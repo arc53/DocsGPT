@@ -19,15 +19,20 @@ class GoogleLLMHandler(LLMHandler):
             )
         if hasattr(response, "candidates"):
             parts = response.candidates[0].content.parts if response.candidates else []
-            tool_calls = [
-                ToolCall(
-                    id=str(uuid.uuid4()),
-                    name=part.function_call.name,
-                    arguments=part.function_call.args,
-                )
-                for part in parts
-                if hasattr(part, "function_call") and part.function_call is not None
-            ]
+            tool_calls = []
+            for idx, part in enumerate(parts):
+                if hasattr(part, "function_call") and part.function_call is not None:
+                    has_sig = hasattr(part, "thought_signature") and part.thought_signature is not None
+                    thought_sig = part.thought_signature if has_sig else None
+                    tool_calls.append(
+                        ToolCall(
+                            id=str(uuid.uuid4()),
+                            name=part.function_call.name,
+                            arguments=part.function_call.args,
+                            index=idx,
+                            thought_signature=thought_sig,
+                        )
+                    )
 
             content = " ".join(
                 part.text
@@ -41,13 +46,17 @@ class GoogleLLMHandler(LLMHandler):
                 raw_response=response,
             )
         else:
+            # This branch handles individual Part objects from streaming responses
             tool_calls = []
-            if hasattr(response, "function_call"):
+            if hasattr(response, "function_call") and response.function_call is not None:
+                has_sig = hasattr(response, "thought_signature") and response.thought_signature is not None
+                thought_sig = response.thought_signature if has_sig else None
                 tool_calls.append(
                     ToolCall(
                         id=str(uuid.uuid4()),
                         name=response.function_call.name,
                         arguments=response.function_call.args,
+                        thought_signature=thought_sig,
                     )
                 )
             return LLMResponse(

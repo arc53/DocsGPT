@@ -197,6 +197,24 @@ def generate_image_url(image_path):
         return f"{base_url}/api/images/{image_path}"
 
 
+def calculate_compression_threshold(
+    model_id: str, threshold_percentage: float = 0.8
+) -> int:
+    """
+    Calculate token threshold for triggering compression.
+
+    Args:
+        model_id: Model identifier
+        threshold_percentage: Percentage of context window (default 80%)
+
+    Returns:
+        Token count threshold
+    """
+    total_context = get_token_limit(model_id)
+    threshold = int(total_context * threshold_percentage)
+    return threshold
+
+
 def clean_text_for_tts(text: str) -> str:
     """
     clean text for Text-to-Speech processing.

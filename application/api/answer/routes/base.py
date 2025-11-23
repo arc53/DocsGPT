@@ -266,6 +266,26 @@ class BaseAnswerResource:
                     shared_token=shared_token,
                     attachment_ids=attachment_ids,
                 )
+                # Persist compression metadata/summary if it exists and wasn't saved mid-execution
+                compression_meta = getattr(agent, "compression_metadata", None)
+                compression_saved = getattr(agent, "compression_saved", False)
+                if conversation_id and compression_meta and not compression_saved:
+                    try:
+                        self.conversation_service.update_compression_metadata(
+                            conversation_id, compression_meta
+                        )
+                        self.conversation_service.append_compression_message(
+                            conversation_id, compression_meta
+                        )
+                        agent.compression_saved = True
+                        logger.info(
+                            f"Persisted compression metadata for conversation {conversation_id}"
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to persist compression metadata: {str(e)}",
+                            exc_info=True,
+                        )
             else:
                 conversation_id = None
             id_data = {"type": "id", "id": str(conversation_id)}
@@ -328,6 +348,25 @@ class BaseAnswerResource:
                         shared_token=shared_token,
                         attachment_ids=attachment_ids,
                     )
+                    compression_meta = getattr(agent, "compression_metadata", None)
+                    compression_saved = getattr(agent, "compression_saved", False)
+                    if conversation_id and compression_meta and not compression_saved:
+                        try:
+                            self.conversation_service.update_compression_metadata(
+                                conversation_id, compression_meta
+                            )
+                            self.conversation_service.append_compression_message(
+                                conversation_id, compression_meta
+                            )
+                            agent.compression_saved = True
+                            logger.info(
+                                f"Persisted compression metadata for conversation {conversation_id} (partial stream)"
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to persist compression metadata (partial stream): {str(e)}",
+                                exc_info=True,
+                            )
                 except Exception as e:
                     logger.error(
                         f"Error saving partial response: {str(e)}", exc_info=True

@@ -10,6 +10,8 @@ from bson.dbref import DBRef
 from bson.objectid import ObjectId
 
 from application.agents.agent_creator import AgentCreator
+from application.api.answer.services.compression import CompressionOrchestrator
+from application.api.answer.services.compression.token_counter import TokenCounter
 from application.api.answer.services.conversation_service import ConversationService
 from application.api.answer.services.prompt_renderer import PromptRenderer
 from application.core.model_utils import (
@@ -90,9 +92,14 @@ class StreamProcessor:
         self.shared_token = None
         self.model_id: Optional[str] = None
         self.conversation_service = ConversationService()
+        self.compression_orchestrator = CompressionOrchestrator(
+            self.conversation_service
+        )
         self.prompt_renderer = PromptRenderer()
         self._prompt_content: Optional[str] = None
         self._required_tool_actions: Optional[Dict[str, Set[Optional[str]]]] = None
+        self.compressed_summary: Optional[str] = None
+        self.compressed_summary_tokens: int = 0
 
     def initialize(self):
         """Initialize all required components for processing"""
@@ -112,14 +119,71 @@ class StreamProcessor:
             )
             if not conversation:
                 raise ValueError("Conversation not found or unauthorized")
-            self.history = [
-                {"prompt": query["prompt"], "response": query["response"]}
-                for query in conversation.get("queries", [])
-            ]
+
+            # Check if compression is enabled and needed
+            if settings.ENABLE_CONVERSATION_COMPRESSION:
+                self._handle_compression(conversation)
+            else:
+                # Original behavior - load all history
+                self.history = [
+                    {"prompt": query["prompt"], "response": query["response"]}
+                    for query in conversation.get("queries", [])
+                ]
         else:
             self.history = limit_chat_history(
                 json.loads(self.data.get("history", "[]")), model_id=self.model_id
             )
+
+    def _handle_compression(self, conversation: Dict[str, Any]):
+        """
+        Handle conversation compression logic using orchestrator.
+
+        Args:
+            conversation: Full conversation document
+        """
+        try:
+            # Use orchestrator to handle all compression logic
+            result = self.compression_orchestrator.compress_if_needed(
+                conversation_id=self.conversation_id,
+                user_id=self.initial_user_id,
+                model_id=self.model_id,
+                decoded_token=self.decoded_token,
+            )
+
+            if not result.success:
+                logger.error(
+                    f"Compression failed: {result.error}, using full history"
+                )
+                self.history = [
+                    {"prompt": query["prompt"], "response": query["response"]}
+                    for query in conversation.get("queries", [])
+                ]
+                return
+
+            # Set compressed summary if compression was performed
+            if result.compression_performed and result.compressed_summary:
+                self.compressed_summary = result.compressed_summary
+                self.compressed_summary_tokens = TokenCounter.count_message_tokens(
+                    [{"content": result.compressed_summary}]
+                )
+                logger.info(
+                    f"Using compressed summary ({self.compressed_summary_tokens} tokens) "
+                    f"+ {len(result.recent_queries)} recent messages"
+                )
+
+            # Build history from recent queries
+            self.history = result.as_history()
+
+        except Exception as e:
+            logger.error(
+                f"Error handling compression, falling back to standard history: {str(e)}",
+                exc_info=True,
+            )
+            # Fallback to original behavior
+            self.history = [
+                {"prompt": query["prompt"], "response": query["response"]}
+                for query in conversation.get("queries", [])
+            ]
 
     def _process_attachments(self):
         """Process any attachments in the request"""
@@ -658,7 +722,7 @@ class StreamProcessor:
         )
         system_api_key = get_api_key_for_provider(provider or settings.LLM_PROVIDER)
 
-        return AgentCreator.create_agent(
+        agent = AgentCreator.create_agent(
             self.agent_config["agent_type"],
             endpoint="stream",
             llm_name=provider or settings.LLM_PROVIDER,
@@ -671,4 +735,10 @@ class StreamProcessor:
             decoded_token=self.decoded_token,
             attachments=self.attachments,
             json_schema=self.agent_config.get("json_schema"),
+            compressed_summary=self.compressed_summary,
         )
+
+        agent.conversation_id = self.conversation_id
+        agent.initial_user_id = self.initial_user_id
+
+        return agent

@@ -34,6 +34,7 @@ class BaseAgent(ABC):
         token_limit: Optional[int] = settings.DEFAULT_AGENT_LIMITS["token_limit"],
         limited_request_mode: Optional[bool] = False,
         request_limit: Optional[int] = settings.DEFAULT_AGENT_LIMITS["request_limit"],
+        compressed_summary: Optional[str] = None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -64,6 +65,9 @@ class BaseAgent(ABC):
         self.token_limit = token_limit
         self.limited_request_mode = limited_request_mode
         self.request_limit = request_limit
+        self.compressed_summary = compressed_summary
+        self.current_token_count = 0
+        self.context_limit_reached = False
 
     @log_activity()
     def gen(
@@ -276,12 +280,77 @@ class BaseAgent(ABC):
             for tool_call in self.tool_calls
         ]
 
+    def _calculate_current_context_tokens(self, messages: List[Dict]) -> int:
+        """
+        Calculate total tokens in current context (messages).
+
+        Args:
+            messages: List of message dicts
+
+        Returns:
+            Total token count
+        """
+        from application.api.answer.services.compression.token_counter import (
+            TokenCounter,
+        )
+
+        return TokenCounter.count_message_tokens(messages)
+
+    def _check_context_limit(self, messages: List[Dict]) -> bool:
+        """
+        Check if we're approaching context limit (80%).
+
+        Args:
+            messages: Current message list
+
+        Returns:
+            True if at or above 80% of context limit
+        """
+        from application.core.model_utils import get_token_limit
+        from application.core.settings import settings
+
+        try:
+            # Calculate current tokens
+            current_tokens = self._calculate_current_context_tokens(messages)
+            self.current_token_count = current_tokens
+
+            # Get context limit for model
+            context_limit = get_token_limit(self.model_id)
+
+            # Calculate threshold (80%)
+            threshold = int(context_limit * settings.COMPRESSION_THRESHOLD_PERCENTAGE)
+
+            # Check if we've reached the limit
+            if current_tokens >= threshold:
+                logger.warning(
+                    f"Context limit approaching: {current_tokens}/{context_limit} tokens "
+                    f"({(current_tokens/context_limit)*100:.1f}%)"
+                )
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Error checking context limit: {str(e)}", exc_info=True)
+            return False
+
     def _build_messages(
         self,
         system_prompt: str,
         query: str,
     ) -> List[Dict]:
         """Build messages using pre-rendered system prompt"""
+        # Append compression summary to system prompt if present
+        if self.compressed_summary:
+            compression_context = (
+                "\n\n---\n\n"
+                "This session is being continued from a previous conversation that "
+                "has been compressed to fit within context limits. "
+                "The conversation is summarized below:\n\n"
+                f"{self.compressed_summary}"
+            )
+            system_prompt = system_prompt + compression_context
+
         messages = [{"role": "system", "content": system_prompt}]
 
         for i in self.chat_history:

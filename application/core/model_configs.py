@@ -29,63 +29,29 @@ GOOGLE_ATTACHMENTS = [
 
 OPENAI_MODELS = [
     AvailableModel(
-        id="gpt-4o",
+        id="gpt-5.1",
         provider=ModelProvider.OPENAI,
-        display_name="GPT-4 Omni",
-        description="Latest and most capable model",
+        display_name="GPT-5.1",
+        description="Flagship model with enhanced reasoning, coding, and agentic capabilities",
         capabilities=ModelCapabilities(
             supports_tools=True,
             supports_structured_output=True,
             supported_attachment_types=OPENAI_ATTACHMENTS,
-            context_window=128000,
+            context_window=400000,
         ),
     ),
     AvailableModel(
-        id="gpt-4o-mini",
+        id="gpt-5-mini",
         provider=ModelProvider.OPENAI,
-        display_name="GPT-4 Omni Mini",
-        description="Fast and efficient",
+        display_name="GPT-5 Mini",
+        description="Faster, cost-effective variant of GPT-5.1",
         capabilities=ModelCapabilities(
             supports_tools=True,
             supports_structured_output=True,
             supported_attachment_types=OPENAI_ATTACHMENTS,
-            context_window=128000,
+            context_window=400000,
         ),
-    ),
-    AvailableModel(
-        id="gpt-4-turbo",
-        provider=ModelProvider.OPENAI,
-        display_name="GPT-4 Turbo",
-        description="Fast GPT-4 with 128k context",
-        capabilities=ModelCapabilities(
-            supports_tools=True,
-            supports_structured_output=True,
-            supported_attachment_types=OPENAI_ATTACHMENTS,
-            context_window=128000,
-        ),
-    ),
-    AvailableModel(
-        id="gpt-4",
-        provider=ModelProvider.OPENAI,
-        display_name="GPT-4",
-        description="Most capable model",
-        capabilities=ModelCapabilities(
-            supports_tools=True,
-            supports_structured_output=True,
-            supported_attachment_types=OPENAI_ATTACHMENTS,
-            context_window=8192,
-        ),
-    ),
-    AvailableModel(
-        id="gpt-3.5-turbo",
-        provider=ModelProvider.OPENAI,
-        display_name="GPT-3.5 Turbo",
-        description="Fast and cost-effective",
-        capabilities=ModelCapabilities(
-            supports_tools=True,
-            context_window=4096,
-        ),
-    ),
+    )
 ]
 
 
@@ -159,15 +125,15 @@ GOOGLE_MODELS = [
         ),
     ),
     AvailableModel(
-        id="gemini-2.5-pro",
+        id="gemini-3-pro-preview",
         provider=ModelProvider.GOOGLE,
-        display_name="Gemini 2.5 Pro",
+        display_name="Gemini 3 Pro",
         description="Most capable Gemini model",
         capabilities=ModelCapabilities(
             supports_tools=True,
             supports_structured_output=True,
             supported_attachment_types=GOOGLE_ATTACHMENTS,
-            context_window=2000000,
+            context_window=20000,  # Set low for testing compression
         ),
     ),
 ]

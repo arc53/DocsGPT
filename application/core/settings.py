@@ -144,6 +144,13 @@ class Settings(BaseSettings):
     # Tool pre-fetch settings
     ENABLE_TOOL_PREFETCH: bool = True
 
+    # Conversation Compression Settings
+    ENABLE_CONVERSATION_COMPRESSION: bool = True
+    COMPRESSION_THRESHOLD_PERCENTAGE: float = 0.8  # Trigger at 80% of context
+    COMPRESSION_MODEL_OVERRIDE: Optional[str] = None  # Use different model for compression
+    COMPRESSION_PROMPT_VERSION: str = "v1.0"  # Track prompt iterations
+    COMPRESSION_MAX_HISTORY_POINTS: int = 3  # Keep only last N compression points to prevent DB bloat
+
 
 path = Path(__file__).parent.parent.absolute()
 settings = Settings(_env_file=path.joinpath(".env"), _env_file_encoding="utf-8")
