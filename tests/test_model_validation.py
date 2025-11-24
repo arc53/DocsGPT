@@ -64,7 +64,7 @@ def test_model_without_base_url():
 def test_validate_model_id():
     """Test model_id validation"""
     # Get the registry instance to check what models are available
-    registry = ModelRegistry.get_instance()
+    ModelRegistry.get_instance()
 
     # Test with a model that should exist (docsgpt-local is always added)
     assert validate_model_id("docsgpt-local") is True

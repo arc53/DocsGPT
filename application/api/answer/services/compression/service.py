@@ -11,7 +11,6 @@ from application.api.answer.services.compression.prompt_builder import (
 from application.api.answer.services.compression.token_counter import TokenCounter
 from application.api.answer.services.compression.types import (
     CompressionMetadata,
-    CompressionResult,
 )
 from application.core.settings import settings
 

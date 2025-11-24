@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 
 from application.agents.base import BaseAgent
 from application.llm.handlers.base import LLMHandler, ToolCall
@@ -310,7 +310,7 @@ class TestLLMHandlerTokenTracking:
             tools_dict = {}
 
             # Execute streaming
-            results = list(handler.handle_streaming(mock_agent, "first", tools_dict, messages))
+            list(handler.handle_streaming(mock_agent, "first", tools_dict, messages))
 
             # Should have called gen_stream with tools=None (disabled)
             mock_agent.llm.gen_stream.assert_called()

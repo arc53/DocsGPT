@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime, timezone
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 
 from application.api.answer.services.compression import CompressionService
 from application.api.answer.services.compression.threshold_checker import (
@@ -258,7 +258,7 @@ class TestCompressionService:
         mock_summary = "<summary>Test summary with tools</summary>"
         compression_service.llm.gen.return_value = mock_summary
 
-        result = compression_service.compress_conversation(
+        compression_service.compress_conversation(
             conversation=conversation, compress_up_to_index=0
         )
 

@@ -334,7 +334,7 @@ DocsGPT provides:
                 try:
                     error_data = response.json()
                     self.print_error(f"Error: {error_data}")
-                except:
+                except Exception:
                     self.print_error(f"Response: {response.text[:500]}")
                 self.test_results.append((test_name, False, f"Status {response.status_code}"))
                 return None
@@ -371,7 +371,7 @@ DocsGPT provides:
 
         try:
             self.print_info(f"POST {endpoint}")
-            self.print_info(f"Crawling: https://docs.docsgpt.cloud/")
+            self.print_info("Crawling: https://docs.docsgpt.cloud/")
 
             response = requests.post(
                 endpoint,
@@ -401,7 +401,7 @@ DocsGPT provides:
                 try:
                     error_data = response.json()
                     self.print_error(f"Error: {error_data}")
-                except:
+                except Exception:
                     self.print_error(f"Response: {response.text[:500]}")
                 self.test_results.append((test_name, False, f"Status {response.status_code}"))
                 return None
@@ -556,7 +556,7 @@ DocsGPT provides:
                 try:
                     error_data = response.json()
                     self.print_error(f"Error: {error_data.get('message', response.text[:200])}")
-                except:
+                except Exception:
                     self.print_error(f"Response: {response.text[:500]}")
                 self.test_results.append((test_name, False, f"Status {response.status_code}"))
                 return None
@@ -803,7 +803,7 @@ DocsGPT provides:
                 try:
                     error_data = response.json()
                     self.print_error(f"Error: {error_data.get('message', response.text[:200])}")
-                except:
+                except Exception:
                     self.print_error(f"Response: {response.text[:500]}")
                 self.test_results.append((test_name, False, f"Status {response.status_code}"))
                 return None
@@ -997,7 +997,7 @@ DocsGPT provides:
                 conversation_id = result.get('conversation_id', conversation_id)
                 self.print_success("Critical information sent")
             else:
-                self.print_error(f"Critical info request failed")
+                self.print_error("Critical info request failed")
                 self.test_results.append((test_name, False, "Critical info failed"))
                 return False
             time.sleep(2)
@@ -1027,7 +1027,7 @@ DocsGPT provides:
                     conversation_id = result.get('conversation_id', conversation_id)
                     self.print_success(f"Burying question {i+1}/2 completed")
                 else:
-                    self.print_error(f"Request failed")
+                    self.print_error("Request failed")
                     self.test_results.append((test_name, False, "Burying questions failed"))
                     return False
                 time.sleep(2)
@@ -1064,7 +1064,7 @@ DocsGPT provides:
                     self.test_results.append((test_name, False, "Info not preserved"))
                     return False
             else:
-                self.print_error(f"Recall request failed")
+                self.print_error("Recall request failed")
                 self.test_results.append((test_name, False, "Recall failed"))
                 return False
         except Exception as e:
