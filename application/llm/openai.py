@@ -128,6 +128,10 @@ class OpenAILLM(BaseLLM):
     ):
         messages = self._clean_messages_openai(messages)
 
+        # Convert max_tokens to max_completion_tokens for newer models
+        if "max_tokens" in kwargs:
+            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+
         request_params = {
             "model": model,
             "messages": messages,
@@ -158,6 +162,10 @@ class OpenAILLM(BaseLLM):
         **kwargs,
     ):
         messages = self._clean_messages_openai(messages)
+
+        # Convert max_tokens to max_completion_tokens for newer models
+        if "max_tokens" in kwargs:
+            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
 
         request_params = {
             "model": model,

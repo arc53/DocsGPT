@@ -180,3 +180,103 @@ class ConversationService:
                     conversation_data["api_key"] = agent["key"]
             result = self.conversations_collection.insert_one(conversation_data)
             return str(result.inserted_id)
+
+    def update_compression_metadata(
+        self, conversation_id: str, compression_metadata: Dict[str, Any]
+    ) -> None:
+        """
+        Update conversation with compression metadata.
+
+        Uses $push with $slice to keep only the most recent compression points,
+        preventing unbounded array growth. Since each compression incorporates
+        previous compressions, older points become redundant.
+
+        Args:
+            conversation_id: Conversation ID
+            compression_metadata: Compression point data
+        """
+        try:
+            self.conversations_collection.update_one(
+                {"_id": ObjectId(conversation_id)},
+                {
+                    "$set": {
+                        "compression_metadata.is_compressed": True,
+                        "compression_metadata.last_compression_at": compression_metadata.get(
+                            "timestamp"
+                        ),
+                    },
+                    "$push": {
+                        "compression_metadata.compression_points": {
+                            "$each": [compression_metadata],
+                            "$slice": -settings.COMPRESSION_MAX_HISTORY_POINTS,
+                        }
+                    },
+                },
+            )
+            logger.info(
+                f"Updated compression metadata for conversation {conversation_id}"
+            )
+        except Exception as e:
+            logger.error(
+                f"Error updating compression metadata: {str(e)}", exc_info=True
+            )
+            raise
+
+    def append_compression_message(
+        self, conversation_id: str, compression_metadata: Dict[str, Any]
+    ) -> None:
+        """
+        Append a synthetic compression summary entry into the conversation history.
+        This makes the summary visible in the DB alongside normal queries.
+        """
+        try:
+            summary = compression_metadata.get("compressed_summary", "")
+            if not summary:
+                return
+            timestamp = compression_metadata.get("timestamp", datetime.now(timezone.utc))
+
+            self.conversations_collection.update_one(
+                {"_id": ObjectId(conversation_id)},
+                {
+                    "$push": {
+                        "queries": {
+                            "prompt": "[Context Compression Summary]",
+                            "response": summary,
+                            "thought": "",
+                            "sources": [],
+                            "tool_calls": [],
+                            "timestamp": timestamp,
+                            "attachments": [],
+                            "model_id": compression_metadata.get("model_used"),
+                        }
+                    }
+                },
+            )
+            logger.info(f"Appended compression summary to conversation {conversation_id}")
+        except Exception as e:
+            logger.error(
+                f"Error appending compression summary: {str(e)}", exc_info=True
+            )
+
+    def get_compression_metadata(
+        self, conversation_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get compression metadata for a conversation.
+
+        Args:
+            conversation_id: Conversation ID
+
+        Returns:
+            Compression metadata dict or None
+        """
+        try:
+            conversation = self.conversations_collection.find_one(
+                {"_id": ObjectId(conversation_id)}, {"compression_metadata": 1}
+            )
+            return conversation.get("compression_metadata") if conversation else None
+        except Exception as e:
+            logger.error(
+                f"Error getting compression metadata: {str(e)}", exc_info=True
+            )
+            return None
