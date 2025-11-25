@@ -37,7 +37,7 @@ OPENAI_MODELS = [
             supports_tools=True,
             supports_structured_output=True,
             supported_attachment_types=OPENAI_ATTACHMENTS,
-            context_window=400000,
+            context_window=200000,
         ),
     ),
     AvailableModel(
@@ -49,7 +49,7 @@ OPENAI_MODELS = [
             supports_tools=True,
             supports_structured_output=True,
             supported_attachment_types=OPENAI_ATTACHMENTS,
-            context_window=400000,
+            context_window=200000,
         ),
     )
 ]
@@ -133,7 +133,7 @@ GOOGLE_MODELS = [
             supports_tools=True,
             supports_structured_output=True,
             supported_attachment_types=GOOGLE_ATTACHMENTS,
-            context_window=20000,  # Set low for testing compression
+            context_window=2000000,
         ),
     ),
 ]
