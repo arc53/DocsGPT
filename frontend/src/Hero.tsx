@@ -1,5 +1,7 @@
-import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import { useTranslation } from 'react-i18next';
+
+import DocsGPT3 from './assets/cute_docsgpt3.svg';
+import DropdownModel from './components/DropdownModel';
 
 export default function Hero({
   handleQuestion,
@@ -26,6 +28,10 @@ export default function Hero({
           <span className="text-4xl font-semibold">DocsGPT</span>
           <img className="mb-1 inline w-14" src={DocsGPT3} alt="docsgpt" />
         </div>
+        {/* Model Selector */}
+        <div className="relative w-72">
+          <DropdownModel />
+        </div>
       </div>
 
       {/* Demo Buttons Section */}
@@ -38,7 +44,7 @@ export default function Hero({
                 <button
                   key={key}
                   onClick={() => handleQuestion({ question: demo.query })}
-                  className={`border-dark-gray text-just-black hover:bg-cultured dark:border-dim-gray dark:text-chinese-white dark:hover:bg-charleston-green w-full rounded-[66px] border bg-transparent px-6 py-[14px] text-left transition-colors ${key >= 2 ? 'hidden md:block' : ''} // Show only 2 buttons on mobile`}
+                  className={`border-dark-gray text-just-black hover:bg-cultured dark:border-dim-gray dark:text-chinese-white dark:hover:bg-charleston-green w-full rounded-[66px] border bg-transparent px-6 py-[14px] text-left transition-colors ${key >= 2 ? 'hidden md:block' : ''}`}
                 >
                   <p className="text-black-1000 dark:text-bright-gray mb-2 font-semibold">
                     {demo.header}

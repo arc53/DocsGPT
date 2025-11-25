@@ -9,11 +9,12 @@ import { Agent } from '../agents/types';
 import { ActiveState, Doc } from '../models/misc';
 import { RootState } from '../store';
 import {
+  getLocalRecentDocs,
   setLocalApiKey,
   setLocalRecentDocs,
-  getLocalRecentDocs,
 } from './preferenceApi';
 
+import type { Model } from '../models/types';
 export interface Preference {
   apiKey: string;
   prompt: { name: string; id: string; type: string };
@@ -32,6 +33,9 @@ export interface Preference {
   agents: Agent[] | null;
   sharedAgents: Agent[] | null;
   selectedAgent: Agent | null;
+  selectedModel: Model | null;
+  availableModels: Model[];
+  modelsLoading: boolean;
 }
 
 const initialState: Preference = {
@@ -61,6 +65,9 @@ const initialState: Preference = {
   agents: null,
   sharedAgents: null,
   selectedAgent: null,
+  selectedModel: null,
+  availableModels: [],
+  modelsLoading: false,
 };
 
 export const prefSlice = createSlice({
@@ -109,6 +116,15 @@ export const prefSlice = createSlice({
     setSelectedAgent: (state, action) => {
       state.selectedAgent = action.payload;
     },
+    setSelectedModel: (state, action: PayloadAction<Model | null>) => {
+      state.selectedModel = action.payload;
+    },
+    setAvailableModels: (state, action: PayloadAction<Model[]>) => {
+      state.availableModels = action.payload;
+    },
+    setModelsLoading: (state, action: PayloadAction<boolean>) => {
+      state.modelsLoading = action.payload;
+    },
   },
 });
 
@@ -127,6 +143,9 @@ export const {
   setAgents,
   setSharedAgents,
   setSelectedAgent,
+  setSelectedModel,
+  setAvailableModels,
+  setModelsLoading,
 } = prefSlice.actions;
 export default prefSlice.reducer;
 
@@ -198,6 +217,19 @@ prefListenerMiddleware.startListening({
   },
 });
 
+prefListenerMiddleware.startListening({
+  matcher: isAnyOf(setSelectedModel),
+  effect: (action, listenerApi) => {
+    const model = (listenerApi.getState() as RootState).preference
+      .selectedModel;
+    if (model) {
+      localStorage.setItem('DocsGPTSelectedModel', JSON.stringify(model));
+    } else {
+      localStorage.removeItem('DocsGPTSelectedModel');
+    }
+  },
+});
+
 export const selectApiKey = (state: RootState) => state.preference.apiKey;
 export const selectApiKeyStatus = (state: RootState) =>
   !!state.preference.apiKey;
@@ -227,3 +259,9 @@ export const selectSharedAgents = (state: RootState) =>
   state.preference.sharedAgents;
 export const selectSelectedAgent = (state: RootState) =>
   state.preference.selectedAgent;
+export const selectSelectedModel = (state: RootState) =>
+  state.preference.selectedModel;
+export const selectAvailableModels = (state: RootState) =>
+  state.preference.availableModels;
+export const selectModelsLoading = (state: RootState) =>
+  state.preference.modelsLoading;

@@ -32,4 +32,6 @@ export type Agent = {
   token_limit?: number;
   limited_request_mode?: boolean;
   request_limit?: number;
+  models?: string[];
+  default_model_id?: string;
 };

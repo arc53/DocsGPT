@@ -91,7 +91,7 @@ def test_clean_messages_google_basic():
             {"function_call": {"name": "fn", "args": {"a": 1}}},
         ]},
     ]
-    cleaned = llm._clean_messages_google(msgs)
+    cleaned, system_instruction = llm._clean_messages_google(msgs)
 
     assert all(hasattr(c, "role") and hasattr(c, "parts") for c in cleaned)
     assert any(c.role == "model" for c in cleaned)

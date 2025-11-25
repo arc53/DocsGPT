@@ -530,6 +530,7 @@
         "prompt": "Промпт",
         "tools": "Инструменты",
         "agentType": "Тип агента",
+        "models": "Модели",
         "advanced": "Расширенные",
         "preview": "Предпросмотр"
       },
@@ -540,6 +541,8 @@
         "chunksPerQuery": "Фрагментов на запрос",
         "selectType": "Выберите тип",
         "selectTools": "Выберите инструменты",
+        "selectModels": "Выберите модели для этого агента",
+        "selectDefaultModel": "Выберите модель по умолчанию",
         "enterTokenLimit": "Введите лимит токенов",
         "enterRequestLimit": "Введите лимит запросов"
       },
@@ -553,6 +556,11 @@
         "searchPlaceholder": "Поиск инструментов...",
         "noOptionsMessage": "Нет доступных инструментов"
       },
+      "modelsPopup": {
+        "title": "Выберите Модели",
+        "searchPlaceholder": "Поиск моделей...",
+        "noOptionsMessage": "Нет доступных моделей"
+      },
       "upload": {
         "clickToUpload": "Нажмите для загрузки",
         "dragAndDrop": " или перетащите"
@@ -560,6 +568,9 @@
       "agentTypes": {
         "classic": "Классический",
         "react": "ReAct"
+      },
+      "labels": {
+        "defaultModel": "Модель по умолчанию"
       },
       "advanced": {
         "jsonSchema": "Схема ответа JSON",

@@ -2,6 +2,7 @@ const endpoints = {
   USER: {
     CONFIG: '/api/config',
     NEW_TOKEN: '/api/generate_token',
+    MODELS: '/api/models',
     DOCS: '/api/sources',
     DOCS_PAGINATED: '/api/sources/paginated',
     API_KEYS: '/api/get_api_keys',

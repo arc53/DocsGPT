@@ -13,30 +13,32 @@ class BaseLLM(ABC):
     def __init__(
         self,
         decoded_token=None,
+        model_id=None,
+        base_url=None,
     ):
         self.decoded_token = decoded_token
+        self.model_id = model_id
+        self.base_url = base_url
         self.token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
-        self.fallback_provider = settings.FALLBACK_LLM_PROVIDER
-        self.fallback_model_name = settings.FALLBACK_LLM_NAME
-        self.fallback_llm_api_key = settings.FALLBACK_LLM_API_KEY
         self._fallback_llm = None
+        self._fallback_sequence_index = 0
 
     @property
     def fallback_llm(self):
-        """Lazy-loaded fallback LLM instance."""
-        if (
-            self._fallback_llm is None
-            and self.fallback_provider
-            and self.fallback_model_name
-        ):
+        """Lazy-loaded fallback LLM from FALLBACK_* settings."""
+        if self._fallback_llm is None and settings.FALLBACK_LLM_PROVIDER:
             try:
                 from application.llm.llm_creator import LLMCreator
 
                 self._fallback_llm = LLMCreator.create_llm(
-                    self.fallback_provider,
-                    self.fallback_llm_api_key,
-                    None,
-                    self.decoded_token,
+                    settings.FALLBACK_LLM_PROVIDER,
+                    api_key=settings.FALLBACK_LLM_API_KEY or settings.API_KEY,
+                    user_api_key=None,
+                    decoded_token=self.decoded_token,
+                    model_id=settings.FALLBACK_LLM_NAME,
+                )
+                logger.info(
+                    f"Fallback LLM initialized: {settings.FALLBACK_LLM_PROVIDER}/{settings.FALLBACK_LLM_NAME}"
                 )
             except Exception as e:
                 logger.error(
@@ -54,7 +56,7 @@ class BaseLLM(ABC):
         self, method_name: str, decorators: list, *args, **kwargs
     ):
         """
-        Unified method execution with fallback support.
+        Execute method with fallback support.
 
         Args:
             method_name: Name of the raw method ('_raw_gen' or '_raw_gen_stream')
@@ -73,10 +75,10 @@ class BaseLLM(ABC):
             return decorated_method()
         except Exception as e:
             if not self.fallback_llm:
-                logger.error(f"Primary LLM failed and no fallback available: {str(e)}")
+                logger.error(f"Primary LLM failed and no fallback configured: {str(e)}")
                 raise
             logger.warning(
-                f"Falling back to {self.fallback_provider}/{self.fallback_model_name}. Error: {str(e)}"
+                f"Primary LLM failed. Falling back to {settings.FALLBACK_LLM_PROVIDER}/{settings.FALLBACK_LLM_NAME}. Error: {str(e)}"
             )
 
             fallback_method = getattr(

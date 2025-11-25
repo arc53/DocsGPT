@@ -54,6 +54,10 @@ class AnswerResource(Resource, BaseAnswerResource):
                 default=True,
                 description="Whether to save the conversation",
             ),
+            "model_id": fields.String(
+                required=False,
+                description="Model ID to use for this request",
+            ),
             "passthrough": fields.Raw(
                 required=False,
                 description="Dynamic parameters to inject into prompt template",
@@ -97,6 +101,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                 isNoneDoc=data.get("isNoneDoc"),
                 index=None,
                 should_save_conversation=data.get("save_conversation", True),
+                model_id=processor.model_id,
             )
             stream_result = self.process_response_stream(stream)
 

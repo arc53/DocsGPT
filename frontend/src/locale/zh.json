@@ -530,6 +530,7 @@
         "prompt": "提示词",
         "tools": "工具",
         "agentType": "代理类型",
+        "models": "模型",
         "advanced": "高级",
         "preview": "预览"
       },
@@ -540,6 +541,8 @@
         "chunksPerQuery": "每次查询的块数",
         "selectType": "选择类型",
         "selectTools": "选择工具",
+        "selectModels": "为此代理选择模型",
+        "selectDefaultModel": "选择默认模型",
         "enterTokenLimit": "输入令牌限制",
         "enterRequestLimit": "输入请求限制"
       },
@@ -553,6 +556,11 @@
         "searchPlaceholder": "搜索工具...",
         "noOptionsMessage": "没有可用的工具"
       },
+      "modelsPopup": {
+        "title": "选择模型",
+        "searchPlaceholder": "搜索模型...",
+        "noOptionsMessage": "没有可用的模型"
+      },
       "upload": {
         "clickToUpload": "点击上传",
         "dragAndDrop": " 或拖放"
@@ -560,6 +568,9 @@
       "agentTypes": {
         "classic": "经典",
         "react": "ReAct"
+      },
+      "labels": {
+        "defaultModel": "默认模型"
       },
       "advanced": {
         "jsonSchema": "JSON响应架构",
