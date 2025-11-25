@@ -530,6 +530,7 @@
         "prompt": "Prompt",
         "tools": "Tools",
         "agentType": "Agent type",
+        "models": "Models",
         "advanced": "Advanced",
         "preview": "Preview"
       },
@@ -540,6 +541,8 @@
         "chunksPerQuery": "Chunks per query",
         "selectType": "Select type",
         "selectTools": "Select tools",
+        "selectModels": "Select models for this agent",
+        "selectDefaultModel": "Select default model",
         "enterTokenLimit": "Enter token limit",
         "enterRequestLimit": "Enter request limit"
       },
@@ -553,6 +556,11 @@
         "searchPlaceholder": "Search tools...",
         "noOptionsMessage": "No tools available"
       },
+      "modelsPopup": {
+        "title": "Select Models",
+        "searchPlaceholder": "Search models...",
+        "noOptionsMessage": "No models available"
+      },
       "upload": {
         "clickToUpload": "Click to upload",
         "dragAndDrop": " or drag and drop"
@@ -560,6 +568,9 @@
       "agentTypes": {
         "classic": "Classic",
         "react": "ReAct"
+      },
+      "labels": {
+        "defaultModel": "Default Model"
       },
       "advanced": {
         "jsonSchema": "JSON response schema",

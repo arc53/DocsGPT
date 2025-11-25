@@ -26,13 +26,6 @@
 
 </div>
 
-<div align="center">
-  <br>
-🎃 <a href="https://github.com/arc53/DocsGPT/blob/main/HACKTOBERFEST.md"> Hacktoberfest Prizes, Rules & Q&A </a> 🎃
-  <br>
-  <br>
-</div>
-
 
 <div align="center">
   <br>

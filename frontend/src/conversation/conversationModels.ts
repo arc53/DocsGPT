@@ -65,4 +65,5 @@ export interface RetrievalPayload {
   agent_id?: string;
   attachments?: string[];
   save_conversation?: boolean;
+  model_id?: string;
 }

@@ -10,14 +10,21 @@ from bson.dbref import DBRef
 from bson.objectid import ObjectId
 
 from application.agents.agent_creator import AgentCreator
+from application.api.answer.services.compression import CompressionOrchestrator
+from application.api.answer.services.compression.token_counter import TokenCounter
 from application.api.answer.services.conversation_service import ConversationService
 from application.api.answer.services.prompt_renderer import PromptRenderer
+from application.core.model_utils import (
+    get_api_key_for_provider,
+    get_default_model_id,
+    get_provider_from_model_id,
+    validate_model_id,
+)
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.retriever.retriever_creator import RetrieverCreator
 from application.utils import (
     calculate_doc_token_budget,
-    get_gpt_model,
     limit_chat_history,
 )
 
@@ -83,14 +90,20 @@ class StreamProcessor:
         self.retriever_config = {}
         self.is_shared_usage = False
         self.shared_token = None
-        self.gpt_model = get_gpt_model()
+        self.model_id: Optional[str] = None
         self.conversation_service = ConversationService()
+        self.compression_orchestrator = CompressionOrchestrator(
+            self.conversation_service
+        )
         self.prompt_renderer = PromptRenderer()
         self._prompt_content: Optional[str] = None
         self._required_tool_actions: Optional[Dict[str, Set[Optional[str]]]] = None
+        self.compressed_summary: Optional[str] = None
+        self.compressed_summary_tokens: int = 0
 
     def initialize(self):
         """Initialize all required components for processing"""
+        self._validate_and_set_model()
         self._configure_agent()
         self._configure_source()
         self._configure_retriever()
@@ -106,14 +119,71 @@ class StreamProcessor:
             )
             if not conversation:
                 raise ValueError("Conversation not found or unauthorized")
+
+            # Check if compression is enabled and needed
+            if settings.ENABLE_CONVERSATION_COMPRESSION:
+                self._handle_compression(conversation)
+            else:
+                # Original behavior - load all history
+                self.history = [
+                    {"prompt": query["prompt"], "response": query["response"]}
+                    for query in conversation.get("queries", [])
+                ]
+        else:
+            self.history = limit_chat_history(
+                json.loads(self.data.get("history", "[]")), model_id=self.model_id
+            )
+
+    def _handle_compression(self, conversation: Dict[str, Any]):
+        """
+        Handle conversation compression logic using orchestrator.
+
+        Args:
+            conversation: Full conversation document
+        """
+        try:
+            # Use orchestrator to handle all compression logic
+            result = self.compression_orchestrator.compress_if_needed(
+                conversation_id=self.conversation_id,
+                user_id=self.initial_user_id,
+                model_id=self.model_id,
+                decoded_token=self.decoded_token,
+            )
+
+            if not result.success:
+                logger.error(
+                    f"Compression failed: {result.error}, using full history"
+                )
+                self.history = [
+                    {"prompt": query["prompt"], "response": query["response"]}
+                    for query in conversation.get("queries", [])
+                ]
+                return
+
+            # Set compressed summary if compression was performed
+            if result.compression_performed and result.compressed_summary:
+                self.compressed_summary = result.compressed_summary
+                self.compressed_summary_tokens = TokenCounter.count_message_tokens(
+                    [{"content": result.compressed_summary}]
+                )
+                logger.info(
+                    f"Using compressed summary ({self.compressed_summary_tokens} tokens) "
+                    f"+ {len(result.recent_queries)} recent messages"
+                )
+
+            # Build history from recent queries
+            self.history = result.as_history()
+
+        except Exception as e:
+            logger.error(
+                f"Error handling compression, falling back to standard history: {str(e)}",
+                exc_info=True,
+            )
+            # Fallback to original behavior
             self.history = [
                 {"prompt": query["prompt"], "response": query["response"]}
                 for query in conversation.get("queries", [])
             ]
-        else:
-            self.history = limit_chat_history(
-                json.loads(self.data.get("history", "[]")), gpt_model=self.gpt_model
-            )
 
     def _process_attachments(self):
         """Process any attachments in the request"""
@@ -142,6 +212,25 @@ class StreamProcessor:
                     f"Error retrieving attachment {attachment_id}: {e}", exc_info=True
                 )
         return attachments
+
+    def _validate_and_set_model(self):
+        """Validate and set model_id from request"""
+        from application.core.model_settings import ModelRegistry
+
+        requested_model = self.data.get("model_id")
+
+        if requested_model:
+            if not validate_model_id(requested_model):
+                registry = ModelRegistry.get_instance()
+                available_models = [m.id for m in registry.get_enabled_models()]
+                raise ValueError(
+                    f"Invalid model_id '{requested_model}'. "
+                    f"Available models: {', '.join(available_models[:5])}"
+                    + (f" and {len(available_models) - 5} more" if len(available_models) > 5 else "")
+                )
+            self.model_id = requested_model
+        else:
+            self.model_id = get_default_model_id()
 
     def _get_agent_key(self, agent_id: Optional[str], user_id: Optional[str]) -> tuple:
         """Get API key for agent with access control"""
@@ -322,7 +411,7 @@ class StreamProcessor:
     def _configure_retriever(self):
         history_token_limit = int(self.data.get("token_limit", 2000))
         doc_token_limit = calculate_doc_token_budget(
-            gpt_model=self.gpt_model, history_token_limit=history_token_limit
+            model_id=self.model_id, history_token_limit=history_token_limit
         )
 
         self.retriever_config = {
@@ -344,7 +433,7 @@ class StreamProcessor:
             prompt=get_prompt(self.agent_config["prompt_id"], self.prompts_collection),
             chunks=self.retriever_config["chunks"],
             doc_token_limit=self.retriever_config.get("doc_token_limit", 50000),
-            gpt_model=self.gpt_model,
+            model_id=self.model_id,
             user_api_key=self.agent_config["user_api_key"],
             decoded_token=self.decoded_token,
         )
@@ -626,12 +715,19 @@ class StreamProcessor:
             tools_data=tools_data,
         )
 
-        return AgentCreator.create_agent(
+        provider = (
+            get_provider_from_model_id(self.model_id)
+            if self.model_id
+            else settings.LLM_PROVIDER
+        )
+        system_api_key = get_api_key_for_provider(provider or settings.LLM_PROVIDER)
+
+        agent = AgentCreator.create_agent(
             self.agent_config["agent_type"],
             endpoint="stream",
-            llm_name=settings.LLM_PROVIDER,
-            gpt_model=self.gpt_model,
-            api_key=settings.API_KEY,
+            llm_name=provider or settings.LLM_PROVIDER,
+            model_id=self.model_id,
+            api_key=system_api_key,
             user_api_key=self.agent_config["user_api_key"],
             prompt=rendered_prompt,
             chat_history=self.history,
@@ -639,4 +735,10 @@ class StreamProcessor:
             decoded_token=self.decoded_token,
             attachments=self.attachments,
             json_schema=self.agent_config.get("json_schema"),
+            compressed_summary=self.compressed_summary,
         )
+
+        agent.conversation_id = self.conversation_id
+        agent.initial_user_id = self.initial_user_id
+
+        return agent

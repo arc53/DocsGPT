@@ -15,6 +15,7 @@ export function handleFetchAnswer(
   agentId?: string,
   attachments?: string[],
   save_conversation = true,
+  modelId?: string,
 ): Promise<
   | {
       result: any;
@@ -46,6 +47,10 @@ export function handleFetchAnswer(
     agent_id: agentId,
     save_conversation: save_conversation,
   };
+
+  if (modelId) {
+    payload.model_id = modelId;
+  }
 
   // Add attachments to payload if they exist
   if (attachments && attachments.length > 0) {
@@ -101,6 +106,7 @@ export function handleFetchAnswerSteaming(
   agentId?: string,
   attachments?: string[],
   save_conversation = true,
+  modelId?: string,
 ): Promise<Answer> {
   const payload: RetrievalPayload = {
     question: question,
@@ -113,6 +119,10 @@ export function handleFetchAnswerSteaming(
     agent_id: agentId,
     save_conversation: save_conversation,
   };
+
+  if (modelId) {
+    payload.model_id = modelId;
+  }
 
   // Add attachments to payload if they exist
   if (attachments && attachments.length > 0) {

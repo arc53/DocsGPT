@@ -530,6 +530,7 @@
         "prompt": "Prompt",
         "tools": "Herramientas",
         "agentType": "Tipo de agente",
+        "models": "Modelos",
         "advanced": "Avanzado",
         "preview": "Vista previa"
       },
@@ -540,6 +541,8 @@
         "chunksPerQuery": "Fragmentos por consulta",
         "selectType": "Seleccionar tipo",
         "selectTools": "Seleccionar herramientas",
+        "selectModels": "Seleccionar modelos para este agente",
+        "selectDefaultModel": "Seleccionar modelo predeterminado",
         "enterTokenLimit": "Ingresar límite de tokens",
         "enterRequestLimit": "Ingresar límite de solicitudes"
       },
@@ -553,6 +556,11 @@
         "searchPlaceholder": "Buscar herramientas...",
         "noOptionsMessage": "No hay herramientas disponibles"
       },
+      "modelsPopup": {
+        "title": "Seleccionar Modelos",
+        "searchPlaceholder": "Buscar modelos...",
+        "noOptionsMessage": "No hay modelos disponibles"
+      },
       "upload": {
         "clickToUpload": "Haz clic para subir",
         "dragAndDrop": " o arrastra y suelta"
@@ -560,6 +568,9 @@
       "agentTypes": {
         "classic": "Clásico",
         "react": "ReAct"
+      },
+      "labels": {
+        "defaultModel": "Modelo Predeterminado"
       },
       "advanced": {
         "jsonSchema": "Esquema de respuesta JSON",

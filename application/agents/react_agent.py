@@ -86,7 +86,7 @@ class ReActAgent(BaseAgent):
         messages = [{"role": "user", "content": plan_prompt}]
 
         plan_stream = self.llm.gen_stream(
-            model=self.gpt_model,
+            model=self.model_id,
             messages=messages,
             tools=self.tools if self.tools else None,
         )
@@ -151,7 +151,7 @@ class ReActAgent(BaseAgent):
         messages = [{"role": "user", "content": final_prompt}]
 
         final_stream = self.llm.gen_stream(
-            model=self.gpt_model, messages=messages, tools=None
+            model=self.model_id, messages=messages, tools=None
         )
 
         if log_context:
