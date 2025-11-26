@@ -103,11 +103,10 @@ class StreamProcessor:
 
     def initialize(self):
         """Initialize all required components for processing"""
-        self._validate_and_set_model()
         self._configure_agent()
+        self._validate_and_set_model()
         self._configure_source()
         self._configure_retriever()
-        self._configure_agent()
         self._load_conversation_history()
         self._process_attachments()
 
@@ -230,7 +229,12 @@ class StreamProcessor:
                 )
             self.model_id = requested_model
         else:
-            self.model_id = get_default_model_id()
+            # Check if agent has a default model configured
+            agent_default_model = self.agent_config.get("default_model_id", "")
+            if agent_default_model and validate_model_id(agent_default_model):
+                self.model_id = agent_default_model
+            else:
+                self.model_id = get_default_model_id()
 
     def _get_agent_key(self, agent_id: Optional[str], user_id: Optional[str]) -> tuple:
         """Get API key for agent with access control"""
@@ -303,6 +307,10 @@ class StreamProcessor:
             data["sources"] = sources_list
         else:
             data["sources"] = []
+
+        # Preserve model configuration from agent
+        data["default_model_id"] = data.get("default_model_id", "")
+
         return data
 
     def _configure_source(self):
@@ -355,6 +363,7 @@ class StreamProcessor:
                     "agent_type": data_key.get("agent_type", settings.AGENT_NAME),
                     "user_api_key": api_key,
                     "json_schema": data_key.get("json_schema"),
+                    "default_model_id": data_key.get("default_model_id", ""),
                 }
             )
             self.initial_user_id = data_key.get("user")
@@ -379,6 +388,7 @@ class StreamProcessor:
                     "agent_type": data_key.get("agent_type", settings.AGENT_NAME),
                     "user_api_key": self.agent_key,
                     "json_schema": data_key.get("json_schema"),
+                    "default_model_id": data_key.get("default_model_id", ""),
                 }
             )
             self.decoded_token = (
@@ -405,6 +415,7 @@ class StreamProcessor:
                     "agent_type": settings.AGENT_NAME,
                     "user_api_key": None,
                     "json_schema": None,
+                    "default_model_id": "",
                 }
             )
 
