@@ -191,7 +191,7 @@ const useToolVariables = () => {
                     }
                     filteredActions.push({
                       label: `${action.name} (${tool.displayName || tool.name})`,
-                      value: `tools.${toolIdentifier}.${action.name}`,
+                      value: `tools['${toolIdentifier}'].${action.name}`,
                     });
                   }
                 }
