@@ -380,11 +380,16 @@ const Markdown = styled.div`
     .dgpt-table-container { 
       margin: 20px 0;
       width:100%;
-      overflow-x: auto; 
+      overflow-x: scroll !important;  
       border: 1px solid #a2a2ab; 
       border-radius: 6px; 
       -webkit-overflow-scrolling: touch;
+      -ms-overflow-style: scrollbar;
+      scrollbar-width: thin; 
+      scrollbar-color: #a2a2ab #38383b;
     }
+  
+
     table, .dgpt-table { 
       width: 100%; 
       border-collapse: collapse; 
@@ -438,14 +443,17 @@ const Delay = styled(DotAnimation) <{ delay: number }>`
 `;
 const PromptContainer = styled.form`
   background-color: transparent;
-  height: ${props => props.theme.dimensions.size == 'large' ? '60px' : '40px'};
+  min-height: ${props => props.theme.dimensions.size == 'large' ? '40px' : '23px'};
+  max-height:150px;
   display: flex;
+  align-items: end;
   justify-content: space-evenly;
 `;
 const StyledTextarea = styled.textarea`
+  box-sizing: border-box;
   width: 100%;
   border: 1px solid #686877;
-  padding-left: 12px;
+  padding: ${props => props.theme.dimensions.size === 'large' ? '18px 12px 14px 12px' : '8px 12px 4px 12px'};
   background-color: transparent;
   font-size: 16px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -453,6 +461,13 @@ const StyledTextarea = styled.textarea`
   color: ${props => props.theme.text};
   outline: none;
   resize: none;
+  transition: height 0.1s ease;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  line-height: 1.4;
+  text-align: left;
+  min-height: ${props => props.theme.dimensions.size === 'large' ? '60px' : '40px'};
+  max-height: 140px;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: #38383b transparent;
@@ -466,6 +481,10 @@ const StyledTextarea = styled.textarea`
   }
   &::-webkit-scrollbar-track {
     background: transparent;
+  }
+  &::placeholder {
+    text-align: left;
+
   }
 `;
 const StyledButton = styled.button`
@@ -684,14 +703,15 @@ export const WidgetCore = ({
   const isBubbleHovered = useRef<boolean>(false);
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
+  const promptRef = React.useRef<HTMLTextAreaElement | null>(null);
   const md = new MarkdownIt();
   //Custom markdown for the table
   md.renderer.rules.table_open = () => '<div class="dgpt-table-container"><table class="dgpt-table">';
   md.renderer.rules.table_close = () => '</table></div>';
   md.renderer.rules.thead_open = () => '<thead class="dgpt-thead">';
   md.renderer.rules.tr_open = () => '<tr class="dgpt-tr">';
-  md.renderer.rules.td_open = () => '<th class="dgpt-th">';
-  md.renderer.rules.th_open = () => '<td class="dgpt-td">';
+  md.renderer.rules.td_open = () => '<th class="dgpt-td">';
+  md.renderer.rules.th_open = () => '<td class="dgpt-th">';
 
 
 
@@ -848,10 +868,11 @@ export const WidgetCore = ({
     }
 
   }
-  // submit handler
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    await appendQuery(prompt)
+  const resetInput  = () => {
+     if (promptRef.current && promptRef.current.value.trim() === "") 
+      {
+        return;
+      } 
   }
 
   const appendQuery = async (userQuery: string) => {
@@ -863,11 +884,60 @@ export const WidgetCore = ({
     setPrompt('');
     await stream(userQuery);
   }
+  // submit handler
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    //Rest the input to it's original size after submitting
+    if( promptRef.current){
+        promptRef.current.value = "";
+        promptRef.current.style.height = "auto"; 
+    }
+    await appendQuery(prompt)
+    
+  }
   const handlePromptKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
+   
       e.preventDefault();
+      // Prevent sending empty messages
+      if (promptRef.current && promptRef.current.value.trim() === "") return;
+      //Rest the input to it's original size after submitting
+      if(promptRef.current){
+        promptRef.current.value = "";
+        promptRef.current.style.height = "auto"; 
+      }
       await appendQuery(prompt);
-    }
+  }
+}
+  // Auto-resize the input textarea while typing, clamping to base or max height
+  const handleUserInput = (e: React.KeyboardEvent<HTMLTextAreaElement>) =>{
+      const el = promptRef.current;
+      if (!el) return;
+      const baseHeight = size === 'large' ? 60 : 40;
+      const maxHeight = 140;
+      el.style.height = 'auto';
+      const next = Math.min(el.scrollHeight, maxHeight);
+      el.style.height = Math.max(baseHeight, next) + 'px';
+
+  }
+  
+  // Update prompt state, auto resize textarea to content, and maintain scroll on new lines
+  const handlePromptChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = event.target.value;
+      setPrompt(value);
+      const el = event.currentTarget;
+      const baseHeight = size === 'large' ? 60 : 40;
+      const maxHeight = 140;
+      el.style.height = 'auto';
+      const next = Math.min(el.scrollHeight, maxHeight);
+      el.style.height = Math.max(baseHeight, next) + 'px';
+      if(value.includes("\n")){
+        el.scrollTop = el.scrollHeight;
+
+      }
+      
+      
   }
   const handleImageError = (event: React.SyntheticEvent<HTMLImageElement, Event>) => {
     event.currentTarget.src = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png";
@@ -995,12 +1065,16 @@ export const WidgetCore = ({
               <PromptContainer
                 onSubmit={handleSubmit}>
                 <StyledTextarea
+                  id='chatInput'
+                  ref={promptRef}
                   autoFocus
+                  onInput={handleUserInput}
                   value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
+                  onChange={handlePromptChange}
                   placeholder="Ask your question"
                   onKeyDown={handlePromptKeyDown}
                   rows={1}
+                  wrap="soft"
                 />
                 <StyledButton
                   disabled={prompt.trim().length == 0 || status !== 'idle'}>
