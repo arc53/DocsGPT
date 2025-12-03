@@ -400,6 +400,7 @@ const Markdown = styled.div`
     thead, .dgpt-thead { 
       font-size: 12px; 
       text-transform: uppercase; 
+      
     }
     
     
@@ -407,7 +408,15 @@ const Markdown = styled.div`
       padding: 10px;
       border-bottom: 1px solid #a2a2ab; 
       font-size:14px;
+      
     }
+    th{
+      font-weight: normal !important;
+    }
+    td{
+      font-weight: bold;
+    }
+   
     
     
 `
@@ -710,8 +719,8 @@ export const WidgetCore = ({
   md.renderer.rules.table_close = () => '</table></div>';
   md.renderer.rules.thead_open = () => '<thead class="dgpt-thead">';
   md.renderer.rules.tr_open = () => '<tr class="dgpt-tr">';
-  md.renderer.rules.td_open = () => '<th class="dgpt-td">';
-  md.renderer.rules.th_open = () => '<td class="dgpt-th">';
+  md.renderer.rules.td_open = () => '<th class="dgpt-th">';
+  md.renderer.rules.th_open = () => '<td class="dgpt-td">';
 
 
 
@@ -868,12 +877,7 @@ export const WidgetCore = ({
     }
 
   }
-  const resetInput  = () => {
-     if (promptRef.current && promptRef.current.value.trim() === "") 
-      {
-        return;
-      } 
-  }
+
 
   const appendQuery = async (userQuery: string) => {
     if (!userQuery)
@@ -887,7 +891,8 @@ export const WidgetCore = ({
   // submit handler
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-
+    // Prevent sending empty messages
+    if (promptRef.current && promptRef.current.value.trim() === "") return;
     //Rest the input to it's original size after submitting
     if( promptRef.current){
         promptRef.current.value = "";
