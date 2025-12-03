@@ -103,7 +103,8 @@ export default function Prompts({
           if (!response.ok) {
             throw new Error('Failed to delete prompt');
           }
-          if (prompts.length > 0) {
+          // Only change selection if we're deleting the currently selected prompt
+          if (prompts.length > 0 && selectedPrompt && selectedPrompt.id === promptToDelete.id) {
             const firstPrompt = prompts.find((p) => p.id !== promptToDelete.id);
             if (firstPrompt) {
               onSelectPrompt(
@@ -209,6 +210,7 @@ export default function Prompts({
               }}
               onDelete={handleDeletePrompt}
               placeholder={'Select a prompt'}
+              showSearch
               {...dropdownProps}
             />
             {showAddButton && (

@@ -25,6 +25,11 @@ const preloadedState: { preference: Preference } = {
       prompt !== null
         ? JSON.parse(prompt)
         : { name: 'default', id: 'default', type: 'private' },
+    prompts: [
+      { name: 'default', id: 'default', type: 'public' },
+      { name: 'creative', id: 'creative', type: 'public' },
+      { name: 'strict', id: 'strict', type: 'public' },
+    ],
     chunks: JSON.parse(chunks ?? '2').toString(),
     token_limit: token_limit ? parseInt(token_limit) : 2000,
     selectedDocs: doc !== null ? JSON.parse(doc) : [],

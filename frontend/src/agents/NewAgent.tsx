@@ -19,7 +19,9 @@ import {
   selectSelectedAgent,
   selectSourceDocs,
   selectToken,
+  selectPrompts,
   setSelectedAgent,
+  setPrompts,
 } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
 import Prompts from '../settings/Prompts';
@@ -41,6 +43,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const token = useSelector(selectToken);
   const sourceDocs = useSelector(selectSourceDocs);
   const selectedAgent = useSelector(selectSelectedAgent);
+  const prompts = useSelector(selectPrompts);
 
   const [effectiveMode, setEffectiveMode] = useState(mode);
   const [agent, setAgent] = useState<Agent>({
@@ -65,9 +68,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     default_model_id: '',
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [prompts, setPrompts] = useState<
-    { name: string; id: string; type: string }[]
-  >([]);
   const [userTools, setUserTools] = useState<OptionType[]>([]);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [isSourcePopupOpen, setIsSourcePopupOpen] = useState(false);
@@ -404,14 +404,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       }));
       setUserTools(tools);
     };
-    const getPrompts = async () => {
-      const response = await userService.getPrompts(token);
-      if (!response.ok) {
-        throw new Error('Failed to fetch prompts');
-      }
-      const data = await response.json();
-      setPrompts(data);
-    };
     const getModels = async () => {
       const response = await modelService.getModels(null);
       if (!response.ok) throw new Error('Failed to fetch models');
@@ -420,7 +412,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       setAvailableModels(transformed);
     };
     getTools();
-    getPrompts();
     getModels();
   }, [token]);
 
@@ -839,12 +830,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   prompts={prompts}
                   selectedPrompt={
                     prompts.find((prompt) => prompt.id === agent.prompt_id) ||
-                    prompts[0]
+                    prompts[0] ||
+                    { name: 'default', id: 'default', type: 'public' }
                   }
                   onSelectPrompt={(name, id, type) =>
                     setAgent({ ...agent, prompt_id: id })
                   }
-                  setPrompts={setPrompts}
+                  setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
                   title={t('agents.form.sections.prompt')}
                   titleClassName="text-lg font-semibold dark:text-[#E0E0E0]"
                   showAddButton={false}
@@ -1240,7 +1232,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       />
       <AddPromptModal
         prompts={prompts}
-        setPrompts={setPrompts}
         isOpen={addPromptModal}
         onClose={() => setAddPromptModal('INACTIVE')}
         onSelect={(name: string, id: string, type: string) => {
@@ -1274,17 +1265,16 @@ function AgentPreviewArea() {
 
 function AddPromptModal({
   prompts,
-  setPrompts,
   isOpen,
   onClose,
   onSelect,
 }: {
   prompts: Prompt[];
-  setPrompts?: React.Dispatch<React.SetStateAction<Prompt[]>>;
   isOpen: ActiveState;
   onClose: () => void;
   onSelect?: (name: string, id: string, type: string) => void;
 }) {
+  const dispatch = useDispatch();
   const token = useSelector(selectToken);
 
   const [newPromptName, setNewPromptName] = useState('');
@@ -1303,12 +1293,13 @@ function AddPromptModal({
         throw new Error('Failed to add prompt');
       }
       const newPrompt = await response.json();
-      if (setPrompts) {
+      // Update Redux store with new prompt
+      dispatch(
         setPrompts([
           ...prompts,
           { name: newPromptName, id: newPrompt.id, type: 'private' },
-        ]);
-      }
+        ]),
+      );
       onClose();
       setNewPromptName('');
       setNewPromptContent('');
