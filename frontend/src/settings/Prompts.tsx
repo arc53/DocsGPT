@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import Dropdown from '../components/Dropdown';
+import SearchableDropdown from '../components/SearchableDropdown';
 import { DropdownProps } from '../components/types/Dropdown.types';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, PromptProps } from '../models/misc';
@@ -183,7 +183,7 @@ export default function Prompts({
             {title ? title : t('settings.general.prompt')}
           </p>
           <div className="flex flex-row flex-wrap items-baseline justify-start gap-6">
-            <Dropdown
+            <SearchableDropdown
               options={prompts.map((prompt: any) =>
                 typeof prompt === 'string'
                   ? { name: prompt, id: prompt, type: '' }
@@ -210,7 +210,6 @@ export default function Prompts({
               }}
               onDelete={handleDeletePrompt}
               placeholder={'Select a prompt'}
-              showSearch
               {...dropdownProps}
             />
             {showAddButton && (

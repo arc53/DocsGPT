@@ -22,10 +22,7 @@ import {
  * - Fetching and setting up prompts
  * - Fetching and setting up conversations
  *
- * Should be called once at the top level of the application after authentication.
- *
- * @param isAuthLoading - Whether authentication is still in progress.
- *                        Data fetching is skipped until auth completes to prevent race conditions.
+ * @param isAuthLoading - 
  */
 export default function useDataInitializer(isAuthLoading: boolean) {
   const dispatch = useDispatch();

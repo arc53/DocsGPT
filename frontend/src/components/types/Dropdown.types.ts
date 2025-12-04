@@ -42,5 +42,4 @@ export interface DropdownProps<T extends DropdownOption = DropdownOption> {
   placeholder?: string;
   placeholderClassName?: string;
   contentSize?: string;
-  showSearch?: boolean;
 }
