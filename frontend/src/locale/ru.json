@@ -491,6 +491,15 @@
     "description": "Откройте и создайте пользовательские версии DocsGPT, которые объединяют инструкции, дополнительные знания и любую комбинацию навыков",
     "newAgent": "Новый Агент",
     "backToAll": "Вернуться ко всем агентам",
+    "searchPlaceholder": "Поиск...",
+    "noSearchResults": "Агенты не найдены",
+    "tryDifferentSearch": "Попробуйте другой поисковый запрос",
+    "filters": {
+      "all": "Все",
+      "byDocsGPT": "От DocsGPT",
+      "byMe": "Мои",
+      "shared": "Поделились со мной"
+    },
     "sections": {
       "template": {
         "title": "От DocsGPT",

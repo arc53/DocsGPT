@@ -1,16 +1,18 @@
 import userService from '../api/services/userService';
 import {
   selectAgents,
-  selectTemplateAgents,
   selectSharedAgents,
+  selectTemplateAgents,
   setAgents,
-  setTemplateAgents,
   setSharedAgents,
+  setTemplateAgents,
 } from '../preferences/preferenceSlice';
+
+export type AgentSectionId = 'template' | 'user' | 'shared';
 
 export const agentSectionsConfig = [
   {
-    id: 'template',
+    id: 'template' as const,
     title: 'By DocsGPT',
     description: 'Agents provided by DocsGPT',
     showNewAgentButton: false,
@@ -20,7 +22,7 @@ export const agentSectionsConfig = [
     updateAction: setTemplateAgents,
   },
   {
-    id: 'user',
+    id: 'user' as const,
     title: 'By me',
     description: 'Agents created or published by you',
     showNewAgentButton: true,
@@ -30,7 +32,7 @@ export const agentSectionsConfig = [
     updateAction: setAgents,
   },
   {
-    id: 'shared',
+    id: 'shared' as const,
     title: 'Shared with me',
     description: 'Agents imported by using a public link',
     showNewAgentButton: false,
