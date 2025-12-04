@@ -81,23 +81,23 @@ export default function AgentsList() {
       <h1 className="text-eerie-black mb-0 text-[32px] font-bold lg:text-[40px] dark:text-[#E0E0E0]">
         {t('agents.title')}
       </h1>
-      <p className="dark:text-gray-4000 mt-5 text-[15px] text-[#71717A]">
+      <p className="dark:text-gray-4000 mt-5 max-w-lg text-[15px] leading-6 text-[#71717A]">
         {t('agents.description')}
       </p>
 
-      <div className="mt-6 flex flex-col gap-4">
+      <div className="mt-6 flex flex-col gap-4 pb-4">
         <div className="relative w-full max-w-md">
           <img
             src={Search}
             alt=""
-            className="absolute top-1/2 left-3 h-5 w-5 -translate-y-1/2 opacity-50"
+            className="absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 opacity-40"
           />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('agents.searchPlaceholder')}
-            className="border-silver dark:border-silver/40 dark:bg-raisin-black h-[42px] w-full rounded-full border bg-transparent py-2 pr-4 pl-10 text-sm outline-none dark:text-white"
+            className="h-[44px] w-full rounded-full border border-[#E5E5E5] bg-white py-2 pr-5 pl-11 text-sm shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow outline-none placeholder:text-[#9CA3AF] focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white dark:shadow-none dark:placeholder:text-[#6B7280]"
           />
         </div>
 
