@@ -491,6 +491,15 @@
     "description": "Entdecke und erstelle benutzerdefinierte Versionen von DocsGPT, die Anweisungen, zusätzliches Wissen und beliebige Kombinationen von Fähigkeiten kombinieren",
     "newAgent": "Neuer Agent",
     "backToAll": "Zurück zu allen Agenten",
+    "searchPlaceholder": "Suchen...",
+    "noSearchResults": "Keine Agenten gefunden",
+    "tryDifferentSearch": "Versuche einen anderen Suchbegriff",
+    "filters": {
+      "all": "Alle",
+      "byDocsGPT": "Von DocsGPT",
+      "byMe": "Von mir",
+      "shared": "Mit mir geteilt"
+    },
     "sections": {
       "template": {
         "title": "Von DocsGPT",

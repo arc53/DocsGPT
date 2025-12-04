@@ -491,6 +491,15 @@
     "description": "探索並創建結合指令、額外知識和任意技能組合的DocsGPT自訂版本",
     "newAgent": "新建代理",
     "backToAll": "返回所有代理",
+    "searchPlaceholder": "搜尋...",
+    "noSearchResults": "未找到代理",
+    "tryDifferentSearch": "請嘗試不同的搜尋詞",
+    "filters": {
+      "all": "全部",
+      "byDocsGPT": "由DocsGPT提供",
+      "byMe": "我的",
+      "shared": "與我共享"
+    },
     "sections": {
       "template": {
         "title": "由DocsGPT提供",
