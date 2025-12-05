@@ -29,6 +29,7 @@ export default function General() {
 
   const languageOptions = [
     { label: 'English', value: 'en' },
+    { label: 'Deutsch', value: 'de' },
     { label: 'Español', value: 'es' },
     { label: '日本語', value: 'jp' },
     { label: '普通话', value: 'zh' },

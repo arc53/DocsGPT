@@ -1,7 +1,7 @@
 import os
 import datetime
 import json
-from flask import Blueprint, request, send_from_directory
+from flask import Blueprint, request, send_from_directory, jsonify
 from werkzeug.utils import secure_filename
 from bson.objectid import ObjectId
 import logging
@@ -22,6 +22,16 @@ current_dir = os.path.dirname(
 
 
 internal = Blueprint("internal", __name__)
+
+
+@internal.before_request
+def verify_internal_key():
+    """Verify INTERNAL_KEY for all internal endpoint requests."""
+    if settings.INTERNAL_KEY:
+        internal_key = request.headers.get("X-Internal-Key")
+        if not internal_key or internal_key != settings.INTERNAL_KEY:
+            logger.warning(f"Unauthorized internal API access attempt from {request.remote_addr}")
+            return jsonify({"error": "Unauthorized", "message": "Invalid or missing internal key"}), 401
 
 
 @internal.route("/api/download", methods=["get"])

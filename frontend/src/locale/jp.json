@@ -491,6 +491,15 @@
     "description": "指示、追加知識、スキルの組み合わせを含むDocsGPTのカスタムバージョンを発見して作成します",
     "newAgent": "新しいエージェント",
     "backToAll": "すべてのエージェントに戻る",
+    "searchPlaceholder": "検索...",
+    "noSearchResults": "エージェントが見つかりません",
+    "tryDifferentSearch": "別の検索語をお試しください",
+    "filters": {
+      "all": "すべて",
+      "byDocsGPT": "DocsGPT提供",
+      "byMe": "自分の",
+      "shared": "共有された"
+    },
     "sections": {
       "template": {
         "title": "DocsGPT提供",

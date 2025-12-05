@@ -26,6 +26,7 @@ services:
       - MONGO_URI=mongodb://mongo:27017/docsgpt
       - CACHE_REDIS_URL=redis://redis:6379/2
       - OPENAI_BASE_URL=$OPENAI_BASE_URL
+      - INTERNAL_KEY=$INTERNAL_KEY
     ports:
       - "7091:7091"
     volumes:
@@ -50,6 +51,7 @@ services:
       - MONGO_URI=mongodb://mongo:27017/docsgpt
       - API_URL=http://backend:7091
       - CACHE_REDIS_URL=redis://redis:6379/2
+      - INTERNAL_KEY=$INTERNAL_KEY
     volumes:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
