@@ -157,7 +157,9 @@ function SearchableDropdown<T extends SearchableDropdownOption>({
               <img
                 src={Search}
                 alt="search"
-                className="absolute left-3 h-4 w-4 opacity-50"
+                width={14}
+                height={14}
+                className="absolute left-3"
               />
               <input
                 ref={searchInputRef}
