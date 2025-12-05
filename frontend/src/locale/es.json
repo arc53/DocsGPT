@@ -491,6 +491,15 @@
     "description": "Descubre y crea versiones personalizadas de DocsGPT que combinan instrucciones, conocimiento adicional y cualquier combinación de habilidades",
     "newAgent": "Nuevo Agente",
     "backToAll": "Volver a todos los agentes",
+    "searchPlaceholder": "Buscar...",
+    "noSearchResults": "No se encontraron agentes",
+    "tryDifferentSearch": "Prueba con un término de búsqueda diferente",
+    "filters": {
+      "all": "Todos",
+      "byDocsGPT": "Por DocsGPT",
+      "byMe": "Por mí",
+      "shared": "Compartidos conmigo"
+    },
     "sections": {
       "template": {
         "title": "Por DocsGPT",

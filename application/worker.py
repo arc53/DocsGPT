@@ -109,6 +109,10 @@ def download_file(url, params, dest_path):
 def upload_index(full_path, file_data):
     files = None
     try:
+        headers = {}
+        if settings.INTERNAL_KEY:
+            headers["X-Internal-Key"] = settings.INTERNAL_KEY
+
         if settings.VECTOR_STORE == "faiss":
             faiss_path = full_path + "/index.faiss"
             pkl_path = full_path + "/index.pkl"
@@ -129,10 +133,13 @@ def upload_index(full_path, file_data):
                 urljoin(settings.API_URL, "/api/upload_index"),
                 files=files,
                 data=file_data,
+                headers=headers,
             )
         else:
             response = requests.post(
-                urljoin(settings.API_URL, "/api/upload_index"), data=file_data
+                urljoin(settings.API_URL, "/api/upload_index"),
+                data=file_data,
+                headers=headers,
             )
         response.raise_for_status()
     except (requests.RequestException, FileNotFoundError) as e:
