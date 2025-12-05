@@ -29,7 +29,7 @@ class RemoteEmbeddings:
             payload["model"] = self.model_name
 
         response = requests.post(
-            self.api_url, headers=self.headers, json=payload, timeout=60
+            self.api_url, headers=self.headers, json=payload, timeout=180
         )
         response.raise_for_status()
         result = response.json()
