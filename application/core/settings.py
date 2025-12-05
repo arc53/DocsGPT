@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 current_dir = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -10,12 +10,19 @@ current_dir = os.path.dirname(
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(extra="ignore")
+
     AUTH_TYPE: Optional[str] = None  # simple_jwt, session_jwt, or None
     LLM_PROVIDER: str = "docsgpt"
     LLM_NAME: Optional[str] = (
         None  # if LLM_PROVIDER is openai, LLM_NAME can be gpt-4 or gpt-3.5-turbo
     )
     EMBEDDINGS_NAME: str = "huggingface_sentence-transformers/all-mpnet-base-v2"
+    EMBEDDINGS_BASE_URL: Optional[str] = None  # Remote embeddings API URL (OpenAI-compatible)
+    EMBEDDINGS_KEY: Optional[str] = (
+        None  # api key for embeddings (if using openai, just copy API_KEY)
+    )
+    
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
     MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
@@ -73,9 +80,6 @@ class Settings(BaseSettings):
     GROQ_API_KEY: Optional[str] = None
     HUGGINGFACE_API_KEY: Optional[str] = None
 
-    EMBEDDINGS_KEY: Optional[str] = (
-        None  # api key for embeddings (if using openai, just copy API_KEY)
-    )
     OPENAI_API_BASE: Optional[str] = None  # azure openai api base url
     OPENAI_API_VERSION: Optional[str] = None  # azure openai api version
     AZURE_DEPLOYMENT_NAME: Optional[str] = None  # azure deployment name for answering
@@ -153,5 +157,6 @@ class Settings(BaseSettings):
     COMPRESSION_MAX_HISTORY_POINTS: int = 3  # Keep only last N compression points to prevent DB bloat
 
 
-path = Path(__file__).parent.parent.absolute()
+# Project root is one level above application/
+path = Path(__file__).parent.parent.parent.absolute()
 settings = Settings(_env_file=path.joinpath(".env"), _env_file_encoding="utf-8")

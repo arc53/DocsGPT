@@ -21,3 +21,4 @@ def config_loggers(*args, **kwargs):
 
 
 celery = make_celery()
+celery.config_from_object("application.celeryconfig")
