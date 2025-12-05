@@ -512,11 +512,12 @@ export default function MessageInput({
   };
 
   useEffect(() => {
+  if (!autoFocus) return;
+
   const interval = setInterval(() => {
-    if (autoFocus && inputRef.current) {
+    if (inputRef.current) {
       inputRef.current.focus();
 
-      // Check if focus succeeded
       if (document.activeElement === inputRef.current) {
         clearInterval(interval);
       }
@@ -525,6 +526,7 @@ export default function MessageInput({
 
   return () => clearInterval(interval);
 }, [autoFocus]);
+
 
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
