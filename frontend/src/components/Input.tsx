@@ -1,5 +1,5 @@
 import { InputProps } from './types';
-import { useRef } from 'react';
+import { useRef, useEffect } from 'react';
 
 const Input = ({
   id,
@@ -27,16 +27,25 @@ const Input = ({
     jet: 'border-jet',
     gray: 'border-gray-5000 dark:text-silver',
   };
+
   const borderStyles = {
     thin: 'border',
     thick: 'border-2',
   };
+
   const textSizeStyles = {
     small: 'text-sm',
     medium: 'text-base',
   };
 
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // 🔥 Auto-focus logic (the real fix for the issue)
+  useEffect(() => {
+    if (isAutoFocused && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isAutoFocused]);
 
   const hasValue = value !== undefined && value !== null && value !== '';
 
@@ -48,7 +57,7 @@ const Input = ({
         type={type}
         id={id}
         name={name}
-        autoFocus={isAutoFocused}
+        autoFocus={isAutoFocused} 
         placeholder={placeholder || ''}
         maxLength={maxLength}
         value={value}
@@ -59,11 +68,13 @@ const Input = ({
       >
         {children}
       </input>
+
       {leftIcon && (
         <div className="absolute top-1/2 left-3 flex -translate-y-1/2 transform items-center justify-center">
           {leftIcon}
         </div>
       )}
+
       {placeholder && (
         <label
           htmlFor={id}
