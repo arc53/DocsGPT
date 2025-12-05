@@ -40,10 +40,6 @@ export default function SourcesPopup({
     showAbove: false,
   });
 
-  const embeddingsName =
-    import.meta.env.VITE_EMBEDDINGS_NAME ||
-    'huggingface_sentence-transformers/all-mpnet-base-v2';
-
   const options = useSelector(selectSourceDocs);
   const selectedDocs = useSelector(selectSelectedDocs);
 
@@ -147,70 +143,65 @@ export default function SourcesPopup({
           {options ? (
             <>
               {filteredOptions?.map((option: any, index: number) => {
-                if (option.model === embeddingsName) {
-                  const isSelected =
-                    selectedDocs &&
-                    Array.isArray(selectedDocs) &&
-                    selectedDocs.length > 0 &&
-                    selectedDocs.some((doc) =>
-                      option.id
-                        ? doc.id === option.id
-                        : doc.date === option.date,
-                    );
-
-                  return (
-                    <div
-                      key={index}
-                      className="border-opacity-80 dark:border-dim-gray flex cursor-pointer items-center border-b border-[#D9D9D9] p-3 transition-colors hover:bg-gray-100 dark:text-[14px] dark:hover:bg-[#2C2E3C]"
-                      onClick={() => {
-                        if (isSelected) {
-                          const updatedDocs =
-                            selectedDocs && Array.isArray(selectedDocs)
-                              ? selectedDocs.filter((doc) =>
-                                  option.id
-                                    ? doc.id !== option.id
-                                    : doc.date !== option.date,
-                                )
-                              : [];
-                          dispatch(setSelectedDocs(updatedDocs));
-                          handlePostDocumentSelect(
-                            updatedDocs.length > 0 ? updatedDocs : null,
-                          );
-                        } else {
-                          const updatedDocs =
-                            selectedDocs && Array.isArray(selectedDocs)
-                              ? [...selectedDocs, option]
-                              : [option];
-                          dispatch(setSelectedDocs(updatedDocs));
-                          handlePostDocumentSelect(updatedDocs);
-                        }
-                      }}
-                    >
-                      <img
-                        src={SourceIcon}
-                        alt="Source"
-                        width={14}
-                        height={14}
-                        className="mr-3 shrink-0"
-                      />
-                      <span className="dark:text-bright-gray mr-3 grow overflow-hidden font-medium text-ellipsis whitespace-nowrap text-[#5D5D5D]">
-                        {option.name}
-                      </span>
-                      <div
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-xs border-2 border-[#C6C6C6] p-[0.5px] dark:border-[#757783]`}
-                      >
-                        {isSelected && (
-                          <img
-                            src={CheckIcon}
-                            alt="Selected"
-                            className="h-3 w-3"
-                          />
-                        )}
-                      </div>
-                    </div>
+                const isSelected =
+                  selectedDocs &&
+                  Array.isArray(selectedDocs) &&
+                  selectedDocs.length > 0 &&
+                  selectedDocs.some((doc) =>
+                    option.id ? doc.id === option.id : doc.date === option.date,
                   );
-                }
-                return null;
+
+                return (
+                  <div
+                    key={index}
+                    className="border-opacity-80 dark:border-dim-gray flex cursor-pointer items-center border-b border-[#D9D9D9] p-3 transition-colors hover:bg-gray-100 dark:text-[14px] dark:hover:bg-[#2C2E3C]"
+                    onClick={() => {
+                      if (isSelected) {
+                        const updatedDocs =
+                          selectedDocs && Array.isArray(selectedDocs)
+                            ? selectedDocs.filter((doc) =>
+                                option.id
+                                  ? doc.id !== option.id
+                                  : doc.date !== option.date,
+                              )
+                            : [];
+                        dispatch(setSelectedDocs(updatedDocs));
+                        handlePostDocumentSelect(
+                          updatedDocs.length > 0 ? updatedDocs : null,
+                        );
+                      } else {
+                        const updatedDocs =
+                          selectedDocs && Array.isArray(selectedDocs)
+                            ? [...selectedDocs, option]
+                            : [option];
+                        dispatch(setSelectedDocs(updatedDocs));
+                        handlePostDocumentSelect(updatedDocs);
+                      }
+                    }}
+                  >
+                    <img
+                      src={SourceIcon}
+                      alt="Source"
+                      width={14}
+                      height={14}
+                      className="mr-3 shrink-0"
+                    />
+                    <span className="dark:text-bright-gray mr-3 grow overflow-hidden font-medium text-ellipsis whitespace-nowrap text-[#5D5D5D]">
+                      {option.name}
+                    </span>
+                    <div
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-xs border-2 border-[#C6C6C6] p-[0.5px] dark:border-[#757783]`}
+                    >
+                      {isSelected && (
+                        <img
+                          src={CheckIcon}
+                          alt="Selected"
+                          className="h-3 w-3"
+                        />
+                      )}
+                    </div>
+                  </div>
+                );
               })}
             </>
           ) : (
