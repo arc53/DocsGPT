@@ -6,9 +6,10 @@ import {
 } from '@reduxjs/toolkit';
 
 import { Agent } from '../agents/types';
-import { ActiveState, Doc } from '../models/misc';
+import { ActiveState, Doc, Prompt } from '../models/misc';
 import { RootState } from '../store';
 import {
+  getLocalPrompt,
   getLocalRecentDocs,
   setLocalApiKey,
   setLocalRecentDocs,
@@ -18,6 +19,7 @@ import type { Model } from '../models/types';
 export interface Preference {
   apiKey: string;
   prompt: { name: string; id: string; type: string };
+  prompts: Prompt[];
   chunks: string;
   token_limit: number;
   selectedDocs: Doc[];
@@ -41,6 +43,11 @@ export interface Preference {
 const initialState: Preference = {
   apiKey: 'xxx',
   prompt: { name: 'default', id: 'default', type: 'public' },
+  prompts: [
+    { name: 'default', id: 'default', type: 'public' },
+    { name: 'creative', id: 'creative', type: 'public' },
+    { name: 'strict', id: 'strict', type: 'public' },
+  ],
   chunks: '2',
   token_limit: 2000,
   selectedDocs: [
@@ -95,6 +102,9 @@ export const prefSlice = createSlice({
     setPrompt: (state, action) => {
       state.prompt = action.payload;
     },
+    setPrompts: (state, action: PayloadAction<Prompt[]>) => {
+      state.prompts = action.payload;
+    },
     setChunks: (state, action) => {
       state.chunks = action.payload;
     },
@@ -135,6 +145,7 @@ export const {
   setConversations,
   setToken,
   setPrompt,
+  setPrompts,
   setChunks,
   setTokenLimit,
   setModalStateDeleteConv,
@@ -218,6 +229,27 @@ prefListenerMiddleware.startListening({
 });
 
 prefListenerMiddleware.startListening({
+  matcher: isAnyOf(setPrompts),
+  effect: (_action, listenerApi) => {
+    const state = listenerApi.getState() as RootState;
+    const availablePrompts = state.preference.prompts;
+    if (availablePrompts && availablePrompts.length > 0) {
+      const validatedPrompt = getLocalPrompt(availablePrompts);
+      if (validatedPrompt !== null) {
+        listenerApi.dispatch(setPrompt(validatedPrompt));
+      } else {
+        const defaultPrompt = availablePrompts.find(
+          (p) => p.id === 'default',
+        ) || availablePrompts[0];
+        if (defaultPrompt) {
+          listenerApi.dispatch(setPrompt(defaultPrompt));
+        }
+      }
+    }
+  },
+});
+
+prefListenerMiddleware.startListening({
   matcher: isAnyOf(setSelectedModel),
   effect: (action, listenerApi) => {
     const model = (listenerApi.getState() as RootState).preference
@@ -247,6 +279,7 @@ export const selectConversationId = (state: RootState) =>
   state.conversation.conversationId;
 export const selectToken = (state: RootState) => state.preference.token;
 export const selectPrompt = (state: RootState) => state.preference.prompt;
+export const selectPrompts = (state: RootState) => state.preference.prompts;
 export const selectChunks = (state: RootState) => state.preference.chunks;
 export const selectTokenLimit = (state: RootState) =>
   state.preference.token_limit;
