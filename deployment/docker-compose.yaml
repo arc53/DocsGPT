@@ -16,9 +16,12 @@ services:
   backend:
     user: root
     build: ../application
+    env_file:
+      - ../.env
     environment:
       - API_KEY=$API_KEY
-      - EMBEDDINGS_KEY=$API_KEY
+      - EMBEDDINGS_KEY=$EMBEDDINGS_KEY
+      - EMBEDDINGS_BASE_URL=$EMBEDDINGS_BASE_URL
       - LLM_PROVIDER=$LLM_PROVIDER
       - LLM_NAME=$LLM_NAME
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -41,9 +44,12 @@ services:
     user: root
     build: ../application
     command: celery -A application.app.celery worker -l INFO -B
+    env_file:
+      - ../.env
     environment:
       - API_KEY=$API_KEY
-      - EMBEDDINGS_KEY=$API_KEY
+      - EMBEDDINGS_KEY=$EMBEDDINGS_KEY
+      - EMBEDDINGS_BASE_URL=$EMBEDDINGS_BASE_URL
       - LLM_PROVIDER=$LLM_PROVIDER
       - LLM_NAME=$LLM_NAME
       - CELERY_BROKER_URL=redis://redis:6379/0

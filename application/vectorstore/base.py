@@ -2,41 +2,79 @@ import logging
 import os
 from abc import ABC, abstractmethod
 
+import requests
 from langchain_openai import OpenAIEmbeddings
-from sentence_transformers import SentenceTransformer
 
 from application.core.settings import settings
 
 
-class EmbeddingsWrapper:
-    def __init__(self, model_name, *args, **kwargs):
-        logging.info(f"Initializing EmbeddingsWrapper with model: {model_name}")
-        try:
-            kwargs.setdefault("trust_remote_code", True)
-            self.model = SentenceTransformer(
-                model_name,
-                config_kwargs={"allow_dangerous_deserialization": True},
-                *args,
-                **kwargs,
-            )
-            if self.model is None or self.model._first_module() is None:
+class RemoteEmbeddings:
+    """
+    Wrapper for remote embeddings API (OpenAI-compatible).
+    Used when EMBEDDINGS_BASE_URL is configured.
+    """
+
+    def __init__(self, api_url: str, model_name: str, api_key: str = None):
+        self.api_url = api_url.rstrip("/")
+        self.model_name = model_name
+        self.headers = {"Content-Type": "application/json"}
+        if api_key:
+            self.headers["Authorization"] = f"Bearer {api_key}"
+        self.dimension = None
+
+    def _embed(self, inputs):
+        """Send embedding request to remote API."""
+        payload = {"inputs": inputs}
+        if self.model_name:
+            payload["model"] = self.model_name
+
+        response = requests.post(
+            self.api_url, headers=self.headers, json=payload, timeout=60
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        if isinstance(result, list):
+            if result and isinstance(result[0], list):
+                return result
+            elif result and all(isinstance(x, (int, float)) for x in result):
+                return [result]
+            elif not result:
+                return []
+            else:
                 raise ValueError(
-                    f"SentenceTransformer model failed to load properly for: {model_name}"
+                    f"Unexpected list content from remote embeddings API: {result}"
                 )
-            self.dimension = self.model.get_sentence_embedding_dimension()
-            logging.info(f"Successfully loaded model with dimension: {self.dimension}")
-        except Exception as e:
-            logging.error(
-                f"Failed to initialize SentenceTransformer with model {model_name}: {str(e)}",
-                exc_info=True,
+        elif isinstance(result, dict) and "error" in result:
+            raise ValueError(f"Remote embeddings API error: {result['error']}")
+        else:
+            raise ValueError(
+                f"Unexpected response format from remote embeddings API: {result}"
             )
-            raise
 
     def embed_query(self, query: str):
-        return self.model.encode(query).tolist()
+        """Embed a single query string."""
+        embeddings_list = self._embed(query)
+        if (
+            isinstance(embeddings_list, list)
+            and len(embeddings_list) == 1
+            and isinstance(embeddings_list[0], list)
+        ):
+            if self.dimension is None:
+                self.dimension = len(embeddings_list[0])
+            return embeddings_list[0]
+        raise ValueError(
+            f"Unexpected result structure after embedding query: {embeddings_list}"
+        )
 
     def embed_documents(self, documents: list):
-        return self.model.encode(documents).tolist()
+        """Embed a list of documents."""
+        if not documents:
+            return []
+        embeddings_list = self._embed(documents)
+        if self.dimension is None and embeddings_list:
+            self.dimension = len(embeddings_list[0])
+        return embeddings_list
 
     def __call__(self, text):
         if isinstance(text, str):
@@ -45,6 +83,13 @@ class EmbeddingsWrapper:
             return self.embed_documents(text)
         else:
             raise ValueError("Input must be a string or a list of strings")
+
+
+def _get_embeddings_wrapper():
+    """Lazy import of EmbeddingsWrapper to avoid loading SentenceTransformer when using remote embeddings."""
+    from application.vectorstore.embeddings_local import EmbeddingsWrapper
+
+    return EmbeddingsWrapper
 
 
 class EmbeddingsSingleton:
@@ -60,8 +105,13 @@ class EmbeddingsSingleton:
 
     @staticmethod
     def _create_instance(embeddings_name, *args, **kwargs):
+        if embeddings_name == "openai_text-embedding-ada-002":
+            return OpenAIEmbeddings(*args, **kwargs)
+
+        # Lazy import EmbeddingsWrapper only when needed (avoids loading SentenceTransformer)
+        EmbeddingsWrapper = _get_embeddings_wrapper()
+
         embeddings_factory = {
-            "openai_text-embedding-ada-002": OpenAIEmbeddings,
             "huggingface_sentence-transformers/all-mpnet-base-v2": lambda: EmbeddingsWrapper(
                 "sentence-transformers/all-mpnet-base-v2"
             ),
@@ -121,6 +171,20 @@ class BaseVectorStore(ABC):
         )
 
     def _get_embeddings(self, embeddings_name, embeddings_key=None):
+        # Check for remote embeddings first
+        if settings.EMBEDDINGS_BASE_URL:
+            logging.info(
+                f"Using remote embeddings API at: {settings.EMBEDDINGS_BASE_URL}"
+            )
+            cache_key = f"remote_{settings.EMBEDDINGS_BASE_URL}_{embeddings_name}"
+            if cache_key not in EmbeddingsSingleton._instances:
+                EmbeddingsSingleton._instances[cache_key] = RemoteEmbeddings(
+                    api_url=settings.EMBEDDINGS_BASE_URL,
+                    model_name=embeddings_name,
+                    api_key=embeddings_key,
+                )
+            return EmbeddingsSingleton._instances[cache_key]
+
         if embeddings_name == "openai_text-embedding-ada-002":
             if self.is_azure_configured():
                 os.environ["OPENAI_API_TYPE"] = "azure"
