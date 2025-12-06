@@ -30,9 +30,6 @@ import AgentPreview from './AgentPreview';
 import { Agent, ToolSummary } from './types';
 
 import type { Model } from '../models/types';
-const embeddingsName =
-  import.meta.env.VITE_EMBEDDINGS_NAME ||
-  'huggingface_sentence-transformers/all-mpnet-base-v2';
 
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const { t } = useTranslation();
@@ -539,22 +536,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       } else {
         // Single source selected - maintain backward compatibility
         const selectedSource = selectedSources[0];
-        if (selectedSource?.model === embeddingsName) {
-          if (selectedSource && 'id' in selectedSource) {
-            setAgent((prev) => ({
-              ...prev,
-              source: selectedSource?.id || 'default',
-              sources: [], // Clear sources array for single source
-              retriever: '',
-            }));
-          } else {
-            setAgent((prev) => ({
-              ...prev,
-              source: '',
-              sources: [], // Clear sources array
-              retriever: selectedSource?.retriever || 'classic',
-            }));
-          }
+        if (selectedSource && 'id' in selectedSource) {
+          setAgent((prev) => ({
+            ...prev,
+            source: selectedSource?.id || 'default',
+            sources: [], // Clear sources array for single source
+            retriever: '',
+          }));
+        } else {
+          setAgent((prev) => ({
+            ...prev,
+            source: '',
+            sources: [], // Clear sources array
+            retriever: selectedSource?.retriever || 'classic',
+          }));
         }
       }
     } else {
