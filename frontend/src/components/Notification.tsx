@@ -43,9 +43,10 @@ export default function Notification({
         }
       `}</style>
       <a
-        className="group absolute right-2 bottom-6 z-20 flex w-3/4 items-center justify-center gap-2 rounded-lg px-2 py-4 sm:right-4 md:w-2/5 lg:w-1/3 xl:w-1/4 2xl:w-1/5 overflow-hidden"
+        className="group absolute right-2 bottom-6 z-20 flex w-3/4 items-center justify-center gap-2 overflow-hidden rounded-lg px-2 py-4 sm:right-4 md:w-2/5 lg:w-1/3 xl:w-1/4 2xl:w-1/5"
         style={{
-          background: 'linear-gradient(90deg, #390086 0%, #6222B7 100%), linear-gradient(90deg, rgba(57, 0, 134, 0) 0%, #6222B7 53.02%, rgba(57, 0, 134, 0) 100%)',
+          background:
+            'linear-gradient(90deg, #390086 0%, #6222B7 100%), linear-gradient(90deg, rgba(57, 0, 134, 0) 0%, #6222B7 53.02%, rgba(57, 0, 134, 0) 100%)',
         }}
         href={notificationLink}
         target="_blank"
@@ -53,21 +54,26 @@ export default function Notification({
         rel="noreferrer"
       >
         {/* Animated stars background */}
-        <div className="absolute inset-0 pointer-events-none">
+        <div className="pointer-events-none absolute inset-0">
           {stars.map((star) => (
             <svg
               key={star.id}
               className="star absolute"
-              style={{
-                width: `${star.size * 4}px`,
-                height: `${star.size * 4}px`,
-                left: `${star.left}%`,
-                top: `${star.top}%`,
-                opacity: star.opacity,
-                filter: `drop-shadow(0 0 ${star.size}px rgba(255, 255, 255, 0.5))`,
-                '--duration': `${star.animationDuration}s`,
-                '--delay': `${star.animationDelay}s`,
-              } as React.CSSProperties & { '--duration': string; '--delay': string }}
+              style={
+                {
+                  width: `${star.size * 4}px`,
+                  height: `${star.size * 4}px`,
+                  left: `${star.left}%`,
+                  top: `${star.top}%`,
+                  opacity: star.opacity,
+                  filter: `drop-shadow(0 0 ${star.size}px rgba(255, 255, 255, 0.5))`,
+                  '--duration': `${star.animationDuration}s`,
+                  '--delay': `${star.animationDelay}s`,
+                } as React.CSSProperties & {
+                  '--duration': string;
+                  '--delay': string;
+                }
+              }
               viewBox="0 0 24 24"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
@@ -81,10 +87,10 @@ export default function Notification({
           ))}
         </div>
 
-        <p className="text-white-3000 text-xs leading-6 font-semibold xl:text-sm xl:leading-7 relative z-10">
+        <p className="text-white-3000 relative z-10 text-xs leading-6 font-semibold xl:text-sm xl:leading-7">
           {notificationText}
         </p>
-        <span className="relative flex items-center z-10">
+        <span className="relative z-10 flex items-center">
           <svg
             width="18"
             height="13"

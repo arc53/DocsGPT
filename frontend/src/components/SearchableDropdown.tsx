@@ -136,10 +136,10 @@ function SearchableDropdown<T extends SearchableDropdownOption>({
     >
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full cursor-pointer items-center justify-between ${border} border-silver bg-white px-5 py-3 dark:border-dim-gray dark:bg-transparent ${borderRadius}`}
+        className={`flex w-full cursor-pointer items-center justify-between ${border} border-silver dark:border-dim-gray bg-white px-5 py-3 dark:bg-transparent ${borderRadius}`}
       >
         <span
-          className={`truncate dark:text-bright-gray ${!selectedValue ? 'text-gray-500 dark:text-gray-400' : ''}`}
+          className={`dark:text-bright-gray truncate ${!selectedValue ? 'text-gray-500 dark:text-gray-400' : ''}`}
         >
           {getDisplayValue()}
         </span>
@@ -151,8 +151,12 @@ function SearchableDropdown<T extends SearchableDropdownOption>({
       </button>
 
       {isOpen && (
-        <div className={`absolute left-0 right-0 z-20 mt-2 ${borderRadius} bg-[#FBFBFB] shadow-[0px_24px_48px_0px_#00000029] dark:bg-dark-charcoal`}>
-          <div className={`sticky top-0 z-10 border-b border-silver bg-[#FBFBFB] px-3 py-2 dark:border-dim-gray dark:bg-dark-charcoal ${rounded === 'xl' ? 'rounded-t-xl' : 'rounded-t-3xl'}`}>
+        <div
+          className={`absolute right-0 left-0 z-20 mt-2 ${borderRadius} dark:bg-dark-charcoal bg-[#FBFBFB] shadow-[0px_24px_48px_0px_#00000029]`}
+        >
+          <div
+            className={`border-silver dark:border-dim-gray dark:bg-dark-charcoal sticky top-0 z-10 border-b bg-[#FBFBFB] px-3 py-2 ${rounded === 'xl' ? 'rounded-t-xl' : 'rounded-t-3xl'}`}
+          >
             <div className="relative flex items-center">
               <img
                 src={Search}
@@ -167,7 +171,7 @@ function SearchableDropdown<T extends SearchableDropdownOption>({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search..."
-                className="w-full rounded-lg border-0 bg-transparent py-2 pl-10 pr-3 font-['Inter'] text-[14px] font-normal leading-[16.5px] focus:outline-none focus:ring-0 dark:text-bright-gray"
+                className="dark:text-bright-gray w-full rounded-lg border-0 bg-transparent py-2 pr-3 pl-10 font-['Inter'] text-[14px] leading-[16.5px] font-normal focus:ring-0 focus:outline-none"
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
@@ -200,7 +204,7 @@ function SearchableDropdown<T extends SearchableDropdownOption>({
                         setIsOpen(false);
                         setSearchQuery('');
                       }}
-                      className="ml-5 flex-1 overflow-hidden text-ellipsis whitespace-nowrap py-3 font-['Inter'] text-[14px] font-normal leading-[16.5px] dark:text-light-gray"
+                      className="dark:text-light-gray ml-5 flex-1 overflow-hidden py-3 font-['Inter'] text-[14px] leading-[16.5px] font-normal text-ellipsis whitespace-nowrap"
                     >
                       {getOptionText(option)}
                     </span>
@@ -230,11 +234,14 @@ function SearchableDropdown<T extends SearchableDropdownOption>({
                         onClick={(e) => {
                           e.stopPropagation();
                           const id =
-                            typeof option === 'string' ? option : optionId ?? '';
+                            typeof option === 'string'
+                              ? option
+                              : (optionId ?? '');
                           onDelete(id);
                         }}
                         className={`mr-2 h-4 w-4 cursor-pointer hover:opacity-50 ${
-                          typeof showDelete === 'function' && !showDelete(option)
+                          typeof showDelete === 'function' &&
+                          !showDelete(option)
                             ? 'hidden'
                             : ''
                         }`}
@@ -262,4 +269,3 @@ function SearchableDropdown<T extends SearchableDropdownOption>({
 }
 
 export default SearchableDropdown;
-

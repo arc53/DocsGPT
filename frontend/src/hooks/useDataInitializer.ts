@@ -2,7 +2,11 @@ import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { Doc } from '../models/misc';
-import { getDocs, getConversations, getPrompts } from '../preferences/preferenceApi';
+import {
+  getDocs,
+  getConversations,
+  getPrompts,
+} from '../preferences/preferenceApi';
 import {
   selectConversations,
   selectSelectedDocs,
@@ -22,7 +26,7 @@ import {
  * - Fetching and setting up prompts
  * - Fetching and setting up conversations
  *
- * @param isAuthLoading - 
+ * @param isAuthLoading -
  */
 export default function useDataInitializer(isAuthLoading: boolean) {
   const dispatch = useDispatch();
@@ -61,7 +65,7 @@ export default function useDataInitializer(isAuthLoading: boolean) {
     };
 
     fetchDocs();
-  }, [isAuthLoading, token, dispatch, selectedDoc]);
+  }, [isAuthLoading, token]);
 
   // Initialize prompts
   useEffect(() => {
@@ -80,8 +84,6 @@ export default function useDataInitializer(isAuthLoading: boolean) {
     };
 
     fetchPromptsData();
-    // Only run once when auth completes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthLoading, token]);
 
   // Initialize conversations
@@ -105,6 +107,5 @@ export default function useDataInitializer(isAuthLoading: boolean) {
     };
 
     fetchConversationsData();
-  }, [isAuthLoading, conversations?.data, token, dispatch, conversations]);
+  }, [isAuthLoading, conversations?.data, token]);
 }
-

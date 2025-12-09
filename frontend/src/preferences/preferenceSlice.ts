@@ -238,9 +238,9 @@ prefListenerMiddleware.startListening({
       if (validatedPrompt !== null) {
         listenerApi.dispatch(setPrompt(validatedPrompt));
       } else {
-        const defaultPrompt = availablePrompts.find(
-          (p) => p.id === 'default',
-        ) || availablePrompts[0];
+        const defaultPrompt =
+          availablePrompts.find((p) => p.id === 'default') ||
+          availablePrompts[0];
         if (defaultPrompt) {
           listenerApi.dispatch(setPrompt(defaultPrompt));
         }

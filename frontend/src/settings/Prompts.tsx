@@ -104,7 +104,11 @@ export default function Prompts({
             throw new Error('Failed to delete prompt');
           }
           // Only change selection if we're deleting the currently selected prompt
-          if (prompts.length > 0 && selectedPrompt && selectedPrompt.id === promptToDelete.id) {
+          if (
+            prompts.length > 0 &&
+            selectedPrompt &&
+            selectedPrompt.id === promptToDelete.id
+          ) {
             const firstPrompt = prompts.find((p) => p.id !== promptToDelete.id);
             if (firstPrompt) {
               onSelectPrompt(

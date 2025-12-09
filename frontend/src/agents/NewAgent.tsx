@@ -825,8 +825,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   prompts={prompts}
                   selectedPrompt={
                     prompts.find((prompt) => prompt.id === agent.prompt_id) ||
-                    prompts[0] ||
-                    { name: 'default', id: 'default', type: 'public' }
+                    prompts[0] || {
+                      name: 'default',
+                      id: 'default',
+                      type: 'public',
+                    }
                   }
                   onSelectPrompt={(name, id, type) =>
                     setAgent({ ...agent, prompt_id: id })
