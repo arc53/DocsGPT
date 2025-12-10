@@ -6,7 +6,7 @@ cryptography==46.0.3
 dataclasses-json==0.6.7
 docx2txt==0.8
 duckduckgo-search==8.1.1
-ebooklib==0.18
+ebooklib==0.20
 escodegen==1.0.11
 esprima==4.0.1
 esutils==1.0.1
