@@ -1,7 +1,7 @@
 """Base schema for readers."""
 from dataclasses import dataclass
 
-from langchain.docstore.document import Document as LCDocument
+from langchain_core.documents import Document as LCDocument
 from application.parser.schema.schema import BaseDocument
 
 
