@@ -2,17 +2,17 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
-import userService from '../api/services/userService';
 import Dropdown from '../components/Dropdown';
 import { useDarkTheme } from '../hooks';
 import {
   selectChunks,
   selectPrompt,
-  selectToken,
+  selectPrompts,
   selectTokenLimit,
   setChunks,
   setModalStateDeleteConv,
   setPrompt,
+  setPrompts,
   setTokenLimit,
 } from '../preferences/preferenceSlice';
 import Prompts from './Prompts';
@@ -22,7 +22,6 @@ export default function General() {
     t,
     i18n: { changeLanguage },
   } = useTranslation();
-  const token = useSelector(selectToken);
   const themes = [
     { value: 'Light', label: t('settings.general.light') },
     { value: 'Dark', label: t('settings.general.dark') },
@@ -46,9 +45,7 @@ export default function General() {
     [4000, t('settings.general.high')],
     [1e9, t('settings.general.unlimited')],
   ]);
-  const [prompts, setPrompts] = React.useState<
-    { name: string; id: string; type: string }[]
-  >([]);
+  const prompts = useSelector(selectPrompts);
   const selectedChunks = useSelector(selectChunks);
   const selectedTokenLimit = useSelector(selectTokenLimit);
   const [isDarkTheme, toggleTheme] = useDarkTheme();
@@ -63,22 +60,6 @@ export default function General() {
       : languageOptions[0],
   );
   const selectedPrompt = useSelector(selectPrompt);
-
-  React.useEffect(() => {
-    const handleFetchPrompts = async () => {
-      try {
-        const response = await userService.getPrompts(token);
-        if (!response.ok) {
-          throw new Error('Failed to fetch prompts');
-        }
-        const promptsData = await response.json();
-        setPrompts(promptsData);
-      } catch (error) {
-        console.error(error);
-      }
-    };
-    handleFetchPrompts();
-  }, []);
 
   React.useEffect(() => {
     localStorage.setItem('docsgpt-locale', selectedLanguage?.value as string);
@@ -169,7 +150,7 @@ export default function General() {
           onSelectPrompt={(name, id, type) =>
             dispatch(setPrompt({ name: name, id: id, type: type }))
           }
-          setPrompts={setPrompts}
+          setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
           dropdownProps={{ size: 'w-56', rounded: '3xl', border: 'border' }}
         />
       </div>

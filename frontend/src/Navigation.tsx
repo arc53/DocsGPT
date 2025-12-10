@@ -31,7 +31,6 @@ import {
 } from './conversation/conversationSlice';
 import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme, useMediaQuery } from './hooks';
-import useDefaultDocument from './hooks/useDefaultDocument';
 import useTokenAuth from './hooks/useTokenAuth';
 import DeleteConvModal from './modals/DeleteConvModal';
 import JWTModal from './modals/JWTModal';
@@ -155,7 +154,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   }, [agents, sharedAgents, token, dispatch]);
 
   useEffect(() => {
-    if (!conversations?.data) fetchConversations();
     if (queries.length === 0) resetConversation();
   }, [conversations?.data, dispatch]);
 
@@ -290,7 +288,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     setNavOpen(!(isMobile || isTablet));
   }, [isMobile, isTablet]);
 
-  useDefaultDocument();
   return (
     <>
       {(isMobile || isTablet) && navOpen && (
