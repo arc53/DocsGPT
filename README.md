@@ -46,24 +46,10 @@
 </ul>
 
 ## Roadmap
-
-- [x] Full GoogleAI compatibility (Jan 2025)
-- [x] Add tools (Jan 2025)
-- [x] Manually updating chunks in the app UI (Feb 2025)
-- [x] Devcontainer for easy development (Feb 2025)
-- [x] ReACT agent (March 2025)
-- [x] Chatbots menu re-design to handle tools, agent types, and more (April 2025)
-- [x] New input box in the conversation menu (April 2025)
-- [x] Add triggerable actions / tools (webhook) (April 2025)
-- [x] Agent optimisations (May 2025)
-- [x] Filesystem sources update (July 2025)
-- [x] Json Responses (August 2025)
-- [x] MCP support (August 2025)
-- [x] Google Drive integration (September 2025)
 - [x] Add OAuth 2.0 authentication for MCP (September 2025)
-- [ ] SharePoint integration (October 2025)
-- [ ] Deep Agents (October 2025)
-- [ ] Agent scheduling
+- [x] Deep Agents (October 2025)
+- [ ] Prompt Templating ( October 2025 )
+- [ ] Agent scheduling ( December 2025 )
 
 You can find our full roadmap [here](https://github.com/orgs/arc53/projects/2). Please don't hesitate to contribute or create issues, it helps us improve DocsGPT!
 
@@ -158,9 +144,17 @@ We as members, contributors, and leaders, pledge to make participation in our co
 
 The source code license is [MIT](https://opensource.org/license/mit/), as described in the [LICENSE](LICENSE) file.
 
-<p>This project is supported by:</p>
+## This project is supported by:
+
 <p>
   <a href="https://www.digitalocean.com/?utm_medium=opensource&utm_source=DocsGPT">
     <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201px">
   </a>
 </p>
+<p>
+  <a href="https://console.neon.tech/app/?promo=docsgpt">
+    <img width="201" alt="color" src="https://github.com/user-attachments/assets/42c8aa45-7b99-4f56-85d6-e0f07dddcc3b" />
+  </a>
+</p>
+
+
