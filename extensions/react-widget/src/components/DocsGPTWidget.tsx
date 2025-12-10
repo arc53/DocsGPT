@@ -719,8 +719,8 @@ export const WidgetCore = ({
   md.renderer.rules.table_close = () => '</table></div>';
   md.renderer.rules.thead_open = () => '<thead class="dgpt-thead">';
   md.renderer.rules.tr_open = () => '<tr class="dgpt-tr">';
-  md.renderer.rules.td_open = () => '<th class="dgpt-th">';
-  md.renderer.rules.th_open = () => '<td class="dgpt-td">';
+  md.renderer.rules.td_open = () => '<td class="dgpt-td">';
+  md.renderer.rules.th_open = () => '<th class="dgpt-th">';
 
 
 
@@ -891,15 +891,11 @@ export const WidgetCore = ({
   // submit handler
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    // Prevent sending empty messages
-    if (promptRef.current && promptRef.current.value.trim() === "") return;
-    //Rest the input to it's original size after submitting
-    if( promptRef.current){
-        promptRef.current.value = "";
-        promptRef.current.style.height = "auto"; 
+    if (!prompt.trim()) return;
+    if (promptRef.current) {
+      promptRef.current.style.height = "auto";
     }
-    await appendQuery(prompt)
-    
+    await appendQuery(prompt);
   }
   const handlePromptKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
