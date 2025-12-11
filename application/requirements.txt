@@ -45,7 +45,7 @@ mypy-extensions==1.0.0
 networkx==3.6.1
 numpy==2.2.1
 openai==2.9.0
-openapi3-parser==1.1.21
+openapi3-parser==1.1.22
 orjson==3.11.5
 packaging==24.2
 pandas==2.2.3
