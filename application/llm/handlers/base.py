@@ -833,7 +833,10 @@ class LLMHandler(ABC):
                         if call.name:
                             existing.name = call.name
                         if call.arguments:
-                            existing.arguments += call.arguments
+                            if existing.arguments is None:
+                                existing.arguments = call.arguments
+                            else:
+                                existing.arguments += call.arguments
                         # Preserve thought_signature for Google Gemini 3 models
                         if call.thought_signature:
                             existing.thought_signature = call.thought_signature

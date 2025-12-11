@@ -148,8 +148,11 @@ class ConversationService:
             ]
 
             completion = llm.gen(
-                model=model_id, messages=messages_summary, max_tokens=30
+                model=model_id, messages=messages_summary, max_tokens=500
             )
+
+            if not completion or not completion.strip():
+                completion = question[:50] if question else "New Conversation"
 
             conversation_data = {
                 "user": user_id,

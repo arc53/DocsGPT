@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 
 from application.parser.remote.web_loader import WebLoader, headers
 from application.parser.schema.base import Document
-from langchain.docstore.document import Document as LCDocument
+from langchain_core.documents import Document as LCDocument
 
 
 @pytest.fixture

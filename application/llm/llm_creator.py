@@ -4,7 +4,6 @@ from application.llm.anthropic import AnthropicLLM
 from application.llm.docsgpt_provider import DocsGPTAPILLM
 from application.llm.google_ai import GoogleLLM
 from application.llm.groq import GroqLLM
-from application.llm.huggingface import HuggingFaceLLM
 from application.llm.llama_cpp import LlamaCpp
 from application.llm.novita import NovitaLLM
 from application.llm.openai import AzureOpenAILLM, OpenAILLM
@@ -19,7 +18,6 @@ class LLMCreator:
         "openai": OpenAILLM,
         "azure_openai": AzureOpenAILLM,
         "sagemaker": SagemakerAPILLM,
-        "huggingface": HuggingFaceLLM,
         "llama.cpp": LlamaCpp,
         "anthropic": AnthropicLLM,
         "docsgpt": DocsGPTAPILLM,
