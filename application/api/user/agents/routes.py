@@ -97,6 +97,7 @@ class GetAgent(Resource):
                 "shared_token": agent.get("shared_token", ""),
                 "models": agent.get("models", []),
                 "default_model_id": agent.get("default_model_id", ""),
+                "folder_id": agent.get("folder_id"),
             }
             return make_response(jsonify(data), 200)
         except Exception as e:
@@ -176,6 +177,7 @@ class GetAgents(Resource):
                     "shared_token": agent.get("shared_token", ""),
                     "models": agent.get("models", []),
                     "default_model_id": agent.get("default_model_id", ""),
+                    "folder_id": agent.get("folder_id"),
                 }
                 for agent in agents
                 if "source" in agent or "retriever" in agent
@@ -241,6 +243,9 @@ class CreateAgent(Resource):
             ),
             "default_model_id": fields.String(
                 required=False, description="Default model ID for this agent"
+            ),
+            "folder_id": fields.String(
+                required=False, description="Folder ID to organize the agent"
             ),
         },
     )
@@ -418,6 +423,7 @@ class CreateAgent(Resource):
                 "key": key,
                 "models": data.get("models", []),
                 "default_model_id": data.get("default_model_id", ""),
+                "folder_id": data.get("folder_id"),
             }
             if new_agent["chunks"] == "":
                 new_agent["chunks"] = "2"
@@ -490,6 +496,9 @@ class UpdateAgent(Resource):
             ),
             "default_model_id": fields.String(
                 required=False, description="Default model ID for this agent"
+            ),
+            "folder_id": fields.String(
+                required=False, description="Folder ID to organize the agent"
             ),
         },
     )
@@ -584,6 +593,7 @@ class UpdateAgent(Resource):
             "request_limit",
             "models",
             "default_model_id",
+            "folder_id",
         ]
 
         for field in allowed_fields:
