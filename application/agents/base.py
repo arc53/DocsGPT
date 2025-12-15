@@ -232,12 +232,20 @@ class BaseAgent(ABC):
         # Prepare tool_config and add tool_id for memory tools
 
         if tool_data["name"] == "api_tool":
+            action_config = tool_data["config"]["actions"][action_name]
             tool_config = {
-                "url": tool_data["config"]["actions"][action_name]["url"],
-                "method": tool_data["config"]["actions"][action_name]["method"],
+                "url": action_config["url"],
+                "method": action_config["method"],
                 "headers": headers,
                 "query_params": query_params,
             }
+            if "body_content_type" in action_config:
+                tool_config["body_content_type"] = action_config.get(
+                    "body_content_type", "application/json"
+                )
+                tool_config["body_encoding_rules"] = action_config.get(
+                    "body_encoding_rules", {}
+                )
         else:
             tool_config = tool_data["config"].copy() if tool_data["config"] else {}
             # Add tool_id from MongoDB _id for tools that need instance isolation (like memory tool)
@@ -247,15 +255,15 @@ class BaseAgent(ABC):
         tool = tm.load_tool(
             tool_data["name"],
             tool_config=tool_config,
-            user_id=self.user,  # Pass user ID for MCP tools credential decryption
+            user_id=self.user,
         )
         if tool_data["name"] == "api_tool":
-            print(
+            logger.debug(
                 f"Executing api: {action_name} with query_params: {query_params}, headers: {headers}, body: {body}"
             )
             result = tool.execute_action(action_name, **body)
         else:
-            print(f"Executing tool: {action_name} with args: {call_args}")
+            logger.debug(f"Executing tool: {action_name} with args: {call_args}")
             result = tool.execute_action(action_name, **parameters)
         tool_call_data["result"] = (
             f"{str(result)[:50]}..." if len(str(result)) > 50 else result

@@ -1,24 +1,24 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import CircleCheck from '../assets/circle-check.svg';
 import CircleX from '../assets/circle-x.svg';
+import NoFilesDarkIcon from '../assets/no-files-dark.svg';
+import NoFilesIcon from '../assets/no-files.svg';
 import Trash from '../assets/trash.svg';
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import ToggleSwitch from '../components/ToggleSwitch';
+import { useDarkTheme } from '../hooks';
 import AddActionModal from '../modals/AddActionModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
-import { APIActionType, APIToolType, UserToolType } from './types';
-import { useTranslation } from 'react-i18next';
 import { areObjectsEqual } from '../utils/objectUtils';
-import { useDarkTheme } from '../hooks';
-import NoFilesIcon from '../assets/no-files.svg';
-import NoFilesDarkIcon from '../assets/no-files-dark.svg';
+import { APIActionType, APIToolType, UserToolType } from './types';
 
 export default function ToolConfig({
   tool,
@@ -164,6 +164,13 @@ export default function ToolConfig({
   };
 
   const handleAddNewAction = (actionName: string) => {
+    const toolCopy = tool as APIToolType;
+
+    if (toolCopy.config.actions && toolCopy.config.actions[actionName]) {
+      alert(t('settings.tools.actionAlreadyExists'));
+      return;
+    }
+
     const newAction: APIActionType = {
       name: actionName,
       method: 'GET',
@@ -182,8 +189,10 @@ export default function ToolConfig({
         type: 'object',
       },
       active: true,
+      body_content_type: 'application/json',
+      body_encoding_rules: {},
     };
-    const toolCopy = tool as APIToolType;
+
     setTool({
       ...toolCopy,
       config: {
@@ -271,16 +280,14 @@ export default function ToolConfig({
           <p className="text-eerie-black dark:text-bright-gray text-base font-semibold">
             {t('settings.tools.actions')}
           </p>
-          {tool.name === 'api_tool' &&
-            (!tool.config.actions ||
-              Object.keys(tool.config.actions).length === 0) && (
-              <button
-                onClick={() => setActionModalState('ACTIVE')}
-                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
-              >
-                {t('settings.tools.addAction')}
-              </button>
-            )}
+          {tool.name === 'api_tool' && (
+            <button
+              onClick={() => setActionModalState('ACTIVE')}
+              className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
+            >
+              {t('settings.tools.addAction')}
+            </button>
+          )}
         </div>
         {tool.name === 'api_tool' ? (
           <>
@@ -690,7 +697,7 @@ function APIToolConfig({
                     {t('settings.tools.method')}
                   </span>
                   <Dropdown
-                    options={['GET', 'POST', 'PUT', 'DELETE']}
+                    options={['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']}
                     selectedValue={action.method}
                     onSelect={(value: string) => {
                       setApiTool((prevApiTool) => {
@@ -704,7 +711,10 @@ function APIToolConfig({
                           | 'GET'
                           | 'POST'
                           | 'PUT'
-                          | 'DELETE';
+                          | 'DELETE'
+                          | 'PATCH'
+                          | 'HEAD'
+                          | 'OPTIONS';
                         updatedActions[actionName] = updatedAction;
                         return {
                           ...prevApiTool,
@@ -748,6 +758,75 @@ function APIToolConfig({
                   placeholder={t('settings.tools.descriptionPlaceholder')}
                 />
               </div>
+              {(action.method === 'POST' ||
+                action.method === 'PUT' ||
+                action.method === 'PATCH' ||
+                action.method === 'HEAD' ||
+                action.method === 'OPTIONS') && (
+                <div className="mt-4 px-5 py-2">
+                  <div className="relative w-full">
+                    <span className="text-gray-4000 dark:bg-raisin-black dark:text-silver absolute -top-2 left-5 z-10 bg-white px-2 text-xs">
+                      {t('settings.tools.bodyContentType')}
+                    </span>
+                    <Dropdown
+                      options={[
+                        'application/json',
+                        'application/x-www-form-urlencoded',
+                        'multipart/form-data',
+                        'text/plain',
+                        'application/xml',
+                        'application/octet-stream',
+                      ]}
+                      selectedValue={
+                        action.body_content_type || 'application/json'
+                      }
+                      onSelect={(value: string) => {
+                        setApiTool((prevApiTool) => {
+                          const updatedActions = {
+                            ...prevApiTool.config.actions,
+                          };
+                          const updatedAction = {
+                            ...updatedActions[actionName],
+                          };
+                          updatedAction.body_content_type = value as
+                            | 'application/json'
+                            | 'application/x-www-form-urlencoded'
+                            | 'multipart/form-data'
+                            | 'text/plain'
+                            | 'application/xml'
+                            | 'application/octet-stream';
+                          updatedActions[actionName] = updatedAction;
+                          return {
+                            ...prevApiTool,
+                            config: {
+                              ...prevApiTool.config,
+                              actions: updatedActions,
+                            },
+                          };
+                        });
+                      }}
+                      size="w-56"
+                      rounded="3xl"
+                      border="border"
+                    />
+                  </div>
+                  <p className="text-eerie-black dark:text-bright-gray mt-2 text-xs opacity-60">
+                    {action.body_content_type === 'multipart/form-data' &&
+                      'For APIs requiring multipart format. File uploads not supported through LLM.'}
+                    {action.body_content_type === 'application/octet-stream' &&
+                      'Raw binary data, base64-encoded for transmission.'}
+                    {action.body_content_type === 'application/x-www-form-urlencoded' &&
+                      'Standard form submission format. Best for legacy APIs and login forms.'}
+                    {action.body_content_type === 'application/xml' &&
+                      'Structured XML format. Use for SOAP and enterprise APIs.'}
+                    {action.body_content_type === 'text/plain' &&
+                      'Raw text data. Each field on a new line.'}
+                    {(!action.body_content_type ||
+                      action.body_content_type === 'application/json') &&
+                      'Most common format. Use for modern REST APIs.'}
+                  </p>
+                </div>
+              )}
               <div className="mt-4 px-5 py-2">
                 <APIActionTable
                   apiAction={action}
@@ -793,6 +872,7 @@ function APIActionTable({
 
   const [action, setAction] = React.useState<APIActionType>(apiAction);
   const [newPropertyKey, setNewPropertyKey] = React.useState('');
+  const [newPropertyType, setNewPropertyType] = React.useState<'string' | 'integer'>('string');
   const [addingPropertySection, setAddingPropertySection] = React.useState<
     'headers' | 'query_params' | 'body' | null
   >(null);
@@ -831,10 +911,12 @@ function APIActionTable({
     setEditingPropertyKey({ section: null, oldKey: null });
     setAddingPropertySection(section);
     setNewPropertyKey('');
+    setNewPropertyType('string');
   };
   const handleAddPropertyCancel = () => {
     setAddingPropertySection(null);
     setNewPropertyKey('');
+    setNewPropertyType('string');
   };
   const handleAddProperty = () => {
     if (addingPropertySection && newPropertyKey.trim() !== '') {
@@ -842,7 +924,7 @@ function APIActionTable({
         const updatedProperties = {
           ...prevAction[addingPropertySection].properties,
           [newPropertyKey.trim()]: {
-            type: 'string',
+            type: newPropertyType,
             description: '',
             value: '',
             filled_by_llm: false,
@@ -857,6 +939,7 @@ function APIActionTable({
         };
       });
       setNewPropertyKey('');
+      setNewPropertyType('string');
       setAddingPropertySection(null);
     }
   };
@@ -872,6 +955,7 @@ function APIActionTable({
   const handleRenamePropertyCancel = () => {
     setEditingPropertyKey({ section: null, oldKey: null });
     setNewPropertyKey('');
+    setNewPropertyType('string');
   };
   const handleRenameProperty = () => {
     if (
@@ -901,6 +985,7 @@ function APIActionTable({
       });
       setEditingPropertyKey({ section: null, oldKey: null });
       setNewPropertyKey('');
+      setNewPropertyType('string');
     }
   };
 
@@ -916,6 +1001,29 @@ function APIActionTable({
         [section]: {
           ...prevAction[section],
           properties: restProperties,
+        },
+      };
+    });
+  };
+
+  const handlePropertyTypeChange = (
+    section: 'headers' | 'query_params' | 'body',
+    key: string,
+    newType: 'string' | 'integer',
+  ) => {
+    setAction((prevAction) => {
+      const updatedProperties = {
+        ...prevAction[section].properties,
+        [key]: {
+          ...prevAction[section].properties[key],
+          type: newType,
+        },
+      };
+      return {
+        ...prevAction,
+        [section]: {
+          ...prevAction[section],
+          properties: updatedProperties,
         },
       };
     });
@@ -978,7 +1086,22 @@ function APIActionTable({
                   />
                 )}
               </td>
-              <td>{param.type}</td>
+              <td>
+                <select
+                  value={param.type}
+                  onChange={(e) =>
+                    handlePropertyTypeChange(
+                      section,
+                      key,
+                      e.target.value as 'string' | 'integer',
+                    )
+                  }
+                  className="border-silver dark:border-silver/40 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                >
+                  <option value="string">string</option>
+                  <option value="integer">integer</option>
+                </select>
+              </td>
               <td>
                 <label className="ml-[10px] flex cursor-pointer items-start gap-4">
                   <div className="flex items-center">
@@ -1056,7 +1179,19 @@ function APIActionTable({
                 className="border-silver dark:border-silver/40 flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
               />
             </td>
-            <td colSpan={4} className="text-right">
+            <td>
+              <select
+                value={newPropertyType}
+                onChange={(e) =>
+                  setNewPropertyType(e.target.value as 'string' | 'integer')
+                }
+                className="border-silver dark:border-silver/40 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+              >
+                <option value="string">string</option>
+                <option value="integer">integer</option>
+              </select>
+            </td>
+            <td colSpan={3} className="text-right">
               <button
                 onClick={handleAddProperty}
                 className="bg-purple-30 hover:bg-violets-are-blue mr-1 rounded-full px-5 py-[4px] text-sm text-white"
@@ -1102,6 +1237,153 @@ function APIActionTable({
       </>
     );
   };
+
+  const renderHeadersTable = () => {
+    return (
+      <>
+        {Object.entries(action.headers.properties).map(([key, param], index) => (
+          <tr key={index} className="font-normal text-nowrap">
+            <td className="relative">
+              {editingPropertyKey.section === 'headers' &&
+              editingPropertyKey.oldKey === key ? (
+                <div className="flex flex-row items-center justify-between gap-2">
+                  <input
+                    value={newPropertyKey}
+                    className="border-silver dark:border-silver/40 flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                    onChange={(e) => setNewPropertyKey(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleRenameProperty();
+                      }
+                    }}
+                  />
+                  <div className="mt-1">
+                    <button
+                      onClick={handleRenameProperty}
+                      className="mr-1 h-5 w-5"
+                    >
+                      <img
+                        src={CircleCheck}
+                        alt="check"
+                        className="h-5 w-5"
+                      />
+                    </button>
+                    <button
+                      onClick={handleRenamePropertyCancel}
+                      className="h-5 w-5"
+                    >
+                      <img src={CircleX} alt="cancel" className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <input
+                  value={key}
+                  className="border-silver dark:border-silver/40 flex w-full min-w-[175.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                  onFocus={() => handleRenamePropertyStart('headers', key)}
+                  readOnly
+                />
+              )}
+            </td>
+            <td>
+              <input
+                value={param.value}
+                onChange={(e) =>
+                  handlePropertyChange('headers', key, 'value', e.target.value)
+                }
+                placeholder="e.g., application/json"
+                className="border-silver dark:border-silver/40 w-full rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+              />
+            </td>
+            <td>
+              <input
+                value={param.description}
+                className="border-silver dark:border-silver/40 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                onChange={(e) =>
+                  handlePropertyChange('headers', key, 'description', e.target.value)
+                }
+              />
+            </td>
+            <td
+              style={{
+                width: '50px',
+                minWidth: '50px',
+                maxWidth: '50px',
+                padding: '0',
+              }}
+              className="border-silver dark:border-silver/40 border-b"
+            >
+              <button
+                onClick={() => handlePorpertyDelete('headers', key)}
+                className="h-4 w-4 opacity-60 hover:opacity-100"
+              >
+                <img src={Trash} alt="delete" className="h-4 w-4"></img>
+              </button>
+            </td>
+          </tr>
+        ))}
+        {addingPropertySection === 'headers' ? (
+          <tr>
+            <td>
+              <input
+                value={newPropertyKey}
+                onChange={(e) => setNewPropertyKey(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleAddProperty();
+                  }
+                }}
+                placeholder={t('settings.tools.propertyName')}
+                className="border-silver dark:border-silver/40 flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+              />
+            </td>
+            <td colSpan={2} className="text-right">
+              <button
+                onClick={handleAddProperty}
+                className="bg-purple-30 hover:bg-violets-are-blue mr-1 rounded-full px-5 py-[4px] text-sm text-white"
+              >
+                {t('settings.tools.add')}
+              </button>
+              <button
+                onClick={handleAddPropertyCancel}
+                className="rounded-full border border-solid border-red-500 px-5 py-[4px] text-sm text-red-500 hover:bg-red-500 hover:text-white"
+              >
+                {t('settings.tools.cancel')}
+              </button>
+            </td>
+            <td
+              style={{
+                width: '50px',
+                minWidth: '50px',
+                maxWidth: '50px',
+                padding: '0',
+              }}
+            ></td>
+          </tr>
+        ) : (
+          <tr>
+            <td colSpan={3}>
+              <button
+                onClick={() => handleAddPropertyStart('headers')}
+                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue flex items-start rounded-full border border-solid px-5 py-[4px] text-sm text-nowrap transition-colors hover:text-white"
+              >
+                {t('settings.tools.addNew')}
+              </button>
+            </td>
+            <td
+              style={{
+                width: '50px',
+                minWidth: '50px',
+                maxWidth: '50px',
+                padding: '0',
+              }}
+            ></td>
+          </tr>
+        )}
+      </>
+    );
+  };
+
   return (
     <div className="scrollbar-thin flex flex-col gap-6">
       <div>
@@ -1115,16 +1397,10 @@ function APIActionTable({
                 {t('settings.tools.name')}
               </th>
               <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.type')}
-              </th>
-              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.filledByLLM')}
+                {t('settings.tools.value')}
               </th>
               <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.description')}
-              </th>
-              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.value')}
               </th>
               <th
                 style={{
@@ -1136,7 +1412,7 @@ function APIActionTable({
               ></th>
             </tr>
           </thead>
-          <tbody>{renderPropertiesTable('headers')}</tbody>
+          <tbody>{renderHeadersTable()}</tbody>
         </table>
       </div>
       <div>

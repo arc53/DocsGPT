@@ -71,11 +71,18 @@ export type APIActionType = {
   name: string;
   url: string;
   description: string;
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS';
   query_params: ParameterGroupType;
   headers: ParameterGroupType;
   body: ParameterGroupType;
   active: boolean;
+  body_content_type?: 'application/json' | 'application/x-www-form-urlencoded' | 'multipart/form-data' | 'text/plain' | 'application/xml' | 'application/octet-stream';
+  body_encoding_rules?: {
+    [key: string]: {
+      style?: 'form' | 'spaceDelimited' | 'pipeDelimited' | 'deepObject';
+      explode?: boolean;
+    };
+  };
 };
 
 export type APIToolType = {
