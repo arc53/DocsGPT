@@ -12,6 +12,7 @@ class RemoteEmbeddings:
     """
     Wrapper for remote embeddings API (OpenAI-compatible).
     Used when EMBEDDINGS_BASE_URL is configured.
+    Sends requests to {base_url}/v1/embeddings in OpenAI format.
     """
 
     def __init__(self, api_url: str, model_name: str, api_key: str = None):
@@ -20,33 +21,30 @@ class RemoteEmbeddings:
         self.headers = {"Content-Type": "application/json"}
         if api_key:
             self.headers["Authorization"] = f"Bearer {api_key}"
-        self.dimension = None
+        self.dimension = 768
 
     def _embed(self, inputs):
-        """Send embedding request to remote API."""
-        payload = {"inputs": inputs}
+        """Send embedding request to remote API in OpenAI-compatible format."""
+        payload = {"input": inputs}
         if self.model_name:
             payload["model"] = self.model_name
 
-        response = requests.post(
-            self.api_url, headers=self.headers, json=payload, timeout=180
-        )
+        url = f"{self.api_url}/v1/embeddings"
+        response = requests.post(url, headers=self.headers, json=payload, timeout=180)
         response.raise_for_status()
         result = response.json()
 
-        if isinstance(result, list):
-            if result and isinstance(result[0], list):
-                return result
-            elif result and all(isinstance(x, (int, float)) for x in result):
-                return [result]
-            elif not result:
-                return []
-            else:
-                raise ValueError(
-                    f"Unexpected list content from remote embeddings API: {result}"
-                )
-        elif isinstance(result, dict) and "error" in result:
-            raise ValueError(f"Remote embeddings API error: {result['error']}")
+        # Handle OpenAI-compatible response format
+        if isinstance(result, dict):
+            if "error" in result:
+                raise ValueError(f"Remote embeddings API error: {result['error']}")
+            if "data" in result:
+                # Sort by index to ensure correct order
+                data = sorted(result["data"], key=lambda x: x.get("index", 0))
+                return [item["embedding"] for item in data]
+            raise ValueError(
+                f"Unexpected response format from remote embeddings API: {result}"
+            )
         else:
             raise ValueError(
                 f"Unexpected response format from remote embeddings API: {result}"
