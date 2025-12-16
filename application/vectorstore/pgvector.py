@@ -11,6 +11,7 @@ class PGVectorStore(BaseVectorStore):
         source_id: str = "",
         embeddings_key: str = "embeddings",
         table_name: str = "documents",
+        decoded_token: Optional[str] = None,
         vector_column: str = "embedding",
         text_column: str = "text",
         metadata_column: str = "metadata",
@@ -68,8 +69,7 @@ class PGVectorStore(BaseVectorStore):
             # Enable pgvector extension
             cursor.execute("CREATE EXTENSION IF NOT EXISTS vector;")
             
-            # Get embedding dimension
-            embedding_dim = getattr(self._embedding, 'dimension', 1536)  # Default to OpenAI dimension
+            embedding_dim = getattr(self._embedding, 'dimension', 768)
             
             # Create table with vector column
             create_table_query = f"""
@@ -152,7 +152,7 @@ class PGVectorStore(BaseVectorStore):
         """Add texts with their embeddings to the vector store"""
         if not texts:
             return []
-        
+
         embeddings = self._embedding.embed_documents(texts)
         metadatas = metadatas or [{}] * len(texts)
         
@@ -239,15 +239,13 @@ class PGVectorStore(BaseVectorStore):
     def add_chunk(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> str:
         """Add a single chunk to the vector store"""
         metadata = metadata or {}
-        
-        # Create a copy to avoid modifying the original metadata
+
         final_metadata = metadata.copy()
-        
-        # Ensure the source_id is in the metadata so the chunk can be found by filters
+
         final_metadata["source_id"] = self._source_id
-        
+
         embeddings = self._embedding.embed_documents([text])
-        
+
         if not embeddings:
             raise ValueError("Could not generate embedding for chunk")
         
