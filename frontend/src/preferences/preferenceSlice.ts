@@ -21,7 +21,6 @@ export interface Preference {
   prompt: { name: string; id: string; type: string };
   prompts: Prompt[];
   chunks: string;
-  token_limit: number;
   selectedDocs: Doc[];
   sourceDocs: Doc[] | null;
   conversations: {
@@ -49,7 +48,6 @@ const initialState: Preference = {
     { name: 'strict', id: 'strict', type: 'public' },
   ],
   chunks: '2',
-  token_limit: 2000,
   selectedDocs: [
     {
       id: 'default',
@@ -108,9 +106,6 @@ export const prefSlice = createSlice({
     setChunks: (state, action) => {
       state.chunks = action.payload;
     },
-    setTokenLimit: (state, action) => {
-      state.token_limit = action.payload;
-    },
     setModalStateDeleteConv: (state, action: PayloadAction<ActiveState>) => {
       state.modalState = action.payload;
     },
@@ -147,7 +142,6 @@ export const {
   setPrompt,
   setPrompts,
   setChunks,
-  setTokenLimit,
   setModalStateDeleteConv,
   setPaginatedDocuments,
   setTemplateAgents,
@@ -196,18 +190,6 @@ prefListenerMiddleware.startListening({
     localStorage.setItem(
       'DocsGPTChunks',
       JSON.stringify((listenerApi.getState() as RootState).preference.chunks),
-    );
-  },
-});
-
-prefListenerMiddleware.startListening({
-  matcher: isAnyOf(setTokenLimit),
-  effect: (action, listenerApi) => {
-    localStorage.setItem(
-      'DocsGPTTokenLimit',
-      JSON.stringify(
-        (listenerApi.getState() as RootState).preference.token_limit,
-      ),
     );
   },
 });
@@ -281,8 +263,6 @@ export const selectToken = (state: RootState) => state.preference.token;
 export const selectPrompt = (state: RootState) => state.preference.prompt;
 export const selectPrompts = (state: RootState) => state.preference.prompts;
 export const selectChunks = (state: RootState) => state.preference.chunks;
-export const selectTokenLimit = (state: RootState) =>
-  state.preference.token_limit;
 export const selectPaginatedDocuments = (state: RootState) =>
   state.preference.paginatedDocuments;
 export const selectTemplateAgents = (state: RootState) =>

@@ -73,7 +73,6 @@ def sample_answer_request():
         "conversation_id": None,
         "prompt_id": "default",
         "chunks": 2,
-        "token_limit": 1000,
         "retriever": "classic_rag",
         "active_docs": "local/test/",
         "isNoneDoc": False,
