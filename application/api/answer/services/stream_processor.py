@@ -420,16 +420,14 @@ class StreamProcessor:
             )
 
     def _configure_retriever(self):
-        history_token_limit = int(self.data.get("token_limit", 2000))
         doc_token_limit = calculate_doc_token_budget(
-            model_id=self.model_id, history_token_limit=history_token_limit
+            model_id=self.model_id
         )
 
         self.retriever_config = {
             "retriever_name": self.data.get("retriever", "classic"),
             "chunks": int(self.data.get("chunks", 2)),
             "doc_token_limit": doc_token_limit,
-            "history_token_limit": history_token_limit,
         }
 
         api_key = self.data.get("api_key") or self.agent_key

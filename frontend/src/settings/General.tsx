@@ -8,12 +8,10 @@ import {
   selectChunks,
   selectPrompt,
   selectPrompts,
-  selectTokenLimit,
   setChunks,
   setModalStateDeleteConv,
   setPrompt,
   setPrompts,
-  setTokenLimit,
 } from '../preferences/preferenceSlice';
 import Prompts from './Prompts';
 
@@ -37,17 +35,8 @@ export default function General() {
     { label: 'Русский', value: 'ru' },
   ];
   const chunks = ['0', '2', '4', '6', '8', '10'];
-  const token_limits = new Map([
-    [0, t('settings.general.none')],
-    [100, t('settings.general.low')],
-    [1000, t('settings.general.medium')],
-    [2000, t('settings.general.default')],
-    [4000, t('settings.general.high')],
-    [1e9, t('settings.general.unlimited')],
-  ]);
   const prompts = useSelector(selectPrompts);
   const selectedChunks = useSelector(selectChunks);
-  const selectedTokenLimit = useSelector(selectTokenLimit);
   const [isDarkTheme, toggleTheme] = useDarkTheme();
   const [selectedTheme, setSelectedTheme] = React.useState(
     isDarkTheme ? 'Dark' : 'Light',
@@ -113,31 +102,6 @@ export default function General() {
           options={chunks}
           selectedValue={selectedChunks}
           onSelect={(value: string) => dispatch(setChunks(value))}
-          size="w-56"
-          rounded="3xl"
-          border="border"
-        />
-      </div>
-      <div className="flex flex-col gap-4">
-        <label className="text-jet dark:text-bright-gray text-base font-medium">
-          {t('settings.general.convHistory')}
-        </label>
-        <Dropdown
-          options={Array.from(token_limits, ([value, desc]) => ({
-            value: value,
-            description: desc,
-          }))}
-          selectedValue={{
-            value: selectedTokenLimit,
-            description: token_limits.get(selectedTokenLimit) as string,
-          }}
-          onSelect={({
-            value,
-            description,
-          }: {
-            value: number;
-            description: string;
-          }) => dispatch(setTokenLimit(value))}
           size="w-56"
           rounded="3xl"
           border="border"

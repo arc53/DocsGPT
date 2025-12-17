@@ -77,11 +77,11 @@ def count_tokens_docs(docs):
 
 
 def calculate_doc_token_budget(
-    model_id: str = "gpt-4o", history_token_limit: int = 2000
+    model_id: str = "gpt-4o"
 ) -> int:
     total_context = get_token_limit(model_id)
     reserved = sum(settings.RESERVED_TOKENS.values())
-    doc_budget = total_context - history_token_limit - reserved
+    doc_budget = total_context - reserved
     return max(doc_budget, 1000)
 
 

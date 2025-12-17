@@ -63,7 +63,6 @@ export const fetchAnswer = createAsyncThunk<
         currentConversationId,
         state.preference.prompt.id,
         state.preference.chunks,
-        state.preference.token_limit,
         (event) => {
           const data = JSON.parse(event.data);
           const targetIndex = indx ?? state.conversation.queries.length - 1;
@@ -171,7 +170,6 @@ export const fetchAnswer = createAsyncThunk<
         state.conversation.conversationId,
         state.preference.prompt.id,
         state.preference.chunks,
-        state.preference.token_limit,
         state.preference.selectedAgent?.id,
         attachmentIds,
         true,
