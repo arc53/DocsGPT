@@ -190,9 +190,8 @@ def run_agent_logic(agent_config, input_data):
         system_api_key = get_api_key_for_provider(provider or settings.LLM_PROVIDER)
 
         # Calculate proper doc_token_limit based on model's context window
-        history_token_limit = 2000  # Default for webhooks
         doc_token_limit = calculate_doc_token_budget(
-            model_id=model_id, history_token_limit=history_token_limit
+            model_id=model_id
         )
 
         retriever = RetrieverCreator.create_retriever(
