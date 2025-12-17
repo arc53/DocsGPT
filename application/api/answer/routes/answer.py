@@ -40,7 +40,6 @@ class AnswerResource(Resource, BaseAnswerResource):
             "chunks": fields.Integer(
                 required=False, default=2, description="Number of chunks"
             ),
-            "token_limit": fields.Integer(required=False, description="Token limit"),
             "retriever": fields.String(required=False, description="Retriever type"),
             "api_key": fields.String(required=False, description="API key"),
             "active_docs": fields.String(
