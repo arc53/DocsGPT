@@ -65,7 +65,6 @@ export const fetchPreviewAnswer = createAsyncThunk<
           null, // No conversation ID for previews
           state.preference.prompt.id,
           state.preference.chunks,
-          state.preference.token_limit,
           (event: MessageEvent) => {
             const data = JSON.parse(event.data);
             const targetIndex = indx ?? state.agentPreview.queries.length - 1;
@@ -136,7 +135,6 @@ export const fetchPreviewAnswer = createAsyncThunk<
           null,
           state.preference.prompt.id,
           state.preference.chunks,
-          state.preference.token_limit,
           state.preference.selectedAgent?.id,
           attachmentIds,
           false,

@@ -127,6 +127,7 @@ class OpenAILLM(BaseLLM):
         **kwargs,
     ):
         messages = self._clean_messages_openai(messages)
+        logging.info(f"Cleaned messages: {messages}")
 
         # Convert max_tokens to max_completion_tokens for newer models
         if "max_tokens" in kwargs:
@@ -144,7 +145,7 @@ class OpenAILLM(BaseLLM):
         if response_format:
             request_params["response_format"] = response_format
         response = self.client.chat.completions.create(**request_params)
-
+        logging.info(f"OpenAI response: {response}")
         if tools:
             return response.choices[0]
         else:
@@ -162,6 +163,7 @@ class OpenAILLM(BaseLLM):
         **kwargs,
     ):
         messages = self._clean_messages_openai(messages)
+        logging.info(f"Cleaned messages: {messages}")
 
         # Convert max_tokens to max_completion_tokens for newer models
         if "max_tokens" in kwargs:
@@ -182,6 +184,7 @@ class OpenAILLM(BaseLLM):
 
         try:
             for line in response:
+                logging.debug(f"OpenAI stream line: {line}")
                 if (
                     len(line.choices) > 0
                     and line.choices[0].delta.content is not None

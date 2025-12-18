@@ -293,6 +293,8 @@ const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
     margin: 0px;
     &:hover ${Feedback} * {
     visibility: visible ;
+    
+    
   }
 `;
 const Message = styled.div<{ type: MESSAGE_TYPE }>`
@@ -302,13 +304,14 @@ const Message = styled.div<{ type: MESSAGE_TYPE }>`
     color: ${props => props.type === 'ANSWER' ? props.theme.primary.text : '#fff'};
     border: none;
     float: ${props => props.type === 'QUESTION' ? 'right' : 'left'};
-    max-width: ${props => props.type === 'ANSWER' ? '100%' : '80'};
+    max-width: ${props => props.type === 'ANSWER' ? '90%' : '80%'};
     overflow: auto;
     margin: 4px;
     display: block;
     line-height: 1.5;
     padding: 12px;
     border-radius: 6px;
+     overflow-wrap: break-word; 
 `;
 const Markdown = styled.div`
  pre {
@@ -322,7 +325,7 @@ const Markdown = styled.div`
     }
 
     h1 {
-      font-size: 16px;
+      font-size: clamp(14px,40vw,16px);
     }
 
     h2 {
@@ -334,6 +337,7 @@ const Markdown = styled.div`
     }
 
     p {
+      
       margin: 0px;
     }
 
@@ -354,8 +358,67 @@ const Markdown = styled.div`
 
     ul{
       padding:0px;
-      list-style-position: inside;
+      margin: 1rem 0;                   
+      list-style-position: outside;     
+      list-style-type: disc;         
+      padding-left: 1rem;              
+      white-space: normal;
     }
+    
+    ol{
+      padding:0px;
+      margin: 1rem 0;                   
+      list-style-position: outside;     
+      list-style-type: decimal;         
+      padding-left: 1rem;              
+      white-space: normal;
+    }
+      
+    li{
+       line-height: 1.625;
+    }
+    .dgpt-table-container { 
+      margin: 20px 0;
+      width:100%;
+      overflow-x: scroll !important;  
+      border: 1px solid #a2a2ab; 
+      border-radius: 6px; 
+      -webkit-overflow-scrolling: touch;
+      -ms-overflow-style: scrollbar;
+      scrollbar-width: thin; 
+      scrollbar-color: #a2a2ab #38383b;
+    }
+  
+
+    table, .dgpt-table { 
+      width: 100%; 
+      border-collapse: collapse; 
+      text-align: left; 
+      min-width:600px;
+      
+    }
+    thead, .dgpt-thead { 
+      font-size: 12px; 
+      text-transform: uppercase; 
+      
+    }
+    
+    
+    th, .dgpt-th, td, .dgpt-td { 
+      padding: 10px;
+      border-bottom: 1px solid #a2a2ab; 
+      font-size:14px;
+      
+    }
+    th{
+      font-weight: normal !important;
+    }
+    td{
+      font-weight: bold;
+    }
+   
+    
+    
 `
 const ErrorAlert = styled.div`
   color: #b91c1c;
@@ -389,19 +452,49 @@ const Delay = styled(DotAnimation) <{ delay: number }>`
 `;
 const PromptContainer = styled.form`
   background-color: transparent;
-  height: ${props => props.theme.dimensions.size == 'large' ? '60px' : '40px'};
+  min-height: ${props => props.theme.dimensions.size == 'large' ? '40px' : '23px'};
+  max-height:150px;
   display: flex;
+  align-items: end;
   justify-content: space-evenly;
 `;
-const StyledInput = styled.input`
+const StyledTextarea = styled.textarea`
+  box-sizing: border-box;
   width: 100%;
   border: 1px solid #686877;
-  padding-left: 12px;
+  padding: ${props => props.theme.dimensions.size === 'large' ? '18px 12px 14px 12px' : '8px 12px 4px 12px'};
   background-color: transparent;
   font-size: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   border-radius: 6px;
   color: ${props => props.theme.text};
   outline: none;
+  resize: none;
+  transition: height 0.1s ease;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  line-height: 1.4;
+  text-align: left;
+  min-height: ${props => props.theme.dimensions.size === 'large' ? '60px' : '40px'};
+  max-height: 140px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #38383b transparent;
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: #38383b;
+    border-radius: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::placeholder {
+    text-align: left;
+
+  }
 `;
 const StyledButton = styled.button`
   display: flex;
@@ -619,7 +712,17 @@ export const WidgetCore = ({
   const isBubbleHovered = useRef<boolean>(false);
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
+  const promptRef = React.useRef<HTMLTextAreaElement | null>(null);
   const md = new MarkdownIt();
+  //Custom markdown for the table
+  md.renderer.rules.table_open = () => '<div class="dgpt-table-container"><table class="dgpt-table">';
+  md.renderer.rules.table_close = () => '</table></div>';
+  md.renderer.rules.thead_open = () => '<thead class="dgpt-thead">';
+  md.renderer.rules.tr_open = () => '<tr class="dgpt-tr">';
+  md.renderer.rules.td_open = () => '<td class="dgpt-td">';
+  md.renderer.rules.th_open = () => '<th class="dgpt-th">';
+
+
 
   React.useEffect(() => {
     if (isOpen) {
@@ -774,11 +877,7 @@ export const WidgetCore = ({
     }
 
   }
-  // submit handler
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    await appendQuery(prompt)
-  }
+
 
   const appendQuery = async (userQuery: string) => {
     if (!userQuery)
@@ -789,6 +888,58 @@ export const WidgetCore = ({
     setPrompt('');
     await stream(userQuery);
   }
+  // submit handler
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!prompt.trim()) return;
+    if (promptRef.current) {
+      promptRef.current.style.height = "auto";
+    }
+    await appendQuery(prompt);
+  }
+  const handlePromptKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+   
+      e.preventDefault();
+      // Prevent sending empty messages
+      if (promptRef.current && promptRef.current.value.trim() === "") return;
+      //Rest the input to it's original size after submitting
+      if(promptRef.current){
+        promptRef.current.value = "";
+        promptRef.current.style.height = "auto"; 
+      }
+      await appendQuery(prompt);
+  }
+}
+  // Auto-resize the input textarea while typing, clamping to base or max height
+  const handleUserInput = (e: React.KeyboardEvent<HTMLTextAreaElement>) =>{
+      const el = promptRef.current;
+      if (!el) return;
+      const baseHeight = size === 'large' ? 60 : 40;
+      const maxHeight = 140;
+      el.style.height = 'auto';
+      const next = Math.min(el.scrollHeight, maxHeight);
+      el.style.height = Math.max(baseHeight, next) + 'px';
+
+  }
+  
+  // Update prompt state, auto resize textarea to content, and maintain scroll on new lines
+  const handlePromptChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = event.target.value;
+      setPrompt(value);
+      const el = event.currentTarget;
+      const baseHeight = size === 'large' ? 60 : 40;
+      const maxHeight = 140;
+      el.style.height = 'auto';
+      const next = Math.min(el.scrollHeight, maxHeight);
+      el.style.height = Math.max(baseHeight, next) + 'px';
+      if(value.includes("\n")){
+        el.scrollTop = el.scrollHeight;
+
+      }
+      
+      
+  }
   const handleImageError = (event: React.SyntheticEvent<HTMLImageElement, Event>) => {
     event.currentTarget.src = "https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png";
   };
@@ -798,6 +949,9 @@ export const WidgetCore = ({
       ? sizesConfig.getCustom(size.custom)
       : sizesConfig[size];
   if (!mounted) return null;
+
+
+  
   return (
     <ThemeProvider theme={{ ...themes[theme], dimensions }}>
       {isOpen && size === 'large' &&
@@ -911,10 +1065,18 @@ export const WidgetCore = ({
             <div>
               <PromptContainer
                 onSubmit={handleSubmit}>
-                <StyledInput
+                <StyledTextarea
+                  id='chatInput'
+                  ref={promptRef}
                   autoFocus
-                  value={prompt} onChange={(event) => setPrompt(event.target.value)}
-                  type='text' placeholder="Ask your question" />
+                  onInput={handleUserInput}
+                  value={prompt}
+                  onChange={handlePromptChange}
+                  placeholder="Ask your question"
+                  onKeyDown={handlePromptKeyDown}
+                  rows={1}
+                  wrap="soft"
+                />
                 <StyledButton
                   disabled={prompt.trim().length == 0 || status !== 'idle'}>
                   <PaperPlaneIcon width={18} height={18} color='white' />
