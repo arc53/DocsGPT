@@ -1,6 +1,8 @@
 import json
 import logging
+import re
 from typing import Any, Dict, Optional
+from urllib.parse import urlencode
 
 import requests
 
@@ -70,14 +72,24 @@ class APITool(Tool):
         response = None
 
         try:
+            path_params_used = set()
             if query_params:
-                from urllib.parse import urlencode
-
-                query_string = urlencode(query_params)
+                for match in re.finditer(r"\{([^}]+)\}", request_url):
+                    param_name = match.group(1)
+                    if param_name in query_params:
+                        request_url = request_url.replace(
+                            f"{{{param_name}}}", str(query_params[param_name])
+                        )
+                        path_params_used.add(param_name)
+            remaining_params = {
+                k: v for k, v in query_params.items() if k not in path_params_used
+            }
+            if remaining_params:
+                query_string = urlencode(remaining_params)
                 separator = "&" if "?" in request_url else "?"
                 request_url = f"{request_url}{separator}{query_string}"
-
             # Serialize body based on content type
+
             if body and body != {}:
                 try:
                     serialized_body, body_headers = RequestBodySerializer.serialize(
@@ -93,14 +105,12 @@ class APITool(Tool):
                     }
             else:
                 serialized_body = None
-
             if "Content-Type" not in request_headers and method not in [
                 "GET",
                 "HEAD",
                 "DELETE",
             ]:
                 request_headers["Content-Type"] = ContentType.JSON
-
             logger.debug(
                 f"API Call: {method} {request_url} | Content-Type: {request_headers.get('Content-Type', 'N/A')}"
             )
@@ -148,7 +158,6 @@ class APITool(Tool):
                     "message": f"Unsupported HTTP method: {method}",
                     "data": None,
                 }
-
             response.raise_for_status()
 
             data = self._parse_response(response)
@@ -158,7 +167,6 @@ class APITool(Tool):
                 "data": data,
                 "message": "API call successful.",
             }
-
         except requests.exceptions.Timeout:
             logger.error(f"Request timeout for {request_url}")
             return {
@@ -179,7 +187,6 @@ class APITool(Tool):
                 error_data = response.json()
             except (json.JSONDecodeError, ValueError):
                 error_data = response.text
-
             return {
                 "status_code": response.status_code,
                 "message": f"HTTP Error {response.status_code}",
@@ -210,26 +217,27 @@ class APITool(Tool):
 
         if not response.content:
             return None
-
         # JSON response
+
         if "application/json" in content_type:
             try:
                 return response.json()
             except json.JSONDecodeError as e:
                 logger.warning(f"Failed to parse JSON response: {str(e)}")
                 return response.text
-
         # XML response
+
         elif "application/xml" in content_type or "text/xml" in content_type:
             return response.text
-
         # Plain text response
+
         elif "text/plain" in content_type or "text/html" in content_type:
             return response.text
-
         # Binary/unknown response
+
         else:
             # Try to decode as text first, fall back to base64
+
             try:
                 return response.text
             except (UnicodeDecodeError, AttributeError):

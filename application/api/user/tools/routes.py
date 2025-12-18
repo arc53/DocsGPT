@@ -4,6 +4,7 @@ from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
+from application.agents.tools.spec_parser import parse_spec
 from application.agents.tools.tool_manager import ToolManager
 from application.api import api
 from application.api.user.base import user_tools_collection
@@ -414,3 +415,57 @@ class DeleteTool(Resource):
             current_app.logger.error(f"Error deleting tool: {err}", exc_info=True)
             return {"success": False}, 400
         return {"success": True}, 200
+
+
+@tools_ns.route("/parse_spec")
+class ParseSpec(Resource):
+    @api.doc(
+        description="Parse an API specification (OpenAPI 3.x or Swagger 2.0) and return actions"
+    )
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        if "file" in request.files:
+            file = request.files["file"]
+            if not file.filename:
+                return make_response(
+                    jsonify({"success": False, "message": "No file selected"}), 400
+                )
+            try:
+                spec_content = file.read().decode("utf-8")
+            except UnicodeDecodeError:
+                return make_response(
+                    jsonify({"success": False, "message": "Invalid file encoding"}), 400
+                )
+        elif request.is_json:
+            data = request.get_json()
+            spec_content = data.get("spec_content", "")
+        else:
+            return make_response(
+                jsonify({"success": False, "message": "No spec provided"}), 400
+            )
+        if not spec_content or not spec_content.strip():
+            return make_response(
+                jsonify({"success": False, "message": "Empty spec content"}), 400
+            )
+        try:
+            metadata, actions = parse_spec(spec_content)
+            return make_response(
+                jsonify(
+                    {
+                        "success": True,
+                        "metadata": metadata,
+                        "actions": actions,
+                    }
+                ),
+                200,
+            )
+        except ValueError as e:
+            error_msg = str(e)
+            current_app.logger.error(f"Spec validation error: {error_msg}")
+            return make_response(jsonify({"success": False, "error": error_msg}), 400)
+        except Exception as err:
+            error_msg = str(err)
+            current_app.logger.error(f"Error parsing spec: {error_msg}", exc_info=True)
+            return make_response(jsonify({"success": False, "error": error_msg}), 500)

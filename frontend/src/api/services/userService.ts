@@ -84,6 +84,11 @@ const userService = {
     apiClient.post(endpoints.USER.UPDATE_TOOL, data, token),
   deleteTool: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.DELETE_TOOL, data, token),
+  parseSpec: (file: File, token: string | null): Promise<any> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiClient.postFormData(endpoints.USER.PARSE_SPEC, formData, token);
+  },
   getDocumentChunks: (
     docId: string,
     page: number,

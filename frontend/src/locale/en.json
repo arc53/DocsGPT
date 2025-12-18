@@ -162,6 +162,9 @@
       "authentication": "Authentication",
       "actions": "Actions",
       "addAction": "Add action",
+      "importSpec": "Import Spec",
+      "searchActions": "Search actions...",
+      "noActionsMatch": "No actions match your search",
       "actionAlreadyExists": "An action with this name already exists",
       "noActionsFound": "No actions found",
       "url": "URL",
@@ -443,6 +446,21 @@
       "generate": "Generate",
       "test": "Test",
       "learnMore": "Learn more"
+    },
+    "importSpec": {
+      "title": "Import API Specification",
+      "description": "Upload an OpenAPI 3.x or Swagger 2.0 specification file to automatically generate actions.",
+      "dropzoneText": "Click to upload or drag and drop",
+      "supportedFormats": "JSON or YAML format",
+      "invalidFileType": "Invalid file type. Please upload a JSON or YAML file.",
+      "parseError": "Failed to parse the specification. Please check the file format.",
+      "version": "Version",
+      "actionsFound": "{{count}} actions found",
+      "selectAll": "Select all",
+      "deselectAll": "Deselect all",
+      "cancel": "Cancel",
+      "parse": "Parse",
+      "import": "Import ({{count}})"
     }
   },
   "sharedConv": {

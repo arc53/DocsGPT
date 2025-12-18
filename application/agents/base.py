@@ -120,10 +120,10 @@ class BaseAgent(ABC):
                         params["properties"][k] = {
                             key: value
                             for key, value in v.items()
-                            if key != "filled_by_llm" and key != "value"
+                            if key not in ("filled_by_llm", "value", "required")
                         }
-
-                        params["required"].append(k)
+                        if v.get("required", False):
+                            params["required"].append(k)
         return params
 
     def _prepare_tools(self, tools_dict):
@@ -219,7 +219,11 @@ class BaseAgent(ABC):
         for param_type, target_dict in param_types.items():
             if param_type in action_data and action_data[param_type].get("properties"):
                 for param, details in action_data[param_type]["properties"].items():
-                    if param not in call_args and "value" in details:
+                    if (
+                        param not in call_args
+                        and "value" in details
+                        and details["value"]
+                    ):
                         target_dict[param] = details["value"]
         for param, value in call_args.items():
             for param_type, target_dict in param_types.items():
