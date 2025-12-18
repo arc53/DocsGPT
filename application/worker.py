@@ -960,17 +960,14 @@ def agent_webhook_worker(self, agent_id, payload):
         result = run_agent_logic(agent_config, input_data)
     except Exception as e:
         logging.error(f"Error running agent logic: {e}", exc_info=True)
-        self.update_state(state="PROGRESS", meta={"current": 100})
+        return {"status": "error"}
+    else:
         logging.info(
             f"Webhook processed for agent {agent_id}", extra={"agent_id": agent_id}
         )
-        return {"status": "error"}
-
-    self.update_state(state="PROGRESS", meta={"current": 100})
-    logging.info(
-        f"Webhook processed for agent {agent_id}", extra={"agent_id": agent_id}
-    )
-    return {"status": "success", "result": result}
+        return {"status": "success", "result": result}
+    finally:
+        self.update_state(state="PROGRESS", meta={"current": 100})
 
 
 def ingest_connector(
