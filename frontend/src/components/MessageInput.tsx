@@ -500,7 +500,7 @@ export default function MessageInput({
     return () => clearInterval(interval);
   }, [attachments, dispatch]);
 
-  const handleInput = () => {
+  const handleInput = useCallback(() => {
     if (inputRef.current) {
       if (window.innerWidth < 350) inputRef.current.style.height = 'auto';
       else inputRef.current.style.height = '64px';
@@ -509,12 +509,21 @@ export default function MessageInput({
         96,
       )}px`;
     }
-  };
+  }, []);
+
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
     handleInput();
-  }, [autoFocus]);
+  }, [autoFocus, handleInput]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value);
@@ -564,7 +573,11 @@ export default function MessageInput({
       setValue('');
       // Refocus input after submission if autoFocus is enabled
       if (autoFocus) {
-        setTimeout(() => inputRef.current?.focus(), 0);
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            inputRef.current?.focus();
+          }
+        }, 0);
       }
     }
   };
