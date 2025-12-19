@@ -11,7 +11,7 @@ ebooklib==0.20
 escodegen==1.0.11
 esprima==4.0.1
 esutils==1.0.1
-elevenlabs==2.26.1
+elevenlabs==2.27.0
 Flask==3.1.2
 faiss-cpu==1.13.1
 fastmcp==2.13.3
