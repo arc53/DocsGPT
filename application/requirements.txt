@@ -55,7 +55,7 @@ pathable==0.4.4
 pillow
 portalocker>=2.7.0,<3.0.0
 prance==25.4.8.0
-prompt-toolkit==3.0.51
+prompt-toolkit==3.0.52
 protobuf==6.33.2
 psycopg2-binary==2.9.11
 py==1.11.0
