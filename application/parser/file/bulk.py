@@ -10,29 +10,92 @@ from application.parser.file.epub_parser import EpubParser
 from application.parser.file.html_parser import HTMLParser
 from application.parser.file.markdown_parser import MarkdownParser
 from application.parser.file.rst_parser import RstParser
-from application.parser.file.tabular_parser import PandasCSVParser,ExcelParser
+from application.parser.file.tabular_parser import PandasCSVParser, ExcelParser
 from application.parser.file.json_parser import JSONParser
 from application.parser.file.pptx_parser import PPTXParser
 from application.parser.file.image_parser import ImageParser
 from application.parser.schema.base import Document
 from application.utils import num_tokens_from_string
 
-DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = {
-    ".pdf": PDFParser(),
-    ".docx": DocxParser(),
-    ".csv": PandasCSVParser(),
-    ".xlsx":ExcelParser(),
-    ".epub": EpubParser(),
-    ".md": MarkdownParser(),
-    ".rst": RstParser(),
-    ".html": HTMLParser(),
-    ".mdx": MarkdownParser(),
-    ".json":JSONParser(),
-    ".pptx":PPTXParser(),
-    ".png": ImageParser(),
-    ".jpg": ImageParser(),
-    ".jpeg": ImageParser(),
-}
+
+def get_default_file_extractor() -> Dict[str, BaseParser]:
+    """Get the default file extractor.
+
+    Uses docling parsers by default for advanced document processing.
+    Falls back to standard parsers if docling is not installed.
+    """
+    try:
+        from application.parser.file.docling_parser import (
+            DoclingPDFParser,
+            DoclingDocxParser,
+            DoclingPPTXParser,
+            DoclingXLSXParser,
+            DoclingHTMLParser,
+            DoclingImageParser,
+            DoclingCSVParser,
+            DoclingAsciiDocParser,
+            DoclingVTTParser,
+            DoclingXMLParser,
+        )
+        return {
+            # Documents
+            ".pdf": DoclingPDFParser(),
+            ".docx": DoclingDocxParser(),
+            ".pptx": DoclingPPTXParser(),
+            ".xlsx": DoclingXLSXParser(),
+            # Web formats
+            ".html": DoclingHTMLParser(),
+            ".xhtml": DoclingHTMLParser(),
+            # Data formats
+            ".csv": DoclingCSVParser(),
+            ".json": JSONParser(),  # Keep JSON parser (specialized handling)
+            # Text/markup formats
+            ".md": MarkdownParser(),  # Keep markdown parser (specialized handling)
+            ".mdx": MarkdownParser(),
+            ".rst": RstParser(),
+            ".adoc": DoclingAsciiDocParser(),
+            ".asciidoc": DoclingAsciiDocParser(),
+            # Images (with OCR)
+            ".png": DoclingImageParser(),
+            ".jpg": DoclingImageParser(),
+            ".jpeg": DoclingImageParser(),
+            ".tiff": DoclingImageParser(),
+            ".tif": DoclingImageParser(),
+            ".bmp": DoclingImageParser(),
+            ".webp": DoclingImageParser(),
+            # Media/subtitles
+            ".vtt": DoclingVTTParser(),
+            # Specialized XML formats
+            ".xml": DoclingXMLParser(),
+            # Formats docling doesn't support - use standard parsers
+            ".epub": EpubParser(),
+        }
+    except ImportError:
+        logging.warning(
+            "docling is not installed. Using standard parsers. "
+            "For advanced document parsing, install with: pip install docling"
+        )
+        # Fallback to standard parsers
+        return {
+            ".pdf": PDFParser(),
+            ".docx": DocxParser(),
+            ".csv": PandasCSVParser(),
+            ".xlsx": ExcelParser(),
+            ".epub": EpubParser(),
+            ".md": MarkdownParser(),
+            ".rst": RstParser(),
+            ".html": HTMLParser(),
+            ".mdx": MarkdownParser(),
+            ".json": JSONParser(),
+            ".pptx": PPTXParser(),
+            ".png": ImageParser(),
+            ".jpg": ImageParser(),
+            ".jpeg": ImageParser(),
+        }
+
+
+# For backwards compatibility
+DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = get_default_file_extractor()
 
 
 class SimpleDirectoryReader(BaseReader):
