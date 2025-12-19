@@ -514,7 +514,7 @@ export default function MessageInput({
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
     handleInput();
-  }, []);
+  }, [autoFocus]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value);
@@ -525,10 +525,7 @@ export default function MessageInput({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
-      if (inputRef.current) {
-        inputRef.current.value = '';
-        handleInput();
-      }
+      handleInput();
     }
   };
 
@@ -565,6 +562,10 @@ export default function MessageInput({
     if (value.trim() && !loading) {
       onSubmit(value);
       setValue('');
+      // Refocus input after submission if autoFocus is enabled
+      if (autoFocus) {
+        setTimeout(() => inputRef.current?.focus(), 0);
+      }
     }
   };
 

@@ -311,7 +311,8 @@ const Message = styled.div<{ type: MESSAGE_TYPE }>`
     line-height: 1.5;
     padding: 12px;
     border-radius: 6px;
-     overflow-wrap: break-word; 
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
 `;
 const Markdown = styled.div`
  pre {
