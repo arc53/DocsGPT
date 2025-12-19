@@ -175,6 +175,20 @@ The `ToolManager` should be able to load it when DocsGPT starts.
     - Validate and sanitize any inputs, especially if they are used to construct database queries or shell commands, to prevent injection attacks.
 - **Performance:** Consider the performance implications of your tool's actions. If an action is slow, it will impact the user experience. Optimize where possible.
 
+### Networking & Proxy Support
+
+If your custom tool makes outgoing HTTP requests (e.g., via `requests`), you can support proxies consistently with built-in tools:
+
+- Accept an optional `proxy` in your tool `config` (e.g., `self.proxy = config.get("proxy") or os.environ.get("API_TOOL_PROXY")`).
+- Pass it to `requests` using the `proxies` argument:
+
+```python
+proxies = {"http": self.proxy, "https": self.proxy} if self.proxy else None
+response = requests.get(url, headers=headers, params=params, proxies=proxies)
+```
+
+If neither is set, requests go directly. Using the shared `API_TOOL_PROXY` env var keeps behavior consistent across tools.
+
 ## (Optional) Contributing Your Tool
 
 If you develop a custom tool that you believe could be valuable to the broader DocsGPT community and is general-purpose:
