@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-
+import ExternalLinkIcon from '../assets/external-link.svg';
 import { Agent } from '../agents/types';
 import userService from '../api/services/userService';
 import CopyButton from '../components/CopyButton';
@@ -123,7 +123,7 @@ export default function AgentDetailsModal({
                     {t('modals.agentDetails.learnMore')}
                   </span>
                   <img
-                    src="/src/assets/external-link.svg"
+                    src={ExternalLinkIcon}
                     alt="External link"
                     className="h-3 w-3"
                   />
@@ -168,7 +168,7 @@ export default function AgentDetailsModal({
                     >
                       {t('modals.agentDetails.test')}
                       <img
-                        src="/src/assets/external-link.svg"
+                        src={ExternalLinkIcon}
                         alt="External link"
                         className="h-3 w-3 group-hover:brightness-0 group-hover:invert"
                       />
@@ -210,7 +210,7 @@ export default function AgentDetailsModal({
                     {t('modals.agentDetails.learnMore')}
                   </span>
                   <img
-                    src="/src/assets/external-link.svg"
+                    src={ExternalLinkIcon}
                     alt="External link"
                     className="h-3 w-3"
                   />
