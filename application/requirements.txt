@@ -38,7 +38,7 @@ langchain-text-splitters==1.0.0
 langsmith==0.4.58
 lazy-object-proxy==1.12.0
 lxml==6.0.2
-markupsafe==3.0.2
+markupsafe==3.0.3
 marshmallow==3.26.1
 mpmath==1.3.0
 multidict==6.7.0
