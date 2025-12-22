@@ -76,7 +76,12 @@ class UploadFile(Resource):
                     temp_file_path = os.path.join(temp_dir, safe_file)
                     file.save(temp_file_path)
 
-                    if zipfile.is_zipfile(temp_file_path):
+                    # Only extract actual .zip files, not Office formats (.docx, .xlsx, .pptx)
+                    # which are technically zip archives but should be processed as-is
+                    is_office_format = safe_file.lower().endswith(
+                        (".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub")
+                    )
+                    if zipfile.is_zipfile(temp_file_path) and not is_office_format:
                         try:
                             with zipfile.ZipFile(temp_file_path, "r") as zip_ref:
                                 zip_ref.extractall(path=temp_dir)

@@ -146,7 +146,10 @@ class SimpleDirectoryReader(BaseReader):
 
         self.recursive = recursive
         self.exclude_hidden = exclude_hidden
-        self.required_exts = required_exts
+        # Normalize extensions to lowercase for case-insensitive matching
+        self.required_exts = (
+            [ext.lower() for ext in required_exts] if required_exts else None
+        )
         self.num_files_limit = num_files_limit
 
         if input_files:
@@ -175,7 +178,7 @@ class SimpleDirectoryReader(BaseReader):
                 continue
             elif (
                     self.required_exts is not None
-                    and input_file.suffix not in self.required_exts
+                    and input_file.suffix.lower() not in self.required_exts
             ):
                 continue
             else:
@@ -212,8 +215,9 @@ class SimpleDirectoryReader(BaseReader):
         self.file_token_counts = {}
         
         for input_file in self.input_files:
-            if input_file.suffix in self.file_extractor:
-                parser = self.file_extractor[input_file.suffix]
+            suffix_lower = input_file.suffix.lower()
+            if suffix_lower in self.file_extractor:
+                parser = self.file_extractor[suffix_lower]
                 if not parser.parser_config_set:
                     parser.init_parser()
                 data = parser.parse_file(input_file, errors=self.errors)
@@ -295,7 +299,7 @@ class SimpleDirectoryReader(BaseReader):
                     if subtree:
                         result[item.name] = subtree
                 else:
-                    if self.required_exts is not None and item.suffix not in self.required_exts:
+                    if self.required_exts is not None and item.suffix.lower() not in self.required_exts:
                         continue
                     
                     full_path = str(item.resolve())
