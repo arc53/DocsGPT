@@ -42,7 +42,7 @@ markupsafe==3.0.2
 marshmallow==3.26.1
 mpmath==1.3.0
 multidict==6.7.0
-mypy-extensions==1.0.0
+mypy-extensions==1.1.0
 networkx==3.6.1
 numpy==2.2.1
 openai==2.9.0
