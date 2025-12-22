@@ -137,6 +137,27 @@ const userService = {
       token,
     );
   },
+  getAgentFolders: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.AGENT_FOLDERS, token),
+  createAgentFolder: (
+    data: { name: string; parent_id?: string },
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.post(endpoints.USER.AGENT_FOLDERS, data, token),
+  getAgentFolder: (id: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.AGENT_FOLDER(id), token),
+  updateAgentFolder: (
+    id: string,
+    data: { name?: string; parent_id?: string },
+    token: string | null,
+  ): Promise<any> => apiClient.put(endpoints.USER.AGENT_FOLDER(id), data, token),
+  deleteAgentFolder: (id: string, token: string | null): Promise<any> =>
+    apiClient.delete(endpoints.USER.AGENT_FOLDER(id), token),
+  moveAgentToFolder: (
+    data: { agent_id: string; folder_id?: string | null },
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.post(endpoints.USER.MOVE_AGENT_TO_FOLDER, data, token),
 };
 
 export default userService;

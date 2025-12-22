@@ -629,7 +629,20 @@
     "preview": {
       "testMessage": "Teste deinen Agenten hier. Veröffentlichte Agenten können in Konversationen verwendet werden."
     },
-    "deleteConfirmation": "Bist du sicher, dass du diesen Agenten löschen möchtest?"
+    "deleteConfirmation": "Bist du sicher, dass du diesen Agenten löschen möchtest?",
+    "folders": {
+      "newFolder": "Neuer Ordner",
+      "createFolder": "Ordner erstellen",
+      "folderName": "Ordnername",
+      "rename": "Umbenennen",
+      "delete": "Löschen",
+      "deleteConfirm": "Bist du sicher, dass du diesen Ordner löschen möchtest? Agenten im Ordner werden verschoben.",
+      "empty": "Dieser Ordner ist leer",
+      "moveToFolder": "In Ordner verschieben",
+      "moveTo": "Verschieben",
+      "move": "Verschieben",
+      "noFolder": "Kein Ordner (Stammverzeichnis)"
+    }
   },
   "components": {
     "fileUpload": {

@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import userService from '../../api/services/userService';
 import {
   selectToken,
+  setAgentFolders,
   setAgents,
   setSharedAgents,
   setTemplateAgents,
@@ -13,6 +14,7 @@ import { AgentSectionId } from '../agents.config';
 interface UseAgentsFetchResult {
   isLoading: Record<AgentSectionId, boolean>;
   isAllLoaded: boolean;
+  refetchFolders: () => Promise<void>;
 }
 
 export function useAgentsFetch(): UseAgentsFetchResult {
@@ -64,14 +66,26 @@ export function useAgentsFetch(): UseAgentsFetchResult {
     }
   }, [token, dispatch]);
 
+  const fetchFolders = useCallback(async () => {
+    try {
+      const response = await userService.getAgentFolders(token);
+      if (!response.ok) throw new Error('Failed to fetch folders');
+      const data = await response.json();
+      dispatch(setAgentFolders(data.folders || []));
+    } catch (error) {
+      dispatch(setAgentFolders([]));
+    }
+  }, [token, dispatch]);
+
   useEffect(() => {
     setIsLoading({ template: true, user: true, shared: true });
     Promise.all([
       fetchTemplateAgents(),
       fetchUserAgents(),
       fetchSharedAgents(),
+      fetchFolders(),
     ]);
-  }, [fetchTemplateAgents, fetchUserAgents, fetchSharedAgents]);
+  }, [fetchTemplateAgents, fetchUserAgents, fetchSharedAgents, fetchFolders]);
 
   const isAllLoaded =
     !isLoading.template && !isLoading.user && !isLoading.shared;
@@ -79,5 +93,6 @@ export function useAgentsFetch(): UseAgentsFetchResult {
   return {
     isLoading,
     isAllLoaded,
+    refetchFolders: fetchFolders,
   };
 }

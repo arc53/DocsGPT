@@ -629,7 +629,20 @@
     "preview": {
       "testMessage": "Test your agent here. Published agents can be used in conversations."
     },
-    "deleteConfirmation": "Are you sure you want to delete this agent?"
+    "deleteConfirmation": "Are you sure you want to delete this agent?",
+    "folders": {
+      "newFolder": "New Folder",
+      "createFolder": "Create Folder",
+      "folderName": "Folder name",
+      "rename": "Rename",
+      "delete": "Delete",
+      "deleteConfirm": "Are you sure you want to delete this folder? Agents inside will be moved out of the folder.",
+      "empty": "This folder is empty",
+      "moveToFolder": "Move to folder",
+      "moveTo": "Move",
+      "move": "Move",
+      "noFolder": "No folder (root)"
+    }
   },
   "components": {
     "fileUpload": {

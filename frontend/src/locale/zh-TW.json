@@ -629,7 +629,20 @@
     "preview": {
       "testMessage": "在此測試您的代理。已發佈的代理可以在對話中使用。"
     },
-    "deleteConfirmation": "您確定要刪除此代理嗎？"
+    "deleteConfirmation": "您確定要刪除此代理嗎？",
+    "folders": {
+      "newFolder": "新建資料夾",
+      "createFolder": "建立資料夾",
+      "folderName": "資料夾名稱",
+      "rename": "重新命名",
+      "delete": "刪除",
+      "deleteConfirm": "確定要刪除此資料夾嗎？資料夾中的代理將被移出。",
+      "empty": "此資料夾為空",
+      "moveToFolder": "移動到資料夾",
+      "moveTo": "移動",
+      "move": "移動",
+      "noFolder": "無資料夾 (根目錄)"
+    }
   },
   "components": {
     "fileUpload": {

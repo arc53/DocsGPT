@@ -5,7 +5,7 @@ import {
   PayloadAction,
 } from '@reduxjs/toolkit';
 
-import { Agent } from '../agents/types';
+import { Agent, AgentFolder } from '../agents/types';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import { RootState } from '../store';
 import {
@@ -37,6 +37,7 @@ export interface Preference {
   selectedModel: Model | null;
   availableModels: Model[];
   modelsLoading: boolean;
+  agentFolders: AgentFolder[] | null;
 }
 
 const initialState: Preference = {
@@ -73,6 +74,7 @@ const initialState: Preference = {
   selectedModel: null,
   availableModels: [],
   modelsLoading: false,
+  agentFolders: null,
 };
 
 export const prefSlice = createSlice({
@@ -130,6 +132,9 @@ export const prefSlice = createSlice({
     setModelsLoading: (state, action: PayloadAction<boolean>) => {
       state.modelsLoading = action.payload;
     },
+    setAgentFolders: (state, action: PayloadAction<AgentFolder[] | null>) => {
+      state.agentFolders = action.payload;
+    },
   },
 });
 
@@ -151,6 +156,7 @@ export const {
   setSelectedModel,
   setAvailableModels,
   setModelsLoading,
+  setAgentFolders,
 } = prefSlice.actions;
 export default prefSlice.reducer;
 
@@ -278,3 +284,5 @@ export const selectAvailableModels = (state: RootState) =>
   state.preference.availableModels;
 export const selectModelsLoading = (state: RootState) =>
   state.preference.modelsLoading;
+export const selectAgentFolders = (state: RootState) =>
+  state.preference.agentFolders;

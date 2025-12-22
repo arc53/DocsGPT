@@ -629,7 +629,20 @@
     "preview": {
       "testMessage": "在此测试您的代理。已发布的代理可以在对话中使用。"
     },
-    "deleteConfirmation": "您确定要删除此代理吗？"
+    "deleteConfirmation": "您确定要删除此代理吗？",
+    "folders": {
+      "newFolder": "新建文件夹",
+      "createFolder": "创建文件夹",
+      "folderName": "文件夹名称",
+      "rename": "重命名",
+      "delete": "删除",
+      "deleteConfirm": "确定要删除此文件夹吗？文件夹中的代理将被移出。",
+      "empty": "此文件夹为空",
+      "moveToFolder": "移动到文件夹",
+      "moveTo": "移动",
+      "move": "移动",
+      "noFolder": "无文件夹 (根目录)"
+    }
   },
   "components": {
     "fileUpload": {

@@ -1,23 +1,30 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
+import userService from '../api/services/userService';
 import Search from '../assets/search.svg';
 import Spinner from '../components/Spinner';
 import {
   setConversation,
   updateConversationId,
 } from '../conversation/conversationSlice';
+import FolderNameModal from '../modals/FolderManagementModal';
+import { ActiveState } from '../models/misc';
 import {
+  selectAgentFolders,
   selectSelectedAgent,
+  selectToken,
+  setAgentFolders,
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import AgentCard from './AgentCard';
 import { AgentSectionId, agentSectionsConfig } from './agents.config';
+import FolderCard from './FolderCard';
 import { AgentFilterTab, useAgentSearch } from './hooks/useAgentSearch';
 import { useAgentsFetch } from './hooks/useAgentsFetch';
-import { Agent } from './types';
+import { Agent, AgentFolder } from './types';
 
 const FILTER_TABS: { id: AgentFilterTab; labelKey: string }[] = [
   { id: 'all', labelKey: 'agents.filters.all' },
@@ -29,9 +36,12 @@ const FILTER_TABS: { id: AgentFilterTab; labelKey: string }[] = [
 export default function AgentsList() {
   const { t } = useTranslation();
   const dispatch = useDispatch();
+  const token = useSelector(selectToken);
   const selectedAgent = useSelector(selectSelectedAgent);
+  const folders = useSelector(selectAgentFolders);
+  const [folderModalState, setFolderModalState] = useState<ActiveState>('INACTIVE');
 
-  const { isLoading } = useAgentsFetch();
+  const { isLoading, refetchFolders } = useAgentsFetch();
 
   const {
     searchQuery,
@@ -54,6 +64,54 @@ export default function AgentsList() {
     );
     if (selectedAgent) dispatch(setSelectedAgent(null));
   }, []);
+
+  const handleCreateFolder = useCallback(
+    async (name: string) => {
+      const response = await userService.createAgentFolder({ name }, token);
+      if (response.ok) {
+        await refetchFolders();
+        return true;
+      }
+      return false;
+    },
+    [token, refetchFolders],
+  );
+
+  const handleDeleteFolder = useCallback(
+    async (folderId: string) => {
+      const response = await userService.deleteAgentFolder(folderId, token);
+      if (response.ok) {
+        await refetchFolders();
+        return true;
+      }
+      return false;
+    },
+    [token, refetchFolders],
+  );
+
+  const handleRenameFolder = useCallback(
+    async (folderId: string, newName: string) => {
+      const response = await userService.updateAgentFolder(
+        folderId,
+        { name: newName },
+        token,
+      );
+      if (response.ok) {
+        dispatch(
+          setAgentFolders(
+            (folders || []).map((f) =>
+              f.id === folderId ? { ...f, name: newName } : f,
+            ),
+          ),
+        );
+      }
+    },
+    [token, folders, dispatch],
+  );
+
+  const handleSubmitNewFolder = async (name: string) => {
+    await handleCreateFolder(name);
+  };
 
   const visibleSections = agentSectionsConfig.filter((config) => {
     if (activeFilter !== 'all') {
@@ -129,6 +187,12 @@ export default function AgentsList() {
           searchQuery={searchQuery}
           isFilteredView={activeFilter !== 'all'}
           isLoading={isLoading[sectionConfig.id as AgentSectionId]}
+          folders={sectionConfig.id === 'user' ? folders : null}
+          folderModalState={sectionConfig.id === 'user' ? folderModalState : 'INACTIVE'}
+          setFolderModalState={setFolderModalState}
+          onCreateFolder={handleSubmitNewFolder}
+          onDeleteFolder={handleDeleteFolder}
+          onRenameFolder={handleRenameFolder}
         />
       ))}
 
@@ -138,6 +202,13 @@ export default function AgentsList() {
           <p className="text-sm">{t('agents.tryDifferentSearch')}</p>
         </div>
       )}
+
+      <FolderNameModal
+        modalState={folderModalState}
+        setModalState={setFolderModalState}
+        mode="create"
+        onSubmit={handleSubmitNewFolder}
+      />
     </div>
   );
 }
@@ -149,6 +220,12 @@ interface AgentSectionProps {
   searchQuery: string;
   isFilteredView: boolean;
   isLoading: boolean;
+  folders: AgentFolder[] | null;
+  folderModalState: ActiveState;
+  setFolderModalState: (state: ActiveState) => void;
+  onCreateFolder: (name: string) => void;
+  onDeleteFolder: (id: string) => Promise<boolean>;
+  onRenameFolder: (id: string, name: string) => void;
 }
 
 function AgentSection({
@@ -158,14 +235,32 @@ function AgentSection({
   searchQuery,
   isFilteredView,
   isLoading,
+  folders,
+  setFolderModalState,
+  onDeleteFolder,
+  onRenameFolder,
 }: AgentSectionProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const allAgents = useSelector(config.selectData);
+  const [expandedFolderId, setExpandedFolderId] = useState<string | null>(null);
 
   const updateAgents = (updatedAgents: Agent[]) => {
     dispatch(config.updateAction(updatedAgents));
+  };
+
+  const unfolderedAgents = useMemo(() => {
+    if (config.id !== 'user' || !folders) return filteredAgents;
+    return filteredAgents.filter((a) => !a.folder_id);
+  }, [filteredAgents, folders, config.id]);
+
+  const getAgentsForFolder = (folderId: string) => {
+    return filteredAgents.filter((a) => a.folder_id === folderId);
+  };
+
+  const handleToggleExpand = (folderId: string) => {
+    setExpandedFolderId((prev) => (prev === folderId ? null : folderId));
   };
 
   const hasNoAgentsAtAll = !isLoading && totalAgents === 0;
@@ -208,45 +303,103 @@ function AgentSection({
             {t(`agents.sections.${config.id}.description`)}
           </p>
         </div>
-        {config.showNewAgentButton && (
-          <button
-            className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-4 py-2 text-sm text-white"
-            onClick={() => navigate('/agents/new')}
-          >
-            {t('agents.newAgent')}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {config.id === 'user' && (
+            <button
+              className="rounded-full border border-[#E5E5E5] bg-white px-4 py-2 text-sm text-[#18181B] hover:bg-[#F5F5F5] dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white dark:hover:bg-[#383838]"
+              onClick={() => setFolderModalState('ACTIVE')}
+            >
+              {t('agents.folders.newFolder')}
+            </button>
+          )}
+          {config.showNewAgentButton && (
+            <button
+              className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-4 py-2 text-sm text-white"
+              onClick={() => navigate('/agents/new')}
+            >
+              {t('agents.newAgent')}
+            </button>
+          )}
+        </div>
       </div>
-      <div>
+
+      <div className="flex flex-col gap-4">
         {isLoading ? (
           <div className="flex h-40 w-full items-center justify-center">
             <Spinner />
           </div>
-        ) : filteredAgents.length > 0 ? (
-          <div className="grid grid-cols-1 gap-4 sm:flex sm:flex-wrap">
-            {filteredAgents.map((agent) => (
-              <AgentCard
-                key={agent.id}
-                agent={agent}
-                agents={allAgents || []}
-                updateAgents={updateAgents}
-                section={config.id}
-              />
-            ))}
-          </div>
-        ) : hasNoAgentsAtAll ? (
-          <div className="flex h-40 w-full flex-col items-center justify-center gap-3 text-[#71717A]">
-            <p>{t(`agents.sections.${config.id}.emptyState`)}</p>
-            {config.showNewAgentButton && (
-              <button
-                className="bg-purple-30 hover:bg-violets-are-blue ml-2 rounded-full px-4 py-2 text-sm text-white"
-                onClick={() => navigate('/agents/new')}
-              >
-                {t('agents.newAgent')}
-              </button>
+        ) : (
+          <>
+            {config.id === 'user' && folders && folders.length > 0 && (
+              <div className="flex flex-wrap gap-3">
+                {folders.map((folder) => (
+                  <FolderCard
+                    key={folder.id}
+                    folder={folder}
+                    agentCount={getAgentsForFolder(folder.id).length}
+                    onDelete={onDeleteFolder}
+                    onRename={onRenameFolder}
+                    isExpanded={expandedFolderId === folder.id}
+                    onToggleExpand={handleToggleExpand}
+                  />
+                ))}
+              </div>
             )}
-          </div>
-        ) : null}
+
+            {config.id === 'user' &&
+              expandedFolderId &&
+              folders?.find((f) => f.id === expandedFolderId) && (
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm text-[#71717A]">
+                    {folders.find((f) => f.id === expandedFolderId)?.name}
+                  </p>
+                  {getAgentsForFolder(expandedFolderId).length > 0 ? (
+                    <div className="grid grid-cols-1 gap-4 sm:flex sm:flex-wrap">
+                      {getAgentsForFolder(expandedFolderId).map((agent) => (
+                        <AgentCard
+                          key={agent.id}
+                          agent={agent}
+                          agents={allAgents || []}
+                          updateAgents={updateAgents}
+                          section="user"
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-[#71717A]">
+                      {t('agents.folders.empty')}
+                    </p>
+                  )}
+                </div>
+              )}
+
+            {unfolderedAgents.length > 0 ? (
+              <div className="grid grid-cols-1 gap-4 sm:flex sm:flex-wrap">
+                {unfolderedAgents.map((agent) => (
+                  <AgentCard
+                    key={agent.id}
+                    agent={agent}
+                    agents={allAgents || []}
+                    updateAgents={updateAgents}
+                    section={config.id}
+                  />
+                ))}
+              </div>
+            ) : hasNoAgentsAtAll && (!folders || folders.length === 0) ? (
+              <div className="flex h-40 w-full flex-col items-center justify-center gap-3 text-[#71717A]">
+                <p>{t(`agents.sections.${config.id}.emptyState`)}</p>
+                {config.showNewAgentButton && (
+                  <button
+                    className="bg-purple-30 hover:bg-violets-are-blue ml-2 rounded-full px-4 py-2 text-sm text-white"
+                    onClick={() => navigate('/agents/new')}
+                  >
+                    {t('agents.newAgent')}
+                  </button>
+                )}
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   );
