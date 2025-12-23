@@ -7,7 +7,7 @@ dataclasses-json==0.6.7
 docling>=2.16.0
 rapidocr>=1.4.0
 onnxruntime>=1.19.0
-docx2txt==0.8
+docx2txt==0.9
 duckduckgo-search==8.1.1
 ebooklib==0.20
 escodegen==1.0.11
