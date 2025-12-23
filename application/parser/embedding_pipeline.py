@@ -65,6 +65,10 @@ def embed_and_store_documents(docs: List[Any], folder_name: str, source_id: str,
     if not os.path.exists(folder_name):
         os.makedirs(folder_name)
 
+    # Validate docs is not empty
+    if not docs:
+        raise ValueError("No documents to embed - check file format and extension")
+
     # Initialize vector store
     if settings.VECTOR_STORE == "faiss":
         docs_init = [docs.pop(0)]
