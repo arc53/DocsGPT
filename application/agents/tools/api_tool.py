@@ -14,6 +14,8 @@ from application.agents.tools.base import Tool
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_TIMEOUT = 90  # seconds
+
 
 class APITool(Tool):
     """
@@ -117,40 +119,40 @@ class APITool(Tool):
 
             if method.upper() == "GET":
                 response = requests.get(
-                    request_url, headers=request_headers, timeout=30
+                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
                 )
             elif method.upper() == "POST":
                 response = requests.post(
                     request_url,
                     data=serialized_body,
                     headers=request_headers,
-                    timeout=30,
+                    timeout=DEFAULT_TIMEOUT,
                 )
             elif method.upper() == "PUT":
                 response = requests.put(
                     request_url,
                     data=serialized_body,
                     headers=request_headers,
-                    timeout=30,
+                    timeout=DEFAULT_TIMEOUT,
                 )
             elif method.upper() == "DELETE":
                 response = requests.delete(
-                    request_url, headers=request_headers, timeout=30
+                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
                 )
             elif method.upper() == "PATCH":
                 response = requests.patch(
                     request_url,
                     data=serialized_body,
                     headers=request_headers,
-                    timeout=30,
+                    timeout=DEFAULT_TIMEOUT,
                 )
             elif method.upper() == "HEAD":
                 response = requests.head(
-                    request_url, headers=request_headers, timeout=30
+                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
                 )
             elif method.upper() == "OPTIONS":
                 response = requests.options(
-                    request_url, headers=request_headers, timeout=30
+                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
                 )
             else:
                 return {
@@ -171,7 +173,7 @@ class APITool(Tool):
             logger.error(f"Request timeout for {request_url}")
             return {
                 "status_code": None,
-                "message": "Request timeout (30s exceeded)",
+                "message": f"Request timeout ({DEFAULT_TIMEOUT}s exceeded)",
                 "data": None,
             }
         except requests.exceptions.ConnectionError as e:
