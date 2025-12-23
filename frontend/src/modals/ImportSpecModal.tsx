@@ -54,6 +54,7 @@ export default function ImportSpecModal({
   const [selectedActions, setSelectedActions] = useState<Set<number>>(
     new Set(),
   );
+  const [baseUrl, setBaseUrl] = useState<string>('');
 
   const handleClose = () => {
     setModalState('INACTIVE');
@@ -62,6 +63,7 @@ export default function ImportSpecModal({
     setError(null);
     setParsedResult(null);
     setSelectedActions(new Set());
+    setBaseUrl('');
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -104,6 +106,7 @@ export default function ImportSpecModal({
       const result = await response.json();
       if (result.success) {
         setParsedResult(result);
+        setBaseUrl(result.metadata.base_url || '');
         setSelectedActions(
           new Set<number>(
             result.actions.map((_: APIActionType, i: number) => i),
@@ -144,9 +147,12 @@ export default function ImportSpecModal({
 
   const handleImport = () => {
     if (!parsedResult) return;
-    const actionsToImport = parsedResult.actions.filter((_, i) =>
-      selectedActions.has(i),
-    );
+    const actionsToImport = parsedResult.actions
+      .filter((_, i) => selectedActions.has(i))
+      .map((action) => ({
+        ...action,
+        url: action.url.replace(parsedResult.metadata.base_url, baseUrl.trim()),
+      }));
     onImport(actionsToImport);
     handleClose();
   };
@@ -211,9 +217,22 @@ export default function ImportSpecModal({
               )}
               <p className="mt-2 text-xs text-gray-500">
                 {t('modals.importSpec.version')}:{' '}
-                {parsedResult.metadata.version} | Base URL:{' '}
-                {parsedResult.metadata.base_url || 'N/A'}
+                {parsedResult.metadata.version}
               </p>
+              <div className="mt-3">
+                <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
+                  {t('modals.importSpec.baseUrl')}
+                </label>
+                <input
+                  type="text"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  className="border-silver dark:border-silver/40 text-jet dark:text-bright-gray w-full rounded-lg border bg-white px-3 py-2 text-sm outline-hidden dark:bg-[#2C2C2C]"
+                  placeholder={
+                    parsedResult.metadata.base_url || 'https://api.example.com'
+                  }
+                />
+              </div>
             </div>
 
             <div className="flex items-center justify-between px-1">

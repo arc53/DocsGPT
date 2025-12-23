@@ -455,6 +455,7 @@
       "invalidFileType": "Invalid file type. Please upload a JSON or YAML file.",
       "parseError": "Failed to parse the specification. Please check the file format.",
       "version": "Version",
+      "baseUrl": "Base URL",
       "actionsFound": "{{count}} actions found",
       "selectAll": "Select all",
       "deselectAll": "Deselect all",
