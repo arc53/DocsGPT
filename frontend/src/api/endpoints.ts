@@ -40,6 +40,7 @@ const endpoints = {
     UPDATE_TOOL_STATUS: '/api/update_tool_status',
     UPDATE_TOOL: '/api/update_tool',
     DELETE_TOOL: '/api/delete_tool',
+    PARSE_SPEC: '/api/parse_spec',
     SYNC_CONNECTOR: '/api/connectors/sync',
     GET_CHUNKS: (
       docId: string,
