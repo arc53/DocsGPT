@@ -16,6 +16,7 @@ from application.parser.file.pptx_parser import PPTXParser
 from application.parser.file.image_parser import ImageParser
 from application.parser.schema.base import Document
 from application.utils import num_tokens_from_string
+from application.core.settings import settings
 
 
 def get_default_file_extractor() -> Dict[str, BaseParser]:
@@ -37,9 +38,10 @@ def get_default_file_extractor() -> Dict[str, BaseParser]:
             DoclingVTTParser,
             DoclingXMLParser,
         )
+        ocr_enabled = settings.DOCLING_OCR_ENABLED
         return {
             # Documents
-            ".pdf": DoclingPDFParser(),
+            ".pdf": DoclingPDFParser(ocr_enabled=ocr_enabled),
             ".docx": DoclingDocxParser(),
             ".pptx": DoclingPPTXParser(),
             ".xlsx": DoclingXLSXParser(),
@@ -56,13 +58,13 @@ def get_default_file_extractor() -> Dict[str, BaseParser]:
             ".adoc": DoclingAsciiDocParser(),
             ".asciidoc": DoclingAsciiDocParser(),
             # Images (with OCR)
-            ".png": DoclingImageParser(),
-            ".jpg": DoclingImageParser(),
-            ".jpeg": DoclingImageParser(),
-            ".tiff": DoclingImageParser(),
-            ".tif": DoclingImageParser(),
-            ".bmp": DoclingImageParser(),
-            ".webp": DoclingImageParser(),
+            ".png": DoclingImageParser(ocr_enabled=ocr_enabled),
+            ".jpg": DoclingImageParser(ocr_enabled=ocr_enabled),
+            ".jpeg": DoclingImageParser(ocr_enabled=ocr_enabled),
+            ".tiff": DoclingImageParser(ocr_enabled=ocr_enabled),
+            ".tif": DoclingImageParser(ocr_enabled=ocr_enabled),
+            ".bmp": DoclingImageParser(ocr_enabled=ocr_enabled),
+            ".webp": DoclingImageParser(ocr_enabled=ocr_enabled),
             # Media/subtitles
             ".vtt": DoclingVTTParser(),
             # Specialized XML formats

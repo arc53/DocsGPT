@@ -14,9 +14,6 @@ from application.parser.file.base_parser import BaseParser
 
 logger = logging.getLogger(__name__)
 
-# Minimum content length to consider a PDF as having extractable text
-MIN_CONTENT_LENGTH = 100
-
 
 class DoclingParser(BaseParser):
     """Parser using docling for advanced document processing.
@@ -28,6 +25,10 @@ class DoclingParser(BaseParser):
     - OCR for scanned documents (supports RapidOCR)
     - Unified DoclingDocument format
     - Export to Markdown
+
+    Uses hybrid OCR approach by default:
+    - Text regions: Direct PDF text extraction (fast)
+    - Bitmap/image regions: OCR only these areas (smart)
     """
 
     def __init__(
@@ -38,18 +39,16 @@ class DoclingParser(BaseParser):
         use_rapidocr: bool = True,
         ocr_languages: Optional[List[str]] = None,
         force_full_page_ocr: bool = False,
-        ocr_on_empty_only: bool = True,
     ):
         """Initialize DoclingParser.
 
         Args:
-            ocr_enabled: Enable OCR for scanned documents/images
+            ocr_enabled: Enable OCR for bitmap/image regions in documents
             table_structure: Enable table structure recognition
             export_format: Output format ('markdown', 'text', 'html')
             use_rapidocr: Use RapidOCR engine (default True, works well in Docker)
             ocr_languages: List of OCR languages (default: ['english'])
-            force_full_page_ocr: Force OCR on entire page regardless of content
-            ocr_on_empty_only: Only use OCR if initial parsing returns empty/minimal content
+            force_full_page_ocr: Force OCR on entire page (False = smart hybrid OCR)
         """
         super().__init__()
         self.ocr_enabled = ocr_enabled
@@ -58,32 +57,36 @@ class DoclingParser(BaseParser):
         self.use_rapidocr = use_rapidocr
         self.ocr_languages = ocr_languages or ["english"]
         self.force_full_page_ocr = force_full_page_ocr
-        self.ocr_on_empty_only = ocr_on_empty_only
         self._converter = None
-        self._converter_with_ocr = None
 
-    def _create_converter(self, with_ocr: bool = False):
-        """Create a docling converter with specified OCR setting.
+    def _create_converter(self):
+        """Create a docling converter with hybrid OCR configuration.
 
-        Args:
-            with_ocr: Whether to enable OCR in the converter
+        Uses smart OCR approach:
+        - When ocr_enabled=True and force_full_page_ocr=False (default):
+          Layout model detects text vs bitmap regions, OCR only runs on bitmaps
+        - When ocr_enabled=True and force_full_page_ocr=True:
+          OCR runs on entire page (for scanned documents/images)
+        - When ocr_enabled=False:
+          No OCR, only native text extraction
 
         Returns:
             DocumentConverter instance
         """
         from docling.document_converter import (
             DocumentConverter,
+            ImageFormatOption,
             InputFormat,
             PdfFormatOption,
         )
         from docling.datamodel.pipeline_options import PdfPipelineOptions
 
         pipeline_options = PdfPipelineOptions(
-            do_ocr=with_ocr,
+            do_ocr=self.ocr_enabled,
             do_table_structure=self.table_structure,
         )
 
-        if with_ocr:
+        if self.ocr_enabled:
             ocr_options = self._get_ocr_options()
             if ocr_options is not None:
                 pipeline_options.ocr_options = ocr_options
@@ -93,14 +96,17 @@ class DoclingParser(BaseParser):
                 InputFormat.PDF: PdfFormatOption(
                     pipeline_options=pipeline_options,
                 ),
+                InputFormat.IMAGE: ImageFormatOption(
+                    pipeline_options=pipeline_options,
+                ),
             }
         )
 
     def _init_parser(self) -> Dict:
-        """Initialize the docling converters."""
+        """Initialize the docling converter with hybrid OCR."""
         logger.info("Initializing DoclingParser...")
         logger.info(f"  ocr_enabled={self.ocr_enabled}")
-        logger.info(f"  ocr_on_empty_only={self.ocr_on_empty_only}")
+        logger.info(f"  force_full_page_ocr={self.force_full_page_ocr}")
         logger.info(f"  use_rapidocr={self.use_rapidocr}")
 
         try:
@@ -111,16 +117,8 @@ class DoclingParser(BaseParser):
                 "Install it with: pip install docling"
             )
 
-        # Create converter without OCR (for initial fast parsing)
-        if self.ocr_on_empty_only:
-            logger.info("Creating converter without OCR for initial parsing")
-            self._converter = self._create_converter(with_ocr=False)
-            # Create OCR converter lazily when needed
-            self._converter_with_ocr = None
-        else:
-            # OCR always on or always off
-            logger.info(f"Creating converter with ocr_enabled={self.ocr_enabled}")
-            self._converter = self._create_converter(with_ocr=self.ocr_enabled)
+        # Create converter with hybrid OCR (smart: text direct, bitmaps OCR'd)
+        self._converter = self._create_converter()
 
         logger.info("DoclingParser initialized successfully")
         return {
@@ -129,7 +127,7 @@ class DoclingParser(BaseParser):
             "export_format": self.export_format,
             "use_rapidocr": self.use_rapidocr,
             "ocr_languages": self.ocr_languages,
-            "ocr_on_empty_only": self.ocr_on_empty_only,
+            "force_full_page_ocr": self.force_full_page_ocr,
         }
 
     def _get_ocr_options(self):
@@ -156,34 +154,41 @@ class DoclingParser(BaseParser):
             return None
 
     def _export_content(self, document) -> str:
-        """Export document content in the configured format."""
-        if self.export_format == "markdown":
-            return document.export_to_markdown()
-        elif self.export_format == "html":
-            return document.export_to_html()
-        else:
-            return document.export_to_text()
+        """Export document content in the configured format.
 
-    def _is_content_empty(self, content: str) -> bool:
-        """Check if extracted content is empty or too short.
-
-        Args:
-            content: The extracted text content
-
-        Returns:
-            True if content is considered empty/insufficient
+        Handles edge case where text is nested under picture elements (e.g., OCR'd
+        images). If the standard export returns minimal content but document.texts
+        contains extracted text, falls back to direct text extraction.
         """
-        if not content:
-            return True
-        # Strip whitespace and check length
-        stripped = content.strip()
-        return len(stripped) < MIN_CONTENT_LENGTH
+        if self.export_format == "markdown":
+            content = document.export_to_markdown()
+        elif self.export_format == "html":
+            content = document.export_to_html()
+        else:
+            content = document.export_to_text()
+
+        # Handle case where text is nested under pictures (common with OCR'd images)
+        # Standard exports may return just "<!-- image -->" while actual text exists
+        stripped_content = content.strip()
+        is_minimal = len(stripped_content) < 50 or stripped_content == "<!-- image -->"
+
+        if is_minimal and hasattr(document, "texts") and document.texts:
+            # Extract text directly from document.texts
+            extracted_texts = [t.text for t in document.texts if t.text]
+            if extracted_texts:
+                logger.info(
+                    f"Standard export minimal ({len(stripped_content)} chars), "
+                    f"extracting {len(extracted_texts)} texts directly"
+                )
+                return "\n\n".join(extracted_texts)
+
+        return content
 
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
-        """Parse file using docling.
+        """Parse file using docling with hybrid OCR.
 
-        First attempts parsing without OCR for speed. If content is empty/minimal
-        and ocr_on_empty_only is True, retries with OCR enabled.
+        Uses smart OCR approach where the layout model detects text vs bitmap
+        regions. Text is extracted directly, bitmaps are OCR'd only when needed.
 
         Args:
             file: Path to the file to parse
@@ -198,25 +203,10 @@ class DoclingParser(BaseParser):
             self._init_parser()
 
         try:
-            # First pass: try without OCR (fast)
-            logger.info(f"Converting file (without OCR): {file}")
+            logger.info(f"Converting file with hybrid OCR: {file}")
             result = self._converter.convert(str(file))
             content = self._export_content(result.document)
-            logger.info(f"Initial parse complete, content length: {len(content)} chars")
-
-            # Check if we need OCR
-            if self.ocr_on_empty_only and self.ocr_enabled and self._is_content_empty(content):
-                logger.info(f"Content is empty/minimal ({len(content.strip())} chars), retrying with OCR...")
-
-                # Create OCR converter lazily
-                if self._converter_with_ocr is None:
-                    logger.info("Creating converter with OCR enabled")
-                    self._converter_with_ocr = self._create_converter(with_ocr=True)
-
-                # Retry with OCR
-                result = self._converter_with_ocr.convert(str(file))
-                content = self._export_content(result.document)
-                logger.info(f"OCR parse complete, content length: {len(content)} chars")
+            logger.info(f"Parse complete, content length: {len(content)} chars")
 
             return content
 
@@ -230,8 +220,11 @@ class DoclingParser(BaseParser):
 class DoclingPDFParser(DoclingParser):
     """Docling-based PDF parser with advanced features and RapidOCR support.
 
-    By default, parses PDFs without OCR first for speed. If the content is
-    empty or minimal, automatically retries with OCR enabled.
+    Uses hybrid OCR approach by default:
+    - Text regions: Direct PDF text extraction (fast)
+    - Bitmap/image regions: OCR only these areas (smart)
+
+    Set force_full_page_ocr=True only for fully scanned documents.
     """
 
     def __init__(
@@ -241,7 +234,6 @@ class DoclingPDFParser(DoclingParser):
         use_rapidocr: bool = True,
         ocr_languages: Optional[List[str]] = None,
         force_full_page_ocr: bool = False,
-        ocr_on_empty_only: bool = True,
     ):
         super().__init__(
             ocr_enabled=ocr_enabled,
@@ -250,7 +242,6 @@ class DoclingPDFParser(DoclingParser):
             use_rapidocr=use_rapidocr,
             ocr_languages=ocr_languages,
             force_full_page_ocr=force_full_page_ocr,
-            ocr_on_empty_only=ocr_on_empty_only,
         )
 
 
@@ -285,23 +276,23 @@ class DoclingHTMLParser(DoclingParser):
 class DoclingImageParser(DoclingParser):
     """Docling-based image parser with OCR and RapidOCR support.
 
-    For images, OCR is always enabled immediately (not lazy) since images
-    typically require OCR to extract any text.
+    For images, force_full_page_ocr=True is used since images are entirely
+    visual and require full OCR to extract any text.
     """
 
     def __init__(
         self,
+        ocr_enabled: bool = True,
         use_rapidocr: bool = True,
         ocr_languages: Optional[List[str]] = None,
         force_full_page_ocr: bool = True,
     ):
         super().__init__(
-            ocr_enabled=True,
+            ocr_enabled=ocr_enabled,
             export_format="markdown",
             use_rapidocr=use_rapidocr,
             ocr_languages=ocr_languages,
             force_full_page_ocr=force_full_page_ocr,
-            ocr_on_empty_only=False,  # Always use OCR for images
         )
 
 
