@@ -320,4 +320,4 @@ class DirectoryStructure(Resource):
             current_app.logger.error(
                 f"Error retrieving directory structure: {e}", exc_info=True
             )
-            return make_response(jsonify({"success": False, "error": str(e)}), 500)
+            return make_response(jsonify({"success": False, "error": "Failed to retrieve directory structure"}), 500)

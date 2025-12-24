@@ -35,9 +35,9 @@ class ClassicRAG(BaseRetriever):
                 self.chunks = 2
         else:
             self.chunks = chunks
-        user_identifier = user_api_key if user_api_key else "default"
+        user_id = decoded_token.get("sub") if decoded_token else "default"
         logging.info(
-            f"ClassicRAG initialized with chunks={self.chunks}, user_api_key={user_identifier}, "
+            f"ClassicRAG initialized with chunks={self.chunks}, user_id={user_id}, "
             f"sources={'active_docs' in source and source['active_docs'] is not None}"
         )
         self.model_id = model_id

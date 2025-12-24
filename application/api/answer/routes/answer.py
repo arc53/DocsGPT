@@ -137,5 +137,5 @@ class AnswerResource(Resource, BaseAnswerResource):
                 f"/api/answer - error: {str(e)} - traceback: {traceback.format_exc()}",
                 extra={"error": str(e), "traceback": traceback.format_exc()},
             )
-            return make_response({"error": str(e)}, 500)
+            return make_response({"error": "An error occurred processing your request"}, 500)
         return make_response(result, 200)

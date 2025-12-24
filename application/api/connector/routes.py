@@ -1,7 +1,9 @@
 import base64
 import datetime
+import html
 import json
 import uuid
+from urllib.parse import urlencode
 
 
 from bson.objectid import ObjectId
@@ -34,6 +36,18 @@ sessions_collection = db["connector_sessions"]
 connector = Blueprint("connector", __name__)
 connectors_ns = Namespace("connectors", description="Connector operations", path="/")
 api.add_namespace(connectors_ns)
+
+# Fixed callback status path to prevent open redirect
+CALLBACK_STATUS_PATH = "/api/connectors/callback-status"
+
+
+def build_callback_redirect(params: dict) -> str:
+    """Build a safe redirect URL to the callback status page.
+
+    Uses a fixed path and properly URL-encodes all parameters
+    to prevent URL injection and open redirect vulnerabilities.
+    """
+    return f"{CALLBACK_STATUS_PATH}?{urlencode(params)}"
 
 
 
@@ -75,8 +89,8 @@ class ConnectorAuth(Resource):
                 "state": state
             }), 200)
         except Exception as e:
-            current_app.logger.error(f"Error generating connector auth URL: {e}")
-            return make_response(jsonify({"success": False, "error": str(e)}), 500)
+            current_app.logger.error(f"Error generating connector auth URL: {e}", exc_info=True)
+            return make_response(jsonify({"success": False, "error": "Failed to generate authorization URL"}), 500)
 
 
 @connectors_ns.route("/api/connectors/callback")
@@ -93,18 +107,37 @@ class ConnectorsCallback(Resource):
             error = request.args.get('error')
 
             state_dict = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
-            provider = state_dict["provider"]
-            state_object_id = state_dict["object_id"]
+            provider = state_dict.get("provider")
+            state_object_id = state_dict.get("object_id")
+
+            # Validate provider
+            if not provider or not isinstance(provider, str) or not ConnectorCreator.is_supported(provider):
+                return redirect(build_callback_redirect({
+                    "status": "error",
+                    "message": "Invalid provider"
+                }))
 
             if error:
                 if error == "access_denied":
-                    return redirect(f"/api/connectors/callback-status?status=cancelled&message=Authentication+was+cancelled.+You+can+try+again+if+you'd+like+to+connect+your+account.&provider={provider}")
+                    return redirect(build_callback_redirect({
+                        "status": "cancelled",
+                        "message": "Authentication was cancelled. You can try again if you'd like to connect your account.",
+                        "provider": provider
+                    }))
                 else:
                     current_app.logger.warning(f"OAuth error in callback: {error}")
-                    return redirect(f"/api/connectors/callback-status?status=error&message=Authentication+failed.+Please+try+again+and+make+sure+to+grant+all+requested+permissions.&provider={provider}")
+                    return redirect(build_callback_redirect({
+                        "status": "error",
+                        "message": "Authentication failed. Please try again and make sure to grant all requested permissions.",
+                        "provider": provider
+                    }))
 
             if not authorization_code:
-                return redirect(f"/api/connectors/callback-status?status=error&message=Authentication+failed.+Please+try+again+and+make+sure+to+grant+all+requested+permissions.&provider={provider}")
+                return redirect(build_callback_redirect({
+                    "status": "error",
+                    "message": "Authentication failed. Please try again and make sure to grant all requested permissions.",
+                    "provider": provider
+                }))
 
             try:
                 auth = ConnectorCreator.create_auth(provider)
@@ -141,15 +174,28 @@ class ConnectorsCallback(Resource):
                 )
 
                 # Redirect to success page with session token and user email
-                return redirect(f"/api/connectors/callback-status?status=success&message=Authentication+successful&provider={provider}&session_token={session_token}&user_email={user_email}")
+                return redirect(build_callback_redirect({
+                    "status": "success",
+                    "message": "Authentication successful",
+                    "provider": provider,
+                    "session_token": session_token,
+                    "user_email": user_email
+                }))
 
             except Exception as e:
                 current_app.logger.error(f"Error exchanging code for tokens: {str(e)}", exc_info=True)
-                return redirect(f"/api/connectors/callback-status?status=error&message=Authentication+failed.+Please+try+again+and+make+sure+to+grant+all+requested+permissions.&provider={provider}")
+                return redirect(build_callback_redirect({
+                    "status": "error",
+                    "message": "Authentication failed. Please try again and make sure to grant all requested permissions.",
+                    "provider": provider
+                }))
 
         except Exception as e:
             current_app.logger.error(f"Error handling connector callback: {e}")
-            return redirect("/api/connectors/callback-status?status=error&message=Authentication+failed.+Please+try+again+and+make+sure+to+grant+all+requested+permissions.")
+            return redirect(build_callback_redirect({
+                "status": "error",
+                "message": "Authentication failed. Please try again and make sure to grant all requested permissions."
+            }))
 
 
 @connectors_ns.route("/api/connectors/files")
@@ -228,8 +274,8 @@ class ConnectorFiles(Resource):
                 "has_more": has_more
             }), 200)
         except Exception as e:
-            current_app.logger.error(f"Error loading connector files: {e}")
-            return make_response(jsonify({"success": False, "error": f"Failed to load files: {str(e)}"}), 500)
+            current_app.logger.error(f"Error loading connector files: {e}", exc_info=True)
+            return make_response(jsonify({"success": False, "error": "Failed to load files"}), 500)
 
 
 @connectors_ns.route("/api/connectors/validate-session")
@@ -289,8 +335,8 @@ class ConnectorValidateSession(Resource):
                 "access_token": token_info.get('access_token')
             }), 200)
         except Exception as e:
-            current_app.logger.error(f"Error validating connector session: {e}")
-            return make_response(jsonify({"success": False, "error": str(e)}), 500)
+            current_app.logger.error(f"Error validating connector session: {e}", exc_info=True)
+            return make_response(jsonify({"success": False, "error": "Failed to validate session"}), 500)
 
 
 @connectors_ns.route("/api/connectors/disconnect")
@@ -311,8 +357,8 @@ class ConnectorDisconnect(Resource):
             
             return make_response(jsonify({"success": True}), 200)
         except Exception as e:
-            current_app.logger.error(f"Error disconnecting connector session: {e}")
-            return make_response(jsonify({"success": False, "error": str(e)}), 500)
+            current_app.logger.error(f"Error disconnecting connector session: {e}", exc_info=True)
+            return make_response(jsonify({"success": False, "error": "Failed to disconnect session"}), 500)
 
 
 @connectors_ns.route("/api/connectors/sync")
@@ -418,8 +464,8 @@ class ConnectorSync(Resource):
             return make_response(
                 jsonify({
                     "success": False,
-                    "error": str(err)
-                }), 
+                    "error": "Failed to sync connector source"
+                }),
                 400
             )
 
@@ -430,17 +476,28 @@ class ConnectorCallbackStatus(Resource):
     def get(self):
         """Return HTML page with connector authentication status"""
         try:
-            status = request.args.get('status', 'error')
-            message = request.args.get('message', '')
-            provider = request.args.get('provider', 'connector')
+            # Validate and sanitize status to a known value
+            status_raw = request.args.get('status', 'error')
+            status = status_raw if status_raw in ('success', 'error', 'cancelled') else 'error'
+
+            # Escape all user-controlled values for HTML context
+            message = html.escape(request.args.get('message', ''))
+            provider_raw = request.args.get('provider', 'connector')
+            provider = html.escape(provider_raw.replace('_', ' ').title())
             session_token = request.args.get('session_token', '')
-            user_email = request.args.get('user_email', '')
-            
+            user_email = html.escape(request.args.get('user_email', ''))
+
+            # Use json.dumps for safe JavaScript string embedding
+            js_status = json.dumps(status)
+            js_session_token = json.dumps(session_token)
+            js_user_email = json.dumps(user_email)
+            js_provider_type = json.dumps(provider_raw)
+
             html_content = f"""
             <!DOCTYPE html>
             <html>
             <head>
-                <title>{provider.replace('_', ' ').title()} Authentication</title>
+                <title>{provider} Authentication</title>
                 <style>
                     body {{ font-family: Arial, sans-serif; text-align: center; padding: 40px; }}
                     .container {{ max-width: 600px; margin: 0 auto; }}
@@ -450,13 +507,14 @@ class ConnectorCallbackStatus(Resource):
                 </style>
                 <script>
                     window.onload = function() {{
-                        const status = "{status}";
-                        const sessionToken = "{session_token}";
-                        const userEmail = "{user_email}";
+                        const status = {js_status};
+                        const sessionToken = {js_session_token};
+                        const userEmail = {js_user_email};
+                        const providerType = {js_provider_type};
 
                         if (status === "success" && window.opener) {{
                             window.opener.postMessage({{
-                                type: '{provider}_auth_success',
+                                type: providerType + '_auth_success',
                                 session_token: sessionToken,
                                 user_email: userEmail
                             }}, '*');
@@ -470,17 +528,17 @@ class ConnectorCallbackStatus(Resource):
             </head>
             <body>
                 <div class="container">
-                    <h2>{provider.replace('_', ' ').title()} Authentication</h2>
+                    <h2>{provider} Authentication</h2>
                     <div class="{status}">
                         <p>{message}</p>
                         {f'<p>Connected as: {user_email}</p>' if status == 'success' else ''}
                     </div>
-                    <p><small>You can close this window. {f"Your {provider.replace('_', ' ').title()} is now connected and ready to use." if status == 'success' else "Feel free to close this window."}</small></p>
+                    <p><small>You can close this window. {f"Your {provider} is now connected and ready to use." if status == 'success' else "Feel free to close this window."}</small></p>
                 </div>
             </body>
             </html>
             """
-            
+
             return make_response(html_content, 200, {'Content-Type': 'text/html'})
         except Exception as e:
             current_app.logger.error(f"Error rendering callback status page: {e}")
