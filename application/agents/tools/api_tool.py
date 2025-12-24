@@ -11,6 +11,7 @@ from application.agents.tools.api_body_serializer import (
     RequestBodySerializer,
 )
 from application.agents.tools.base import Tool
+from application.core.url_validation import validate_url, SSRFError
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,17 @@ class APITool(Tool):
         request_headers = headers.copy() if headers else {}
         response = None
 
+        # Validate URL to prevent SSRF attacks
+        try:
+            validate_url(request_url)
+        except SSRFError as e:
+            logger.error(f"URL validation failed: {e}")
+            return {
+                "status_code": None,
+                "message": f"URL validation error: {e}",
+                "data": None,
+            }
+
         try:
             path_params_used = set()
             if query_params:
@@ -90,6 +102,18 @@ class APITool(Tool):
                 query_string = urlencode(remaining_params)
                 separator = "&" if "?" in request_url else "?"
                 request_url = f"{request_url}{separator}{query_string}"
+
+            # Re-validate URL after parameter substitution to prevent SSRF via path params
+            try:
+                validate_url(request_url)
+            except SSRFError as e:
+                logger.error(f"URL validation failed after parameter substitution: {e}")
+                return {
+                    "status_code": None,
+                    "message": f"URL validation error: {e}",
+                    "data": None,
+                }
+
             # Serialize body based on content type
 
             if body and body != {}:

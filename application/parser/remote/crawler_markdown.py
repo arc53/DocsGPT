@@ -2,6 +2,7 @@ import requests
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
 from application.parser.remote.base import BaseRemote
+from application.core.url_validation import validate_url, SSRFError
 import re
 from markdownify import markdownify
 from application.parser.schema.base import Document
@@ -25,9 +26,12 @@ class CrawlerLoader(BaseRemote):
         if isinstance(url, list) and url:
             url = url[0]
 
-        # Ensure the URL has a scheme (if not, default to http)
-        if not urlparse(url).scheme:
-            url = "http://" + url
+        # Validate URL to prevent SSRF attacks
+        try:
+            url = validate_url(url)
+        except SSRFError as e:
+            print(f"URL validation failed: {e}")
+            return []
 
         # Keep track of visited URLs to avoid revisiting the same page
         visited_urls = set()
@@ -78,9 +82,14 @@ class CrawlerLoader(BaseRemote):
 
     def _fetch_page(self, url):
         try:
+            # Validate URL before fetching to prevent SSRF
+            validate_url(url)
             response = self.session.get(url, timeout=10)
             response.raise_for_status()
             return response.text
+        except SSRFError as e:
+            print(f"URL validation failed for {url}: {e}")
+            return None
         except requests.exceptions.RequestException as e:
             print(f"Error fetching URL {url}: {e}")
             return None
