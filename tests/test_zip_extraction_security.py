@@ -11,9 +11,7 @@ from application.worker import (
     _is_path_safe,
     _validate_zip_safety,
     extract_zip_recursive,
-    MAX_UNCOMPRESSED_SIZE,
     MAX_FILE_COUNT,
-    MAX_COMPRESSION_RATIO,
 )
 
 

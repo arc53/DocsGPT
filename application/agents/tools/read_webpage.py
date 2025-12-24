@@ -2,7 +2,6 @@ import requests
 from markdownify import markdownify
 from application.agents.tools.base import Tool
 from application.core.url_validation import validate_url, SSRFError
-from urllib.parse import urlparse
 
 class ReadWebpageTool(Tool):
     """

@@ -139,7 +139,7 @@ def validate_url(url: str, allow_localhost: bool = False) -> str:
             raise SSRFError("Access to cloud metadata services is not allowed.")
 
         if is_private_ip(ip_str) and not allow_localhost:
-            raise SSRFError(f"Access to private/internal IP addresses is not allowed.")
+            raise SSRFError("Access to private/internal IP addresses is not allowed.")
 
         return url
     except ValueError:
@@ -155,7 +155,7 @@ def validate_url(url: str, allow_localhost: bool = False) -> str:
         raise SSRFError("Access to cloud metadata services is not allowed.")
 
     if is_private_ip(resolved_ip) and not allow_localhost:
-        raise SSRFError(f"Access to private/internal networks is not allowed.")
+        raise SSRFError("Access to private/internal networks is not allowed.")
 
     return url
 
