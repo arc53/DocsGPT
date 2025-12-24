@@ -10,29 +10,94 @@ from application.parser.file.epub_parser import EpubParser
 from application.parser.file.html_parser import HTMLParser
 from application.parser.file.markdown_parser import MarkdownParser
 from application.parser.file.rst_parser import RstParser
-from application.parser.file.tabular_parser import PandasCSVParser,ExcelParser
+from application.parser.file.tabular_parser import PandasCSVParser, ExcelParser
 from application.parser.file.json_parser import JSONParser
 from application.parser.file.pptx_parser import PPTXParser
 from application.parser.file.image_parser import ImageParser
 from application.parser.schema.base import Document
 from application.utils import num_tokens_from_string
+from application.core.settings import settings
 
-DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = {
-    ".pdf": PDFParser(),
-    ".docx": DocxParser(),
-    ".csv": PandasCSVParser(),
-    ".xlsx":ExcelParser(),
-    ".epub": EpubParser(),
-    ".md": MarkdownParser(),
-    ".rst": RstParser(),
-    ".html": HTMLParser(),
-    ".mdx": MarkdownParser(),
-    ".json":JSONParser(),
-    ".pptx":PPTXParser(),
-    ".png": ImageParser(),
-    ".jpg": ImageParser(),
-    ".jpeg": ImageParser(),
-}
+
+def get_default_file_extractor() -> Dict[str, BaseParser]:
+    """Get the default file extractor.
+
+    Uses docling parsers by default for advanced document processing.
+    Falls back to standard parsers if docling is not installed.
+    """
+    try:
+        from application.parser.file.docling_parser import (
+            DoclingPDFParser,
+            DoclingDocxParser,
+            DoclingPPTXParser,
+            DoclingXLSXParser,
+            DoclingHTMLParser,
+            DoclingImageParser,
+            DoclingCSVParser,
+            DoclingAsciiDocParser,
+            DoclingVTTParser,
+            DoclingXMLParser,
+        )
+        ocr_enabled = settings.DOCLING_OCR_ENABLED
+        return {
+            # Documents
+            ".pdf": DoclingPDFParser(ocr_enabled=ocr_enabled),
+            ".docx": DoclingDocxParser(),
+            ".pptx": DoclingPPTXParser(),
+            ".xlsx": DoclingXLSXParser(),
+            # Web formats
+            ".html": DoclingHTMLParser(),
+            ".xhtml": DoclingHTMLParser(),
+            # Data formats
+            ".csv": DoclingCSVParser(),
+            ".json": JSONParser(),  # Keep JSON parser (specialized handling)
+            # Text/markup formats
+            ".md": MarkdownParser(),  # Keep markdown parser (specialized handling)
+            ".mdx": MarkdownParser(),
+            ".rst": RstParser(),
+            ".adoc": DoclingAsciiDocParser(),
+            ".asciidoc": DoclingAsciiDocParser(),
+            # Images (with OCR)
+            ".png": DoclingImageParser(ocr_enabled=ocr_enabled),
+            ".jpg": DoclingImageParser(ocr_enabled=ocr_enabled),
+            ".jpeg": DoclingImageParser(ocr_enabled=ocr_enabled),
+            ".tiff": DoclingImageParser(ocr_enabled=ocr_enabled),
+            ".tif": DoclingImageParser(ocr_enabled=ocr_enabled),
+            ".bmp": DoclingImageParser(ocr_enabled=ocr_enabled),
+            ".webp": DoclingImageParser(ocr_enabled=ocr_enabled),
+            # Media/subtitles
+            ".vtt": DoclingVTTParser(),
+            # Specialized XML formats
+            ".xml": DoclingXMLParser(),
+            # Formats docling doesn't support - use standard parsers
+            ".epub": EpubParser(),
+        }
+    except ImportError:
+        logging.warning(
+            "docling is not installed. Using standard parsers. "
+            "For advanced document parsing, install with: pip install docling"
+        )
+        # Fallback to standard parsers
+        return {
+            ".pdf": PDFParser(),
+            ".docx": DocxParser(),
+            ".csv": PandasCSVParser(),
+            ".xlsx": ExcelParser(),
+            ".epub": EpubParser(),
+            ".md": MarkdownParser(),
+            ".rst": RstParser(),
+            ".html": HTMLParser(),
+            ".mdx": MarkdownParser(),
+            ".json": JSONParser(),
+            ".pptx": PPTXParser(),
+            ".png": ImageParser(),
+            ".jpg": ImageParser(),
+            ".jpeg": ImageParser(),
+        }
+
+
+# For backwards compatibility
+DEFAULT_FILE_EXTRACTOR: Dict[str, BaseParser] = get_default_file_extractor()
 
 
 class SimpleDirectoryReader(BaseReader):
@@ -83,7 +148,10 @@ class SimpleDirectoryReader(BaseReader):
 
         self.recursive = recursive
         self.exclude_hidden = exclude_hidden
-        self.required_exts = required_exts
+        # Normalize extensions to lowercase for case-insensitive matching
+        self.required_exts = (
+            [ext.lower() for ext in required_exts] if required_exts else None
+        )
         self.num_files_limit = num_files_limit
 
         if input_files:
@@ -112,7 +180,7 @@ class SimpleDirectoryReader(BaseReader):
                 continue
             elif (
                     self.required_exts is not None
-                    and input_file.suffix not in self.required_exts
+                    and input_file.suffix.lower() not in self.required_exts
             ):
                 continue
             else:
@@ -149,8 +217,9 @@ class SimpleDirectoryReader(BaseReader):
         self.file_token_counts = {}
         
         for input_file in self.input_files:
-            if input_file.suffix in self.file_extractor:
-                parser = self.file_extractor[input_file.suffix]
+            suffix_lower = input_file.suffix.lower()
+            if suffix_lower in self.file_extractor:
+                parser = self.file_extractor[suffix_lower]
                 if not parser.parser_config_set:
                     parser.init_parser()
                 data = parser.parse_file(input_file, errors=self.errors)
@@ -232,7 +301,7 @@ class SimpleDirectoryReader(BaseReader):
                     if subtree:
                         result[item.name] = subtree
                 else:
-                    if self.required_exts is not None and item.suffix not in self.required_exts:
+                    if self.required_exts is not None and item.suffix.lower() not in self.required_exts:
                         continue
                     
                     full_path = str(item.resolve())

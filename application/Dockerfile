@@ -48,7 +48,11 @@ FROM ubuntu:24.04 as final
 RUN apt-get update && \
     apt-get install -y software-properties-common && \
     add-apt-repository ppa:deadsnakes/ppa && \
-    apt-get update && apt-get install -y --no-install-recommends python3.12 && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        python3.12 \
+        libgl1 \
+        libglib2.0-0 \
+        && \
     ln -s /usr/bin/python3.12 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 

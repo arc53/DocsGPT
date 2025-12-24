@@ -229,8 +229,14 @@ class TestBaseAgentTools:
                         "type": "string",
                         "description": "Test param",
                         "filled_by_llm": True,
+                        "required": True,
                     },
-                    "param2": {"type": "number", "filled_by_llm": False, "value": 42},
+                    "param2": {
+                        "type": "number",
+                        "filled_by_llm": False,
+                        "value": 42,
+                        "required": False,
+                    },
                 }
             }
         }
