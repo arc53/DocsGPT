@@ -1,6 +1,7 @@
 import requests
 from markdownify import markdownify
 from application.agents.tools.base import Tool
+from application.core.url_validation import validate_url, SSRFError
 from urllib.parse import urlparse
 
 class ReadWebpageTool(Tool):
@@ -31,11 +32,12 @@ class ReadWebpageTool(Tool):
         if not url:
             return "Error: URL parameter is missing."
 
-        # Ensure the URL has a scheme (if not, default to http)
-        parsed_url = urlparse(url)
-        if not parsed_url.scheme:
-            url = "http://" + url
-        
+        # Validate URL to prevent SSRF attacks
+        try:
+            url = validate_url(url)
+        except SSRFError as e:
+            return f"Error: URL validation failed - {e}"
+
         try:
             response = requests.get(url, timeout=10, headers={'User-Agent': 'DocsGPT-Agent/1.0'})
             response.raise_for_status()  # Raise an exception for HTTP errors (4xx or 5xx)
