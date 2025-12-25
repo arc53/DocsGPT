@@ -487,11 +487,15 @@ class ConnectorCallbackStatus(Resource):
             session_token = request.args.get('session_token', '')
             user_email = html.escape(request.args.get('user_email', ''))
 
-            # Use json.dumps for safe JavaScript string embedding
-            js_status = json.dumps(status)
-            js_session_token = json.dumps(session_token)
-            js_user_email = json.dumps(user_email)
-            js_provider_type = json.dumps(provider_raw)
+            def safe_js_string(value: str) -> str:
+                """Safely encode a string for embedding in inline JavaScript."""
+                js_encoded = json.dumps(value)
+                return js_encoded.replace('</', '<\\/').replace('<!--', '<\\!--')
+
+            js_status = safe_js_string(status)
+            js_session_token = safe_js_string(session_token)
+            js_user_email = safe_js_string(user_email)
+            js_provider_type = safe_js_string(provider_raw)
 
             html_content = f"""
             <!DOCTYPE html>
