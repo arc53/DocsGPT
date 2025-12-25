@@ -307,9 +307,10 @@ class CreateAgent(Resource):
                         400,
                     )
             except Exception as e:
+                current_app.logger.error(f"Invalid JSON schema: {e}")
                 return make_response(
                     jsonify(
-                        {"success": False, "message": f"Invalid JSON schema: {str(e)}"}
+                        {"success": False, "message": "Invalid JSON schema format"}
                     ),
                     400,
                 )

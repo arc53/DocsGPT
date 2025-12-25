@@ -462,10 +462,8 @@ class ParseSpec(Resource):
                 200,
             )
         except ValueError as e:
-            error_msg = str(e)
-            current_app.logger.error(f"Spec validation error: {error_msg}")
-            return make_response(jsonify({"success": False, "error": error_msg}), 400)
+            current_app.logger.error(f"Spec validation error: {e}")
+            return make_response(jsonify({"success": False, "error": "Invalid specification format"}), 400)
         except Exception as err:
-            error_msg = str(err)
-            current_app.logger.error(f"Error parsing spec: {error_msg}", exc_info=True)
-            return make_response(jsonify({"success": False, "error": error_msg}), 500)
+            current_app.logger.error(f"Error parsing spec: {err}", exc_info=True)
+            return make_response(jsonify({"success": False, "error": "Failed to parse specification"}), 500)

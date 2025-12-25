@@ -1,7 +1,7 @@
 """Tool management MCP server integration."""
 
 import json
-from email.quoprimime import unquote
+from urllib.parse import unquote, urlencode
 
 from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, redirect, request
@@ -63,6 +63,11 @@ class TestMCPServerConfig(Resource):
 
             mcp_tool = MCPTool(config=test_config, user_id=user)
             result = mcp_tool.test_connection()
+
+            # Sanitize the response to avoid exposing internal error details
+            if not result.get("success") and "message" in result:
+                current_app.logger.error(f"MCP connection test failed: {result.get('message')}")
+                result["message"] = "Connection test failed"
 
             return make_response(jsonify(result), 200)
         except Exception as e:
@@ -263,9 +268,12 @@ class MCPOAuthCallback(Resource):
         error = request.args.get("error")
 
         if error:
-            return redirect(
-                f"/api/connectors/callback-status?status=error&message=OAuth+error:+{error}.+Please+try+again+and+make+sure+to+grant+all+requested+permissions,+including+offline+access.&provider=mcp_tool"
-            )
+            params = {
+                "status": "error",
+                "message": f"OAuth error: {error}. Please try again and make sure to grant all requested permissions, including offline access.",
+                "provider": "mcp_tool"
+            }
+            return redirect(f"/api/connectors/callback-status?{urlencode(params)}")
         if not code or not state:
             return redirect(
                 "/api/connectors/callback-status?status=error&message=Authorization+code+or+state+not+provided.+Please+complete+the+authorization+process+and+make+sure+to+grant+offline+access.&provider=mcp_tool"
