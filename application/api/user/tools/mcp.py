@@ -64,6 +64,11 @@ class TestMCPServerConfig(Resource):
             mcp_tool = MCPTool(config=test_config, user_id=user)
             result = mcp_tool.test_connection()
 
+            # Sanitize the response to avoid exposing internal error details
+            if not result.get("success") and "message" in result:
+                current_app.logger.error(f"MCP connection test failed: {result.get('message')}")
+                result["message"] = "Connection test failed"
+
             return make_response(jsonify(result), 200)
         except Exception as e:
             current_app.logger.error(f"Error testing MCP server: {e}", exc_info=True)
