@@ -1,7 +1,7 @@
 import logging
 import requests
 import re  # Import regular expression library
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from application.parser.remote.base import BaseRemote
 from application.core.url_validation import validate_url, SSRFError
 

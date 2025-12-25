@@ -4,6 +4,7 @@ beautifulsoup4==4.14.3
 celery==5.6.0
 cryptography==46.0.3
 dataclasses-json==0.6.7
+defusedxml==0.7.1
 docling>=2.16.0
 rapidocr>=1.4.0
 onnxruntime>=1.19.0
