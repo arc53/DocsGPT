@@ -85,7 +85,7 @@ tqdm==4.67.1
 transformers==4.57.3
 typing-extensions==4.15.0
 typing-inspect==0.9.0
-tzdata==2025.2
+tzdata==2025.3
 urllib3==2.6.1
 vine==5.1.0
 wcwidth==0.2.14
