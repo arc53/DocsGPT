@@ -579,8 +579,9 @@ class TaskStatus(Resource):
             ):
                 task_meta = str(task_meta)  # Convert to a string representation
         except ConnectionError as err:
+            current_app.logger.error(f"Connection error getting task status: {err}")
             return make_response(
-                jsonify({"success": False, "message": str(err)}), 503
+                jsonify({"success": False, "message": "Service unavailable"}), 503
             )
         except Exception as err:
             current_app.logger.error(f"Error getting task status: {err}", exc_info=True)

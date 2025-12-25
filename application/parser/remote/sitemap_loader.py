@@ -3,6 +3,7 @@ import requests
 import re  # Import regular expression library
 import xml.etree.ElementTree as ET
 from application.parser.remote.base import BaseRemote
+from application.core.url_validation import validate_url, SSRFError
 
 class SitemapLoader(BaseRemote):
     def __init__(self, limit=20):
@@ -14,7 +15,14 @@ class SitemapLoader(BaseRemote):
         sitemap_url= inputs
         # Check if the input is a list and if it is, use the first element
         if isinstance(sitemap_url, list) and sitemap_url:
-            url = sitemap_url[0]
+            sitemap_url = sitemap_url[0]
+
+        # Validate URL to prevent SSRF attacks
+        try:
+            sitemap_url = validate_url(sitemap_url)
+        except SSRFError as e:
+            logging.error(f"URL validation failed: {e}")
+            return []
 
         urls = self._extract_urls(sitemap_url)
         if not urls:
@@ -40,8 +48,13 @@ class SitemapLoader(BaseRemote):
 
     def _extract_urls(self, sitemap_url):
         try:
-            response = requests.get(sitemap_url)
+            # Validate URL before fetching to prevent SSRF
+            validate_url(sitemap_url)
+            response = requests.get(sitemap_url, timeout=30)
             response.raise_for_status()  # Raise an exception for HTTP errors
+        except SSRFError as e:
+            print(f"URL validation failed for sitemap: {sitemap_url}. Error: {e}")
+            return []
         except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
             print(f"Failed to fetch sitemap: {sitemap_url}. Error: {e}")
             return []

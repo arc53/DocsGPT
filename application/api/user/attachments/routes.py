@@ -99,11 +99,8 @@ class StoreAttachment(Resource):
                     })
             
             if not tasks:
-                error_msg = "No valid files to upload"
-                if errors:
-                    error_msg += f". Errors: {errors}"
                 return make_response(
-                    jsonify({"status": "error", "message": error_msg, "errors": errors}),
+                    jsonify({"status": "error", "message": "No valid files to upload"}),
                     400,
                 )
             
@@ -135,7 +132,7 @@ class StoreAttachment(Resource):
                 )
         except Exception as err:
             current_app.logger.error(f"Error storing attachment: {err}", exc_info=True)
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            return make_response(jsonify({"success": False, "error": "Failed to store attachment"}), 400)
 
 
 @attachments_ns.route("/images/<path:image_path>")
