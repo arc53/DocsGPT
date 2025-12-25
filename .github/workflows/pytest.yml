@@ -1,5 +1,9 @@
 name: Run python tests with pytest
 on: [push, pull_request]
+
+permissions:
+  contents: read
+
 jobs:
   pytest_and_coverage:
     name: Run tests and count coverage

@@ -130,7 +130,7 @@ class Settings(BaseSettings):
     MILVUS_TOKEN: Optional[str] = ""
 
     # LanceDB vectorstore config
-    LANCEDB_PATH: str = "/tmp/lancedb"  # Path where LanceDB stores its local data
+    LANCEDB_PATH: str = "./data/lancedb"  # Path where LanceDB stores its local data
     LANCEDB_TABLE_NAME: Optional[str] = (
         "docsgpts"  # Name of the table to use for storing vectors
     )
