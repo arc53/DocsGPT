@@ -53,7 +53,7 @@ openai==2.14.0
 openapi3-parser==1.1.22
 orjson==3.11.5
 packaging==24.2
-pandas==2.2.3
+pandas==2.3.3
 openpyxl==3.1.5
 pathable==0.4.4
 pillow
