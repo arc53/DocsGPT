@@ -70,7 +70,7 @@ pymongo==4.15.5
 pypdf==6.5.0
 python-dateutil==2.9.0.post0
 python-dotenv
-python-jose==3.4.0
+python-jose==3.5.0
 python-pptx==1.0.2
 redis==7.1.0
 referencing>=0.28.0,<0.31.0
