@@ -62,6 +62,8 @@ class ConversationService:
         attachment_ids: Optional[List[str]] = None,
     ) -> str:
         """Save or update a conversation in the database"""
+        if decoded_token is None:
+            raise ValueError("Invalid or missing authentication token")
         user_id = decoded_token.get("sub")
         if not user_id:
             raise ValueError("User ID not found in token")

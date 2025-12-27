@@ -80,6 +80,12 @@ class StreamResource(Resource, BaseAnswerResource):
         processor = StreamProcessor(data, decoded_token)
         try:
             processor.initialize()
+            if not processor.decoded_token:
+                return Response(
+                    self.error_stream_generate("Unauthorized"),
+                    status=401,
+                    mimetype="text/event-stream",
+                )
 
             docs_together, docs_list = processor.pre_fetch_docs(data["question"])
             tools_data = processor.pre_fetch_tools()
