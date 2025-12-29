@@ -22,7 +22,7 @@ flask-restx==1.3.2
 google-genai==1.54.0
 google-api-python-client==2.187.0
 google-auth-httplib2==0.3.0
-google-auth-oauthlib==1.2.2
+google-auth-oauthlib==1.2.3
 gTTS==2.5.4
 gunicorn==23.0.0
 html2text==2025.4.15
