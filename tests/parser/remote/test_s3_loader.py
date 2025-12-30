@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 from botocore.exceptions import ClientError, NoCredentialsError
 
@@ -514,7 +514,7 @@ class TestLoadData:
             "prefix": "docs/",
         }
 
-        docs = s3_loader.load_data(input_data)
+        s3_loader.load_data(input_data)
 
         paginator.paginate.assert_called_once_with(Bucket="test-bucket", Prefix="docs/")
 
