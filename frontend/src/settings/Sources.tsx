@@ -201,6 +201,61 @@ export default function Sources({
       });
   };
 
+  const getConnectorProvider = async (doc: Doc): Promise<string | null> => {
+    if (doc.provider) {
+      return doc.provider;
+    }
+    if (!doc.id) {
+      return null;
+    }
+    try {
+      const directoryResponse = await userService.getDirectoryStructure(
+        doc.id,
+        token,
+      );
+      const directoryData = await directoryResponse.json();
+      return directoryData?.provider ?? null;
+    } catch (error) {
+      console.error('Error fetching connector provider:', error);
+      return null;
+    }
+  };
+
+  const handleSyncNow = async (doc: Doc) => {
+    if (!doc.id) {
+      return;
+    }
+    try {
+      if (doc.type?.startsWith('connector')) {
+        const provider = await getConnectorProvider(doc);
+        if (!provider) {
+          console.error('Sync now failed: provider not found');
+          return;
+        }
+        const response = await userService.syncConnector(
+          doc.id,
+          provider,
+          token,
+        );
+        const data = await response.json();
+        if (!data.success) {
+          console.error('Sync now failed:', data.error || data.message);
+        }
+        return;
+      }
+      const response = await userService.syncSource(
+        { source_id: doc.id },
+        token,
+      );
+      const data = await response.json();
+      if (!data.success) {
+        console.error('Sync now failed:', data.error || data.message);
+      }
+    } catch (error) {
+      console.error('Error syncing source:', error);
+    }
+  };
+
   const [documentToDelete, setDocumentToDelete] = useState<{
     index: number;
     document: Doc;
@@ -245,6 +300,16 @@ export default function Sources({
             docId: document.id ?? null,
             document: document,
           });
+        },
+        iconWidth: 14,
+        iconHeight: 14,
+        variant: 'primary',
+      });
+      actions.push({
+        icon: SyncIcon,
+        label: t('settings.sources.syncNow'),
+        onClick: () => {
+          handleSyncNow(document);
         },
         iconWidth: 14,
         iconHeight: 14,

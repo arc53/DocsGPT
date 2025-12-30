@@ -67,6 +67,7 @@
       "preLoaded": "Precargado",
       "private": "Privado",
       "sync": "Sincronizar",
+      "syncNow": "Sincronizar ahora",
       "syncing": "Sincronizando...",
       "syncConfirmation": "¿Estás seguro de que deseas sincronizar \"{{sourceName}}\"? Esto actualizará el contenido con tu almacenamiento en la nube y puede anular cualquier edición que hayas realizado en fragmentos individuales.",
       "syncFrequency": {
@@ -316,6 +317,10 @@
         "google_drive": {
           "label": "Google Drive",
           "heading": "Subir desde Google Drive"
+        },
+        "s3": {
+          "label": "Amazon S3",
+          "heading": "Agregar contenido desde Amazon S3"
         }
       },
       "connectors": {

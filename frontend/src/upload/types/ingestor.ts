@@ -4,6 +4,7 @@ import UrlIcon from '../../assets/url.svg';
 import GithubIcon from '../../assets/github.svg';
 import RedditIcon from '../../assets/reddit.svg';
 import DriveIcon from '../../assets/drive.svg';
+import S3Icon from '../../assets/s3.svg';
 
 export type IngestorType =
   | 'crawler'
@@ -11,7 +12,8 @@ export type IngestorType =
   | 'reddit'
   | 'url'
   | 'google_drive'
-  | 'local_file';
+  | 'local_file'
+  | 's3';
 
 export interface IngestorConfig {
   type: IngestorType | null;
@@ -147,6 +149,50 @@ export const IngestorFormSchemas: IngestorSchema[] = [
       },
     ],
   },
+  {
+    key: 's3',
+    label: 'Amazon S3',
+    icon: S3Icon,
+    heading: 'Add content from Amazon S3',
+    fields: [
+      {
+        name: 'aws_access_key_id',
+        label: 'AWS Access Key ID',
+        type: 'string',
+        required: true,
+      },
+      {
+        name: 'aws_secret_access_key',
+        label: 'AWS Secret Access Key',
+        type: 'string',
+        required: true,
+      },
+      {
+        name: 'bucket',
+        label: 'Bucket Name',
+        type: 'string',
+        required: true,
+      },
+      {
+        name: 'prefix',
+        label: 'Path Prefix (optional)',
+        type: 'string',
+        required: false,
+      },
+      {
+        name: 'region',
+        label: 'AWS Region',
+        type: 'string',
+        required: false,
+      },
+      {
+        name: 'endpoint_url',
+        label: 'Custom Endpoint URL (optional)',
+        type: 'string',
+        required: false,
+      },
+    ],
+  },
 ];
 
 export const IngestorDefaultConfigs: Record<
@@ -175,6 +221,17 @@ export const IngestorDefaultConfigs: Record<
     },
   },
   local_file: { name: '', config: { files: [] } },
+  s3: {
+    name: '',
+    config: {
+      aws_access_key_id: '',
+      aws_secret_access_key: '',
+      bucket: '',
+      prefix: '',
+      region: 'us-east-1',
+      endpoint_url: '',
+    },
+  },
 };
 
 export interface IngestorOption {

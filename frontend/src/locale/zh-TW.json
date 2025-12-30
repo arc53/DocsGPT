@@ -67,6 +67,7 @@
       "preLoaded": "預載入",
       "private": "私人",
       "sync": "同步",
+      "syncNow": "立即同步",
       "syncing": "同步中...",
       "syncConfirmation": "您確定要同步 \"{{sourceName}}\" 嗎？這將使用您的雲端儲存更新內容，並可能覆蓋您對個別文本塊所做的任何編輯。",
       "syncFrequency": {
@@ -316,6 +317,10 @@
         "google_drive": {
           "label": "Google Drive",
           "heading": "從Google Drive上傳"
+        },
+        "s3": {
+          "label": "Amazon S3",
+          "heading": "從Amazon S3新增內容"
         }
       },
       "connectors": {

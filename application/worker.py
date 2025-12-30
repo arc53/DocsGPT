@@ -868,6 +868,58 @@ def remote_worker(
         tokens = count_tokens_docs(docs)
         logging.info("Total tokens calculated: %d", tokens)
 
+        # Build directory structure from loaded documents
+        # Format matches local file uploads: flat structure with type, size_bytes, token_count
+        directory_structure = {}
+        for doc in raw_docs:
+            # Get the file path/name from doc_id or extra_info
+            file_path = doc.doc_id or ""
+            if not file_path and doc.extra_info:
+                file_path = doc.extra_info.get("key", "") or doc.extra_info.get(
+                    "title", ""
+                )
+
+            if file_path:
+                # Use just the filename (last part of path) for flat structure
+                file_name = file_path.split("/")[-1] if "/" in file_path else file_path
+
+                # Calculate token count
+                token_count = len(doc.text.split()) if doc.text else 0
+
+                # Estimate size in bytes from text content
+                size_bytes = len(doc.text.encode("utf-8")) if doc.text else 0
+
+                # Guess mime type from extension
+                ext = os.path.splitext(file_name)[1].lower()
+                mime_types = {
+                    ".txt": "text/plain",
+                    ".md": "text/markdown",
+                    ".pdf": "application/pdf",
+                    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ".doc": "application/msword",
+                    ".html": "text/html",
+                    ".json": "application/json",
+                    ".csv": "text/csv",
+                    ".xml": "application/xml",
+                    ".py": "text/x-python",
+                    ".js": "text/javascript",
+                    ".ts": "text/typescript",
+                    ".jsx": "text/jsx",
+                    ".tsx": "text/tsx",
+                }
+                file_type = mime_types.get(ext, "application/octet-stream")
+
+                directory_structure[file_name] = {
+                    "type": file_type,
+                    "size_bytes": size_bytes,
+                    "token_count": token_count,
+                }
+
+        logging.info(
+            f"Built directory structure with {len(directory_structure)} files: "
+            f"{list(directory_structure.keys())}"
+        )
+
         if operation_mode == "upload":
             id = ObjectId()
             embed_and_store_documents(docs, full_path, id, self)
@@ -879,6 +931,10 @@ def remote_worker(
             embed_and_store_documents(docs, full_path, id, self)
         self.update_state(state="PROGRESS", meta={"current": 100})
 
+        # Serialize remote_data as JSON if it's a dict (for S3, Reddit, etc.)
+        remote_data_serialized = (
+            json.dumps(source_data) if isinstance(source_data, dict) else source_data
+        )
         file_data = {
             "name": name_job,
             "user": user,
@@ -886,8 +942,9 @@ def remote_worker(
             "retriever": retriever,
             "id": str(id),
             "type": loader,
-            "remote_data": source_data,
+            "remote_data": remote_data_serialized,
             "sync_frequency": sync_frequency,
+            "directory_structure": json.dumps(directory_structure),
         }
 
         if operation_mode == "sync":
