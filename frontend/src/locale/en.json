@@ -641,7 +641,8 @@
       "moveToFolder": "Move to folder",
       "moveTo": "Move",
       "move": "Move",
-      "noFolder": "No folder (root)"
+      "noFolder": "No folder (root)",
+      "backToRoot": "Back"
     }
   },
   "components": {

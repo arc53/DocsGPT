@@ -641,7 +641,8 @@
       "moveToFolder": "フォルダに移動",
       "moveTo": "移動",
       "move": "移動",
-      "noFolder": "フォルダなし (ルート)"
+      "noFolder": "フォルダなし (ルート)",
+      "backToRoot": "戻る"
     }
   },
   "components": {

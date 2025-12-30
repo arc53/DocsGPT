@@ -641,7 +641,8 @@
       "moveToFolder": "In Ordner verschieben",
       "moveTo": "Verschieben",
       "move": "Verschieben",
-      "noFolder": "Kein Ordner (Stammverzeichnis)"
+      "noFolder": "Kein Ordner (Stammverzeichnis)",
+      "backToRoot": "Zurück"
     }
   },
   "components": {

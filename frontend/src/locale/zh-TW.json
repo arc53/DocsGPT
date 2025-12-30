@@ -641,7 +641,8 @@
       "moveToFolder": "移動到資料夾",
       "moveTo": "移動",
       "move": "移動",
-      "noFolder": "無資料夾 (根目錄)"
+      "noFolder": "無資料夾 (根目錄)",
+      "backToRoot": "返回"
     }
   },
   "components": {

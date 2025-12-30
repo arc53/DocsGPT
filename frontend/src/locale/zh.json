@@ -641,7 +641,8 @@
       "moveToFolder": "移动到文件夹",
       "moveTo": "移动",
       "move": "移动",
-      "noFolder": "无文件夹 (根目录)"
+      "noFolder": "无文件夹 (根目录)",
+      "backToRoot": "返回"
     }
   },
   "components": {
