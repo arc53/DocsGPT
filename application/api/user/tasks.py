@@ -8,6 +8,7 @@ from application.worker import (
     mcp_oauth,
     mcp_oauth_status,
     remote_worker,
+    sync,
     sync_worker,
 )
 
@@ -35,6 +36,30 @@ def reingest_source_task(self, source_id, user):
 @celery.task(bind=True)
 def schedule_syncs(self, frequency):
     resp = sync_worker(self, frequency)
+    return resp
+
+
+@celery.task(bind=True)
+def sync_source(
+    self,
+    source_data,
+    job_name,
+    user,
+    loader,
+    sync_frequency,
+    retriever,
+    doc_id,
+):
+    resp = sync(
+        self,
+        source_data,
+        job_name,
+        user,
+        loader,
+        sync_frequency,
+        retriever,
+        doc_id,
+    )
     return resp
 
 

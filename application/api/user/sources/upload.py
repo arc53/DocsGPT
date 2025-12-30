@@ -187,6 +187,8 @@ class UploadRemote(Resource):
                 source_data = config.get("url")
             elif data["source"] == "reddit":
                 source_data = config
+            elif data["source"] == "s3":
+                source_data = config
             elif data["source"] in ConnectorCreator.get_supported_connectors():
                 session_token = config.get("session_token")
                 if not session_token:

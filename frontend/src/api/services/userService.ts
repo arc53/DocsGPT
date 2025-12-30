@@ -72,6 +72,8 @@ const userService = {
     apiClient.post(endpoints.USER.LOGS, data, token),
   manageSync: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MANAGE_SYNC, data, token),
+  syncSource: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.SYNC_SOURCE, data, token),
   getAvailableTools: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.GET_AVAILABLE_TOOLS, token),
   getUserTools: (token: string | null): Promise<any> =>
