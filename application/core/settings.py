@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     PARSE_PDF_AS_IMAGE: bool = False
     PARSE_IMAGE_REMOTE: bool = False
     DOCLING_OCR_ENABLED: bool = True  # Enable OCR for docling parsers (PDF, images)
+    DOCLING_OCR_ATTACHMENTS_ENABLED: bool = False  # Enable OCR for docling when parsing attachments
     VECTOR_STORE: str = (
         "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector"
     )

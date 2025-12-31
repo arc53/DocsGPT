@@ -19,7 +19,9 @@ from application.utils import num_tokens_from_string
 from application.core.settings import settings
 
 
-def get_default_file_extractor() -> Dict[str, BaseParser]:
+def get_default_file_extractor(
+    ocr_enabled: Optional[bool] = None,
+) -> Dict[str, BaseParser]:
     """Get the default file extractor.
 
     Uses docling parsers by default for advanced document processing.
@@ -38,7 +40,8 @@ def get_default_file_extractor() -> Dict[str, BaseParser]:
             DoclingVTTParser,
             DoclingXMLParser,
         )
-        ocr_enabled = settings.DOCLING_OCR_ENABLED
+        if ocr_enabled is None:
+            ocr_enabled = settings.DOCLING_OCR_ENABLED
         return {
             # Documents
             ".pdf": DoclingPDFParser(ocr_enabled=ocr_enabled),

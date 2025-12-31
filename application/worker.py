@@ -25,7 +25,7 @@ from application.core.settings import settings
 from application.parser.chunking import Chunker
 from application.parser.connectors.connector_creator import ConnectorCreator
 from application.parser.embedding_pipeline import embed_and_store_documents
-from application.parser.file.bulk import SimpleDirectoryReader
+from application.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
 from application.parser.remote.remote_creator import RemoteCreator
 from application.parser.schema.base import Document
 from application.retriever.retriever_creator import RetrieverCreator
@@ -1042,10 +1042,16 @@ def attachment_worker(self, file_info, user):
             state="PROGRESS", meta={"current": 30, "status": "Processing content"}
         )
 
+        file_extractor = get_default_file_extractor(
+            ocr_enabled=settings.DOCLING_OCR_ATTACHMENTS_ENABLED
+        )
         content = storage.process_file(
             relative_path,
             lambda local_path, **kwargs: SimpleDirectoryReader(
-                input_files=[local_path], exclude_hidden=True, errors="ignore"
+                input_files=[local_path],
+                exclude_hidden=True,
+                errors="ignore",
+                file_extractor=file_extractor,
             )
             .load_data()[0]
             .text,
