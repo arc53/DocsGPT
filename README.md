@@ -46,10 +46,11 @@
 </ul>
 
 ## Roadmap
-- [x] Add OAuth 2.0 authentication for MCP (September 2025)
-- [x] Deep Agents (October 2025)
-- [ ] Prompt Templating ( October 2025 )
-- [ ] Agent scheduling ( December 2025 )
+- [x] Add OAuth 2.0 authentication for MCP ( September 2025 )
+- [x] Deep Agents ( October 2025 )
+- [x] Prompt Templating ( October 2025 )
+- [x] Full api tooling ( Dec 2025 )
+- [ ] Agent scheduling ( Jan 2026 )
 
 You can find our full roadmap [here](https://github.com/orgs/arc53/projects/2). Please don't hesitate to contribute or create issues, it helps us improve DocsGPT!
 
