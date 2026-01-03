@@ -34,4 +34,13 @@ export type Agent = {
   request_limit?: number;
   models?: string[];
   default_model_id?: string;
+  folder_id?: string;
+};
+
+export type AgentFolder = {
+  id: string;
+  name: string;
+  parent_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
 };

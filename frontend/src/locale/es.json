@@ -634,7 +634,23 @@
     "preview": {
       "testMessage": "Prueba tu agente aquí. Los agentes publicados se pueden usar en conversaciones."
     },
-    "deleteConfirmation": "¿Estás seguro de que quieres eliminar este agente?"
+    "deleteConfirmation": "¿Estás seguro de que quieres eliminar este agente?",
+    "folders": {
+      "newFolder": "Nueva carpeta",
+      "createFolder": "Crear carpeta",
+      "folderName": "Nombre de la carpeta",
+      "rename": "Renombrar",
+      "delete": "Eliminar",
+      "deleteConfirm": "¿Estás seguro de que quieres eliminar esta carpeta? Los agentes serán movidos fuera de la carpeta.",
+      "empty": "Esta carpeta está vacía",
+      "moveToFolder": "Mover a carpeta",
+      "moveTo": "Mover",
+      "move": "Mover",
+      "noFolder": "Sin carpeta (raíz)",
+      "backToRoot": "Volver",
+      "noSubfolders": "Sin subcarpetas",
+      "noFolders": "No hay carpetas todavía"
+    }
   },
   "components": {
     "fileUpload": {

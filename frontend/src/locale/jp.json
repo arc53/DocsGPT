@@ -634,7 +634,23 @@
     "preview": {
       "testMessage": "ここでエージェントをテストできます。公開されたエージェントは会話で使用できます。"
     },
-    "deleteConfirmation": "このエージェントを削除してもよろしいですか？"
+    "deleteConfirmation": "このエージェントを削除してもよろしいですか？",
+    "folders": {
+      "newFolder": "新しいフォルダ",
+      "createFolder": "フォルダを作成",
+      "folderName": "フォルダ名",
+      "rename": "名前を変更",
+      "delete": "削除",
+      "deleteConfirm": "このフォルダを削除してもよろしいですか？フォルダ内のエージェントは移動されます。",
+      "empty": "このフォルダは空です",
+      "moveToFolder": "フォルダに移動",
+      "moveTo": "移動",
+      "move": "移動",
+      "noFolder": "フォルダなし (ルート)",
+      "backToRoot": "戻る",
+      "noSubfolders": "サブフォルダなし",
+      "noFolders": "フォルダがありません"
+    }
   },
   "components": {
     "fileUpload": {

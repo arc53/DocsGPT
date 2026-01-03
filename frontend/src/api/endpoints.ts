@@ -65,6 +65,9 @@ const endpoints = {
     MCP_SAVE_SERVER: '/api/mcp_server/save',
     MCP_OAUTH_STATUS: (task_id: string) =>
       `/api/mcp_server/oauth_status/${task_id}`,
+    AGENT_FOLDERS: '/api/agents/folders/',
+    AGENT_FOLDER: (id: string) => `/api/agents/folders/${id}`,
+    MOVE_AGENT_TO_FOLDER: '/api/agents/folders/move_agent',
   },
   CONVERSATION: {
     ANSWER: '/api/answer',
