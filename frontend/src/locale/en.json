@@ -642,7 +642,9 @@
       "moveTo": "Move",
       "move": "Move",
       "noFolder": "No folder (root)",
-      "backToRoot": "Back"
+      "backToRoot": "Back",
+      "currentFolder": "This folder",
+      "noSubfolders": "No subfolders"
     }
   },
   "components": {
