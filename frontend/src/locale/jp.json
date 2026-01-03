@@ -642,7 +642,9 @@
       "moveTo": "移動",
       "move": "移動",
       "noFolder": "フォルダなし (ルート)",
-      "backToRoot": "戻る"
+      "backToRoot": "戻る",
+      "noSubfolders": "サブフォルダなし",
+      "noFolders": "フォルダがありません"
     }
   },
   "components": {

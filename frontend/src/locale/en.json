@@ -644,7 +644,8 @@
       "noFolder": "No folder (root)",
       "backToRoot": "Back",
       "currentFolder": "This folder",
-      "noSubfolders": "No subfolders"
+      "noSubfolders": "No subfolders",
+      "noFolders": "No folders yet"
     }
   },
   "components": {

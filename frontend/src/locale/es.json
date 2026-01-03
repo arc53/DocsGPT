@@ -642,7 +642,9 @@
       "moveTo": "Mover",
       "move": "Mover",
       "noFolder": "Sin carpeta (raíz)",
-      "backToRoot": "Volver"
+      "backToRoot": "Volver",
+      "noSubfolders": "Sin subcarpetas",
+      "noFolders": "No hay carpetas todavía"
     }
   },
   "components": {

@@ -642,7 +642,9 @@
       "moveTo": "移动",
       "move": "移动",
       "noFolder": "无文件夹 (根目录)",
-      "backToRoot": "返回"
+      "backToRoot": "返回",
+      "noSubfolders": "没有子文件夹",
+      "noFolders": "暂无文件夹"
     }
   },
   "components": {

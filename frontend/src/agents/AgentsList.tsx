@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -10,8 +10,6 @@ import {
   setConversation,
   updateConversationId,
 } from '../conversation/conversationSlice';
-import FolderNameModal from '../modals/FolderManagementModal';
-import { ActiveState } from '../models/misc';
 import {
   selectAgentFolders,
   selectSelectedAgent,
@@ -166,10 +164,11 @@ export default function AgentsList() {
             <button
               key={tab.id}
               onClick={() => setActiveFilter(tab.id)}
-              className={`rounded-full px-4 py-2 text-sm transition-colors ${activeFilter === tab.id
+              className={`rounded-full px-4 py-2 text-sm transition-colors ${
+                activeFilter === tab.id
                   ? 'bg-[#E0E0E0] text-[#18181B] dark:bg-[#4A4A4A] dark:text-white'
-                  : 'bg-transparent text-[#71717A] hover:bg-[#F5F5F5] dark:text-gray dark:hover:bg-[#383838]/50'
-                }`}
+                  : 'dark:text-gray bg-transparent text-[#71717A] hover:bg-[#F5F5F5] dark:hover:bg-[#383838]/50'
+              }`}
             >
               {t(tab.labelKey)}
             </button>
@@ -236,9 +235,12 @@ function AgentSection({
   const allAgents = useSelector(config.selectData);
   // Track folder navigation path as a stack of folder IDs
   const [folderPath, setFolderPath] = useState<string[]>([]);
-  const [folderModalState, setFolderModalState] = useState<ActiveState>('INACTIVE');
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const newFolderInputRef = useRef<HTMLInputElement>(null);
 
-  const currentFolderId = folderPath.length > 0 ? folderPath[folderPath.length - 1] : null;
+  const currentFolderId =
+    folderPath.length > 0 ? folderPath[folderPath.length - 1] : null;
 
   const updateAgents = (updatedAgents: Agent[]) => {
     dispatch(config.updateAction(updatedAgents));
@@ -253,7 +255,9 @@ function AgentSection({
   const unfolderedAgents = useMemo(() => {
     if (config.id !== 'user' || !folders) return filteredAgents;
     // Show agents that belong to the current folder level
-    return filteredAgents.filter((a) => (a.folder_id || null) === currentFolderId);
+    return filteredAgents.filter(
+      (a) => (a.folder_id || null) === currentFolderId,
+    );
   }, [filteredAgents, folders, config.id, currentFolderId]);
 
   const getAgentsForFolder = (folderId: string) => {
@@ -270,10 +274,6 @@ function AgentSection({
     } else {
       setFolderPath((prev) => prev.slice(0, index + 1));
     }
-  };
-
-  const handleCreateSubfolder = () => {
-    setFolderModalState('ACTIVE');
   };
 
   const handleSubmitNewFolder = (name: string) => {
@@ -319,8 +319,20 @@ function AgentSection({
   }, [folders, folderPath]);
 
   const ChevronIcon = () => (
-    <svg width="6" height="10" viewBox="0 0 6 10" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path fillRule="evenodd" clipRule="evenodd" d="M5.54027 4.45973C5.68108 4.60058 5.76018 4.79159 5.76018 4.99075C5.76018 5.18992 5.68108 5.38092 5.54027 5.52177L1.29134 9.7707C1.22206 9.84244 1.13918 9.89966 1.04754 9.93902C0.955906 9.97839 0.857348 9.9991 0.757618 9.99997C0.657889 10.0008 0.558986 9.98183 0.466679 9.94407C0.374373 9.9063 0.290512 9.85053 0.21999 9.78001C0.149467 9.70949 0.0936966 9.62563 0.055931 9.53332C0.0181655 9.44101 -0.000838292 9.34211 2.83259e-05 9.24238C0.000894943 9.14265 0.0216148 9.04409 0.0609787 8.95246C0.100343 8.86082 0.157562 8.77794 0.229299 8.70866L3.9472 4.99075L0.229299 1.27285C0.0924814 1.13119 0.0167756 0.941464 0.0184869 0.744531C0.0201982 0.547597 0.0991896 0.359213 0.238448 0.219954C0.377707 0.0806961 0.56609 0.00170419 0.763024 -7.66275e-06C0.959958 -0.00171856 1.14969 0.073987 1.29134 0.210805L5.54027 4.45973Z" fill="currentColor" fillOpacity="0.5" />
+    <svg
+      width="6"
+      height="10"
+      viewBox="0 0 6 10"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M5.54027 4.45973C5.68108 4.60058 5.76018 4.79159 5.76018 4.99075C5.76018 5.18992 5.68108 5.38092 5.54027 5.52177L1.29134 9.7707C1.22206 9.84244 1.13918 9.89966 1.04754 9.93902C0.955906 9.97839 0.857348 9.9991 0.757618 9.99997C0.657889 10.0008 0.558986 9.98183 0.466679 9.94407C0.374373 9.9063 0.290512 9.85053 0.21999 9.78001C0.149467 9.70949 0.0936966 9.62563 0.055931 9.53332C0.0181655 9.44101 -0.000838292 9.34211 2.83259e-05 9.24238C0.000894943 9.14265 0.0216148 9.04409 0.0609787 8.95246C0.100343 8.86082 0.157562 8.77794 0.229299 8.70866L3.9472 4.99075L0.229299 1.27285C0.0924814 1.13119 0.0167756 0.941464 0.0184869 0.744531C0.0201982 0.547597 0.0991896 0.359213 0.238448 0.219954C0.377707 0.0806961 0.56609 0.00170419 0.763024 -7.66275e-06C0.959958 -0.00171856 1.14969 0.073987 1.29134 0.210805L5.54027 4.45973Z"
+        fill="currentColor"
+        fillOpacity="0.5"
+      />
     </svg>
   );
 
@@ -362,14 +374,43 @@ function AgentSection({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {config.id === 'user' && (
-            <button
-              className="rounded-full border border-[#E5E5E5] bg-white px-4 py-2 text-sm text-[#18181B] hover:bg-[#F5F5F5] dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white dark:hover:bg-[#383838]"
-              onClick={handleCreateSubfolder}
-            >
-              {t('agents.folders.newFolder')}
-            </button>
-          )}
+          {config.id === 'user' &&
+            (isCreatingFolder ? (
+              <input
+                ref={newFolderInputRef}
+                type="text"
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newFolderName.trim()) {
+                    handleSubmitNewFolder(newFolderName.trim());
+                    setNewFolderName('');
+                    setIsCreatingFolder(false);
+                  } else if (e.key === 'Escape') {
+                    setNewFolderName('');
+                    setIsCreatingFolder(false);
+                  }
+                }}
+                onBlur={() => {
+                  if (!newFolderName.trim()) {
+                    setIsCreatingFolder(false);
+                  }
+                }}
+                placeholder={t('agents.folders.newFolder')}
+                className="rounded-full border border-[#E5E5E5] bg-white px-4 py-2 text-sm text-[#18181B] outline-none placeholder:text-[#9CA3AF] dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white dark:placeholder:text-[#6B7280]"
+                autoFocus
+              />
+            ) : (
+              <button
+                className="rounded-full border border-[#E5E5E5] bg-white px-4 py-2 text-sm text-[#18181B] hover:bg-[#F5F5F5] dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white dark:hover:bg-[#383838]"
+                onClick={() => {
+                  setIsCreatingFolder(true);
+                  setTimeout(() => newFolderInputRef.current?.focus(), 0);
+                }}
+              >
+                {t('agents.folders.newFolder')}
+              </button>
+            ))}
           {config.showNewAgentButton && (
             <button
               className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-4 py-2 text-sm text-white"
@@ -420,7 +461,11 @@ function AgentSection({
               </div>
             ) : hasNoAgentsAtAll && currentLevelFolders.length === 0 ? (
               <div className="flex h-40 w-full flex-col items-center justify-center gap-3 text-[#71717A]">
-                <p>{currentFolderId ? t('agents.folders.empty') : t(`agents.sections.${config.id}.emptyState`)}</p>
+                <p>
+                  {currentFolderId
+                    ? t('agents.folders.empty')
+                    : t(`agents.sections.${config.id}.emptyState`)}
+                </p>
                 {config.showNewAgentButton && !currentFolderId && (
                   <button
                     className="bg-purple-30 hover:bg-violets-are-blue ml-2 rounded-full px-4 py-2 text-sm text-white"
@@ -434,13 +479,6 @@ function AgentSection({
           </>
         )}
       </div>
-
-      <FolderNameModal
-        modalState={folderModalState}
-        setModalState={setFolderModalState}
-        mode="create"
-        onSubmit={handleSubmitNewFolder}
-      />
     </div>
   );
 }
