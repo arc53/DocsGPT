@@ -78,6 +78,9 @@ def test_load_data_crawls_same_domain_links(mock_requests_get, mock_validate_url
     sources = {doc.extra_info.get("source") for doc in result}
     assert sources == {"http://example.com", "http://example.com/about"}
 
+    paths = {doc.extra_info.get("file_path") for doc in result}
+    assert paths == {"index.md", "about.md"}
+
     texts = {doc.text for doc in result}
     assert texts == {"Root content", "About content"}
 
@@ -107,7 +110,10 @@ def test_load_data_accepts_list_input_and_adds_scheme(mock_requests_get, mock_va
 
     assert len(result) == 1
     assert result[0].text == "Homepage"
-    assert result[0].extra_info == {"source": "http://example.com"}
+    assert result[0].extra_info == {
+        "source": "http://example.com",
+        "file_path": "index.md",
+    }
 
 
 @patch("application.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
@@ -190,3 +196,17 @@ def test_load_data_returns_empty_on_ssrf_validation_failure(mock_validate_url):
     assert result == []
     mock_validate_url.assert_called_once()
 
+
+def test_url_to_virtual_path_variants():
+    crawler = CrawlerLoader()
+
+    assert crawler._url_to_virtual_path("https://docs.docsgpt.cloud/") == "index.md"
+    assert (
+        crawler._url_to_virtual_path("https://docs.docsgpt.cloud/guides/setup")
+        == "guides/setup.md"
+    )
+    assert (
+        crawler._url_to_virtual_path("https://docs.docsgpt.cloud/guides/setup/")
+        == "guides/setup.md"
+    )
+    assert crawler._url_to_virtual_path("https://example.com/page.html") == "page.md"
