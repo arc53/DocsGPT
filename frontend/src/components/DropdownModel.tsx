@@ -113,7 +113,7 @@ export default function DropdownModel() {
                 className={`border-gray-3000/75 dark:border-purple-taupe/50 hover:bg-gray-3000/75 dark:hover:bg-purple-taupe flex h-10 w-full cursor-pointer items-center justify-between border-t`}
               >
                 <div className="flex w-full items-center justify-between">
-                  <p className="overflow-hidden py-3 pr-2 pl-5 overflow-ellipsis whitespace-nowrap">
+                  <p className="flex-1 truncate py-3 pr-2 pl-5">
                     {model.display_name}
                   </p>
                   {model.id === selectedModel?.id ? (
