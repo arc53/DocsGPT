@@ -21,6 +21,10 @@
     "title": "🏗️ Architecture",
     "href": "/Guides/Architecture"
   },
+  "compression": {
+    "title": "🗜️ Context Compression",
+    "href": "/Guides/compression"
+  },
   "Integrations": {
     "title": "🔗 Integrations"
   }
