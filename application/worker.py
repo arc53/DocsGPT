@@ -869,27 +869,33 @@ def remote_worker(
         logging.info("Total tokens calculated: %d", tokens)
 
         # Build directory structure from loaded documents
-        # Format matches local file uploads: flat structure with type, size_bytes, token_count
+        # Format matches local file uploads: nested structure with type, size_bytes, token_count
         directory_structure = {}
         for doc in raw_docs:
-            # Get the file path/name from doc_id or extra_info
-            file_path = doc.doc_id or ""
-            if not file_path and doc.extra_info:
-                file_path = doc.extra_info.get("key", "") or doc.extra_info.get(
-                    "title", ""
+            # Get the file path from extra_info
+            # For crawlers: file_path is a virtual path like "guides/setup.md"
+            # For other remotes: use key or title as fallback
+            file_path = ""
+            if doc.extra_info:
+                file_path = (
+                    doc.extra_info.get("file_path", "")
+                    or doc.extra_info.get("key", "")
+                    or doc.extra_info.get("title", "")
                 )
+            if not file_path:
+                file_path = doc.doc_id or ""
 
             if file_path:
-                # Use just the filename (last part of path) for flat structure
-                file_name = file_path.split("/")[-1] if "/" in file_path else file_path
-
                 # Calculate token count
-                token_count = len(doc.text.split()) if doc.text else 0
+                token_count = num_tokens_from_string(doc.text) if doc.text else 0
 
                 # Estimate size in bytes from text content
                 size_bytes = len(doc.text.encode("utf-8")) if doc.text else 0
 
                 # Guess mime type from extension
+                file_name = (
+                    file_path.split("/")[-1] if "/" in file_path else file_path
+                )
                 ext = os.path.splitext(file_name)[1].lower()
                 mime_types = {
                     ".txt": "text/plain",
@@ -909,11 +915,23 @@ def remote_worker(
                 }
                 file_type = mime_types.get(ext, "application/octet-stream")
 
-                directory_structure[file_name] = {
-                    "type": file_type,
-                    "size_bytes": size_bytes,
-                    "token_count": token_count,
-                }
+                # Build nested directory structure from path
+                # e.g., "guides/setup.md" -> {"guides": {"setup.md": {...}}}
+                path_parts = file_path.split("/")
+                current_level = directory_structure
+                for i, part in enumerate(path_parts):
+                    if i == len(path_parts) - 1:
+                        # Last part is the file
+                        current_level[part] = {
+                            "type": file_type,
+                            "size_bytes": size_bytes,
+                            "token_count": token_count,
+                        }
+                    else:
+                        # Intermediate parts are directories
+                        if part not in current_level:
+                            current_level[part] = {}
+                        current_level = current_level[part]
 
         logging.info(
             f"Built directory structure with {len(directory_structure)} files: "

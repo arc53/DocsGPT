@@ -1,4 +1,5 @@
 import logging
+import os
 import requests
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
@@ -47,10 +48,13 @@ class CrawlerLoader(BaseRemote):
                 docs = loader.load()
                 # Convert the loaded documents to your Document schema
                 for doc in docs:
+                    metadata = dict(doc.metadata or {})
+                    source_url = metadata.get("source") or current_url
+                    metadata["file_path"] = self._url_to_virtual_path(source_url)
                     loaded_content.append(
                         Document(
                             doc.page_content,
-                            extra_info=doc.metadata
+                            extra_info=metadata
                         )
                     )
             except Exception as e:
@@ -74,3 +78,29 @@ class CrawlerLoader(BaseRemote):
                 break
 
         return loaded_content
+
+    def _url_to_virtual_path(self, url):
+        """
+        Convert a URL to a virtual file path ending with .md.
+
+        Examples:
+            https://docs.docsgpt.cloud/ -> index.md
+            https://docs.docsgpt.cloud/guides/setup -> guides/setup.md
+            https://docs.docsgpt.cloud/guides/setup/ -> guides/setup.md
+            https://example.com/page.html -> page.md
+        """
+        parsed = urlparse(url)
+        path = parsed.path.strip("/")
+
+        if not path:
+            return "index.md"
+
+        # Remove common file extensions and add .md
+        base, ext = os.path.splitext(path)
+        if ext.lower() in [".html", ".htm", ".php", ".asp", ".aspx", ".jsp"]:
+            path = base
+
+        if not path.endswith(".md"):
+            path = f"{path}.md"
+
+        return path

@@ -7,6 +7,7 @@ import re
 from markdownify import markdownify
 from application.parser.schema.base import Document
 import tldextract
+import os
 
 class CrawlerLoader(BaseRemote):
     def __init__(self, limit=10, allow_subdomains=False):
@@ -57,13 +58,21 @@ class CrawlerLoader(BaseRemote):
             # Convert the HTML to Markdown for cleaner text formatting
             title, language, processed_markdown = self._process_html_to_markdown(html_content, current_url)
             if processed_markdown:
+                # Generate virtual file path from URL for consistent file-like matching
+                virtual_path = self._url_to_virtual_path(current_url)
+                
                 # Create a Document for each visited page
                 documents.append(
                     Document(
                         processed_markdown,  # content
                         None,  # doc_id
                         None,  # embedding
-                        {"source": current_url, "title": title, "language": language} # extra_info
+                        {
+                            "source": current_url,
+                            "title": title,
+                            "language": language,
+                            "file_path": virtual_path,
+                        },  # extra_info
                     )
                 )
 
@@ -146,3 +155,30 @@ class CrawlerLoader(BaseRemote):
                 if link_base == base_domain:
                     filtered.append(link)
         return filtered
+
+    def _url_to_virtual_path(self, url):
+        """
+        Convert a URL to a virtual file path ending with .md.
+
+        Examples:
+            https://docs.docsgpt.cloud/ -> index.md
+            https://docs.docsgpt.cloud/guides/setup -> guides/setup.md
+            https://docs.docsgpt.cloud/guides/setup/ -> guides/setup.md
+            https://example.com/page.html -> page.md
+        """
+        parsed = urlparse(url)
+        path = parsed.path.strip("/")
+
+        if not path:
+            return "index.md"
+
+        # Remove common file extensions and add .md
+        base, ext = os.path.splitext(path)
+        if ext.lower() in [".html", ".htm", ".php", ".asp", ".aspx", ".jsp"]:
+            path = base
+
+        # Ensure path ends with .md
+        if not path.endswith(".md"):
+            path = path + ".md"
+
+        return path
