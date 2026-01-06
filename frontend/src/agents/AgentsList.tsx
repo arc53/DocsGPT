@@ -37,6 +37,7 @@ export default function AgentsList() {
   const token = useSelector(selectToken);
   const selectedAgent = useSelector(selectSelectedAgent);
   const folders = useSelector(selectAgentFolders);
+  const [folderPath, setFolderPath] = useState<string[]>([]);
 
   const { isLoading, refetchFolders, refetchUserAgents } = useAgentsFetch();
 
@@ -188,6 +189,10 @@ export default function AgentsList() {
           isFilteredView={activeFilter !== 'all'}
           isLoading={isLoading[sectionConfig.id as AgentSectionId]}
           folders={sectionConfig.id === 'user' ? folders : null}
+          folderPath={sectionConfig.id === 'user' ? folderPath : []}
+          onFolderPathChange={
+            sectionConfig.id === 'user' ? setFolderPath : undefined
+          }
           onCreateFolder={handleSubmitNewFolder}
           onDeleteFolder={handleDeleteFolder}
           onRenameFolder={handleRenameFolder}
@@ -212,6 +217,8 @@ interface AgentSectionProps {
   isFilteredView: boolean;
   isLoading: boolean;
   folders: AgentFolder[] | null;
+  folderPath: string[];
+  onFolderPathChange?: (path: string[]) => void;
   onCreateFolder: (name: string, parentId?: string) => void;
   onDeleteFolder: (id: string) => Promise<boolean>;
   onRenameFolder: (id: string, name: string) => void;
@@ -225,6 +232,8 @@ function AgentSection({
   isFilteredView,
   isLoading,
   folders,
+  folderPath,
+  onFolderPathChange,
   onCreateFolder,
   onDeleteFolder,
   onRenameFolder,
@@ -233,8 +242,6 @@ function AgentSection({
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const allAgents = useSelector(config.selectData);
-  // Track folder navigation path as a stack of folder IDs
-  const [folderPath, setFolderPath] = useState<string[]>([]);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const newFolderInputRef = useRef<HTMLInputElement>(null);
@@ -242,15 +249,45 @@ function AgentSection({
   const currentFolderId =
     folderPath.length > 0 ? folderPath[folderPath.length - 1] : null;
 
+  const setFolderPath = useCallback(
+    (updater: string[] | ((prev: string[]) => string[])) => {
+      if (!onFolderPathChange) return;
+      if (typeof updater === 'function') {
+        onFolderPathChange(updater(folderPath));
+      } else {
+        onFolderPathChange(updater);
+      }
+    },
+    [onFolderPathChange, folderPath],
+  );
+
   const updateAgents = (updatedAgents: Agent[]) => {
     dispatch(config.updateAction(updatedAgents));
   };
 
+  const folderHasMatchingAgents = useCallback(
+    (folderId: string): boolean => {
+      const directMatches = filteredAgents.some((a) => a.folder_id === folderId);
+      if (directMatches) return true;
+      const childFolders = (folders || []).filter(
+        (f) => f.parent_id === folderId,
+      );
+      return childFolders.some((f) => folderHasMatchingAgents(f.id));
+    },
+    [filteredAgents, folders],
+  );
+
   // Get folders at the current level (root or inside current folder)
   const currentLevelFolders = useMemo(() => {
     if (config.id !== 'user' || !folders) return [];
-    return folders.filter((f) => (f.parent_id || null) === currentFolderId);
-  }, [folders, currentFolderId, config.id]);
+    const foldersAtLevel = folders.filter(
+      (f) => (f.parent_id || null) === currentFolderId,
+    );
+    if (searchQuery) {
+      return foldersAtLevel.filter((f) => folderHasMatchingAgents(f.id));
+    }
+    return foldersAtLevel;
+  }, [folders, currentFolderId, config.id, searchQuery, folderHasMatchingAgents]);
 
   const unfolderedAgents = useMemo(() => {
     if (config.id !== 'user' || !folders) return filteredAgents;
