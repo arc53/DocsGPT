@@ -247,7 +247,7 @@ export default function AgentCard({
   };
   return (
     <div
-      className={`relative flex h-44 w-full flex-col justify-between rounded-[1.2rem] bg-[#F6F6F6] px-6 py-5 hover:bg-[#ECECEC] md:w-48 dark:bg-[#383838] dark:hover:bg-[#383838]/80 ${agent.status === 'published' && 'cursor-pointer'}`}
+      className={`relative flex h-44 flex-col justify-between rounded-[1.2rem] bg-[#F6F6F6] px-4 py-5 hover:bg-[#ECECEC] sm:w-48 sm:px-6 dark:bg-[#383838] dark:hover:bg-[#383838]/80 ${agent.status === 'published' && 'cursor-pointer'}`}
       onClick={(e) => {
         e.stopPropagation();
         handleClick();

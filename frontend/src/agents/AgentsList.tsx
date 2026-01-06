@@ -391,9 +391,9 @@ function AgentSection({
 
   return (
     <div className="mt-8 flex flex-col gap-4">
-      <div className="flex w-full items-center justify-between">
+      <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2">
-          <h2 className="flex items-center gap-2 text-[18px] font-semibold text-[#18181B] dark:text-[#E0E0E0]">
+          <h2 className="flex flex-wrap items-center gap-2 text-[18px] font-semibold text-[#18181B] dark:text-[#E0E0E0]">
             {config.id === 'user' && folderPath.length > 0 ? (
               <>
                 <button
@@ -450,12 +450,12 @@ function AgentSection({
                   }
                 }}
                 placeholder={t('agents.folders.newFolder')}
-                className="rounded-full border border-[#E5E5E5] bg-white px-4 py-2 text-sm text-[#18181B] outline-none placeholder:text-[#9CA3AF] dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white dark:placeholder:text-[#6B7280]"
+                className="w-28 rounded-full border border-[#E5E5E5] bg-white px-4 py-2 text-sm text-[#18181B] outline-none placeholder:text-[#9CA3AF] sm:w-auto dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white dark:placeholder:text-[#6B7280]"
                 autoFocus
               />
             ) : (
               <button
-                className="rounded-full border border-[#E5E5E5] bg-white px-4 py-2 text-sm text-[#18181B] hover:bg-[#F5F5F5] dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white dark:hover:bg-[#383838]"
+                className="shrink-0 whitespace-nowrap rounded-full border border-[#E5E5E5] bg-white px-4 py-2 text-sm text-[#18181B] hover:bg-[#F5F5F5] dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white dark:hover:bg-[#383838]"
                 onClick={() => {
                   setIsCreatingFolder(true);
                   setTimeout(() => newFolderInputRef.current?.focus(), 0);
@@ -466,7 +466,7 @@ function AgentSection({
             ))}
           {config.showNewAgentButton && (
             <button
-              className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-4 py-2 text-sm text-white"
+              className="bg-purple-30 hover:bg-violets-are-blue shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm text-white"
               onClick={() =>
                 navigate(
                   currentFolderId
@@ -490,7 +490,7 @@ function AgentSection({
           <>
             {/* Show subfolders at current level */}
             {config.id === 'user' && currentLevelFolders.length > 0 && (
-              <div className="flex flex-wrap gap-3">
+              <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
                 {currentLevelFolders.map((folder) => (
                   <FolderCard
                     key={folder.id}
@@ -507,7 +507,7 @@ function AgentSection({
 
             {/* Show agents at current level */}
             {unfolderedAgents.length > 0 ? (
-              <div className="grid grid-cols-1 gap-4 sm:flex sm:flex-wrap">
+              <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
                 {unfolderedAgents.map((agent) => (
                   <AgentCard
                     key={agent.id}

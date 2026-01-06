@@ -69,7 +69,7 @@ export default function FolderCard({
   return (
     <>
       <div
-        className={`relative flex w-full cursor-pointer items-center justify-between rounded-[1.2rem] px-4 py-3 md:w-48 ${
+        className={`relative flex cursor-pointer items-center justify-between rounded-[1.2rem] px-4 py-3 sm:w-48 ${
           isExpanded
             ? 'bg-[#E5E5E5] dark:bg-[#454545]'
             : 'bg-[#F6F6F6] hover:bg-[#ECECEC] dark:bg-[#383838] dark:hover:bg-[#383838]/80'
