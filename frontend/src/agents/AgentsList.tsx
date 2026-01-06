@@ -280,6 +280,17 @@ function AgentSection({
   const updateAgents = (updatedAgents: Agent[]) => {
     dispatch(config.updateAction(updatedAgents));
   };
+  
+  const currentFolderDescendantIds = useMemo(() => {
+    if (config.id !== 'user' || !folders || currentFolderId === null) return null;
+
+    const getDescendants = (folderId: string): string[] => {
+      const children = folders.filter((f) => f.parent_id === folderId);
+      return children.flatMap((child) => [child.id, ...getDescendants(child.id)]);
+    };
+
+    return new Set([currentFolderId, ...getDescendants(currentFolderId)]);
+  }, [folders, currentFolderId, config.id]);
 
   const folderHasMatchingAgents = useCallback(
     (folderId: string): boolean => {
@@ -307,11 +318,23 @@ function AgentSection({
 
   const unfolderedAgents = useMemo(() => {
     if (config.id !== 'user' || !folders) return filteredAgents;
-    // Show agents that belong to the current folder level
+
+    if (searchQuery) {
+      // When searching at root: return ALL filtered agents
+      if (currentFolderId === null) {
+        return filteredAgents;
+      }
+      // When searching inside a folder: return agents in current folder OR any descendant
+      return filteredAgents.filter(
+        (a) => currentFolderDescendantIds?.has(a.folder_id ?? '') ?? false,
+      );
+    }
+
+    // No search: show agents that belong to the current folder level only
     return filteredAgents.filter(
       (a) => (a.folder_id || null) === currentFolderId,
     );
-  }, [filteredAgents, folders, config.id, currentFolderId]);
+  }, [filteredAgents, folders, config.id, currentFolderId, searchQuery, currentFolderDescendantIds]);
 
   const getAgentsForFolder = (folderId: string) => {
     return filteredAgents.filter((a) => a.folder_id === folderId);
