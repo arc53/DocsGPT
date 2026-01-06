@@ -157,15 +157,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
   }, []);
 
+  const navigateBackToAgents = useCallback(() => {
+    const targetPath = validatedFolderId
+      ? `/agents?folder=${validatedFolderId}`
+      : '/agents';
+    navigate(targetPath);
+  }, [navigate, validatedFolderId]);
+
   const handleCancel = () => {
     if (selectedAgent) dispatch(setSelectedAgent(null));
-    navigate('/agents');
+    navigateBackToAgents();
   };
 
   const handleDelete = async (agentId: string) => {
     const response = await userService.deleteAgent(agentId, token);
     if (!response.ok) throw new Error('Failed to delete agent');
-    navigate('/agents');
+    navigateBackToAgents();
   };
 
   const handleSaveDraft = async () => {

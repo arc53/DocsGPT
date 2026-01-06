@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
 import Search from '../assets/search.svg';
@@ -34,10 +34,26 @@ const FILTER_TABS: { id: AgentFilterTab; labelKey: string }[] = [
 export default function AgentsList() {
   const { t } = useTranslation();
   const dispatch = useDispatch();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const token = useSelector(selectToken);
   const selectedAgent = useSelector(selectSelectedAgent);
   const folders = useSelector(selectAgentFolders);
-  const [folderPath, setFolderPath] = useState<string[]>([]);
+  const [folderPath, setFolderPath] = useState<string[]>(() => {
+    const folderIdFromUrl = searchParams.get('folder');
+    return folderIdFromUrl ? [folderIdFromUrl] : [];
+  });
+
+  // Sync folder path with URL
+  useEffect(() => {
+    const currentFolderInUrl = searchParams.get('folder');
+    const currentFolderId = folderPath.length > 0 ? folderPath[folderPath.length - 1] : null;
+
+    if (currentFolderId !== currentFolderInUrl) {
+      const newUrl = currentFolderId ? `/agents?folder=${currentFolderId}` : '/agents';
+      navigate(newUrl, { replace: true });
+    }
+  }, [folderPath, searchParams, navigate]);
 
   const { isLoading, refetchFolders, refetchUserAgents } = useAgentsFetch();
 
