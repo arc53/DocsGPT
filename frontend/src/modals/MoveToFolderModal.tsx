@@ -223,21 +223,16 @@ export default function MoveToFolderModal({
               )}
 
               {currentLevelFolders.map((folder) => (
-                <div
+                <button
                   key={folder.id}
-                  className={`flex w-full items-center justify-between border-b border-gray-200 px-8 py-2 text-left text-[14px] dark:border-[#3A3A3A] ${
+                  onClick={() => setSelectedFolderId(folder.id)}
+                  className={`flex w-full cursor-pointer items-center justify-between border-b border-gray-200 px-8 py-2 text-left text-[14px] dark:border-[#3A3A3A] ${
                     selectedFolderId === folder.id
                       ? 'bg-[#7D54D1] text-white'
                       : 'bg-[#F9F9F9] hover:bg-gray-100 dark:bg-[#2A2A2A] dark:hover:bg-[#383838]'
                   }`}
                 >
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedFolderId(folder.id);
-                    }}
-                    className="flex flex-1 items-center gap-2"
-                  >
+                  <span className="flex flex-1 items-center gap-2">
                     <img
                       src={FolderIcon}
                       alt="folder"
@@ -248,13 +243,21 @@ export default function MoveToFolderModal({
                     >
                       {folder.name}
                     </span>
-                  </button>
+                  </span>
                   {/* Check if folder has subfolders */}
                   {folders.some((f) => f.parent_id === folder.id) && (
-                    <button
+                    <span
+                      role="button"
+                      tabIndex={0}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleNavigateIntoFolder(folder.id);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.stopPropagation();
+                          handleNavigateIntoFolder(folder.id);
+                        }
                       }}
                       className="ml-2 flex h-6 w-6 items-center justify-center rounded-full hover:bg-[#FFFFFF2B]"
                     >
@@ -263,9 +266,9 @@ export default function MoveToFolderModal({
                         alt="expand"
                         className={`h-3 w-3 ${selectedFolderId === folder.id ? 'brightness-0 invert' : ''}`}
                       />
-                    </button>
+                    </span>
                   )}
-                </div>
+                </button>
               ))}
               {currentLevelFolders.length === 0 && folderPath.length > 0 && (
                 <div className="flex h-[200px] items-center justify-center text-sm text-[#71717A]">

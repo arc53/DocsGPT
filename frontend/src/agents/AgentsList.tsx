@@ -38,7 +38,7 @@ export default function AgentsList() {
   const selectedAgent = useSelector(selectSelectedAgent);
   const folders = useSelector(selectAgentFolders);
 
-  const { isLoading, refetchFolders } = useAgentsFetch();
+  const { isLoading, refetchFolders, refetchUserAgents } = useAgentsFetch();
 
   const {
     searchQuery,
@@ -81,12 +81,12 @@ export default function AgentsList() {
     async (folderId: string) => {
       const response = await userService.deleteAgentFolder(folderId, token);
       if (response.ok) {
-        await refetchFolders();
+        await Promise.all([refetchFolders(), refetchUserAgents()]);
         return true;
       }
       return false;
     },
-    [token, refetchFolders],
+    [token, refetchFolders, refetchUserAgents],
   );
 
   const handleRenameFolder = useCallback(

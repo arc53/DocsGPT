@@ -112,7 +112,7 @@ export default function FolderCard({
           onDelete(folder.id);
           setDeleteConfirmation('INACTIVE');
         }}
-        cancelLabel={t('convTile.cancel')}
+        cancelLabel={t('cancel')}
         variant="danger"
       />
       <FolderNameModal

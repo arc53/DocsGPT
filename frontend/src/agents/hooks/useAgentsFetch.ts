@@ -15,6 +15,7 @@ interface UseAgentsFetchResult {
   isLoading: Record<AgentSectionId, boolean>;
   isAllLoaded: boolean;
   refetchFolders: () => Promise<void>;
+  refetchUserAgents: () => Promise<void>;
 }
 
 export function useAgentsFetch(): UseAgentsFetchResult {
@@ -94,5 +95,6 @@ export function useAgentsFetch(): UseAgentsFetchResult {
     isLoading,
     isAllLoaded,
     refetchFolders: fetchFolders,
+    refetchUserAgents: fetchUserAgents,
   };
 }
