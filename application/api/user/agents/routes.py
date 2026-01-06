@@ -11,6 +11,7 @@ from flask_restx import fields, Namespace, Resource
 
 from application.api import api
 from application.api.user.base import (
+    agent_folders_collection,
     agents_collection,
     db,
     ensure_user_doc,
@@ -365,6 +366,22 @@ class CreateAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Image upload failed"}), 400
             )
+
+        folder_id = data.get("folder_id")
+        if folder_id:
+            if not ObjectId.is_valid(folder_id):
+                return make_response(
+                    jsonify({"success": False, "message": "Invalid folder ID format"}),
+                    400,
+                )
+            folder = agent_folders_collection.find_one(
+                {"_id": ObjectId(folder_id), "user": user}
+            )
+            if not folder:
+                return make_response(
+                    jsonify({"success": False, "message": "Folder not found"}), 404
+                )
+
         try:
             key = str(uuid.uuid4()) if data.get("status") == "published" else ""
 
@@ -779,6 +796,32 @@ class UpdateAgent(Resource):
                         ),
                         400,
                     )
+            elif field == "folder_id":
+                folder_id = data.get("folder_id")
+                if folder_id:
+                    if not ObjectId.is_valid(folder_id):
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "message": "Invalid folder ID format",
+                                }
+                            ),
+                            400,
+                        )
+                    folder = agent_folders_collection.find_one(
+                        {"_id": ObjectId(folder_id), "user": user}
+                    )
+                    if not folder:
+                        return make_response(
+                            jsonify(
+                                {"success": False, "message": "Folder not found"}
+                            ),
+                            404,
+                        )
+                    update_fields[field] = folder_id
+                else:
+                    update_fields[field] = None
             else:
                 value = data[field]
                 if field in ["name", "description", "prompt_id", "agent_type"]:

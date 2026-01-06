@@ -2,7 +2,7 @@ import isEqual from 'lodash/isEqual';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
@@ -16,10 +16,12 @@ import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import {
+  selectAgentFolders,
   selectSelectedAgent,
   selectSourceDocs,
   selectToken,
   selectPrompts,
+  setAgentFolders,
   setSelectedAgent,
   setPrompts,
 } from '../preferences/preferenceSlice';
@@ -37,10 +39,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const dispatch = useDispatch();
   const { agentId } = useParams();
 
+  const [searchParams] = useSearchParams();
+  const folderIdFromUrl = searchParams.get('folder_id');
+
   const token = useSelector(selectToken);
   const sourceDocs = useSelector(selectSourceDocs);
   const selectedAgent = useSelector(selectSelectedAgent);
   const prompts = useSelector(selectPrompts);
+  const agentFolders = useSelector(selectAgentFolders);
+
+  const [validatedFolderId, setValidatedFolderId] = useState<string | null>(null);
 
   const [effectiveMode, setEffectiveMode] = useState(mode);
   const [agent, setAgent] = useState<Agent>({
@@ -238,6 +246,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       formData.append('default_model_id', agent.default_model_id);
     }
 
+    if (effectiveMode === 'new' && validatedFolderId) {
+      formData.append('folder_id', validatedFolderId);
+    }
+
     try {
       setDraftLoading(true);
       const response =
@@ -341,6 +353,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       formData.append('default_model_id', agent.default_model_id);
     }
 
+    if (effectiveMode === 'new' && validatedFolderId) {
+      formData.append('folder_id', validatedFolderId);
+    }
+
     try {
       setPublishLoading(true);
       const response =
@@ -411,6 +427,36 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     getTools();
     getModels();
   }, [token]);
+
+  // Validate folder_id from URL against user's folders
+  useEffect(() => {
+    const validateAndSetFolder = async () => {
+      if (!folderIdFromUrl) {
+        setValidatedFolderId(null);
+        return;
+      }
+
+      let folders = agentFolders;
+      if (!folders) {
+        try {
+          const response = await userService.getAgentFolders(token);
+          if (response.ok) {
+            const data = await response.json();
+            folders = data.folders || [];
+            dispatch(setAgentFolders(folders));
+          }
+        } catch {
+          setValidatedFolderId(null);
+          return;
+        }
+      }
+
+      const folderExists = folders?.some((f) => f.id === folderIdFromUrl);
+      setValidatedFolderId(folderExists ? folderIdFromUrl : null);
+    };
+
+    validateAndSetFolder();
+  }, [folderIdFromUrl, agentFolders, token, dispatch]);
 
   // Auto-select default source if none selected
   useEffect(() => {

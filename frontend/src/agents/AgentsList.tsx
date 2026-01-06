@@ -451,7 +451,13 @@ function AgentSection({
           {config.showNewAgentButton && (
             <button
               className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-4 py-2 text-sm text-white"
-              onClick={() => navigate('/agents/new')}
+              onClick={() =>
+                navigate(
+                  currentFolderId
+                    ? `/agents/new?folder_id=${currentFolderId}`
+                    : '/agents/new',
+                )
+              }
             >
               {t('agents.newAgent')}
             </button>
@@ -506,7 +512,13 @@ function AgentSection({
                 {config.showNewAgentButton && !currentFolderId && (
                   <button
                     className="bg-purple-30 hover:bg-violets-are-blue ml-2 rounded-full px-4 py-2 text-sm text-white"
-                    onClick={() => navigate('/agents/new')}
+                    onClick={() =>
+                      navigate(
+                        currentFolderId
+                          ? `/agents/new?folder_id=${currentFolderId}`
+                          : '/agents/new',
+                      )
+                    }
                   >
                     {t('agents.newAgent')}
                   </button>
