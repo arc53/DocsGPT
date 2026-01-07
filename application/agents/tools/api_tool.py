@@ -47,24 +47,6 @@ class APITool(Tool):
             self.body_encoding_rules,
         )
 
-    def _make_api_call(self, url, method, headers, query_params, body):
-        if query_params:
-            url = f"{url}?{requests.compat.urlencode(query_params)}"
-        # if isinstance(body, dict):
-        #     body = json.dumps(body)
-        proxies = None
-        if self.proxy:
-            proxies = {"http": self.proxy, "https": self.proxy}
-        try:
-            print(f"Making API call: {method} {url} with body: {body}")
-            if body == "{}":
-                body = None
-            response = requests.request(method, url, headers=headers, data=body, proxies=proxies)
-            response.raise_for_status() 
-            content_type = response.headers.get(
-                "Content-Type", "application/json"
-            ).lower()
-            if "application/json" in content_type:
     def _make_api_call(
         self,
         url: str,
@@ -93,6 +75,9 @@ class APITool(Tool):
         request_url = url
         request_headers = headers.copy() if headers else {}
         response = None
+        proxies = None
+        if self.proxy:
+            proxies = {"http": self.proxy, "https": self.proxy}
 
         # Validate URL to prevent SSRF attacks
         try:
@@ -163,7 +148,7 @@ class APITool(Tool):
 
             if method.upper() == "GET":
                 response = requests.get(
-                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
+                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT, proxies=proxies
                 )
             elif method.upper() == "POST":
                 response = requests.post(
@@ -171,6 +156,7 @@ class APITool(Tool):
                     data=serialized_body,
                     headers=request_headers,
                     timeout=DEFAULT_TIMEOUT,
+                    proxies=proxies
                 )
             elif method.upper() == "PUT":
                 response = requests.put(
@@ -178,10 +164,11 @@ class APITool(Tool):
                     data=serialized_body,
                     headers=request_headers,
                     timeout=DEFAULT_TIMEOUT,
+                    proxies=proxies
                 )
             elif method.upper() == "DELETE":
                 response = requests.delete(
-                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
+                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT, proxies=proxies
                 )
             elif method.upper() == "PATCH":
                 response = requests.patch(
@@ -189,14 +176,15 @@ class APITool(Tool):
                     data=serialized_body,
                     headers=request_headers,
                     timeout=DEFAULT_TIMEOUT,
+                    proxies=proxies
                 )
             elif method.upper() == "HEAD":
                 response = requests.head(
-                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
+                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT, proxies=proxies
                 )
             elif method.upper() == "OPTIONS":
                 response = requests.options(
-                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
+                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT, proxies=proxies
                 )
             else:
                 return {

@@ -1,3 +1,5 @@
+import os
+from urllib.parse import urlparse
 import requests
 from markdownify import markdownify
 from application.agents.tools.base import Tool
