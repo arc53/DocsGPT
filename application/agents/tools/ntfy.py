@@ -16,6 +16,7 @@ class NtfyTool(Tool):
         """
         self.config = config
         self.token = config.get("token", "")
+        self.proxy = config.get("proxy") or os.environ.get("API_TOOL_PROXY")
 
     def execute_action(self, action_name, **kwargs):
         """
@@ -71,7 +72,10 @@ class NtfyTool(Tool):
         if self.token:
             headers["Authorization"] = f"Basic {self.token}"
         data = message.encode("utf-8")
-        response = requests.post(url, headers=headers, data=data)
+        proxies = None
+        if self.proxy:
+            proxies = {"http": self.proxy, "https": self.proxy}
+        response = requests.post(url, headers=headers, data=data, proxies=proxies)
         return {"status_code": response.status_code, "message": "Message sent"}
 
     def get_actions_metadata(self):

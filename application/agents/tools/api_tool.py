@@ -1,3 +1,4 @@
+import os
 import json
 import logging
 import re
@@ -30,6 +31,7 @@ class APITool(Tool):
         self.method = config.get("method", "GET")
         self.headers = config.get("headers", {})
         self.query_params = config.get("query_params", {})
+        self.proxy = config.get("proxy") or os.environ.get("API_TOOL_PROXY")
         self.body_content_type = config.get("body_content_type", ContentType.JSON)
         self.body_encoding_rules = config.get("body_encoding_rules", {})
 
@@ -45,6 +47,24 @@ class APITool(Tool):
             self.body_encoding_rules,
         )
 
+    def _make_api_call(self, url, method, headers, query_params, body):
+        if query_params:
+            url = f"{url}?{requests.compat.urlencode(query_params)}"
+        # if isinstance(body, dict):
+        #     body = json.dumps(body)
+        proxies = None
+        if self.proxy:
+            proxies = {"http": self.proxy, "https": self.proxy}
+        try:
+            print(f"Making API call: {method} {url} with body: {body}")
+            if body == "{}":
+                body = None
+            response = requests.request(method, url, headers=headers, data=body, proxies=proxies)
+            response.raise_for_status() 
+            content_type = response.headers.get(
+                "Content-Type", "application/json"
+            ).lower()
+            if "application/json" in content_type:
     def _make_api_call(
         self,
         url: str,

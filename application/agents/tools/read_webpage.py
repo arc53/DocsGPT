@@ -15,6 +15,7 @@ class ReadWebpageTool(Tool):
         :param config: Optional configuration dictionary. Not used by this tool.
         """
         self.config = config
+        self.proxy = config.get("proxy") or os.environ.get("API_TOOL_PROXY")
 
     def execute_action(self, action_name: str, **kwargs) -> str:
         """
@@ -31,6 +32,15 @@ class ReadWebpageTool(Tool):
         if not url:
             return "Error: URL parameter is missing."
 
+        # Ensure the URL has a scheme (if not, default to http)
+        parsed_url = urlparse(url)
+        if not parsed_url.scheme:
+            url = "http://" + url
+        
+        proxies = None
+        if self.proxy:
+            proxies = {"http": self.proxy, "https": self.proxy}
+        
         # Validate URL to prevent SSRF attacks
         try:
             url = validate_url(url)
@@ -38,7 +48,7 @@ class ReadWebpageTool(Tool):
             return f"Error: URL validation failed - {e}"
 
         try:
-            response = requests.get(url, timeout=10, headers={'User-Agent': 'DocsGPT-Agent/1.0'})
+            response = requests.get(url, timeout=10, headers={'User-Agent': 'DocsGPT-Agent/1.0'}, proxies=proxies)
             response.raise_for_status()  # Raise an exception for HTTP errors (4xx or 5xx)
             
             html_content = response.text

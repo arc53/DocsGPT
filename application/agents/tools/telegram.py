@@ -12,6 +12,7 @@ class TelegramTool(Tool):
     def __init__(self, config):
         self.config = config
         self.token = config.get("token", "")
+        self.proxy = config.get("proxy") or os.environ.get("API_TOOL_PROXY")
 
     def execute_action(self, action_name, **kwargs):
         actions = {
@@ -28,14 +29,20 @@ class TelegramTool(Tool):
         print(f"Sending message: {text}")
         url = f"https://api.telegram.org/bot{self.token}/sendMessage"
         payload = {"chat_id": chat_id, "text": text}
-        response = requests.post(url, data=payload)
+        proxies = None
+        if self.proxy:
+            proxies = {"http": self.proxy, "https": self.proxy}
+        response = requests.post(url, data=payload, proxies=proxies)
         return {"status_code": response.status_code, "message": "Message sent"}
 
     def _send_image(self, image_url, chat_id):
         print(f"Sending image: {image_url}")
         url = f"https://api.telegram.org/bot{self.token}/sendPhoto"
         payload = {"chat_id": chat_id, "photo": image_url}
-        response = requests.post(url, data=payload)
+        proxies = None
+        if self.proxy:
+            proxies = {"http": self.proxy, "https": self.proxy}
+        response = requests.post(url, data=payload, proxies=proxies)
         return {"status_code": response.status_code, "message": "Image sent"}
 
     def get_actions_metadata(self):
