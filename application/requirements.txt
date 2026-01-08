@@ -1,5 +1,5 @@
 anthropic==0.75.0
-boto3==1.42.17
+boto3==1.42.24
 beautifulsoup4==4.14.3
 celery==5.6.0
 cryptography==46.0.3
