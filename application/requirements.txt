@@ -92,5 +92,5 @@ wcwidth==0.2.14
 werkzeug>=3.1.0
 yarl==1.22.0
 markdownify==1.2.2
-tldextract==5.3.0
+tldextract==5.3.1
 websockets==15.0.1
