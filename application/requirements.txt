@@ -1,5 +1,5 @@
 anthropic==0.75.0
-boto3==1.42.12
+boto3==1.42.17
 beautifulsoup4==4.14.3
 celery==5.6.0
 cryptography==46.0.3
@@ -17,12 +17,12 @@ esutils==1.0.1
 elevenlabs==2.27.0
 Flask==3.1.2
 faiss-cpu==1.13.2
-fastmcp==2.14.0
+fastmcp==2.14.1
 flask-restx==1.3.2
 google-genai==1.54.0
 google-api-python-client==2.187.0
 google-auth-httplib2==0.3.0
-google-auth-oauthlib==1.2.2
+google-auth-oauthlib==1.2.3
 gTTS==2.5.4
 gunicorn==23.0.0
 html2text==2025.4.15
@@ -43,7 +43,7 @@ langsmith==0.5.1
 lazy-object-proxy==1.12.0
 lxml==6.0.2
 markupsafe==3.0.3
-marshmallow>=3.18.0,<4.0.0
+marshmallow>=3.18.0,<5.0.0
 mpmath==1.3.0
 multidict==6.7.0
 mypy-extensions==1.1.0
@@ -73,7 +73,7 @@ python-dotenv
 python-jose==3.5.0
 python-pptx==1.0.2
 redis==7.1.0
-referencing>=0.28.0,<0.31.0
+referencing>=0.28.0,<0.38.0
 regex==2025.11.3
 requests==2.32.5
 retry==0.9.2
@@ -86,7 +86,7 @@ transformers==4.57.3
 typing-extensions==4.15.0
 typing-inspect==0.9.0
 tzdata==2025.3
-urllib3==2.6.1
+urllib3==2.6.3
 vine==5.1.0
 wcwidth==0.2.14
 werkzeug>=3.1.0
