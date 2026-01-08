@@ -1,10 +1,12 @@
 import { SyntheticEvent, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 import userService from '../api/services/userService';
 import Duplicate from '../assets/duplicate.svg';
 import Edit from '../assets/edit.svg';
+import FolderIcon from '../assets/folder.svg';
 import Link from '../assets/link-gray.svg';
 import Monitoring from '../assets/monitoring.svg';
 import Pin from '../assets/pin.svg';
@@ -14,6 +16,7 @@ import UnPin from '../assets/unpin.svg';
 import AgentImage from '../components/AgentImage';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import ConfirmationModal from '../modals/ConfirmationModal';
+import MoveToFolderModal from '../modals/MoveToFolderModal';
 import { ActiveState } from '../models/misc';
 import {
   selectAgents,
@@ -36,6 +39,7 @@ export default function AgentCard({
   updateAgents,
   section,
 }: AgentCardProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
@@ -44,6 +48,7 @@ export default function AgentCard({
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
+  const [moveModalState, setMoveModalState] = useState<ActiveState>('INACTIVE');
 
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -99,6 +104,18 @@ export default function AgentCard({
             },
           ]
         : []),
+      {
+        icon: FolderIcon,
+        label: t('agents.folders.moveToFolder'),
+        onClick: (e: SyntheticEvent) => {
+          e.stopPropagation();
+          setMoveModalState('ACTIVE');
+          setIsMenuOpen(false);
+        },
+        variant: 'primary',
+        iconWidth: 16,
+        iconHeight: 15,
+      },
       {
         icon: Trash,
         label: 'Delete',
@@ -218,9 +235,19 @@ export default function AgentCard({
       console.error('Error:', error);
     }
   };
+
+  const handleMoveSuccess = (folderId: string | null) => {
+    const updatedAgents = agents.map((prevAgent) => {
+      if (prevAgent.id === agent.id) {
+        return { ...prevAgent, folder_id: folderId ?? undefined };
+      }
+      return prevAgent;
+    });
+    updateAgents?.(updatedAgents);
+  };
   return (
     <div
-      className={`relative flex h-44 w-full flex-col justify-between rounded-[1.2rem] bg-[#F6F6F6] px-6 py-5 hover:bg-[#ECECEC] md:w-48 dark:bg-[#383838] dark:hover:bg-[#383838]/80 ${agent.status === 'published' && 'cursor-pointer'}`}
+      className={`relative flex h-44 flex-col justify-between rounded-[1.2rem] bg-[#F6F6F6] px-4 py-5 hover:bg-[#ECECEC] sm:w-48 sm:px-6 dark:bg-[#383838] dark:hover:bg-[#383838]/80 ${agent.status === 'published' && 'cursor-pointer'}`}
       onClick={(e) => {
         e.stopPropagation();
         handleClick();
@@ -278,6 +305,14 @@ export default function AgentCard({
         }}
         cancelLabel="Cancel"
         variant="danger"
+      />
+      <MoveToFolderModal
+        modalState={moveModalState}
+        setModalState={setMoveModalState}
+        agentName={agent.name}
+        agentId={agent.id ?? ''}
+        currentFolderId={agent.folder_id}
+        onMoveSuccess={handleMoveSuccess}
       />
     </div>
   );
