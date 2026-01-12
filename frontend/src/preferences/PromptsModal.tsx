@@ -136,7 +136,7 @@ function PromptTextarea({
       </div>
       <textarea
         id={id}
-        className="peer border-silver dark:border-silver/40 relative z-10 h-48 w-full resize-none rounded border-2 bg-transparent px-3 py-2 text-base text-gray-800 outline-none dark:bg-transparent dark:text-white"
+        className="peer border-silver dark:border-silver/40 relative z-10 h-48 w-full resize-none rounded border-2 bg-transparent px-3 py-2 text-base text-gray-800 outline-none md:h-64 lg:h-80 dark:bg-transparent dark:text-white"
         value={value}
         onChange={onChange}
         onScroll={handleScroll}
@@ -765,7 +765,7 @@ export default function PromptsModal({
           setNewPromptContent('');
         }
       }}
-      className="mx-4 mt-16 w-[95vw] max-w-[650px] rounded-2xl bg-white px-4 py-4 sm:px-6 sm:py-6 md:px-8 md:py-6 dark:bg-[#1E1E2A]"
+      className="mx-4 mt-16 w-[95vw] max-w-[650px] rounded-2xl bg-white px-4 py-4 sm:px-6 sm:py-6 md:max-w-[860px] md:px-8 md:py-6 lg:max-w-[980px] dark:bg-[#1E1E2A]"
       contentClassName="!overflow-visible"
     >
       {view}
