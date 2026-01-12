@@ -20,13 +20,24 @@ To connect to a local inference engine, you will generally need to configure the
 *   **`OPENAI_BASE_URL`**:  This is essential. Set this to the base URL of your local inference engine's API endpoint. This tells DocsGPT where to find your local LLM server.
 *   **`API_KEY`**:  Generally, for local inference engines, you can set `API_KEY=None` as authentication is usually not required in local setups.
 
+## Native llama.cpp Support
+
+DocsGPT includes native support for llama.cpp without requiring an OpenAI-compatible server. To use this:
+
+```
+LLM_PROVIDER=llama.cpp
+LLM_NAME=your-model-name
+```
+
+This provider integrates directly with llama.cpp Python bindings.
+
 ## Supported Local Inference Engines (OpenAI API Compatible)
 
-DocsGPT is readily configurable to work with the following local inference engines, all communicating via the OpenAI API format. Here are example `OPENAI_BASE_URL` values for each, based on default setups:
+DocsGPT is also readily configurable to work with the following local inference engines, all communicating via the OpenAI API format. Here are example `OPENAI_BASE_URL` values for each, based on default setups:
 
 | Inference Engine              | `LLM_PROVIDER` | `OPENAI_BASE_URL`          |
 | :---------------------------- | :------------- | :------------------------- |
-| LLaMa.cpp                     | `openai`       | `http://localhost:8000/v1`   |
+| LLaMa.cpp (server mode)       | `openai`       | `http://localhost:8000/v1`   |
 | Ollama                        | `openai`       | `http://localhost:11434/v1`  |
 | Text Generation Inference (TGI)| `openai`      | `http://localhost:8080/v1`   |
 | SGLang                        | `openai`       | `http://localhost:30000/v1`  |
@@ -38,6 +49,40 @@ DocsGPT is readily configurable to work with the following local inference engin
 **Important Note on `localhost` vs `host.docker.internal`:**
 
 The `OPENAI_BASE_URL` examples above use `http://localhost`.  If you are running DocsGPT within Docker and your local inference engine is running on your host machine (outside of Docker), you will likely need to replace `localhost` with `http://host.docker.internal` to ensure Docker can correctly access your host's services. For example, `http://host.docker.internal:11434/v1` for Ollama.
+
+## How the Model Registry Works
+
+DocsGPT uses a **Model Registry** to automatically detect and register available models based on your environment configuration. Understanding this system helps you configure models correctly.
+
+### Automatic Model Detection
+
+When DocsGPT starts, the Model Registry scans your environment variables and automatically registers models from providers that have valid API keys configured:
+
+| Environment Variable   | Provider Models Registered |
+| :--------------------- | :------------------------- |
+| `OPENAI_API_KEY`       | OpenAI models (gpt-5.1, gpt-5-mini, etc.) |
+| `ANTHROPIC_API_KEY`    | Anthropic models (Claude family) |
+| `GOOGLE_API_KEY`       | Google models (Gemini family) |
+| `GROQ_API_KEY`         | Groq models (Llama, Mixtral) |
+| `HUGGINGFACE_API_KEY`  | HuggingFace models |
+
+You can also use the generic `API_KEY` variable with `LLM_PROVIDER` to configure a single provider.
+
+### Custom OpenAI-Compatible Models
+
+When you set `OPENAI_BASE_URL` along with `LLM_PROVIDER=openai` and `LLM_NAME`, the registry automatically creates a custom model entry pointing to your local inference server. This is how local engines like Ollama, vLLM, and others get registered.
+
+### Default Model Selection
+
+The registry determines the default model in this priority order:
+
+1. If `LLM_NAME` is set and matches a registered model, that model becomes the default
+2. Otherwise, the first model from the configured `LLM_PROVIDER` is selected
+3. If neither is set, the first available model in the registry is used
+
+### Multiple Providers
+
+You can configure multiple API keys simultaneously (e.g., both `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`). The registry will load models from all configured providers, giving users the ability to switch between them in the UI.
 
 ## Adding Support for Other Local Engines
 
