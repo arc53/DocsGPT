@@ -33,6 +33,9 @@ import SourcesPopup from './SourcesPopup';
 import ToolsPopup from './ToolsPopup';
 import { handleAbort } from '../conversation/conversationSlice';
 
+const generateId = (): string =>
+  `${Date.now()}-${Math.random().toString(36).substring(2)}`;
+
 type MessageInputProps = {
   onSubmit: (text: string) => void;
   loading: boolean;
@@ -99,7 +102,7 @@ export default function MessageInput({
 
         files.forEach((file, i) => {
           formData.append('file', file);
-          const uiId = crypto.randomUUID();
+          const uiId = generateId();
           indexToUiId[i] = uiId;
           dispatch(
             addAttachment({
@@ -285,7 +288,7 @@ export default function MessageInput({
         const formData = new FormData();
         formData.append('file', file);
         const xhr = new XMLHttpRequest();
-        const uniqueId = crypto.randomUUID();
+        const uniqueId = generateId();
 
         const newAttachment = {
           id: uniqueId,
