@@ -187,3 +187,18 @@ AZURE_OPENAI_MODELS = [
         ),
     ),
 ]
+
+
+def create_custom_openai_model(model_name: str, base_url: str) -> AvailableModel:
+    """Create a custom OpenAI-compatible model (e.g., LM Studio, Ollama)."""
+    return AvailableModel(
+        id=model_name,
+        provider=ModelProvider.OPENAI,
+        display_name=model_name,
+        description=f"Custom OpenAI-compatible model at {base_url}",
+        base_url=base_url,
+        capabilities=ModelCapabilities(
+            supports_tools=True,
+            supported_attachment_types=OPENAI_ATTACHMENTS,
+        ),
+    )

@@ -84,7 +84,9 @@ class ModelRegistry:
 
         self.models.clear()
 
-        self._add_docsgpt_models(settings)
+        # Skip DocsGPT model if using custom OpenAI-compatible endpoint
+        if not settings.OPENAI_BASE_URL:
+            self._add_docsgpt_models(settings)
         if settings.OPENAI_API_KEY or (
             settings.LLM_PROVIDER == "openai" and settings.API_KEY
         ):
@@ -125,19 +127,34 @@ class ModelRegistry:
         )
 
     def _add_openai_models(self, settings):
-        from application.core.model_configs import OPENAI_MODELS
+        from application.core.model_configs import (
+            OPENAI_MODELS,
+            create_custom_openai_model,
+        )
 
+        # Add standard OpenAI models if API key is present
         if settings.OPENAI_API_KEY:
             for model in OPENAI_MODELS:
                 self.models[model.id] = model
-            return
-        if settings.LLM_PROVIDER == "openai" and settings.LLM_NAME:
+
+        # Add custom model if OPENAI_BASE_URL is configured with a custom LLM_NAME
+        if (
+            settings.LLM_PROVIDER == "openai"
+            and settings.OPENAI_BASE_URL
+            and settings.LLM_NAME
+        ):
+            custom_model = create_custom_openai_model(
+                settings.LLM_NAME, settings.OPENAI_BASE_URL
+            )
+            self.models[settings.LLM_NAME] = custom_model
+            logger.info(
+                f"Registered custom OpenAI model: {settings.LLM_NAME} at {settings.OPENAI_BASE_URL}"
+            )
+
+        # Fallback: add all OpenAI models if none were added
+        if not any(m.provider.value == "openai" for m in self.models.values()):
             for model in OPENAI_MODELS:
-                if model.id == settings.LLM_NAME:
-                    self.models[model.id] = model
-                    return
-        for model in OPENAI_MODELS:
-            self.models[model.id] = model
+                self.models[model.id] = model
 
     def _add_azure_openai_models(self, settings):
         from application.core.model_configs import AZURE_OPENAI_MODELS

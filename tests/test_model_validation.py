@@ -64,10 +64,12 @@ def test_model_without_base_url():
 def test_validate_model_id():
     """Test model_id validation"""
     # Get the registry instance to check what models are available
-    ModelRegistry.get_instance()
+    registry = ModelRegistry.get_instance()
 
-    # Test with a model that should exist (docsgpt-local is always added)
-    assert validate_model_id("docsgpt-local") is True
+    # Test with a model that exists in the registry
+    available_models = registry.get_all_models()
+    if available_models:
+        assert validate_model_id(available_models[0].id) is True
 
     # Test with invalid model_id
     assert validate_model_id("invalid-model-xyz-123") is False
@@ -79,13 +81,18 @@ def test_validate_model_id():
 @pytest.mark.unit
 def test_get_base_url_for_model():
     """Test retrieving base_url for a model"""
-    # Test with a model that doesn't have base_url
-    result = get_base_url_for_model("docsgpt-local")
-    assert result is None  # docsgpt-local doesn't have custom base_url
-
     # Test with invalid model
     result = get_base_url_for_model("invalid-model")
     assert result is None
+
+    # Test with a model that exists but may or may not have base_url
+    registry = ModelRegistry.get_instance()
+    available_models = registry.get_all_models()
+    if available_models:
+        model = available_models[0]
+        result = get_base_url_for_model(model.id)
+        # Result should match the model's base_url (could be None or a string)
+        assert result == model.base_url
 
 
 @pytest.mark.unit
