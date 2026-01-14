@@ -9,6 +9,7 @@ from application.llm.novita import NovitaLLM
 from application.llm.openai import AzureOpenAILLM, OpenAILLM
 from application.llm.premai import PremAILLM
 from application.llm.sagemaker import SagemakerAPILLM
+from application.llm.open_router import OpenRouterLLM
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ class LLMCreator:
         "groq": GroqLLM,
         "google": GoogleLLM,
         "novita": NovitaLLM,
+        "openrouter": OpenRouterLLM,
     }
 
     @classmethod

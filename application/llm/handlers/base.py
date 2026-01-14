@@ -105,6 +105,7 @@ class LLMHandler(ABC):
         """
         Prepare messages with attachments and provider-specific formatting.
 
+
         Args:
             agent: The agent instance
             messages: Original messages
@@ -118,11 +119,40 @@ class LLMHandler(ABC):
         logger.info(f"Preparing messages with {len(attachments)} attachments")
         supported_types = agent.llm.get_supported_attachment_types()
 
+        # Check if provider supports images but not PDF (synthetic PDF support)
+        supports_images = any(t.startswith("image/") for t in supported_types)
+        supports_pdf = "application/pdf" in supported_types
+
+        # Process attachments, converting PDFs to images if needed
+        processed_attachments = []
+        for attachment in attachments:
+            mime_type = attachment.get("mime_type")
+
+            # Synthetic PDF support: convert PDF to images if LLM supports images but not PDF
+            if mime_type == "application/pdf" and supports_images and not supports_pdf:
+                logger.info(
+                    f"Converting PDF to images for synthetic PDF support: {attachment.get('path', 'unknown')}"
+                )
+                try:
+                    converted_images = self._convert_pdf_to_images(attachment)
+                    processed_attachments.extend(converted_images)
+                    logger.info(
+                        f"Converted PDF to {len(converted_images)} images"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to convert PDF to images, falling back to text: {e}"
+                    )
+                    # Fall back to treating as unsupported (text extraction)
+                    processed_attachments.append(attachment)
+            else:
+                processed_attachments.append(attachment)
+
         supported_attachments = [
-            a for a in attachments if a.get("mime_type") in supported_types
+            a for a in processed_attachments if a.get("mime_type") in supported_types
         ]
         unsupported_attachments = [
-            a for a in attachments if a.get("mime_type") not in supported_types
+            a for a in processed_attachments if a.get("mime_type") not in supported_types
         ]
 
         # Process supported attachments with the LLM's custom method
@@ -144,6 +174,37 @@ class LLMHandler(ABC):
                 messages, unsupported_attachments
             )
         return messages
+
+    def _convert_pdf_to_images(self, attachment: Dict) -> List[Dict]:
+        """
+        Convert a PDF attachment to a list of image attachments.
+
+        This enables synthetic PDF support for LLMs that support images but not PDFs.
+
+        Args:
+            attachment: PDF attachment dictionary with 'path' and optional 'content'
+
+        Returns:
+            List of image attachment dictionaries with 'data', 'mime_type', and 'page'
+        """
+        from application.utils import convert_pdf_to_images
+        from application.storage.storage_creator import StorageCreator
+
+        file_path = attachment.get("path")
+        if not file_path:
+            raise ValueError("No file path provided in PDF attachment")
+
+        storage = StorageCreator.get_storage()
+
+        # Convert PDF to images
+        images_data = convert_pdf_to_images(
+            file_path=file_path,
+            storage=storage,
+            max_pages=20,
+            dpi=150,
+        )
+
+        return images_data
 
     def _append_unsupported_attachments(
         self, messages: List[Dict], attachments: List[Dict]
