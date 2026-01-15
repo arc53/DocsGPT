@@ -9,13 +9,12 @@ from application.llm.base import BaseLLM
 from application.storage.storage_creator import StorageCreator
 
 
-def _truncate_base64_for_logging(messages, max_length=50):
+def _truncate_base64_for_logging(messages):
     """
     Create a copy of messages with base64 data truncated for readable logging.
 
     Args:
         messages: List of message dicts
-        max_length: Max characters to show for base64 data
 
     Returns:
         Copy of messages with truncated base64 content

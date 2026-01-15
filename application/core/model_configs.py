@@ -8,8 +8,8 @@ from application.core.model_settings import (
     ModelProvider,
 )
 
-OPENAI_ATTACHMENTS = [
-    #"application/pdf",
+# Base image attachment types supported by most vision-capable LLMs
+IMAGE_ATTACHMENTS = [
     "image/png",
     "image/jpeg",
     "image/jpg",
@@ -17,30 +17,15 @@ OPENAI_ATTACHMENTS = [
     "image/gif",
 ]
 
-GOOGLE_ATTACHMENTS = [
-    "application/pdf",
-    "image/png",
-    "image/jpeg",
-    "image/jpg",
-    "image/webp",
-    "image/gif",
-]
+# PDF excluded: most OpenAI-compatible endpoints don't support native PDF uploads.
+# When excluded, PDFs are synthetically processed by converting pages to images.
+OPENAI_ATTACHMENTS = IMAGE_ATTACHMENTS
 
-ANTHROPIC_ATTACHMENTS = [
-    "image/png",
-    "image/jpeg",
-    "image/jpg",
-    "image/webp",
-    "image/gif",
-]
+GOOGLE_ATTACHMENTS = ["application/pdf"] + IMAGE_ATTACHMENTS
 
-OPENROUTER_ATTACHMENTS = [
-    "image/png",
-    "image/jpeg",
-    "image/jpg",
-    "image/webp",
-    "image/gif",
-]  
+ANTHROPIC_ATTACHMENTS = IMAGE_ATTACHMENTS
+
+OPENROUTER_ATTACHMENTS = IMAGE_ATTACHMENTS
 
 
 OPENAI_MODELS = [
