@@ -8,8 +8,8 @@ from application.core.model_settings import (
     ModelProvider,
 )
 
-OPENAI_ATTACHMENTS = [
-    "application/pdf",
+# Base image attachment types supported by most vision-capable LLMs
+IMAGE_ATTACHMENTS = [
     "image/png",
     "image/jpeg",
     "image/jpg",
@@ -17,14 +17,15 @@ OPENAI_ATTACHMENTS = [
     "image/gif",
 ]
 
-GOOGLE_ATTACHMENTS = [
-    "application/pdf",
-    "image/png",
-    "image/jpeg",
-    "image/jpg",
-    "image/webp",
-    "image/gif",
-]
+# PDF excluded: most OpenAI-compatible endpoints don't support native PDF uploads.
+# When excluded, PDFs are synthetically processed by converting pages to images.
+OPENAI_ATTACHMENTS = IMAGE_ATTACHMENTS
+
+GOOGLE_ATTACHMENTS = ["application/pdf"] + IMAGE_ATTACHMENTS
+
+ANTHROPIC_ATTACHMENTS = IMAGE_ATTACHMENTS
+
+OPENROUTER_ATTACHMENTS = IMAGE_ATTACHMENTS
 
 
 OPENAI_MODELS = [
@@ -63,6 +64,7 @@ ANTHROPIC_MODELS = [
         description="Latest Claude 3.5 Sonnet with enhanced capabilities",
         capabilities=ModelCapabilities(
             supports_tools=True,
+            supported_attachment_types=ANTHROPIC_ATTACHMENTS,
             context_window=200000,
         ),
     ),
@@ -73,6 +75,7 @@ ANTHROPIC_MODELS = [
         description="Balanced performance and capability",
         capabilities=ModelCapabilities(
             supports_tools=True,
+            supported_attachment_types=ANTHROPIC_ATTACHMENTS,
             context_window=200000,
         ),
     ),
@@ -83,6 +86,7 @@ ANTHROPIC_MODELS = [
         description="Most capable Claude model",
         capabilities=ModelCapabilities(
             supports_tools=True,
+            supported_attachment_types=ANTHROPIC_ATTACHMENTS,
             context_window=200000,
         ),
     ),
@@ -93,6 +97,7 @@ ANTHROPIC_MODELS = [
         description="Fastest Claude model",
         capabilities=ModelCapabilities(
             supports_tools=True,
+            supported_attachment_types=ANTHROPIC_ATTACHMENTS,
             context_window=200000,
         ),
     ),
@@ -151,27 +156,42 @@ GROQ_MODELS = [
         ),
     ),
     AvailableModel(
-        id="llama-3.1-8b-instant",
+        id="openai/gpt-oss-120b",
         provider=ModelProvider.GROQ,
-        display_name="Llama 3.1 8B",
-        description="Ultra-fast inference",
+        display_name="GPT-OSS 120B",
+        description="Open-source GPT model optimized for speed",
         capabilities=ModelCapabilities(
             supports_tools=True,
             context_window=128000,
         ),
     ),
+]
+
+
+OPENROUTER_MODELS = [
     AvailableModel(
-        id="mixtral-8x7b-32768",
-        provider=ModelProvider.GROQ,
-        display_name="Mixtral 8x7B",
-        description="High-speed inference with tools",
+        id="qwen/qwen3-coder:free",
+        provider=ModelProvider.OPENROUTER,
+        display_name="Qwen 3 Coder",
+        description="Latest Qwen model with high-speed inference",
         capabilities=ModelCapabilities(
             supports_tools=True,
-            context_window=32768,
+            context_window=128000,
+            supported_attachment_types=OPENROUTER_ATTACHMENTS
+        ),
+    ),
+    AvailableModel(
+        id="google/gemma-3-27b-it:free",
+        provider=ModelProvider.OPENROUTER,
+        display_name="Gemma 3 27B",
+        description="Latest Gemma model with high-speed inference",
+        capabilities=ModelCapabilities(
+            supports_tools=True,
+            context_window=128000,
+            supported_attachment_types=OPENROUTER_ATTACHMENTS
         ),
     ),
 ]
-
 
 AZURE_OPENAI_MODELS = [
     AvailableModel(

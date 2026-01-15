@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 class ModelProvider(str, Enum):
     OPENAI = "openai"
+    OPENROUTER = "openrouter"
     AZURE_OPENAI = "azure_openai"
     ANTHROPIC = "anthropic"
     GROQ = "groq"
@@ -107,6 +108,10 @@ class ModelRegistry:
             settings.LLM_PROVIDER == "groq" and settings.API_KEY
         ):
             self._add_groq_models(settings)
+        if settings.OPEN_ROUTER_API_KEY or (
+            settings.LLM_PROVIDER == "openrouter" and settings.API_KEY
+        ):
+            self._add_openrouter_models(settings)
         if settings.HUGGINGFACE_API_KEY or (
             settings.LLM_PROVIDER == "huggingface" and settings.API_KEY
         ):
@@ -210,6 +215,21 @@ class ModelRegistry:
                     self.models[model.id] = model
                     return
         for model in GROQ_MODELS:
+            self.models[model.id] = model
+    
+    def _add_openrouter_models(self, settings):
+        from application.core.model_configs import OPENROUTER_MODELS
+
+        if settings.OPEN_ROUTER_API_KEY:
+            for model in OPENROUTER_MODELS:
+                self.models[model.id] = model
+            return
+        if settings.LLM_PROVIDER == "openrouter" and settings.LLM_NAME:
+            for model in OPENROUTER_MODELS:
+                if model.id == settings.LLM_NAME:
+                    self.models[model.id] = model
+                    return
+        for model in OPENROUTER_MODELS:
             self.models[model.id] = model
 
     def _add_docsgpt_models(self, settings):

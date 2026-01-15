@@ -60,14 +60,14 @@ def get_default_file_extractor(
             ".rst": RstParser(),
             ".adoc": DoclingAsciiDocParser(),
             ".asciidoc": DoclingAsciiDocParser(),
-            # Images (with OCR)
-            ".png": DoclingImageParser(ocr_enabled=ocr_enabled),
-            ".jpg": DoclingImageParser(ocr_enabled=ocr_enabled),
-            ".jpeg": DoclingImageParser(ocr_enabled=ocr_enabled),
-            ".tiff": DoclingImageParser(ocr_enabled=ocr_enabled),
-            ".tif": DoclingImageParser(ocr_enabled=ocr_enabled),
-            ".bmp": DoclingImageParser(ocr_enabled=ocr_enabled),
-            ".webp": DoclingImageParser(ocr_enabled=ocr_enabled),
+            # Images (with OCR) - only use Docling when OCR is enabled
+            ".png": DoclingImageParser(ocr_enabled=ocr_enabled) if ocr_enabled else ImageParser(),
+            ".jpg": DoclingImageParser(ocr_enabled=ocr_enabled) if ocr_enabled else ImageParser(),
+            ".jpeg": DoclingImageParser(ocr_enabled=ocr_enabled) if ocr_enabled else ImageParser(),
+            ".tiff": DoclingImageParser(ocr_enabled=ocr_enabled) if ocr_enabled else ImageParser(),
+            ".tif": DoclingImageParser(ocr_enabled=ocr_enabled) if ocr_enabled else ImageParser(),
+            ".bmp": DoclingImageParser(ocr_enabled=ocr_enabled) if ocr_enabled else ImageParser(),
+            ".webp": DoclingImageParser(ocr_enabled=ocr_enabled) if ocr_enabled else ImageParser(),
             # Media/subtitles
             ".vtt": DoclingVTTParser(),
             # Specialized XML formats

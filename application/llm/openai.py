@@ -9,6 +9,57 @@ from application.llm.base import BaseLLM
 from application.storage.storage_creator import StorageCreator
 
 
+def _truncate_base64_for_logging(messages):
+    """
+    Create a copy of messages with base64 data truncated for readable logging.
+
+    Args:
+        messages: List of message dicts
+
+    Returns:
+        Copy of messages with truncated base64 content
+    """
+    import copy
+
+    def truncate_content(content):
+        if isinstance(content, str):
+            # Check if it looks like a data URL with base64
+            if content.startswith("data:") and ";base64," in content:
+                prefix_end = content.index(";base64,") + len(";base64,")
+                prefix = content[:prefix_end]
+                return f"{prefix}[BASE64_DATA_TRUNCATED, length={len(content) - prefix_end}]"
+            return content
+        elif isinstance(content, list):
+            return [truncate_item(item) for item in content]
+        elif isinstance(content, dict):
+            return {k: truncate_content(v) for k, v in content.items()}
+        return content
+
+    def truncate_item(item):
+        if isinstance(item, dict):
+            result = {}
+            for k, v in item.items():
+                if k == "url" and isinstance(v, str) and ";base64," in v:
+                    prefix_end = v.index(";base64,") + len(";base64,")
+                    prefix = v[:prefix_end]
+                    result[k] = f"{prefix}[BASE64_DATA_TRUNCATED, length={len(v) - prefix_end}]"
+                elif k == "data" and isinstance(v, str) and len(v) > 100:
+                    result[k] = f"[BASE64_DATA_TRUNCATED, length={len(v)}]"
+                else:
+                    result[k] = truncate_content(v)
+            return result
+        return truncate_content(item)
+
+    truncated = []
+    for msg in messages:
+        msg_copy = copy.copy(msg)
+        if "content" in msg_copy:
+            msg_copy["content"] = truncate_content(msg_copy["content"])
+        truncated.append(msg_copy)
+
+    return truncated
+
+
 class OpenAILLM(BaseLLM):
 
     def __init__(self, api_key=None, user_api_key=None, base_url=None, *args, **kwargs):
@@ -44,12 +95,12 @@ class OpenAILLM(BaseLLM):
                 if isinstance(content, str):
                     cleaned_messages.append({"role": role, "content": content})
                 elif isinstance(content, list):
+                    # Collect all content parts into a single message
+                    content_parts = []
+
                     for item in content:
-                        if "text" in item:
-                            cleaned_messages.append(
-                                {"role": role, "content": item["text"]}
-                            )
-                        elif "function_call" in item:
+                        if "function_call" in item:
+                            # Function calls need their own message
                             cleaned_args = self._remove_null_values(
                                 item["function_call"]["args"]
                             )
@@ -69,6 +120,7 @@ class OpenAILLM(BaseLLM):
                                 }
                             )
                         elif "function_response" in item:
+                            # Function responses need their own message
                             cleaned_messages.append(
                                 {
                                     "role": "tool",
@@ -81,36 +133,20 @@ class OpenAILLM(BaseLLM):
                                 }
                             )
                         elif isinstance(item, dict):
-                            content_parts = []
-                            if "text" in item:
-                                content_parts.append(
-                                    {"type": "text", "text": item["text"]}
-                                )
-                            elif (
-                                "type" in item
-                                and item["type"] == "text"
-                                and "text" in item
-                            ):
+                            # Collect content parts (text, images, files) into a single message
+                            if "type" in item and item["type"] == "text" and "text" in item:
                                 content_parts.append(item)
-                            elif (
-                                "type" in item
-                                and item["type"] == "file"
-                                and "file" in item
-                            ):
+                            elif "type" in item and item["type"] == "file" and "file" in item:
                                 content_parts.append(item)
-                            elif (
-                                "type" in item
-                                and item["type"] == "image_url"
-                                and "image_url" in item
-                            ):
+                            elif "type" in item and item["type"] == "image_url" and "image_url" in item:
                                 content_parts.append(item)
-                            cleaned_messages.append(
-                                {"role": role, "content": content_parts}
-                            )
-                        else:
-                            raise ValueError(
-                                f"Unexpected content dictionary format: {item}"
-                            )
+                            elif "text" in item and "type" not in item:
+                                # Legacy format: {"text": "..."} without type
+                                content_parts.append({"type": "text", "text": item["text"]})
+
+                    # Add the collected content parts as a single message
+                    if content_parts:
+                        cleaned_messages.append({"role": role, "content": content_parts})
                 else:
                     raise ValueError(f"Unexpected content type: {type(content)}")
         return cleaned_messages
@@ -127,7 +163,7 @@ class OpenAILLM(BaseLLM):
         **kwargs,
     ):
         messages = self._clean_messages_openai(messages)
-        logging.info(f"Cleaned messages: {messages}")
+        logging.info(f"Cleaned messages: {_truncate_base64_for_logging(messages)}")
 
         # Convert max_tokens to max_completion_tokens for newer models
         if "max_tokens" in kwargs:
@@ -163,7 +199,7 @@ class OpenAILLM(BaseLLM):
         **kwargs,
     ):
         messages = self._clean_messages_openai(messages)
-        logging.info(f"Cleaned messages: {messages}")
+        logging.info(f"Cleaned messages: {_truncate_base64_for_logging(messages)}")
 
         # Convert max_tokens to max_completion_tokens for newer models
         if "max_tokens" in kwargs:
@@ -261,17 +297,14 @@ class OpenAILLM(BaseLLM):
         """
         Return a list of MIME types supported by OpenAI for file uploads.
 
+        This reads from the model config to ensure consistency.
+        If no model config found, falls back to images only (safest default).
+
         Returns:
             list: List of supported MIME types
         """
-        return [
-            "application/pdf",
-            "image/png",
-            "image/jpeg",
-            "image/jpg",
-            "image/webp",
-            "image/gif",
-        ]
+        from application.core.model_configs import OPENAI_ATTACHMENTS
+        return OPENAI_ATTACHMENTS
 
     def prepare_messages_with_attachments(self, messages, attachments=None):
         """
@@ -308,10 +341,16 @@ class OpenAILLM(BaseLLM):
             prepared_messages[user_message_index]["content"] = []
         for attachment in attachments:
             mime_type = attachment.get("mime_type")
+            logging.info(f"Processing attachment with mime_type: {mime_type}, has_data: {'data' in attachment}, has_path: {'path' in attachment}")
 
             if mime_type and mime_type.startswith("image/"):
                 try:
-                    base64_image = self._get_base64_image(attachment)
+                    # Check if this is a pre-converted image (from PDF-to-image conversion)
+                    if "data" in attachment:
+                        base64_image = attachment["data"]
+                    else:
+                        base64_image = self._get_base64_image(attachment)
+
                     prepared_messages[user_message_index]["content"].append(
                         {
                             "type": "image_url",
@@ -320,6 +359,7 @@ class OpenAILLM(BaseLLM):
                             },
                         }
                     )
+
                 except Exception as e:
                     logging.error(
                         f"Error processing image attachment: {e}", exc_info=True
@@ -334,6 +374,7 @@ class OpenAILLM(BaseLLM):
             # Handle PDFs using the file API
 
             elif mime_type == "application/pdf":
+                logging.info(f"Attempting to upload PDF to OpenAI: {attachment.get('path', 'unknown')}")
                 try:
                     file_id = self._upload_file_to_openai(attachment)
                     prepared_messages[user_message_index]["content"].append(
@@ -348,6 +389,8 @@ class OpenAILLM(BaseLLM):
                                 "text": f"File content:\n\n{attachment['content']}",
                             }
                         )
+            else:
+                logging.warning(f"Unsupported attachment type in OpenAI provider: {mime_type}")
         return prepared_messages
 
     def _get_base64_image(self, attachment):

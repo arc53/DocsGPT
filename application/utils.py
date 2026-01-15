@@ -1,7 +1,11 @@
+import base64
 import hashlib
+import io
+import logging
 import os
 import re
 import uuid
+from typing import List
 
 import tiktoken
 from flask import jsonify, make_response
@@ -10,6 +14,8 @@ from werkzeug.utils import secure_filename
 from application.core.model_utils import get_token_limit
 
 from application.core.settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 _encoding = None
@@ -213,6 +219,93 @@ def calculate_compression_threshold(
     total_context = get_token_limit(model_id)
     threshold = int(total_context * threshold_percentage)
     return threshold
+
+
+def convert_pdf_to_images(
+    file_path: str,
+    storage=None,
+    max_pages: int = 20,
+    dpi: int = 150,
+    image_format: str = "PNG",
+) -> List[dict]:
+    """
+    Convert PDF pages to images for LLMs that support images but not PDFs.
+
+    This enables "synthetic PDF support" by converting each PDF page to an image
+    that can be sent to vision-capable LLMs like Claude.
+
+    Args:
+        file_path: Path to the PDF file (can be storage path)
+        storage: Optional storage instance for retrieving files
+        max_pages: Maximum number of pages to convert (default 20 to avoid context overflow)
+        dpi: Resolution for rendering (default 150 for balance of quality/size)
+        image_format: Output format (PNG recommended for quality)
+
+    Returns:
+        List of dicts with keys:
+        - 'data': base64-encoded image data
+        - 'mime_type': MIME type (e.g., 'image/png')
+        - 'page': Page number (1-indexed)
+
+    Raises:
+        ImportError: If pdf2image is not installed
+        FileNotFoundError: If file doesn't exist
+        Exception: If conversion fails
+    """
+    try:
+        from pdf2image import convert_from_path, convert_from_bytes
+    except ImportError:
+        raise ImportError(
+            "pdf2image is required for PDF-to-image conversion. "
+            "Install it with: pip install pdf2image\n"
+            "Also ensure poppler-utils is installed on your system."
+        )
+
+    images_data = []
+    mime_type = f"image/{image_format.lower()}"
+
+    try:
+        # Get PDF content either from storage or direct file path
+        if storage and hasattr(storage, "get_file"):
+            with storage.get_file(file_path) as pdf_file:
+                pdf_bytes = pdf_file.read()
+                pil_images = convert_from_bytes(
+                    pdf_bytes,
+                    dpi=dpi,
+                    fmt=image_format.lower(),
+                    first_page=1,
+                    last_page=max_pages,
+                )
+        else:
+            pil_images = convert_from_path(
+                file_path,
+                dpi=dpi,
+                fmt=image_format.lower(),
+                first_page=1,
+                last_page=max_pages,
+            )
+
+        for page_num, pil_image in enumerate(pil_images, start=1):
+            # Convert PIL image to base64
+            buffer = io.BytesIO()
+            pil_image.save(buffer, format=image_format)
+            buffer.seek(0)
+            base64_data = base64.b64encode(buffer.read()).decode("utf-8")
+
+            images_data.append({
+                "data": base64_data,
+                "mime_type": mime_type,
+                "page": page_num,
+            })
+
+        return images_data
+
+    except FileNotFoundError:
+        logger.error(f"PDF file not found: {file_path}")
+        raise
+    except Exception as e:
+        logger.error(f"Error converting PDF to images: {e}", exc_info=True)
+        raise
 
 
 def clean_text_for_tts(text: str) -> str:

@@ -9,6 +9,7 @@ def get_api_key_for_provider(provider: str) -> Optional[str]:
 
     provider_key_map = {
         "openai": settings.OPENAI_API_KEY,
+        "openrouter": settings.OPEN_ROUTER_API_KEY,
         "anthropic": settings.ANTHROPIC_API_KEY,
         "google": settings.GOOGLE_API_KEY,
         "groq": settings.GROQ_API_KEY,

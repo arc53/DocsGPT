@@ -52,6 +52,7 @@ RUN apt-get update && \
         python3.12 \
         libgl1 \
         libglib2.0-0 \
+        poppler-utils \
         && \
     ln -s /usr/bin/python3.12 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
