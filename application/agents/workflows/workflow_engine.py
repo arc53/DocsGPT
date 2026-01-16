@@ -132,10 +132,7 @@ class WorkflowEngine:
             formatted_prompt = self._format_template(node_config.prompt_template)
         else:
             formatted_prompt = self.state.get("query", "")
-
-        # Get the LLM name for this node (or fall back to workflow agent's LLM)
         node_llm_name = node_config.llm_name or self.agent.llm_name
-        # Get the appropriate API key for this LLM provider
         node_api_key = get_api_key_for_provider(node_llm_name) or self.agent.api_key
 
         node_agent = WorkflowNodeAgentFactory.create(

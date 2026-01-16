@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 
 class WorkflowAgent(BaseAgent):
+    """A specialized agent that executes predefined workflows."""
+
     def __init__(
         self,
         *args,
@@ -114,12 +116,12 @@ class WorkflowAgent(BaseAgent):
                 return None
             workflow = Workflow(**workflow_doc)
 
-            nodes_docs = list(
+            nodes_docs = List(
                 workflow_nodes_coll.find({"workflow_id": self.workflow_id})
             )
             nodes = [WorkflowNode(**doc) for doc in nodes_docs]
 
-            edges_docs = list(
+            edges_docs = List(
                 workflow_edges_coll.find({"workflow_id": self.workflow_id})
             )
             edges = [WorkflowEdge(**doc) for doc in edges_docs]
