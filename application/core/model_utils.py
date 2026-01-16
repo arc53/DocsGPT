@@ -1,6 +1,6 @@
 from typing import Any, Dict, Optional
 
-from application.core.model_settings import ModelRegistry, _is_valid_api_key
+from application.core.model_settings import ModelRegistry
 
 
 def get_api_key_for_provider(provider: str) -> Optional[str]:
@@ -19,11 +19,9 @@ def get_api_key_for_provider(provider: str) -> Optional[str]:
     }
 
     provider_key = provider_key_map.get(provider)
-    if provider_key and _is_valid_api_key(provider_key):
+    if provider_key:
         return provider_key
-    if _is_valid_api_key(settings.API_KEY):
-        return settings.API_KEY
-    return None
+    return settings.API_KEY
 
 
 def get_all_available_models() -> Dict[str, Dict[str, Any]]:

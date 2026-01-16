@@ -6,19 +6,6 @@ from typing import Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
-def _is_valid_api_key(key: Optional[str]) -> bool:
-    """
-    Check if an API key is valid (not None, not empty, not string 'None').
-    Handles Pydantic loading 'None' from .env as string "None".
-    """
-    if key is None:
-        return False
-    if not isinstance(key, str):
-        return False
-    key_stripped = key.strip().lower()
-    return key_stripped != "" and key_stripped != "none"
-
-
 class ModelProvider(str, Enum):
     OPENAI = "openai"
     AZURE_OPENAI = "azure_openai"
@@ -101,29 +88,29 @@ class ModelRegistry:
         if not settings.OPENAI_BASE_URL:
             self._add_docsgpt_models(settings)
         if (
-            _is_valid_api_key(settings.OPENAI_API_KEY)
-            or (settings.LLM_PROVIDER == "openai" and _is_valid_api_key(settings.API_KEY))
+            settings.OPENAI_API_KEY
+            or (settings.LLM_PROVIDER == "openai" and settings.API_KEY)
             or settings.OPENAI_BASE_URL
         ):
             self._add_openai_models(settings)
         if settings.OPENAI_API_BASE or (
-            settings.LLM_PROVIDER == "azure_openai" and _is_valid_api_key(settings.API_KEY)
+            settings.LLM_PROVIDER == "azure_openai" and settings.API_KEY
         ):
             self._add_azure_openai_models(settings)
-        if _is_valid_api_key(settings.ANTHROPIC_API_KEY) or (
-            settings.LLM_PROVIDER == "anthropic" and _is_valid_api_key(settings.API_KEY)
+        if settings.ANTHROPIC_API_KEY or (
+            settings.LLM_PROVIDER == "anthropic" and settings.API_KEY
         ):
             self._add_anthropic_models(settings)
-        if _is_valid_api_key(settings.GOOGLE_API_KEY) or (
-            settings.LLM_PROVIDER == "google" and _is_valid_api_key(settings.API_KEY)
+        if settings.GOOGLE_API_KEY or (
+            settings.LLM_PROVIDER == "google" and settings.API_KEY
         ):
             self._add_google_models(settings)
-        if _is_valid_api_key(settings.GROQ_API_KEY) or (
-            settings.LLM_PROVIDER == "groq" and _is_valid_api_key(settings.API_KEY)
+        if settings.GROQ_API_KEY or (
+            settings.LLM_PROVIDER == "groq" and settings.API_KEY
         ):
             self._add_groq_models(settings)
-        if _is_valid_api_key(settings.HUGGINGFACE_API_KEY) or (
-            settings.LLM_PROVIDER == "huggingface" and _is_valid_api_key(settings.API_KEY)
+        if settings.HUGGINGFACE_API_KEY or (
+            settings.LLM_PROVIDER == "huggingface" and settings.API_KEY
         ):
             self._add_huggingface_models(settings)
         # Default model selection
@@ -140,7 +127,7 @@ class ModelRegistry:
                 self.default_model_id = settings.LLM_NAME
 
         if not self.default_model_id:
-            if settings.LLM_PROVIDER and _is_valid_api_key(settings.API_KEY):
+            if settings.LLM_PROVIDER and settings.API_KEY:
                 for model_id, model in self.models.items():
                     if model.provider.value == settings.LLM_PROVIDER:
                         self.default_model_id = model_id
@@ -178,7 +165,7 @@ class ModelRegistry:
                     )
         else:
             # Standard OpenAI API usage - add standard models if API key is valid
-            if _is_valid_api_key(settings.OPENAI_API_KEY):
+            if settings.OPENAI_API_KEY:
                 for model in OPENAI_MODELS:
                     self.models[model.id] = model
 
