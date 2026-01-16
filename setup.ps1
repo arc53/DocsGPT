@@ -398,9 +398,9 @@ function Serve-LocalOllama {
     # Create .env file
     "API_KEY=xxxx" | Out-File -FilePath $ENV_FILE -Encoding utf8 -Force
     "LLM_PROVIDER=openai" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "MODEL_NAME=$model_name" | Add-Content -Path $ENV_FILE -Encoding utf8
+    "LLM_NAME=$model_name" | Add-Content -Path $ENV_FILE -Encoding utf8
     "VITE_API_STREAMING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "OPENAI_BASE_URL=http://host.docker.internal:11434/v1" | Add-Content -Path $ENV_FILE -Encoding utf8
+    "OPENAI_BASE_URL=http://ollama:11434/v1" | Add-Content -Path $ENV_FILE -Encoding utf8
     "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" | Add-Content -Path $ENV_FILE -Encoding utf8
     
     Write-ColorText ".env file configured for Ollama ($($docker_compose_file_suffix.ToUpper()))." -ForegroundColor "Green"
@@ -495,49 +495,49 @@ function Connect-LocalInferenceEngine {
         switch ($engine_choice) {
             "1" {  # LLaMa.cpp
                 $script:engine_name = "LLaMa.cpp"
-                $script:openai_base_url = "http://localhost:8000/v1"
+                $script:openai_base_url = "http://host.docker.internal:8000/v1"
                 Get-ModelName
                 break
             }
             "2" {  # Ollama
                 $script:engine_name = "Ollama"
-                $script:openai_base_url = "http://localhost:11434/v1"
+                $script:openai_base_url = "http://host.docker.internal:11434/v1"
                 Get-ModelName
                 break
             }
             "3" {  # TGI
                 $script:engine_name = "TGI"
-                $script:openai_base_url = "http://localhost:8080/v1"
+                $script:openai_base_url = "http://host.docker.internal:8080/v1"
                 Get-ModelName
                 break
             }
             "4" {  # SGLang
                 $script:engine_name = "SGLang"
-                $script:openai_base_url = "http://localhost:30000/v1"
+                $script:openai_base_url = "http://host.docker.internal:30000/v1"
                 Get-ModelName
                 break
             }
             "5" {  # vLLM
                 $script:engine_name = "vLLM"
-                $script:openai_base_url = "http://localhost:8000/v1"
+                $script:openai_base_url = "http://host.docker.internal:8000/v1"
                 Get-ModelName
                 break
             }
             "6" {  # Aphrodite
                 $script:engine_name = "Aphrodite"
-                $script:openai_base_url = "http://localhost:2242/v1"
+                $script:openai_base_url = "http://host.docker.internal:2242/v1"
                 Get-ModelName
                 break
             }
             "7" {  # FriendliAI
                 $script:engine_name = "FriendliAI"
-                $script:openai_base_url = "http://localhost:8997/v1"
+                $script:openai_base_url = "http://host.docker.internal:8997/v1"
                 Get-ModelName
                 break
             }
             "8" {  # LMDeploy
                 $script:engine_name = "LMDeploy"
-                $script:openai_base_url = "http://localhost:23333/v1"
+                $script:openai_base_url = "http://host.docker.internal:23333/v1"
                 Get-ModelName
                 break
             }
@@ -561,7 +561,7 @@ function Connect-LocalInferenceEngine {
     # Create .env file
     "API_KEY=None" | Out-File -FilePath $ENV_FILE -Encoding utf8 -Force
     "LLM_PROVIDER=openai" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "MODEL_NAME=$model_name" | Add-Content -Path $ENV_FILE -Encoding utf8
+    "LLM_NAME=$model_name" | Add-Content -Path $ENV_FILE -Encoding utf8
     "VITE_API_STREAMING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
     "OPENAI_BASE_URL=$openai_base_url" | Add-Content -Path $ENV_FILE -Encoding utf8
     "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" | Add-Content -Path $ENV_FILE -Encoding utf8
@@ -694,7 +694,7 @@ function Connect-CloudAPIProvider {
     # Create .env file
     "API_KEY=$api_key" | Out-File -FilePath $ENV_FILE -Encoding utf8 -Force
     "LLM_PROVIDER=$llm_name" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "MODEL_NAME=$model_name" | Add-Content -Path $ENV_FILE -Encoding utf8
+    "LLM_NAME=$model_name" | Add-Content -Path $ENV_FILE -Encoding utf8
     "VITE_API_STREAMING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
     
     Write-ColorText ".env file configured for $provider_name." -ForegroundColor "Green"

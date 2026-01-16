@@ -173,8 +173,8 @@ prompt_ollama_options() {
 # 1) Use DocsGPT Public API Endpoint (simple and free)
 use_docs_public_api_endpoint() {
     echo -e "\n${NC}Setting up DocsGPT Public API Endpoint...${NC}"
-    echo "LLM_PROVIDER=docsgpt" > .env
-    echo "VITE_API_STREAMING=true" >> .env
+    echo "LLM_PROVIDER=docsgpt" > "$ENV_FILE"
+    echo "VITE_API_STREAMING=true" >> "$ENV_FILE"
     echo -e "${GREEN}.env file configured for DocsGPT Public API.${NC}"
 
     check_and_start_docker
@@ -240,12 +240,12 @@ serve_local_ollama() {
 
 
     echo -e "\n${NC}Configuring for Ollama ($(echo "$docker_compose_file_suffix" | tr '[:lower:]' '[:upper:]'))...${NC}" # Using tr for uppercase - more compatible
-    echo "API_KEY=xxxx" > .env # Placeholder API Key
-    echo "LLM_PROVIDER=openai" >> .env
-    echo "LLM_NAME=$model_name" >> .env
-    echo "VITE_API_STREAMING=true" >> .env
-    echo "OPENAI_BASE_URL=http://ollama:11434/v1" >> .env
-    echo "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" >> .env
+    echo "API_KEY=xxxx" > "$ENV_FILE" # Placeholder API Key
+    echo "LLM_PROVIDER=openai" >> "$ENV_FILE"
+    echo "LLM_NAME=$model_name" >> "$ENV_FILE"
+    echo "VITE_API_STREAMING=true" >> "$ENV_FILE"
+    echo "OPENAI_BASE_URL=http://ollama:11434/v1" >> "$ENV_FILE"
+    echo "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" >> "$ENV_FILE"
     echo -e "${GREEN}.env file configured for Ollama ($(echo "$docker_compose_file_suffix" | tr '[:lower:]' '[:upper:]')${NC}${GREEN}).${NC}"
 
 
@@ -308,42 +308,42 @@ connect_local_inference_engine() {
         case "$engine_choice" in
             1) # LLaMa.cpp
                 engine_name="LLaMa.cpp"
-                openai_base_url="http://localhost:8000/v1"
+                openai_base_url="http://host.docker.internal:8000/v1"
                 get_model_name
                 break ;;
             2) # Ollama
                 engine_name="Ollama"
-                openai_base_url="http://localhost:11434/v1"
+                openai_base_url="http://host.docker.internal:11434/v1"
                 get_model_name
                 break ;;
             3) # TGI
                 engine_name="TGI"
-                openai_base_url="http://localhost:8080/v1"
+                openai_base_url="http://host.docker.internal:8080/v1"
                 get_model_name
                 break ;;
             4) # SGLang
                 engine_name="SGLang"
-                openai_base_url="http://localhost:30000/v1"
+                openai_base_url="http://host.docker.internal:30000/v1"
                 get_model_name
                 break ;;
             5) # vLLM
                 engine_name="vLLM"
-                openai_base_url="http://localhost:8000/v1"
+                openai_base_url="http://host.docker.internal:8000/v1"
                 get_model_name
                 break ;;
             6) # Aphrodite
                 engine_name="Aphrodite"
-                openai_base_url="http://localhost:2242/v1"
+                openai_base_url="http://host.docker.internal:2242/v1"
                 get_model_name
                 break ;;
             7) # FriendliAI
                 engine_name="FriendliAI"
-                openai_base_url="http://localhost:8997/v1"
+                openai_base_url="http://host.docker.internal:8997/v1"
                 get_model_name
                 break ;;
             8) # LMDeploy
                 engine_name="LMDeploy"
-                openai_base_url="http://localhost:23333/v1"
+                openai_base_url="http://host.docker.internal:23333/v1"
                 get_model_name
                 break ;;
             b|B) clear; return ;; # Back to Main Menu
@@ -352,19 +352,19 @@ connect_local_inference_engine() {
     done
 
     echo -e "\n${NC}Configuring for Local Inference Engine: ${BOLD}${engine_name}...${NC}"
-    echo "API_KEY=None" > .env
-    echo "LLM_PROVIDER=openai" >> .env
-    echo "LLM_NAME=$model_name" >> .env
-    echo "VITE_API_STREAMING=true" >> .env
-    echo "OPENAI_BASE_URL=$openai_base_url" >> .env
-    echo "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" >> .env
+    echo "API_KEY=None" > "$ENV_FILE"
+    echo "LLM_PROVIDER=openai" >> "$ENV_FILE"
+    echo "LLM_NAME=$model_name" >> "$ENV_FILE"
+    echo "VITE_API_STREAMING=true" >> "$ENV_FILE"
+    echo "OPENAI_BASE_URL=$openai_base_url" >> "$ENV_FILE"
+    echo "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" >> "$ENV_FILE"
     echo -e "${GREEN}.env file configured for ${BOLD}${engine_name}${NC}${GREEN} with OpenAI API format.${NC}"
     echo -e "${YELLOW}Note: MODEL_NAME is set to '${BOLD}$model_name${NC}${YELLOW}'. You can change it later in the .env file.${NC}"
 
     check_and_start_docker
 
     echo -e "\n${NC}Starting Docker Compose...${NC}"
-    docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" pull && docker compose -f "${COMPOSE_FILE}" up -d
+    docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" pull && docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d
     docker_compose_status=$?
 
     echo "Docker Compose Exit Status: $docker_compose_status" # Debug output
@@ -444,10 +444,10 @@ connect_cloud_api_provider() {
     done
 
     echo -e "\n${NC}Configuring for Cloud API Provider: ${BOLD}${provider_name}...${NC}"
-    echo "API_KEY=$api_key" > .env
-    echo "LLM_PROVIDER=$llm_provider" >> .env
-    echo "LLM_NAME=$model_name" >> .env
-    echo "VITE_API_STREAMING=true" >> .env
+    echo "API_KEY=$api_key" > "$ENV_FILE"
+    echo "LLM_PROVIDER=$llm_provider" >> "$ENV_FILE"
+    echo "LLM_NAME=$model_name" >> "$ENV_FILE"
+    echo "VITE_API_STREAMING=true" >> "$ENV_FILE"
     echo -e "${GREEN}.env file configured for ${BOLD}${provider_name}${NC}${GREEN}.${NC}"
 
     check_and_start_docker

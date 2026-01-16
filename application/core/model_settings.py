@@ -88,8 +88,10 @@ class ModelRegistry:
         # Skip DocsGPT model if using custom OpenAI-compatible endpoint
         if not settings.OPENAI_BASE_URL:
             self._add_docsgpt_models(settings)
-        if settings.OPENAI_API_KEY or (
-            settings.LLM_PROVIDER == "openai" and settings.API_KEY
+        if (
+            settings.OPENAI_API_KEY
+            or (settings.LLM_PROVIDER == "openai" and settings.API_KEY)
+            or settings.OPENAI_BASE_URL
         ):
             self._add_openai_models(settings)
         if settings.OPENAI_API_BASE or (
@@ -117,15 +119,26 @@ class ModelRegistry:
         ):
             self._add_huggingface_models(settings)
         # Default model selection
-
-        if settings.LLM_NAME and settings.LLM_NAME in self.models:
-            self.default_model_id = settings.LLM_NAME
-        elif settings.LLM_PROVIDER and settings.API_KEY:
-            for model_id, model in self.models.items():
-                if model.provider.value == settings.LLM_PROVIDER:
-                    self.default_model_id = model_id
+        if settings.LLM_NAME:
+            # Parse LLM_NAME (may be comma-separated)
+            model_names = self._parse_model_names(settings.LLM_NAME)
+            # First model in the list becomes default
+            for model_name in model_names:
+                if model_name in self.models:
+                    self.default_model_id = model_name
                     break
-        else:
+            # Backward compat: try exact match if no parsed model found
+            if not self.default_model_id and settings.LLM_NAME in self.models:
+                self.default_model_id = settings.LLM_NAME
+
+        if not self.default_model_id:
+            if settings.LLM_PROVIDER and settings.API_KEY:
+                for model_id, model in self.models.items():
+                    if model.provider.value == settings.LLM_PROVIDER:
+                        self.default_model_id = model_id
+                        break
+
+        if not self.default_model_id and self.models:
             self.default_model_id = next(iter(self.models.keys()))
         logger.info(
             f"ModelRegistry loaded {len(self.models)} models, default: {self.default_model_id}"
@@ -137,29 +150,29 @@ class ModelRegistry:
             create_custom_openai_model,
         )
 
-        # Add standard OpenAI models if API key is present
-        if settings.OPENAI_API_KEY:
-            for model in OPENAI_MODELS:
-                self.models[model.id] = model
+        # Check if using local OpenAI-compatible endpoint (Ollama, LM Studio, etc.)
+        using_local_endpoint = bool(
+            settings.OPENAI_BASE_URL and settings.OPENAI_BASE_URL.strip()
+        )
 
-        # Add custom model if OPENAI_BASE_URL is configured with a custom LLM_NAME
-        if (
-            settings.LLM_PROVIDER == "openai"
-            and settings.OPENAI_BASE_URL
-            and settings.LLM_NAME
-        ):
-            custom_model = create_custom_openai_model(
-                settings.LLM_NAME, settings.OPENAI_BASE_URL
-            )
-            self.models[settings.LLM_NAME] = custom_model
-            logger.info(
-                f"Registered custom OpenAI model: {settings.LLM_NAME} at {settings.OPENAI_BASE_URL}"
-            )
-
-        # Fallback: add all OpenAI models if none were added
-        if not any(m.provider.value == "openai" for m in self.models.values()):
-            for model in OPENAI_MODELS:
-                self.models[model.id] = model
+        if using_local_endpoint:
+            # When OPENAI_BASE_URL is set, ONLY register custom models from LLM_NAME
+            # Do NOT add standard OpenAI models (gpt-5.1, etc.)
+            if settings.LLM_NAME:
+                model_names = self._parse_model_names(settings.LLM_NAME)
+                for model_name in model_names:
+                    custom_model = create_custom_openai_model(
+                        model_name, settings.OPENAI_BASE_URL
+                    )
+                    self.models[model_name] = custom_model
+                    logger.info(
+                        f"Registered custom OpenAI model: {model_name} at {settings.OPENAI_BASE_URL}"
+                    )
+        else:
+            # Standard OpenAI API usage - add standard models if API key is valid
+            if settings.OPENAI_API_KEY:
+                for model in OPENAI_MODELS:
+                    self.models[model.id] = model
 
     def _add_azure_openai_models(self, settings):
         from application.core.model_configs import AZURE_OPENAI_MODELS
@@ -259,6 +272,15 @@ class ModelRegistry:
             ),
         )
         self.models[model_id] = model
+
+    def _parse_model_names(self, llm_name: str) -> List[str]:
+        """
+        Parse LLM_NAME which may contain comma-separated model names.
+        E.g., 'deepseek-r1:1.5b,gemma:2b' -> ['deepseek-r1:1.5b', 'gemma:2b']
+        """
+        if not llm_name:
+            return []
+        return [name.strip() for name in llm_name.split(",") if name.strip()]
 
     def get_model(self, model_id: str) -> Optional[AvailableModel]:
         return self.models.get(model_id)
