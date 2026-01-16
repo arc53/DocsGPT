@@ -39,7 +39,7 @@ _ROOT_DIR = _TESTS_DIR.parent
 if str(_ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(_ROOT_DIR))
 
-from tests.integration.base import Colors, DocsGPTTestBase, generate_jwt_token
+from tests.integration.base import Colors, generate_jwt_token
 from tests.integration.test_chat import ChatTests
 from tests.integration.test_sources import SourceTests
 from tests.integration.test_agents import AgentTests

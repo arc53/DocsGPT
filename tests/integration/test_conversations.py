@@ -408,7 +408,7 @@ class ConversationTests(DocsGPTTestBase):
 
             if response.status_code == 200:
                 result = response.json()
-                self.print_success(f"Retrieved shared conversation")
+                self.print_success("Retrieved shared conversation")
                 self.print_info(f"Messages: {len(result.get('queries', []))}")
                 self.record_result(test_name, True, f"Share ID: {share_id}")
                 return True

@@ -11,7 +11,6 @@ This module provides:
 import argparse
 import json as json_module
 import os
-import sys
 from pathlib import Path
 from typing import Any, Iterator, Optional, Type, TypeVar
 

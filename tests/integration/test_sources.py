@@ -524,7 +524,7 @@ Created at: {int(time.time())}
             self.print_info(f"Status Code: {response.status_code}")
 
             if response.status_code == 200:
-                result = response.json()
+                response.json()  # Validate JSON response
                 self.print_success("Directory structure retrieved")
                 self.record_result(test_name, True, "Success")
                 return True

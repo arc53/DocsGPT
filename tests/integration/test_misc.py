@@ -232,7 +232,7 @@ class MiscTests(DocsGPTTestBase):
             )
 
             if response.status_code in [200, 201]:
-                result = response.json()
+                response.json()  # Validate JSON response
                 self.print_success("Large attachment stored")
                 self.record_result(test_name, True, "Attachment stored")
                 return True
