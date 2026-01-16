@@ -31,6 +31,140 @@ from application.utils import (
 agents_ns = Namespace("agents", description="Agent management operations", path="/api")
 
 
+AGENT_TYPE_SCHEMAS = {
+    "classic": {
+        "required_published": [
+            "name",
+            "description",
+            "chunks",
+            "retriever",
+            "prompt_id",
+        ],
+        "required_draft": ["name"],
+        "validate_published": ["name", "description", "prompt_id"],
+        "validate_draft": [],
+        "require_source": True,
+        "fields": [
+            "user",
+            "name",
+            "description",
+            "agent_type",
+            "status",
+            "key",
+            "image",
+            "source",
+            "sources",
+            "chunks",
+            "retriever",
+            "prompt_id",
+            "tools",
+            "json_schema",
+            "models",
+            "default_model_id",
+            "folder_id",
+            "limited_token_mode",
+            "token_limit",
+            "limited_request_mode",
+            "request_limit",
+            "createdAt",
+            "updatedAt",
+            "lastUsedAt",
+        ],
+    },
+    "workflow": {
+        "required_published": ["name", "workflow"],
+        "required_draft": ["name"],
+        "validate_published": ["name", "workflow"],
+        "validate_draft": [],
+        "fields": [
+            "user",
+            "name",
+            "description",
+            "agent_type",
+            "status",
+            "key",
+            "workflow",
+            "folder_id",
+            "limited_token_mode",
+            "token_limit",
+            "limited_request_mode",
+            "request_limit",
+            "createdAt",
+            "updatedAt",
+            "lastUsedAt",
+        ],
+    },
+}
+
+AGENT_TYPE_SCHEMAS["react"] = AGENT_TYPE_SCHEMAS["classic"]
+AGENT_TYPE_SCHEMAS["openai"] = AGENT_TYPE_SCHEMAS["classic"]
+
+
+def build_agent_document(
+    data, user, key, agent_type, image_url=None, source_field=None, sources_list=None
+):
+    """Build agent document based on agent type schema."""
+
+    if not agent_type or agent_type not in AGENT_TYPE_SCHEMAS:
+        agent_type = "classic"
+    schema = AGENT_TYPE_SCHEMAS.get(agent_type, AGENT_TYPE_SCHEMAS["classic"])
+    allowed_fields = set(schema["fields"])
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    base_doc = {
+        "user": user,
+        "name": data.get("name"),
+        "description": data.get("description", ""),
+        "agent_type": agent_type,
+        "status": data.get("status"),
+        "key": key,
+        "createdAt": now,
+        "updatedAt": now,
+        "lastUsedAt": None,
+    }
+
+    if agent_type == "workflow":
+        base_doc["workflow"] = data.get("workflow")
+        base_doc["folder_id"] = data.get("folder_id")
+    else:
+        base_doc.update(
+            {
+                "image": image_url or "",
+                "source": source_field or "",
+                "sources": sources_list or [],
+                "chunks": data.get("chunks", ""),
+                "retriever": data.get("retriever", ""),
+                "prompt_id": data.get("prompt_id", ""),
+                "tools": data.get("tools", []),
+                "json_schema": data.get("json_schema"),
+                "models": data.get("models", []),
+                "default_model_id": data.get("default_model_id", ""),
+                "folder_id": data.get("folder_id"),
+            }
+        )
+    if "limited_token_mode" in allowed_fields:
+        base_doc["limited_token_mode"] = (
+            data.get("limited_token_mode") == "True"
+            if isinstance(data.get("limited_token_mode"), str)
+            else bool(data.get("limited_token_mode", False))
+        )
+    if "token_limit" in allowed_fields:
+        base_doc["token_limit"] = int(
+            data.get("token_limit", settings.DEFAULT_AGENT_LIMITS["token_limit"])
+        )
+    if "limited_request_mode" in allowed_fields:
+        base_doc["limited_request_mode"] = (
+            data.get("limited_request_mode") == "True"
+            if isinstance(data.get("limited_request_mode"), str)
+            else bool(data.get("limited_request_mode", False))
+        )
+    if "request_limit" in allowed_fields:
+        base_doc["request_limit"] = int(
+            data.get("request_limit", settings.DEFAULT_AGENT_LIMITS["request_limit"])
+        )
+    return {k: v for k, v in base_doc.items() if k in allowed_fields}
+
+
 @agents_ns.route("/get_agent")
 class GetAgent(Resource):
     @api.doc(params={"id": "Agent ID"}, description="Get agent by ID")
@@ -68,7 +202,7 @@ class GetAgent(Resource):
                     if (isinstance(source_ref, DBRef) and db.dereference(source_ref))
                     or source_ref == "default"
                 ],
-                "chunks": agent["chunks"],
+                "chunks": agent.get("chunks", "2"),
                 "retriever": agent.get("retriever", ""),
                 "prompt_id": agent.get("prompt_id", ""),
                 "tools": agent.get("tools", []),
@@ -148,7 +282,7 @@ class GetAgents(Resource):
                             isinstance(source_ref, DBRef) and db.dereference(source_ref)
                         )
                     ],
-                    "chunks": agent["chunks"],
+                    "chunks": agent.get("chunks", "2"),
                     "retriever": agent.get("retriever", ""),
                     "prompt_id": agent.get("prompt_id", ""),
                     "tools": agent.get("tools", []),
@@ -209,15 +343,21 @@ class CreateAgent(Resource):
                 required=False,
                 description="List of source identifiers for multiple sources",
             ),
-            "chunks": fields.Integer(required=True, description="Chunks count"),
-            "retriever": fields.String(required=True, description="Retriever ID"),
-            "prompt_id": fields.String(required=True, description="Prompt ID"),
+            "chunks": fields.Integer(required=False, description="Chunks count"),
+            "retriever": fields.String(required=False, description="Retriever ID"),
+            "prompt_id": fields.String(required=False, description="Prompt ID"),
             "tools": fields.List(
                 fields.String, required=False, description="List of tool identifiers"
             ),
-            "agent_type": fields.String(required=True, description="Type of the agent"),
+            "agent_type": fields.String(
+                required=False,
+                description="Type of the agent (classic, react, workflow). Defaults to 'classic' for backwards compatibility.",
+            ),
             "status": fields.String(
                 required=True, description="Status of the agent (draft or published)"
+            ),
+            "workflow": fields.String(
+                required=False, description="Workflow ID for workflow-type agents"
             ),
             "json_schema": fields.Raw(
                 required=False,
@@ -330,18 +470,26 @@ class CreateAgent(Resource):
                 ),
                 400,
             )
-        if data.get("status") == "published":
-            required_fields = [
-                "name",
-                "description",
-                "chunks",
-                "retriever",
-                "prompt_id",
-                "agent_type",
-            ]
-            # Require either source or sources (but not both)
+        agent_type = data.get("agent_type", "")
+        # Default to classic schema for empty or unknown agent types
 
-            if not data.get("source") and not data.get("sources"):
+        if not agent_type or agent_type not in AGENT_TYPE_SCHEMAS:
+            schema = AGENT_TYPE_SCHEMAS["classic"]
+            # Set agent_type to classic if it was empty
+
+            if not agent_type:
+                agent_type = "classic"
+        else:
+            schema = AGENT_TYPE_SCHEMAS[agent_type]
+        if data.get("status") == "published":
+            required_fields = schema["required_published"]
+            validate_fields = schema["validate_published"]
+
+            if (
+                schema.get("require_source")
+                and not data.get("source")
+                and not data.get("sources")
+            ):
                 return make_response(
                     jsonify(
                         {
@@ -351,10 +499,9 @@ class CreateAgent(Resource):
                     ),
                     400,
                 )
-            validate_fields = ["name", "description", "prompt_id", "agent_type"]
         else:
-            required_fields = ["name"]
-            validate_fields = []
+            required_fields = schema["required_draft"]
+            validate_fields = schema["validate_draft"]
         missing_fields = check_required_fields(data, required_fields)
         invalid_fields = validate_required_fields(data, validate_fields)
         if missing_fields:
@@ -366,7 +513,6 @@ class CreateAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Image upload failed"}), 400
             )
-
         folder_id = data.get("folder_id")
         if folder_id:
             if not ObjectId.is_valid(folder_id):
@@ -381,76 +527,36 @@ class CreateAgent(Resource):
                 return make_response(
                     jsonify({"success": False, "message": "Folder not found"}), 404
                 )
-
         try:
             key = str(uuid.uuid4()) if data.get("status") == "published" else ""
 
             sources_list = []
+            source_field = ""
             if data.get("sources") and len(data.get("sources", [])) > 0:
                 for source_id in data.get("sources", []):
                     if source_id == "default":
                         sources_list.append("default")
                     elif ObjectId.is_valid(source_id):
                         sources_list.append(DBRef("sources", ObjectId(source_id)))
-                source_field = ""
             else:
                 source_value = data.get("source", "")
                 if source_value == "default":
                     source_field = "default"
                 elif ObjectId.is_valid(source_value):
                     source_field = DBRef("sources", ObjectId(source_value))
-                else:
-                    source_field = ""
-            new_agent = {
-                "user": user,
-                "name": data.get("name"),
-                "description": data.get("description", ""),
-                "image": image_url,
-                "source": source_field,
-                "sources": sources_list,
-                "chunks": data.get("chunks", ""),
-                "retriever": data.get("retriever", ""),
-                "prompt_id": data.get("prompt_id", ""),
-                "tools": data.get("tools", []),
-                "agent_type": data.get("agent_type", ""),
-                "status": data.get("status"),
-                "json_schema": data.get("json_schema"),
-                "limited_token_mode": (
-                    data.get("limited_token_mode") == "True"
-                    if isinstance(data.get("limited_token_mode"), str)
-                    else bool(data.get("limited_token_mode", False))
-                ),
-                "token_limit": int(
-                    data.get(
-                        "token_limit", settings.DEFAULT_AGENT_LIMITS["token_limit"]
-                    )
-                ),
-                "limited_request_mode": (
-                    data.get("limited_request_mode") == "True"
-                    if isinstance(data.get("limited_request_mode"), str)
-                    else bool(data.get("limited_request_mode", False))
-                ),
-                "request_limit": int(
-                    data.get(
-                        "request_limit", settings.DEFAULT_AGENT_LIMITS["request_limit"]
-                    )
-                ),
-                "createdAt": datetime.datetime.now(datetime.timezone.utc),
-                "updatedAt": datetime.datetime.now(datetime.timezone.utc),
-                "lastUsedAt": None,
-                "key": key,
-                "models": data.get("models", []),
-                "default_model_id": data.get("default_model_id", ""),
-                "folder_id": data.get("folder_id"),
-            }
-            if new_agent["chunks"] == "":
-                new_agent["chunks"] = "2"
-            if (
-                new_agent["source"] == ""
-                and new_agent["retriever"] == ""
-                and not new_agent["sources"]
-            ):
-                new_agent["retriever"] = "classic"
+            new_agent = build_agent_document(
+                data, user, key, agent_type, image_url, source_field, sources_list
+            )
+
+            if agent_type != "workflow":
+                if new_agent.get("chunks") == "":
+                    new_agent["chunks"] = "2"
+                if (
+                    new_agent.get("source") == ""
+                    and new_agent.get("retriever") == ""
+                    and not new_agent.get("sources")
+                ):
+                    new_agent["retriever"] = "classic"
             resp = agents_collection.insert_one(new_agent)
             new_id = str(resp.inserted_id)
         except Exception as err:
@@ -479,15 +585,21 @@ class UpdateAgent(Resource):
                 required=False,
                 description="List of source identifiers for multiple sources",
             ),
-            "chunks": fields.Integer(required=True, description="Chunks count"),
-            "retriever": fields.String(required=True, description="Retriever ID"),
-            "prompt_id": fields.String(required=True, description="Prompt ID"),
+            "chunks": fields.Integer(required=False, description="Chunks count"),
+            "retriever": fields.String(required=False, description="Retriever ID"),
+            "prompt_id": fields.String(required=False, description="Prompt ID"),
             "tools": fields.List(
                 fields.String, required=False, description="List of tool identifiers"
             ),
-            "agent_type": fields.String(required=True, description="Type of the agent"),
+            "agent_type": fields.String(
+                required=False,
+                description="Type of the agent (classic, react, workflow). Defaults to 'classic' for backwards compatibility.",
+            ),
             "status": fields.String(
                 required=True, description="Status of the agent (draft or published)"
+            ),
+            "workflow": fields.String(
+                required=False, description="Workflow ID for workflow-type agents"
             ),
             "json_schema": fields.Raw(
                 required=False,
@@ -768,10 +880,10 @@ class UpdateAgent(Resource):
                     )
             elif field == "token_limit":
                 token_limit = data.get("token_limit")
-                # Convert to int and store
                 update_fields[field] = int(token_limit) if token_limit else 0
 
                 # Validate consistency with mode
+
                 if update_fields[field] > 0 and not data.get("limited_token_mode"):
                     return make_response(
                         jsonify(
@@ -814,9 +926,7 @@ class UpdateAgent(Resource):
                     )
                     if not folder:
                         return make_response(
-                            jsonify(
-                                {"success": False, "message": "Folder not found"}
-                            ),
+                            jsonify({"success": False, "message": "Folder not found"}),
                             404,
                         )
                     update_fields[field] = folder_id
@@ -1069,19 +1179,16 @@ class AdoptAgent(Resource):
     def post(self):
         if not (decoded_token := request.decoded_token):
             return make_response(jsonify({"success": False}), 401)
-
         if not (agent_id := request.args.get("id")):
             return make_response(
                 jsonify({"success": False, "message": "ID required"}), 400
             )
-
         try:
             agent = agents_collection.find_one(
                 {"_id": ObjectId(agent_id), "user": "system"}
             )
             if not agent:
                 return make_response(jsonify({"status": "Not found"}), 404)
-
             new_agent = agent.copy()
             new_agent.pop("_id", None)
             new_agent["user"] = decoded_token["sub"]
