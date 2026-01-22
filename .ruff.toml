@@ -1,2 +1,6 @@
 # Allow lines to be as long as 120 characters.
 line-length = 120
+
+[lint.per-file-ignores]
+# Integration tests use sys.path.insert() before imports for standalone execution
+"tests/integration/*.py" = ["E402"]
