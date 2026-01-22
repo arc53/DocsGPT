@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 current_dir = os.path.dirname(
@@ -158,6 +159,36 @@ class Settings(BaseSettings):
     COMPRESSION_MODEL_OVERRIDE: Optional[str] = None  # Use different model for compression
     COMPRESSION_PROMPT_VERSION: str = "v1.0"  # Track prompt iterations
     COMPRESSION_MAX_HISTORY_POINTS: int = 3  # Keep only last N compression points to prevent DB bloat
+
+    @field_validator(
+        "API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GOOGLE_API_KEY",
+        "GROQ_API_KEY",
+        "HUGGINGFACE_API_KEY",
+        "EMBEDDINGS_KEY",
+        "FALLBACK_LLM_API_KEY",
+        "QDRANT_API_KEY",
+        "ELEVENLABS_API_KEY",
+        "INTERNAL_KEY",
+        mode="before",
+    )
+    @classmethod
+    def normalize_api_key(cls, v: Optional[str]) -> Optional[str]:
+        """
+        Normalize API keys: convert 'None', 'none', empty strings,
+        and whitespace-only strings to actual None.
+        Handles Pydantic loading 'None' from .env as string "None".
+        """
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            return v
+        stripped = v.strip()
+        if stripped == "" or stripped.lower() == "none":
+            return None
+        return stripped
 
 
 # Project root is one level above application/

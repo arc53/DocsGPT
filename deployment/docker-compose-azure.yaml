@@ -11,17 +11,13 @@ services:
 
   backend:
     build: ../application
+    env_file:
+      - ../.env
     environment:
-      - API_KEY=$OPENAI_API_KEY
-      - EMBEDDINGS_KEY=$OPENAI_API_KEY
+      # Override URLs to use docker service names
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - MONGO_URI=mongodb://mongo:27017/docsgpt
-      - OPENAI_API_KEY=$OPENAI_API_KEY
-      - OPENAI_API_BASE=$OPENAI_API_BASE
-      - OPENAI_API_VERSION=$OPENAI_API_VERSION
-      - AZURE_DEPLOYMENT_NAME=$AZURE_DEPLOYMENT_NAME
-      - AZURE_EMBEDDINGS_DEPLOYMENT_NAME=$AZURE_EMBEDDINGS_DEPLOYMENT_NAME
     ports:
       - "7091:7091"
     volumes:
@@ -35,18 +31,14 @@ services:
   worker:
     build: ../application
     command: celery -A application.app.celery worker -l INFO
+    env_file:
+      - ../.env
     environment:
-      - API_KEY=$OPENAI_API_KEY
-      - EMBEDDINGS_KEY=$OPENAI_API_KEY
+      # Override URLs to use docker service names
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - MONGO_URI=mongodb://mongo:27017/docsgpt
       - API_URL=http://backend:7091
-      - OPENAI_API_KEY=$OPENAI_API_KEY
-      - OPENAI_API_BASE=$OPENAI_API_BASE
-      - OPENAI_API_VERSION=$OPENAI_API_VERSION
-      - AZURE_DEPLOYMENT_NAME=$AZURE_DEPLOYMENT_NAME
-      - AZURE_EMBEDDINGS_DEPLOYMENT_NAME=$AZURE_EMBEDDINGS_DEPLOYMENT_NAME
     depends_on:
         - redis
         - mongo

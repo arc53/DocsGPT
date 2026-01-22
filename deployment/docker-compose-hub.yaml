@@ -5,8 +5,8 @@ services:
     image: arc53/docsgpt-fe:develop
     environment:
       - VITE_API_HOST=http://localhost:7091
-      - VITE_API_STREAMING=$VITE_API_STREAMING
-      - VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
+      - VITE_API_STREAMING=${VITE_API_STREAMING:-true}
+      - VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID:-}
     ports:
       - "5173:5173"
     depends_on:
@@ -16,16 +16,13 @@ services:
   backend:
     user: root
     image: arc53/docsgpt:develop
+    env_file:
+      - ../.env
     environment:
-      - API_KEY=$API_KEY
-      - EMBEDDINGS_KEY=$API_KEY
-      - LLM_PROVIDER=$LLM_PROVIDER
-      - LLM_NAME=$LLM_NAME
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - MONGO_URI=mongodb://mongo:27017/docsgpt
       - CACHE_REDIS_URL=redis://redis:6379/2
-      - OPENAI_BASE_URL=$OPENAI_BASE_URL
     ports:
       - "7091:7091"
     volumes:
@@ -41,11 +38,9 @@ services:
     user: root
     image: arc53/docsgpt:develop
     command: celery -A application.app.celery worker -l INFO -B
+    env_file:
+      - ../.env
     environment:
-      - API_KEY=$API_KEY
-      - EMBEDDINGS_KEY=$API_KEY
-      - LLM_PROVIDER=$LLM_PROVIDER
-      - LLM_NAME=$LLM_NAME
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - MONGO_URI=mongodb://mongo:27017/docsgpt
