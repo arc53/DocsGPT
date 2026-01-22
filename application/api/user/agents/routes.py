@@ -19,6 +19,9 @@ from application.api.user.base import (
     resolve_tool_details,
     storage,
     users_collection,
+    workflow_edges_collection,
+    workflow_nodes_collection,
+    workflows_collection,
 )
 from application.core.settings import settings
 from application.utils import (
@@ -233,6 +236,7 @@ class GetAgent(Resource):
                 "models": agent.get("models", []),
                 "default_model_id": agent.get("default_model_id", ""),
                 "folder_id": agent.get("folder_id"),
+                "workflow": agent.get("workflow"),
             }
             return make_response(jsonify(data), 200)
         except Exception as e:
@@ -313,9 +317,12 @@ class GetAgents(Resource):
                     "models": agent.get("models", []),
                     "default_model_id": agent.get("default_model_id", ""),
                     "folder_id": agent.get("folder_id"),
+                    "workflow": agent.get("workflow"),
                 }
                 for agent in agents
-                if "source" in agent or "retriever" in agent
+                if "source" in agent
+                or "retriever" in agent
+                or agent.get("agent_type") == "workflow"
             ]
         except Exception as err:
             current_app.logger.error(f"Error retrieving agents: {err}", exc_info=True)
@@ -960,46 +967,74 @@ class UpdateAgent(Resource):
             )
         newly_generated_key = None
         final_status = update_fields.get("status", existing_agent.get("status"))
+        agent_type = update_fields.get("agent_type", existing_agent.get("agent_type"))
 
         if final_status == "published":
-            required_published_fields = {
-                "name": "Agent name",
-                "description": "Agent description",
-                "chunks": "Chunks count",
-                "prompt_id": "Prompt",
-                "agent_type": "Agent type",
-            }
+            if agent_type == "workflow":
+                required_published_fields = {
+                    "name": "Agent name",
+                }
+                missing_published_fields = []
+                for req_field, field_label in required_published_fields.items():
+                    final_value = update_fields.get(
+                        req_field, existing_agent.get(req_field)
+                    )
+                    if not final_value:
+                        missing_published_fields.append(field_label)
 
-            missing_published_fields = []
-            for req_field, field_label in required_published_fields.items():
-                final_value = update_fields.get(
-                    req_field, existing_agent.get(req_field)
+                workflow_id = existing_agent.get("workflow")
+                if not workflow_id:
+                    missing_published_fields.append("Workflow")
+
+                if missing_published_fields:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": f"Cannot publish workflow agent. Missing required fields: {', '.join(missing_published_fields)}",
+                            }
+                        ),
+                        400,
+                    )
+            else:
+                required_published_fields = {
+                    "name": "Agent name",
+                    "description": "Agent description",
+                    "chunks": "Chunks count",
+                    "prompt_id": "Prompt",
+                    "agent_type": "Agent type",
+                }
+
+                missing_published_fields = []
+                for req_field, field_label in required_published_fields.items():
+                    final_value = update_fields.get(
+                        req_field, existing_agent.get(req_field)
+                    )
+                    if not final_value:
+                        missing_published_fields.append(field_label)
+                source_val = update_fields.get("source", existing_agent.get("source"))
+                sources_val = update_fields.get(
+                    "sources", existing_agent.get("sources", [])
                 )
-                if not final_value:
-                    missing_published_fields.append(field_label)
-            source_val = update_fields.get("source", existing_agent.get("source"))
-            sources_val = update_fields.get(
-                "sources", existing_agent.get("sources", [])
-            )
 
-            has_valid_source = (
-                isinstance(source_val, DBRef)
-                or source_val == "default"
-                or (isinstance(sources_val, list) and len(sources_val) > 0)
-            )
-
-            if not has_valid_source:
-                missing_published_fields.append("Source")
-            if missing_published_fields:
-                return make_response(
-                    jsonify(
-                        {
-                            "success": False,
-                            "message": f"Cannot publish agent. Missing or invalid required fields: {', '.join(missing_published_fields)}",
-                        }
-                    ),
-                    400,
+                has_valid_source = (
+                    isinstance(source_val, DBRef)
+                    or source_val == "default"
+                    or (isinstance(sources_val, list) and len(sources_val) > 0)
                 )
+
+                if not has_valid_source:
+                    missing_published_fields.append("Source")
+                if missing_published_fields:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": f"Cannot publish agent. Missing or invalid required fields: {', '.join(missing_published_fields)}",
+                            }
+                        ),
+                        400,
+                    )
             if not existing_agent.get("key"):
                 newly_generated_key = str(uuid.uuid4())
                 update_fields["key"] = newly_generated_key
@@ -1071,6 +1106,15 @@ class DeleteAgent(Resource):
                     jsonify({"success": False, "message": "Agent not found"}), 404
                 )
             deleted_id = str(deleted_agent["_id"])
+
+            if deleted_agent.get("agent_type") == "workflow" and deleted_agent.get(
+                "workflow"
+            ):
+                workflow_id = deleted_agent["workflow"]
+                workflow_nodes_collection.delete_many({"workflow_id": workflow_id})
+                workflow_edges_collection.delete_many({"workflow_id": workflow_id})
+                workflows_collection.delete_one({"_id": ObjectId(workflow_id)})
+
         except Exception as err:
             current_app.logger.error(f"Error deleting agent: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)

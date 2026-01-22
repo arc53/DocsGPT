@@ -83,7 +83,11 @@ export default function AgentCard({
         label: 'Edit',
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
-          navigate(`/agents/edit/${agent.id}`);
+          if (agent.agent_type === 'workflow') {
+            navigate(`/agents/workflow/edit/${agent.id}`);
+          } else {
+            navigate(`/agents/edit/${agent.id}`);
+          }
         },
         variant: 'primary',
         iconWidth: 14,

@@ -37,7 +37,7 @@ class WorkflowEngine:
 
         start_node = self.graph.get_start_node()
         if not start_node:
-            yield {"answer": "Error: No start node found in workflow."}
+            yield {"type": "error", "error": "No start node found in workflow."}
             return
         current_node_id: Optional[str] = start_node.id
         steps = 0
@@ -45,7 +45,7 @@ class WorkflowEngine:
         while current_node_id and steps < self.MAX_EXECUTION_STEPS:
             node = self.graph.get_node_by_id(current_node_id)
             if not node:
-                yield {"answer": f"Error: Node {current_node_id} not found."}
+                yield {"type": "error", "error": f"Node {current_node_id} not found."}
                 break
             log_entry = self._create_log_entry(node)
             try:
@@ -81,8 +81,8 @@ class WorkflowEngine:
         return {
             "node_id": node.id,
             "node_type": node.type.value,
-            "start_time": datetime.now(timezone.utc),
-            "end_time": None,
+            "started_at": datetime.now(timezone.utc),
+            "completed_at": None,
             "status": ExecutionStatus.RUNNING.value,
             "error": None,
             "state_snapshot": {},
@@ -149,11 +149,19 @@ class WorkflowEngine:
         )
 
         full_response = ""
+        first_chunk = True
         for event in node_agent.gen(formatted_prompt):
             if "answer" in event:
                 full_response += event["answer"]
                 if node_config.stream_to_user:
+                    if first_chunk and hasattr(self, "_has_streamed"):
+                        yield {"answer": "\n\n"}
+                        first_chunk = False
                     yield event
+
+        if node_config.stream_to_user:
+            self._has_streamed = True
+
         output_key = node_config.output_variable or f"node_{node.id}_output"
         self.state[output_key] = full_response
 
@@ -227,8 +235,8 @@ class WorkflowEngine:
                 node_id=log["node_id"],
                 node_type=log["node_type"],
                 status=ExecutionStatus(log["status"]),
-                started_at=log["start_time"],
-                completed_at=log.get("end_time"),
+                started_at=log["started_at"],
+                completed_at=log.get("completed_at"),
                 error=log.get("error"),
                 state_snapshot=log.get("state_snapshot", {}),
             )

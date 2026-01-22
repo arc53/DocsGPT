@@ -45,7 +45,7 @@ class WorkflowAgent(BaseAgent):
     ) -> Generator[Dict[str, str], None, None]:
         graph = self._load_workflow_graph()
         if not graph:
-            yield {"answer": "Error: Failed to load workflow."}
+            yield {"type": "error", "error": "Failed to load workflow configuration."}
             return
         self._engine = WorkflowEngine(graph, self)
         yield from self._engine.execute({}, query)
@@ -116,12 +116,12 @@ class WorkflowAgent(BaseAgent):
                 return None
             workflow = Workflow(**workflow_doc)
 
-            nodes_docs = List(
+            nodes_docs = list(
                 workflow_nodes_coll.find({"workflow_id": self.workflow_id})
             )
             nodes = [WorkflowNode(**doc) for doc in nodes_docs]
 
-            edges_docs = List(
+            edges_docs = list(
                 workflow_edges_coll.find({"workflow_id": self.workflow_id})
             )
             edges = [WorkflowEdge(**doc) for doc in edges_docs]
