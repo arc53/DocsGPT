@@ -269,6 +269,27 @@ class BaseAgent(ABC):
         else:
             logger.debug(f"Executing tool: {action_name} with args: {call_args}")
             result = tool.execute_action(action_name, **parameters)
+
+        get_artifact_id = (
+            getattr(tool, "get_artifact_id", None)
+            if tool_data["name"] != "api_tool"
+            else None
+        )
+
+        artifact_id = None
+        if callable(get_artifact_id):
+            try:
+                artifact_id = get_artifact_id(action_name, **parameters)
+            except Exception:
+                logger.exception(
+                    "Failed to extract artifact_id from tool %s for action %s",
+                    tool_data["name"],
+                    action_name,
+                )
+
+        artifact_id = str(artifact_id).strip() if artifact_id is not None else ""
+        if artifact_id:
+            tool_call_data["artifact_id"] = artifact_id
         tool_call_data["result"] = (
             f"{str(result)[:50]}..." if len(str(result)) > 50 else result
         )
