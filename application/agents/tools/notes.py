@@ -38,6 +38,8 @@ class NotesTool(Tool):
         db = MongoDB.get_client()[settings.MONGO_DB_NAME]
         self.collection = db["notes"]
 
+        self._last_artifact_id: Optional[str] = None
+
     # -----------------------------
     # Action implementations
     # -----------------------------
@@ -53,6 +55,8 @@ class NotesTool(Tool):
         """
         if not self.user_id:
              return "Error: NotesTool requires a valid user_id."
+
+        self._last_artifact_id = None
 
         if action_name == "view":
             return self._get_note()
@@ -125,6 +129,9 @@ class NotesTool(Tool):
         """Return configuration requirements (none for now)."""
         return {}
 
+    def get_artifact_id(self, action_name: str, **kwargs: Any) -> Optional[str]:
+        return self._last_artifact_id
+
     # -----------------------------
     # Internal helpers (single-note)
     # -----------------------------
@@ -132,17 +139,22 @@ class NotesTool(Tool):
         doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id})
         if not doc or not doc.get("note"):
             return "No note found."
+        if doc.get("_id") is not None:
+            self._last_artifact_id = str(doc.get("_id"))
         return str(doc["note"])
 
     def _overwrite_note(self, content: str) -> str:
         content = (content or "").strip()
         if not content:
             return "Note content required."
-        self.collection.update_one(
+        result = self.collection.find_one_and_update(
             {"user_id": self.user_id, "tool_id": self.tool_id},
             {"$set": {"note": content, "updated_at": datetime.utcnow()}},
-            upsert=True,  # ✅ create if missing
+            upsert=True,
+            return_document=True,
         )
+        if result and result.get("_id") is not None:
+            self._last_artifact_id = str(result.get("_id"))
         return "Note saved."
 
     def _str_replace(self, old_str: str, new_str: str) -> str:
@@ -163,10 +175,13 @@ class NotesTool(Tool):
         import re
         updated_note = re.sub(re.escape(old_str), new_str, current_note, flags=re.IGNORECASE)
 
-        self.collection.update_one(
+        result = self.collection.find_one_and_update(
             {"user_id": self.user_id, "tool_id": self.tool_id},
             {"$set": {"note": updated_note, "updated_at": datetime.utcnow()}},
+            return_document=True,
         )
+        if result and result.get("_id") is not None:
+            self._last_artifact_id = str(result.get("_id"))
         return "Note updated."
 
     def _insert(self, line_number: int, text: str) -> str:
@@ -188,12 +203,21 @@ class NotesTool(Tool):
         lines.insert(index, text)
         updated_note = "\n".join(lines)
 
-        self.collection.update_one(
+        result = self.collection.find_one_and_update(
             {"user_id": self.user_id, "tool_id": self.tool_id},
             {"$set": {"note": updated_note, "updated_at": datetime.utcnow()}},
+            return_document=True,
         )
+        if result and result.get("_id") is not None:
+            self._last_artifact_id = str(result.get("_id"))
         return "Text inserted."
 
     def _delete_note(self) -> str:
-        res = self.collection.delete_one({"user_id": self.user_id, "tool_id": self.tool_id})
-        return "Note deleted." if res.deleted_count else "No note found to delete."
+        doc = self.collection.find_one_and_delete(
+            {"user_id": self.user_id, "tool_id": self.tool_id}
+        )
+        if not doc:
+            return "No note found to delete."
+        if doc.get("_id") is not None:
+            self._last_artifact_id = str(doc.get("_id"))
+        return "Note deleted."
