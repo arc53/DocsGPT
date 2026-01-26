@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -19,6 +19,7 @@ import {
 } from '../preferences/preferenceSlice';
 import AgentCard from './AgentCard';
 import { AgentSectionId, agentSectionsConfig } from './agents.config';
+import AgentTypeModal from './components/AgentTypeModal';
 import FolderCard from './FolderCard';
 import { AgentFilterTab, useAgentSearch } from './hooks/useAgentSearch';
 import { useAgentsFetch } from './hooks/useAgentsFetch';
@@ -43,14 +44,19 @@ export default function AgentsList() {
     const folderIdFromUrl = searchParams.get('folder');
     return folderIdFromUrl ? [folderIdFromUrl] : [];
   });
+  const [showAgentTypeModal, setShowAgentTypeModal] = useState(false);
+  const [modalFolderId, setModalFolderId] = useState<string | null>(null);
 
   // Sync folder path with URL
   useEffect(() => {
     const currentFolderInUrl = searchParams.get('folder');
-    const currentFolderId = folderPath.length > 0 ? folderPath[folderPath.length - 1] : null;
+    const currentFolderId =
+      folderPath.length > 0 ? folderPath[folderPath.length - 1] : null;
 
     if (currentFolderId !== currentFolderInUrl) {
-      const newUrl = currentFolderId ? `/agents?folder=${currentFolderId}` : '/agents';
+      const newUrl = currentFolderId
+        ? `/agents?folder=${currentFolderId}`
+        : '/agents';
       navigate(newUrl, { replace: true });
     }
   }, [folderPath, searchParams, navigate]);
@@ -212,6 +218,8 @@ export default function AgentsList() {
           onCreateFolder={handleSubmitNewFolder}
           onDeleteFolder={handleDeleteFolder}
           onRenameFolder={handleRenameFolder}
+          setModalFolderId={setModalFolderId}
+          setShowAgentTypeModal={setShowAgentTypeModal}
         />
       ))}
 
@@ -221,6 +229,12 @@ export default function AgentsList() {
           <p className="text-sm">{t('agents.tryDifferentSearch')}</p>
         </div>
       )}
+
+      <AgentTypeModal
+        isOpen={showAgentTypeModal}
+        onClose={() => setShowAgentTypeModal(false)}
+        folderId={modalFolderId}
+      />
     </div>
   );
 }
@@ -238,6 +252,8 @@ interface AgentSectionProps {
   onCreateFolder: (name: string, parentId?: string) => void;
   onDeleteFolder: (id: string) => Promise<boolean>;
   onRenameFolder: (id: string, name: string) => void;
+  setModalFolderId: (folderId: string | null) => void;
+  setShowAgentTypeModal: (show: boolean) => void;
 }
 
 function AgentSection({
@@ -253,6 +269,8 @@ function AgentSection({
   onCreateFolder,
   onDeleteFolder,
   onRenameFolder,
+  setModalFolderId,
+  setShowAgentTypeModal,
 }: AgentSectionProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -280,13 +298,17 @@ function AgentSection({
   const updateAgents = (updatedAgents: Agent[]) => {
     dispatch(config.updateAction(updatedAgents));
   };
-  
+
   const currentFolderDescendantIds = useMemo(() => {
-    if (config.id !== 'user' || !folders || currentFolderId === null) return null;
+    if (config.id !== 'user' || !folders || currentFolderId === null)
+      return null;
 
     const getDescendants = (folderId: string): string[] => {
       const children = folders.filter((f) => f.parent_id === folderId);
-      return children.flatMap((child) => [child.id, ...getDescendants(child.id)]);
+      return children.flatMap((child) => [
+        child.id,
+        ...getDescendants(child.id),
+      ]);
     };
 
     return new Set([currentFolderId, ...getDescendants(currentFolderId)]);
@@ -294,7 +316,9 @@ function AgentSection({
 
   const folderHasMatchingAgents = useCallback(
     (folderId: string): boolean => {
-      const directMatches = filteredAgents.some((a) => a.folder_id === folderId);
+      const directMatches = filteredAgents.some(
+        (a) => a.folder_id === folderId,
+      );
       if (directMatches) return true;
       const childFolders = (folders || []).filter(
         (f) => f.parent_id === folderId,
@@ -314,7 +338,13 @@ function AgentSection({
       return foldersAtLevel.filter((f) => folderHasMatchingAgents(f.id));
     }
     return foldersAtLevel;
-  }, [folders, currentFolderId, config.id, searchQuery, folderHasMatchingAgents]);
+  }, [
+    folders,
+    currentFolderId,
+    config.id,
+    searchQuery,
+    folderHasMatchingAgents,
+  ]);
 
   const unfolderedAgents = useMemo(() => {
     if (config.id !== 'user' || !folders) return filteredAgents;
@@ -334,7 +364,14 @@ function AgentSection({
     return filteredAgents.filter(
       (a) => (a.folder_id || null) === currentFolderId,
     );
-  }, [filteredAgents, folders, config.id, currentFolderId, searchQuery, currentFolderDescendantIds]);
+  }, [
+    filteredAgents,
+    folders,
+    config.id,
+    currentFolderId,
+    searchQuery,
+    currentFolderDescendantIds,
+  ]);
 
   const getAgentsForFolder = (folderId: string) => {
     return filteredAgents.filter((a) => a.folder_id === folderId);
@@ -376,7 +413,10 @@ function AgentSection({
         {config.showNewAgentButton && (
           <button
             className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-4 py-2 text-sm text-white"
-            onClick={() => navigate('/agents/new')}
+            onClick={() => {
+              setModalFolderId(null);
+              setShowAgentTypeModal(true);
+            }}
           >
             {t('agents.newAgent')}
           </button>
@@ -478,7 +518,7 @@ function AgentSection({
               />
             ) : (
               <button
-                className="shrink-0 whitespace-nowrap rounded-full border border-[#E5E5E5] bg-white px-4 py-2 text-sm text-[#18181B] hover:bg-[#F5F5F5] dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white dark:hover:bg-[#383838]"
+                className="shrink-0 rounded-full border border-[#E5E5E5] bg-white px-4 py-2 text-sm whitespace-nowrap text-[#18181B] hover:bg-[#F5F5F5] dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white dark:hover:bg-[#383838]"
                 onClick={() => {
                   setIsCreatingFolder(true);
                   setTimeout(() => newFolderInputRef.current?.focus(), 0);
@@ -489,14 +529,11 @@ function AgentSection({
             ))}
           {config.showNewAgentButton && (
             <button
-              className="bg-purple-30 hover:bg-violets-are-blue shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm text-white"
-              onClick={() =>
-                navigate(
-                  currentFolderId
-                    ? `/agents/new?folder_id=${currentFolderId}`
-                    : '/agents/new',
-                )
-              }
+              className="bg-purple-30 hover:bg-violets-are-blue shrink-0 rounded-full px-4 py-2 text-sm whitespace-nowrap text-white"
+              onClick={() => {
+                setModalFolderId(currentFolderId);
+                setShowAgentTypeModal(true);
+              }}
             >
               {t('agents.newAgent')}
             </button>
@@ -551,13 +588,10 @@ function AgentSection({
                 {config.showNewAgentButton && !currentFolderId && (
                   <button
                     className="bg-purple-30 hover:bg-violets-are-blue ml-2 rounded-full px-4 py-2 text-sm text-white"
-                    onClick={() =>
-                      navigate(
-                        currentFolderId
-                          ? `/agents/new?folder_id=${currentFolderId}`
-                          : '/agents/new',
-                      )
-                    }
+                    onClick={() => {
+                      setModalFolderId(currentFolderId);
+                      setShowAgentTypeModal(true);
+                    }}
                   >
                     {t('agents.newAgent')}
                   </button>
