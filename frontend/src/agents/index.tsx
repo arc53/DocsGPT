@@ -4,7 +4,7 @@ import AgentLogs from './AgentLogs';
 import AgentsList from './AgentsList';
 import NewAgent from './NewAgent';
 import SharedAgent from './SharedAgent';
-import WorkflowBuilder from './WorkflowBuilder';
+import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 export default function Agents() {
   return (

@@ -415,10 +415,17 @@ class StreamProcessor:
                     )
                     self.retriever_config["chunks"] = 2
         else:
+            agent_type = settings.AGENT_NAME
+            if self.data.get("workflow") and isinstance(
+                self.data.get("workflow"), dict
+            ):
+                agent_type = "workflow"
+                self.agent_config["workflow"] = self.data["workflow"]
+
             self.agent_config.update(
                 {
                     "prompt_id": self.data.get("prompt_id", "default"),
-                    "agent_type": settings.AGENT_NAME,
+                    "agent_type": agent_type,
                     "user_api_key": None,
                     "json_schema": None,
                     "default_model_id": "",
@@ -749,7 +756,16 @@ class StreamProcessor:
             attachments=self.attachments,
             json_schema=self.agent_config.get("json_schema"),
             compressed_summary=self.compressed_summary,
-            workflow_id=self.agent_config.get("workflow"),
+            workflow_id=(
+                self.agent_config.get("workflow")
+                if isinstance(self.agent_config.get("workflow"), str)
+                else None
+            ),
+            workflow=(
+                self.agent_config.get("workflow")
+                if isinstance(self.agent_config.get("workflow"), dict)
+                else None
+            ),
         )
 
         agent.conversation_id = self.conversation_id

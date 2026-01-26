@@ -30,7 +30,7 @@ import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
 import AgentPreview from './AgentPreview';
 import { Agent, ToolSummary } from './types';
-import WorkflowBuilder from './WorkflowBuilder';
+import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 import type { Model } from '../models/types';
 

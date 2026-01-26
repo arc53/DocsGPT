@@ -5,8 +5,8 @@ import {
   Bot,
   Database,
   Flag,
+  Pencil,
   Play,
-  Settings,
   StickyNote,
   Trash2,
   X,
@@ -40,20 +40,14 @@ import {
 } from '@/components/ui/select';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 
-import modelService from '../api/services/modelService';
-import userService from '../api/services/userService';
-import ArrowLeft from '../assets/arrow-left.svg';
-import { WorkflowNode } from './types/workflow';
-import {
-  AgentNode,
-  EndNode,
-  NoteNode,
-  SetStateNode,
-  StartNode,
-} from './workflow/nodes';
-import WorkflowPreview from './workflow/WorkflowPreview';
+import modelService from '../../api/services/modelService';
+import userService from '../../api/services/userService';
+import ArrowLeft from '../../assets/arrow-left.svg';
+import { WorkflowNode } from '../types/workflow';
+import { AgentNode, EndNode, NoteNode, SetStateNode, StartNode } from './nodes';
+import WorkflowPreview from './WorkflowPreview';
 
-import type { Model } from '../models/types';
+import type { Model } from '../../models/types';
 interface AgentNodeConfig {
   agent_type: 'classic' | 'react';
   llm_name?: string;
@@ -382,7 +376,6 @@ function WorkflowBuilderInner() {
             }),
           ),
         );
-        // Fit view after loading with slight delay to ensure nodes are rendered
         setTimeout(() => {
           reactFlowInstance.fitView({
             padding: 0.2,
@@ -584,27 +577,28 @@ function WorkflowBuilderInner() {
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
-          <div className="relative">
+          <div className="group relative flex items-center gap-2">
+            <div>
+              <div
+                className="max-w-xs truncate text-xl font-bold text-gray-900 dark:text-white"
+                title={workflowName || 'New Workflow'}
+              >
+                {workflowName || 'New Workflow'}
+              </div>
+              {workflowDescription && (
+                <div
+                  className="max-w-xs truncate text-xs text-gray-500 dark:text-gray-400"
+                  title={workflowDescription}
+                >
+                  {workflowDescription}
+                </div>
+              )}
+            </div>
             <button
               onClick={() => setShowWorkflowSettings(!showWorkflowSettings)}
-              className="flex items-center gap-2 text-left"
+              className="text-gray-400 opacity-0 transition-opacity group-hover:opacity-100 hover:text-gray-600 dark:hover:text-gray-200"
             >
-              <div>
-                <div className="text-xl font-bold text-gray-900 dark:text-white">
-                  {workflowName || 'New Workflow'}
-                </div>
-                {workflowDescription && (
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    {workflowDescription.length > 50
-                      ? `${workflowDescription.slice(0, 50)}...`
-                      : workflowDescription}
-                  </div>
-                )}
-              </div>
-              <Settings
-                size={16}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-              />
+              <Pencil size={14} />
             </button>
             {showWorkflowSettings && (
               <div

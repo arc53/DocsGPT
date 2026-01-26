@@ -48,10 +48,27 @@ class WorkflowEngine:
                 yield {"type": "error", "error": f"Node {current_node_id} not found."}
                 break
             log_entry = self._create_log_entry(node)
+
+            yield {
+                "type": "workflow_step",
+                "node_id": node.id,
+                "node_type": node.type.value,
+                "node_title": node.title,
+                "status": "running",
+            }
+
             try:
                 yield from self._execute_node(node)
                 log_entry["status"] = ExecutionStatus.COMPLETED.value
                 log_entry["completed_at"] = datetime.now(timezone.utc)
+
+                yield {
+                    "type": "workflow_step",
+                    "node_id": node.id,
+                    "node_type": node.type.value,
+                    "node_title": node.title,
+                    "status": "completed",
+                }
             except Exception as e:
                 logger.error(f"Error executing node {node.id}: {e}", exc_info=True)
                 log_entry["status"] = ExecutionStatus.FAILED.value
@@ -59,6 +76,15 @@ class WorkflowEngine:
                 log_entry["completed_at"] = datetime.now(timezone.utc)
                 log_entry["state_snapshot"] = dict(self.state)
                 self.execution_log.append(log_entry)
+
+                yield {
+                    "type": "workflow_step",
+                    "node_id": node.id,
+                    "node_type": node.type.value,
+                    "node_title": node.title,
+                    "status": "failed",
+                }
+                yield {"type": "error", "error": str(e)}
                 break
             log_entry["state_snapshot"] = dict(self.state)
             self.execution_log.append(log_entry)
