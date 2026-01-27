@@ -256,6 +256,8 @@ class BaseAgent(ABC):
             # Use MongoDB _id if available, otherwise fall back to enumerated tool_id
 
             tool_config["tool_id"] = str(tool_data.get("_id", tool_id))
+            if hasattr(self, "conversation_id") and self.conversation_id:
+                tool_config["conversation_id"] = self.conversation_id
         tool = tm.load_tool(
             tool_data["name"],
             tool_config=tool_config,
