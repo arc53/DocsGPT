@@ -203,7 +203,7 @@ export default function ConversationTile({
             <input
               autoFocus
               type="text"
-              className="h-6 w-full bg-transparent px-1 text-sm leading-6 font-normal focus:outline-[#0075FF]"
+              className="h-6 w-full bg-transparent px-1 text-sm leading-6 rounded-2xl font-normal outline-none"
               value={conversationName}
               onChange={(e) => setConversationsName(e.target.value)}
               onKeyDown={handleRenameKeyDown}
