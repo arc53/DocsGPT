@@ -467,3 +467,117 @@ class ParseSpec(Resource):
         except Exception as err:
             current_app.logger.error(f"Error parsing spec: {err}", exc_info=True)
             return make_response(jsonify({"success": False, "error": "Failed to parse specification"}), 500)
+
+
+@tools_ns.route("/artifact/<artifact_id>")
+class GetArtifact(Resource):
+    @api.doc(description="Get artifact data by artifact ID")
+    def get(self, artifact_id: str):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user_id = decoded_token.get("sub")
+
+        try:
+            obj_id = ObjectId(artifact_id)
+        except Exception:
+            return make_response(
+                jsonify({"success": False, "message": "Invalid artifact ID"}), 400
+            )
+
+        from application.core.mongo_db import MongoDB
+        from application.core.settings import settings
+
+        db = MongoDB.get_client()[settings.MONGO_DB_NAME]
+
+        note_doc = db["notes"].find_one({"_id": obj_id, "user_id": user_id})
+        if note_doc:
+            content = note_doc.get("note", "")
+            line_count = len(content.split("\n")) if content else 0
+            artifact = {
+                "artifact_type": "note",
+                "data": {
+                    "content": content,
+                    "line_count": line_count,
+                    "updated_at": (
+                        note_doc["updated_at"].isoformat()
+                        if note_doc.get("updated_at")
+                        else None
+                    ),
+                },
+            }
+            return make_response(jsonify({"success": True, "artifact": artifact}), 200)
+
+        todo_doc = db["todos"].find_one({"_id": obj_id, "user_id": user_id})
+        if todo_doc:
+            tool_id = todo_doc.get("tool_id")
+            conversation_id = todo_doc.get("conversation_id")
+            query = {"user_id": user_id, "tool_id": tool_id}
+            if conversation_id:
+                query["conversation_id"] = conversation_id
+            all_todos = list(db["todos"].find(query))
+            items = []
+            open_count = 0
+            completed_count = 0
+            for t in all_todos:
+                status = t.get("status", "open")
+                if status == "open":
+                    open_count += 1
+                elif status == "completed":
+                    completed_count += 1
+                items.append({
+                    "todo_id": t.get("todo_id"),
+                    "title": t.get("title", ""),
+                    "status": status,
+                    "created_at": (
+                        t["created_at"].isoformat() if t.get("created_at") else None
+                    ),
+                    "updated_at": (
+                        t["updated_at"].isoformat() if t.get("updated_at") else None
+                    ),
+                })
+            artifact = {
+                "artifact_type": "todo_list",
+                "data": {
+                    "items": items,
+                    "total_count": len(items),
+                    "open_count": open_count,
+                    "completed_count": completed_count,
+                },
+            }
+            return make_response(jsonify({"success": True, "artifact": artifact}), 200)
+
+        memory_doc = db["memories"].find_one({"_id": obj_id, "user_id": user_id})
+        if memory_doc:
+            artifact_data = memory_doc.get("artifact_data", {})
+            artifact_type = artifact_data.get("artifact_type", "memory_file")
+            if artifact_type == "memory_directory":
+                artifact = {
+                    "artifact_type": "memory",
+                    "data": {
+                        "artifact_subtype": "directory",
+                        "directory": {
+                            "path": artifact_data.get("path", "/"),
+                            "files": artifact_data.get("files", []),
+                        },
+                    },
+                }
+            else:
+                artifact = {
+                    "artifact_type": "memory",
+                    "data": {
+                        "artifact_subtype": "file",
+                        "file": {
+                            "path": artifact_data.get("path", ""),
+                            "content": artifact_data.get("content", ""),
+                            "storage_path": artifact_data.get("storage_path"),
+                            "file_url": artifact_data.get("file_url"),
+                            "updated_at": artifact_data.get("updated_at"),
+                        },
+                    },
+                }
+            return make_response(jsonify({"success": True, "artifact": artifact}), 200)
+
+        return make_response(
+            jsonify({"success": False, "message": "Artifact not found"}), 404
+        )
