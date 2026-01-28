@@ -68,6 +68,7 @@ const endpoints = {
     AGENT_FOLDERS: '/api/agents/folders/',
     AGENT_FOLDER: (id: string) => `/api/agents/folders/${id}`,
     MOVE_AGENT_TO_FOLDER: '/api/agents/folders/move_agent',
+    GET_ARTIFACT: (artifactId: string) => `/api/artifact/${artifactId}`,
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

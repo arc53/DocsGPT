@@ -160,6 +160,8 @@ const userService = {
     token: string | null,
   ): Promise<any> =>
     apiClient.post(endpoints.USER.MOVE_AGENT_TO_FOLDER, data, token),
+  getArtifact: (artifactId: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.GET_ARTIFACT(artifactId), token),
 };
 
 export default userService;
