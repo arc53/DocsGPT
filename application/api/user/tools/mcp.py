@@ -43,6 +43,16 @@ class TestMCPServerConfig(Resource):
             return missing_fields
         try:
             config = data["config"]
+            transport_type = (config.get("transport_type") or "auto").lower()
+            allowed_transports = {"auto", "sse", "http"}
+            if transport_type not in allowed_transports:
+                return make_response(
+                    jsonify({"success": False, "error": "Unsupported transport_type"}),
+                    400,
+                )
+            config.pop("command", None)
+            config.pop("args", None)
+            config["transport_type"] = transport_type
 
             auth_credentials = {}
             auth_type = config.get("auth_type", "none")
@@ -115,6 +125,16 @@ class MCPServerSave(Resource):
             return missing_fields
         try:
             config = data["config"]
+            transport_type = (config.get("transport_type") or "auto").lower()
+            allowed_transports = {"auto", "sse", "http"}
+            if transport_type not in allowed_transports:
+                return make_response(
+                    jsonify({"success": False, "error": "Unsupported transport_type"}),
+                    400,
+                )
+            config.pop("command", None)
+            config.pop("args", None)
+            config["transport_type"] = transport_type
 
             auth_credentials = {}
             auth_type = config.get("auth_type", "none")
