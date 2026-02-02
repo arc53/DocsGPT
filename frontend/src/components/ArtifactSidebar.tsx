@@ -1,10 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import {
+  oneLight,
+  vscDarkPlus,
+} from 'react-syntax-highlighter/dist/cjs/styles/prism';
 
 import Exit from '../assets/exit.svg';
 import { selectToken } from '../preferences/preferenceSlice';
 import userService from '../api/services/userService';
 import Spinner from './Spinner';
+import CopyButton from './CopyButton';
+import { useDarkTheme } from '../hooks';
 
 type TodoItem = {
   todo_id: number;
@@ -37,13 +46,35 @@ type ArtifactSidebarProps = {
   onClose: () => void;
   artifactId: string | null;
   toolName?: string;
+  /**
+   * overlay: current fixed slide-in sidebar
+   * split: renders as a normal panel (to be placed in a split layout)
+   */
+  variant?: 'overlay' | 'split';
 };
+
+const ARTIFACT_TITLE_BY_TYPE: Record<ArtifactData['artifact_type'], string> = {
+  todo_list: 'Todo List',
+  note: 'Note',
+  memory: 'Memory',
+};
+
+function getArtifactTitle(artifact: ArtifactData | null, toolName?: string) {
+  if (artifact) return ARTIFACT_TITLE_BY_TYPE[artifact.artifact_type] ?? 'Artifact';
+
+  const formattedToolName = (toolName ?? '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  return formattedToolName || 'Artifact';
+}
 
 function TodoListView({ data }: { data: TodoArtifactData }) {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold dark:text-white">Todo List</h3>
+      <div className="mb-4 flex items-center justify-end">
         <div className="flex gap-2 text-xs">
           <span className="rounded-full bg-green-100 px-2 py-1 text-green-700 dark:bg-green-900/30 dark:text-green-400">
             {data.completed_count} done
@@ -65,8 +96,8 @@ function TodoListView({ data }: { data: TodoArtifactData }) {
                 key={item.todo_id}
                 className={`flex items-start gap-3 rounded-lg border p-3 ${
                   item.status === 'completed'
-                    ? 'border-green-200 bg-green-50 dark:border-green-900/50 dark:bg-green-900/20'
-                    : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'
+                    ? 'border-green-300 dark:border-green-800'
+                    : 'border-gray-200 dark:border-gray-700'
                 }`}
               >
                 <span
@@ -114,18 +145,122 @@ function TodoListView({ data }: { data: TodoArtifactData }) {
 }
 
 function NoteView({ data }: { data: NoteArtifactData }) {
+  const [isDarkTheme] = useDarkTheme();
+
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-lg font-semibold dark:text-white">Note</h3>
-        <span className="text-xs text-gray-500 dark:text-gray-400">
-          {data.line_count} lines
-        </span>
+      <div className="mb-4 flex items-center justify-end">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            {data.line_count} lines
+          </span>
+          <CopyButton textToCopy={data.content || ''} />
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto">
-        <pre className="whitespace-pre-wrap rounded-lg bg-gray-50 p-4 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200">
-          {data.content || 'Empty note'}
-        </pre>
+      <div className="flex-1 overflow-y-auto p-4">
+        {data.content ? (
+          <ReactMarkdown
+            className="flex flex-col gap-3 text-sm leading-normal break-words whitespace-pre-wrap text-gray-800 dark:text-gray-200"
+            remarkPlugins={[remarkGfm]}
+            components={{
+              code(props) {
+                const {
+                  children,
+                  className,
+                  node: _node,
+                  ref: _ref,
+                  ...rest
+                } = props;
+                void _node;
+                void _ref;
+                const match = /language-(\w+)/.exec(className || '');
+                const language = match ? match[1] : '';
+
+                return match ? (
+                  <div className="group border-light-silver dark:border-raisin-black relative my-2 overflow-hidden rounded-[14px] border">
+                    <div className="bg-platinum dark:bg-eerie-black-2 flex items-center justify-between px-2 py-1">
+                      <span className="text-just-black dark:text-chinese-white text-xs font-medium">
+                        {language}
+                      </span>
+                      <CopyButton
+                        textToCopy={String(children).replace(/\n$/, '')}
+                      />
+                    </div>
+                    <SyntaxHighlighter
+                      {...rest}
+                      PreTag="div"
+                      language={language}
+                      style={isDarkTheme ? vscDarkPlus : oneLight}
+                      customStyle={{
+                        margin: 0,
+                        borderRadius: 0,
+                        scrollbarWidth: 'thin',
+                      }}
+                    >
+                      {String(children).replace(/\n$/, '')}
+                    </SyntaxHighlighter>
+                  </div>
+                ) : (
+                  <code
+                    className="dark:bg-independence dark:text-bright-gray rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal"
+                    {...rest}
+                  >
+                    {children}
+                  </code>
+                );
+              },
+              ul({ children }) {
+                return (
+                  <ul className="list-inside list-disc pl-4 whitespace-normal">
+                    {children}
+                  </ul>
+                );
+              },
+              ol({ children }) {
+                return (
+                  <ol className="list-inside list-decimal pl-4 whitespace-normal">
+                    {children}
+                  </ol>
+                );
+              },
+              a({ children, href }) {
+                return (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline dark:text-blue-400"
+                  >
+                    {children}
+                  </a>
+                );
+              },
+              p({ children }) {
+                return <p className="whitespace-pre-wrap">{children}</p>;
+              },
+              h1({ children }) {
+                return <h1 className="text-xl font-bold">{children}</h1>;
+              },
+              h2({ children }) {
+                return <h2 className="text-lg font-bold">{children}</h2>;
+              },
+              h3({ children }) {
+                return <h3 className="text-base font-bold">{children}</h3>;
+              },
+              blockquote({ children }) {
+                return (
+                  <blockquote className="border-l-4 border-gray-300 pl-4 italic dark:border-gray-600">
+                    {children}
+                  </blockquote>
+                );
+              },
+            }}
+          >
+            {data.content}
+          </ReactMarkdown>
+        ) : (
+          <p className="text-sm text-gray-500 dark:text-gray-400">Empty note</p>
+        )}
       </div>
     </div>
   );
@@ -136,12 +271,15 @@ export default function ArtifactSidebar({
   onClose,
   artifactId,
   toolName,
+  variant = 'overlay',
 }: ArtifactSidebarProps) {
   const sidebarRef = React.useRef<HTMLDivElement>(null);
   const token = useSelector(selectToken);
   const [artifact, setArtifact] = useState<ArtifactData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const title = getArtifactTitle(artifact, toolName);
 
   useEffect(() => {
     if (!isOpen || !artifactId) {
@@ -175,11 +313,11 @@ export default function ArtifactSidebar({
   };
 
   useEffect(() => {
-    if (isOpen) {
+    if (variant === 'overlay' && isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen]);
+  }, [isOpen, variant]);
 
   const renderContent = () => {
     if (loading) {
@@ -211,6 +349,36 @@ export default function ArtifactSidebar({
     }
   };
 
+  if (variant === 'split') {
+    if (!isOpen) return null;
+
+    return (
+      <div className="flex h-full w-full flex-col p-3">
+        {/* Space for top bar / actions */}
+        <div className="h-14 shrink-0" />
+        {/* Artifact panel */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-transparent dark:border-gray-700">
+          <div className="flex w-full items-center justify-between px-4 py-2">
+            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+              {title}
+            </span>
+            <button
+              className="rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-800"
+              onClick={onClose}
+            >
+              <img
+                className="h-3 w-3 filter dark:invert"
+                src={Exit}
+                alt="Close"
+              />
+            </button>
+          </div>
+          <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div ref={sidebarRef} className="h-vh relative">
       <div
@@ -220,13 +388,17 @@ export default function ArtifactSidebar({
       >
         <div className="flex w-full items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
           <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
-            {toolName || 'Artifact'}
+            {title}
           </span>
           <button
             className="hover:bg-gray-1000 dark:hover:bg-gun-metal rounded-full p-2"
             onClick={onClose}
           >
-            <img className="h-4 w-4 filter dark:invert" src={Exit} alt="Close" />
+            <img
+              className="h-4 w-4 filter dark:invert"
+              src={Exit}
+              alt="Close"
+            />
           </button>
         </div>
         <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>
@@ -234,4 +406,3 @@ export default function ArtifactSidebar({
     </div>
   );
 }
-

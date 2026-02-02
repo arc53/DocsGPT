@@ -37,6 +37,8 @@ type ConversationMessagesProps = {
   status: Status;
   showHeroOnEmpty?: boolean;
   headerContent?: ReactNode;
+  onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
+  isSplitView?: boolean;
 };
 
 export default function ConversationMessages({
@@ -47,6 +49,8 @@ export default function ConversationMessages({
   handleFeedback,
   showHeroOnEmpty = true,
   headerContent,
+  onOpenArtifact,
+  isSplitView = false,
 }: ConversationMessagesProps) {
   const [isDarkTheme] = useDarkTheme();
   const { t } = useTranslation();
@@ -148,6 +152,7 @@ export default function ConversationMessages({
           thought={query.thought}
           sources={query.sources}
           toolCalls={query.tool_calls}
+          onOpenArtifact={onOpenArtifact}
           feedback={query.feedback}
           isStreaming={isCurrentlyStreaming}
           handleFeedback={
@@ -214,7 +219,13 @@ export default function ConversationMessages({
         </button>
       )}
 
-      <div className="w-full max-w-[1300px] px-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
+      <div
+        className={
+          isSplitView
+            ? 'w-full max-w-[1300px] px-2'
+            : 'w-full max-w-[1300px] px-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12'
+        }
+      >
         {headerContent}
 
         {queries.length > 0 ? (
