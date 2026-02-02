@@ -1,11 +1,39 @@
+import io
 import pytest
 from application.agents.tools.memory import MemoryTool
 from application.core.settings import settings
 
 
+class FakeStorage:
+    """Fake storage for testing - stores files in memory."""
+
+    def __init__(self) -> None:
+        self.files = {}  # path -> bytes
+
+    def save_file(self, file_data, path, **kwargs):
+        content = file_data.read()
+        file_data.seek(0)
+        self.files[path] = content
+        return {"storage_type": "fake"}
+
+    def get_file(self, path):
+        if path not in self.files:
+            raise FileNotFoundError(f"File not found: {path}")
+        return io.BytesIO(self.files[path])
+
+    def file_exists(self, path):
+        return path in self.files
+
+    def delete_file(self, path):
+        if path in self.files:
+            del self.files[path]
+            return True
+        return False
+
+
 @pytest.fixture
 def memory_tool(monkeypatch) -> MemoryTool:
-    """Provide a MemoryTool with a fake Mongo collection and fixed user_id."""
+    """Provide a MemoryTool with a fake Mongo collection and fake storage."""
 
     class FakeCollection:
         def __init__(self) -> None:
@@ -16,7 +44,6 @@ def memory_tool(monkeypatch) -> MemoryTool:
             tool_id = doc.get("tool_id")
             path = doc.get("path")
             key = f"{user_id}:{tool_id}:{path}"
-            # Add _id to document if not present
 
             if "_id" not in doc:
                 doc["_id"] = key
@@ -157,7 +184,10 @@ def memory_tool(monkeypatch) -> MemoryTool:
         "application.core.mongo_db.MongoDB.get_client", lambda: fake_client
     )
 
-    # Return tool with a fixed tool_id for consistency in tests
+    fake_storage = FakeStorage()
+    monkeypatch.setattr(
+        "application.agents.tools.memory.StorageCreator.get_storage", lambda: fake_storage
+    )
 
     return MemoryTool({"tool_id": "test_tool_id"}, user_id="test_user")
 
