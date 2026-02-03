@@ -12,6 +12,9 @@ export interface WorkflowExecutionStep {
   reasoning?: string;
   startedAt?: number;
   completedAt?: number;
+  stateSnapshot?: Record<string, unknown>;
+  output?: string;
+  error?: string;
 }
 
 interface WorkflowData {
@@ -21,8 +24,12 @@ interface WorkflowData {
   edges: WorkflowEdge[];
 }
 
+export interface WorkflowQuery extends Query {
+  executionSteps?: WorkflowExecutionStep[];
+}
+
 export interface WorkflowPreviewState {
-  queries: Query[];
+  queries: WorkflowQuery[];
   status: Status;
   executionSteps: WorkflowExecutionStep[];
   activeNodeId: string | null;
@@ -119,11 +126,17 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
                     } else if (data.type === 'workflow_step') {
                       dispatch(
                         updateExecutionStep({
-                          nodeId: data.node_id,
-                          nodeType: data.node_type,
-                          nodeTitle: data.node_title,
-                          status: data.status,
-                          reasoning: data.reasoning,
+                          index: targetIndex,
+                          step: {
+                            nodeId: data.node_id,
+                            nodeType: data.node_type,
+                            nodeTitle: data.node_title,
+                            status: data.status,
+                            reasoning: data.reasoning,
+                            stateSnapshot: data.state_snapshot,
+                            output: data.output,
+                            error: data.error,
+                          },
                         }),
                       );
                       if (data.status === 'running') {
@@ -288,25 +301,60 @@ export const workflowPreviewSlice = createSlice({
         ...query,
       };
     },
-    updateExecutionStep(state, action: PayloadAction<WorkflowExecutionStep>) {
-      const step = action.payload;
-      const existingIndex = state.executionSteps.findIndex(
-        (s) => s.nodeId === step.nodeId,
-      );
-      if (existingIndex !== -1) {
-        state.executionSteps[existingIndex] = {
-          ...state.executionSteps[existingIndex],
-          ...step,
-          completedAt:
-            step.status === 'completed' || step.status === 'failed'
-              ? Date.now()
-              : state.executionSteps[existingIndex].completedAt,
+    updateExecutionStep(
+      state,
+      action: PayloadAction<{
+        index: number;
+        step: Partial<WorkflowExecutionStep> & {
+          nodeId: string;
+          nodeType: string;
+          nodeTitle: string;
+          status: WorkflowExecutionStep['status'];
         };
+      }>,
+    ) {
+      const { index, step } = action.payload;
+
+      if (!state.queries[index]) return;
+      if (!state.queries[index].executionSteps) {
+        state.queries[index].executionSteps = [];
+      }
+
+      const querySteps = state.queries[index].executionSteps!;
+      const existingIndex = querySteps.findIndex((s) => s.nodeId === step.nodeId);
+
+      const updatedStep: WorkflowExecutionStep = {
+        nodeId: step.nodeId,
+        nodeType: step.nodeType,
+        nodeTitle: step.nodeTitle,
+        status: step.status,
+        reasoning: step.reasoning,
+        stateSnapshot: step.stateSnapshot,
+        output: step.output,
+        error: step.error,
+        startedAt: existingIndex !== -1 ? querySteps[existingIndex].startedAt : Date.now(),
+        completedAt:
+          step.status === 'completed' || step.status === 'failed'
+            ? Date.now()
+            : existingIndex !== -1
+              ? querySteps[existingIndex].completedAt
+              : undefined,
+      };
+
+      if (existingIndex !== -1) {
+        updatedStep.stateSnapshot = step.stateSnapshot ?? querySteps[existingIndex].stateSnapshot;
+        updatedStep.output = step.output ?? querySteps[existingIndex].output;
+        updatedStep.error = step.error ?? querySteps[existingIndex].error;
+        querySteps[existingIndex] = updatedStep;
       } else {
-        state.executionSteps.push({
-          ...step,
-          startedAt: Date.now(),
-        });
+        querySteps.push(updatedStep);
+      }
+
+      const globalIndex = state.executionSteps.findIndex((s) => s.nodeId === step.nodeId);
+      if (globalIndex !== -1) {
+        state.executionSteps[globalIndex] = updatedStep;
+      } else {
+        state.executionSteps.push(updatedStep);
       }
     },
     setActiveNodeId(state, action: PayloadAction<string | null>) {

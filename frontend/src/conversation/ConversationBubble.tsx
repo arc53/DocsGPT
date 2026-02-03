@@ -150,7 +150,7 @@ const ConversationBubble = forwardRef<
             {!isEditClicked && (
               <>
                 <div className="relative mr-2 flex w-full flex-col">
-                  <div className="from-medium-purple to-slate-blue mr-2 ml-2 flex max-w-full items-start gap-2 rounded-[28px] bg-linear-to-b px-5 py-4 text-sm leading-normal break-words whitespace-pre-wrap text-white sm:text-base">
+                  <div className="from-medium-purple to-slate-blue mr-2 ml-2 flex max-w-full items-start gap-2 rounded-[28px] bg-linear-to-b px-5 py-4 text-sm leading-normal wrap-break-word whitespace-pre-wrap text-white sm:text-base">
                     <div
                       ref={messageRef}
                       className={`${isQuestionCollapsed ? 'line-clamp-4' : ''} w-full`}
@@ -305,15 +305,15 @@ const ConversationBubble = forwardRef<
                     {sources?.slice(0, 3)?.map((source, index) => (
                       <div key={index} className="relative">
                         <div
-                          className="bg-gray-1000 dark:bg-gun-metal h-28 cursor-pointer rounded-[20px] p-4 hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
+                          className="bg-gray-1000 dark:bg-gun-metal h-28 cursor-pointer rounded-4xl p-4 hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
                           onMouseOver={() => setActiveTooltip(index)}
                           onMouseOut={() => setActiveTooltip(null)}
                         >
-                          <p className="ellipsis-text h-12 text-xs break-words">
+                          <p className="ellipsis-text h-12 text-xs wrap-break-word">
                             {source.text}
                           </p>
                           <div
-                            className={`mt-[14px] flex flex-row items-center gap-[6px] underline-offset-2 ${
+                            className={`mt-3.5 flex flex-row items-center gap-1.5 underline-offset-2 ${
                               source.link && source.link !== 'local'
                                 ? 'hover:text-[#007DFF] hover:underline dark:hover:text-[#48A0FF]'
                                 : ''
@@ -334,7 +334,7 @@ const ConversationBubble = forwardRef<
                               className="h-[17px] w-[17px] object-fill"
                             />
                             <p
-                              className="mt-[2px] truncate text-xs"
+                              className="mt-0.5 truncate text-xs"
                               title={
                                 source.link && source.link !== 'local'
                                   ? source.link
@@ -353,7 +353,7 @@ const ConversationBubble = forwardRef<
                             onMouseOver={() => setActiveTooltip(index)}
                             onMouseOut={() => setActiveTooltip(null)}
                           >
-                            <p className="line-clamp-6 max-h-[164px] overflow-hidden rounded-md text-sm break-words text-ellipsis">
+                            <p className="line-clamp-6 max-h-[164px] overflow-hidden rounded-md text-sm wrap-break-word text-ellipsis">
                               {source.text}
                             </p>
                           </div>
@@ -362,7 +362,7 @@ const ConversationBubble = forwardRef<
                     ))}
                     {(sources?.length ?? 0) > 3 && (
                       <div
-                        className="bg-gray-1000 text-purple-30 dark:bg-gun-metal flex h-28 cursor-pointer flex-col-reverse rounded-[20px] p-4 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
+                        className="bg-gray-1000 text-purple-30 dark:bg-gun-metal flex h-28 cursor-pointer flex-col-reverse rounded-4xl p-4 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
                         onClick={() => setIsSidebarOpen(true)}
                       >
                         <p className="ellipsis-text h-22 text-xs">
@@ -414,7 +414,7 @@ const ConversationBubble = forwardRef<
                       <Fragment key={index}>
                         {segment.type === 'text' ? (
                           <ReactMarkdown
-                            className="fade-in flex flex-col gap-3 leading-normal break-words whitespace-pre-wrap"
+                            className="fade-in flex flex-col gap-3 leading-normal wrap-break-word whitespace-pre-wrap"
                             remarkPlugins={[remarkGfm, remarkMath]}
                             rehypePlugins={[rehypeKatex]}
                             components={{
@@ -462,7 +462,7 @@ const ConversationBubble = forwardRef<
                                     </SyntaxHighlighter>
                                   </div>
                                 ) : (
-                                  <code className="dark:bg-independence dark:text-bright-gray rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal whitespace-pre-line">
+                                  <code className="dark:bg-independence dark:text-bright-gray rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
                                     {children}
                                   </code>
                                 );
@@ -651,7 +651,7 @@ function AllSources(sources: AllSourcesProps) {
           return (
             <div
               key={index}
-              className={`group/card bg-gray-1000 relative w-full rounded-[20px] p-4 transition-colors hover:bg-[#F1F1F1] dark:bg-[#28292E] dark:hover:bg-[#2C2E3C] ${
+              className={`group/card bg-gray-1000 relative w-full rounded-4xl p-4 transition-colors hover:bg-[#F1F1F1] dark:bg-[#28292E] dark:hover:bg-[#2C2E3C] ${
                 isExternalSource ? 'cursor-pointer' : ''
               }`}
               onClick={() =>
@@ -660,7 +660,7 @@ function AllSources(sources: AllSourcesProps) {
             >
               <p
                 title={source.title}
-                className={`ellipsis-text text-left text-sm font-semibold break-words ${
+                className={`ellipsis-text text-left text-sm font-semibold wrap-break-word ${
                   isExternalSource
                     ? 'group-hover/card:text-purple-30 dark:group-hover/card:text-[#8C67D7]'
                     : ''
@@ -679,7 +679,7 @@ function AllSources(sources: AllSourcesProps) {
                   />
                 )}
               </p>
-              <p className="dark:text-chinese-silver mt-3 line-clamp-4 rounded-md text-left text-xs break-words text-black">
+              <p className="dark:text-chinese-silver mt-3 line-clamp-4 rounded-md text-left text-xs wrap-break-word text-black">
                 {source.text}
               </p>
             </div>
@@ -725,12 +725,12 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
               <Accordion
                 key={`tool-call-${index}`}
                 title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
-                className="bg-gray-1000 dark:bg-gun-metal w-full rounded-[20px] hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
+                className="bg-gray-1000 dark:bg-gun-metal w-full rounded-4xl hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
                 titleClassName="px-6 py-2 text-sm font-semibold"
               >
                 <div className="flex flex-col gap-1">
                   <div className="border-silver dark:border-silver/20 flex flex-col rounded-2xl border">
-                    <p className="dark:bg-eerie-black-2 flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold break-words">
+                    <p className="dark:bg-eerie-black-2 flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
                       <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
                         Arguments
                       </span>{' '}
@@ -738,7 +738,7 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                         textToCopy={JSON.stringify(toolCall.arguments, null, 2)}
                       />
                     </p>
-                    <p className="dark:tex dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm break-words">
+                    <p className="dark:tex dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
                       <span
                         className="leading-[23px] text-black dark:text-gray-400"
                         style={{ fontFamily: 'IBMPlexMono-Medium' }}
@@ -748,7 +748,7 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                     </p>
                   </div>
                   <div className="border-silver dark:border-silver/20 flex flex-col rounded-2xl border">
-                    <p className="dark:bg-eerie-black-2 flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold break-words">
+                    <p className="dark:bg-eerie-black-2 flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
                       <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
                         Response
                       </span>{' '}
@@ -766,7 +766,7 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                       </span>
                     )}
                     {toolCall.status === 'completed' && (
-                      <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm break-words">
+                      <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
                         <span
                           className="leading-[23px] text-black dark:text-gray-400"
                           style={{ fontFamily: 'IBMPlexMono-Medium' }}
@@ -776,7 +776,7 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                       </p>
                     )}
                     {toolCall.status === 'error' && (
-                      <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm break-words">
+                      <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
                         <span
                           className="leading-[23px] text-red-500 dark:text-red-400"
                           style={{ fontFamily: 'IBMPlexMono-Medium' }}
@@ -838,7 +838,7 @@ function Thought({
         <div className="fade-in mr-5 ml-2 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
           <div className="bg-gray-1000 dark:bg-gun-metal rounded-[28px] px-7 py-[18px]">
             <ReactMarkdown
-              className="fade-in leading-normal break-words whitespace-pre-wrap"
+              className="fade-in leading-normal wrap-break-word whitespace-pre-wrap"
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[rehypeKatex]}
               components={{
@@ -873,7 +873,7 @@ function Thought({
                       </SyntaxHighlighter>
                     </div>
                   ) : (
-                    <code className="dark:bg-independence dark:text-bright-gray rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal whitespace-pre-line">
+                    <code className="dark:bg-independence dark:text-bright-gray rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
                       {children}
                     </code>
                   );

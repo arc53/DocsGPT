@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Play,
   StickyNote,
+  Workflow,
   XCircle,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -15,8 +16,9 @@ import { useDispatch, useSelector } from 'react-redux';
 
 import { cn } from '@/lib/utils';
 
+import ChevronDownIcon from '../../assets/chevron-down.svg';
 import MessageInput from '../../components/MessageInput';
-import ConversationMessages from '../../conversation/ConversationMessages';
+import ConversationBubble from '../../conversation/ConversationBubble';
 import { Query } from '../../conversation/conversationModels';
 import { AppDispatch } from '../../store';
 import { WorkflowEdge, WorkflowNode } from '../types/workflow';
@@ -31,6 +33,7 @@ import {
   selectWorkflowPreviewQueries,
   selectWorkflowPreviewStatus,
   WorkflowExecutionStep,
+  WorkflowQuery,
 } from './workflowPreviewSlice';
 
 interface WorkflowData {
@@ -44,32 +47,192 @@ interface WorkflowPreviewProps {
   workflowData: WorkflowData;
 }
 
+const NODE_ICONS: Record<string, React.ReactNode> = {
+  start: <Play className="h-3 w-3" />,
+  agent: <Bot className="h-3 w-3" />,
+  end: <Flag className="h-3 w-3" />,
+  note: <StickyNote className="h-3 w-3" />,
+  state: <Database className="h-3 w-3" />,
+};
+
+const NODE_COLORS: Record<string, string> = {
+  start: 'text-green-600 dark:text-green-400',
+  agent: 'text-purple-600 dark:text-purple-400',
+  end: 'text-gray-600 dark:text-gray-400',
+  note: 'text-yellow-600 dark:text-yellow-400',
+  state: 'text-blue-600 dark:text-blue-400',
+};
+
+function ExecutionDetails({
+  steps,
+  nodes,
+  isOpen,
+  onToggle,
+  stepRefs,
+}: {
+  steps: WorkflowExecutionStep[];
+  nodes: WorkflowNode[];
+  isOpen: boolean;
+  onToggle: () => void;
+  stepRefs?: React.RefObject<Map<string, HTMLDivElement>>;
+}) {
+  const completedSteps = steps.filter(
+    (s) => s.status === 'completed' || s.status === 'failed',
+  );
+
+  if (completedSteps.length === 0) return null;
+
+  const formatValue = (value: unknown): string => {
+    if (typeof value === 'string') return value;
+    return JSON.stringify(value, null, 2);
+  };
+
+  return (
+    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+      <div className="my-2 flex flex-row items-center justify-center gap-3">
+        <div className="flex h-[26px] w-[30px] items-center justify-center">
+          <Workflow className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+        </div>
+        <button className="flex flex-row items-center gap-2" onClick={onToggle}>
+          <p className="text-base font-semibold">
+            Execution Details
+            <span className="ml-1.5 text-sm font-normal text-gray-500 dark:text-gray-400">
+              ({completedSteps.length}{' '}
+              {completedSteps.length === 1 ? 'step' : 'steps'})
+            </span>
+          </p>
+          <img
+            src={ChevronDownIcon}
+            alt="ChevronDown"
+            className={cn(
+              'h-4 w-4 transform transition-transform duration-200 dark:invert',
+              isOpen ? 'rotate-180' : '',
+            )}
+          />
+        </button>
+      </div>
+      <div
+        className={cn(
+          'ml-3 grid w-full transition-all duration-300 ease-in-out',
+          isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="space-y-2 pr-2">
+            {completedSteps.map((step, stepIndex) => {
+              const node = nodes.find((n) => n.id === step.nodeId);
+              const displayName =
+                node?.title || node?.data?.title || step.nodeTitle;
+              const stateVars = step.stateSnapshot
+                ? Object.entries(step.stateSnapshot).filter(
+                    ([key]) => !['query', 'chat_history'].includes(key),
+                  )
+                : [];
+
+              const truncateText = (text: string, maxLength: number) => {
+                if (text.length <= maxLength) return text;
+                return text.slice(0, maxLength) + '...';
+              };
+
+              return (
+                <div
+                  key={step.nodeId}
+                  ref={(el) => {
+                    if (el && stepRefs) stepRefs.current.set(step.nodeId, el);
+                  }}
+                  className="rounded-xl bg-[#F5F5F5] p-3 dark:bg-[#383838]"
+                >
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {stepIndex + 1}.
+                    </span>
+                    <div
+                      className={cn(
+                        'shrink-0',
+                        NODE_COLORS[step.nodeType] || NODE_COLORS.state,
+                      )}
+                    >
+                      {NODE_ICONS[step.nodeType] || (
+                        <Circle className="h-3 w-3" />
+                      )}
+                    </div>
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {displayName}
+                    </span>
+                    <div className="ml-auto shrink-0">
+                      {step.status === 'completed' && (
+                        <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      )}
+                      {step.status === 'failed' && (
+                        <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                      )}
+                    </div>
+                  </div>
+                  {(step.output || step.error || stateVars.length > 0) && (
+                    <div className="mt-3 space-y-2 text-sm">
+                      {step.output && (
+                        <div className="rounded-lg bg-white p-2 dark:bg-[#2A2A2A]">
+                          <span className="font-medium text-gray-600 dark:text-gray-400">
+                            Output:{' '}
+                          </span>
+                          <span className="wrap-break-word whitespace-pre-wrap text-gray-900 dark:text-gray-100">
+                            {truncateText(step.output, 300)}
+                          </span>
+                        </div>
+                      )}
+                      {step.error && (
+                        <div className="rounded-lg bg-red-50 p-2 dark:bg-red-900/30">
+                          <span className="font-medium text-red-700 dark:text-red-300">
+                            Error:{' '}
+                          </span>
+                          <span className="wrap-break-word whitespace-pre-wrap text-red-800 dark:text-red-200">
+                            {step.error}
+                          </span>
+                        </div>
+                      )}
+                      {stateVars.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {stateVars.map(([key, value]) => (
+                            <span
+                              key={key}
+                              className="inline-flex items-center rounded-lg bg-white px-2 py-1 text-xs dark:bg-[#2A2A2A]"
+                            >
+                              <span className="font-medium text-gray-600 dark:text-gray-400">
+                                {key}:
+                              </span>
+                              <span
+                                className="ml-1 max-w-[200px] truncate text-gray-900 dark:text-gray-100"
+                                title={formatValue(value)}
+                              >
+                                {truncateText(formatValue(value), 50)}
+                              </span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function WorkflowMiniMap({
   nodes,
   activeNodeId,
   executionSteps,
+  onNodeClick,
 }: {
   nodes: WorkflowNode[];
   activeNodeId: string | null;
   executionSteps: WorkflowExecutionStep[];
+  onNodeClick?: (nodeId: string) => void;
 }) {
-  const getNodeIcon = (type: string) => {
-    switch (type) {
-      case 'start':
-        return <Play className="h-3 w-3" />;
-      case 'agent':
-        return <Bot className="h-3 w-3" />;
-      case 'end':
-        return <Flag className="h-3 w-3" />;
-      case 'note':
-        return <StickyNote className="h-3 w-3" />;
-      case 'state':
-        return <Database className="h-3 w-3" />;
-      default:
-        return <Circle className="h-3 w-3" />;
-    }
-  };
-
   const getNodeDisplayName = (node: WorkflowNode) => {
     if (node.type === 'start') return 'Start';
     if (node.type === 'end') return 'End';
@@ -125,6 +288,11 @@ function WorkflowMiniMap({
     return (a.position?.y || 0) - (b.position?.y || 0);
   });
 
+  const hasStepData = (nodeId: string) => {
+    const step = executionSteps.find((s) => s.nodeId === nodeId);
+    return step && (step.status === 'completed' || step.status === 'failed');
+  };
+
   return (
     <div className="space-y-1">
       {sortedNodes.map((node, index) => (
@@ -133,25 +301,24 @@ function WorkflowMiniMap({
             <div className="absolute top-12 left-4 h-3 w-0.5 bg-gray-200 dark:bg-gray-700" />
           )}
 
-          <div
+          <button
+            onClick={() => hasStepData(node.id) && onNodeClick?.(node.id)}
+            disabled={!hasStepData(node.id)}
             className={cn(
-              'flex h-12 items-center gap-2 rounded-lg border px-3 text-xs transition-all',
+              'flex h-12 w-full items-center gap-2 rounded-lg border px-3 text-xs transition-all',
               getStatusColor(node.id, node.type),
+              hasStepData(node.id) && 'cursor-pointer hover:opacity-80',
             )}
           >
             <div
               className={cn(
                 'flex h-5 w-5 shrink-0 items-center justify-center rounded-full',
-                node.type === 'start' && 'text-green-600 dark:text-green-400',
-                node.type === 'agent' && 'text-purple-600 dark:text-purple-400',
-                node.type === 'end' && 'text-gray-600 dark:text-gray-400',
-                node.type === 'note' && 'text-yellow-600 dark:text-yellow-400',
-                node.type === 'state' && 'text-blue-600 dark:text-blue-400',
+                NODE_COLORS[node.type] || NODE_COLORS.state,
               )}
             >
-              {getNodeIcon(node.type)}
+              {NODE_ICONS[node.type] || <Circle className="h-3 w-3" />}
             </div>
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 text-left">
               <div className="truncate font-medium text-gray-700 dark:text-gray-200">
                 {getNodeDisplayName(node)}
               </div>
@@ -172,7 +339,7 @@ function WorkflowMiniMap({
                 <XCircle className="h-3 w-3 text-red-500" />
               )}
             </div>
-          </div>
+          </button>
         </div>
       ))}
     </div>
@@ -184,14 +351,33 @@ export default function WorkflowPreview({
 }: WorkflowPreviewProps) {
   const dispatch = useDispatch<AppDispatch>();
 
-  const queries = useSelector(selectWorkflowPreviewQueries);
+  const queries = useSelector(selectWorkflowPreviewQueries) as WorkflowQuery[];
   const status = useSelector(selectWorkflowPreviewStatus);
   const executionSteps = useSelector(selectWorkflowExecutionSteps);
   const activeNodeId = useSelector(selectActiveNodeId);
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
+  const [openDetailsIndex, setOpenDetailsIndex] = useState<number | null>(null);
 
   const fetchStream = useRef<{ abort: () => void } | null>(null);
+  const stepRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollToStep = useCallback(
+    (nodeId: string) => {
+      const lastQueryIndex = queries.length - 1;
+      if (lastQueryIndex >= 0) {
+        setOpenDetailsIndex(lastQueryIndex);
+        setTimeout(() => {
+          const stepEl = stepRefs.current.get(nodeId);
+          if (stepEl) {
+            stepEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
+      }
+    },
+    [queries.length],
+  );
 
   const handleFetchAnswer = useCallback(
     ({ question, index }: { question: string; index?: number }) => {
@@ -280,6 +466,9 @@ export default function WorkflowPreview({
     } else setLastQueryReturnedErr(false);
   }, [queries]);
 
+  const lastQuerySteps =
+    queries.length > 0 ? queries[queries.length - 1].executionSteps || [] : [];
+
   return (
     <div className="dark:bg-raisin-black flex h-full flex-col bg-white">
       <div className="border-light-silver dark:bg-raisin-black flex h-[77px] items-center justify-between border-b bg-white px-6 dark:border-[#3A3A3A]">
@@ -316,13 +505,19 @@ export default function WorkflowPreview({
             <WorkflowMiniMap
               nodes={workflowData.nodes}
               activeNodeId={activeNodeId}
-              executionSteps={executionSteps}
+              executionSteps={
+                lastQuerySteps.length > 0 ? lastQuerySteps : executionSteps
+              }
+              onNodeClick={scrollToStep}
             />
           </div>
         </div>
 
         <div className="relative flex min-w-0 flex-1 flex-col">
-          <div className="scrollbar-thin absolute inset-0 bottom-[100px] overflow-y-auto px-4 pt-4">
+          <div
+            ref={chatContainerRef}
+            className="scrollbar-thin absolute inset-0 bottom-[100px] overflow-y-auto px-4 pt-4"
+          >
             {queries.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center">
                 <div className="mb-2 flex size-14 shrink-0 items-center justify-center rounded-xl bg-gray-100 dark:bg-[#2C2C2C]">
@@ -333,14 +528,70 @@ export default function WorkflowPreview({
                 </p>
               </div>
             ) : (
-              <div className="[&>div>div]:w-full! [&>div>div]:max-w-none!">
-                <ConversationMessages
-                  handleQuestion={handleQuestion}
-                  handleQuestionSubmission={handleQuestionSubmission}
-                  queries={queries}
-                  status={status}
-                  showHeroOnEmpty={false}
-                />
+              <div className="w-full">
+                {queries.map((query, index) => {
+                  const querySteps = query.executionSteps || [];
+                  const hasResponse = !!(query.response || query.error);
+                  const isLastQuery = index === queries.length - 1;
+                  const isOpen =
+                    openDetailsIndex === index ||
+                    (!hasResponse && isLastQuery && querySteps.length > 0);
+
+                  return (
+                    <div key={index}>
+                      {/* Query bubble */}
+                      <ConversationBubble
+                        className={index === 0 ? 'mt-5' : ''}
+                        message={query.prompt}
+                        type="QUESTION"
+                        handleUpdatedQuestionSubmission={
+                          handleQuestionSubmission
+                        }
+                        questionNumber={index}
+                      />
+
+                      {/* Execution Details */}
+                      {querySteps.length > 0 && (
+                        <ExecutionDetails
+                          steps={querySteps}
+                          nodes={workflowData.nodes}
+                          isOpen={isOpen}
+                          onToggle={() =>
+                            setOpenDetailsIndex(
+                              openDetailsIndex === index ? null : index,
+                            )
+                          }
+                          stepRefs={isLastQuery ? stepRefs : undefined}
+                        />
+                      )}
+
+                      {/* Response bubble */}
+                      {(query.response ||
+                        query.thought ||
+                        query.tool_calls) && (
+                        <ConversationBubble
+                          className={isLastQuery ? 'mb-32' : 'mb-7'}
+                          message={query.response}
+                          type="ANSWER"
+                          thought={query.thought}
+                          sources={query.sources}
+                          toolCalls={query.tool_calls}
+                          feedback={query.feedback}
+                          isStreaming={status === 'loading' && isLastQuery}
+                        />
+                      )}
+
+                      {/* Error bubble */}
+                      {query.error && (
+                        <ConversationBubble
+                          className={isLastQuery ? 'mb-32' : 'mb-7'}
+                          message={query.error}
+                          type="ERROR"
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

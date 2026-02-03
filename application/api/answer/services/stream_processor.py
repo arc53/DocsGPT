@@ -742,31 +742,33 @@ class StreamProcessor:
         )
         system_api_key = get_api_key_for_provider(provider or settings.LLM_PROVIDER)
 
-        agent = AgentCreator.create_agent(
-            self.agent_config["agent_type"],
-            endpoint="stream",
-            llm_name=provider or settings.LLM_PROVIDER,
-            model_id=self.model_id,
-            api_key=system_api_key,
-            user_api_key=self.agent_config["user_api_key"],
-            prompt=rendered_prompt,
-            chat_history=self.history,
-            retrieved_docs=self.retrieved_docs,
-            decoded_token=self.decoded_token,
-            attachments=self.attachments,
-            json_schema=self.agent_config.get("json_schema"),
-            compressed_summary=self.compressed_summary,
-            workflow_id=(
-                self.agent_config.get("workflow")
-                if isinstance(self.agent_config.get("workflow"), str)
-                else None
-            ),
-            workflow=(
-                self.agent_config.get("workflow")
-                if isinstance(self.agent_config.get("workflow"), dict)
-                else None
-            ),
-        )
+        agent_type = self.agent_config["agent_type"]
+
+        # Base agent kwargs
+        agent_kwargs = {
+            "endpoint": "stream",
+            "llm_name": provider or settings.LLM_PROVIDER,
+            "model_id": self.model_id,
+            "api_key": system_api_key,
+            "user_api_key": self.agent_config["user_api_key"],
+            "prompt": rendered_prompt,
+            "chat_history": self.history,
+            "retrieved_docs": self.retrieved_docs,
+            "decoded_token": self.decoded_token,
+            "attachments": self.attachments,
+            "json_schema": self.agent_config.get("json_schema"),
+            "compressed_summary": self.compressed_summary,
+        }
+
+        # Workflow-specific kwargs for workflow agents
+        if agent_type == "workflow":
+            workflow_config = self.agent_config.get("workflow")
+            if isinstance(workflow_config, str):
+                agent_kwargs["workflow_id"] = workflow_config
+            elif isinstance(workflow_config, dict):
+                agent_kwargs["workflow"] = workflow_config
+
+        agent = AgentCreator.create_agent(agent_type, **agent_kwargs)
 
         agent.conversation_id = self.conversation_id
         agent.initial_user_id = self.initial_user_id

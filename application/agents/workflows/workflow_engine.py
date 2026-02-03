@@ -62,12 +62,17 @@ class WorkflowEngine:
                 log_entry["status"] = ExecutionStatus.COMPLETED.value
                 log_entry["completed_at"] = datetime.now(timezone.utc)
 
+                output_key = f"node_{node.id}_output"
+                node_output = self.state.get(output_key)
+
                 yield {
                     "type": "workflow_step",
                     "node_id": node.id,
                     "node_type": node.type.value,
                     "node_title": node.title,
                     "status": "completed",
+                    "state_snapshot": dict(self.state),
+                    "output": node_output,
                 }
             except Exception as e:
                 logger.error(f"Error executing node {node.id}: {e}", exc_info=True)
@@ -83,6 +88,8 @@ class WorkflowEngine:
                     "node_type": node.type.value,
                     "node_title": node.title,
                     "status": "failed",
+                    "state_snapshot": dict(self.state),
+                    "error": str(e),
                 }
                 yield {"type": "error", "error": str(e)}
                 break
