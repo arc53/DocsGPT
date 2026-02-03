@@ -13,7 +13,8 @@ This guide will walk you through deploying DocsGPT on Kubernetes.
 Ensure you have the following installed before proceeding:
 
 - [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
-- Access to a Kubernetes cluster
+- Access to a Kubernetes cluster.
+- [Neon](https://get.neon.com/docsgpt) (optional) for a quick and easy vector store setup with pgvector.
 
 ## Folder Structure
 
@@ -35,6 +36,8 @@ The `deployment/k8s` folder contains the necessary deployment and service config
 2. **Configure Secrets (optional)**
 
    Ensure that you have all the necessary secrets in `docsgpt-secrets.yaml`. Update it with your secrets before applying if you want. By default we will use qdrant as a vectorstore and public docsgpt llm as llm for inference.
+   
+   Alternatively, you can use [Neon](https://get.neon.com/docsgpt) as an easy way to set up your vector store with pgvector, which is highly recommended for quick deployments.
 
 3. **Apply Kubernetes Deployments**
 
