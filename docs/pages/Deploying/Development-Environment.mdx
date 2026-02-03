@@ -105,6 +105,12 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
 
     This command will start the Celery worker, which processes tasks such as document parsing and vector embedding.
 
+    **macOS note:** Due to a threading issue, start Celery with the solo pool:
+
+    ```bash
+    python -m celery -A application.app.celery worker -l INFO --pool=solo
+    ```
+
 **Running in Debugger (VSCode):**
 
 For easier debugging, you can launch the Flask app and Celery worker directly from VSCode's debugger.
