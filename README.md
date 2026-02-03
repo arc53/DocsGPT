@@ -159,3 +159,5 @@ The source code license is [MIT](https://opensource.org/license/mit/), as descri
   
 </p>
 
+
+- [AgentMarket](https://agentmarket.cloud) - B2A marketplace for AI agents. 189 listings, 28M+ energy records, enterprise-ready API.
