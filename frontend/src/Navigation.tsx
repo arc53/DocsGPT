@@ -285,6 +285,22 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   }
 
   useEffect(() => {
+    const handleNavOpen = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.shiftKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        setNavOpen(prev => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleNavOpen);
+
+    return () => {
+      window.removeEventListener('keydown', handleNavOpen);
+    };
+  }, []);
+
+
+  useEffect(() => {
     setNavOpen(!(isMobile || isTablet));
   }, [isMobile, isTablet]);
 
@@ -302,6 +318,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           <div className="flex items-center gap-3">
             {!navOpen && (
               <button
+                id="open-nav-button"
                 onClick={() => {
                   setNavOpen(!navOpen);
                 }}
