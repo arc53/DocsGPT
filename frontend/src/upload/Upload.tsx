@@ -263,6 +263,7 @@ function Upload({
     name: '',
     config: {},
   }));
+  const [nameTouched, setNameTouched] = useState(false);
 
   const { t } = useTranslation();
   const dispatch = useDispatch();
@@ -284,6 +285,7 @@ function Upload({
     setSelectedFiles([]);
     setSelectedFolders([]);
     setShowAdvancedOptions(false);
+    setNameTouched(false);
   }, []);
 
   const handleTaskFailure = useCallback(
@@ -410,7 +412,10 @@ function Upload({
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
       setfiles(acceptedFiles);
-      setIngestor((prev) => ({ ...prev, name: acceptedFiles[0]?.name || '' }));
+      const pickedName = acceptedFiles[0]?.name;
+      if (!nameTouched && pickedName) {
+        setIngestor((prev) => ({ ...prev, name: pickedName }));
+      }
 
       // If we're in local_file mode, update the ingestor config
       if (ingestor.type === 'local_file') {
@@ -423,7 +428,7 @@ function Upload({
         }));
       }
     },
-    [ingestor.type],
+    [ingestor.type, nameTouched],
   );
 
   const doNothing = () => undefined;
@@ -772,6 +777,7 @@ function Upload({
         config: {},
       });
       setfiles([]);
+      setNameTouched(false);
       return;
     }
 
@@ -781,6 +787,7 @@ function Upload({
       name: defaultConfig.name,
       config: defaultConfig.config,
     });
+    setNameTouched(false);
 
     // Clear files if switching away from local_file
     if (type !== 'local_file') {
@@ -860,6 +867,7 @@ function Upload({
                   colorVariant="silver"
                   value={ingestor.name}
                   onChange={(e) => {
+                    setNameTouched(true);
                     setIngestor((prevState) => ({
                       ...prevState,
                       name: e.target.value,
