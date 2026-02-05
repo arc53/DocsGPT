@@ -92,6 +92,7 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
 interface SearchResult {
   path: string;
   isFile: boolean;
+  name?: string;
 }
 
 interface ChunksProps {
@@ -99,6 +100,7 @@ interface ChunksProps {
   documentName?: string;
   handleGoBack: () => void;
   path?: string;
+  displayPath?: string;
   onFileSearch?: (query: string) => SearchResult[];
   onFileSelect?: (path: string) => void;
 }
@@ -108,6 +110,7 @@ const Chunks: React.FC<ChunksProps> = ({
   documentName,
   handleGoBack,
   path,
+  displayPath,
   onFileSearch,
   onFileSelect,
 }) => {
@@ -134,7 +137,8 @@ const Chunks: React.FC<ChunksProps> = ({
   const [chunkToDelete, setChunkToDelete] = useState<ChunkType | null>(null);
   const [isEditing, setIsEditing] = useState(false);
 
-  const pathParts = path ? path.split('/') : [];
+  const displayPathValue = displayPath ?? path ?? '';
+  const pathParts = displayPathValue ? displayPathValue.split('/') : [];
 
   const fetchChunks = async () => {
     setLoading(true);
@@ -515,7 +519,9 @@ const Chunks: React.FC<ChunksProps> = ({
                       className="mr-2 h-4 w-4 flex-shrink-0"
                     />
                     <span className="truncate text-sm dark:text-[#E0E0E0]">
-                      {result.path.split('/').pop() || result.path}
+                      {result.name ||
+                        result.path.split('/').pop() ||
+                        result.path}
                     </span>
                   </div>
                 ))

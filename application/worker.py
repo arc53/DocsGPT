@@ -52,6 +52,41 @@ def metadata_from_filename(title):
     return {"title": title}
 
 
+def _normalize_file_name_map(file_name_map):
+    if not file_name_map:
+        return {}
+    if isinstance(file_name_map, str):
+        try:
+            file_name_map = json.loads(file_name_map)
+        except Exception:
+            return {}
+    return file_name_map if isinstance(file_name_map, dict) else {}
+
+
+def _get_display_name(file_name_map, rel_path):
+    if not file_name_map or not rel_path:
+        return None
+    if rel_path in file_name_map:
+        return file_name_map[rel_path]
+    base_name = os.path.basename(rel_path)
+    return file_name_map.get(base_name)
+
+
+def _apply_display_names_to_structure(structure, file_name_map, prefix=""):
+    if not isinstance(structure, dict) or not file_name_map:
+        return structure
+    for name, node in structure.items():
+        if isinstance(node, dict) and "type" in node and "size_bytes" in node:
+            rel_path = f"{prefix}/{name}" if prefix else name
+            display_name = _get_display_name(file_name_map, rel_path)
+            if display_name:
+                node["display_name"] = display_name
+        elif isinstance(node, dict):
+            next_prefix = f"{prefix}/{name}" if prefix else name
+            _apply_display_names_to_structure(node, file_name_map, next_prefix)
+    return structure
+
+
 # Define a function to generate a random string of a given length.
 
 
@@ -375,7 +410,15 @@ def run_agent_logic(agent_config, input_data):
 
 
 def ingest_worker(
-    self, directory, formats, job_name, file_path, filename, user, retriever="classic"
+    self,
+    directory,
+    formats,
+    job_name,
+    file_path,
+    filename,
+    user,
+    retriever="classic",
+    file_name_map=None,
 ):
     """
     Ingest and process documents.
@@ -389,6 +432,7 @@ def ingest_worker(
         filename (str): Original unsanitized filename provided by the user.
         user (str): Identifier for the user initiating the ingestion (original, unsanitized).
         retriever (str): Type of retriever to use for processing the documents.
+        file_name_map (dict|str|None): Optional mapping of safe relative paths to original filenames.
 
     Returns:
         dict: Information about the completed ingestion task, including input parameters and a "limited" flag.
@@ -468,6 +512,22 @@ def ingest_worker(
 
             directory_structure = getattr(reader, "directory_structure", {})
             logging.info(f"Directory structure from reader: {directory_structure}")
+            file_name_map = _normalize_file_name_map(file_name_map)
+            if file_name_map:
+                for doc in raw_docs:
+                    extra_info = getattr(doc, "extra_info", None)
+                    if not isinstance(extra_info, dict):
+                        continue
+                    rel_path = extra_info.get("source") or extra_info.get("file_path")
+                    display_name = _get_display_name(file_name_map, rel_path)
+                    if display_name:
+                        display_name = str(display_name)
+                        extra_info["filename"] = display_name
+                        extra_info["file_name"] = display_name
+                        extra_info["title"] = display_name
+                directory_structure = _apply_display_names_to_structure(
+                    directory_structure, file_name_map
+                )
 
             chunker = Chunker(
                 chunking_strategy="classic_chunk",
@@ -504,6 +564,8 @@ def ingest_worker(
                 "file_path": file_path,
                 "directory_structure": json.dumps(directory_structure),
             }
+            if file_name_map:
+                file_data["file_name_map"] = json.dumps(file_name_map)
 
             upload_index(vector_store_path, file_data)
         except Exception as e:
@@ -547,6 +609,7 @@ def reingest_source_worker(self, source_id, user):
 
         storage = StorageCreator.get_storage()
         source_file_path = source.get("file_path", "")
+        file_name_map = _normalize_file_name_map(source.get("file_name_map"))
 
         self.update_state(
             state="PROGRESS", meta={"current": 20, "status": "Scanning current files"}
@@ -781,6 +844,14 @@ def reingest_source_worker(self, source_id, user):
                                         )
                                 except Exception:
                                     pass
+                                display_name = _get_display_name(
+                                    file_name_map, meta.get("source")
+                                )
+                                if display_name:
+                                    display_name = str(display_name)
+                                    meta["filename"] = display_name
+                                    meta["file_name"] = display_name
+                                    meta["title"] = display_name
 
                                 vector_store.add_chunk(d.text, metadata=meta)
                                 added += 1
@@ -795,6 +866,9 @@ def reingest_source_worker(self, source_id, user):
                 # 3) Update source directory structure timestamp
                 try:
                     total_tokens = sum(reader.file_token_counts.values())
+                    directory_structure = _apply_display_names_to_structure(
+                        directory_structure, file_name_map
+                    )
 
                     sources_collection.update_one(
                         {"_id": ObjectId(source_id)},

@@ -31,6 +31,7 @@ interface FileNode {
   type?: string;
   token_count?: number;
   size_bytes?: number;
+  display_name?: string;
   [key: string]: any;
 }
 
@@ -90,11 +91,11 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
     false,
   );
 
-  const handleFileClick = (fileName: string) => {
+  const handleFileClick = (fileName: string, displayName?: string) => {
     const fullPath = [...currentPath, fileName].join('/');
     setSelectedFile({
       id: fullPath,
-      name: fileName,
+      name: displayName ?? fileName,
     });
   };
 
@@ -261,6 +262,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
     name: string,
     isFile: boolean,
     _itemId: string,
+    displayName?: string,
   ): MenuOption[] => {
     const options: MenuOption[] = [];
 
@@ -270,7 +272,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
       onClick: (event: React.SyntheticEvent) => {
         event.stopPropagation();
         if (isFile) {
-          handleFileClick(name);
+          handleFileClick(name, displayName);
         } else {
           navigateToDirectory(name);
         }
@@ -495,9 +497,16 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
       .map(([name, node]) => {
         const itemId = `file-${name}`;
         const menuRef = getMenuRef(itemId);
+        const displayName =
+          typeof node.display_name === 'string' && node.display_name.trim()
+            ? node.display_name
+            : name;
 
         return (
-          <TableRow key={itemId} onClick={() => handleFileClick(name)}>
+          <TableRow
+            key={itemId}
+            onClick={() => handleFileClick(name, displayName)}
+          >
             <TableCell width="40%" align="left">
               <div className="flex min-w-0 items-center">
                 <img
@@ -505,7 +514,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
                   alt={t('settings.sources.fileAlt')}
                   className="mr-2 h-4 w-4 flex-shrink-0"
                 />
-                <span className="truncate">{name}</span>
+                <span className="truncate">{displayName}</span>
               </div>
             </TableCell>
             <TableCell width="30%" align="left">
@@ -532,7 +541,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
                   setIsOpen={(isOpen) =>
                     setActiveMenuId(isOpen ? itemId : null)
                   }
-                  options={getActionOptions(name, true, itemId)}
+                  options={getActionOptions(name, true, itemId, displayName)}
                   anchorRef={menuRef}
                   position="bottom-left"
                   offset={{ x: -4, y: 4 }}
@@ -555,10 +564,16 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
 
     Object.entries(structure).forEach(([name, node]) => {
       const fullPath = [...currentPath, name].join('/');
+      const displayName =
+        typeof node.display_name === 'string' && node.display_name.trim()
+          ? node.display_name
+          : '';
+      const queryLower = query.toLowerCase();
+      const matchTarget = displayName ? `${name} ${displayName}` : name;
 
-      if (name.toLowerCase().includes(query.toLowerCase())) {
+      if (matchTarget.toLowerCase().includes(queryLower)) {
         results.push({
-          name,
+          name: displayName || name,
           path: fullPath,
           isFile: !!node.type,
         });
@@ -587,7 +602,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
 
       setSelectedFile({
         id: result.path,
-        name: fileName,
+        name: result.name || fileName,
       });
     } else {
       setCurrentPath(result.path.split('/'));
@@ -642,7 +657,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
                       className="mr-2 h-4 w-4 flex-shrink-0"
                     />
                     <span className="flex-1 truncate text-sm dark:text-[#E0E0E0]">
-                      {result.path.split('/').pop() || result.path}
+                      {result.name}
                     </span>
                   </div>
                 ))
@@ -661,13 +676,47 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
     return [];
   };
 
+  const getDisplayNameForPath = (path: string) => {
+    if (!directoryStructure) {
+      return path.split('/').pop() || path;
+    }
+    let structure: any = directoryStructure;
+    if (typeof structure === 'string') {
+      try {
+        structure = JSON.parse(structure);
+      } catch (e) {
+        return path.split('/').pop() || path;
+      }
+    }
+    if (typeof structure !== 'object' || structure === null) {
+      return path.split('/').pop() || path;
+    }
+    const parts = path.split('/').filter(Boolean);
+    let current: any = structure;
+    for (const part of parts) {
+      if (!current || typeof current !== 'object') {
+        return parts[parts.length - 1] || path;
+      }
+      current = current[part];
+    }
+    if (
+      current &&
+      typeof current === 'object' &&
+      typeof current.display_name === 'string' &&
+      current.display_name.trim()
+    ) {
+      return current.display_name;
+    }
+    return parts[parts.length - 1] || path;
+  };
+
   const handleFileSelect = (path: string) => {
     const pathParts = path.split('/');
     const fileName = pathParts.pop() || '';
     setCurrentPath(pathParts);
     setSelectedFile({
       id: path,
-      name: fileName,
+      name: getDisplayNameForPath(path) || fileName,
     });
   };
 
@@ -687,6 +736,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
               documentName={sourceName}
               handleGoBack={() => setSelectedFile(null)}
               path={selectedFile.id}
+              displayPath={[...currentPath, selectedFile.name].join('/')}
               onFileSearch={handleFileSearch}
               onFileSelect={handleFileSelect}
             />
