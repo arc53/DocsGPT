@@ -367,7 +367,9 @@ class BaseAgent(ABC):
                 f"Context at limit: {current_tokens:,}/{context_limit:,} tokens "
                 f"({percentage:.1f}%). Model: {self.model_id}"
             )
-        elif current_tokens >= int(context_limit * settings.COMPRESSION_THRESHOLD_PERCENTAGE):
+        elif current_tokens >= int(
+            context_limit * settings.COMPRESSION_THRESHOLD_PERCENTAGE
+        ):
             logger.info(
                 f"Context approaching limit: {current_tokens:,}/{context_limit:,} tokens "
                 f"({percentage:.1f}%)"

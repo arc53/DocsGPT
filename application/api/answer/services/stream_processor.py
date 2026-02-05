@@ -150,9 +150,7 @@ class StreamProcessor:
             )
 
             if not result.success:
-                logger.error(
-                    f"Compression failed: {result.error}, using full history"
-                )
+                logger.error(f"Compression failed: {result.error}, using full history")
                 self.history = [
                     {"prompt": query["prompt"], "response": query["response"]}
                     for query in conversation.get("queries", [])
@@ -225,7 +223,11 @@ class StreamProcessor:
                 raise ValueError(
                     f"Invalid model_id '{requested_model}'. "
                     f"Available models: {', '.join(available_models[:5])}"
-                    + (f" and {len(available_models) - 5} more" if len(available_models) > 5 else "")
+                    + (
+                        f" and {len(available_models) - 5} more"
+                        if len(available_models) > 5
+                        else ""
+                    )
                 )
             self.model_id = requested_model
         else:
@@ -370,6 +372,8 @@ class StreamProcessor:
             self.decoded_token = {"sub": data_key.get("user")}
             if data_key.get("source"):
                 self.source = {"active_docs": data_key["source"]}
+            if data_key.get("workflow"):
+                self.agent_config["workflow"] = data_key["workflow"]
             if data_key.get("retriever"):
                 self.retriever_config["retriever_name"] = data_key["retriever"]
             if data_key.get("chunks") is not None:
@@ -398,6 +402,8 @@ class StreamProcessor:
             )
             if data_key.get("source"):
                 self.source = {"active_docs": data_key["source"]}
+            if data_key.get("workflow"):
+                self.agent_config["workflow"] = data_key["workflow"]
             if data_key.get("retriever"):
                 self.retriever_config["retriever_name"] = data_key["retriever"]
             if data_key.get("chunks") is not None:
@@ -409,10 +415,17 @@ class StreamProcessor:
                     )
                     self.retriever_config["chunks"] = 2
         else:
+            agent_type = settings.AGENT_NAME
+            if self.data.get("workflow") and isinstance(
+                self.data.get("workflow"), dict
+            ):
+                agent_type = "workflow"
+                self.agent_config["workflow"] = self.data["workflow"]
+
             self.agent_config.update(
                 {
                     "prompt_id": self.data.get("prompt_id", "default"),
-                    "agent_type": settings.AGENT_NAME,
+                    "agent_type": agent_type,
                     "user_api_key": None,
                     "json_schema": None,
                     "default_model_id": "",
@@ -420,9 +433,7 @@ class StreamProcessor:
             )
 
     def _configure_retriever(self):
-        doc_token_limit = calculate_doc_token_budget(
-            model_id=self.model_id
-        )
+        doc_token_limit = calculate_doc_token_budget(model_id=self.model_id)
 
         self.retriever_config = {
             "retriever_name": self.data.get("retriever", "classic"),
@@ -731,21 +742,33 @@ class StreamProcessor:
         )
         system_api_key = get_api_key_for_provider(provider or settings.LLM_PROVIDER)
 
-        agent = AgentCreator.create_agent(
-            self.agent_config["agent_type"],
-            endpoint="stream",
-            llm_name=provider or settings.LLM_PROVIDER,
-            model_id=self.model_id,
-            api_key=system_api_key,
-            user_api_key=self.agent_config["user_api_key"],
-            prompt=rendered_prompt,
-            chat_history=self.history,
-            retrieved_docs=self.retrieved_docs,
-            decoded_token=self.decoded_token,
-            attachments=self.attachments,
-            json_schema=self.agent_config.get("json_schema"),
-            compressed_summary=self.compressed_summary,
-        )
+        agent_type = self.agent_config["agent_type"]
+
+        # Base agent kwargs
+        agent_kwargs = {
+            "endpoint": "stream",
+            "llm_name": provider or settings.LLM_PROVIDER,
+            "model_id": self.model_id,
+            "api_key": system_api_key,
+            "user_api_key": self.agent_config["user_api_key"],
+            "prompt": rendered_prompt,
+            "chat_history": self.history,
+            "retrieved_docs": self.retrieved_docs,
+            "decoded_token": self.decoded_token,
+            "attachments": self.attachments,
+            "json_schema": self.agent_config.get("json_schema"),
+            "compressed_summary": self.compressed_summary,
+        }
+
+        # Workflow-specific kwargs for workflow agents
+        if agent_type == "workflow":
+            workflow_config = self.agent_config.get("workflow")
+            if isinstance(workflow_config, str):
+                agent_kwargs["workflow_id"] = workflow_config
+            elif isinstance(workflow_config, dict):
+                agent_kwargs["workflow"] = workflow_config
+
+        agent = AgentCreator.create_agent(agent_type, **agent_kwargs)
 
         agent.conversation_id = self.conversation_id
         agent.initial_user_id = self.initial_user_id
