@@ -215,6 +215,7 @@ const FileTree: React.FC<FileTreeProps> = ({
     name: string,
     isFile: boolean,
     _itemId: string,
+    displayName?: string,
   ): MenuOption[] => {
     const options: MenuOption[] = [];
 
@@ -224,7 +225,7 @@ const FileTree: React.FC<FileTreeProps> = ({
       onClick: (event: React.SyntheticEvent) => {
         event.stopPropagation();
         if (isFile) {
-          handleFileClick(name);
+          handleFileClick(name, displayName);
         } else {
           navigateToDirectory(name);
         }
@@ -669,7 +670,7 @@ const FileTree: React.FC<FileTreeProps> = ({
                   setIsOpen={(isOpen) =>
                     setActiveMenuId(isOpen ? itemId : null)
                   }
-                  options={getActionOptions(name, true, itemId)}
+                  options={getActionOptions(name, true, itemId, displayName)}
                   anchorRef={menuRef}
                   position="bottom-left"
                   offset={{ x: -4, y: 4 }}

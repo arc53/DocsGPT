@@ -262,6 +262,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
     name: string,
     isFile: boolean,
     _itemId: string,
+    displayName?: string,
   ): MenuOption[] => {
     const options: MenuOption[] = [];
 
@@ -271,7 +272,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
       onClick: (event: React.SyntheticEvent) => {
         event.stopPropagation();
         if (isFile) {
-          handleFileClick(name);
+          handleFileClick(name, displayName);
         } else {
           navigateToDirectory(name);
         }
@@ -540,7 +541,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
                   setIsOpen={(isOpen) =>
                     setActiveMenuId(isOpen ? itemId : null)
                   }
-                  options={getActionOptions(name, true, itemId)}
+                  options={getActionOptions(name, true, itemId, displayName)}
                   anchorRef={menuRef}
                   position="bottom-left"
                   offset={{ x: -4, y: 4 }}
