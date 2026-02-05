@@ -16,6 +16,7 @@ interface ActionButtonsProps {
   className?: string;
   showNewChat?: boolean;
   showShare?: boolean;
+  isArtifactOpen?: boolean;
 }
 
 import { useNavigate } from 'react-router-dom';
@@ -24,6 +25,7 @@ export default function ActionButtons({
   className = '',
   showNewChat = true,
   showShare = true,
+  isArtifactOpen = false,
 }: ActionButtonsProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
@@ -41,7 +43,11 @@ export default function ActionButtons({
     navigate('/');
   };
   return (
-    <div className="fixed top-0 right-4 z-10 flex h-16 flex-col justify-center">
+    <div
+      className={`fixed top-0 z-10 flex h-16 flex-col justify-center transition-all duration-300 ${
+        isArtifactOpen ? 'right-[calc(50%+1rem)]' : 'right-4'
+      }`}
+    >
       <div className={`flex items-center gap-2 sm:gap-4 ${className}`}>
         {showNewChat && (
           <button

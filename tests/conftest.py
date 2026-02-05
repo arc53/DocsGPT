@@ -191,3 +191,11 @@ def mock_tool_manager(mock_tool, monkeypatch):
         "application.agents.base.ToolManager", Mock(return_value=manager)
     )
     return manager
+
+
+@pytest.fixture
+def flask_app():
+    from flask import Flask
+
+    app = Flask(__name__)
+    return app
