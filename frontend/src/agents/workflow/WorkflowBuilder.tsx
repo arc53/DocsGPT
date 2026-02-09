@@ -44,6 +44,8 @@ import modelService from '../../api/services/modelService';
 import userService from '../../api/services/userService';
 import ArrowLeft from '../../assets/arrow-left.svg';
 import { WorkflowNode } from '../types/workflow';
+import MobileBlocker from './components/MobileBlocker';
+import PromptTextArea from './components/PromptTextArea';
 import { AgentNode, EndNode, NoteNode, SetStateNode, StartNode } from './nodes';
 import WorkflowPreview from './WorkflowPreview';
 
@@ -95,7 +97,6 @@ function WorkflowBuilderInner() {
   );
   const [showNodeConfig, setShowNodeConfig] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  const configPanelRef = useRef<HTMLDivElement>(null);
   const workflowSettingsRef = useRef<HTMLDivElement>(null);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [availableTools, setAvailableTools] = useState<UserTool[]>([]);
@@ -138,8 +139,55 @@ function WorkflowBuilderInner() {
     [],
   );
 
-  const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
+  const onConnect = useCallback((params: Connection) => {
+    setEdges((eds) => {
+      const exists = eds.some(
+        (e) =>
+          e.source === params.source &&
+          e.sourceHandle === params.sourceHandle &&
+          e.target === params.target &&
+          e.targetHandle === params.targetHandle,
+      );
+      if (exists) return eds;
+
+      const filtered = eds.filter(
+        (e) =>
+          !(
+            e.source === params.source &&
+            e.sourceHandle === (params.sourceHandle ?? null)
+          ) &&
+          !(
+            e.target === params.target &&
+            e.targetHandle === (params.targetHandle ?? null)
+          ),
+      );
+      return addEdge(params, filtered);
+    });
+  }, []);
+
+  const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
+    setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+  }, []);
+
+  const handleNodeDragStart = useCallback(
+    (e: React.DragEvent, nodeType: string) => {
+      e.dataTransfer.setData('application/reactflow', nodeType);
+      e.dataTransfer.effectAllowed = 'move';
+      const el = e.currentTarget as HTMLElement;
+      const clone = el.cloneNode(true) as HTMLElement;
+      clone.style.position = 'absolute';
+      clone.style.top = '-9999px';
+      clone.style.width = `${el.offsetWidth}px`;
+      clone.style.borderRadius = '9999px';
+      clone.style.overflow = 'hidden';
+      document.body.appendChild(clone);
+      e.dataTransfer.setDragImage(
+        clone,
+        clone.offsetWidth / 2,
+        clone.offsetHeight / 2,
+      );
+      requestAnimationFrame(() => document.body.removeChild(clone));
+    },
     [],
   );
 
@@ -155,8 +203,6 @@ function WorkflowBuilderInner() {
       const type = event.dataTransfer.getData('application/reactflow');
       if (!type) return;
 
-      // Use screenToFlowPosition to correctly convert screen coordinates to flow coordinates
-      // This accounts for viewport pan and zoom
       const position = reactFlowInstance.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
@@ -253,25 +299,10 @@ function WorkflowBuilderInner() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedNode, handleDeleteNode]);
 
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      const isInsidePanel = configPanelRef.current?.contains(target) ?? false;
-      const isInsideRadixPortal =
-        target.closest('[data-radix-popper-content-wrapper]') !== null ||
-        target.closest('[data-radix-select-content]') !== null ||
-        target.closest('[role="listbox"]') !== null ||
-        target.closest('[cmdk-root]') !== null;
-      if (!isInsidePanel && !isInsideRadixPortal) {
-        setShowNodeConfig(false);
-      }
-    };
-    if (showNodeConfig) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () =>
-        document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showNodeConfig]);
+  const handlePanelBackdropClick = useCallback(() => {
+    setShowNodeConfig(false);
+    setSelectedNode(null);
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -568,573 +599,583 @@ function WorkflowBuilderInner() {
   ]);
 
   return (
-    <div className="bg-lotion dark:bg-outer-space flex h-screen w-full flex-col">
-      <div className="border-light-silver dark:bg-raisin-black flex items-center justify-between border-b bg-white px-6 py-4 dark:border-[#3A3A3A]">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate('/agents')}
-            className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
-          >
-            <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-          </button>
-          <div className="group relative flex items-center gap-2">
-            <div>
-              <div
-                className="max-w-xs truncate text-xl font-bold text-gray-900 dark:text-white"
-                title={workflowName || 'New Workflow'}
-              >
-                {workflowName || 'New Workflow'}
-              </div>
-              {workflowDescription && (
+    <>
+      <MobileBlocker />
+      <div className="bg-lotion dark:bg-outer-space fixed inset-0 z-50 hidden h-screen w-full flex-col md:flex">
+        <div className="border-light-silver dark:bg-raisin-black flex items-center justify-between border-b bg-white px-6 py-4 dark:border-[#3A3A3A]">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => navigate('/agents')}
+              className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
+            >
+              <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
+            </button>
+            <div className="group relative flex items-center gap-2">
+              <div>
                 <div
-                  className="max-w-xs truncate text-xs text-gray-500 dark:text-gray-400"
-                  title={workflowDescription}
+                  className="max-w-xs truncate text-xl font-bold text-gray-900 dark:text-white"
+                  title={workflowName || 'New Workflow'}
                 >
-                  {workflowDescription}
+                  {workflowName || 'New Workflow'}
+                </div>
+                {workflowDescription && (
+                  <div
+                    className="max-w-xs truncate text-xs text-gray-500 dark:text-gray-400"
+                    title={workflowDescription}
+                  >
+                    {workflowDescription}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setShowWorkflowSettings(!showWorkflowSettings)}
+                className="text-gray-400 opacity-0 transition-opacity group-hover:opacity-100 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <Pencil size={14} />
+              </button>
+              {showWorkflowSettings && (
+                <div
+                  ref={workflowSettingsRef}
+                  className="dark:bg-raisin-black absolute top-full left-0 z-50 mt-2 w-80 rounded-xl border border-[#E5E5E5] bg-white p-4 shadow-lg dark:border-[#3A3A3A]"
+                >
+                  <div className="mb-3">
+                    <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Workflow Name
+                    </label>
+                    <input
+                      type="text"
+                      value={workflowName}
+                      onChange={(e) => setWorkflowName(e.target.value)}
+                      className="focus:ring-purple-30 w-full rounded-lg border border-[#E5E5E5] bg-white px-3 py-2 text-sm outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                      placeholder="Enter workflow name"
+                    />
+                  </div>
+                  <div className="mb-3">
+                    <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Description
+                    </label>
+                    <textarea
+                      value={workflowDescription}
+                      onChange={(e) => setWorkflowDescription(e.target.value)}
+                      className="focus:ring-purple-30 w-full rounded-lg border border-[#E5E5E5] bg-white px-3 py-2 text-sm outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                      rows={3}
+                      placeholder="Describe what this workflow does"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setShowWorkflowSettings(false)}
+                    className="bg-violets-are-blue hover:bg-purple-30 w-full rounded-lg px-3 py-2 text-sm font-medium text-white"
+                  >
+                    Done
+                  </button>
                 </div>
               )}
             </div>
+          </div>
+          <div className="flex items-center gap-3">
             <button
-              onClick={() => setShowWorkflowSettings(!showWorkflowSettings)}
-              className="text-gray-400 opacity-0 transition-opacity group-hover:opacity-100 hover:text-gray-600 dark:hover:text-gray-200"
+              onClick={() => {
+                const validationErrors = validateWorkflow();
+                if (validationErrors.length > 0) {
+                  setErrorContext('preview');
+                  setPublishErrors(validationErrors);
+                  return;
+                }
+                setShowPreview(true);
+              }}
+              className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-gray-200 dark:hover:bg-[#383838]"
             >
-              <Pencil size={14} />
+              <Play size={16} />
+              Preview
             </button>
-            {showWorkflowSettings && (
-              <div
-                ref={workflowSettingsRef}
-                className="dark:bg-raisin-black absolute top-full left-0 z-50 mt-2 w-80 rounded-xl border border-[#E5E5E5] bg-white p-4 shadow-lg dark:border-[#3A3A3A]"
+            <button
+              onClick={handlePublish}
+              disabled={isPublishing}
+              className="bg-violets-are-blue hover:bg-purple-30 rounded-full px-6 py-2 text-sm font-medium text-white shadow-sm transition-colors disabled:opacity-50"
+            >
+              {isPublishing ? 'Publishing...' : 'Publish'}
+            </button>
+          </div>
+        </div>
+
+        {publishErrors.length > 0 && (
+          <div className="pointer-events-none absolute top-20 right-0 left-0 z-50 flex justify-center px-4">
+            <Alert
+              variant="destructive"
+              className="pointer-events-auto w-full max-w-md bg-red-50 shadow-lg dark:bg-red-950/20"
+            >
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>
+                {errorContext === 'preview'
+                  ? 'Unable to preview workflow'
+                  : 'Unable to publish workflow'}
+              </AlertTitle>
+              <AlertDescription>
+                <ul className="mt-2 list-inside list-disc space-y-1 wrap-break-word">
+                  {publishErrors.map((error, index) => (
+                    <li key={index}>{error}</li>
+                  ))}
+                </ul>
+              </AlertDescription>
+              <button
+                onClick={() => setPublishErrors([])}
+                className="absolute top-4 right-4 text-red-700 hover:text-red-900 dark:text-red-300 dark:hover:text-red-100"
               >
-                <div className="mb-3">
-                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Workflow Name
-                  </label>
-                  <input
-                    type="text"
-                    value={workflowName}
-                    onChange={(e) => setWorkflowName(e.target.value)}
-                    className="focus:ring-purple-30 w-full rounded-lg border border-[#E5E5E5] bg-white px-3 py-2 text-sm outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
-                    placeholder="Enter workflow name"
-                  />
-                </div>
-                <div className="mb-3">
-                  <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Description
-                  </label>
-                  <textarea
-                    value={workflowDescription}
-                    onChange={(e) => setWorkflowDescription(e.target.value)}
-                    className="focus:ring-purple-30 w-full rounded-lg border border-[#E5E5E5] bg-white px-3 py-2 text-sm outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
-                    rows={3}
-                    placeholder="Describe what this workflow does"
-                  />
-                </div>
-                <button
-                  onClick={() => setShowWorkflowSettings(false)}
-                  className="bg-violets-are-blue hover:bg-purple-30 w-full rounded-lg px-3 py-2 text-sm font-medium text-white"
+                <X size={16} />
+              </button>
+            </Alert>
+          </div>
+        )}
+
+        <div className="flex flex-1 overflow-hidden">
+          <div className="border-light-silver dark:bg-raisin-black flex w-64 flex-col gap-6 border-r bg-gray-50 p-4 dark:border-[#3A3A3A]">
+            <div>
+              <h3 className="mb-3 text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
+                Core Nodes
+              </h3>
+              <div className="flex flex-col gap-2">
+                <div
+                  className="group flex cursor-move items-center gap-3 rounded-full border bg-white px-4 py-3 shadow-sm transition-all hover:shadow-md dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:hover:bg-[#383838]"
+                  draggable
+                  onDragStart={(e) => handleNodeDragStart(e, 'agent')}
                 >
-                  Done
-                </button>
+                  <div className="text-violets-are-blue group-hover:bg-violets-are-blue flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 transition-colors group-hover:text-white">
+                    <Bot size={18} />
+                  </div>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                    AI Agent
+                  </span>
+                </div>
+                <div
+                  className="group flex cursor-move items-center gap-3 rounded-full border bg-white px-4 py-3 shadow-sm transition-all hover:shadow-md dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:hover:bg-[#383838]"
+                  draggable
+                  onDragStart={(e) => handleNodeDragStart(e, 'end')}
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600 transition-colors group-hover:bg-green-600 group-hover:text-white">
+                    <Flag size={18} />
+                  </div>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                    End
+                  </span>
+                </div>
+                <div
+                  className="group flex cursor-move items-center gap-3 rounded-full border bg-white px-4 py-3 shadow-sm transition-all hover:shadow-md dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:hover:bg-[#383838]"
+                  draggable
+                  onDragStart={(e) => handleNodeDragStart(e, 'note')}
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-600 transition-colors group-hover:bg-yellow-500 group-hover:text-white">
+                    <StickyNote size={18} />
+                  </div>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                    Note
+                  </span>
+                </div>
               </div>
+            </div>
+
+            <div>
+              <h3 className="mb-3 text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
+                Logic & Data
+              </h3>
+              <div className="flex flex-col gap-2">
+                <div
+                  className="group flex cursor-move items-center gap-3 rounded-full border bg-white px-4 py-3 shadow-sm transition-all hover:shadow-md dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:hover:bg-[#383838]"
+                  draggable
+                  onDragStart={(e) => handleNodeDragStart(e, 'state')}
+                >
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white">
+                    <Database size={18} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      Set State
+                    </span>
+                    <span className="text-[10px] text-gray-400">
+                      Modify workflow variables
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            ref={reactFlowWrapper}
+            className="dark:bg-raisin-black/10 relative flex-1 bg-gray-50"
+          >
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onEdgeClick={onEdgeClick}
+              onDrop={onDrop}
+              onDragOver={onDragOver}
+              onNodeClick={handleNodeClick}
+              nodeTypes={nodeTypes}
+              deleteKeyCode={['Backspace', 'Delete']}
+              fitView
+            >
+              <Background />
+              <Controls />
+            </ReactFlow>
+
+            {showNodeConfig && selectedNode && (
+              <>
+                <div
+                  className="absolute inset-0 z-10"
+                  onClick={handlePanelBackdropClick}
+                />
+                <div className="border-light-silver dark:bg-raisin-black absolute top-4 right-4 z-20 w-96 rounded-2xl border bg-white shadow-[0px_4px_40px_-3px_#0000001A] dark:border-[#3A3A3A]">
+                  <div className="border-light-silver flex items-center justify-between border-b p-4 dark:border-[#3A3A3A]">
+                    <h3 className="font-semibold text-gray-900 dark:text-white">
+                      {selectedNode.type === 'start' && 'Start Node'}
+                      {selectedNode.type === 'end' && 'End Node'}
+                      {selectedNode.type === 'agent' && 'AI Agent'}
+                      {selectedNode.type === 'note' && 'Note'}
+                      {selectedNode.type === 'state' && 'Set State'}
+                    </h3>
+                    <button
+                      onClick={() => setShowNodeConfig(false)}
+                      className="text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-200"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  <div className="max-h-[calc(100vh-200px)] overflow-y-auto p-4">
+                    <div className="mb-4 flex flex-col gap-2">
+                      <div className="rounded-lg bg-gray-50 p-3 dark:bg-[#2C2C2C]">
+                        <div className="mb-1 text-xs text-gray-500 dark:text-gray-400">
+                          Node ID
+                        </div>
+                        <div className="truncate font-mono text-xs text-gray-700 dark:text-gray-300">
+                          {selectedNode.id}
+                        </div>
+                      </div>
+
+                      {selectedNode.type !== 'start' &&
+                        selectedNode.type !== 'end' && (
+                          <>
+                            <div>
+                              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Title
+                              </label>
+                              <input
+                                type="text"
+                                value={
+                                  selectedNode.data.title ||
+                                  selectedNode.data.label ||
+                                  ''
+                                }
+                                onChange={(e) =>
+                                  handleUpdateNodeData({
+                                    title: e.target.value,
+                                    label: e.target.value,
+                                  })
+                                }
+                                className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                                placeholder="Enter node title"
+                              />
+                            </div>
+
+                            {selectedNode.type === 'agent' && (
+                              <>
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Agent Type
+                                  </label>
+                                  <Select
+                                    value={
+                                      selectedNode.data.config?.agent_type ||
+                                      'classic'
+                                    }
+                                    onValueChange={(value) =>
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          agent_type: value,
+                                        },
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger className="w-full">
+                                      <SelectValue placeholder="Select agent type" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="classic">
+                                        Classic
+                                      </SelectItem>
+                                      <SelectItem value="react">
+                                        ReAct
+                                      </SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Model
+                                  </label>
+                                  <Select
+                                    value={
+                                      selectedNode.data.config?.model_id || ''
+                                    }
+                                    onValueChange={(value) => {
+                                      const selectedModel =
+                                        availableModels.find(
+                                          (m) => m.id === value,
+                                        );
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          model_id: value,
+                                          llm_name:
+                                            selectedModel?.provider || '',
+                                        },
+                                      });
+                                    }}
+                                  >
+                                    <SelectTrigger className="w-full">
+                                      <SelectValue placeholder="Select a model" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {availableModels.map((model) => (
+                                        <SelectItem
+                                          key={model.id}
+                                          value={model.id}
+                                        >
+                                          {model.display_name} ·{' '}
+                                          {model.provider}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    System Prompt
+                                  </label>
+                                  <textarea
+                                    value={
+                                      selectedNode.data.config?.system_prompt ??
+                                      ''
+                                    }
+                                    onChange={(e) =>
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          system_prompt: e.target.value,
+                                        },
+                                      })
+                                    }
+                                    className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                                    rows={3}
+                                    placeholder="System prompt for the agent"
+                                  />
+                                </div>
+                                <PromptTextArea
+                                  label="Prompt Template"
+                                  value={
+                                    selectedNode.data.config?.prompt_template ||
+                                    ''
+                                  }
+                                  onChange={(val) =>
+                                    handleUpdateNodeData({
+                                      config: {
+                                        ...(selectedNode.data.config || {}),
+                                        prompt_template: val,
+                                      },
+                                    })
+                                  }
+                                  nodes={nodes}
+                                  edges={edges}
+                                  selectedNodeId={selectedNode.id}
+                                  placeholder="Use {{variable}} for dynamic content"
+                                />
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Output Variable
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={
+                                      selectedNode.data.config
+                                        ?.output_variable || ''
+                                    }
+                                    onChange={(e) =>
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          output_variable: e.target.value,
+                                        },
+                                      })
+                                    }
+                                    className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                                    placeholder="Variable name for output"
+                                  />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    id="stream_to_user"
+                                    checked={
+                                      selectedNode.data.config
+                                        ?.stream_to_user ?? true
+                                    }
+                                    onChange={(e) =>
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          stream_to_user: e.target.checked,
+                                        },
+                                      })
+                                    }
+                                    className="h-4 w-4"
+                                  />
+                                  <label
+                                    htmlFor="stream_to_user"
+                                    className="text-sm text-gray-700 dark:text-gray-300"
+                                  >
+                                    Stream output to user
+                                  </label>
+                                </div>{' '}
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Tools
+                                  </label>
+                                  <MultiSelect
+                                    options={availableTools.map((tool) => ({
+                                      value: tool.id,
+                                      label: tool.displayName,
+                                    }))}
+                                    selected={
+                                      selectedNode.data.config?.tools || []
+                                    }
+                                    onChange={(newTools) =>
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          tools: newTools,
+                                        },
+                                      })
+                                    }
+                                    placeholder="Select tools..."
+                                    searchPlaceholder="Search tools..."
+                                    emptyText="No tools available"
+                                  />
+                                </div>
+                              </>
+                            )}
+
+                            {selectedNode.type === 'note' && (
+                              <div>
+                                <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  Note Content
+                                </label>
+                                <textarea
+                                  value={selectedNode.data.content || ''}
+                                  onChange={(e) =>
+                                    handleUpdateNodeData({
+                                      content: e.target.value,
+                                    })
+                                  }
+                                  className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                                  rows={4}
+                                  placeholder="Enter note content"
+                                />
+                              </div>
+                            )}
+
+                            {selectedNode.type === 'state' && (
+                              <>
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Variable Name
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={selectedNode.data.variable || ''}
+                                    onChange={(e) =>
+                                      handleUpdateNodeData({
+                                        variable: e.target.value,
+                                      })
+                                    }
+                                    className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                                    placeholder="e.g. analysis_type"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Value
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={selectedNode.data.value || ''}
+                                    onChange={(e) =>
+                                      handleUpdateNodeData({
+                                        value: e.target.value,
+                                      })
+                                    }
+                                    className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                                    placeholder="e.g. price_check"
+                                  />
+                                </div>
+                              </>
+                            )}
+                          </>
+                        )}
+                    </div>
+
+                    <button
+                      onClick={handleDeleteNode}
+                      disabled={selectedNode?.type === 'start'}
+                      className="flex w-full items-center justify-center gap-2 rounded-full border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10"
+                    >
+                      <Trash2 size={16} />
+                      {selectedNode?.type === 'start'
+                        ? 'Cannot Delete Start Node'
+                        : 'Delete Node'}
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => {
-              const validationErrors = validateWorkflow();
-              if (validationErrors.length > 0) {
-                setErrorContext('preview');
-                setPublishErrors(validationErrors);
-                return;
-              }
-              setShowPreview(true);
-            }}
-            className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-gray-200 dark:hover:bg-[#383838]"
+
+        <Sheet open={showPreview} onOpenChange={setShowPreview}>
+          <SheetContent
+            side="right"
+            showCloseButton={false}
+            className="dark:bg-raisin-black w-full max-w-none p-0 sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px] dark:border-[#3A3A3A]"
           >
-            <Play size={16} />
-            Preview
-          </button>
-          <button
-            onClick={handlePublish}
-            disabled={isPublishing}
-            className="bg-violets-are-blue hover:bg-purple-30 rounded-full px-6 py-2 text-sm font-medium text-white shadow-sm transition-colors disabled:opacity-50"
-          >
-            {isPublishing ? 'Publishing...' : 'Publish'}
-          </button>
-        </div>
+            <WorkflowPreview
+              workflowData={{
+                name: workflowName,
+                description: workflowDescription,
+                nodes: nodes
+                  .filter((n) => n.type !== 'note')
+                  .map((n) => ({
+                    id: n.id,
+                    type: n.type as 'start' | 'end' | 'agent' | 'state',
+                    title: n.data.title || n.data.label || n.type,
+                    position: n.position,
+                    data: n.type === 'agent' ? n.data.config : n.data,
+                  })),
+                edges: edges.map((e) => ({
+                  id: e.id,
+                  source: e.source,
+                  target: e.target,
+                  sourceHandle: e.sourceHandle || undefined,
+                  targetHandle: e.targetHandle || undefined,
+                })),
+              }}
+            />
+          </SheetContent>
+        </Sheet>
       </div>
-
-      {publishErrors.length > 0 && (
-        <div className="pointer-events-none absolute top-20 right-0 left-64 z-50 flex justify-center px-4">
-          <Alert
-            variant="destructive"
-            className="pointer-events-auto w-full max-w-md bg-red-50 shadow-lg dark:bg-red-950/20"
-          >
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>
-              {errorContext === 'preview'
-                ? 'Unable to preview workflow'
-                : 'Unable to publish workflow'}
-            </AlertTitle>
-            <AlertDescription>
-              <ul className="mt-2 list-inside list-disc space-y-1">
-                {publishErrors.map((error, index) => (
-                  <li key={index}>{error}</li>
-                ))}
-              </ul>
-            </AlertDescription>
-            <button
-              onClick={() => setPublishErrors([])}
-              className="absolute top-4 right-4 text-red-700 hover:text-red-900 dark:text-red-300 dark:hover:text-red-100"
-            >
-              <X size={16} />
-            </button>
-          </Alert>
-        </div>
-      )}
-
-      <div className="flex flex-1 overflow-hidden">
-        <div className="border-light-silver dark:bg-raisin-black flex w-64 flex-col gap-6 border-r bg-gray-50 p-4 dark:border-[#3A3A3A]">
-          <div>
-            <h3 className="mb-3 text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
-              Core Nodes
-            </h3>
-            <div className="flex flex-col gap-2">
-              <div
-                className="group flex cursor-move items-center gap-3 rounded-full border bg-white px-4 py-3 shadow-sm transition-all hover:shadow-md dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:hover:bg-[#383838]"
-                draggable
-                onDragStart={(e) =>
-                  e.dataTransfer.setData('application/reactflow', 'agent')
-                }
-              >
-                <div className="text-violets-are-blue group-hover:bg-violets-are-blue flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 transition-colors group-hover:text-white">
-                  <Bot size={18} />
-                </div>
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                  AI Agent
-                </span>
-              </div>
-              <div
-                className="group flex cursor-move items-center gap-3 rounded-full border bg-white px-4 py-3 shadow-sm transition-all hover:shadow-md dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:hover:bg-[#383838]"
-                draggable
-                onDragStart={(e) =>
-                  e.dataTransfer.setData('application/reactflow', 'end')
-                }
-              >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600 transition-colors group-hover:bg-green-600 group-hover:text-white">
-                  <Flag size={18} />
-                </div>
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                  End
-                </span>
-              </div>
-              <div
-                className="group flex cursor-move items-center gap-3 rounded-full border bg-white px-4 py-3 shadow-sm transition-all hover:shadow-md dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:hover:bg-[#383838]"
-                draggable
-                onDragStart={(e) =>
-                  e.dataTransfer.setData('application/reactflow', 'note')
-                }
-              >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-600 transition-colors group-hover:bg-yellow-500 group-hover:text-white">
-                  <StickyNote size={18} />
-                </div>
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                  Note
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="mb-3 text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
-              Logic & Data
-            </h3>
-            <div className="flex flex-col gap-2">
-              <div
-                className="group flex cursor-move items-center gap-3 rounded-full border bg-white px-4 py-3 shadow-sm transition-all hover:shadow-md dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:hover:bg-[#383838]"
-                draggable
-                onDragStart={(e) =>
-                  e.dataTransfer.setData('application/reactflow', 'state')
-                }
-              >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white">
-                  <Database size={18} />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                    Set State
-                  </span>
-                  <span className="text-[10px] text-gray-400">
-                    Modify workflow variables
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div
-          ref={reactFlowWrapper}
-          className="dark:bg-raisin-black/10 relative flex-1 bg-gray-50"
-        >
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onDrop={onDrop}
-            onDragOver={onDragOver}
-            onNodeClick={handleNodeClick}
-            nodeTypes={nodeTypes}
-            fitView
-          >
-            <Background />
-            <Controls />
-          </ReactFlow>
-
-          {showNodeConfig && selectedNode && (
-            <div
-              ref={configPanelRef}
-              className="border-light-silver dark:bg-raisin-black absolute top-4 right-4 w-96 rounded-2xl border bg-white shadow-[0px_4px_40px_-3px_#0000001A] dark:border-[#3A3A3A]"
-            >
-              <div className="border-light-silver flex items-center justify-between border-b p-4 dark:border-[#3A3A3A]">
-                <h3 className="font-semibold text-gray-900 dark:text-white">
-                  {selectedNode.type === 'start' && 'Start Node'}
-                  {selectedNode.type === 'end' && 'End Node'}
-                  {selectedNode.type === 'agent' && 'AI Agent'}
-                  {selectedNode.type === 'note' && 'Note'}
-                  {selectedNode.type === 'state' && 'Set State'}
-                </h3>
-                <button
-                  onClick={() => setShowNodeConfig(false)}
-                  className="text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-200"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="max-h-[calc(100vh-200px)] overflow-y-auto p-4">
-                <div className="mb-4 flex flex-col gap-2">
-                  <div className="rounded-lg bg-gray-50 p-3 dark:bg-[#2C2C2C]">
-                    <div className="mb-1 text-xs text-gray-500 dark:text-gray-400">
-                      Node ID
-                    </div>
-                    <div className="font-mono text-xs text-gray-700 dark:text-gray-300">
-                      {selectedNode.id}
-                    </div>
-                  </div>
-
-                  {selectedNode.type !== 'start' &&
-                    selectedNode.type !== 'end' && (
-                      <>
-                        <div>
-                          <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                            Title
-                          </label>
-                          <input
-                            type="text"
-                            value={
-                              selectedNode.data.title ||
-                              selectedNode.data.label ||
-                              ''
-                            }
-                            onChange={(e) =>
-                              handleUpdateNodeData({
-                                title: e.target.value,
-                                label: e.target.value,
-                              })
-                            }
-                            className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
-                            placeholder="Enter node title"
-                          />
-                        </div>
-
-                        {selectedNode.type === 'agent' && (
-                          <>
-                            <div>
-                              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Agent Type
-                              </label>
-                              <Select
-                                value={
-                                  selectedNode.data.config?.agent_type ||
-                                  'classic'
-                                }
-                                onValueChange={(value) =>
-                                  handleUpdateNodeData({
-                                    config: {
-                                      ...(selectedNode.data.config || {}),
-                                      agent_type: value,
-                                    },
-                                  })
-                                }
-                              >
-                                <SelectTrigger className="w-full">
-                                  <SelectValue placeholder="Select agent type" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="classic">
-                                    Classic
-                                  </SelectItem>
-                                  <SelectItem value="react">ReAct</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div>
-                              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Model
-                              </label>
-                              <Select
-                                value={selectedNode.data.config?.model_id || ''}
-                                onValueChange={(value) => {
-                                  const selectedModel = availableModels.find(
-                                    (m) => m.id === value,
-                                  );
-                                  handleUpdateNodeData({
-                                    config: {
-                                      ...(selectedNode.data.config || {}),
-                                      model_id: value,
-                                      llm_name: selectedModel?.provider || '',
-                                    },
-                                  });
-                                }}
-                              >
-                                <SelectTrigger className="w-full">
-                                  <SelectValue placeholder="Select a model" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {availableModels.map((model) => (
-                                    <SelectItem key={model.id} value={model.id}>
-                                      {model.display_name} · {model.provider}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div>
-                              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                System Prompt
-                              </label>
-                              <textarea
-                                value={
-                                  selectedNode.data.config?.system_prompt ||
-                                  'You are a helpful assistant.'
-                                }
-                                onChange={(e) =>
-                                  handleUpdateNodeData({
-                                    config: {
-                                      ...(selectedNode.data.config || {}),
-                                      system_prompt: e.target.value,
-                                    },
-                                  })
-                                }
-                                className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
-                                rows={3}
-                                placeholder="System prompt for the agent"
-                              />
-                            </div>
-                            <div>
-                              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Prompt Template
-                              </label>
-                              <textarea
-                                value={
-                                  selectedNode.data.config?.prompt_template ||
-                                  ''
-                                }
-                                onChange={(e) =>
-                                  handleUpdateNodeData({
-                                    config: {
-                                      ...(selectedNode.data.config || {}),
-                                      prompt_template: e.target.value,
-                                    },
-                                  })
-                                }
-                                className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
-                                rows={4}
-                                placeholder="Use {{variable}} for dynamic content"
-                              />
-                            </div>
-                            <div>
-                              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Output Variable
-                              </label>
-                              <input
-                                type="text"
-                                value={
-                                  selectedNode.data.config?.output_variable ||
-                                  ''
-                                }
-                                onChange={(e) =>
-                                  handleUpdateNodeData({
-                                    config: {
-                                      ...(selectedNode.data.config || {}),
-                                      output_variable: e.target.value,
-                                    },
-                                  })
-                                }
-                                className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
-                                placeholder="Variable name for output"
-                              />
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                id="stream_to_user"
-                                checked={
-                                  selectedNode.data.config?.stream_to_user ??
-                                  true
-                                }
-                                onChange={(e) =>
-                                  handleUpdateNodeData({
-                                    config: {
-                                      ...(selectedNode.data.config || {}),
-                                      stream_to_user: e.target.checked,
-                                    },
-                                  })
-                                }
-                                className="h-4 w-4"
-                              />
-                              <label
-                                htmlFor="stream_to_user"
-                                className="text-sm text-gray-700 dark:text-gray-300"
-                              >
-                                Stream output to user
-                              </label>
-                            </div>{' '}
-                            <div>
-                              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Tools
-                              </label>
-                              <MultiSelect
-                                options={availableTools.map((tool) => ({
-                                  value: tool.id,
-                                  label: tool.displayName,
-                                }))}
-                                selected={selectedNode.data.config?.tools || []}
-                                onChange={(newTools) =>
-                                  handleUpdateNodeData({
-                                    config: {
-                                      ...(selectedNode.data.config || {}),
-                                      tools: newTools,
-                                    },
-                                  })
-                                }
-                                placeholder="Select tools..."
-                                searchPlaceholder="Search tools..."
-                                emptyText="No tools available"
-                              />
-                            </div>
-                          </>
-                        )}
-
-                        {selectedNode.type === 'note' && (
-                          <div>
-                            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                              Note Content
-                            </label>
-                            <textarea
-                              value={selectedNode.data.content || ''}
-                              onChange={(e) =>
-                                handleUpdateNodeData({
-                                  content: e.target.value,
-                                })
-                              }
-                              className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
-                              rows={4}
-                              placeholder="Enter note content"
-                            />
-                          </div>
-                        )}
-
-                        {selectedNode.type === 'state' && (
-                          <>
-                            <div>
-                              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Variable Name
-                              </label>
-                              <input
-                                type="text"
-                                value={selectedNode.data.variable || ''}
-                                onChange={(e) =>
-                                  handleUpdateNodeData({
-                                    variable: e.target.value,
-                                  })
-                                }
-                                className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
-                                placeholder="e.g. analysis_type"
-                              />
-                            </div>
-                            <div>
-                              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Value
-                              </label>
-                              <input
-                                type="text"
-                                value={selectedNode.data.value || ''}
-                                onChange={(e) =>
-                                  handleUpdateNodeData({
-                                    value: e.target.value,
-                                  })
-                                }
-                                className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
-                                placeholder="e.g. price_check"
-                              />
-                            </div>
-                          </>
-                        )}
-                      </>
-                    )}
-                </div>
-
-                <button
-                  onClick={handleDeleteNode}
-                  disabled={selectedNode?.type === 'start'}
-                  className="flex w-full items-center justify-center gap-2 rounded-full border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10"
-                >
-                  <Trash2 size={16} />
-                  {selectedNode?.type === 'start'
-                    ? 'Cannot Delete Start Node'
-                    : 'Delete Node'}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Preview Panel */}
-      <Sheet open={showPreview} onOpenChange={setShowPreview}>
-        <SheetContent
-          side="right"
-          showCloseButton={false}
-          className="dark:bg-raisin-black w-full max-w-none p-0 sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px] dark:border-[#3A3A3A]"
-        >
-          <WorkflowPreview
-            workflowData={{
-              name: workflowName,
-              description: workflowDescription,
-              nodes: nodes.map((n) => ({
-                id: n.id,
-                type: n.type as 'start' | 'end' | 'agent' | 'note' | 'state',
-                title: n.data.title || n.data.label || n.type,
-                position: n.position,
-                data: n.type === 'agent' ? n.data.config : n.data,
-              })),
-              edges: edges.map((e) => ({
-                id: e.id,
-                source: e.source,
-                target: e.target,
-                sourceHandle: e.sourceHandle || undefined,
-                targetHandle: e.targetHandle || undefined,
-              })),
-            }}
-          />
-        </SheetContent>
-      </Sheet>
-    </div>
+    </>
   );
 }
 

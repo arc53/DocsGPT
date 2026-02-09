@@ -156,7 +156,7 @@ function ExecutionDetails({
                         <Circle className="h-3 w-3" />
                       )}
                     </div>
-                    <span className="font-medium text-gray-900 dark:text-white">
+                    <span className="min-w-0 truncate font-medium text-gray-900 dark:text-white">
                       {displayName}
                     </span>
                     <div className="ml-auto shrink-0">
@@ -197,7 +197,7 @@ function ExecutionDetails({
                               key={key}
                               className="inline-flex items-center rounded-lg bg-white px-2 py-1 text-xs dark:bg-[#2A2A2A]"
                             >
-                              <span className="font-medium text-gray-600 dark:text-gray-400">
+                              <span className="max-w-[100px] truncate font-medium text-gray-600 dark:text-gray-400">
                                 {key}:
                               </span>
                               <span

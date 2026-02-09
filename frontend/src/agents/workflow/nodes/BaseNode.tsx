@@ -52,7 +52,8 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
         <Handle
           type="target"
           position={Position.Left}
-          className="hover:bg-violets-are-blue! -left-1! h-3! w-3! bg-gray-400! transition-colors"
+          isConnectable={true}
+          className="hover:bg-violets-are-blue! -left-1! h-3! w-3! rounded-full! border-2! border-white! bg-gray-400! transition-colors dark:border-[#2C2C2C]!"
         />
       )}
 
@@ -70,7 +71,7 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
             {title}
           </div>
           {children && (
-            <div className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+            <div className="mt-1 truncate text-xs text-gray-600 dark:text-gray-400">
               {children}
             </div>
           )}
@@ -81,7 +82,8 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
         <Handle
           type="source"
           position={Position.Right}
-          className="hover:bg-violets-are-blue! -right-1! h-3! w-3! bg-gray-400! transition-colors"
+          isConnectable={true}
+          className="hover:bg-violets-are-blue! -right-1! h-3! w-3! rounded-full! border-2! border-white! bg-gray-400! transition-colors dark:border-[#2C2C2C]!"
         />
       )}
     </div>
