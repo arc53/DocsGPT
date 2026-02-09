@@ -455,7 +455,6 @@ const ConversationBubble = forwardRef<
                                       customStyle={{
                                         margin: 0,
                                         borderRadius: 0,
-                                        scrollbarWidth: 'thin',
                                       }}
                                     >
                                       {String(children).replace(/\n$/, '')}
@@ -645,7 +644,7 @@ function AllSources(sources: AllSourcesProps) {
         <p className="text-left text-xl">{`${sources.sources.length} ${t('conversation.sources.title')}`}</p>
         <div className="mx-1 mt-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40 lg:w-[95%]"></div>
       </div>
-      <div className="scrollbar-thin mt-6 flex h-[90%] w-52 flex-col gap-4 overflow-y-auto pr-3 sm:w-64">
+      <div className="mt-6 flex h-[90%] w-52 flex-col gap-4 overflow-y-auto pr-3 sm:w-64">
         {sources.sources.map((source, index) => {
           const isExternalSource = source.link && source.link !== 'local';
           return (
@@ -866,7 +865,6 @@ function Thought({
                         customStyle={{
                           margin: 0,
                           borderRadius: 0,
-                          scrollbarWidth: 'thin',
                         }}
                       >
                         {String(children).replace(/\n$/, '')}
