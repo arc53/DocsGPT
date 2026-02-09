@@ -471,7 +471,7 @@ class ParseSpec(Resource):
 
 @tools_ns.route("/artifact/<artifact_id>")
 class GetArtifact(Resource):
-    @api.doc(description="Get artifact data by artifact ID")
+    @api.doc(description="Get artifact data by artifact ID. Returns all todos for the tool when fetching a todo artifact.")
     def get(self, artifact_id: str):
         decoded_token = request.decoded_token
         if not decoded_token:
@@ -511,10 +511,8 @@ class GetArtifact(Resource):
         todo_doc = db["todos"].find_one({"_id": obj_id, "user_id": user_id})
         if todo_doc:
             tool_id = todo_doc.get("tool_id")
-            conversation_id = todo_doc.get("conversation_id")
+            # Return all todos for the tool
             query = {"user_id": user_id, "tool_id": tool_id}
-            if conversation_id:
-                query["conversation_id"] = conversation_id
             all_todos = list(db["todos"].find(query))
             items = []
             open_count = 0

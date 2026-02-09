@@ -91,9 +91,9 @@ function TodoListView({ data }: { data: TodoArtifactData }) {
           </p>
         ) : (
           <ul className="space-y-2">
-            {data.items.map((item) => (
+            {data.items.map((item, index) => (
               <li
-                key={item.todo_id}
+                key={`${item.todo_id}-${index}`}
                 className={`flex items-start gap-3 rounded-lg border p-3 ${
                   item.status === 'completed'
                     ? 'border-green-300 dark:border-green-800'
@@ -274,34 +274,108 @@ export default function ArtifactSidebar({
   variant = 'overlay',
 }: ArtifactSidebarProps) {
   const sidebarRef = React.useRef<HTMLDivElement>(null);
+  const lastSuccessfulTodoArtifactIdRef = React.useRef<string | null>(null);
+  const currentFetchIdRef = React.useRef<string | null>(null);
   const token = useSelector(selectToken);
   const [artifact, setArtifact] = useState<ArtifactData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [effectiveArtifactId, setEffectiveArtifactId] = useState<string | null>(
+    artifactId,
+  );
 
   const title = getArtifactTitle(artifact, toolName);
 
+  // Reset effectiveArtifactId when artifactId changes
   useEffect(() => {
-    if (!isOpen || !artifactId) {
-      setArtifact(null);
-      setError(null);
+    if (!isOpen) {
+      setEffectiveArtifactId(null);
       return;
     }
+    setEffectiveArtifactId(artifactId);
+  }, [isOpen, artifactId]);
+
+  // Fetch artifact when effectiveArtifactId changes
+  useEffect(() => {
+    if (!isOpen || !effectiveArtifactId) {
+      setArtifact(null);
+      setError(null);
+      setLoading(false);
+      currentFetchIdRef.current = null;
+      return;
+    }
+
+    // Generate a unique ID for this fetch
+    const fetchId = `${effectiveArtifactId}-${Date.now()}`;
+    currentFetchIdRef.current = fetchId;
+    
     setLoading(true);
     setError(null);
+    
+    // Note: For todo artifacts, the endpoint always returns all todos for the tool; will be coversation scoped later
     userService
-      .getArtifact(artifactId, token)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && data.artifact) {
-          setArtifact(data.artifact);
-        } else {
-          setError(data.message || 'Failed to load artifact');
+      .getArtifact(effectiveArtifactId, token)
+      .then(async (res: any) => {
+        // Ignore if this is not the current fetch
+        if (currentFetchIdRef.current !== fetchId) return;
+        
+        const isResponseLike = res && typeof res.json === 'function';
+        const status = isResponseLike ? res.status : undefined;
+        const ok = isResponseLike ? Boolean(res.ok) : true;
+
+        let data: any = res;
+        if (isResponseLike) {
+          try {
+            data = await res.json();
+          } catch {
+            data = null;
+          }
         }
+
+        // Check again after async operation
+        if (currentFetchIdRef.current !== fetchId) return;
+
+        if (ok && data?.success && data?.artifact) {
+          setArtifact(data.artifact);
+          // Remember the last successful todo artifact id so we can fallback if a newer id 404s.
+          if (data.artifact?.artifact_type === 'todo_list') {
+            lastSuccessfulTodoArtifactIdRef.current = effectiveArtifactId;
+          }
+          setLoading(false);
+          return;
+        }
+
+        const isTodoTool = (toolName ?? '').toLowerCase().includes('todo');
+
+        // If the latest todo artifact id is missing (404), fall back to the last known good one
+        // so the backend can still resolve `tool_id` for the todo list.
+        if (
+          status === 404 &&
+          isTodoTool &&
+          lastSuccessfulTodoArtifactIdRef.current &&
+          lastSuccessfulTodoArtifactIdRef.current !== effectiveArtifactId
+        ) {
+          // Update effectiveArtifactId to trigger a new fetch with the fallback id
+          setEffectiveArtifactId(lastSuccessfulTodoArtifactIdRef.current);
+          setLoading(false);
+          return;
+        }
+
+        // Ensure we show a visible error state instead of rendering nothing.
+        const message =
+          data?.message ||
+          (status === 404 ? 'Artifact not found' : null) ||
+          'Failed to load artifact';
+        setError(message);
+        setLoading(false);
       })
-      .catch(() => setError('Failed to fetch artifact'))
-      .finally(() => setLoading(false));
-  }, [isOpen, artifactId, token]);
+      .catch((err) => {
+        // Ignore if this is not the current fetch
+        if (currentFetchIdRef.current !== fetchId) return;
+        setError('Failed to fetch artifact');
+        setLoading(false);
+      });
+  }, [isOpen, effectiveArtifactId, token, toolName]);
 
   const handleClickOutside = (event: MouseEvent) => {
     if (
@@ -334,7 +408,16 @@ export default function ArtifactSidebar({
         </div>
       );
     }
-    if (!artifact) return null;
+    // Avoid rendering an empty panel if the artifact couldn't be loaded for any reason.
+    if (!artifact) {
+      return (
+        <div className="flex h-full items-center justify-center">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Artifact not found
+          </p>
+        </div>
+      );
+    }
     switch (artifact.artifact_type) {
       case 'todo_list':
         return <TodoListView data={artifact.data} />;
