@@ -64,13 +64,16 @@ class UploadFile(Resource):
         safe_user = safe_filename(user)
         dir_name = safe_filename(job_name)
         base_path = f"{settings.UPLOAD_FOLDER}/{safe_user}/{dir_name}"
+        file_name_map = {}
 
         try:
             storage = StorageCreator.get_storage()
 
             for file in files:
-                original_filename = file.filename
+                original_filename = os.path.basename(file.filename)
                 safe_file = safe_filename(original_filename)
+                if original_filename:
+                    file_name_map[safe_file] = original_filename
 
                 with tempfile.TemporaryDirectory() as temp_dir:
                     temp_file_path = os.path.join(temp_dir, safe_file)
@@ -142,6 +145,7 @@ class UploadFile(Resource):
                 user,
                 file_path=base_path,
                 filename=dir_name,
+                file_name_map=file_name_map,
             )
         except Exception as err:
             current_app.logger.error(f"Error uploading file: {err}", exc_info=True)
@@ -341,6 +345,14 @@ class ManageSourceFiles(Resource):
             storage = StorageCreator.get_storage()
             source_file_path = source.get("file_path", "")
             parent_dir = request.form.get("parent_dir", "")
+            file_name_map = source.get("file_name_map") or {}
+            if isinstance(file_name_map, str):
+                try:
+                    file_name_map = json.loads(file_name_map)
+                except Exception:
+                    file_name_map = {}
+            if not isinstance(file_name_map, dict):
+                file_name_map = {}
 
             if parent_dir and (parent_dir.startswith("/") or ".." in parent_dir):
                 return make_response(
@@ -362,19 +374,35 @@ class ManageSourceFiles(Resource):
                         400,
                     )
                 added_files = []
+                map_updated = False
 
                 target_dir = source_file_path
                 if parent_dir:
                     target_dir = f"{source_file_path}/{parent_dir}"
                 for file in files:
                     if file.filename:
-                        safe_filename_str = safe_filename(file.filename)
+                        original_filename = os.path.basename(file.filename)
+                        safe_filename_str = safe_filename(original_filename)
                         file_path = f"{target_dir}/{safe_filename_str}"
 
                         # Save file to storage
 
                         storage.save_file(file, file_path)
                         added_files.append(safe_filename_str)
+                        if original_filename:
+                            relative_key = (
+                                f"{parent_dir}/{safe_filename_str}"
+                                if parent_dir
+                                else safe_filename_str
+                            )
+                            file_name_map[relative_key] = original_filename
+                            map_updated = True
+
+                if map_updated:
+                    sources_collection.update_one(
+                        {"_id": ObjectId(source_id)},
+                        {"$set": {"file_name_map": file_name_map}},
+                    )
                 # Trigger re-ingestion pipeline
 
                 from application.api.user.tasks import reingest_source_task
@@ -421,6 +449,7 @@ class ManageSourceFiles(Resource):
                 # Remove files from storage and directory structure
 
                 removed_files = []
+                map_updated = False
                 for file_path in file_paths:
                     full_path = f"{source_file_path}/{file_path}"
 
@@ -429,6 +458,15 @@ class ManageSourceFiles(Resource):
                     if storage.file_exists(full_path):
                         storage.delete_file(full_path)
                         removed_files.append(file_path)
+                    if file_path in file_name_map:
+                        file_name_map.pop(file_path, None)
+                        map_updated = True
+
+                if map_updated and isinstance(file_name_map, dict):
+                    sources_collection.update_one(
+                        {"_id": ObjectId(source_id)},
+                        {"$set": {"file_name_map": file_name_map}},
+                    )
                 # Trigger re-ingestion pipeline
 
                 from application.api.user.tasks import reingest_source_task
@@ -511,6 +549,20 @@ class ManageSourceFiles(Resource):
                     f"User: {user}, Source ID: {source_id}, Directory path: {directory_path}, "
                     f"Full path: {full_directory_path}"
                 )
+                if directory_path and file_name_map:
+                    prefix = f"{directory_path.rstrip('/')}/"
+                    keys_to_remove = [
+                        key
+                        for key in file_name_map.keys()
+                        if key == directory_path or key.startswith(prefix)
+                    ]
+                    if keys_to_remove:
+                        for key in keys_to_remove:
+                            file_name_map.pop(key, None)
+                        sources_collection.update_one(
+                            {"_id": ObjectId(source_id)},
+                            {"$set": {"file_name_map": file_name_map}},
+                        )
 
                 # Trigger re-ingestion pipeline
 

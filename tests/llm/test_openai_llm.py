@@ -14,18 +14,44 @@ class FakeChatCompletions:
             self.tool_calls = tool_calls
 
     class _Delta:
-        def __init__(self, content=None):
+        def __init__(self, content=None, reasoning_content=None, tool_calls=None):
             self.content = content
+            self.reasoning_content = reasoning_content
+            self.tool_calls = tool_calls
 
     class _Choice:
-        def __init__(self, content=None, delta=None, finish_reason="stop"):
+        def __init__(
+            self,
+            content=None,
+            delta=None,
+            reasoning_content=None,
+            tool_calls=None,
+            finish_reason="stop",
+        ):
             self.message = FakeChatCompletions._Msg(content=content)
-            self.delta = FakeChatCompletions._Delta(content=delta)
+            self.delta = FakeChatCompletions._Delta(
+                content=delta,
+                reasoning_content=reasoning_content,
+                tool_calls=tool_calls,
+            )
             self.finish_reason = finish_reason
 
     class _StreamLine:
         def __init__(self, deltas):
-            self.choices = [FakeChatCompletions._Choice(delta=d) for d in deltas]
+            choices = []
+            for delta in deltas:
+                if isinstance(delta, dict):
+                    choices.append(
+                        FakeChatCompletions._Choice(
+                            delta=delta.get("content"),
+                            reasoning_content=delta.get("reasoning_content"),
+                            tool_calls=delta.get("tool_calls"),
+                            finish_reason=delta.get("finish_reason", "stop"),
+                        )
+                    )
+                else:
+                    choices.append(FakeChatCompletions._Choice(delta=delta))
+            self.choices = choices
 
     class _Response:
         def __init__(self, choices=None, lines=None):
@@ -142,6 +168,44 @@ def test_raw_gen_stream_yields_chunks(openai_llm):
     chunks = list(gen)
     assert "part1" in "".join(chunks)
     assert "part2" in "".join(chunks)
+
+
+@pytest.mark.unit
+def test_raw_gen_stream_emits_thought_events(openai_llm):
+    msgs = [{"role": "user", "content": "think first"}]
+
+    openai_llm.client.chat.completions.create = lambda **kwargs: FakeChatCompletions._Response(
+        lines=[
+            FakeChatCompletions._StreamLine(
+                [{"reasoning_content": "internal thought"}]
+            ),
+            FakeChatCompletions._StreamLine([{"content": "final answer"}]),
+            FakeChatCompletions._StreamLine([{"finish_reason": "stop"}]),
+        ]
+    )
+
+    chunks = list(openai_llm._raw_gen_stream(openai_llm, model="gpt", messages=msgs))
+
+    assert {"type": "thought", "thought": "internal thought"} in chunks
+    assert "final answer" in chunks
+
+
+@pytest.mark.unit
+def test_raw_gen_stream_keeps_prefix_like_text_as_answer(openai_llm):
+    msgs = [{"role": "user", "content": "return literal marker"}]
+    prefixed_answer = "[[DOCSGPT_OPENAI_REASONING]]this is answer text"
+
+    openai_llm.client.chat.completions.create = lambda **kwargs: FakeChatCompletions._Response(
+        lines=[
+            FakeChatCompletions._StreamLine([{"content": prefixed_answer}]),
+            FakeChatCompletions._StreamLine([{"finish_reason": "stop"}]),
+        ]
+    )
+
+    chunks = list(openai_llm._raw_gen_stream(openai_llm, model="gpt", messages=msgs))
+
+    assert prefixed_answer in chunks
+    assert not any(isinstance(chunk, dict) and chunk.get("type") == "thought" for chunk in chunks)
 
 
 @pytest.mark.unit

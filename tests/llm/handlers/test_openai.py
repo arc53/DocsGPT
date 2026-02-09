@@ -188,6 +188,22 @@ class TestOpenAILLMHandler:
         
         assert result == []
 
+    def test_iterate_stream_preserves_thought_events(self):
+        """Test stream iteration preserves provider-emitted thought events."""
+        handler = OpenAILLMHandler()
+
+        mock_chunks = [
+            {"type": "thought", "thought": "first thought"},
+            "answer token",
+        ]
+
+        result = list(handler._iterate_stream(mock_chunks))
+
+        assert result == [
+            {"type": "thought", "thought": "first thought"},
+            "answer token",
+        ]
+
     def test_parse_response_tool_call_missing_attributes(self):
         """Test parsing tool calls with missing attributes."""
         handler = OpenAILLMHandler()

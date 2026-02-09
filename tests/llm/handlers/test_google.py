@@ -254,6 +254,22 @@ class TestGoogleLLMHandler:
         
         assert result == []
 
+    def test_iterate_stream_preserves_thought_events(self):
+        """Test stream iteration preserves provider-emitted thought events."""
+        handler = GoogleLLMHandler()
+
+        mock_chunks = [
+            {"type": "thought", "thought": "first thought"},
+            "answer token",
+        ]
+
+        result = list(handler._iterate_stream(mock_chunks))
+
+        assert result == [
+            {"type": "thought", "thought": "first thought"},
+            "answer token",
+        ]
+
     def test_parse_response_parts_without_function_call_attribute(self):
         """Test parsing response with parts missing function_call attribute."""
         handler = GoogleLLMHandler()

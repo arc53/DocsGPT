@@ -4,10 +4,11 @@ import pytest
 from application.llm.google_ai import GoogleLLM
 
 class _FakePart:
-    def __init__(self, text=None, function_call=None, file_data=None):
+    def __init__(self, text=None, function_call=None, file_data=None, thought=False):
         self.text = text
         self.function_call = function_call
         self.file_data = file_data
+        self.thought = thought
 
     @staticmethod
     def from_text(text):
@@ -38,10 +39,22 @@ class FakeTypesModule:
     Part = _FakePart
     Content = _FakeContent
 
+    class ThinkingConfig:
+        def __init__(
+            self,
+            include_thoughts=None,
+            thinking_budget=None,
+            thinking_level=None,
+        ):
+            self.include_thoughts = include_thoughts
+            self.thinking_budget = thinking_budget
+            self.thinking_level = thinking_level
+
     class GenerateContentConfig:
         def __init__(self):
             self.system_instruction = None
             self.tools = None
+            self.thinking_config = None
             self.response_schema = None
             self.response_mime_type = None
 
@@ -112,6 +125,86 @@ def test_raw_gen_stream_yields_chunks():
     assert list(gen) == ["a", "b"]
 
 
+def test_raw_gen_stream_does_not_set_thinking_config_by_default(monkeypatch):
+    captured = {}
+
+    def fake_stream(self, *args, **kwargs):
+        captured["config"] = kwargs.get("config")
+        return [types.SimpleNamespace(text="a", candidates=None)]
+
+    monkeypatch.setattr(FakeModels, "generate_content_stream", fake_stream)
+
+    llm = GoogleLLM(api_key="key")
+    msgs = [{"role": "user", "content": "hello"}]
+    list(llm._raw_gen_stream(llm, model="gemini", messages=msgs, stream=True))
+
+    assert captured["config"].thinking_config is None
+
+
+def test_raw_gen_stream_emits_thought_events(monkeypatch):
+    llm = GoogleLLM(api_key="key")
+    msgs = [{"role": "user", "content": "hello"}]
+
+    thought_part = types.SimpleNamespace(
+        text="thinking token",
+        function_call=None,
+        thought=True,
+    )
+    answer_part = types.SimpleNamespace(
+        text="answer token",
+        function_call=None,
+        thought=False,
+    )
+    chunk = types.SimpleNamespace(
+        candidates=[
+            types.SimpleNamespace(
+                content=types.SimpleNamespace(parts=[thought_part, answer_part])
+            )
+        ]
+    )
+
+    monkeypatch.setattr(
+        FakeModels,
+        "generate_content_stream",
+        lambda self, *args, **kwargs: [chunk],
+    )
+
+    out = list(llm._raw_gen_stream(llm, model="gemini", messages=msgs, stream=True))
+
+    assert {"type": "thought", "thought": "thinking token"} in out
+    assert "answer token" in out
+
+
+def test_raw_gen_stream_keeps_prefix_like_text_as_answer(monkeypatch):
+    llm = GoogleLLM(api_key="key")
+    msgs = [{"role": "user", "content": "hello"}]
+    prefixed_answer = "[[DOCSGPT_GOOGLE_REASONING]]this is answer text"
+
+    answer_part = types.SimpleNamespace(
+        text=prefixed_answer,
+        function_call=None,
+        thought=False,
+    )
+    chunk = types.SimpleNamespace(
+        candidates=[
+            types.SimpleNamespace(
+                content=types.SimpleNamespace(parts=[answer_part])
+            )
+        ]
+    )
+
+    monkeypatch.setattr(
+        FakeModels,
+        "generate_content_stream",
+        lambda self, *args, **kwargs: [chunk],
+    )
+
+    out = list(llm._raw_gen_stream(llm, model="gemini", messages=msgs, stream=True))
+
+    assert prefixed_answer in out
+    assert not any(isinstance(item, dict) and item.get("type") == "thought" for item in out)
+
+
 def test_prepare_structured_output_format_type_mapping():
     llm = GoogleLLM(api_key="key")
     schema = {
@@ -148,4 +241,3 @@ def test_prepare_messages_with_attachments_appends_files(monkeypatch):
     files_entry = next((p for p in user_msg["content"] if isinstance(p, dict) and "files" in p), None)
     assert files_entry is not None
     assert isinstance(files_entry["files"], list) and len(files_entry["files"]) == 2
-

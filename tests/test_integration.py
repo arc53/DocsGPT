@@ -650,7 +650,7 @@ DocsGPT provides:
                     return False
 
                 result = response.json()
-                answer = result.get('answer', '')
+                answer = result.get('answer') or ''
                 self.print_success(f"Answer received: {answer[:100]}...")
                 self.test_results.append((test_name, True, "Success"))
                 return True
@@ -877,7 +877,6 @@ DocsGPT provides:
             payload = {
                 "question": question,
                 "history": "[]",
-                "model_id": "gemini-2.5-pro",
             }
 
             # Use agent if available, otherwise isNoneDoc
@@ -902,7 +901,7 @@ DocsGPT provides:
                 if response.status_code == 200:
                     result = response.json()
                     current_conv_id = result.get('conversation_id', current_conv_id)
-                    answer_preview = result.get('answer', '')[:80]
+                    answer_preview = (result.get('answer') or '')[:80]
                     self.print_success(f"Request {i+1}/10 completed (conv_id: {current_conv_id})")
                     self.print_info(f"  Answer preview: {answer_preview}...")
                 else:
@@ -958,7 +957,6 @@ DocsGPT provides:
                 "question": question,
                 "history": "[]",
                 "isNoneDoc": True,
-                "model_id": "gemini-2.5-pro",
             }
 
             if conversation_id:
@@ -986,7 +984,6 @@ DocsGPT provides:
             "question": "Please remember this critical information: The production database password is stored in DB_PASSWORD_PROD environment variable. The backup runs at 3:00 AM UTC daily. Premium users have 10,000 req/hour limit.",
             "history": "[]",
             "isNoneDoc": True,
-            "model_id": "gemini-2.5-pro",
             "conversation_id": conversation_id,
         }
 
@@ -1016,7 +1013,6 @@ DocsGPT provides:
                 "question": question,
                 "history": "[]",
                 "isNoneDoc": True,
-                "model_id": "gemini-2.5-pro",
                 "conversation_id": conversation_id,
             }
 
@@ -1042,7 +1038,6 @@ DocsGPT provides:
             "question": "What was the database password environment variable I mentioned earlier?",
             "history": "[]",
             "isNoneDoc": True,
-            "model_id": "gemini-2.5-pro",
             "conversation_id": conversation_id,
         }
 
@@ -1050,7 +1045,7 @@ DocsGPT provides:
             response = requests.post(endpoint, json=recall_payload, headers=self.headers, timeout=60)
             if response.status_code == 200:
                 result = response.json()
-                answer = result.get('answer', '').lower()
+                answer = (result.get('answer') or '').lower()
 
                 # Check if the critical info was preserved
                 if 'db_password_prod' in answer or 'database password' in answer:
@@ -1191,7 +1186,7 @@ DocsGPT provides:
 
                         if response.status_code == 200:
                             result = response.json()
-                            answer = result.get('answer', '')
+                            answer = result.get('answer') or ''
                             self.print_success(f"Answer received: {answer[:100]}...")
 
                             if any(word in answer.lower() for word in ['install', 'docker', 'setup']):

@@ -137,18 +137,20 @@ export default function Conversation() {
     if (updated === true) {
       handleQuestion({ question: question as string, index: indx });
     } else if (question && status !== 'loading') {
-      if (lastQueryReturnedErr) {
+      if (lastQueryReturnedErr && queries.length > 0) {
+        const retryIndex = queries.length - 1;
         dispatch(
           updateQuery({
-            index: queries.length - 1,
+            index: retryIndex,
             query: {
               prompt: question,
             },
           }),
         );
         handleQuestion({
-          question: question,
+          question,
           isRetry: true,
+          index: retryIndex,
         });
       } else {
         handleQuestion({

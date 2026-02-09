@@ -58,6 +58,30 @@ export default function General() {
     <div className="mt-12 flex flex-col gap-4">
       {' '}
       <div className="flex flex-col gap-4">
+        <Prompts
+          prompts={prompts}
+          selectedPrompt={selectedPrompt}
+          onSelectPrompt={(name, id, type) =>
+            dispatch(setPrompt({ name: name, id: id, type: type }))
+          }
+          setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
+          dropdownProps={{ size: 'w-56', rounded: '3xl', border: 'border' }}
+        />
+      </div>
+      <div className="flex flex-col gap-4">
+        <label className="text-jet dark:text-bright-gray text-base font-medium">
+          {t('settings.general.chunks')}
+        </label>
+        <Dropdown
+          options={chunks}
+          selectedValue={selectedChunks}
+          onSelect={(value: string) => dispatch(setChunks(value))}
+          size="w-56"
+          rounded="3xl"
+          border="border"
+        />
+      </div>
+      <div className="flex flex-col gap-4">
         {' '}
         <label className="text-jet dark:text-bright-gray text-base font-medium">
           {t('settings.general.selectTheme')}
@@ -92,30 +116,6 @@ export default function General() {
           size="w-56"
           rounded="3xl"
           border="border"
-        />
-      </div>
-      <div className="flex flex-col gap-4">
-        <label className="text-jet dark:text-bright-gray text-base font-medium">
-          {t('settings.general.chunks')}
-        </label>
-        <Dropdown
-          options={chunks}
-          selectedValue={selectedChunks}
-          onSelect={(value: string) => dispatch(setChunks(value))}
-          size="w-56"
-          rounded="3xl"
-          border="border"
-        />
-      </div>
-      <div className="flex flex-col gap-4">
-        <Prompts
-          prompts={prompts}
-          selectedPrompt={selectedPrompt}
-          onSelectPrompt={(name, id, type) =>
-            dispatch(setPrompt({ name: name, id: id, type: type }))
-          }
-          setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
-          dropdownProps={{ size: 'w-56', rounded: '3xl', border: 'border' }}
         />
       </div>
       <hr className="border-silver dark:border-silver/40 my-4 w-[calc(min(665px,100%))] border-t" />

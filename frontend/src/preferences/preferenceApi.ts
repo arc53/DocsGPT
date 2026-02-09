@@ -90,12 +90,49 @@ export function getLocalApiKey(): string | null {
   return key;
 }
 
-export function getLocalRecentDocs(sourceDocs?: Doc[] | null): Doc[] | null {
-  const docsString = localStorage.getItem('DocsGPTRecentDocs');
-  const selectedDocs = docsString ? (JSON.parse(docsString) as Doc[]) : null;
+function parseStoredRecentDocs(docsString: string | null): Doc[] | null {
+  if (!docsString) {
+    return null;
+  }
 
-  if (!sourceDocs || !selectedDocs || selectedDocs.length === 0) {
-    return selectedDocs;
+  try {
+    const parsedDocs: unknown = JSON.parse(docsString);
+
+    if (Array.isArray(parsedDocs)) {
+      const docs = parsedDocs.filter(
+        (doc): doc is Doc => typeof doc === 'object' && doc !== null,
+      );
+      return docs.length > 0 ? docs : null;
+    }
+
+    if (typeof parsedDocs === 'object' && parsedDocs !== null) {
+      return [parsedDocs as Doc];
+    }
+  } catch (error) {
+    console.warn('Failed to parse DocsGPTRecentDocs from localStorage', error);
+  }
+
+  return null;
+}
+
+export function getStoredRecentDocs(): Doc[] {
+  const recentDocs = parseStoredRecentDocs(
+    localStorage.getItem('DocsGPTRecentDocs'),
+  );
+
+  if (!recentDocs || recentDocs.length === 0) {
+    localStorage.removeItem('DocsGPTRecentDocs');
+    return [];
+  }
+
+  return recentDocs;
+}
+
+export function getLocalRecentDocs(sourceDocs?: Doc[] | null): Doc[] | null {
+  const selectedDocs = getStoredRecentDocs();
+
+  if (!sourceDocs || selectedDocs.length === 0) {
+    return selectedDocs.length > 0 ? selectedDocs : null;
   }
   const isDocAvailable = (selected: Doc) => {
     return sourceDocs.some((source) => {

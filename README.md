@@ -153,9 +153,9 @@ The source code license is [MIT](https://opensource.org/license/mit/), as descri
   </a>
 </p>
 <p>
-  <a href="https://console.neon.tech/app/?promo=docsgpt">
-    <img width="201" alt="color" src="https://github.com/user-attachments/assets/42c8aa45-7b99-4f56-85d6-e0f07dddcc3b" />
+  <a href="https://get.neon.com/docsgpt">
+    <img width="201" alt="color" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" />
   </a>
+  
 </p>
-
 

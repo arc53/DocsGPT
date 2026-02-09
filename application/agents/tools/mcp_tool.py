@@ -169,6 +169,8 @@ class MCPTool(Tool):
                 transport_type = "http"
         else:
             transport_type = self.transport_type
+        if transport_type == "stdio":
+            raise ValueError("STDIO transport is disabled")
         if transport_type == "sse":
             headers.update({"Accept": "text/event-stream", "Cache-Control": "no-cache"})
             return SSETransport(url=self.server_url, headers=headers)
@@ -454,6 +456,12 @@ class MCPTool(Tool):
 
     def get_config_requirements(self) -> Dict:
         """Get configuration requirements for the MCP tool."""
+        transport_enum = ["auto", "sse", "http"]
+        transport_help = {
+            "auto": "Automatically detect best transport",
+            "sse": "Server-Sent Events (for real-time streaming)",
+            "http": "HTTP streaming (recommended for production)",
+        }
         return {
             "server_url": {
                 "type": "string",
@@ -463,14 +471,11 @@ class MCPTool(Tool):
             "transport_type": {
                 "type": "string",
                 "description": "Transport type for connection",
-                "enum": ["auto", "sse", "http", "stdio"],
+                "enum": transport_enum,
                 "default": "auto",
                 "required": False,
                 "help": {
-                    "auto": "Automatically detect best transport",
-                    "sse": "Server-Sent Events (for real-time streaming)",
-                    "http": "HTTP streaming (recommended for production)",
-                    "stdio": "Standard I/O (for local servers)",
+                    **transport_help,
                 },
             },
             "auth_type": {
