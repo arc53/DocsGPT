@@ -878,6 +878,9 @@ class LLMHandler(ABC):
         tool_calls = {}
 
         for chunk in self._iterate_stream(response):
+            if isinstance(chunk, dict) and chunk.get("type") == "thought":
+                yield chunk
+                continue
             if isinstance(chunk, str):
                 yield chunk
                 continue

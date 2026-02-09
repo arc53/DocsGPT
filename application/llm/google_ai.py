@@ -378,6 +378,22 @@ class GoogleLLM(BaseLLM):
             last_preview = f"{last_preview[:preview_chars]}..."
         return f"count={message_count}, last='{last_preview}'"
 
+    @staticmethod
+    def _get_text_value(part):
+        """Get text from both SDK objects and dict-shaped test doubles."""
+        if isinstance(part, dict):
+            value = part.get("text")
+            return value if isinstance(value, str) else ""
+        value = getattr(part, "text", None)
+        return value if isinstance(value, str) else ""
+
+    @staticmethod
+    def _is_thought_part(part):
+        """Detect Gemini thinking parts when available."""
+        if isinstance(part, dict):
+            return bool(part.get("thought"))
+        return bool(getattr(part, "thought", False))
+
     def _raw_gen(
         self,
         baseself,
@@ -438,7 +454,6 @@ class GoogleLLM(BaseLLM):
         if tools:
             cleaned_tools = self._clean_tools_format(tools)
             config.tools = cleaned_tools
-        # Add response schema for structured output if provided
 
         if response_schema:
             config.response_schema = response_schema
@@ -475,10 +490,23 @@ class GoogleLLM(BaseLLM):
                             for part in candidate.content.parts:
                                 if part.function_call:
                                     yield part
-                                elif part.text:
-                                    yield part.text
+                                    continue
+
+                                part_text = self._get_text_value(part)
+                                if not part_text:
+                                    continue
+
+                                if self._is_thought_part(part):
+                                    yield {"type": "thought", "thought": part_text}
+                                else:
+                                    yield part_text
                 elif hasattr(chunk, "text"):
-                    yield chunk.text
+                    chunk_text = self._get_text_value(chunk)
+                    if chunk_text:
+                        if self._is_thought_part(chunk):
+                            yield {"type": "thought", "thought": chunk_text}
+                        else:
+                            yield chunk_text
         finally:
             if hasattr(response, "close"):
                 response.close()
