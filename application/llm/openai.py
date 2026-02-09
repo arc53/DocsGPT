@@ -151,6 +151,51 @@ class OpenAILLM(BaseLLM):
                     raise ValueError(f"Unexpected content type: {type(content)}")
         return cleaned_messages
 
+    @staticmethod
+    def _normalize_reasoning_value(value):
+        """Normalize reasoning payloads from OpenAI-compatible stream chunks."""
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list):
+            return "".join(
+                OpenAILLM._normalize_reasoning_value(item) for item in value
+            )
+        if isinstance(value, dict):
+            for key in ("text", "content", "value", "reasoning_content", "reasoning"):
+                normalized = OpenAILLM._normalize_reasoning_value(value.get(key))
+                if normalized:
+                    return normalized
+            return ""
+
+        for attr in ("text", "content", "value"):
+            if hasattr(value, attr):
+                normalized = OpenAILLM._normalize_reasoning_value(getattr(value, attr))
+                if normalized:
+                    return normalized
+        return ""
+
+    @classmethod
+    def _extract_reasoning_text(cls, delta):
+        """Extract reasoning/thinking tokens from OpenAI-compatible delta chunks."""
+        if delta is None:
+            return ""
+
+        for key in (
+            "reasoning_content",
+            "reasoning",
+            "thinking",
+            "thinking_content",
+        ):
+            value = getattr(delta, key, None)
+            if value is None and isinstance(delta, dict):
+                value = delta.get(key)
+            normalized = cls._normalize_reasoning_value(value)
+            if normalized:
+                return normalized
+        return ""
+
     def _raw_gen(
         self,
         baseself,
@@ -221,14 +266,26 @@ class OpenAILLM(BaseLLM):
         try:
             for line in response:
                 logging.debug(f"OpenAI stream line: {line}")
-                if (
-                    len(line.choices) > 0
-                    and line.choices[0].delta.content is not None
-                    and len(line.choices[0].delta.content) > 0
-                ):
-                    yield line.choices[0].delta.content
-                elif len(line.choices) > 0:
-                    yield line.choices[0]
+                if not getattr(line, "choices", None):
+                    continue
+
+                choice = line.choices[0]
+                delta = getattr(choice, "delta", None)
+                reasoning_text = self._extract_reasoning_text(delta)
+                if reasoning_text:
+                    yield {"type": "thought", "thought": reasoning_text}
+
+                content = getattr(delta, "content", None)
+                if isinstance(content, str) and content:
+                    yield content
+                    continue
+
+                has_tool_calls = bool(getattr(delta, "tool_calls", None))
+                finish_reason = getattr(choice, "finish_reason", None)
+
+                # Yield non-content chunks only when needed for tool-call handling.
+                if has_tool_calls or finish_reason == "tool_calls":
+                    yield choice
         finally:
             if hasattr(response, "close"):
                 response.close()

@@ -805,7 +805,7 @@ function Thought({
 }) {
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
-  const [isThoughtOpen, setIsThoughtOpen] = useState(true);
+  const [isThoughtOpen, setIsThoughtOpen] = useState(false);
 
   return (
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
