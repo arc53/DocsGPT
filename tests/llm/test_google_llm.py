@@ -141,7 +141,9 @@ def test_raw_gen_stream_does_not_set_thinking_config_by_default(monkeypatch):
     assert captured["config"].thinking_config is None
 
 
-def test_raw_gen_stream_sets_thinking_config_when_explicitly_requested(monkeypatch):
+def test_raw_gen_stream_accepts_include_thoughts_without_setting_thinking_config(
+    monkeypatch,
+):
     captured = {}
 
     def fake_stream(self, *args, **kwargs):
@@ -152,7 +154,7 @@ def test_raw_gen_stream_sets_thinking_config_when_explicitly_requested(monkeypat
 
     llm = GoogleLLM(api_key="key")
     msgs = [{"role": "user", "content": "hello"}]
-    list(
+    out = list(
         llm._raw_gen_stream(
             llm,
             model="gemini",
@@ -162,8 +164,8 @@ def test_raw_gen_stream_sets_thinking_config_when_explicitly_requested(monkeypat
         )
     )
 
-    assert captured["config"].thinking_config is not None
-    assert captured["config"].thinking_config.include_thoughts is True
+    assert out == ["a"]
+    assert captured["config"].thinking_config is None
 
 
 def test_raw_gen_stream_emits_thought_events(monkeypatch):
