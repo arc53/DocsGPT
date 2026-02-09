@@ -277,6 +277,7 @@ export default function Conversation() {
             onClose={handleCloseArtifact}
             artifactId={openArtifact?.id ?? null}
             toolName={openArtifact?.toolName}
+            conversationId={conversationId}
           />
         </div>
       )}
@@ -288,6 +289,7 @@ export default function Conversation() {
           onClose={handleCloseArtifact}
           artifactId={openArtifact?.id ?? null}
           toolName={openArtifact?.toolName}
+          conversationId={conversationId}
         />
       )}
     </div>
