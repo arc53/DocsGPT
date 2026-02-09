@@ -105,6 +105,14 @@ const ConversationBubble = forwardRef<
     completedArtifactCalls[completedArtifactCalls.length - 1] ?? null;
   const artifactCount = completedArtifactCalls.length;
 
+  const formatToolName = (toolName: string | undefined): string => {
+    if (!toolName) return '';
+    return toolName
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
   useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
 
   useEffect(() => {
@@ -419,9 +427,11 @@ const ConversationBubble = forwardRef<
                   d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
                 />
               </svg>
-              {artifactCount > 1
-                ? `View artifacts (${artifactCount})`
-                : 'View artifact'}
+              {primaryArtifactCall.tool_name
+                ? formatToolName(primaryArtifactCall.tool_name)
+                : artifactCount > 1
+                  ? `View artifacts (${artifactCount})`
+                  : 'View artifact'}
             </button>
           </div>
         )}
@@ -627,9 +637,11 @@ const ConversationBubble = forwardRef<
                           d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
                         />
                       </svg>
-                      {artifactCount > 1
-                        ? `Artifacts (${artifactCount})`
-                        : 'Artifact'}
+                      {primaryArtifactCall.tool_name
+                        ? formatToolName(primaryArtifactCall.tool_name)
+                        : artifactCount > 1
+                          ? `Artifacts (${artifactCount})`
+                          : 'Artifact'}
                     </button>
                   </div>
                 )}
