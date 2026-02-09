@@ -1,4 +1,4 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSelector, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { RootState } from '../store';
 
 export interface Attachment {
@@ -147,8 +147,10 @@ export const {
 } = uploadSlice.actions;
 
 export const selectAttachments = (state: RootState) => state.upload.attachments;
-export const selectCompletedAttachments = (state: RootState) =>
-  state.upload.attachments.filter((att) => att.status === 'completed');
+export const selectCompletedAttachments = createSelector(
+  [selectAttachments],
+  (attachments) => attachments.filter((att) => att.status === 'completed'),
+);
 export const selectUploadTasks = (state: RootState) => state.upload.tasks;
 
 export default uploadSlice.reducer;

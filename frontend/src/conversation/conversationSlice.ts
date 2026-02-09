@@ -241,12 +241,21 @@ export const conversationSlice = createSlice({
     },
     resendQuery(
       state,
-      action: PayloadAction<{ index: number; prompt: string; query?: Query }>,
+      action: PayloadAction<{ index: number; prompt: string }>,
     ) {
-      state.queries = [
-        ...state.queries.splice(0, action.payload.index),
-        action.payload,
-      ];
+      const { index, prompt } = action.payload;
+      if (index < 0 || index >= state.queries.length) return;
+
+      state.queries.splice(index + 1);
+      state.queries[index].prompt = prompt;
+      delete state.queries[index].response;
+      delete state.queries[index].thought;
+      delete state.queries[index].sources;
+      delete state.queries[index].tool_calls;
+      delete state.queries[index].error;
+      delete state.queries[index].structured;
+      delete state.queries[index].schema;
+      delete state.queries[index].feedback;
     },
     updateStreamingQuery(
       state,
@@ -370,7 +379,7 @@ export const conversationSlice = createSlice({
       .addCase(fetchAnswer.rejected, (state, action) => {
         if (action.meta.aborted) {
           state.status = 'idle';
-          return state;
+          return;
         }
         state.status = 'failed';
         if (state.queries.length > 0) {
