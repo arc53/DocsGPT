@@ -24,13 +24,12 @@ type ConversationMessagesProps = {
   handleQuestion: (params: {
     question: string;
     isRetry?: boolean;
-    updated?: boolean | null;
-    indx?: number;
+    index?: number;
   }) => void;
   handleQuestionSubmission: (
     updatedQuestion?: string,
     updated?: boolean,
-    indx?: number,
+    index?: number,
   ) => void;
   handleFeedback?: (query: Query, feedback: FEEDBACK, index: number) => void;
   queries: Query[];
@@ -169,7 +168,7 @@ export default function ConversationMessages({
             handleQuestion({
               question: questionToRetry,
               isRetry: true,
-              indx: index,
+              index,
             });
           }}
           aria-label={t('Retry') || 'Retry'}

@@ -266,10 +266,13 @@ export const sharedConversationSlice = createSlice({
       .addCase(fetchSharedAnswer.rejected, (state, action) => {
         if (action.meta.aborted) {
           state.status = 'idle';
-          return state;
+          return;
         }
         state.status = 'failed';
-        state.queries[state.queries.length - 1].error = 'Something went wrong';
+        if (state.queries.length > 0) {
+          state.queries[state.queries.length - 1].error =
+            'Something went wrong';
+        }
       });
   },
 });

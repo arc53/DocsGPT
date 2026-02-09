@@ -3,6 +3,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import agentPreviewReducer from './agents/agentPreviewSlice';
 import { conversationSlice } from './conversation/conversationSlice';
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
+import { getStoredRecentDocs } from './preferences/preferenceApi';
 import {
   Preference,
   prefListenerMiddleware,
@@ -13,7 +14,6 @@ import uploadReducer from './upload/uploadSlice';
 const key = localStorage.getItem('DocsGPTApiKey');
 const prompt = localStorage.getItem('DocsGPTPrompt');
 const chunks = localStorage.getItem('DocsGPTChunks');
-const doc = localStorage.getItem('DocsGPTRecentDocs');
 const selectedModel = localStorage.getItem('DocsGPTSelectedModel');
 
 const preloadedState: { preference: Preference } = {
@@ -30,7 +30,7 @@ const preloadedState: { preference: Preference } = {
       { name: 'strict', id: 'strict', type: 'public' },
     ],
     chunks: JSON.parse(chunks ?? '2').toString(),
-    selectedDocs: doc !== null ? JSON.parse(doc) : [],
+    selectedDocs: getStoredRecentDocs(),
     conversations: {
       data: null,
       loading: false,
