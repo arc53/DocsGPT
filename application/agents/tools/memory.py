@@ -1,5 +1,4 @@
 from datetime import datetime
-import io
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import re
@@ -8,8 +7,6 @@ import uuid
 from .base import Tool
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
-from application.storage.storage_creator import StorageCreator
-from application.utils import safe_filename
 
 
 class MemoryTool(Tool):
@@ -29,27 +26,19 @@ class MemoryTool(Tool):
         """
         self.user_id: Optional[str] = user_id
 
+        # Get tool_id from configuration (passed from user_tools._id in production)
+        # In production, tool_id is the MongoDB ObjectId string from user_tools collection
         if tool_config and "tool_id" in tool_config:
             self.tool_id = tool_config["tool_id"]
         elif user_id:
+            # Fallback for backward compatibility or testing
             self.tool_id = f"default_{user_id}"
         else:
+            # Last resort fallback (shouldn't happen in normal use)
             self.tool_id = str(uuid.uuid4())
 
         db = MongoDB.get_client()[settings.MONGO_DB_NAME]
         self.collection = db["memories"]
-        self.storage = StorageCreator.get_storage()
-
-    def _get_storage_path(self, path: str) -> str:
-        """Get the storage path for a file.
-
-        Constructs path: {UPLOAD_FOLDER}/{safe_user_id}/memories/{safe_tool_id}/{path}
-        """
-        safe_user = safe_filename(self.user_id)
-        safe_tool = safe_filename(self.tool_id)
-        upload_folder = getattr(settings, "UPLOAD_FOLDER", "uploads").rstrip("/")
-        relative_path = path.lstrip("/")
-        return f"{upload_folder}/{safe_user}/memories/{safe_tool}/{relative_path}"
 
     # -----------------------------
     # Action implementations
@@ -321,20 +310,18 @@ class MemoryTool(Tool):
 
     def _view_file(self, path: str, view_range: Optional[List[int]] = None) -> str:
         """View file contents with optional line range."""
-        storage_path = self._get_storage_path(path)
+        doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id, "path": path})
 
-        if not self.storage.file_exists(storage_path):
+        if not doc or not doc.get("content"):
             return f"Error: File not found: {path}"
 
-        try:
-            file_obj = self.storage.get_file(storage_path)
-            content = file_obj.read().decode("utf-8")
-        except Exception:
-            return f"Error: File not found: {path}"
+        content = str(doc["content"])
 
+        # Apply view_range if specified
         if view_range and len(view_range) == 2:
             lines = content.split("\n")
             start, end = view_range
+            # Convert to 0-indexed
             start_idx = max(0, start - 1)
             end_idx = min(len(lines), end)
 
@@ -342,6 +329,7 @@ class MemoryTool(Tool):
                 return f"Error: Line range out of bounds. File has {len(lines)} lines."
 
             selected_lines = lines[start_idx:end_idx]
+            # Add line numbers (enumerate with 1-based start)
             numbered_lines = [f"{i}: {line}" for i, line in enumerate(selected_lines, start=start)]
             return "\n".join(numbered_lines)
 
@@ -356,15 +344,11 @@ class MemoryTool(Tool):
         if validated_path == "/" or validated_path.endswith("/"):
             return "Error: Cannot create a file at directory path."
 
-        storage_path = self._get_storage_path(validated_path)
-        file_data = io.BytesIO(file_text.encode("utf-8"))
-        self.storage.save_file(file_data, storage_path)
-
         self.collection.update_one(
             {"user_id": self.user_id, "tool_id": self.tool_id, "path": validated_path},
             {
                 "$set": {
-                    "storage_path": storage_path,
+                    "content": file_text,
                     "updated_at": datetime.now()
                 }
             },
@@ -382,31 +366,29 @@ class MemoryTool(Tool):
         if not old_str:
             return "Error: old_str is required."
 
-        storage_path = self._get_storage_path(validated_path)
+        doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id, "path": validated_path})
 
-        if not self.storage.file_exists(storage_path):
+        if not doc or not doc.get("content"):
             return f"Error: File not found: {validated_path}"
 
-        try:
-            file_obj = self.storage.get_file(storage_path)
-            current_content = file_obj.read().decode("utf-8")
-        except Exception:
-            return f"Error: File not found: {validated_path}"
+        current_content = str(doc["content"])
 
+        # Check if old_str exists (case-insensitive)
         if old_str.lower() not in current_content.lower():
             return f"Error: String '{old_str}' not found in file."
 
+        # Replace the string (case-insensitive)
         import re as regex_module
-        updated_content = regex_module.sub(
-            regex_module.escape(old_str), new_str, current_content, flags=regex_module.IGNORECASE
-        )
-
-        file_data = io.BytesIO(updated_content.encode("utf-8"))
-        self.storage.save_file(file_data, storage_path)
+        updated_content = regex_module.sub(regex_module.escape(old_str), new_str, current_content, flags=regex_module.IGNORECASE)
 
         self.collection.update_one(
             {"user_id": self.user_id, "tool_id": self.tool_id, "path": validated_path},
-            {"$set": {"updated_at": datetime.now()}}
+            {
+                "$set": {
+                    "content": updated_content,
+                    "updated_at": datetime.now()
+                }
+            }
         )
 
         return f"File updated: {validated_path}"
@@ -420,18 +402,15 @@ class MemoryTool(Tool):
         if not insert_text:
             return "Error: insert_text is required."
 
-        storage_path = self._get_storage_path(validated_path)
+        doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id, "path": validated_path})
 
-        if not self.storage.file_exists(storage_path):
+        if not doc or not doc.get("content"):
             return f"Error: File not found: {validated_path}"
 
-        try:
-            file_obj = self.storage.get_file(storage_path)
-            current_content = file_obj.read().decode("utf-8")
-        except Exception:
-            return f"Error: File not found: {validated_path}"
-
+        current_content = str(doc["content"])
         lines = current_content.split("\n")
+
+        # Convert to 0-indexed
         index = insert_line - 1
         if index < 0 or index > len(lines):
             return f"Error: Invalid line number. File has {len(lines)} lines."
@@ -439,12 +418,14 @@ class MemoryTool(Tool):
         lines.insert(index, insert_text)
         updated_content = "\n".join(lines)
 
-        file_data = io.BytesIO(updated_content.encode("utf-8"))
-        self.storage.save_file(file_data, storage_path)
-
         self.collection.update_one(
             {"user_id": self.user_id, "tool_id": self.tool_id, "path": validated_path},
-            {"$set": {"updated_at": datetime.now()}}
+            {
+                "$set": {
+                    "content": updated_content,
+                    "updated_at": datetime.now()
+                }
+            }
         )
 
         return f"Text inserted at line {insert_line} in {validated_path}"
@@ -456,24 +437,13 @@ class MemoryTool(Tool):
             return "Error: Invalid path."
 
         if validated_path == "/":
-            docs = list(self.collection.find(
-                {"user_id": self.user_id, "tool_id": self.tool_id}, {"path": 1}
-            ))
-            for doc in docs:
-                storage_path = self._get_storage_path(doc["path"])
-                self.storage.delete_file(storage_path)
+            # Delete all files for this user and tool
             result = self.collection.delete_many({"user_id": self.user_id, "tool_id": self.tool_id})
             return f"Deleted {result.deleted_count} file(s) from memory."
 
+        # Check if it's a directory (ends with /)
         if validated_path.endswith("/"):
-            docs = list(self.collection.find({
-                "user_id": self.user_id,
-                "tool_id": self.tool_id,
-                "path": {"$regex": f"^{re.escape(validated_path)}"}
-            }, {"path": 1}))
-            for doc in docs:
-                storage_path = self._get_storage_path(doc["path"])
-                self.storage.delete_file(storage_path)
+            # Delete all files in directory
             result = self.collection.delete_many({
                 "user_id": self.user_id,
                 "tool_id": self.tool_id,
@@ -481,34 +451,27 @@ class MemoryTool(Tool):
             })
             return f"Deleted directory and {result.deleted_count} file(s)."
 
+        # Try to delete as directory first (without trailing slash)
+        # Check if any files start with this path + /
         search_path = validated_path + "/"
-        docs = list(self.collection.find({
+        directory_result = self.collection.delete_many({
             "user_id": self.user_id,
             "tool_id": self.tool_id,
             "path": {"$regex": f"^{re.escape(search_path)}"}
-        }, {"path": 1}))
+        })
 
-        if docs:
-            for doc in docs:
-                storage_path = self._get_storage_path(doc["path"])
-                self.storage.delete_file(storage_path)
-            directory_result = self.collection.delete_many({
-                "user_id": self.user_id,
-                "tool_id": self.tool_id,
-                "path": {"$regex": f"^{re.escape(search_path)}"}
-            })
+        if directory_result.deleted_count > 0:
             return f"Deleted directory and {directory_result.deleted_count} file(s)."
 
-        storage_path = self._get_storage_path(validated_path)
-        if self.storage.file_exists(storage_path):
-            self.storage.delete_file(storage_path)
-            self.collection.delete_one({
-                "user_id": self.user_id,
-                "tool_id": self.tool_id,
-                "path": validated_path
-            })
-            return f"Deleted: {validated_path}"
+        # Delete single file
+        result = self.collection.delete_one({
+            "user_id": self.user_id,
+            "tool_id": self.tool_id,
+            "path": validated_path
+        })
 
+        if result.deleted_count:
+            return f"Deleted: {validated_path}"
         return f"Error: File not found: {validated_path}"
 
     def _rename(self, old_path: str, new_path: str) -> str:
@@ -522,10 +485,13 @@ class MemoryTool(Tool):
         if validated_old == "/" or validated_new == "/":
             return "Error: Cannot rename root directory."
 
+        # Check if renaming a directory
         if validated_old.endswith("/"):
+            # Ensure validated_new also ends with / for proper path replacement
             if not validated_new.endswith("/"):
                 validated_new = validated_new + "/"
 
+            # Find all files in the old directory
             docs = list(self.collection.find({
                 "user_id": self.user_id,
                 "tool_id": self.tool_id,
@@ -535,52 +501,45 @@ class MemoryTool(Tool):
             if not docs:
                 return f"Error: Directory not found: {validated_old}"
 
+            # Update paths for all files
             for doc in docs:
                 old_file_path = doc["path"]
                 new_file_path = old_file_path.replace(validated_old, validated_new, 1)
 
-                old_storage_path = self._get_storage_path(old_file_path)
-                new_storage_path = self._get_storage_path(new_file_path)
-
-                if self.storage.file_exists(old_storage_path):
-                    file_obj = self.storage.get_file(old_storage_path)
-                    content = file_obj.read()
-                    file_data = io.BytesIO(content)
-                    self.storage.save_file(file_data, new_storage_path)
-                    self.storage.delete_file(old_storage_path)
-
                 self.collection.update_one(
                     {"_id": doc["_id"]},
-                    {"$set": {
-                        "path": new_file_path,
-                        "storage_path": new_storage_path,
-                        "updated_at": datetime.now()
-                    }}
+                    {"$set": {"path": new_file_path, "updated_at": datetime.now()}}
                 )
 
             return f"Renamed directory: {validated_old} -> {validated_new} ({len(docs)} files)"
 
-        old_storage_path = self._get_storage_path(validated_old)
-        new_storage_path = self._get_storage_path(validated_new)
+        # Rename single file
+        doc = self.collection.find_one({
+            "user_id": self.user_id,
+            "tool_id": self.tool_id,
+            "path": validated_old
+        })
 
-        if not self.storage.file_exists(old_storage_path):
+        if not doc:
             return f"Error: File not found: {validated_old}"
 
-        if self.storage.file_exists(new_storage_path):
+        # Check if new path already exists
+        existing = self.collection.find_one({
+            "user_id": self.user_id,
+            "tool_id": self.tool_id,
+            "path": validated_new
+        })
+
+        if existing:
             return f"Error: File already exists at {validated_new}"
 
-        file_obj = self.storage.get_file(old_storage_path)
-        content = file_obj.read()
-        file_data = io.BytesIO(content)
-        self.storage.save_file(file_data, new_storage_path)
-        self.storage.delete_file(old_storage_path)
-
+        # Delete the old document and create a new one with the new path
         self.collection.delete_one({"user_id": self.user_id, "tool_id": self.tool_id, "path": validated_old})
         self.collection.insert_one({
             "user_id": self.user_id,
             "tool_id": self.tool_id,
             "path": validated_new,
-            "storage_path": new_storage_path,
+            "content": doc.get("content", ""),
             "updated_at": datetime.now()
         })
 

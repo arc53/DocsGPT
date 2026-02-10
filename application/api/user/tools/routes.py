@@ -545,37 +545,6 @@ class GetArtifact(Resource):
             }
             return make_response(jsonify({"success": True, "artifact": artifact}), 200)
 
-        memory_doc = db["memories"].find_one({"_id": obj_id, "user_id": user_id})
-        if memory_doc:
-            artifact_data = memory_doc.get("artifact_data", {})
-            artifact_type = artifact_data.get("artifact_type", "memory_file")
-            if artifact_type == "memory_directory":
-                artifact = {
-                    "artifact_type": "memory",
-                    "data": {
-                        "artifact_subtype": "directory",
-                        "directory": {
-                            "path": artifact_data.get("path", "/"),
-                            "files": artifact_data.get("files", []),
-                        },
-                    },
-                }
-            else:
-                artifact = {
-                    "artifact_type": "memory",
-                    "data": {
-                        "artifact_subtype": "file",
-                        "file": {
-                            "path": artifact_data.get("path", ""),
-                            "content": artifact_data.get("content", ""),
-                            "storage_path": artifact_data.get("storage_path"),
-                            "file_url": artifact_data.get("file_url"),
-                            "updated_at": artifact_data.get("updated_at"),
-                        },
-                    },
-                }
-            return make_response(jsonify({"success": True, "artifact": artifact}), 200)
-
         return make_response(
             jsonify({"success": False, "message": "Artifact not found"}), 404
         )

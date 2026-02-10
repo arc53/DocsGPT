@@ -192,38 +192,3 @@ class TestGetArtifact:
                 resp = resource.get(str(note_id))
 
         assert resp.status_code == 404
-
-    def test_memory_file_artifact_success(self, mock_mongo_db, flask_app, decoded_token):
-        from application.core.settings import settings
-        from application.api.user.tools.routes import GetArtifact
-
-        db = mock_mongo_db[settings.MONGO_DB_NAME]
-        memory_id = ObjectId()
-        db["memories"].insert_one(
-            {
-                "_id": memory_id,
-                "user_id": decoded_token["sub"],
-                "tool_id": "tool1",
-                "path": "/notes.txt",
-                "artifact_data": {
-                    "artifact_type": "memory_file",
-                    "path": "/notes.txt",
-                    "content": "Hello world",
-                    "updated_at": "2025-01-01T00:00:00",
-                },
-            }
-        )
-
-        with flask_app.app_context():
-            with flask_app.test_request_context():
-                request.decoded_token = decoded_token
-                resource = GetArtifact()
-                resp = resource.get(str(memory_id))
-
-        assert resp.status_code == 200
-        assert resp.json["artifact"]["artifact_type"] == "memory"
-        data = resp.json["artifact"]["data"]
-        assert data["artifact_subtype"] == "file"
-        assert data["file"]["path"] == "/notes.txt"
-        assert data["file"]["content"] == "Hello world"
-
