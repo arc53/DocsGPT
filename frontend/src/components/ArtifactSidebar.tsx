@@ -46,6 +46,7 @@ type ArtifactSidebarProps = {
   onClose: () => void;
   artifactId: string | null;
   toolName?: string;
+  conversationId: string | null;
   /**
    * overlay: current fixed slide-in sidebar
    * split: renders as a normal panel (to be placed in a split layout)
@@ -271,6 +272,7 @@ export default function ArtifactSidebar({
   onClose,
   artifactId,
   toolName,
+  conversationId,
   variant = 'overlay',
 }: ArtifactSidebarProps) {
   const sidebarRef = React.useRef<HTMLDivElement>(null);
@@ -285,6 +287,11 @@ export default function ArtifactSidebar({
   );
 
   const title = getArtifactTitle(artifact, toolName);
+
+  // Reset last successful todo artifact ID when conversation changes
+  useEffect(() => {
+    lastSuccessfulTodoArtifactIdRef.current = null;
+  }, [conversationId]);
 
   // Reset effectiveArtifactId when artifactId changes
   useEffect(() => {
@@ -375,7 +382,7 @@ export default function ArtifactSidebar({
         setError('Failed to fetch artifact');
         setLoading(false);
       });
-  }, [isOpen, effectiveArtifactId, token, toolName]);
+  }, [isOpen, effectiveArtifactId, token, toolName, conversationId]);
 
   const handleClickOutside = (event: MouseEvent) => {
     if (
