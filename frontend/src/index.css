@@ -129,7 +129,7 @@ layer(base);
 
   /* Dark theme scrollbar */
   .dark &::-webkit-scrollbar-thumb {
-    background: #CFCFCF;
+    background: #949494;
     border-radius: 9999px;
   }
 
@@ -141,7 +141,7 @@ layer(base);
   scrollbar-color: #E2E8F0 transparent;
 
   .dark & {
-    scrollbar-color: #CFCFCF transparent;
+    scrollbar-color: #949494 transparent;
   }
 }
 
@@ -189,7 +189,7 @@ layer(base);
 
     .dark & th,
     .dark & td {
-      scrollbar-color: #CFCFCF transparent;
+      scrollbar-color: #949494 transparent;
     }
   }
 }
@@ -224,7 +224,7 @@ layer(base);
     background: #8C9198;
   }
   .dark ::-webkit-scrollbar-thumb {
-    background: #CFCFCF;
+    background: #949494;
   }
   .dark ::-webkit-scrollbar-thumb:hover {
     background: #F0F0F0;
