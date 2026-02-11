@@ -175,7 +175,7 @@ export default function ToolsPopup({
           </div>
         ) : (
           <div className="dark:border-dim-gray mx-4 grow overflow-hidden rounded-md border border-[#D9D9D9]">
-            <div className="h-full overflow-y-auto scrollbar-thin">
+            <div className="h-full overflow-y-auto scrollbar-overlay">
               {filteredTools.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center py-8">
                   <img

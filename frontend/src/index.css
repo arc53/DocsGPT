@@ -145,6 +145,59 @@ layer(base);
   }
 }
 
+@utility scrollbar-overlay {
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 9999px;
+  }
+
+  &:hover::-webkit-scrollbar-thumb {
+    background: #E2E8F0;
+  }
+
+  &:hover::-webkit-scrollbar-thumb:hover {
+    background: #8C9198;
+  }
+
+  .dark &::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 9999px;
+  }
+
+  .dark &:hover::-webkit-scrollbar-thumb {
+    background: #949494;
+  }
+
+  .dark &:hover::-webkit-scrollbar-thumb:hover {
+    background: #F0F0F0;
+  }
+
+  /* Standard scrollbar properties (Chrome 121+, Firefox) */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+
+  &:hover {
+    scrollbar-color: #E2E8F0 transparent;
+  }
+
+  .dark & {
+    scrollbar-color: transparent transparent;
+  }
+
+  .dark &:hover {
+    scrollbar-color: #949494 transparent;
+  }
+}
+
 @utility table-default {
   @apply border-silver dark:border-silver/40 dark:text-bright-gray block w-full table-auto justify-center overflow-auto rounded-xl border text-center;
 
@@ -228,6 +281,17 @@ layer(base);
   }
   .dark ::-webkit-scrollbar-thumb:hover {
     background: #F0F0F0;
+  }
+
+  /* Firefox: base scrollbar styles (Firefox ignores ::-webkit-scrollbar) */
+  @supports (-moz-appearance: none) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: #E2E8F0 transparent;
+    }
+    .dark * {
+      scrollbar-color: #949494 transparent;
+    }
   }
 }
 

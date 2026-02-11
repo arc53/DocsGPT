@@ -139,7 +139,7 @@ export default function SourcesPopup({
           />
         </div>
 
-        <div className="dark:border-dim-gray mx-4 grow overflow-y-auto rounded-md border border-[#D9D9D9] scrollbar-thin">
+        <div className="dark:border-dim-gray mx-4 grow overflow-y-auto rounded-md border border-[#D9D9D9] scrollbar-overlay">
           {options ? (
             <>
               {filteredOptions?.map((option: any, index: number) => {

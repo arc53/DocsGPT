@@ -190,7 +190,7 @@ function Log({
       </div>
       {isOpen && (
         <div className="rounded-b-xl bg-[#F1F1F1] px-4 py-3 dark:bg-[#1B1B1B]">
-          <div className="scrollbar-thin overflow-y-auto">
+          <div className="scrollbar-overlay overflow-y-auto">
             <pre className="px-2 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap text-gray-700 dark:text-gray-400">
               {JSON.stringify(filteredLog, null, 2)}
             </pre>
