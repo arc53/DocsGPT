@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useDebounce } from '../hooks/useDebounce';
 import { useTranslation } from 'react-i18next';
 import { formatBytes } from '../utils/stringUtils';
 import { formatDate } from '../utils/dateTimeUtils';
@@ -90,7 +91,6 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   const [userEmail, setUserEmail] = useState<string>('');
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isFolder = (file: CloudFile) => {
     return (
@@ -259,27 +259,16 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     }
   }, [handleScroll]);
 
-  useEffect(() => {
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
-    };
-  }, []);
+  const debouncedLoadFiles = useDebounce((query: string) => {
+    const sessionToken = getSessionToken(provider);
+    if (sessionToken) {
+      loadCloudFiles(sessionToken, currentFolderId, undefined, query);
+    }
+  }, 300);
 
   const handleSearchChange = (query: string) => {
     setSearchQuery(query);
-
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
-    searchTimeoutRef.current = setTimeout(() => {
-      const sessionToken = getSessionToken(provider);
-      if (sessionToken) {
-        loadCloudFiles(sessionToken, currentFolderId, undefined, query);
-      }
-    }, 300);
+    debouncedLoadFiles(query);
   };
 
   const handleFolderClick = (folderId: string, folderName: string) => {

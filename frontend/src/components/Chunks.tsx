@@ -8,6 +8,7 @@ import {
   useMediaQuery,
   useOutsideAlerter,
 } from '../hooks';
+import { useDebounce } from '../hooks/useDebounce';
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import NoFilesIcon from '../assets/no-files.svg';
@@ -273,16 +274,16 @@ const Chunks: React.FC<ChunksProps> = ({
     setChunkToDelete(null);
   };
 
-  useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      if (page !== 1) {
-        setPage(1);
-      } else {
-        fetchChunks();
-      }
-    }, 300);
+  const debouncedSearch = useDebounce(() => {
+    if (page !== 1) {
+      setPage(1);
+    } else {
+      fetchChunks();
+    }
+  }, 300);
 
-    return () => clearTimeout(delayDebounceFn);
+  useEffect(() => {
+    debouncedSearch();
   }, [searchTerm]);
 
   useEffect(() => {

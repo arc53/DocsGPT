@@ -17,6 +17,7 @@ import Pagination from '../components/DocumentPagination';
 import DropdownMenu from '../components/DropdownMenu';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { useDarkTheme, useLoaderState } from '../hooks';
+import { useDebounce } from '../hooks/useDebounce';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
@@ -57,7 +58,6 @@ export default function Sources({
   const token = useSelector(selectToken);
 
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState<string>('');
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
   const [isOnboarding, setIsOnboarding] = useState<boolean>(false);
   const [loading, setLoading] = useLoaderState(false);
@@ -116,12 +116,12 @@ export default function Sources({
     document: null,
   });
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-    }, 500);
+  const debouncedRefreshDocs = useDebounce(() => {
+    refreshDocs(undefined, 1, rowsPerPage);
+  }, 500);
 
-    return () => clearTimeout(timer);
+  useEffect(() => {
+    debouncedRefreshDocs();
   }, [searchTerm]);
 
   const refreshDocs = useCallback(
@@ -156,7 +156,7 @@ export default function Sources({
         newSortOrder,
         page,
         rowsPerPg,
-        debouncedSearchTerm,
+        searchTerm,
         token,
       )
         .then((data) => {
@@ -168,7 +168,7 @@ export default function Sources({
           setLoading(false);
         });
     },
-    [currentPage, rowsPerPage, sortField, sortOrder, debouncedSearchTerm],
+    [currentPage, rowsPerPage, sortField, sortOrder, searchTerm],
   );
 
   const handleManageSync = (doc: Doc, sync_frequency: string) => {
@@ -330,9 +330,7 @@ export default function Sources({
 
     return actions;
   };
-  useEffect(() => {
-    refreshDocs(undefined, 1, rowsPerPage);
-  }, [debouncedSearchTerm]);
+
 
   return documentToView ? (
     <div className="mt-8 flex flex-col">
