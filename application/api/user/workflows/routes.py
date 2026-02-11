@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Dict, List
 
-from flask import request
+from flask import current_app, request
 from flask_restx import Namespace, Resource
 
 from application.api.user.base import (
@@ -59,6 +59,32 @@ def serialize_edge(e: Dict) -> Dict:
     }
 
 
+def get_workflow_graph_version(workflow: Dict) -> int:
+    """Get current graph version with legacy fallback."""
+    raw_version = workflow.get("current_graph_version", 1)
+    try:
+        version = int(raw_version)
+        return version if version > 0 else 1
+    except (ValueError, TypeError):
+        return 1
+
+
+def fetch_graph_documents(collection, workflow_id: str, graph_version: int) -> List[Dict]:
+    """Fetch graph docs for active version, with fallback for legacy unversioned data."""
+    docs = list(
+        collection.find({"workflow_id": workflow_id, "graph_version": graph_version})
+    )
+    if docs:
+        return docs
+    if graph_version == 1:
+        return list(
+            collection.find(
+                {"workflow_id": workflow_id, "graph_version": {"$exists": False}}
+            )
+        )
+    return docs
+
+
 def validate_workflow_structure(nodes: List[Dict], edges: List[Dict]) -> List[str]:
     """Validate workflow graph structure."""
     errors = []
@@ -98,7 +124,9 @@ def validate_workflow_structure(nodes: List[Dict], edges: List[Dict]) -> List[st
     return errors
 
 
-def create_workflow_nodes(workflow_id: str, nodes_data: List[Dict]) -> None:
+def create_workflow_nodes(
+    workflow_id: str, nodes_data: List[Dict], graph_version: int
+) -> None:
     """Insert workflow nodes into database."""
     if nodes_data:
         workflow_nodes_collection.insert_many(
@@ -106,6 +134,7 @@ def create_workflow_nodes(workflow_id: str, nodes_data: List[Dict]) -> None:
                 {
                     "id": n["id"],
                     "workflow_id": workflow_id,
+                    "graph_version": graph_version,
                     "type": n["type"],
                     "title": n.get("title", ""),
                     "description": n.get("description", ""),
@@ -117,7 +146,9 @@ def create_workflow_nodes(workflow_id: str, nodes_data: List[Dict]) -> None:
         )
 
 
-def create_workflow_edges(workflow_id: str, edges_data: List[Dict]) -> None:
+def create_workflow_edges(
+    workflow_id: str, edges_data: List[Dict], graph_version: int
+) -> None:
     """Insert workflow edges into database."""
     if edges_data:
         workflow_edges_collection.insert_many(
@@ -125,6 +156,7 @@ def create_workflow_edges(workflow_id: str, edges_data: List[Dict]) -> None:
                 {
                     "id": e["id"],
                     "workflow_id": workflow_id,
+                    "graph_version": graph_version,
                     "source_id": e.get("source"),
                     "target_id": e.get("target"),
                     "source_handle": e.get("sourceHandle"),
@@ -162,6 +194,7 @@ class WorkflowList(Resource):
             "user": user_id,
             "created_at": now,
             "updated_at": now,
+            "current_graph_version": 1,
         }
 
         result, error = safe_db_operation(
@@ -174,9 +207,11 @@ class WorkflowList(Resource):
         workflow_id = str(result.inserted_id)
 
         try:
-            create_workflow_nodes(workflow_id, nodes_data)
-            create_workflow_edges(workflow_id, edges_data)
+            create_workflow_nodes(workflow_id, nodes_data, 1)
+            create_workflow_edges(workflow_id, edges_data, 1)
         except Exception as e:
+            workflow_nodes_collection.delete_many({"workflow_id": workflow_id})
+            workflow_edges_collection.delete_many({"workflow_id": workflow_id})
             workflows_collection.delete_one({"_id": result.inserted_id})
             return error_response(f"Failed to create workflow structure: {str(e)}")
 
@@ -200,8 +235,13 @@ class WorkflowDetail(Resource):
         if error:
             return error
 
-        nodes = list(workflow_nodes_collection.find({"workflow_id": workflow_id}))
-        edges = list(workflow_edges_collection.find({"workflow_id": workflow_id}))
+        graph_version = get_workflow_graph_version(workflow)
+        nodes = fetch_graph_documents(
+            workflow_nodes_collection, workflow_id, graph_version
+        )
+        edges = fetch_graph_documents(
+            workflow_edges_collection, workflow_id, graph_version
+        )
 
         return success_response(
             {
@@ -237,6 +277,20 @@ class WorkflowDetail(Resource):
                 "Workflow validation failed", errors=validation_errors
             )
 
+        current_graph_version = get_workflow_graph_version(workflow)
+        next_graph_version = current_graph_version + 1
+        try:
+            create_workflow_nodes(workflow_id, nodes_data, next_graph_version)
+            create_workflow_edges(workflow_id, edges_data, next_graph_version)
+        except Exception as e:
+            workflow_nodes_collection.delete_many(
+                {"workflow_id": workflow_id, "graph_version": next_graph_version}
+            )
+            workflow_edges_collection.delete_many(
+                {"workflow_id": workflow_id, "graph_version": next_graph_version}
+            )
+            return error_response(f"Failed to update workflow structure: {str(e)}")
+
         now = datetime.now(timezone.utc)
         _, error = safe_db_operation(
             lambda: workflows_collection.update_one(
@@ -246,21 +300,54 @@ class WorkflowDetail(Resource):
                         "name": name,
                         "description": data.get("description", ""),
                         "updated_at": now,
+                        "current_graph_version": next_graph_version,
                     }
                 },
             ),
             "Failed to update workflow",
         )
         if error:
+            workflow_nodes_collection.delete_many(
+                {"workflow_id": workflow_id, "graph_version": next_graph_version}
+            )
+            workflow_edges_collection.delete_many(
+                {"workflow_id": workflow_id, "graph_version": next_graph_version}
+            )
             return error
 
-        workflow_nodes_collection.delete_many({"workflow_id": workflow_id})
-        workflow_edges_collection.delete_many({"workflow_id": workflow_id})
+        try:
+            workflow_nodes_collection.delete_many(
+                {"workflow_id": workflow_id, "graph_version": {"$ne": next_graph_version}}
+            )
+            workflow_edges_collection.delete_many(
+                {"workflow_id": workflow_id, "graph_version": {"$ne": next_graph_version}}
+            )
+        except Exception as cleanup_err:
+            current_app.logger.warning(
+                f"Failed to clean old workflow graph versions for {workflow_id}: {cleanup_err}"
+            )
+
+        return success_response()
+
+    @require_auth
+    def delete(self, workflow_id: str):
+        """Delete workflow and its graph."""
+        user_id = get_user_id()
+        obj_id, error = validate_object_id(workflow_id, "Workflow")
+        if error:
+            return error
+
+        workflow, error = check_resource_ownership(
+            workflows_collection, obj_id, user_id, "Workflow"
+        )
+        if error:
+            return error
 
         try:
-            create_workflow_nodes(workflow_id, nodes_data)
-            create_workflow_edges(workflow_id, edges_data)
+            workflow_nodes_collection.delete_many({"workflow_id": workflow_id})
+            workflow_edges_collection.delete_many({"workflow_id": workflow_id})
+            workflows_collection.delete_one({"_id": workflow["_id"], "user": user_id})
         except Exception as e:
-            return error_response(f"Failed to update workflow structure: {str(e)}")
+            return error_response(f"Failed to delete workflow: {str(e)}")
 
         return success_response()

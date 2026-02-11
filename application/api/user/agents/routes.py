@@ -103,6 +103,55 @@ AGENT_TYPE_SCHEMAS["react"] = AGENT_TYPE_SCHEMAS["classic"]
 AGENT_TYPE_SCHEMAS["openai"] = AGENT_TYPE_SCHEMAS["classic"]
 
 
+def normalize_workflow_reference(workflow_value):
+    """Normalize workflow references from form/json payloads."""
+    if workflow_value is None:
+        return None
+    if isinstance(workflow_value, dict):
+        return (
+            workflow_value.get("id")
+            or workflow_value.get("_id")
+            or workflow_value.get("workflow_id")
+        )
+    if isinstance(workflow_value, str):
+        value = workflow_value.strip()
+        if not value:
+            return ""
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, str):
+                return parsed.strip()
+            if isinstance(parsed, dict):
+                return (
+                    parsed.get("id") or parsed.get("_id") or parsed.get("workflow_id")
+                )
+        except json.JSONDecodeError:
+            pass
+        return value
+    return str(workflow_value)
+
+
+def validate_workflow_access(workflow_value, user, required=False):
+    """Validate workflow reference and ensure ownership."""
+    workflow_id = normalize_workflow_reference(workflow_value)
+    if not workflow_id:
+        if required:
+            return None, make_response(
+                jsonify({"success": False, "message": "Workflow is required"}), 400
+            )
+        return None, None
+    if not ObjectId.is_valid(workflow_id):
+        return None, make_response(
+            jsonify({"success": False, "message": "Invalid workflow ID format"}), 400
+        )
+    workflow = workflows_collection.find_one({"_id": ObjectId(workflow_id), "user": user})
+    if not workflow:
+        return None, make_response(
+            jsonify({"success": False, "message": "Workflow not found"}), 404
+        )
+    return workflow_id, None
+
+
 def build_agent_document(
     data, user, key, agent_type, image_url=None, source_field=None, sources_list=None
 ):
@@ -488,6 +537,14 @@ class CreateAgent(Resource):
                 agent_type = "classic"
         else:
             schema = AGENT_TYPE_SCHEMAS[agent_type]
+        is_published = data.get("status") == "published"
+        if agent_type == "workflow":
+            workflow_id, workflow_error = validate_workflow_access(
+                data.get("workflow"), user, required=is_published
+            )
+            if workflow_error:
+                return workflow_error
+            data["workflow"] = workflow_id
         if data.get("status") == "published":
             required_fields = schema["required_published"]
             validate_fields = schema["validate_published"]
@@ -731,6 +788,7 @@ class UpdateAgent(Resource):
             "models",
             "default_model_id",
             "folder_id",
+            "workflow",
         ]
 
         for field in allowed_fields:
@@ -939,6 +997,18 @@ class UpdateAgent(Resource):
                     update_fields[field] = folder_id
                 else:
                     update_fields[field] = None
+            elif field == "workflow":
+                workflow_required = (
+                    data.get("status", existing_agent.get("status")) == "published"
+                    and data.get("agent_type", existing_agent.get("agent_type"))
+                    == "workflow"
+                )
+                workflow_id, workflow_error = validate_workflow_access(
+                    data.get("workflow"), user, required=workflow_required
+                )
+                if workflow_error:
+                    return workflow_error
+                update_fields[field] = workflow_id
             else:
                 value = data[field]
                 if field in ["name", "description", "prompt_id", "agent_type"]:
@@ -982,9 +1052,17 @@ class UpdateAgent(Resource):
                     if not final_value:
                         missing_published_fields.append(field_label)
 
-                workflow_id = existing_agent.get("workflow")
+                workflow_id = update_fields.get("workflow", existing_agent.get("workflow"))
                 if not workflow_id:
                     missing_published_fields.append("Workflow")
+                elif not ObjectId.is_valid(workflow_id):
+                    missing_published_fields.append("Valid workflow")
+                else:
+                    workflow = workflows_collection.find_one(
+                        {"_id": ObjectId(workflow_id), "user": user}
+                    )
+                    if not workflow:
+                        missing_published_fields.append("Workflow access")
 
                 if missing_published_fields:
                     return make_response(
@@ -1110,10 +1188,24 @@ class DeleteAgent(Resource):
             if deleted_agent.get("agent_type") == "workflow" and deleted_agent.get(
                 "workflow"
             ):
-                workflow_id = deleted_agent["workflow"]
-                workflow_nodes_collection.delete_many({"workflow_id": workflow_id})
-                workflow_edges_collection.delete_many({"workflow_id": workflow_id})
-                workflows_collection.delete_one({"_id": ObjectId(workflow_id)})
+                workflow_id = normalize_workflow_reference(deleted_agent.get("workflow"))
+                if workflow_id and ObjectId.is_valid(workflow_id):
+                    workflow_oid = ObjectId(workflow_id)
+                    owned_workflow = workflows_collection.find_one(
+                        {"_id": workflow_oid, "user": user}, {"_id": 1}
+                    )
+                    if owned_workflow:
+                        workflow_nodes_collection.delete_many({"workflow_id": workflow_id})
+                        workflow_edges_collection.delete_many({"workflow_id": workflow_id})
+                        workflows_collection.delete_one({"_id": workflow_oid, "user": user})
+                    else:
+                        current_app.logger.warning(
+                            f"Skipping workflow cleanup for non-owned workflow {workflow_id}"
+                        )
+                elif workflow_id:
+                    current_app.logger.warning(
+                        f"Skipping workflow cleanup for invalid workflow id {workflow_id}"
+                    )
 
         except Exception as err:
             current_app.logger.error(f"Error deleting agent: {err}", exc_info=True)

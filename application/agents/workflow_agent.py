@@ -27,10 +27,12 @@ class WorkflowAgent(BaseAgent):
         *args,
         workflow_id: Optional[str] = None,
         workflow: Optional[Dict[str, Any]] = None,
+        workflow_owner: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.workflow_id = workflow_id
+        self.workflow_owner = workflow_owner
         self._workflow_data = workflow
         self._engine: Optional[WorkflowEngine] = None
 
@@ -103,6 +105,18 @@ class WorkflowAgent(BaseAgent):
         try:
             from bson.objectid import ObjectId
 
+            if not self.workflow_id or not ObjectId.is_valid(self.workflow_id):
+                logger.error(f"Invalid workflow ID: {self.workflow_id}")
+                return None
+            owner_id = self.workflow_owner
+            if not owner_id and isinstance(self.decoded_token, dict):
+                owner_id = self.decoded_token.get("sub")
+            if not owner_id:
+                logger.error(
+                    f"Workflow owner not available for workflow load: {self.workflow_id}"
+                )
+                return None
+
             mongo = MongoDB.get_client()
             db = mongo[settings.MONGO_DB_NAME]
 
@@ -110,20 +124,53 @@ class WorkflowAgent(BaseAgent):
             workflow_nodes_coll = db["workflow_nodes"]
             workflow_edges_coll = db["workflow_edges"]
 
-            workflow_doc = workflows_coll.find_one({"_id": ObjectId(self.workflow_id)})
+            workflow_doc = workflows_coll.find_one(
+                {"_id": ObjectId(self.workflow_id), "user": owner_id}
+            )
             if not workflow_doc:
-                logger.error(f"Workflow {self.workflow_id} not found")
+                logger.error(
+                    f"Workflow {self.workflow_id} not found or inaccessible for user {owner_id}"
+                )
                 return None
             workflow = Workflow(**workflow_doc)
+            graph_version = workflow_doc.get("current_graph_version", 1)
+            try:
+                graph_version = int(graph_version)
+                if graph_version <= 0:
+                    graph_version = 1
+            except (ValueError, TypeError):
+                graph_version = 1
 
             nodes_docs = list(
-                workflow_nodes_coll.find({"workflow_id": self.workflow_id})
+                workflow_nodes_coll.find(
+                    {"workflow_id": self.workflow_id, "graph_version": graph_version}
+                )
             )
+            if not nodes_docs and graph_version == 1:
+                nodes_docs = list(
+                    workflow_nodes_coll.find(
+                        {
+                            "workflow_id": self.workflow_id,
+                            "graph_version": {"$exists": False},
+                        }
+                    )
+                )
             nodes = [WorkflowNode(**doc) for doc in nodes_docs]
 
             edges_docs = list(
-                workflow_edges_coll.find({"workflow_id": self.workflow_id})
+                workflow_edges_coll.find(
+                    {"workflow_id": self.workflow_id, "graph_version": graph_version}
+                )
             )
+            if not edges_docs and graph_version == 1:
+                edges_docs = list(
+                    workflow_edges_coll.find(
+                        {
+                            "workflow_id": self.workflow_id,
+                            "graph_version": {"$exists": False},
+                        }
+                    )
+                )
             edges = [WorkflowEdge(**doc) for doc in edges_docs]
 
             return WorkflowGraph(workflow=workflow, nodes=nodes, edges=edges)

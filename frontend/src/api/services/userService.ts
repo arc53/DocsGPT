@@ -166,6 +166,8 @@ const userService = {
     apiClient.post(endpoints.USER.WORKFLOWS, data, token),
   updateWorkflow: (id: string, data: any, token: string | null): Promise<any> =>
     apiClient.put(endpoints.USER.WORKFLOW(id), data, token),
+  deleteWorkflow: (id: string, token: string | null): Promise<any> =>
+    apiClient.delete(endpoints.USER.WORKFLOW(id), token),
 };
 
 export default userService;

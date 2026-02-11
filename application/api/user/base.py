@@ -57,8 +57,18 @@ try:
     workflow_nodes_collection.create_index(
         [("workflow_id", 1)], name="node_workflow_index", background=True
     )
+    workflow_nodes_collection.create_index(
+        [("workflow_id", 1), ("graph_version", 1)],
+        name="node_workflow_graph_version_index",
+        background=True,
+    )
     workflow_edges_collection.create_index(
         [("workflow_id", 1)], name="edge_workflow_index", background=True
+    )
+    workflow_edges_collection.create_index(
+        [("workflow_id", 1), ("graph_version", 1)],
+        name="edge_workflow_graph_version_index",
+        background=True,
     )
 except Exception as e:
     print("Error creating indexes:", e)

@@ -374,6 +374,7 @@ class StreamProcessor:
                 self.source = {"active_docs": data_key["source"]}
             if data_key.get("workflow"):
                 self.agent_config["workflow"] = data_key["workflow"]
+                self.agent_config["workflow_owner"] = data_key.get("user")
             if data_key.get("retriever"):
                 self.retriever_config["retriever_name"] = data_key["retriever"]
             if data_key.get("chunks") is not None:
@@ -404,6 +405,7 @@ class StreamProcessor:
                 self.source = {"active_docs": data_key["source"]}
             if data_key.get("workflow"):
                 self.agent_config["workflow"] = data_key["workflow"]
+                self.agent_config["workflow_owner"] = data_key.get("user")
             if data_key.get("retriever"):
                 self.retriever_config["retriever_name"] = data_key["retriever"]
             if data_key.get("chunks") is not None:
@@ -421,6 +423,8 @@ class StreamProcessor:
             ):
                 agent_type = "workflow"
                 self.agent_config["workflow"] = self.data["workflow"]
+                if isinstance(self.decoded_token, dict):
+                    self.agent_config["workflow_owner"] = self.decoded_token.get("sub")
 
             self.agent_config.update(
                 {
@@ -767,6 +771,9 @@ class StreamProcessor:
                 agent_kwargs["workflow_id"] = workflow_config
             elif isinstance(workflow_config, dict):
                 agent_kwargs["workflow"] = workflow_config
+            workflow_owner = self.agent_config.get("workflow_owner")
+            if workflow_owner:
+                agent_kwargs["workflow_owner"] = workflow_owner
 
         agent = AgentCreator.create_agent(agent_type, **agent_kwargs)
 

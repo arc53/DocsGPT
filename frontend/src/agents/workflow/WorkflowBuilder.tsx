@@ -493,6 +493,7 @@ function WorkflowBuilderInner() {
     }
 
     setIsPublishing(true);
+    let createdWorkflowId: string | null = null;
     try {
       const workflowPayload = {
         name: workflowName,
@@ -558,6 +559,10 @@ function WorkflowBuilderInner() {
         }
         const responseData = await createResponse.json();
         savedWorkflowId = responseData.id;
+        createdWorkflowId = savedWorkflowId || null;
+        if (savedWorkflowId) {
+          setWorkflowId(savedWorkflowId);
+        }
 
         const agentFormData = new FormData();
         agentFormData.append('name', workflowName);
@@ -574,11 +579,34 @@ function WorkflowBuilderInner() {
           agentFormData,
           null,
         );
-        if (!agentResponse.ok) throw new Error('Failed to create agent');
+        if (!agentResponse.ok) {
+          const errorData = await agentResponse.json().catch(() => ({}));
+          throw new Error(errorData.message || 'Failed to create agent');
+        }
+        const agentData = await agentResponse.json().catch(() => ({}));
+        if (agentData?.id) {
+          setCurrentAgentId(agentData.id);
+        }
       }
 
       navigate(folderId ? `/agents?folder=${folderId}` : '/agents');
     } catch (error) {
+      if (createdWorkflowId) {
+        try {
+          const cleanupResponse = await userService.deleteWorkflow(
+            createdWorkflowId,
+            null,
+          );
+          if (cleanupResponse.ok) {
+            setWorkflowId(null);
+          }
+        } catch (cleanupError) {
+          console.error(
+            'Failed to clean up workflow after publish error:',
+            cleanupError,
+          );
+        }
+      }
       console.error('Failed to publish workflow:', error);
       setPublishErrors([
         error instanceof Error ? error.message : 'Failed to publish workflow',
