@@ -1,0 +1,81 @@
+{
+  "name": "docsgpt",
+  "displayName": "DocsGPT Code Assist",
+  "description": "AI-assisted development powered by DocsGPT",
+  "version": "0.0.2",
+  "publisher": "docsgpt",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:docsgptView",
+    "onView:docsgpt-sidebar",
+    "onCommand:docsgpt.openPanel",
+    "onCommand:docsgpt.setApiKey"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "docsgpt.openPanel",
+        "title": "Open DocsGPT Panel"
+      },
+      {
+        "command": "docsgpt.setApiKey",
+        "title": "Set DocsGPT API Key"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "docsgpt-sidebar",
+          "title": "DocsGPT",
+          "icon": "media/icon.png"
+        }
+      ]
+    },
+    "views": {
+      "docsgpt-sidebar": [
+        {
+          "type": "webview",
+          "id": "docsgptView",
+          "name": "DocsGPT Code Assist"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "DocsGPT",
+      "properties": {
+        "docsgpt.apiUrl": {
+          "type": "string",
+          "default": "https://app.docsgpt.cloud",
+          "description": "The base URL for the DocsGPT API. Change this if you are running a local instance (e.g., http://localhost:5001)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.2",
+    "@types/mocha": "^10.0.7",
+    "@types/node-fetch": "^2.6.13",
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "node-fetch": "^2.7.0"
+  }
+}
