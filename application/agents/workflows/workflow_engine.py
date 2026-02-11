@@ -14,7 +14,6 @@ from application.agents.workflows.schemas import (
 
 if TYPE_CHECKING:
     from application.agents.base import BaseAgent
-    from application.logging import LogContext
 logger = logging.getLogger(__name__)
 
 StateValue = Any
