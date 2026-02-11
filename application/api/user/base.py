@@ -38,6 +38,10 @@ users_collection = db["users"]
 user_logs_collection = db["user_logs"]
 user_tools_collection = db["user_tools"]
 attachments_collection = db["attachments"]
+workflow_runs_collection = db["workflow_runs"]
+workflows_collection = db["workflows"]
+workflow_nodes_collection = db["workflow_nodes"]
+workflow_edges_collection = db["workflow_edges"]
 
 
 try:
@@ -47,6 +51,25 @@ try:
         background=True,
     )
     users_collection.create_index("user_id", unique=True)
+    workflows_collection.create_index(
+        [("user", 1)], name="workflow_user_index", background=True
+    )
+    workflow_nodes_collection.create_index(
+        [("workflow_id", 1)], name="node_workflow_index", background=True
+    )
+    workflow_nodes_collection.create_index(
+        [("workflow_id", 1), ("graph_version", 1)],
+        name="node_workflow_graph_version_index",
+        background=True,
+    )
+    workflow_edges_collection.create_index(
+        [("workflow_id", 1)], name="edge_workflow_index", background=True
+    )
+    workflow_edges_collection.create_index(
+        [("workflow_id", 1), ("graph_version", 1)],
+        name="edge_workflow_graph_version_index",
+        background=True,
+    )
 except Exception as e:
     print("Error creating indexes:", e)
 current_dir = os.path.dirname(

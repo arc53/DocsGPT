@@ -5,6 +5,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import MessageInput from '../components/MessageInput';
 import ConversationMessages from '../conversation/ConversationMessages';
 import { Query } from '../conversation/conversationModels';
+import { selectSelectedAgent } from '../preferences/preferenceSlice';
+import { AppDispatch } from '../store';
 import {
   addQuery,
   fetchPreviewAnswer,
@@ -14,8 +16,6 @@ import {
   selectPreviewQueries,
   selectPreviewStatus,
 } from './agentPreviewSlice';
-import { selectSelectedAgent } from '../preferences/preferenceSlice';
-import { AppDispatch } from '../store';
 
 export default function AgentPreview() {
   const { t } = useTranslation();
@@ -112,7 +112,7 @@ export default function AgentPreview() {
   }, [queries]);
   return (
     <div className="relative h-full w-full">
-      <div className="scrollbar-thin absolute inset-0 bottom-[180px] overflow-hidden px-4 pt-4 [&>div>div]:!w-full [&>div>div]:!max-w-none">
+      <div className="scrollbar-thin absolute inset-0 bottom-[180px] overflow-hidden px-4 pt-4 [&>div>div]:w-full! [&>div>div]:max-w-none!">
         <ConversationMessages
           handleQuestion={handleQuestion}
           handleQuestionSubmission={handleQuestionSubmission}

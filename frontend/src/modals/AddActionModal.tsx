@@ -38,10 +38,7 @@ export default function AddActionModal({
 
   if (modalState !== 'ACTIVE') return null;
   return (
-    <WrapperModal
-      close={() => setModalState('INACTIVE')}
-      className="sm:w-[512px]"
-    >
+    <WrapperModal close={() => setModalState('INACTIVE')} className="sm:w-lg">
       <div>
         <h2 className="text-jet dark:text-bright-gray px-3 text-xl font-semibold">
           {t('modals.addAction.title')}

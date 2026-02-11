@@ -1,13 +1,13 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useDispatch, useSelector } from 'react-redux';
 
+import { AgentFolder } from '../agents/types';
 import userService from '../api/services/userService';
-import FolderIcon from '../assets/folder.svg';
 import ChevronRight from '../assets/chevron-right.svg';
+import FolderIcon from '../assets/folder.svg';
 import { ActiveState } from '../models/misc';
 import { selectToken, setAgentFolders } from '../preferences/preferenceSlice';
-import { AgentFolder } from '../agents/types';
 import WrapperModal from './WrapperModal';
 
 type MoveToFolderModalProps = {
@@ -135,7 +135,7 @@ export default function MoveToFolderModal({
   if (modalState !== 'ACTIVE') return null;
 
   return (
-    <WrapperModal close={() => setModalState('INACTIVE')} className="!p-0">
+    <WrapperModal close={() => setModalState('INACTIVE')} className="p-0!">
       <div className="w-[800px] max-w-[90vw]">
         <div className="px-6 pt-4">
           <h2
@@ -147,7 +147,7 @@ export default function MoveToFolderModal({
               letterSpacing: '0.15px',
             }}
           >
-            {t('agents.folders.move')} "{agentName}" to
+            {t('agents.folders.move')} &quot;{agentName}&quot; to
           </h2>
         </div>
         <div

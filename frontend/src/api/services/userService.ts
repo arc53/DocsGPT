@@ -144,15 +144,15 @@ const userService = {
   createAgentFolder: (
     data: { name: string; parent_id?: string },
     token: string | null,
-  ): Promise<any> =>
-    apiClient.post(endpoints.USER.AGENT_FOLDERS, data, token),
+  ): Promise<any> => apiClient.post(endpoints.USER.AGENT_FOLDERS, data, token),
   getAgentFolder: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.AGENT_FOLDER(id), token),
   updateAgentFolder: (
     id: string,
     data: { name?: string; parent_id?: string },
     token: string | null,
-  ): Promise<any> => apiClient.put(endpoints.USER.AGENT_FOLDER(id), data, token),
+  ): Promise<any> =>
+    apiClient.put(endpoints.USER.AGENT_FOLDER(id), data, token),
   deleteAgentFolder: (id: string, token: string | null): Promise<any> =>
     apiClient.delete(endpoints.USER.AGENT_FOLDER(id), token),
   moveAgentToFolder: (
@@ -160,6 +160,14 @@ const userService = {
     token: string | null,
   ): Promise<any> =>
     apiClient.post(endpoints.USER.MOVE_AGENT_TO_FOLDER, data, token),
+  getWorkflow: (id: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.WORKFLOW(id), token),
+  createWorkflow: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.WORKFLOWS, data, token),
+  updateWorkflow: (id: string, data: any, token: string | null): Promise<any> =>
+    apiClient.put(endpoints.USER.WORKFLOW(id), data, token),
+  deleteWorkflow: (id: string, token: string | null): Promise<any> =>
+    apiClient.delete(endpoints.USER.WORKFLOW(id), token),
 };
 
 export default userService;
