@@ -443,7 +443,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
               <TableContainer
                 ref={scrollContainerRef}
                 height="288px"
-                className="scrollbar-thin md:w-4xl lg:w-5xl"
+                className="scrollbar-overlay md:w-4xl lg:w-5xl"
                 bordered={false}
               >
                 {

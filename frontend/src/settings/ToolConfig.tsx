@@ -273,7 +273,7 @@ export default function ToolConfig({
     });
   };
   return (
-    <div className="scrollbar-thin mt-8 flex flex-col gap-4">
+    <div className="scrollbar-overlay mt-8 flex flex-col gap-4">
       <div className="mb-4 flex items-center justify-between">
         <div className="text-eerie-black dark:text-bright-gray flex items-center gap-3 text-sm">
           <button
@@ -818,7 +818,7 @@ function APIToolConfig({
   };
 
   return (
-    <div className="scrollbar-thin flex flex-col gap-4">
+    <div className="scrollbar-overlay flex flex-col gap-4">
       <div className="relative">
         <input
           type="text"
@@ -1659,7 +1659,7 @@ function APIActionTable({
   };
 
   return (
-    <div className="scrollbar-thin flex flex-col gap-6">
+    <div className="scrollbar-overlay flex flex-col gap-6">
       <div>
         <h3 className="text-eerie-black dark:text-bright-gray mb-1 text-base font-normal">
           {t('settings.tools.headers')}

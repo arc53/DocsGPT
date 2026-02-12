@@ -162,7 +162,7 @@ export default function AgentsList() {
       <h1 className="text-eerie-black mb-0 text-[32px] font-bold lg:text-[40px] dark:text-[#E0E0E0]">
         {t('agents.title')}
       </h1>
-      <p className="dark:text-gray-4000 mt-5 max-w-lg text-[15px] leading-6 text-[#71717A]">
+      <p className="dark:text-gray-4000 mt-5 text-[15px] leading-6 text-[#71717A]">
         {t('agents.description')}
       </p>
 

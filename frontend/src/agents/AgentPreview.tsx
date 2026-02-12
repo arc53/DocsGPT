@@ -112,7 +112,7 @@ export default function AgentPreview() {
   }, [queries]);
   return (
     <div className="relative h-full w-full">
-      <div className="scrollbar-thin absolute inset-0 bottom-[180px] overflow-hidden px-4 pt-4 [&>div>div]:w-full! [&>div>div]:max-w-none!">
+      <div className="scrollbar-overlay absolute inset-0 bottom-[180px] overflow-hidden px-4 pt-4 [&>div>div]:w-full! [&>div>div]:max-w-none!">
         <ConversationMessages
           handleQuestion={handleQuestion}
           handleQuestionSubmission={handleQuestionSubmission}
