@@ -212,7 +212,7 @@ export default function MultiSelectPopup({
             <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-gray-900 dark:border-white"></div>
           </div>
         ) : (
-          <div className="h-full overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-400 dark:[&::-webkit-scrollbar-thumb]:bg-gray-600 [&::-webkit-scrollbar-track]:bg-gray-200 dark:[&::-webkit-scrollbar-track]:bg-[#2C2E3C]">
+          <div className="h-full overflow-y-auto scrollbar-overlay">
             {filteredOptions.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center px-4 py-8 text-center">
                 <img

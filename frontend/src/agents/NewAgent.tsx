@@ -30,6 +30,7 @@ import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
 import AgentPreview from './AgentPreview';
 import { Agent, ToolSummary } from './types';
+import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 import type { Model } from '../models/types';
 
@@ -48,7 +49,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const prompts = useSelector(selectPrompts);
   const agentFolders = useSelector(selectAgentFolders);
 
-  const [validatedFolderId, setValidatedFolderId] = useState<string | null>(null);
+  const [validatedFolderId, setValidatedFolderId] = useState<string | null>(
+    null,
+  );
 
   const [effectiveMode, setEffectiveMode] = useState(mode);
   const [agent, setAgent] = useState<Agent>({
@@ -252,6 +255,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (agent.default_model_id) {
       formData.append('default_model_id', agent.default_model_id);
     }
+    if (agent.agent_type === 'workflow' && agent.workflow) {
+      formData.append('workflow', JSON.stringify(agent.workflow));
+    }
 
     if (effectiveMode === 'new' && validatedFolderId) {
       formData.append('folder_id', validatedFolderId);
@@ -358,6 +364,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
     if (agent.default_model_id) {
       formData.append('default_model_id', agent.default_model_id);
+    }
+    if (agent.agent_type === 'workflow' && agent.workflow) {
+      formData.append('workflow', JSON.stringify(agent.workflow));
     }
 
     if (effectiveMode === 'new' && validatedFolderId) {
@@ -664,6 +673,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         <h1 className="text-eerie-black m-0 text-[32px] font-bold lg:text-[40px] dark:text-white">
           {modeConfig[effectiveMode].heading}
         </h1>
+        {agent.agent_type === 'workflow' && (
+          <div className="mt-4 w-full">
+            <WorkflowBuilder />
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-1">
           <button
             className="text-purple-30 dark:text-light-gray mr-4 rounded-3xl py-2 text-sm font-medium dark:bg-transparent"
@@ -730,7 +744,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         </div>
       </div>
       <div className="mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-[30px] bg-[#F6F6F6] p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden dark:bg-[#383838]">
-        <div className="scrollbar-thin col-span-2 flex flex-col gap-5 max-[1179px]:overflow-visible min-[1180px]:max-h-full min-[1180px]:overflow-y-auto min-[1180px]:pr-3">
+        <div className="scrollbar-overlay col-span-2 flex flex-col gap-5 max-[1179px]:overflow-visible min-[1180px]:max-h-full min-[1180px]:overflow-y-auto min-[1180px]:pr-3">
           <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.meta')}

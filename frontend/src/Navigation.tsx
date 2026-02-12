@@ -394,7 +394,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </NavLink>
         <div
           id="conversationsMainDiv"
-          className="mb-auto h-[78vh] overflow-x-hidden overflow-y-auto dark:text-white"
+          className="mb-auto h-[78vh] overflow-x-hidden overflow-y-auto scrollbar-overlay dark:text-white"
         >
           {conversations?.loading && !isDeletingConversation && (
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform">

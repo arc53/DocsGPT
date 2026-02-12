@@ -4,6 +4,7 @@ import AgentLogs from './AgentLogs';
 import AgentsList from './AgentsList';
 import NewAgent from './NewAgent';
 import SharedAgent from './SharedAgent';
+import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 export default function Agents() {
   return (
@@ -13,6 +14,8 @@ export default function Agents() {
       <Route path="/edit/:agentId" element={<NewAgent mode="edit" />} />
       <Route path="/logs/:agentId" element={<AgentLogs />} />
       <Route path="/shared/:agentId" element={<SharedAgent />} />
+      <Route path="/workflow/new" element={<WorkflowBuilder />} />
+      <Route path="/workflow/edit/:agentId" element={<WorkflowBuilder />} />
     </Routes>
   );
 }
