@@ -25,6 +25,10 @@
     "title": "🗜️ Context Compression",
     "href": "/Guides/compression"
   },
+  "ocr": {
+    "title": "OCR",
+    "href": "/Guides/ocr"
+  },
   "Integrations": {
     "title": "🔗 Integrations"
   }

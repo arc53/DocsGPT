@@ -1,6 +1,7 @@
 import { configureStore } from '@reduxjs/toolkit';
 
 import agentPreviewReducer from './agents/agentPreviewSlice';
+import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
 import { conversationSlice } from './conversation/conversationSlice';
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
 import { getStoredRecentDocs } from './preferences/preferenceApi';
@@ -65,6 +66,7 @@ const store = configureStore({
     sharedConversation: sharedConversationSlice.reducer,
     upload: uploadReducer,
     agentPreview: agentPreviewReducer,
+    workflowPreview: workflowPreviewReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(prefListenerMiddleware.middleware),

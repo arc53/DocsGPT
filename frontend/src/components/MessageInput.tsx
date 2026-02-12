@@ -563,8 +563,7 @@ export default function MessageInput({
       e.preventDefault();
       uploadFiles(files);
     }
-};
-
+  };
 
   const handlePostDocumentSelect = (doc: any) => {
     console.log('Selected document:', doc);

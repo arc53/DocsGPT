@@ -35,6 +35,7 @@ export type Agent = {
   models?: string[];
   default_model_id?: string;
   folder_id?: string;
+  workflow?: string;
 };
 
 export type AgentFolder = {
@@ -44,3 +45,5 @@ export type AgentFolder = {
   created_at?: string;
   updated_at?: string;
 };
+
+export * from './workflow';
