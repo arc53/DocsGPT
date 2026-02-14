@@ -14,38 +14,35 @@ import { UserToolType } from '../settings/types';
 
 const variablePattern = /(\{\{\s*[^{}]+\s*\}\}|\{(?!\{)[^{}]+\})/g;
 
-const escapeHtml = (value: string) =>
-  value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
-const highlightPromptVariables = (text: string) => {
+const highlightPromptVariables = (text: string): React.ReactNode[] => {
   if (!text) {
-    return '&#8203;';
+    return ['\u200B'];
   }
   variablePattern.lastIndex = 0;
-  let result = '';
+  const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
+  let key = 0;
 
   while ((match = variablePattern.exec(text)) !== null) {
     const precedingText = text.slice(lastIndex, match.index);
     if (precedingText) {
-      result += escapeHtml(precedingText);
+      parts.push(precedingText);
     }
-    result += `<span class="prompt-variable-highlight">${escapeHtml(match[0])}</span>`;
+    parts.push(
+      <span key={key++} className="prompt-variable-highlight">
+        {match[0]}
+      </span>,
+    );
     lastIndex = match.index + match[0].length;
   }
 
   const remainingText = text.slice(lastIndex);
   if (remainingText) {
-    result += escapeHtml(remainingText);
+    parts.push(remainingText);
   }
 
-  return result || '&#8203;';
+  return parts.length > 0 ? parts : ['\u200B'];
 };
 
 const systemVariableOptionDefinitions = [
@@ -131,8 +128,9 @@ function PromptTextarea({
           style={{
             transform: `translate(${-scrollOffsets.left}px, ${-scrollOffsets.top}px)`,
           }}
-          dangerouslySetInnerHTML={{ __html: highlightedValue }}
-        />
+        >
+          {highlightedValue}
+        </div>
       </div>
       <textarea
         id={id}
