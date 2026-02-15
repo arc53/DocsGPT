@@ -38,6 +38,8 @@ class TodoListTool(Tool):
         db = MongoDB.get_client()[settings.MONGO_DB_NAME]
         self.collection = db["todos"]
 
+        self._last_artifact_id: Optional[str] = None
+
     # -----------------------------
     # Action implementations
     # -----------------------------
@@ -53,6 +55,8 @@ class TodoListTool(Tool):
         """
         if not self.user_id:
             return "Error: TodoListTool requires a valid user_id."
+
+        self._last_artifact_id = None
 
         if action_name == "list":
             return self._list()
@@ -165,6 +169,9 @@ class TodoListTool(Tool):
         """Return configuration requirements."""
         return {}
 
+    def get_artifact_id(self, action_name: str, **kwargs: Any) -> Optional[str]:
+        return self._last_artifact_id
+
     # -----------------------------
     # Internal helpers
     # -----------------------------
@@ -190,11 +197,8 @@ class TodoListTool(Tool):
         Returns a simple integer (1, 2, 3, ...) scoped to this user/tool.
         With 5-10 todos max, scanning is negligible.
         """
-        # Find all todos for this user/tool and get their IDs
-        todos = list(self.collection.find(
-            {"user_id": self.user_id, "tool_id": self.tool_id},
-            {"todo_id": 1}
-        ))
+        query = {"user_id": self.user_id, "tool_id": self.tool_id}
+        todos = list(self.collection.find(query, {"todo_id": 1}))
 
         # Find the maximum todo_id
         max_id = 0
@@ -207,8 +211,8 @@ class TodoListTool(Tool):
 
     def _list(self) -> str:
         """List all todos for the user."""
-        cursor = self.collection.find({"user_id": self.user_id, "tool_id": self.tool_id})
-        todos = list(cursor)
+        query = {"user_id": self.user_id, "tool_id": self.tool_id}
+        todos = list(self.collection.find(query))
 
         if not todos:
             return "No todos found."
@@ -242,7 +246,10 @@ class TodoListTool(Tool):
             "created_at": now,
             "updated_at": now,
         }
-        self.collection.insert_one(doc)
+        insert_result = self.collection.insert_one(doc)
+        inserted_id = getattr(insert_result, "inserted_id", None) or doc.get("_id")
+        if inserted_id is not None:
+            self._last_artifact_id = str(inserted_id)
         return f"Todo created with ID {todo_id}: {title}"
 
     def _get(self, todo_id: Optional[Any]) -> str:
@@ -251,14 +258,14 @@ class TodoListTool(Tool):
         if parsed_todo_id is None:
             return "Error: todo_id must be a positive integer."
 
-        doc = self.collection.find_one({
-            "user_id": self.user_id,
-            "tool_id": self.tool_id,
-            "todo_id": parsed_todo_id
-        })
+        query = {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": parsed_todo_id}
+        doc = self.collection.find_one(query)
 
         if not doc:
             return f"Error: Todo with ID {parsed_todo_id} not found."
+
+        if doc.get("_id") is not None:
+            self._last_artifact_id = str(doc.get("_id"))
 
         title = doc.get("title", "Untitled")
         status = doc.get("status", "open")
@@ -277,13 +284,16 @@ class TodoListTool(Tool):
         if not title:
             return "Error: Title is required."
 
-        result = self.collection.update_one(
-            {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": parsed_todo_id},
-            {"$set": {"title": title, "updated_at": datetime.now()}}
+        query = {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": parsed_todo_id}
+        doc = self.collection.find_one_and_update(
+            query,
+            {"$set": {"title": title, "updated_at": datetime.now()}},
         )
-
-        if result.matched_count == 0:
+        if not doc:
             return f"Error: Todo with ID {parsed_todo_id} not found."
+
+        if doc.get("_id") is not None:
+            self._last_artifact_id = str(doc.get("_id"))
 
         return f"Todo {parsed_todo_id} updated to: {title}"
 
@@ -293,13 +303,16 @@ class TodoListTool(Tool):
         if parsed_todo_id is None:
             return "Error: todo_id must be a positive integer."
 
-        result = self.collection.update_one(
-            {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": parsed_todo_id},
-            {"$set": {"status": "completed", "updated_at": datetime.now()}}
+        query = {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": parsed_todo_id}
+        doc = self.collection.find_one_and_update(
+            query,
+            {"$set": {"status": "completed", "updated_at": datetime.now()}},
         )
-
-        if result.matched_count == 0:
+        if not doc:
             return f"Error: Todo with ID {parsed_todo_id} not found."
+
+        if doc.get("_id") is not None:
+            self._last_artifact_id = str(doc.get("_id"))
 
         return f"Todo {parsed_todo_id} marked as completed."
 
@@ -309,13 +322,12 @@ class TodoListTool(Tool):
         if parsed_todo_id is None:
             return "Error: todo_id must be a positive integer."
 
-        result = self.collection.delete_one({
-            "user_id": self.user_id,
-            "tool_id": self.tool_id,
-            "todo_id": parsed_todo_id
-        })
-
-        if result.deleted_count == 0:
+        query = {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": parsed_todo_id}
+        doc = self.collection.find_one_and_delete(query)
+        if not doc:
             return f"Error: Todo with ID {parsed_todo_id} not found."
+
+        if doc.get("_id") is not None:
+            self._last_artifact_id = str(doc.get("_id"))
 
         return f"Todo {parsed_todo_id} deleted."

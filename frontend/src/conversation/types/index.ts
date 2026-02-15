@@ -6,4 +6,5 @@ export type ToolCallsType = {
   result?: Record<string, any>;
   error?: string;
   status?: 'pending' | 'completed' | 'error';
+  artifact_id?: string;
 };

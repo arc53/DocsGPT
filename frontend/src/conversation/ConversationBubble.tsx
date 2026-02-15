@@ -62,6 +62,7 @@ const ConversationBubble = forwardRef<
       index?: number,
     ) => void;
     filesAttached?: { id: string; fileName: string }[];
+    onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
   }
 >(function ConversationBubble(
   {
@@ -78,6 +79,7 @@ const ConversationBubble = forwardRef<
     isStreaming,
     handleUpdatedQuestionSubmission,
     filesAttached,
+    onOpenArtifact,
   },
   ref,
 ) {
@@ -95,6 +97,21 @@ const ConversationBubble = forwardRef<
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
+
+  const completedArtifactCalls = (toolCalls ?? []).filter(
+    (toolCall) => toolCall.artifact_id && toolCall.status === 'completed',
+  );
+  const primaryArtifactCall =
+    completedArtifactCalls[completedArtifactCalls.length - 1] ?? null;
+  const artifactCount = completedArtifactCalls.length;
+
+  const formatToolName = (toolName: string | undefined): string => {
+    if (!toolName) return '';
+    return toolName
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
 
   useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
 
@@ -379,6 +396,45 @@ const ConversationBubble = forwardRef<
         {toolCalls && toolCalls.length > 0 && (
           <ToolCalls toolCalls={toolCalls} />
         )}
+        {!message && primaryArtifactCall?.artifact_id && onOpenArtifact && (
+          <div className="my-2 ml-2 flex justify-start">
+            <button
+              type="button"
+              onClick={() =>
+                onOpenArtifact({
+                  id: primaryArtifactCall.artifact_id!,
+                  toolName: primaryArtifactCall.tool_name,
+                })
+              }
+              className="flex items-center gap-2 rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                />
+              </svg>
+              {primaryArtifactCall.tool_name
+                ? formatToolName(primaryArtifactCall.tool_name)
+                : artifactCount > 1
+                  ? `View artifacts (${artifactCount})`
+                  : 'View artifact'}
+            </button>
+          </div>
+        )}
         {thought && (
           <Thought thought={thought} preprocessLaTeX={preprocessLaTeX} />
         )}
@@ -548,6 +604,46 @@ const ConversationBubble = forwardRef<
               </div>
             ) : (
               <>
+                {primaryArtifactCall?.artifact_id && onOpenArtifact && (
+                  <div className="relative mr-2 flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onOpenArtifact({
+                          id: primaryArtifactCall.artifact_id!,
+                          toolName: primaryArtifactCall.tool_name,
+                        })
+                      }
+                      className="flex items-center gap-2 rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+                      aria-label="View artifacts"
+                    >
+                      <svg
+                        className="h-4 w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                        />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                        />
+                      </svg>
+                      {primaryArtifactCall.tool_name
+                        ? formatToolName(primaryArtifactCall.tool_name)
+                        : artifactCount > 1
+                          ? `Artifacts (${artifactCount})`
+                          : 'Artifact'}
+                    </button>
+                  </div>
+                )}
                 {!isStreaming && (
                   <>
                     <div className="relative mr-2 block items-center justify-center">
@@ -692,106 +788,107 @@ export default ConversationBubble;
 
 function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
   const [isToolCallsOpen, setIsToolCallsOpen] = useState(false);
+
   return (
-    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-      <div className="my-2 flex flex-row items-center justify-center gap-3">
-        <Avatar
-          className="h-[26px] w-[30px] text-xl"
-          avatar={
-            <img
-              src={Sources}
-              alt={'ToolCalls'}
-              className="h-full w-full object-fill"
-            />
-          }
-        />
-        <button
-          className="flex flex-row items-center gap-2"
-          onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}
-        >
-          <p className="text-base font-semibold">Tool Calls</p>
-          <img
-            src={ChevronDown}
-            alt="ChevronDown"
-            className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen ? 'rotate-180' : ''}`}
+		<div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+        <div className="my-2 flex flex-row items-center justify-center gap-3">
+          <Avatar
+            className="h-[26px] w-[30px] text-xl"
+            avatar={
+              <img
+                src={Sources}
+                alt={'ToolCalls'}
+                className="h-full w-full object-fill"
+              />
+            }
           />
-        </button>
-      </div>
-      {isToolCallsOpen && (
-        <div className="fade-in mr-5 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
-          <div className="grid grid-cols-1 gap-2">
-            {toolCalls.map((toolCall, index) => (
-              <Accordion
-                key={`tool-call-${index}`}
-                title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
-                className="bg-gray-1000 dark:bg-gun-metal w-full rounded-4xl hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
-                titleClassName="px-6 py-2 text-sm font-semibold"
-              >
-                <div className="flex flex-col gap-1">
-                  <div className="border-silver dark:border-silver/20 flex flex-col rounded-2xl border">
-                    <p className="dark:bg-eerie-black-2 flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
-                      <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                        Arguments
-                      </span>{' '}
-                      <CopyButton
-                        textToCopy={JSON.stringify(toolCall.arguments, null, 2)}
-                      />
-                    </p>
-                    <p className="dark:tex dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                      <span
-                        className="leading-[23px] text-black dark:text-gray-400"
-                        style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                      >
-                        {JSON.stringify(toolCall.arguments, null, 2)}
-                      </span>
-                    </p>
-                  </div>
-                  <div className="border-silver dark:border-silver/20 flex flex-col rounded-2xl border">
-                    <p className="dark:bg-eerie-black-2 flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
-                      <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                        Response
-                      </span>{' '}
-                      <CopyButton
-                        textToCopy={
-                          toolCall.status === 'error'
-                            ? toolCall.error || 'Unknown error'
-                            : JSON.stringify(toolCall.result, null, 2)
-                        }
-                      />
-                    </p>
-                    {toolCall.status === 'pending' && (
-                      <span className="dark:bg-raisin-black flex w-full items-center justify-center rounded-b-2xl p-2">
-                        <Spinner size="small" />
-                      </span>
-                    )}
-                    {toolCall.status === 'completed' && (
-                      <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+          <button
+            className="flex flex-row items-center gap-2"
+            onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}
+          >
+            <p className="text-base font-semibold">Tool Calls</p>
+            <img
+              src={ChevronDown}
+              alt="ChevronDown"
+              className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+        </div>
+        {isToolCallsOpen && (
+          <div className="fade-in mr-5 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
+            <div className="grid grid-cols-1 gap-2">
+              {toolCalls.map((toolCall, index) => (
+                <Accordion
+                  key={`tool-call-${index}`}
+                  title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
+                  className="bg-gray-1000 dark:bg-gun-metal w-full rounded-4xl hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
+                  titleClassName="px-6 py-2 text-sm font-semibold"
+                >
+                  <div className="flex flex-col gap-1">
+                    <div className="border-silver dark:border-silver/20 flex flex-col rounded-2xl border">
+                      <p className="dark:bg-eerie-black-2 flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
+                        <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                          Arguments
+                        </span>{' '}
+                        <CopyButton
+                          textToCopy={JSON.stringify(toolCall.arguments, null, 2)}
+                        />
+                      </p>
+                      <p className="dark:tex dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
                         <span
                           className="leading-[23px] text-black dark:text-gray-400"
                           style={{ fontFamily: 'IBMPlexMono-Medium' }}
                         >
-                          {JSON.stringify(toolCall.result, null, 2)}
+                          {JSON.stringify(toolCall.arguments, null, 2)}
                         </span>
                       </p>
-                    )}
-                    {toolCall.status === 'error' && (
-                      <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                        <span
-                          className="leading-[23px] text-red-500 dark:text-red-400"
-                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                        >
-                          {toolCall.error}
-                        </span>
+                    </div>
+                    <div className="border-silver dark:border-silver/20 flex flex-col rounded-2xl border">
+                      <p className="dark:bg-eerie-black-2 flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
+                        <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                          Response
+                        </span>{' '}
+                        <CopyButton
+                          textToCopy={
+                            toolCall.status === 'error'
+                              ? toolCall.error || 'Unknown error'
+                              : JSON.stringify(toolCall.result, null, 2)
+                          }
+                        />
                       </p>
-                    )}
+                      {toolCall.status === 'pending' && (
+                        <span className="dark:bg-raisin-black flex w-full items-center justify-center rounded-b-2xl p-2">
+                          <Spinner size="small" />
+                        </span>
+                      )}
+                      {toolCall.status === 'completed' && (
+                        <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                          <span
+                            className="leading-[23px] text-black dark:text-gray-400"
+                            style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                          >
+                            {JSON.stringify(toolCall.result, null, 2)}
+                          </span>
+                        </p>
+                      )}
+                      {toolCall.status === 'error' && (
+                        <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                          <span
+                            className="leading-[23px] text-red-500 dark:text-red-400"
+                            style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                          >
+                            {toolCall.error}
+                          </span>
+                        </p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </Accordion>
-            ))}
+                </Accordion>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+		</div>
   );
 }
 
