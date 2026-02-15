@@ -51,6 +51,7 @@ import {
   setSharedAgents,
 } from './preferences/preferenceSlice';
 import Upload from './upload/Upload';
+import { Tooltip } from 'react-tooltip'
 
 interface NavigationProps {
   navOpen: boolean;
@@ -297,7 +298,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     return () => {
       window.removeEventListener('keydown', handleNavOpen);
     };
-  }, []);
+  }, [setNavOpen]);
 
 
   useEffect(() => {
@@ -317,19 +318,24 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         <div className="absolute top-3 left-3 z-20 hidden transition-all duration-300 ease-in-out lg:block">
           <div className="flex items-center gap-3">
             {!navOpen && (
-              <button
-                id="open-nav-button"
-                onClick={() => {
-                  setNavOpen(!navOpen);
-                }}
-                className="transition-transform duration-200 hover:scale-110"
-              >
-                <img
-                  src={PanelLeftOpen}
-                  alt="Open navigation menu"
-                  className="m-auto transition-all duration-300 ease-in-out"
-                />
-              </button>
+              <>
+                <Tooltip id="nav-tooltip" />
+                <button
+                  data-tooltip-id="nav-tooltip"
+                  data-tooltip-content="ctrl + shift + s"
+                  id="open-nav-button"
+                  onClick={() => {
+                    setNavOpen(!navOpen);
+                  }}
+                  className="transition-transform duration-200 hover:scale-110"
+                  >
+                  <img
+                    src={PanelLeftOpen}
+                    alt="Open navigation menu"
+                    className="m-auto transition-all duration-300 ease-in-out"
+                    />
+                </button>
+              </>
             )}
             {queries?.length > 0 && (
               <button
@@ -373,7 +379,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               <p className="my-auto text-2xl font-semibold">DocsGPT</p>
             </a>
           </div>
+          <Tooltip id="nav-tooltip" />
           <button
+            data-tooltip-id="nav-tooltip"
+            data-tooltip-content="ctrl + shift + s"
             className="float-right mr-5"
             onClick={() => {
               setNavOpen(!navOpen);

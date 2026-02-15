@@ -38,6 +38,7 @@
     "react-redux": "^9.2.0",
     "react-router-dom": "^7.6.1",
     "react-syntax-highlighter": "^15.6.1",
+    "react-tooltip": "^5.30.0",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.0",
     "remark-math": "^6.0.0",
