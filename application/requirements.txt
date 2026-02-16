@@ -1,6 +1,7 @@
 anthropic==0.75.0
 boto3==1.42.17
 beautifulsoup4==4.14.3
+cel-python==0.5.0
 celery==5.6.0
 cryptography==46.0.3
 dataclasses-json==0.6.7

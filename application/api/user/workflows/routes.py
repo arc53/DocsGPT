@@ -102,6 +102,9 @@ def validate_workflow_structure(nodes: List[Dict], edges: List[Dict]) -> List[st
         errors.append("Workflow must have at least one end node")
 
     node_ids = {n.get("id") for n in nodes}
+    node_map = {n.get("id"): n for n in nodes}
+    end_ids = {n.get("id") for n in end_nodes}
+
     for edge in edges:
         source_id = edge.get("source")
         target_id = edge.get("target")
@@ -115,6 +118,30 @@ def validate_workflow_structure(nodes: List[Dict], edges: List[Dict]) -> List[st
         if not any(e.get("source") == start_id for e in edges):
             errors.append("Start node must have at least one outgoing edge")
 
+    condition_nodes = [n for n in nodes if n.get("type") == "condition"]
+    for cnode in condition_nodes:
+        cnode_id = cnode.get("id")
+        outgoing = [e for e in edges if e.get("source") == cnode_id]
+        if len(outgoing) < 2:
+            errors.append(
+                f"Condition node '{cnode.get('title', cnode_id)}' must have at least 2 outgoing edges"
+            )
+        node_data = cnode.get("data", {})
+        cases = node_data.get("cases", [])
+        if not cases or not any(c.get("expression", "").strip() for c in cases):
+            errors.append(
+                f"Condition node '{cnode.get('title', cnode_id)}' must have at least one case with an expression"
+            )
+
+        for out_edge in outgoing:
+            target = out_edge.get("target")
+            if target and not _can_reach_end(target, edges, node_map, end_ids):
+                handle = out_edge.get("sourceHandle", "branch")
+                errors.append(
+                    f"Branch '{handle}' of condition '{cnode.get('title', cnode_id)}' "
+                    f"must eventually reach an end node"
+                )
+
     for node in nodes:
         if not node.get("id"):
             errors.append("All nodes must have an id")
@@ -122,6 +149,20 @@ def validate_workflow_structure(nodes: List[Dict], edges: List[Dict]) -> List[st
             errors.append(f"Node {node.get('id', 'unknown')} must have a type")
 
     return errors
+
+
+def _can_reach_end(
+    node_id: str, edges: List[Dict], node_map: Dict, end_ids: set, visited: set = None
+) -> bool:
+    if visited is None:
+        visited = set()
+    if node_id in end_ids:
+        return True
+    if node_id in visited or node_id not in node_map:
+        return False
+    visited.add(node_id)
+    outgoing = [e.get("target") for e in edges if e.get("source") == node_id]
+    return any(_can_reach_end(t, edges, node_map, end_ids, visited) for t in outgoing if t)
 
 
 def create_workflow_nodes(

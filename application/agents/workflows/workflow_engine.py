@@ -2,9 +2,11 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional, TYPE_CHECKING
 
+from application.agents.workflows.cel_evaluator import CelEvaluationError, evaluate_cel
 from application.agents.workflows.node_agent import WorkflowNodeAgentFactory
 from application.agents.workflows.schemas import (
     AgentNodeConfig,
+    ConditionNodeConfig,
     ExecutionStatus,
     NodeExecutionLog,
     NodeType,
@@ -28,6 +30,7 @@ class WorkflowEngine:
         self.agent = agent
         self.state: WorkflowState = {}
         self.execution_log: List[Dict[str, Any]] = []
+        self._condition_result: Optional[str] = None
 
     def execute(
         self, initial_inputs: WorkflowState, query: str
@@ -98,6 +101,10 @@ class WorkflowEngine:
             if node.type == NodeType.END:
                 break
             current_node_id = self._get_next_node_id(current_node_id)
+            if current_node_id is None and node.type != NodeType.END:
+                logger.warning(
+                    f"Branch ended at node '{node.title}' ({node.id}) without reaching an end node"
+                )
             steps += 1
         if steps >= self.MAX_EXECUTION_STEPS:
             logger.warning(
@@ -121,10 +128,20 @@ class WorkflowEngine:
         }
 
     def _get_next_node_id(self, current_node_id: str) -> Optional[str]:
+        node = self.graph.get_node_by_id(current_node_id)
         edges = self.graph.get_outgoing_edges(current_node_id)
-        if edges:
-            return edges[0].target_id
-        return None
+        if not edges:
+            return None
+
+        if node and node.type == NodeType.CONDITION and self._condition_result:
+            target_handle = self._condition_result
+            self._condition_result = None
+            for edge in edges:
+                if edge.source_handle == target_handle:
+                    return edge.target_id
+            return None
+
+        return edges[0].target_id
 
     def _execute_node(
         self, node: WorkflowNode
@@ -136,6 +153,7 @@ class WorkflowEngine:
             NodeType.NOTE: self._execute_note_node,
             NodeType.AGENT: self._execute_agent_node,
             NodeType.STATE: self._execute_state_node,
+            NodeType.CONDITION: self._execute_condition_node,
             NodeType.END: self._execute_end_node,
         }
 
@@ -158,7 +176,7 @@ class WorkflowEngine:
     ) -> Generator[Dict[str, str], None, None]:
         from application.core.model_utils import get_api_key_for_provider
 
-        node_config = AgentNodeConfig(**node.config)
+        node_config = AgentNodeConfig(**node.config.get("config", node.config))
 
         if node_config.prompt_template:
             formatted_prompt = self._format_template(node_config.prompt_template)
@@ -195,59 +213,42 @@ class WorkflowEngine:
             self._has_streamed = True
 
         output_key = node_config.output_variable or f"node_{node.id}_output"
-        self.state[output_key] = full_response
+        self.state[output_key] = full_response.strip()
 
     def _execute_state_node(
         self, node: WorkflowNode
     ) -> Generator[Dict[str, str], None, None]:
-        config = node.config
-        operations = config.get("operations", [])
+        config = node.config.get("config", node.config)
+        for op in config.get("operations", []):
+            expression = op.get("expression", "")
+            target_variable = op.get("target_variable", "")
+            if expression and target_variable:
+                self.state[target_variable] = evaluate_cel(expression, self.state)
+        yield from ()
 
-        if operations:
-            for op in operations:
-                key = op.get("key")
-                operation = op.get("operation", "set")
-                value = op.get("value")
+    def _execute_condition_node(
+        self, node: WorkflowNode
+    ) -> Generator[Dict[str, str], None, None]:
+        config = ConditionNodeConfig(**node.config.get("config", node.config))
+        matched_handle = None
 
-                if not key:
-                    continue
-                if operation == "set":
-                    formatted_value = (
-                        self._format_template(str(value))
-                        if isinstance(value, str)
-                        else value
-                    )
-                    self.state[key] = formatted_value
-                elif operation == "increment":
-                    current = self.state.get(key, 0)
-                    try:
-                        self.state[key] = int(current) + int(value or 1)
-                    except (ValueError, TypeError):
-                        self.state[key] = 1
-                elif operation == "append":
-                    if key not in self.state:
-                        self.state[key] = []
-                    if isinstance(self.state[key], list):
-                        self.state[key].append(value)
-        else:
-            updates = config.get("updates", {})
-            if not updates:
-                var_name = config.get("variable")
-                var_value = config.get("value")
-                if var_name and isinstance(var_name, str):
-                    updates = {var_name: var_value or ""}
-            if isinstance(updates, dict):
-                for key, value in updates.items():
-                    if isinstance(value, str):
-                        self.state[key] = self._format_template(value)
-                    else:
-                        self.state[key] = value
+        for case in config.cases:
+            if not case.expression.strip():
+                continue
+            try:
+                if evaluate_cel(case.expression, self.state):
+                    matched_handle = case.source_handle
+                    break
+            except CelEvaluationError:
+                continue
+
+        self._condition_result = matched_handle or "else"
         yield from ()
 
     def _execute_end_node(
         self, node: WorkflowNode
     ) -> Generator[Dict[str, str], None, None]:
-        config = node.config
+        config = node.config.get("config", node.config)
         output_template = str(config.get("output_template", ""))
         if output_template:
             formatted_output = self._format_template(output_template)
