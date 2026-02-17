@@ -69,7 +69,7 @@ pydantic
 pydantic-core
 pydantic-settings
 pymongo==4.15.5
-pypdf==6.5.0
+pypdf==6.6.0
 python-dateutil==2.9.0.post0
 python-dotenv
 python-jose==3.5.0
