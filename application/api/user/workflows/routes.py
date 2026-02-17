@@ -1,7 +1,7 @@
 """Workflow management routes."""
 
 from datetime import datetime, timezone
-from typing import Dict, List
+from typing import Dict, List, Set
 
 from flask import current_app, request
 from flask_restx import Namespace, Resource
@@ -102,6 +102,9 @@ def validate_workflow_structure(nodes: List[Dict], edges: List[Dict]) -> List[st
         errors.append("Workflow must have at least one end node")
 
     node_ids = {n.get("id") for n in nodes}
+    node_map = {n.get("id"): n for n in nodes}
+    end_ids = {n.get("id") for n in end_nodes}
+
     for edge in edges:
         source_id = edge.get("source")
         target_id = edge.get("target")
@@ -115,6 +118,104 @@ def validate_workflow_structure(nodes: List[Dict], edges: List[Dict]) -> List[st
         if not any(e.get("source") == start_id for e in edges):
             errors.append("Start node must have at least one outgoing edge")
 
+    condition_nodes = [n for n in nodes if n.get("type") == "condition"]
+    for cnode in condition_nodes:
+        cnode_id = cnode.get("id")
+        cnode_title = cnode.get("title", cnode_id)
+        outgoing = [e for e in edges if e.get("source") == cnode_id]
+        if len(outgoing) < 2:
+            errors.append(
+                f"Condition node '{cnode_title}' must have at least 2 outgoing edges"
+            )
+        node_data = cnode.get("data", {}) or {}
+        cases = node_data.get("cases", [])
+        if not isinstance(cases, list):
+            cases = []
+        if not cases or not any(
+            isinstance(c, dict) and str(c.get("expression", "")).strip() for c in cases
+        ):
+            errors.append(
+                f"Condition node '{cnode_title}' must have at least one case with an expression"
+            )
+
+        case_handles: Set[str] = set()
+        duplicate_case_handles: Set[str] = set()
+        for case in cases:
+            if not isinstance(case, dict):
+                continue
+            raw_handle = case.get("sourceHandle", "")
+            handle = raw_handle.strip() if isinstance(raw_handle, str) else ""
+            if not handle:
+                errors.append(
+                    f"Condition node '{cnode_title}' has a case without a branch handle"
+                )
+                continue
+            if handle in case_handles:
+                duplicate_case_handles.add(handle)
+            case_handles.add(handle)
+
+        for handle in duplicate_case_handles:
+            errors.append(
+                f"Condition node '{cnode_title}' has duplicate case handle '{handle}'"
+            )
+
+        outgoing_by_handle: Dict[str, List[Dict]] = {}
+        for out_edge in outgoing:
+            raw_handle = out_edge.get("sourceHandle", "")
+            handle = raw_handle.strip() if isinstance(raw_handle, str) else ""
+            outgoing_by_handle.setdefault(handle, []).append(out_edge)
+
+        for handle, handle_edges in outgoing_by_handle.items():
+            if not handle:
+                errors.append(
+                    f"Condition node '{cnode_title}' has an outgoing edge without sourceHandle"
+                )
+                continue
+            if handle != "else" and handle not in case_handles:
+                errors.append(
+                    f"Condition node '{cnode_title}' has a connection from unknown branch '{handle}'"
+                )
+            if len(handle_edges) > 1:
+                errors.append(
+                    f"Condition node '{cnode_title}' has multiple outgoing edges from branch '{handle}'"
+                )
+
+        if "else" not in outgoing_by_handle:
+            errors.append(f"Condition node '{cnode_title}' must have an 'else' branch")
+
+        for case in cases:
+            if not isinstance(case, dict):
+                continue
+            raw_handle = case.get("sourceHandle", "")
+            handle = raw_handle.strip() if isinstance(raw_handle, str) else ""
+            if not handle:
+                continue
+
+            raw_expression = case.get("expression", "")
+            has_expression = isinstance(raw_expression, str) and bool(
+                raw_expression.strip()
+            )
+            has_outgoing = bool(outgoing_by_handle.get(handle))
+            if has_expression and not has_outgoing:
+                errors.append(
+                    f"Condition node '{cnode_title}' case '{handle}' has an expression but no outgoing edge"
+                )
+            if not has_expression and has_outgoing:
+                errors.append(
+                    f"Condition node '{cnode_title}' case '{handle}' has an outgoing edge but no expression"
+                )
+
+        for handle, handle_edges in outgoing_by_handle.items():
+            if not handle:
+                continue
+            for out_edge in handle_edges:
+                target = out_edge.get("target")
+                if target and not _can_reach_end(target, edges, node_map, end_ids):
+                    errors.append(
+                        f"Branch '{handle}' of condition '{cnode_title}' "
+                        f"must eventually reach an end node"
+                    )
+
     for node in nodes:
         if not node.get("id"):
             errors.append("All nodes must have an id")
@@ -122,6 +223,20 @@ def validate_workflow_structure(nodes: List[Dict], edges: List[Dict]) -> List[st
             errors.append(f"Node {node.get('id', 'unknown')} must have a type")
 
     return errors
+
+
+def _can_reach_end(
+    node_id: str, edges: List[Dict], node_map: Dict, end_ids: set, visited: set = None
+) -> bool:
+    if visited is None:
+        visited = set()
+    if node_id in end_ids:
+        return True
+    if node_id in visited or node_id not in node_map:
+        return False
+    visited.add(node_id)
+    outgoing = [e.get("target") for e in edges if e.get("source") == node_id]
+    return any(_can_reach_end(t, edges, node_map, end_ids, visited) for t in outgoing if t)
 
 
 def create_workflow_nodes(

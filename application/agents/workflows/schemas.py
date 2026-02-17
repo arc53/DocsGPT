@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from bson import ObjectId
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -12,6 +12,7 @@ class NodeType(str, Enum):
     AGENT = "agent"
     NOTE = "note"
     STATE = "state"
+    CONDITION = "condition"
 
 
 class AgentType(str, Enum):
@@ -46,6 +47,25 @@ class AgentNodeConfig(BaseModel):
     retriever: str = ""
     model_id: Optional[str] = None
     json_schema: Optional[Dict[str, Any]] = None
+
+
+class ConditionCase(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    name: Optional[str] = None
+    expression: str = ""
+    source_handle: str = Field(..., alias="sourceHandle")
+
+
+class ConditionNodeConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    mode: Literal["simple", "advanced"] = "simple"
+    cases: List[ConditionCase] = Field(default_factory=list)
+
+
+class StateOperation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expression: str = ""
+    target_variable: str = ""
 
 
 class WorkflowEdgeCreate(BaseModel):

@@ -4,6 +4,7 @@ import {
   Circle,
   Database,
   Flag,
+  GitBranch,
   Loader2,
   MessageSquare,
   Play,
@@ -53,6 +54,7 @@ const NODE_ICONS: Record<string, React.ReactNode> = {
   end: <Flag className="h-3 w-3" />,
   note: <StickyNote className="h-3 w-3" />,
   state: <Database className="h-3 w-3" />,
+  condition: <GitBranch className="h-3 w-3" />,
 };
 
 const NODE_COLORS: Record<string, string> = {
@@ -61,6 +63,7 @@ const NODE_COLORS: Record<string, string> = {
   end: 'text-gray-600 dark:text-gray-400',
   note: 'text-yellow-600 dark:text-yellow-400',
   state: 'text-blue-600 dark:text-blue-400',
+  condition: 'text-orange-600 dark:text-orange-400',
 };
 
 function ExecutionDetails({
@@ -267,20 +270,17 @@ function WorkflowMiniMap({
       case 'failed':
         return 'bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700';
       default:
-        if (nodeType === 'start') {
-          return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
-        }
-        if (nodeType === 'agent') {
-          return 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800';
-        }
-        if (nodeType === 'end') {
-          return 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
-        }
         return 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
     }
   };
 
+  const executedOrder = new Map(executionSteps.map((s, i) => [s.nodeId, i]));
   const sortedNodes = [...nodes].sort((a, b) => {
+    const aIdx = executedOrder.get(a.id);
+    const bIdx = executedOrder.get(b.id);
+    if (aIdx !== undefined && bIdx !== undefined) return aIdx - bIdx;
+    if (aIdx !== undefined) return -1;
+    if (bIdx !== undefined) return 1;
     if (a.type === 'start') return -1;
     if (b.type === 'start') return 1;
     if (a.type === 'end') return 1;

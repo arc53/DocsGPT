@@ -1,4 +1,20 @@
-export type NodeType = 'start' | 'end' | 'agent' | 'note' | 'state';
+export type NodeType = 'start' | 'end' | 'agent' | 'note' | 'state' | 'condition';
+
+export interface ConditionCase {
+  name?: string;
+  expression: string;
+  sourceHandle: string;
+}
+
+export interface ConditionNodeConfig {
+  mode: 'simple' | 'advanced';
+  cases: ConditionCase[];
+}
+
+export interface StateOperationConfig {
+  expression: string;
+  target_variable: string;
+}
 
 export interface WorkflowEdge {
   id: string;
