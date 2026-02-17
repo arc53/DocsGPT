@@ -1,7 +1,9 @@
-import React, { memo } from 'react';
+import { Bot, Flag, Play, StickyNote } from 'lucide-react';
+import { memo } from 'react';
+
 import { BaseNode } from './BaseNode';
+import ConditionNode from './ConditionNode';
 import SetStateNode from './SetStateNode';
-import { Play, Bot, StickyNote, Flag } from 'lucide-react';
 
 export const StartNode = memo(function StartNode({
   selected,
@@ -142,3 +144,4 @@ export const NoteNode = memo(function NoteNode({
 });
 
 export { SetStateNode };
+export { ConditionNode };
