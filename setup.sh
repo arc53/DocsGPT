@@ -9,9 +9,10 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 # Base Compose file (relative to script location)
-COMPOSE_FILE="$(dirname "$(readlink -f "$0")")/deployment/docker-compose-hub.yaml"
-COMPOSE_FILE_LOCAL="$(dirname "$(readlink -f "$0")")/deployment/docker-compose.yaml"
-ENV_FILE="$(dirname "$(readlink -f "$0")")/.env"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd -P)"
+COMPOSE_FILE="${SCRIPT_DIR}/deployment/docker-compose-hub.yaml"
+COMPOSE_FILE_LOCAL="${SCRIPT_DIR}/deployment/docker-compose.yaml"
+ENV_FILE="${SCRIPT_DIR}/.env"
 
 # Animation function
 animate_dino() {
@@ -155,7 +156,7 @@ prompt_cloud_api_provider_options() {
     echo -e "${YELLOW}7) Novita${NC}"
     echo -e "${YELLOW}b) Back to Main Menu${NC}"
     echo
-    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-6, or b): ${NC}")" provider_choice
+    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-7, or b): ${NC}")" provider_choice
 }
 
 # Function to prompt for Ollama CPU/GPU options
@@ -170,12 +171,272 @@ prompt_ollama_options() {
     read -p "$(echo -e "${DEFAULT_FG}Choose option (1-2, or b): ${NC}")" ollama_choice
 }
 
+# ========================
+# Advanced Settings Functions
+# ========================
+
+# Vector Store configuration
+configure_vector_store() {
+    echo -e "\n${DEFAULT_FG}${BOLD}Vector Store Configuration${NC}"
+    echo -e "${DEFAULT_FG}Choose your vector store:${NC}"
+    echo -e "${YELLOW}1) FAISS (default, local)${NC}"
+    echo -e "${YELLOW}2) Elasticsearch${NC}"
+    echo -e "${YELLOW}3) Qdrant${NC}"
+    echo -e "${YELLOW}4) Milvus${NC}"
+    echo -e "${YELLOW}5) LanceDB${NC}"
+    echo -e "${YELLOW}6) PGVector${NC}"
+    echo -e "${YELLOW}b) Back${NC}"
+    echo
+    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-6, or b): ${NC}")" vs_choice
+
+    case "$vs_choice" in
+        1)
+            echo "VECTOR_STORE=faiss" >> "$ENV_FILE"
+            echo -e "${GREEN}Vector store set to FAISS.${NC}"
+            ;;
+        2)
+            echo "VECTOR_STORE=elasticsearch" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter Elasticsearch URL (e.g. http://localhost:9200): ${NC}")" elastic_url
+            [ -n "$elastic_url" ] && echo "ELASTIC_URL=$elastic_url" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter Elasticsearch Cloud ID (leave empty if using URL): ${NC}")" elastic_cloud_id
+            [ -n "$elastic_cloud_id" ] && echo "ELASTIC_CLOUD_ID=$elastic_cloud_id" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter Elasticsearch username (leave empty if none): ${NC}")" elastic_user
+            [ -n "$elastic_user" ] && echo "ELASTIC_USERNAME=$elastic_user" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter Elasticsearch password (leave empty if none): ${NC}")" elastic_pass
+            [ -n "$elastic_pass" ] && echo "ELASTIC_PASSWORD=$elastic_pass" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter Elasticsearch index name (default: docsgpt): ${NC}")" elastic_index
+            echo "ELASTIC_INDEX=${elastic_index:-docsgpt}" >> "$ENV_FILE"
+            echo -e "${GREEN}Vector store set to Elasticsearch.${NC}"
+            ;;
+        3)
+            echo "VECTOR_STORE=qdrant" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter Qdrant URL (e.g. http://localhost:6333): ${NC}")" qdrant_url
+            [ -n "$qdrant_url" ] && echo "QDRANT_URL=$qdrant_url" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter Qdrant API key (leave empty if none): ${NC}")" qdrant_key
+            [ -n "$qdrant_key" ] && echo "QDRANT_API_KEY=$qdrant_key" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter Qdrant collection name (default: docsgpt): ${NC}")" qdrant_collection
+            echo "QDRANT_COLLECTION_NAME=${qdrant_collection:-docsgpt}" >> "$ENV_FILE"
+            echo -e "${GREEN}Vector store set to Qdrant.${NC}"
+            ;;
+        4)
+            echo "VECTOR_STORE=milvus" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter Milvus URI (default: ./milvus_local.db): ${NC}")" milvus_uri
+            echo "MILVUS_URI=${milvus_uri:-./milvus_local.db}" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter Milvus token (leave empty if none): ${NC}")" milvus_token
+            [ -n "$milvus_token" ] && echo "MILVUS_TOKEN=$milvus_token" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter Milvus collection name (default: docsgpt): ${NC}")" milvus_collection
+            echo "MILVUS_COLLECTION_NAME=${milvus_collection:-docsgpt}" >> "$ENV_FILE"
+            echo -e "${GREEN}Vector store set to Milvus.${NC}"
+            ;;
+        5)
+            echo "VECTOR_STORE=lancedb" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter LanceDB path (default: ./data/lancedb): ${NC}")" lancedb_path
+            echo "LANCEDB_PATH=${lancedb_path:-./data/lancedb}" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter LanceDB table name (default: docsgpts): ${NC}")" lancedb_table
+            echo "LANCEDB_TABLE_NAME=${lancedb_table:-docsgpts}" >> "$ENV_FILE"
+            echo -e "${GREEN}Vector store set to LanceDB.${NC}"
+            ;;
+        6)
+            echo "VECTOR_STORE=pgvector" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter PGVector connection string (e.g. postgresql://user:pass@host:5432/db): ${NC}")" pgvector_conn
+            [ -n "$pgvector_conn" ] && echo "PGVECTOR_CONNECTION_STRING=$pgvector_conn" >> "$ENV_FILE"
+            echo -e "${GREEN}Vector store set to PGVector.${NC}"
+            ;;
+        b|B) return ;;
+        *) echo -e "\n${RED}Invalid choice.${NC}" ; sleep 1 ;;
+    esac
+}
+
+# Embeddings configuration
+configure_embeddings() {
+    echo -e "\n${DEFAULT_FG}${BOLD}Embeddings Configuration${NC}"
+    echo -e "${DEFAULT_FG}Choose your embeddings provider:${NC}"
+    echo -e "${YELLOW}1) HuggingFace (default, local)${NC}"
+    echo -e "${YELLOW}2) OpenAI Embeddings${NC}"
+    echo -e "${YELLOW}3) Custom Remote Embeddings (OpenAI-compatible API)${NC}"
+    echo -e "${YELLOW}b) Back${NC}"
+    echo
+    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-3, or b): ${NC}")" emb_choice
+
+    case "$emb_choice" in
+        1)
+            echo "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" >> "$ENV_FILE"
+            echo -e "${GREEN}Embeddings set to HuggingFace (local).${NC}"
+            ;;
+        2)
+            echo "EMBEDDINGS_NAME=openai_text-embedding-ada-002" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter Embeddings API key (leave empty to reuse LLM API_KEY): ${NC}")" emb_key
+            [ -n "$emb_key" ] && echo "EMBEDDINGS_KEY=$emb_key" >> "$ENV_FILE"
+            echo -e "${GREEN}Embeddings set to OpenAI.${NC}"
+            ;;
+        3)
+            read -p "$(echo -e "${DEFAULT_FG}Enter embeddings model name: ${NC}")" emb_name
+            [ -n "$emb_name" ] && echo "EMBEDDINGS_NAME=$emb_name" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter remote embeddings API base URL: ${NC}")" emb_url
+            [ -n "$emb_url" ] && echo "EMBEDDINGS_BASE_URL=$emb_url" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter embeddings API key (leave empty if none): ${NC}")" emb_key
+            [ -n "$emb_key" ] && echo "EMBEDDINGS_KEY=$emb_key" >> "$ENV_FILE"
+            echo -e "${GREEN}Custom remote embeddings configured.${NC}"
+            ;;
+        b|B) return ;;
+        *) echo -e "\n${RED}Invalid choice.${NC}" ; sleep 1 ;;
+    esac
+}
+
+# Authentication configuration
+configure_auth() {
+    echo -e "\n${DEFAULT_FG}${BOLD}Authentication Configuration${NC}"
+    echo -e "${DEFAULT_FG}Choose authentication type:${NC}"
+    echo -e "${YELLOW}1) None (default, no authentication)${NC}"
+    echo -e "${YELLOW}2) Simple JWT${NC}"
+    echo -e "${YELLOW}3) Session JWT${NC}"
+    echo -e "${YELLOW}b) Back${NC}"
+    echo
+    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-3, or b): ${NC}")" auth_choice
+
+    case "$auth_choice" in
+        1)
+            echo -e "${GREEN}Authentication disabled (default).${NC}"
+            ;;
+        2)
+            echo "AUTH_TYPE=simple_jwt" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter JWT secret key (leave empty to auto-generate): ${NC}")" jwt_key
+            if [ -n "$jwt_key" ]; then
+                echo "JWT_SECRET_KEY=$jwt_key" >> "$ENV_FILE"
+            else
+                generated_key=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
+                echo "JWT_SECRET_KEY=$generated_key" >> "$ENV_FILE"
+                echo -e "${YELLOW}Auto-generated JWT secret key.${NC}"
+            fi
+            echo -e "${GREEN}Authentication set to Simple JWT.${NC}"
+            ;;
+        3)
+            echo "AUTH_TYPE=session_jwt" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter JWT secret key (leave empty to auto-generate): ${NC}")" jwt_key
+            if [ -n "$jwt_key" ]; then
+                echo "JWT_SECRET_KEY=$jwt_key" >> "$ENV_FILE"
+            else
+                generated_key=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
+                echo "JWT_SECRET_KEY=$generated_key" >> "$ENV_FILE"
+                echo -e "${YELLOW}Auto-generated JWT secret key.${NC}"
+            fi
+            echo -e "${GREEN}Authentication set to Session JWT.${NC}"
+            ;;
+        b|B) return ;;
+        *) echo -e "\n${RED}Invalid choice.${NC}" ; sleep 1 ;;
+    esac
+}
+
+# Integrations configuration
+configure_integrations() {
+    echo -e "\n${DEFAULT_FG}${BOLD}Integrations Configuration${NC}"
+    echo -e "${YELLOW}1) Google Drive${NC}"
+    echo -e "${YELLOW}2) GitHub${NC}"
+    echo -e "${YELLOW}b) Back${NC}"
+    echo
+    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-2, or b): ${NC}")" int_choice
+
+    case "$int_choice" in
+        1)
+            read -p "$(echo -e "${DEFAULT_FG}Enter Google OAuth Client ID: ${NC}")" google_id
+            [ -n "$google_id" ] && echo "GOOGLE_CLIENT_ID=$google_id" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter Google OAuth Client Secret: ${NC}")" google_secret
+            [ -n "$google_secret" ] && echo "GOOGLE_CLIENT_SECRET=$google_secret" >> "$ENV_FILE"
+            echo -e "${GREEN}Google Drive integration configured.${NC}"
+            ;;
+        2)
+            read -p "$(echo -e "${DEFAULT_FG}Enter GitHub Personal Access Token (with repo read access): ${NC}")" github_token
+            [ -n "$github_token" ] && echo "GITHUB_ACCESS_TOKEN=$github_token" >> "$ENV_FILE"
+            echo -e "${GREEN}GitHub integration configured.${NC}"
+            ;;
+        b|B) return ;;
+        *) echo -e "\n${RED}Invalid choice.${NC}" ; sleep 1 ;;
+    esac
+}
+
+# Document Processing configuration
+configure_doc_processing() {
+    echo -e "\n${DEFAULT_FG}${BOLD}Document Processing Configuration${NC}"
+    read -p "$(echo -e "${DEFAULT_FG}Parse PDF pages as images for better table/chart extraction? (y/N): ${NC}")" pdf_image
+    if [[ "$pdf_image" =~ ^[yY]$ ]]; then
+        echo "PARSE_PDF_AS_IMAGE=true" >> "$ENV_FILE"
+        echo -e "${GREEN}PDF-as-image parsing enabled.${NC}"
+    fi
+
+    read -p "$(echo -e "${DEFAULT_FG}Enable OCR for document processing (Docling)? (y/N): ${NC}")" ocr_enabled
+    if [[ "$ocr_enabled" =~ ^[yY]$ ]]; then
+        echo "DOCLING_OCR_ENABLED=true" >> "$ENV_FILE"
+        echo -e "${GREEN}Docling OCR enabled.${NC}"
+    fi
+}
+
+# Text-to-Speech configuration
+configure_tts() {
+    echo -e "\n${DEFAULT_FG}${BOLD}Text-to-Speech Configuration${NC}"
+    echo -e "${DEFAULT_FG}Choose TTS provider:${NC}"
+    echo -e "${YELLOW}1) Google TTS (default, free)${NC}"
+    echo -e "${YELLOW}2) ElevenLabs${NC}"
+    echo -e "${YELLOW}b) Back${NC}"
+    echo
+    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-2, or b): ${NC}")" tts_choice
+
+    case "$tts_choice" in
+        1)
+            echo "TTS_PROVIDER=google_tts" >> "$ENV_FILE"
+            echo -e "${GREEN}TTS set to Google TTS.${NC}"
+            ;;
+        2)
+            echo "TTS_PROVIDER=elevenlabs" >> "$ENV_FILE"
+            read -p "$(echo -e "${DEFAULT_FG}Enter ElevenLabs API key: ${NC}")" elevenlabs_key
+            [ -n "$elevenlabs_key" ] && echo "ELEVENLABS_API_KEY=$elevenlabs_key" >> "$ENV_FILE"
+            echo -e "${GREEN}TTS set to ElevenLabs.${NC}"
+            ;;
+        b|B) return ;;
+        *) echo -e "\n${RED}Invalid choice.${NC}" ; sleep 1 ;;
+    esac
+}
+
+# Main advanced settings menu
+prompt_advanced_settings() {
+    echo
+    read -p "$(echo -e "${DEFAULT_FG}Would you like to configure advanced settings? (y/N): ${NC}")" configure_advanced
+    if [[ ! "$configure_advanced" =~ ^[yY]$ ]]; then
+        return
+    fi
+
+    while true; do
+        echo -e "\n${DEFAULT_FG}${BOLD}Advanced Settings${NC}"
+        echo -e "${YELLOW}1) Vector Store         ${NC}${DEFAULT_FG}(default: faiss)${NC}"
+        echo -e "${YELLOW}2) Embeddings           ${NC}${DEFAULT_FG}(default: HuggingFace local)${NC}"
+        echo -e "${YELLOW}3) Authentication       ${NC}${DEFAULT_FG}(default: none)${NC}"
+        echo -e "${YELLOW}4) Integrations         ${NC}${DEFAULT_FG}(Google Drive, GitHub)${NC}"
+        echo -e "${YELLOW}5) Document Processing  ${NC}${DEFAULT_FG}(PDF as image, OCR)${NC}"
+        echo -e "${YELLOW}6) Text-to-Speech       ${NC}${DEFAULT_FG}(default: Google TTS)${NC}"
+        echo -e "${YELLOW}s) Save and Continue with Docker setup${NC}"
+        echo
+        read -p "$(echo -e "${DEFAULT_FG}Choose option (1-6, or s): ${NC}")" adv_choice
+
+        case "$adv_choice" in
+            1) configure_vector_store ;;
+            2) configure_embeddings ;;
+            3) configure_auth ;;
+            4) configure_integrations ;;
+            5) configure_doc_processing ;;
+            6) configure_tts ;;
+            s|S) break ;;
+            *) echo -e "\n${RED}Invalid choice.${NC}" ; sleep 1 ;;
+        esac
+    done
+}
+
 # 1) Use DocsGPT Public API Endpoint (simple and free)
 use_docs_public_api_endpoint() {
     echo -e "\n${NC}Setting up DocsGPT Public API Endpoint...${NC}"
     echo "LLM_PROVIDER=docsgpt" > "$ENV_FILE"
     echo "VITE_API_STREAMING=true" >> "$ENV_FILE"
     echo -e "${GREEN}.env file configured for DocsGPT Public API.${NC}"
+
+    prompt_advanced_settings
 
     check_and_start_docker
 
@@ -229,11 +490,11 @@ serve_local_ollama() {
                         docker_compose_file_suffix="gpu"
                         get_model_name_ollama
                         break ;;
-                    b|B) clear; return ;; # Back to Main Menu
+                    b|B) clear; return 1 ;; # Back to Main Menu
                     *) echo -e "\n${RED}Invalid choice. Please choose y or b.${NC}" ; sleep 1 ;;
                 esac
                 ;;
-            b|B) clear; return ;; # Back to Main Menu
+            b|B) clear; return 1 ;; # Back to Main Menu
             *) echo -e "\n${RED}Invalid choice. Please choose 1-2, or b.${NC}" ; sleep 1 ;;
         esac
     done
@@ -248,6 +509,7 @@ serve_local_ollama() {
     echo "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" >> "$ENV_FILE"
     echo -e "${GREEN}.env file configured for Ollama ($(echo "$docker_compose_file_suffix" | tr '[:lower:]' '[:upper:]')${NC}${GREEN}).${NC}"
 
+    prompt_advanced_settings
 
     check_and_start_docker
     local compose_files=(
@@ -346,7 +608,7 @@ connect_local_inference_engine() {
                 openai_base_url="http://host.docker.internal:23333/v1"
                 get_model_name
                 break ;;
-            b|B) clear; return ;; # Back to Main Menu
+            b|B) clear; return 1 ;; # Back to Main Menu
             *) echo -e "\n${RED}Invalid choice. Please choose 1-8, or b.${NC}" ; sleep 1 ;;
         esac
     done
@@ -360,6 +622,8 @@ connect_local_inference_engine() {
     echo "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" >> "$ENV_FILE"
     echo -e "${GREEN}.env file configured for ${BOLD}${engine_name}${NC}${GREEN} with OpenAI API format.${NC}"
     echo -e "${YELLOW}Note: MODEL_NAME is set to '${BOLD}$model_name${NC}${YELLOW}'. You can change it later in the .env file.${NC}"
+
+    prompt_advanced_settings
 
     check_and_start_docker
 
@@ -431,6 +695,11 @@ connect_cloud_api_provider() {
                 llm_provider="azure_openai"
                 model_name="gpt-4o"
                 get_api_key
+                echo -e "\n${DEFAULT_FG}${BOLD}Azure OpenAI requires additional configuration:${NC}"
+                read -p "$(echo -e "${DEFAULT_FG}Enter Azure OpenAI API base URL (e.g. https://your-resource.openai.azure.com/): ${NC}")" azure_api_base
+                read -p "$(echo -e "${DEFAULT_FG}Enter Azure OpenAI API version (e.g. 2024-02-15-preview): ${NC}")" azure_api_version
+                read -p "$(echo -e "${DEFAULT_FG}Enter Azure deployment name for chat: ${NC}")" azure_deployment
+                read -p "$(echo -e "${DEFAULT_FG}Enter Azure deployment name for embeddings (leave empty to skip): ${NC}")" azure_emb_deployment
                 break ;;
             7) # Novita
                 provider_name="Novita"
@@ -438,8 +707,8 @@ connect_cloud_api_provider() {
                 model_name="deepseek/deepseek-r1"
                 get_api_key
                 break ;;
-            b|B) clear; return ;; # Clear screen and Back to Main Menu
-            *) echo -e "\n${RED}Invalid choice. Please choose 1-6, or b.${NC}" ; sleep 1 ;;
+            b|B) clear; return 1 ;; # Clear screen and Back to Main Menu
+            *) echo -e "\n${RED}Invalid choice. Please choose 1-7, or b.${NC}" ; sleep 1 ;;
         esac
     done
 
@@ -448,7 +717,18 @@ connect_cloud_api_provider() {
     echo "LLM_PROVIDER=$llm_provider" >> "$ENV_FILE"
     echo "LLM_NAME=$model_name" >> "$ENV_FILE"
     echo "VITE_API_STREAMING=true" >> "$ENV_FILE"
+
+    # Azure OpenAI additional settings
+    if [ "$llm_provider" = "azure_openai" ]; then
+        [ -n "$azure_api_base" ] && echo "OPENAI_API_BASE=$azure_api_base" >> "$ENV_FILE"
+        [ -n "$azure_api_version" ] && echo "OPENAI_API_VERSION=$azure_api_version" >> "$ENV_FILE"
+        [ -n "$azure_deployment" ] && echo "AZURE_DEPLOYMENT_NAME=$azure_deployment" >> "$ENV_FILE"
+        [ -n "$azure_emb_deployment" ] && echo "AZURE_EMBEDDINGS_DEPLOYMENT_NAME=$azure_emb_deployment" >> "$ENV_FILE"
+    fi
+
     echo -e "${GREEN}.env file configured for ${BOLD}${provider_name}${NC}${GREEN}.${NC}"
+
+    prompt_advanced_settings
 
     check_and_start_docker
 
@@ -472,6 +752,21 @@ connect_cloud_api_provider() {
 # Main script execution
 animate_dino
 
+# Check if .env file exists and is not empty
+if [ -f "$ENV_FILE" ] && [ -s "$ENV_FILE" ]; then
+    echo -e "\n${YELLOW}${BOLD}Warning:${NC}${YELLOW} An existing .env file was found with the following settings:${NC}"
+    head -3 "$ENV_FILE" | while IFS= read -r line; do echo -e "${DEFAULT_FG}  $line${NC}"; done
+    total_lines=$(wc -l < "$ENV_FILE")
+    if [ "$total_lines" -gt 3 ]; then
+        echo -e "${DEFAULT_FG}  ... and $((total_lines - 3)) more lines${NC}"
+    fi
+    echo
+    read -p "$(echo -e "${YELLOW}Running setup will overwrite this file. Continue? (y/N): ${NC}")" confirm_overwrite
+    if [[ ! "$confirm_overwrite" =~ ^[yY]$ ]]; then
+        echo -e "${GREEN}Setup cancelled. Your .env file was not modified.${NC}"
+        exit 0
+    fi
+fi
 
 while true; do # Main menu loop
     clear # Clear screen before showing main menu again
@@ -479,18 +774,15 @@ while true; do # Main menu loop
 
     case $main_choice in
         1) # Use DocsGPT Public API Endpoint (Docker Hub images)
-            COMPOSE_FILE="$(dirname "$(readlink -f "$0")")/deployment/docker-compose-hub.yaml"
+            COMPOSE_FILE="${SCRIPT_DIR}/deployment/docker-compose-hub.yaml"
             use_docs_public_api_endpoint
             break ;;
         2) # Serve Local (with Ollama)
-            serve_local_ollama
-            break ;;
+            serve_local_ollama && break ;;
         3) # Connect Local Inference Engine
-            connect_local_inference_engine
-            break ;;
+            connect_local_inference_engine && break ;;
         4) # Connect Cloud API Provider
-            connect_cloud_api_provider
-            break ;;
+            connect_cloud_api_provider && break ;;
         5) # Advanced: Build images locally
             echo -e "\n${YELLOW}You have selected to build images locally. This is recommended for developers or if you want to test local changes.${NC}"
             COMPOSE_FILE="$COMPOSE_FILE_LOCAL"
