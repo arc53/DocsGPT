@@ -128,6 +128,52 @@ function buildSimpleCel(
   return `${variable} ${operator} ${quoted}`;
 }
 
+function normalizeConditionCases(cases: ConditionCase[]): ConditionCase[] {
+  const usedHandles = new Set<string>();
+  let nextIndex = 0;
+
+  return cases.map((conditionCase) => {
+    const candidate = (conditionCase.sourceHandle || '').trim();
+    if (candidate && !usedHandles.has(candidate)) {
+      usedHandles.add(candidate);
+      const match = candidate.match(/^case_(\d+)$/);
+      if (match) {
+        nextIndex = Math.max(nextIndex, Number(match[1]) + 1);
+      }
+      return conditionCase;
+    }
+
+    while (usedHandles.has(`case_${nextIndex}`)) {
+      nextIndex += 1;
+    }
+    const generatedHandle = `case_${nextIndex}`;
+    usedHandles.add(generatedHandle);
+    nextIndex += 1;
+
+    return {
+      ...conditionCase,
+      sourceHandle: generatedHandle,
+    };
+  });
+}
+
+function getNextConditionHandle(cases: ConditionCase[]): string {
+  const usedHandles = new Set(
+    cases.map((conditionCase) => conditionCase.sourceHandle).filter(Boolean),
+  );
+  const usedIndices = Array.from(usedHandles)
+    .map((handle) => handle.match(/^case_(\d+)$/))
+    .filter((match): match is RegExpMatchArray => Boolean(match))
+    .map((match) => Number(match[1]));
+
+  let nextIndex = usedIndices.length > 0 ? Math.max(...usedIndices) + 1 : 0;
+  while (usedHandles.has(`case_${nextIndex}`)) {
+    nextIndex += 1;
+  }
+
+  return `case_${nextIndex}`;
+}
+
 function WorkflowBuilderInner() {
   const navigate = useNavigate();
   const { agentId } = useParams<{ agentId?: string }>();
@@ -445,7 +491,10 @@ function WorkflowBuilderInner() {
             if (n.type === 'agent' && n.data) {
               nodeData.config = n.data;
             } else if (n.type === 'condition' && n.data) {
-              nodeData.config = n.data;
+              nodeData.config = {
+                ...n.data,
+                cases: normalizeConditionCases(n.data.cases || []),
+              };
             } else if (n.type === 'state' && n.data) {
               nodeData.config = n.data;
             } else if (n.data) {
@@ -551,26 +600,102 @@ function WorkflowBuilderInner() {
 
     const conditionNodes = nodes.filter((n) => n.type === 'condition');
     conditionNodes.forEach((node) => {
-      const cases = node.data?.config?.cases || [];
+      const conditionTitle = node.data?.title || node.id;
+      const cases = (node.data?.config?.cases || []) as ConditionCase[];
       if (
         !cases.length ||
-        !cases.some((c: ConditionCase) => c.expression.trim())
+        !cases.some((c: ConditionCase) => Boolean((c.expression || '').trim()))
       ) {
         errors.push(
-          `Condition "${node.data?.title || node.id}" must have at least one case with an expression`,
+          `Condition "${conditionTitle}" must have at least one case with an expression`,
         );
       }
+
+      const caseHandles = new Set<string>();
+      const duplicateCaseHandles = new Set<string>();
+      cases.forEach((conditionCase: ConditionCase) => {
+        const handle = (conditionCase.sourceHandle || '').trim();
+        if (!handle) {
+          errors.push(
+            `Condition "${conditionTitle}" has a case without a branch handle`,
+          );
+          return;
+        }
+        if (caseHandles.has(handle)) {
+          duplicateCaseHandles.add(handle);
+        }
+        caseHandles.add(handle);
+      });
+      duplicateCaseHandles.forEach((handle) => {
+        errors.push(
+          `Condition "${conditionTitle}" has duplicate case handle "${handle}"`,
+        );
+      });
+
       const outgoing = edges.filter((e) => e.source === node.id);
       if (outgoing.length < 2) {
         errors.push(
-          `Condition "${node.data?.title || node.id}" must have at least 2 outgoing connections`,
+          `Condition "${conditionTitle}" must have at least 2 outgoing connections`,
         );
       }
+
+      const outgoingByHandle = new Map<string, Edge[]>();
+      outgoing.forEach((edge) => {
+        const handle = (edge.sourceHandle || '').trim();
+        const handleEdges = outgoingByHandle.get(handle);
+        if (handleEdges) {
+          handleEdges.push(edge);
+          return;
+        }
+        outgoingByHandle.set(handle, [edge]);
+      });
+
+      for (const [handle, handleEdges] of outgoingByHandle.entries()) {
+        if (!handle) {
+          errors.push(
+            `Condition "${conditionTitle}" has a connection without a branch handle`,
+          );
+          continue;
+        }
+        if (handle !== 'else' && !caseHandles.has(handle)) {
+          errors.push(
+            `Condition "${conditionTitle}" has a connection from unknown branch "${handle}"`,
+          );
+        }
+        if (handleEdges.length > 1) {
+          errors.push(
+            `Condition "${conditionTitle}" has multiple connections from branch "${handle}"`,
+          );
+        }
+      }
+
+      if (!outgoingByHandle.has('else')) {
+        errors.push(`Condition "${conditionTitle}" must have an Else branch`);
+      }
+
+      cases.forEach((conditionCase: ConditionCase) => {
+        const handle = (conditionCase.sourceHandle || '').trim();
+        if (!handle) return;
+
+        const hasExpression = Boolean((conditionCase.expression || '').trim());
+        const hasOutgoing = Boolean(outgoingByHandle.get(handle)?.length);
+        if (hasExpression && !hasOutgoing) {
+          errors.push(
+            `Condition "${conditionTitle}" case "${handle}" has an expression but no branch connection`,
+          );
+        }
+        if (!hasExpression && hasOutgoing) {
+          errors.push(
+            `Condition "${conditionTitle}" case "${handle}" has a branch connection but no expression`,
+          );
+        }
+      });
+
       outgoing.forEach((edge) => {
         if (!canReachEnd(edge.target, edges, nodeIds, endNodeIds)) {
           const handle = edge.sourceHandle || 'branch';
           errors.push(
-            `Branch "${handle}" of condition "${node.data?.title || node.id}" must eventually reach an end node`,
+            `Branch "${handle}" of condition "${conditionTitle}" must eventually reach an end node`,
           );
         }
       });
@@ -1434,10 +1559,13 @@ function WorkflowBuilderInner() {
                                           .length > 1 && (
                                           <button
                                             onClick={() => {
-                                              const cases = [
-                                                ...(selectedNode.data.config
-                                                  ?.cases || []),
-                                              ];
+                                              const cases =
+                                                normalizeConditionCases([
+                                                  ...(selectedNode.data.config
+                                                    ?.cases || []),
+                                                ]);
+                                              const removedHandle =
+                                                cases[idx]?.sourceHandle;
                                               cases.splice(idx, 1);
                                               handleUpdateNodeData({
                                                 config: {
@@ -1446,6 +1574,19 @@ function WorkflowBuilderInner() {
                                                   cases,
                                                 },
                                               });
+                                              if (removedHandle) {
+                                                setEdges((eds) =>
+                                                  eds.filter(
+                                                    (edge) =>
+                                                      !(
+                                                        edge.source ===
+                                                          selectedNode.id &&
+                                                        edge.sourceHandle ===
+                                                          removedHandle
+                                                      ),
+                                                  ),
+                                                );
+                                              }
                                             }}
                                             className="text-gray-400 transition-colors hover:text-red-500"
                                           >
@@ -1650,11 +1791,12 @@ function WorkflowBuilderInner() {
 
                                 <button
                                   onClick={() => {
-                                    const cases = [
+                                    const cases = normalizeConditionCases([
                                       ...(selectedNode.data.config?.cases ||
                                         []),
-                                    ];
-                                    const nextHandle = `case_${cases.length}`;
+                                    ]);
+                                    const nextHandle =
+                                      getNextConditionHandle(cases);
                                     cases.push({
                                       name: '',
                                       expression: '',
