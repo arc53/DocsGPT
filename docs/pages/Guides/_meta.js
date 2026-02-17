@@ -1,4 +1,4 @@
-{
+export default {
   "Customising-prompts": {
     "title": "️💻 Customising Prompts",
     "href": "/Guides/Customising-prompts"

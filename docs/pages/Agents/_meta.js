@@ -1,4 +1,4 @@
-{
+export default {
   "basics": {
     "title": "🤖 Agent Basics",
     "href": "/Agents/basics"
@@ -10,5 +10,9 @@
   "webhooks": {
     "title": "🪝 Agent Webhooks",
     "href": "/Agents/webhooks"
+  },
+  "nodes": {
+    "title": "🧩 Workflow Nodes",
+    "href": "/Agents/nodes"
   }
 }

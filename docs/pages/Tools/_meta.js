@@ -1,4 +1,4 @@
-{
+export default {
   "basics": {
     "title": "🔧 Tools Basics",
     "href": "/Tools/basics"

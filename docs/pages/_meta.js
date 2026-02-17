@@ -1,5 +1,4 @@
-
-{
+export default {
   "index": "Home",
   "quickstart": "Quickstart",
   "Deploying": "Deploying",

@@ -1,4 +1,4 @@
-{
+export default {
   "api-key-guide": {
     "title": "🔑 Getting API key",
     "href": "/Extensions/api-key-guide"

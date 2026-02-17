@@ -1,4 +1,4 @@
-{
+export default {
   "DocsGPT-Settings": {
     "title": "⚙️ App Configuration",
     "href": "/Deploying/DocsGPT-Settings"

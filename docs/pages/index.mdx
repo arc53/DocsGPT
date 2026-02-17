@@ -2,7 +2,7 @@
 title: 'Home'
 description: Documentation of DocsGPT - quickstart, deployment guides, model configuration, and widget integration documentation.
 ---
-import { Cards, Card } from 'nextra/components'
+import { Cards } from 'nextra/components'
 import Image from 'next/image'
 
 export const allGuides = {
@@ -85,7 +85,7 @@ Try it yourself: [https://www.docsgpt.cloud/](https://www.docsgpt.cloud/)
 <Cards
       num={3}
       children={Object.keys(allGuides).map((key, i) => (
-        <Card
+        <Cards.Card
           key={i}
           title={allGuides[key].title}
           href={allGuides[key].href}

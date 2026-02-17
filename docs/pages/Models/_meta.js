@@ -1,4 +1,4 @@
-{
+export default {
   "cloud-providers": {
     "title": "☁️ Cloud Providers",
     "href": "/Models/cloud-providers"
