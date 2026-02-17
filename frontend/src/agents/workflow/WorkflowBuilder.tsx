@@ -2,18 +2,23 @@ import 'reactflow/dist/style.css';
 
 import {
   AlertCircle,
+  ChartColumn,
   Bot,
   Database,
   Flag,
   GitBranch,
+  Loader2,
+  Link,
   Pencil,
   Play,
   Plus,
+  Settings2,
   StickyNote,
   Trash2,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSelector } from 'react-redux';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import ReactFlow, {
   addEdge,
@@ -45,6 +50,12 @@ import { Sheet, SheetContent } from '@/components/ui/sheet';
 import modelService from '../../api/services/modelService';
 import userService from '../../api/services/userService';
 import ArrowLeft from '../../assets/arrow-left.svg';
+import { FileUpload } from '../../components/FileUpload';
+import AgentDetailsModal from '../../modals/AgentDetailsModal';
+import ConfirmationModal from '../../modals/ConfirmationModal';
+import { ActiveState } from '../../models/misc';
+import { selectToken } from '../../preferences/preferenceSlice';
+import { Agent } from '../types';
 import { ConditionCase, WorkflowNode } from '../types/workflow';
 import MobileBlocker from './components/MobileBlocker';
 import PromptTextArea from './components/PromptTextArea';
@@ -59,6 +70,9 @@ import {
 import WorkflowPreview from './WorkflowPreview';
 
 import type { Model } from '../../models/types';
+
+const PRIMARY_ACTION_SPINNER_DELAY_MS = 180;
+
 interface AgentNodeConfig {
   agent_type: 'classic' | 'react';
   llm_name?: string;
@@ -78,6 +92,22 @@ interface UserTool {
   id: string;
   name: string;
   displayName: string;
+}
+
+function createEmptyWorkflowAgent(): Agent {
+  return {
+    id: '',
+    name: '',
+    description: '',
+    image: '',
+    source: '',
+    chunks: '2',
+    retriever: '',
+    prompt_id: '',
+    tools: [],
+    agent_type: 'workflow',
+    status: 'published',
+  };
 }
 
 function canReachEnd(
@@ -174,8 +204,46 @@ function getNextConditionHandle(cases: ConditionCase[]): string {
   return `case_${nextIndex}`;
 }
 
+function createWorkflowPayload(
+  name: string,
+  description: string,
+  workflowNodes: Node[],
+  workflowEdges: Edge[],
+) {
+  return {
+    name,
+    description,
+    nodes: workflowNodes.map((node) => ({
+      id: node.id,
+      type: node.type as
+        | 'start'
+        | 'end'
+        | 'agent'
+        | 'note'
+        | 'state'
+        | 'condition',
+      title: node.data.title || node.data.label || node.type,
+      position: node.position,
+      data:
+        node.type === 'agent' ||
+        node.type === 'condition' ||
+        node.type === 'state'
+          ? node.data.config
+          : node.data,
+    })),
+    edges: workflowEdges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle || undefined,
+      targetHandle: edge.targetHandle || undefined,
+    })),
+  };
+}
+
 function WorkflowBuilderInner() {
   const navigate = useNavigate();
+  const token = useSelector(selectToken);
   const { agentId } = useParams<{ agentId?: string }>();
   const [searchParams] = useSearchParams();
   const folderId = searchParams.get('folder_id');
@@ -194,12 +262,25 @@ function WorkflowBuilderInner() {
   const [workflowDescription, setWorkflowDescription] = useState('');
   const [showWorkflowSettings, setShowWorkflowSettings] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [showPrimaryActionSpinner, setShowPrimaryActionSpinner] =
+    useState(false);
   const [publishErrors, setPublishErrors] = useState<string[]>([]);
   const [errorContext, setErrorContext] = useState<'preview' | 'publish'>(
     'publish',
   );
   const [showNodeConfig, setShowNodeConfig] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] =
+    useState<ActiveState>('INACTIVE');
+  const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
+  const [isDeletingAgent, setIsDeletingAgent] = useState(false);
+  const [currentAgent, setCurrentAgent] = useState<Agent>(
+    createEmptyWorkflowAgent(),
+  );
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [savedWorkflowSignature, setSavedWorkflowSignature] = useState<
+    string | null
+  >(null);
   const workflowSettingsRef = useRef<HTMLDivElement>(null);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [availableTools, setAvailableTools] = useState<UserTool[]>([]);
@@ -387,6 +468,39 @@ function WorkflowBuilderInner() {
     [selectedNode],
   );
 
+  const handleUpload = useCallback((files: File[]) => {
+    if (files && files.length > 0) {
+      setImageFile(files[0]);
+    }
+  }, []);
+
+  const navigateBackToAgents = useCallback(() => {
+    navigate(folderId ? `/agents?folder=${folderId}` : '/agents');
+  }, [navigate, folderId]);
+
+  const handleDeleteAgent = useCallback(async () => {
+    const agentToDelete = currentAgentId || currentAgent.id;
+    if (!agentToDelete) return;
+    setIsDeletingAgent(true);
+    try {
+      const response = await userService.deleteAgent(agentToDelete, token);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to delete workflow agent');
+      }
+      navigateBackToAgents();
+    } catch (error) {
+      setPublishErrors([
+        error instanceof Error
+          ? error.message
+          : 'Failed to delete workflow agent',
+      ]);
+      setErrorContext('publish');
+    } finally {
+      setIsDeletingAgent(false);
+    }
+  }, [currentAgentId, currentAgent.id, token, navigateBackToAgents]);
+
   useEffect(() => {
     if (publishErrors.length > 0) {
       const timer = setTimeout(() => {
@@ -395,6 +509,19 @@ function WorkflowBuilderInner() {
       return () => clearTimeout(timer);
     }
   }, [publishErrors.length]);
+
+  useEffect(() => {
+    if (!isPublishing) {
+      setShowPrimaryActionSpinner(false);
+      return;
+    }
+
+    const spinnerTimer = window.setTimeout(() => {
+      setShowPrimaryActionSpinner(true);
+    }, PRIMARY_ACTION_SPINNER_DELAY_MS);
+
+    return () => window.clearTimeout(spinnerTimer);
+  }, [isPublishing]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -456,9 +583,14 @@ function WorkflowBuilderInner() {
     const loadAgentDetails = async () => {
       if (!agentId) return;
       try {
-        const response = await userService.getAgent(agentId, null);
+        const response = await userService.getAgent(agentId, token);
         if (!response.ok) throw new Error('Failed to fetch agent');
         const agent = await response.json();
+        setCurrentAgent({
+          ...createEmptyWorkflowAgent(),
+          ...agent,
+          agent_type: 'workflow',
+        });
         if (agent.agent_type === 'workflow' && agent.workflow) {
           setWorkflowId(agent.workflow);
           setCurrentAgentId(agent.id);
@@ -470,59 +602,69 @@ function WorkflowBuilderInner() {
       }
     };
     loadAgentDetails();
-  }, [agentId]);
+  }, [agentId, token]);
 
   useEffect(() => {
     const loadWorkflow = async () => {
       if (!workflowId) return;
       try {
-        const response = await userService.getWorkflow(workflowId, null);
+        const response = await userService.getWorkflow(workflowId, token);
         if (!response.ok) throw new Error('Failed to fetch workflow');
         const responseData = await response.json();
         const { workflow, nodes: apiNodes, edges: apiEdges } = responseData;
-        setWorkflowName(workflow.name);
-        setWorkflowDescription(workflow.description || '');
-        setNodes(
-          apiNodes.map((n: WorkflowNode) => {
-            const nodeData: Record<string, unknown> = {
-              title: n.title,
-              label: n.title,
+        const nextWorkflowName = workflow.name;
+        const nextWorkflowDescription = workflow.description || '';
+        const mappedNodes = apiNodes.map((n: WorkflowNode) => {
+          const nodeData: Record<string, unknown> = {
+            title: n.title,
+            label: n.title,
+          };
+          if (n.type === 'agent' && n.data) {
+            nodeData.config = n.data;
+          } else if (n.type === 'condition' && n.data) {
+            nodeData.config = {
+              ...n.data,
+              cases: normalizeConditionCases(n.data.cases || []),
             };
-            if (n.type === 'agent' && n.data) {
-              nodeData.config = n.data;
-            } else if (n.type === 'condition' && n.data) {
-              nodeData.config = {
-                ...n.data,
-                cases: normalizeConditionCases(n.data.cases || []),
-              };
-            } else if (n.type === 'state' && n.data) {
-              nodeData.config = n.data;
-            } else if (n.data) {
-              Object.assign(nodeData, n.data);
-            }
-            return {
-              id: n.id,
-              type: n.type,
-              position: n.position,
-              data: nodeData,
-            };
+          } else if (n.type === 'state' && n.data) {
+            nodeData.config = n.data;
+          } else if (n.data) {
+            Object.assign(nodeData, n.data);
+          }
+          return {
+            id: n.id,
+            type: n.type,
+            position: n.position,
+            data: nodeData,
+          };
+        });
+        const mappedEdges = apiEdges.map(
+          (e: {
+            id: string;
+            source: string;
+            target: string;
+            sourceHandle?: string;
+            targetHandle?: string;
+          }) => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            sourceHandle: e.sourceHandle,
+            targetHandle: e.targetHandle,
           }),
         );
-        setEdges(
-          apiEdges.map(
-            (e: {
-              id: string;
-              source: string;
-              target: string;
-              sourceHandle?: string;
-              targetHandle?: string;
-            }) => ({
-              id: e.id,
-              source: e.source,
-              target: e.target,
-              sourceHandle: e.sourceHandle,
-              targetHandle: e.targetHandle,
-            }),
+        setWorkflowName(nextWorkflowName);
+        setWorkflowDescription(nextWorkflowDescription);
+        setNodes(mappedNodes);
+        setEdges(mappedEdges);
+        setSavedWorkflowSignature(
+          JSON.stringify(
+            createWorkflowPayload(
+              nextWorkflowName,
+              nextWorkflowDescription,
+              mappedNodes,
+              mappedEdges,
+            ),
           ),
         );
         setTimeout(() => {
@@ -537,7 +679,7 @@ function WorkflowBuilderInner() {
       }
     };
     loadWorkflow();
-  }, [workflowId, reactFlowInstance]);
+  }, [workflowId, reactFlowInstance, token]);
 
   const validateWorkflow = useCallback((): string[] => {
     const errors: string[] = [];
@@ -704,87 +846,105 @@ function WorkflowBuilderInner() {
     return errors;
   }, [workflowName, nodes, edges]);
 
-  const handlePublish = useCallback(async () => {
-    setPublishErrors([]);
-    setErrorContext('publish');
+  const canManageAgent = Boolean(currentAgentId || currentAgent.id);
+  const effectiveAgentId = currentAgentId || currentAgent.id || '';
+  const currentAgentImage = currentAgent.image || '';
 
-    const validationErrors = validateWorkflow();
-    if (validationErrors.length > 0) {
-      setPublishErrors(validationErrors);
-      return;
-    }
+  const buildWorkflowPayload = useCallback(
+    () =>
+      createWorkflowPayload(workflowName, workflowDescription, nodes, edges),
+    [workflowName, workflowDescription, nodes, edges],
+  );
 
-    setIsPublishing(true);
-    let createdWorkflowId: string | null = null;
-    try {
-      const workflowPayload = {
-        name: workflowName,
-        description: workflowDescription,
-        nodes: nodes.map((n) => ({
-          id: n.id,
-          type: n.type as
-            | 'start'
-            | 'end'
-            | 'agent'
-            | 'note'
-            | 'state'
-            | 'condition',
-          title: n.data.title || n.data.label || n.type,
-          position: n.position,
-          data:
-            n.type === 'agent' || n.type === 'condition' || n.type === 'state'
-              ? n.data.config
-              : n.data,
-        })),
-        edges: edges.map((e) => ({
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          sourceHandle: e.sourceHandle || undefined,
-          targetHandle: e.targetHandle || undefined,
-        })),
-      };
+  const workflowPayloadSignature = useMemo(
+    () => JSON.stringify(buildWorkflowPayload()),
+    [buildWorkflowPayload],
+  );
 
-      let savedWorkflowId = workflowId;
-      if (workflowId) {
-        const updateResponse = await userService.updateWorkflow(
-          workflowId,
-          workflowPayload,
-          null,
-        );
-        if (!updateResponse.ok) {
-          const errorData = await updateResponse.json().catch(() => ({}));
-          throw new Error(errorData.message || 'Failed to update workflow');
-        }
+  const hasSavableChanges =
+    canManageAgent && savedWorkflowSignature !== null
+      ? workflowPayloadSignature !== savedWorkflowSignature ||
+        imageFile !== null
+      : false;
 
-        if (currentAgentId) {
-          const agentFormData = new FormData();
-          agentFormData.append('name', workflowName);
-          agentFormData.append(
-            'description',
-            workflowDescription || `Workflow agent: ${workflowName}`,
+  const persistWorkflow = useCallback(
+    async (navigateAfterSuccess: boolean): Promise<boolean> => {
+      setPublishErrors([]);
+      setErrorContext('publish');
+
+      const validationErrors = validateWorkflow();
+      if (validationErrors.length > 0) {
+        setPublishErrors(validationErrors);
+        return false;
+      }
+
+      setIsPublishing(true);
+      let createdWorkflowId: string | null = null;
+      try {
+        const workflowPayload = buildWorkflowPayload();
+
+        let savedWorkflowId = workflowId;
+        if (workflowId) {
+          const updateResponse = await userService.updateWorkflow(
+            workflowId,
+            workflowPayload,
+            token,
           );
-          agentFormData.append('status', 'published');
-          const agentUpdateResponse = await userService.updateAgent(
-            currentAgentId,
-            agentFormData,
-            null,
-          );
-          if (!agentUpdateResponse.ok) {
-            throw new Error('Failed to update agent');
+          if (!updateResponse.ok) {
+            const errorData = await updateResponse.json().catch(() => ({}));
+            throw new Error(errorData.message || 'Failed to update workflow');
           }
+
+          if (effectiveAgentId) {
+            const agentFormData = new FormData();
+            agentFormData.append('name', workflowName);
+            agentFormData.append(
+              'description',
+              workflowDescription || `Workflow agent: ${workflowName}`,
+            );
+            agentFormData.append('status', 'published');
+            if (imageFile) {
+              agentFormData.append('image', imageFile);
+            }
+            const agentUpdateResponse = await userService.updateAgent(
+              effectiveAgentId,
+              agentFormData,
+              token,
+            );
+            if (!agentUpdateResponse.ok) {
+              throw new Error('Failed to update agent');
+            }
+            const updatedAgent = await agentUpdateResponse
+              .json()
+              .catch(() => null);
+            setCurrentAgent((prev) => ({
+              ...prev,
+              ...(updatedAgent || {}),
+              id: effectiveAgentId,
+              name: workflowName,
+              description:
+                workflowDescription || `Workflow agent: ${workflowName}`,
+              image: updatedAgent?.image || prev.image || '',
+            }));
+          }
+          setImageFile(null);
+          setSavedWorkflowSignature(JSON.stringify(workflowPayload));
+          if (navigateAfterSuccess) {
+            navigateBackToAgents();
+          }
+          return true;
         }
-      } else {
+
         const createResponse = await userService.createWorkflow(
           workflowPayload,
-          null,
+          token,
         );
         if (!createResponse.ok) {
           const errorData = await createResponse.json().catch(() => ({}));
           const backendErrors = errorData.errors || [];
           if (backendErrors.length > 0) {
             setPublishErrors(backendErrors);
-            return;
+            return false;
           }
           throw new Error(errorData.message || 'Failed to create workflow');
         }
@@ -804,11 +964,14 @@ function WorkflowBuilderInner() {
         agentFormData.append('agent_type', 'workflow');
         agentFormData.append('status', 'published');
         agentFormData.append('workflow', savedWorkflowId || '');
+        if (imageFile) {
+          agentFormData.append('image', imageFile);
+        }
         if (folderId) agentFormData.append('folder_id', folderId);
 
         const agentResponse = await userService.createAgent(
           agentFormData,
-          null,
+          token,
         );
         if (!agentResponse.ok) {
           const errorData = await agentResponse.json().catch(() => ({}));
@@ -817,45 +980,102 @@ function WorkflowBuilderInner() {
         const agentData = await agentResponse.json().catch(() => ({}));
         if (agentData?.id) {
           setCurrentAgentId(agentData.id);
+          setCurrentAgent({
+            ...createEmptyWorkflowAgent(),
+            ...agentData,
+            id: agentData.id,
+            name: workflowName,
+            description:
+              workflowDescription || `Workflow agent: ${workflowName}`,
+            image: agentData.image || '',
+            workflow: savedWorkflowId || undefined,
+            agent_type: 'workflow',
+            status: 'published',
+          });
         }
-      }
 
-      navigate(folderId ? `/agents?folder=${folderId}` : '/agents');
-    } catch (error) {
-      if (createdWorkflowId) {
-        try {
-          const cleanupResponse = await userService.deleteWorkflow(
-            createdWorkflowId,
-            null,
-          );
-          if (cleanupResponse.ok) {
-            setWorkflowId(null);
-          }
-        } catch (cleanupError) {
-          console.error(
-            'Failed to clean up workflow after publish error:',
-            cleanupError,
-          );
+        setImageFile(null);
+        setSavedWorkflowSignature(JSON.stringify(workflowPayload));
+        if (navigateAfterSuccess) {
+          navigateBackToAgents();
         }
+        return true;
+      } catch (error) {
+        if (createdWorkflowId) {
+          try {
+            const cleanupResponse = await userService.deleteWorkflow(
+              createdWorkflowId,
+              token,
+            );
+            if (cleanupResponse.ok) {
+              setWorkflowId(null);
+            }
+          } catch (cleanupError) {
+            console.error(
+              'Failed to clean up workflow after publish error:',
+              cleanupError,
+            );
+          }
+        }
+        console.error('Failed to save workflow:', error);
+        setPublishErrors([
+          error instanceof Error ? error.message : 'Failed to save workflow',
+        ]);
+        return false;
+      } finally {
+        setIsPublishing(false);
       }
-      console.error('Failed to publish workflow:', error);
-      setPublishErrors([
-        error instanceof Error ? error.message : 'Failed to publish workflow',
-      ]);
-    } finally {
-      setIsPublishing(false);
-    }
-  }, [
-    workflowName,
-    workflowDescription,
-    nodes,
-    edges,
-    navigate,
-    folderId,
-    workflowId,
-    currentAgentId,
-    validateWorkflow,
-  ]);
+    },
+    [
+      validateWorkflow,
+      buildWorkflowPayload,
+      workflowId,
+      token,
+      effectiveAgentId,
+      workflowName,
+      workflowDescription,
+      imageFile,
+      folderId,
+      navigateBackToAgents,
+    ],
+  );
+
+  const handleWorkflowSettingsDone = useCallback(() => {
+    setShowWorkflowSettings(false);
+    if (!canManageAgent || !hasSavableChanges || isPublishing) return;
+    void persistWorkflow(false);
+  }, [canManageAgent, hasSavableChanges, isPublishing, persistWorkflow]);
+
+  const isPrimaryActionDisabled =
+    isPublishing || (canManageAgent && !hasSavableChanges);
+  const primaryActionLabel = canManageAgent ? 'Save' : 'Publish';
+
+  const handlePrimaryAction = useCallback(() => {
+    if (isPrimaryActionDisabled) return;
+    void persistWorkflow(!canManageAgent);
+  }, [isPrimaryActionDisabled, persistWorkflow, canManageAgent]);
+
+  const agentForDetails = useMemo<Agent>(
+    () => ({
+      ...createEmptyWorkflowAgent(),
+      ...currentAgent,
+      id: effectiveAgentId,
+      name: workflowName,
+      description: workflowDescription || `Workflow agent: ${workflowName}`,
+      image: currentAgentImage,
+      agent_type: 'workflow',
+      status: currentAgent.status || 'published',
+      workflow: workflowId || currentAgent.workflow,
+    }),
+    [
+      currentAgent,
+      effectiveAgentId,
+      workflowName,
+      workflowDescription,
+      currentAgentImage,
+      workflowId,
+    ],
+  );
 
   return (
     <>
@@ -864,7 +1084,7 @@ function WorkflowBuilderInner() {
         <div className="border-light-silver dark:bg-raisin-black flex items-center justify-between border-b bg-white px-6 py-4 dark:border-[#3A3A3A]">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => navigate('/agents')}
+              onClick={navigateBackToAgents}
               className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
             >
               <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
@@ -921,9 +1141,48 @@ function WorkflowBuilderInner() {
                       placeholder="Describe what this workflow does"
                     />
                   </div>
+                  <div className="mb-3">
+                    <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Agent Image
+                    </label>
+                    {currentAgentImage && !imageFile && (
+                      <div className="mb-2 flex items-center gap-2">
+                        <img
+                          src={currentAgentImage}
+                          alt="Agent image"
+                          className="h-10 w-10 rounded-full object-cover"
+                        />
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          Current image
+                        </span>
+                      </div>
+                    )}
+                    <FileUpload
+                      showPreview
+                      maxFiles={1}
+                      previewSize={56}
+                      onUpload={handleUpload}
+                      onRemove={() => setImageFile(null)}
+                      uploadText={[
+                        {
+                          text: 'Click to upload',
+                          colorClass: 'text-violets-are-blue',
+                        },
+                        {
+                          text: ' or drag and drop',
+                          colorClass: 'text-gray-500',
+                        },
+                      ]}
+                      className="rounded-lg border-2 border-dashed border-[#E5E5E5] p-3 text-center transition-colors dark:border-[#3A3A3A] dark:bg-[#2C2C2C]"
+                    />
+                    <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                      Image updates are included the next time you save.
+                    </p>
+                  </div>
                   <button
-                    onClick={() => setShowWorkflowSettings(false)}
-                    className="bg-violets-are-blue hover:bg-purple-30 w-full rounded-lg px-3 py-2 text-sm font-medium text-white"
+                    onClick={handleWorkflowSettingsDone}
+                    disabled={isPublishing}
+                    className="bg-violets-are-blue hover:bg-purple-30 w-full rounded-lg px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Done
                   </button>
@@ -931,7 +1190,42 @@ function WorkflowBuilderInner() {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowWorkflowSettings((prev) => !prev)}
+              className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-gray-200 dark:hover:bg-[#383838]"
+            >
+              <Settings2 size={16} />
+              Details
+            </button>
+            {canManageAgent && (
+              <button
+                onClick={() => navigate(`/agents/logs/${effectiveAgentId}`)}
+                className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-gray-200 dark:hover:bg-[#383838]"
+              >
+                <ChartColumn size={16} />
+                Logs
+              </button>
+            )}
+            {canManageAgent && (
+              <button
+                onClick={() => setAgentDetails('ACTIVE')}
+                className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-gray-200 dark:hover:bg-[#383838]"
+              >
+                <Link size={16} />
+                Access Details
+              </button>
+            )}
+            {canManageAgent && (
+              <button
+                onClick={() => setDeleteConfirmation('ACTIVE')}
+                disabled={isDeletingAgent}
+                className="flex items-center gap-2 rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/30 dark:bg-[#2C2C2C] dark:text-red-400 dark:hover:bg-red-900/10"
+              >
+                <Trash2 size={16} />
+                {isDeletingAgent ? 'Deleting...' : 'Delete'}
+              </button>
+            )}
             <button
               onClick={() => {
                 const validationErrors = validateWorkflow();
@@ -948,11 +1242,24 @@ function WorkflowBuilderInner() {
               Preview
             </button>
             <button
-              onClick={handlePublish}
-              disabled={isPublishing}
-              className="bg-violets-are-blue hover:bg-purple-30 rounded-full px-6 py-2 text-sm font-medium text-white shadow-sm transition-colors disabled:opacity-50"
+              onClick={handlePrimaryAction}
+              disabled={isPrimaryActionDisabled}
+              className={`relative inline-flex items-center justify-center rounded-full px-6 py-2 text-sm font-medium shadow-sm transition-colors disabled:cursor-not-allowed ${
+                canManageAgent && !hasSavableChanges
+                  ? 'bg-gray-200 text-gray-500 dark:bg-[#3A3A3A] dark:text-gray-400'
+                  : 'bg-violets-are-blue hover:bg-purple-30 text-white disabled:opacity-50'
+              }`}
             >
-              {isPublishing ? 'Publishing...' : 'Publish'}
+              <span
+                className={
+                  showPrimaryActionSpinner ? 'opacity-0' : 'opacity-100'
+                }
+              >
+                {primaryActionLabel}
+              </span>
+              {showPrimaryActionSpinner ? (
+                <Loader2 size={16} className="absolute animate-spin" />
+              ) : null}
             </button>
           </div>
         </div>
@@ -967,7 +1274,9 @@ function WorkflowBuilderInner() {
               <AlertTitle>
                 {errorContext === 'preview'
                   ? 'Unable to preview workflow'
-                  : 'Unable to publish workflow'}
+                  : canManageAgent
+                    ? 'Unable to save workflow'
+                    : 'Unable to publish workflow'}
               </AlertTitle>
               <AlertDescription>
                 <ul className="mt-2 list-inside list-disc space-y-1 wrap-break-word">
@@ -1867,6 +2176,23 @@ function WorkflowBuilderInner() {
             />
           </SheetContent>
         </Sheet>
+        <ConfirmationModal
+          message={`Are you sure you want to delete "${workflowName || 'this workflow agent'}"?`}
+          modalState={deleteConfirmation}
+          setModalState={setDeleteConfirmation}
+          submitLabel="Delete"
+          handleSubmit={handleDeleteAgent}
+          cancelLabel="Cancel"
+          variant="danger"
+        />
+        {canManageAgent && (
+          <AgentDetailsModal
+            agent={agentForDetails}
+            mode="edit"
+            modalState={agentDetails}
+            setModalState={setAgentDetails}
+          />
+        )}
       </div>
     </>
   );

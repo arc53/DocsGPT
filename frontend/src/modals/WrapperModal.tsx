@@ -43,7 +43,7 @@ export default function WrapperModal({
 
   const modalContent = (
     <div
-      className="fixed top-0 left-0 z-30 flex h-screen w-screen items-center justify-center"
+      className="fixed top-0 left-0 z-[100] flex h-screen w-screen items-center justify-center"
       onClick={(e: React.MouseEvent) => e.stopPropagation()}
       onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
     >
