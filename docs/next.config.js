@@ -1,7 +1,7 @@
 const nextra = require('nextra').default;
 
 const withNextra = nextra({
-  // Nextra v4 config lives in app/layout + theme.config.jsx
+  defaultShowCopyCode: true,
 });
 
 module.exports = withNextra({
