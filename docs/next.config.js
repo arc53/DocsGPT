@@ -1,9 +1,9 @@
-const withNextra = require('nextra').default({
-  theme: 'nextra-theme-docs',
-  themeConfig: './theme.config.jsx'
-})
+const nextra = require('nextra').default;
 
-module.exports = withNextra()
-   
-// If you have other Next.js configurations, you can pass them as the parameter:
-// module.exports = withNextra({ /* other next.js config */ })
+const withNextra = nextra({
+  // Nextra v4 config lives in app/layout + theme.config.jsx
+});
+
+module.exports = withNextra({
+  reactStrictMode: true,
+});

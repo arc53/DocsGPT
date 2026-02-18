@@ -8,8 +8,7 @@ export default {
   "Extensions": "Extensions",
   "https://gptcloud.arc53.com/": {
     "title": "API",
-    "href": "https://gptcloud.arc53.com/",
-    "newWindow": true
+    "href": "https://gptcloud.arc53.com/"
   },
   "Guides": "Guides",
   "changelog": {
