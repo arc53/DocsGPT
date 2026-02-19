@@ -158,7 +158,11 @@ class GoogleLLM(BaseLLM):
             if isinstance(content, list):
                 parts = []
                 for item in content:
-                    if isinstance(item, dict) and "text" in item and item["text"] is not None:
+                    if (
+                        isinstance(item, dict)
+                        and "text" in item
+                        and item["text"] is not None
+                    ):
                         parts.append(item["text"])
                 return "\n".join(parts)
             return ""
@@ -236,7 +240,9 @@ class GoogleLLM(BaseLLM):
                     raise ValueError(f"Unexpected content type: {type(content)}")
                 if parts:
                     cleaned_messages.append(types.Content(role=role, parts=parts))
-        system_instruction = "\n\n".join(system_instructions) if system_instructions else None
+        system_instruction = (
+            "\n\n".join(system_instructions) if system_instructions else None
+        )
         return cleaned_messages, system_instruction
 
     def _clean_schema(self, schema_obj):
@@ -336,7 +342,10 @@ class GoogleLLM(BaseLLM):
                         return f"function_call:{name}"
                     function_response = getattr(part, "function_response", None)
                     if function_response:
-                        name = getattr(function_response, "name", "") or "function_response"
+                        name = (
+                            getattr(function_response, "name", "")
+                            or "function_response"
+                        )
                         return f"function_response:{name}"
             if isinstance(message, dict):
                 content = message.get("content")
@@ -507,6 +516,9 @@ class GoogleLLM(BaseLLM):
                             yield {"type": "thought", "thought": chunk_text}
                         else:
                             yield chunk_text
+        except Exception as e:
+            logging.error(f"GoogleLLM: Stream error: {e}", exc_info=True)
+            raise
         finally:
             if hasattr(response, "close"):
                 response.close()

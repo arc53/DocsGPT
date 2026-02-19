@@ -15,6 +15,7 @@ from application.core.model_utils import (
 
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
+from application.error import sanitize_api_error
 from application.llm.llm_creator import LLMCreator
 from application.utils import check_required_fields
 
@@ -219,7 +220,14 @@ class BaseAnswerResource:
                     data = json.dumps({"type": "thought", "thought": line["thought"]})
                     yield f"data: {data}\n\n"
                 elif "type" in line:
-                    data = json.dumps(line)
+                    if line.get("type") == "error":
+                        sanitized_error = {
+                            "type": "error",
+                            "error": sanitize_api_error(line.get("error", "An error occurred"))
+                        }
+                        data = json.dumps(sanitized_error)
+                    else:
+                        data = json.dumps(line)
                     yield f"data: {data}\n\n"
             if is_structured and structured_chunks:
                 structured_data = {
