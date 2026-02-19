@@ -56,6 +56,10 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       displayName: 'Drive',
       rootName: 'My Drive',
     },
+    share_point: {
+      displayName: 'SharePoint',
+      rootName: 'My Files',
+    },
   } as const;
 
   const getProviderConfig = (provider: string) => {
