@@ -32,6 +32,7 @@ import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
 
 import { FilePicker } from '../components/FilePicker';
 import GoogleDrivePicker from '../components/GoogleDrivePicker';
+import SharePointPicker from '../components/SharePointPicker';
 
 import ChevronRight from '../assets/chevron-right.svg';
 
@@ -250,6 +251,23 @@ function Upload({
               setSelectedFolders(selectedFolderIds);
             }}
             token={token}
+          />
+        );
+      case 'share_point_picker':
+        return (
+          <FilePicker
+            key={field.name}
+            onSelectionChange={(
+              selectedFileIds: string[],
+              selectedFolderIds: string[] = [],
+            ) => {
+              setSelectedFiles(selectedFileIds);
+              setSelectedFolders(selectedFolderIds);
+            }}
+            provider="share_point"
+            token={token}
+            initialSelectedFiles={selectedFiles}
+            initialSelectedFolders={selectedFolders}
           />
         );
       default:
@@ -534,6 +552,9 @@ function Upload({
     const hasGoogleDrivePicker = schema.some(
       (field: FormField) => field.type === 'google_drive_picker',
     );
+    const hasSharePointPicker = schema.some(
+      (field: FormField) => field.type === 'share_point_picker',
+    );
 
     let configData: Record<string, unknown> = { ...ingestor.config };
 
@@ -541,7 +562,7 @@ function Upload({
       files.forEach((file) => {
         formData.append('file', file);
       });
-    } else if (hasRemoteFilePicker || hasGoogleDrivePicker) {
+    } else if (hasRemoteFilePicker || hasGoogleDrivePicker || hasSharePointPicker) {
       const sessionToken = getSessionToken(ingestor.type as string);
       configData = {
         provider: ingestor.type as string,
@@ -717,12 +738,15 @@ function Upload({
     const hasGoogleDrivePicker = schema.some(
       (field: FormField) => field.type === 'google_drive_picker',
     );
+    const hasSharePointPicker = schema.some(
+      (field: FormField) => field.type === 'share_point_picker',
+    );
 
     if (hasLocalFilePicker) {
       if (files.length === 0) {
         return true;
       }
-    } else if (hasRemoteFilePicker || hasGoogleDrivePicker) {
+    } else if (hasRemoteFilePicker || hasGoogleDrivePicker || hasSharePointPicker) {
       if (selectedFiles.length === 0 && selectedFolders.length === 0) {
         return true;
       }
