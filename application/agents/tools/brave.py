@@ -1,5 +1,10 @@
+import logging
+
 import requests
+
 from application.agents.tools.base import Tool
+
+logger = logging.getLogger(__name__)
 
 
 class BraveSearchTool(Tool):
@@ -41,7 +46,7 @@ class BraveSearchTool(Tool):
         """
         Performs a web search using the Brave Search API.
         """
-        print(f"Performing Brave web search for: {query}")
+        logger.info(f"Brave web search: {query}")
 
         url = f"{self.base_url}/web/search"
 
@@ -94,7 +99,7 @@ class BraveSearchTool(Tool):
         """
         Performs an image search using the Brave Search API.
         """
-        print(f"Performing Brave image search for: {query}")
+        logger.info(f"Brave image search: {query}")
 
         url = f"{self.base_url}/images/search"
 

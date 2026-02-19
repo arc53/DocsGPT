@@ -13,6 +13,7 @@ from application.agents.workflows.schemas import (
     WorkflowGraph,
     WorkflowNode,
 )
+from application.error import sanitize_api_error
 
 if TYPE_CHECKING:
     from application.agents.base import BaseAgent
@@ -84,6 +85,7 @@ class WorkflowEngine:
                 log_entry["state_snapshot"] = dict(self.state)
                 self.execution_log.append(log_entry)
 
+                user_friendly_error = sanitize_api_error(e)
                 yield {
                     "type": "workflow_step",
                     "node_id": node.id,
@@ -91,9 +93,9 @@ class WorkflowEngine:
                     "node_title": node.title,
                     "status": "failed",
                     "state_snapshot": dict(self.state),
-                    "error": str(e),
+                    "error": user_friendly_error,
                 }
-                yield {"type": "error", "error": str(e)}
+                yield {"type": "error", "error": user_friendly_error}
                 break
             log_entry["state_snapshot"] = dict(self.state)
             self.execution_log.append(log_entry)
