@@ -13,10 +13,12 @@ class BaseLLM(ABC):
     def __init__(
         self,
         decoded_token=None,
+        agent_id=None,
         model_id=None,
         base_url=None,
     ):
         self.decoded_token = decoded_token
+        self.agent_id = str(agent_id) if agent_id else None
         self.model_id = model_id
         self.base_url = base_url
         self.token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
@@ -33,9 +35,10 @@ class BaseLLM(ABC):
                 self._fallback_llm = LLMCreator.create_llm(
                     settings.FALLBACK_LLM_PROVIDER,
                     api_key=settings.FALLBACK_LLM_API_KEY or settings.API_KEY,
-                    user_api_key=None,
+                    user_api_key=getattr(self, "user_api_key", None),
                     decoded_token=self.decoded_token,
                     model_id=settings.FALLBACK_LLM_NAME,
+                    agent_id=self.agent_id,
                 )
                 logger.info(
                     f"Fallback LLM initialized: {settings.FALLBACK_LLM_PROVIDER}/{settings.FALLBACK_LLM_NAME}"

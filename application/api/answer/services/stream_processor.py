@@ -90,6 +90,7 @@ class StreamProcessor:
         self.retriever_config = {}
         self.is_shared_usage = False
         self.shared_token = None
+        self.agent_id = self.data.get("agent_id")
         self.model_id: Optional[str] = None
         self.conversation_service = ConversationService()
         self.compression_orchestrator = CompressionOrchestrator(
@@ -355,10 +356,13 @@ class StreamProcessor:
         self.agent_key, self.is_shared_usage, self.shared_token = self._get_agent_key(
             agent_id, self.initial_user_id
         )
+        self.agent_id = str(agent_id) if agent_id else None
 
         api_key = self.data.get("api_key")
         if api_key:
             data_key = self._get_data_from_api_key(api_key)
+            if data_key.get("_id"):
+                self.agent_id = str(data_key.get("_id"))
             self.agent_config.update(
                 {
                     "prompt_id": data_key.get("prompt_id", "default"),
@@ -387,6 +391,8 @@ class StreamProcessor:
                     self.retriever_config["chunks"] = 2
         elif self.agent_key:
             data_key = self._get_data_from_api_key(self.agent_key)
+            if data_key.get("_id"):
+                self.agent_id = str(data_key.get("_id"))
             self.agent_config.update(
                 {
                     "prompt_id": data_key.get("prompt_id", "default"),
@@ -459,6 +465,7 @@ class StreamProcessor:
             doc_token_limit=self.retriever_config.get("doc_token_limit", 50000),
             model_id=self.model_id,
             user_api_key=self.agent_config["user_api_key"],
+            agent_id=self.agent_id,
             decoded_token=self.decoded_token,
         )
 
@@ -754,6 +761,7 @@ class StreamProcessor:
             "llm_name": provider or settings.LLM_PROVIDER,
             "model_id": self.model_id,
             "api_key": system_api_key,
+            "agent_id": self.agent_id,
             "user_api_key": self.agent_config["user_api_key"],
             "prompt": rendered_prompt,
             "chat_history": self.history,

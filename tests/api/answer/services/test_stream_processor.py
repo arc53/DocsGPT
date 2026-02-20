@@ -199,6 +199,7 @@ class TestStreamProcessorAgentConfiguration:
         try:
             processor._configure_agent()
             assert processor.agent_config is not None
+            assert processor.agent_id == str(agent_id)
         except Exception as e:
             assert "Invalid API Key" in str(e)
 
@@ -211,6 +212,7 @@ class TestStreamProcessorAgentConfiguration:
         processor._configure_agent()
 
         assert isinstance(processor.agent_config, dict)
+        assert processor.agent_id is None
 
 
 @pytest.mark.unit
