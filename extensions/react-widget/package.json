@@ -50,7 +50,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "dompurify": "^3.1.5",
-    "flow-bin": "^0.229.2",
+    "flow-bin": "^0.290.0",
     "i": "^0.3.7",
     "install": "^0.13.0",
     "markdown-it": "^14.1.0",
