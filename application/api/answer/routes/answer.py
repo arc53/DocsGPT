@@ -42,6 +42,7 @@ class AnswerResource(Resource, BaseAnswerResource):
             ),
             "retriever": fields.String(required=False, description="Retriever type"),
             "api_key": fields.String(required=False, description="API key"),
+            "agent_id": fields.String(required=False, description="Agent ID"),
             "active_docs": fields.String(
                 required=False, description="Active documents"
             ),
@@ -100,6 +101,9 @@ class AnswerResource(Resource, BaseAnswerResource):
                 isNoneDoc=data.get("isNoneDoc"),
                 index=None,
                 should_save_conversation=data.get("save_conversation", True),
+                agent_id=processor.agent_id,
+                is_shared_usage=processor.is_shared_usage,
+                shared_token=processor.shared_token,
                 model_id=processor.model_id,
             )
             stream_result = self.process_response_stream(stream)

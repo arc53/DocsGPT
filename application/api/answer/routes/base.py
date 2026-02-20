@@ -46,6 +46,27 @@ class BaseAnswerResource:
             return missing_fields
         return None
 
+    @staticmethod
+    def _prepare_tool_calls_for_logging(
+        tool_calls: Optional[List[Dict[str, Any]]], max_chars: int = 10000
+    ) -> List[Dict[str, Any]]:
+        if not tool_calls:
+            return []
+
+        prepared = []
+        for tool_call in tool_calls:
+            if not isinstance(tool_call, dict):
+                prepared.append({"result": str(tool_call)[:max_chars]})
+                continue
+
+            item = dict(tool_call)
+            for key in ("result", "result_full"):
+                value = item.get(key)
+                if isinstance(value, str) and len(value) > max_chars:
+                    item[key] = value[:max_chars]
+            prepared.append(item)
+        return prepared
+
     def check_usage(self, agent_config: Dict) -> Optional[Response]:
         """Check if there is a usage limit and if it is exceeded
 
@@ -246,6 +267,7 @@ class BaseAnswerResource:
                 user_api_key=user_api_key,
                 decoded_token=decoded_token,
                 model_id=model_id,
+                agent_id=agent_id,
             )
 
             if should_save_conversation:
@@ -292,14 +314,20 @@ class BaseAnswerResource:
             data = json.dumps(id_data)
             yield f"data: {data}\n\n"
 
+            tool_calls_for_logging = self._prepare_tool_calls_for_logging(
+                getattr(agent, "tool_calls", tool_calls) or tool_calls
+            )
+
             log_data = {
                 "action": "stream_answer",
                 "level": "info",
                 "user": decoded_token.get("sub"),
                 "api_key": user_api_key,
+                "agent_id": agent_id,
                 "question": question,
                 "response": response_full,
                 "sources": source_log_docs,
+                "tool_calls": tool_calls_for_logging,
                 "attachments": attachment_ids,
                 "timestamp": datetime.datetime.now(datetime.timezone.utc),
             }
@@ -330,6 +358,7 @@ class BaseAnswerResource:
                         api_key=settings.API_KEY,
                         user_api_key=user_api_key,
                         decoded_token=decoded_token,
+                        agent_id=agent_id,
                     )
                     self.conversation_service.save_conversation(
                         conversation_id,
