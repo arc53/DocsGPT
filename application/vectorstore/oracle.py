@@ -1,188 +1,142 @@
-# application/vectorstore/oracle.py
-
 import logging
-import json
 from typing import List, Optional, Any, Dict
-
-from application.core.settings import settings  # :contentReference[oaicite:6]{index=6}
-from application.vectorstore.base import BaseVectorStore  # :contentReference[oaicite:7]{index=7}
+from application.core.settings import settings
+from application.vectorstore.base import BaseVectorStore
 from application.vectorstore.document_class import Document
-# We mirror the PGVector interface from pgvector.py. See that for reference. :contentReference[oaicite:8]{index=8}
-
-logger = logging.getLogger(__name__)
-logger.warning("✅ OracleVectorStore constructor called")
 
 
 class OracleVectorStore(BaseVectorStore):
+    """
+    Oracle Vector Store implementation using Oracle 26ai Autonomous Database.
+    Uses LangChain's Oracle VectorStore integration for all operations.
+    Follows the same architecture as PGVectorStore for consistency.
+    """
+
     def __init__(
         self,
         source_id: str = "",
         embeddings_key: str = "embeddings",
-        table_name: str = "documents",
+        table_name: str = "docsgpt_vectors",
         decoded_token: Optional[str] = None,
-        vector_column: str = "embedding",
-        text_column: str = "text",
-        metadata_column: str = "metadata",
         connection_string: str = None,
     ):
         """
-        Oracle 26ai vectorstore compatible with DocsGPT BaseVectorStore contract.
-        - connection_string: DSN for oracledb, e.g. "user/password@host:port/service" or a connect string.
-          If not provided, reads settings.ORACLE_CONNECTION_STRING.
+        Initialize Oracle Vector Store.
+
+        Args:
+            source_id: Unique identifier for the document source (for multi-tenant filtering)
+            embeddings_key: API key for embeddings (if using OpenAI embeddings)
+            table_name: Name of the Oracle table to store vectors
+            decoded_token: Optional JWT token (not used but kept for interface consistency)
+            connection_string: Oracle connection string (DSN format or connection string)
         """
         super().__init__()
-
+        
+        # Store the source_id for use in filtering operations
         self._source_id = str(source_id).replace("application/indexes/", "").rstrip("/")
         self._embeddings_key = embeddings_key
         self._table_name = table_name
-        self._vector_column = vector_column
-        self._text_column = text_column
-        self._metadata_column = metadata_column
+        
+        # Initialize embeddings using the base class method
         self._embedding = self._get_embeddings(settings.EMBEDDINGS_NAME, embeddings_key)
-
-        # connection string via param or settings
-        self._connection_string = connection_string or getattr(settings, "ORACLE_CONNECTION_STRING", None)
+        
+        # Use provided connection string or fall back to settings
+        self._connection_string = connection_string or getattr(settings, 'ORACLE_CONNECTION_STRING', None)
+        
         if not self._connection_string:
             raise ValueError(
                 "Oracle connection string is required. "
-                "Set ORACLE_CONNECTION_STRING in settings or pass connection_string parameter."
+                "Set ORACLE_CONNECTION_STRING in settings or pass connection_string parameter. "
+                "Format: user/password@host:port/service_name or similar DSN format."
             )
 
+        # Import LangChain Oracle VectorStore
         try:
-            import oracledb
+            from langchain_community.vectorstores import OracleVS
+            from langchain_community.vectorstores.oraclevs import OracleVSConfig
+            from langchain_community.vectorstores.utils import DistanceStrategy
         except ImportError:
             raise ImportError(
-                "Could not import oracledb. Please install with `pip install oracledb`."
+                "Could not import Oracle VectorStore from LangChain. "
+                "Please install with: pip install langchain-community oracledb"
             )
 
-        self._oracledb = oracledb
-        self._connection = None
-        # Create table if missing
-        self._ensure_table_exists()
+        self._OracleVS = OracleVS
+        self._OracleVSConfig = OracleVSConfig
+        self._DistanceStrategy = DistanceStrategy
+        self._vectorstore = None
+        self._initialize_vectorstore()
 
-    def _get_connection(self):
-        """Get or create oracledb connection."""
-        if self._connection is None:
-            # oracledb.connect accepts user/password@host:port/service or DSN parameters
-            self._connection = self._oracledb.connect(self._connection_string)
-            # Set autocommit off (we will commit explicitly)
-            self._connection.autocommit = False
-        return self._connection
-
-    def _ensure_table_exists(self):
+    def _initialize_vectorstore(self):
         """
-        Create table with VECTOR column if it doesn't exist.
-        Oracle does not support 'IF NOT EXISTS' in CREATE TABLE, so we try-create and ignore ORA-00955.
+        Initialize the LangChain Oracle VectorStore.
+        LangChain will handle table creation, vector column creation, and indexing.
         """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
-        logger.info("Ensuring table exists: %s", self._table_name)
-
-        embedding_dim = getattr(self._embedding, "dimension", 768)
-
-        create_table_sql = f"""
-        CREATE TABLE {self._table_name} (
-          id NUMBER GENERATED BY DEFAULT ON NULL AS IDENTITY PRIMARY KEY,
-          {self._text_column} CLOB NOT NULL,
-          {self._vector_column} VECTOR({embedding_dim}),
-          {self._metadata_column} CLOB,
-          source_id VARCHAR2(512) NOT NULL,
-          created_at TIMESTAMP DEFAULT SYSTIMESTAMP
-        ) TABLESPACE USERS
-        """
-
-        create_source_index_sql = f"CREATE INDEX {self._table_name}_source_id_idx ON {self._table_name}(source_id)"
-
         try:
-            logger.info("Creating table: %s", create_table_sql)
-            try:
-                cursor.execute(create_table_sql)
-                logger.info("Table creation attempt finished.")
-            except Exception as e:
-                msg = str(e).lower()
-                if hasattr(e, "code") and e.code == 955:
-                    logger.debug("Table already exists: %s", self._table_name)
-                elif "already exists" in msg or "name is already used" in msg:
-                    logger.debug("Table already exists (caught): %s", msg)
-                else:
-                    raise
-
-            try:
-                cursor.execute(create_source_index_sql)
-            except Exception as e:
-                msg = str(e).lower()
-                if "already exists" in msg or ("ora-00955" in msg):
-                    logger.debug("Source index already exists.")
-                else:
-                    logger.debug("Could not create source_id index: %s", e)
-
-            try:
-                create_vector_index_sql = f"CREATE INDEX {self._table_name}_{self._vector_column}_idx ON {self._table_name}({self._vector_column})"
-                cursor.execute(create_vector_index_sql)
-            except Exception as e:
-                logger.debug("Skipping vector index creation or unsupported: %s", e)
-
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            logger.exception("Failed creating Oracle vector table or index.")
+            # Create Oracle VS configuration
+            # LangChain Oracle VectorStore will automatically:
+            # - Create the table if it doesn't exist
+            # - Add VECTOR column for embeddings
+            # - Add metadata columns
+            # - Create appropriate indexes
+            config = self._OracleVSConfig(
+                table_name=self._table_name,
+                distance_strategy=self._DistanceStrategy.COSINE,
+            )
+            
+            # Initialize the vectorstore
+            # LangChain will handle all schema creation automatically
+            self._vectorstore = self._OracleVS(
+                embedding_function=self._embedding,
+                config=config,
+                client=None,  # Will create connection using connection_string
+                connection_string=self._connection_string,
+            )
+            
+            logging.info(f"Oracle VectorStore initialized successfully with table: {self._table_name}")
+            
+        except Exception as e:
+            logging.error(f"Error initializing Oracle VectorStore: {e}", exc_info=True)
             raise
-        finally:
-            cursor.close()
-
-    def _serialize_metadata(self, metadata: Optional[Dict[str, Any]]) -> str:
-        if metadata is None:
-            return None
-        try:
-            return json.dumps(metadata)
-        except Exception:
-            # Fallback to string
-            return str(metadata)
-
-    def _deserialize_metadata(self, metadata_clob: Optional[str]) -> Dict[str, Any]:
-        if not metadata_clob:
-            return {}
-        try:
-            return json.loads(metadata_clob)
-        except Exception:
-            return {"raw": metadata_clob}
 
     def search(self, question: str, k: int = 2, *args, **kwargs) -> List[Document]:
         """
-        Embed query and run VECTOR_DISTANCE similarity search in Oracle.
-        Uses VECTOR_DISTANCE(column, :query_vector, 'COSINE') in ORDER BY.
+        Search for similar documents using vector similarity.
+        
+        Args:
+            question: The query text to search for
+            k: Number of results to return
+            
+        Returns:
+            List[Document]: List of similar documents filtered by source_id
         """
-        query_vector = self._embedding.embed_query(question)
-
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
-        # Use an integer literal for the FETCH to avoid bind-limit issues
         try:
-            search_sql = f"""
-            SELECT {self._text_column}, {self._metadata_column}
-            FROM {self._table_name}
-            WHERE source_id = :src
-            ORDER BY VECTOR_DISTANCE({self._vector_column}, :qvec, 'COSINE')
-            FETCH FIRST {int(k)} ROWS ONLY
-            """
-
-            # Bind the query vector and source id.
-            cursor.execute(search_sql, {"qvec": query_vector, "src": self._source_id})
-            rows = cursor.fetchall()
-
-            documents: List[Document] = []
-            for text_val, metadata_val in rows:
-                meta = self._deserialize_metadata(metadata_val)
-                documents.append(Document(page_content=text_val, metadata=meta))
-
+            # Generate query embedding
+            # LangChain's similarity_search will handle the vector search
+            
+            # Filter by source_id in metadata
+            filter_dict = {"source_id": self._source_id}
+            
+            # Perform similarity search using LangChain
+            results = self._vectorstore.similarity_search(
+                query=question,
+                k=k,
+                filter=filter_dict,
+                **kwargs
+            )
+            
+            # Convert LangChain documents to our Document class
+            documents = []
+            for doc in results:
+                # Ensure metadata exists
+                metadata = doc.metadata or {}
+                documents.append(Document(page_content=doc.page_content, metadata=metadata))
+            
             return documents
+            
         except Exception as e:
-            logger.error("Error searching Oracle vector store: %s", e, exc_info=True)
+            logging.error(f"Error searching documents in Oracle: {e}", exc_info=True)
             return []
-        finally:
-            cursor.close()
 
     def add_texts(
         self,
@@ -191,163 +145,196 @@ class OracleVectorStore(BaseVectorStore):
         *args,
         **kwargs,
     ) -> List[str]:
-        """Embed texts and insert into Oracle table; returns inserted ids as strings."""
+        """
+        Add texts with their embeddings to the Oracle vector store.
+        
+        Args:
+            texts: List of text strings to add
+            metadatas: Optional list of metadata dictionaries for each text
+            
+        Returns:
+            List[str]: List of inserted document IDs
+        """
         if not texts:
             return []
 
-        embeddings = self._embedding.embed_documents(texts)
-        metadatas = metadatas or [{}] * len(texts)
-
-        conn = self._get_connection()
-        cursor = conn.cursor()
-
-        inserted_ids: List[str] = []
         try:
-            # Oracle uses RETURNING ... INTO :var for returning generated ids.
-            insert_sql = f"""
-            INSERT INTO {self._table_name} ({self._text_column}, {self._vector_column}, {self._metadata_column}, source_id)
-            VALUES (:text, VECTOR(:vec), :meta, :src)
-            RETURNING id INTO :ret_id
-            """
-
-
-            for text, emb, metadata in zip(texts, embeddings, metadatas):
-                id_var = cursor.var(self._oracledb.NUMBER)
-                meta_str = self._serialize_metadata(metadata)
+            # Prepare metadatas with source_id
+            metadatas = metadatas or [{}] * len(texts)
             
-                # Use executemany instead of execute to allow array/vector binding
-                cursor.executemany(
-                    insert_sql,
-                    [{
-                        "text": text,
-                        "vec": json.dumps(emb), 
-                        "meta": meta_str,
-                        "src": self._source_id,
-                        "ret_id": id_var,
-                    }]
-                )
-                # get returned id
-                try:
-                    returned_id = id_var.getvalue()
-                    # returned_id might be a Decimal or number object; coerce to str
-                    inserted_ids.append(str(int(returned_id)))
-                except Exception:
-                    # if return not available, we can issue a fallback select but prefer returned id
-                    inserted_ids.append("")
-            conn.commit()
-            return inserted_ids
+            # Ensure each metadata contains source_id for filtering
+            for metadata in metadatas:
+                metadata["source_id"] = self._source_id
+            
+            # Use LangChain's add_texts method
+            # This will:
+            # - Generate embeddings
+            # - Insert into Oracle table
+            # - Return document IDs
+            ids = self._vectorstore.add_texts(
+                texts=texts,
+                metadatas=metadatas,
+                **kwargs
+            )
+            
+            # Convert IDs to strings
+            return [str(id) for id in ids] if ids else []
+            
         except Exception as e:
-            conn.rollback()
-            logger.exception("Error adding texts to Oracle vector store: %s", e)
+            logging.error(f"Error adding texts to Oracle: {e}", exc_info=True)
             raise
-        finally:
-            cursor.close()
 
     def delete_index(self, *args, **kwargs):
-        """Delete all rows for this source_id."""
-        conn = self._get_connection()
-        cursor = conn.cursor()
+        """
+        Delete all documents for this source_id.
+        Does NOT drop the entire table - only deletes documents belonging to this source.
+        Safe for multi-tenant usage.
+        """
         try:
-            delete_sql = f"DELETE FROM {self._table_name} WHERE source_id = :src"
-            cursor.execute(delete_sql, {"src": self._source_id})
-            conn.commit()
+            # Delete only documents with this source_id
+            # LangChain Oracle VectorStore should support deletion by filter
+            # We need to get all document IDs for this source_id first, then delete them
+            
+            # Since LangChain's delete method typically requires IDs,
+            # we need to retrieve all IDs for this source_id first
+            chunks = self.get_chunks()
+            
+            if chunks:
+                ids_to_delete = [chunk["doc_id"] for chunk in chunks]
+                
+                if hasattr(self._vectorstore, 'delete'):
+                    self._vectorstore.delete(ids=ids_to_delete)
+                else:
+                    # Fallback: delete one by one
+                    for doc_id in ids_to_delete:
+                        self.delete_chunk(doc_id)
+                        
+            logging.info(f"Deleted {len(chunks)} documents for source_id: {self._source_id}")
+            
         except Exception as e:
-            conn.rollback()
-            logger.exception("Error deleting index in Oracle: %s", e)
+            logging.error(f"Error deleting index in Oracle: {e}", exc_info=True)
             raise
-        finally:
-            cursor.close()
 
     def save_local(self, *args, **kwargs):
-        """No-op for DB-backed store."""
+        """
+        No-op for Oracle - data is already persisted in the database.
+        Kept for interface consistency with other vector stores.
+        """
         pass
 
     def get_chunks(self) -> List[Dict[str, Any]]:
-        """Return all chunks for source_id as list of dicts."""
-        conn = self._get_connection()
-        cursor = conn.cursor()
+        """
+        Get all chunks for this source_id.
+        
+        Returns:
+            List[Dict]: List of chunks with doc_id, text, and metadata
+        """
         try:
-            select_sql = f"""
-            SELECT id, {self._text_column}, {self._metadata_column}
-            FROM {self._table_name}
-            WHERE source_id = :src
-            """
-            cursor.execute(select_sql, {"src": self._source_id})
-            rows = cursor.fetchall()
+            # Use similarity_search with a dummy query and high k value
+            # Filter by source_id
+            # This is a workaround since LangChain doesn't have a "get all" method
+            
+            # Alternative: use the underlying connection to query directly
+            # But we want to avoid raw SQL as per requirements
+            
+            # We'll use a broad search with filtering
+            filter_dict = {"source_id": self._source_id}
+            
+            # Retrieve with a high k value (this may need adjustment based on your use case)
+            # Note: This is a limitation of using LangChain abstraction
+            results = self._vectorstore.similarity_search(
+                query="",  # Empty query
+                k=10000,  # Large number to get all documents
+                filter=filter_dict,
+            )
+            
             chunks = []
-            for doc_id, text_val, metadata_val in rows:
-                meta = self._deserialize_metadata(metadata_val)
-                chunks.append({"doc_id": str(int(doc_id)), "text": text_val, "metadata": meta})
+            for idx, doc in enumerate(results):
+                # LangChain documents may not have explicit IDs in metadata
+                # Try to extract ID from metadata or use index
+                doc_id = doc.metadata.get("id", str(idx))
+                
+                chunks.append({
+                    "doc_id": str(doc_id),
+                    "text": doc.page_content,
+                    "metadata": doc.metadata or {}
+                })
+            
             return chunks
+            
         except Exception as e:
-            logger.error("Error fetching chunks from Oracle: %s", e, exc_info=True)
+            logging.error(f"Error getting chunks from Oracle: {e}", exc_info=True)
             return []
-        finally:
-            cursor.close()
 
     def add_chunk(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> str:
-        """Add a single chunk and return its id."""
-        metadata = metadata or {}
-        final_metadata = metadata.copy()
-        final_metadata["source_id"] = self._source_id
-
-        embeddings = self._embedding.embed_documents([text])
-        if not embeddings:
-            raise ValueError("Could not generate embedding for chunk")
-
-        conn = self._get_connection()
-        cursor = conn.cursor()
+        """
+        Add a single chunk to the Oracle vector store.
+        
+        Args:
+            text: The text content to add
+            metadata: Optional metadata dictionary
+            
+        Returns:
+            str: ID of the inserted chunk
+        """
         try:
-            insert_sql = f"""
-            INSERT INTO {self._table_name} ({self._text_column}, {self._vector_column}, {self._metadata_column}, source_id)
-            VALUES (:text, VECTOR(:vec), :meta, :src)
-            RETURNING id INTO :ret_id
-            """
-            id_var = cursor.var(self._oracledb.NUMBER)
-            cursor.executemany(
-                insert_sql,
-                [{
-                    "text": text,
-                    "vec": json.dumps(embeddings[0]),
-                    "meta": self._serialize_metadata(final_metadata),
-                    "src": self._source_id,
-                    "ret_id": id_var,
-                }]
+            metadata = metadata or {}
+            
+            # Ensure metadata contains source_id
+            final_metadata = metadata.copy()
+            final_metadata["source_id"] = self._source_id
+            
+            # Use add_texts with single text
+            ids = self.add_texts(
+                texts=[text],
+                metadatas=[final_metadata]
             )
-
-            conn.commit()
-            returned_id = id_var.getvalue()
-            return str(int(returned_id))
+            
+            if ids and len(ids) > 0:
+                return ids[0]
+            else:
+                raise ValueError("Failed to insert chunk - no ID returned")
+            
         except Exception as e:
-            conn.rollback()
-            logger.exception("Error adding chunk to Oracle: %s", e)
+            logging.error(f"Error adding chunk to Oracle: {e}", exc_info=True)
             raise
-        finally:
-            cursor.close()
 
     def delete_chunk(self, chunk_id: str) -> bool:
-        conn = self._get_connection()
-        cursor = conn.cursor()
+        """
+        Delete a specific chunk by its ID.
+        Only deletes if the chunk belongs to this source_id.
+        
+        Args:
+            chunk_id: ID of the chunk to delete
+            
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
         try:
-            delete_sql = f"DELETE FROM {self._table_name} WHERE id = :id AND source_id = :src"
-            cursor.execute(delete_sql, {"id": int(chunk_id), "src": self._source_id})
-            deleted_count = cursor.rowcount
-            conn.commit()
-            return deleted_count > 0
+            # First verify the chunk belongs to this source_id
+            chunks = self.get_chunks()
+            chunk_ids = [chunk["doc_id"] for chunk in chunks]
+            
+            if chunk_id not in chunk_ids:
+                logging.warning(f"Chunk {chunk_id} not found or does not belong to source_id {self._source_id}")
+                return False
+            
+            # Delete using LangChain's delete method
+            if hasattr(self._vectorstore, 'delete'):
+                self._vectorstore.delete(ids=[chunk_id])
+                return True
+            else:
+                logging.error("Oracle VectorStore does not support delete operation")
+                return False
+            
         except Exception as e:
-            conn.rollback()
-            logger.exception("Error deleting chunk from Oracle: %s", e)
+            logging.error(f"Error deleting chunk from Oracle: {e}", exc_info=True)
             return False
-        finally:
-            cursor.close()
 
     def __del__(self):
-        """Close DB connection if open."""
-        try:
-            if hasattr(self, "_connection") and self._connection:
-                try:
-                    self._connection.close()
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        """
+        Cleanup when object is destroyed.
+        LangChain will handle connection cleanup internally.
+        """
+        # LangChain handles connection cleanup
+        pass
