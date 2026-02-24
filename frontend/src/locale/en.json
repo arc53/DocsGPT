@@ -694,7 +694,10 @@
     "itemsSelected": "{{count}} selected",
     "name": "Name",
     "lastModified": "Last Modified",
-    "size": "Size"
+    "size": "Size",
+    "myFiles": "My Files",
+    "sharedWithMe": "Shared with Me",
+    "loadingMore": "Loading more files..."
   },
   "actionButtons": {
     "openNewChat": "Open New Chat",

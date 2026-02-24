@@ -693,7 +693,10 @@
     "itemsSelected": "{{count}} выбрано",
     "name": "Имя",
     "lastModified": "Последнее изменение",
-    "size": "Размер"
+    "size": "Размер",
+    "myFiles": "Мои файлы",
+    "sharedWithMe": "Доступные мне",
+    "loadingMore": "Загрузка файлов..."
   },
   "actionButtons": {
     "openNewChat": "Открыть новый чат",

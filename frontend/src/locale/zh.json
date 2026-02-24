@@ -693,7 +693,10 @@
     "itemsSelected": "已选择 {{count}} 项",
     "name": "名称",
     "lastModified": "最后修改",
-    "size": "大小"
+    "size": "大小",
+    "myFiles": "我的文件",
+    "sharedWithMe": "与我共享",
+    "loadingMore": "加载更多文件..."
   },
   "actionButtons": {
     "openNewChat": "打开新聊天",

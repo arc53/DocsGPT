@@ -693,7 +693,10 @@
     "itemsSelected": "{{count}} 件選択済み",
     "name": "名前",
     "lastModified": "最終更新日",
-    "size": "サイズ"
+    "size": "サイズ",
+    "myFiles": "マイファイル",
+    "sharedWithMe": "共有アイテム",
+    "loadingMore": "さらに読み込み中..."
   },
   "actionButtons": {
     "openNewChat": "新しいチャットを開く",
