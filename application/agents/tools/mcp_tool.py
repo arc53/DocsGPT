@@ -342,12 +342,19 @@ class MCPTool(Tool):
             return self._format_result(result)
         except Exception as e:
             error_msg = str(e)
-            if "401" in error_msg or "Unauthorized" in error_msg:
+            lower_msg = error_msg.lower()
+            is_auth_error = (
+                "401" in error_msg
+                or "unauthorized" in lower_msg
+                or "session expired" in lower_msg
+                or "re-authorize" in lower_msg
+            )
+            if is_auth_error:
                 if self.auth_type == "oauth":
                     raise Exception(
                         f"Action '{action_name}' failed: OAuth session expired. "
                         "Please re-authorize this MCP server in tool settings."
-                    )
+                    ) from e
                 global _mcp_clients_cache
                 _mcp_clients_cache.pop(self._cache_key, None)
                 self._client = None
@@ -359,10 +366,12 @@ class MCPTool(Tool):
                     return self._format_result(result)
                 except Exception as retry_e:
                     raise Exception(
-                        f"Action '{action_name}' failed after re-auth attempt: {str(retry_e)}. "
+                        f"Action '{action_name}' failed after re-auth attempt: {retry_e}. "
                         "Your credentials may have expired — please re-authorize in tool settings."
-                    )
-            raise Exception(f"Failed to execute action '{action_name}': {error_msg}")
+                    ) from retry_e
+            raise Exception(
+                f"Failed to execute action '{action_name}': {error_msg}"
+            ) from e
 
     def _format_result(self, result) -> Dict:
         """Format FastMCP result to match expected format."""
@@ -660,23 +669,8 @@ class DocsGPTOAuth(OAuthClientProvider):
         user_id=None,
         db=None,
         additional_client_metadata: dict[str, Any] | None = None,
+        skip_redirect_validation: bool = False,
     ):
-        """
-        Initialize custom OAuth client provider for DocsGPT.
-
-        Args:
-            mcp_url: Full URL to the MCP endpoint
-            redirect_uri: Custom redirect URI for DocsGPT frontend
-            redis_client: Redis client for storing auth state
-            redis_prefix: Prefix for Redis keys
-            task_id: Task ID for tracking auth status
-            scopes: OAuth scopes to request
-            client_name: Name for this client during registration
-            user_id: User ID for token storage
-            db: Database instance for token storage
-            additional_client_metadata: Extra fields for OAuthClientMetadata
-        """
-
         self.redirect_uri = redirect_uri
         self.redis_client = redis_client
         self.redis_prefix = redis_prefix
@@ -702,7 +696,7 @@ class DocsGPTOAuth(OAuthClientProvider):
             server_url=self.server_base_url,
             user_id=self.user_id,
             db_client=self.db,
-            expected_redirect_uri=redirect_uri,
+            expected_redirect_uri=None if skip_redirect_validation else redirect_uri,
         )
 
         super().__init__(
@@ -734,16 +728,14 @@ class DocsGPTOAuth(OAuthClientProvider):
     async def redirect_handler(self, authorization_url: str) -> None:
         """Store auth URL and state in Redis for frontend to use."""
         auth_url, state = self._process_auth_url(authorization_url)
-        logging.info(
-            "[DocsGPTOAuth] Processed auth_url: %s, state: %s", auth_url, state
-        )
+        logger.info("Processed auth_url: %s, state: %s", auth_url, state)
         self.auth_url = auth_url
         self.extracted_state = state
 
         if self.redis_client and self.extracted_state:
             key = f"{self.redis_prefix}auth_url:{self.extracted_state}"
             self.redis_client.setex(key, 600, auth_url)
-            logging.info("[DocsGPTOAuth] Stored auth_url in Redis: %s", key)
+            logger.info("Stored auth_url in Redis: %s", key)
 
             if self.task_id:
                 status_key = f"mcp_oauth_status:{self.task_id}"
@@ -826,6 +818,7 @@ class NonInteractiveOAuth(DocsGPTOAuth):
 
     def __init__(self, **kwargs):
         kwargs.setdefault("task_id", None)
+        kwargs["skip_redirect_validation"] = True
         super().__init__(**kwargs)
 
     async def redirect_handler(self, authorization_url: str) -> None:
@@ -869,10 +862,9 @@ class DBTokenStorage(TokenStorage):
         if not doc or "tokens" not in doc:
             return None
         try:
-            tokens = OAuthToken.model_validate(doc["tokens"])
-            return tokens
+            return OAuthToken.model_validate(doc["tokens"])
         except ValidationError as e:
-            logging.error(f"Could not load tokens: {e}")
+            logger.error("Could not load tokens: %s", e)
             return None
 
     async def set_tokens(self, tokens: OAuthToken) -> None:
@@ -882,11 +874,14 @@ class DBTokenStorage(TokenStorage):
             {"$set": {"tokens": tokens.model_dump()}},
             True,
         )
-        logging.info(f"Saved tokens for {self.get_base_url(self.server_url)}")
+        logger.info("Saved tokens for %s", self.get_base_url(self.server_url))
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
         doc = await asyncio.to_thread(self.collection.find_one, self.get_db_key())
         if not doc or "client_info" not in doc:
+            logger.debug(
+                "No client_info in DB for %s", self.get_base_url(self.server_url)
+            )
             return None
         try:
             client_info = OAuthClientInformationFull.model_validate(doc["client_info"])
@@ -896,9 +891,11 @@ class DBTokenStorage(TokenStorage):
                 ]
                 expected_uri = self.expected_redirect_uri.rstrip("/")
                 if expected_uri not in stored_uris:
-                    logging.info(
-                        "OAuth client redirect URI changed for %s, clearing stale client registration.",
+                    logger.warning(
+                        "Redirect URI mismatch for %s: expected=%s stored=%s — clearing.",
                         self.get_base_url(self.server_url),
+                        expected_uri,
+                        stored_uris,
                     )
                     await asyncio.to_thread(
                         self.collection.update_one,
@@ -906,20 +903,9 @@ class DBTokenStorage(TokenStorage):
                         {"$unset": {"client_info": "", "tokens": ""}},
                     )
                     return None
-            tokens = await self.get_tokens()
-            if tokens is None:
-                logging.debug(
-                    "No tokens found, clearing client info to force fresh registration."
-                )
-                await asyncio.to_thread(
-                    self.collection.update_one,
-                    self.get_db_key(),
-                    {"$unset": {"client_info": ""}},
-                )
-                return None
             return client_info
         except ValidationError as e:
-            logging.error(f"Could not load client info: {e}")
+            logger.error("Could not load client info: %s", e)
             return None
 
     def _serialize_client_info(self, info: dict) -> dict:
@@ -935,17 +921,17 @@ class DBTokenStorage(TokenStorage):
             {"$set": {"client_info": serialized_info}},
             True,
         )
-        logging.info(f"Saved client info for {self.get_base_url(self.server_url)}")
+        logger.info("Saved client info for %s", self.get_base_url(self.server_url))
 
     async def clear(self) -> None:
         await asyncio.to_thread(self.collection.delete_one, self.get_db_key())
-        logging.info(f"Cleared OAuth cache for {self.get_base_url(self.server_url)}")
+        logger.info("Cleared OAuth cache for %s", self.get_base_url(self.server_url))
 
     @classmethod
     async def clear_all(cls, db_client) -> None:
         collection = db_client["connector_sessions"]
         await asyncio.to_thread(collection.delete_many, {})
-        logging.info("Cleared all OAuth client cache data.")
+        logger.info("Cleared all OAuth client cache data.")
 
 
 class MCPOAuthManager:
@@ -984,7 +970,7 @@ class MCPOAuthManager:
 
             return True
         except Exception as e:
-            logging.error(f"Error handling OAuth callback: {e}")
+            logger.error("Error handling OAuth callback: %s", e)
             return False
 
     def get_oauth_status(self, task_id: str) -> Dict[str, Any]:

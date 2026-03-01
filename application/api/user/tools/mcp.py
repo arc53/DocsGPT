@@ -1,21 +1,28 @@
 """Tool management MCP server integration."""
 
 import json
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, redirect, request
-from flask_restx import fields, Namespace, Resource
+from flask_restx import Namespace, Resource, fields
 
 from application.agents.tools.mcp_tool import MCPOAuthManager, MCPTool
 from application.api import api
 from application.api.user.base import user_tools_collection
 from application.api.user.tools.routes import transform_actions
 from application.cache import get_redis_instance
-from application.security.encryption import decrypt_credentials, encrypt_credentials
+from application.core.mongo_db import MongoDB
+from application.core.settings import settings
+from application.security.encryption import (decrypt_credentials,
+                                             encrypt_credentials)
 from application.utils import check_required_fields
 
 tools_mcp_ns = Namespace("tools", description="Tool management operations", path="/api")
+
+_mongo = MongoDB.get_client()
+_db = _mongo[settings.MONGO_DB_NAME]
+_connector_sessions = _db["connector_sessions"]
 
 
 @tools_mcp_ns.route("/mcp_server/test")
@@ -79,16 +86,16 @@ class TestMCPServerConfig(Resource):
                 return make_response(jsonify(result), 200)
 
             if not result.get("success") and "message" in result:
-                current_app.logger.error(f"MCP connection test failed: {result.get('message')}")
+                current_app.logger.error(
+                    f"MCP connection test failed: {result.get('message')}"
+                )
                 result["message"] = "Connection test failed"
 
             return make_response(jsonify(result), 200)
         except Exception as e:
             current_app.logger.error(f"Error testing MCP server: {e}", exc_info=True)
             return make_response(
-                jsonify(
-                    {"success": False, "error": "Connection test failed"}
-                ),
+                jsonify({"success": False, "error": "Connection test failed"}),
                 500,
             )
 
@@ -269,9 +276,7 @@ class MCPServerSave(Resource):
         except Exception as e:
             current_app.logger.error(f"Error saving MCP server: {e}", exc_info=True)
             return make_response(
-                jsonify(
-                    {"success": False, "error": "Failed to save MCP server"}
-                ),
+                jsonify({"success": False, "error": "Failed to save MCP server"}),
                 500,
             )
 
@@ -302,7 +307,7 @@ class MCPOAuthCallback(Resource):
             params = {
                 "status": "error",
                 "message": f"OAuth error: {error}. Please try again and make sure to grant all requested permissions, including offline access.",
-                "provider": "mcp_tool"
+                "provider": "mcp_tool",
             }
             return redirect(f"/api/connectors/callback-status?{urlencode(params)}")
         if not code or not state:
@@ -346,7 +351,10 @@ class MCPOAuthStatus(Resource):
                 status = json.loads(status_data)
                 if "tools" in status and isinstance(status["tools"], list):
                     status["tools"] = [
-                        {"name": t.get("name", "unknown"), "description": t.get("description", "")}
+                        {
+                            "name": t.get("name", "unknown"),
+                            "description": t.get("description", ""),
+                        }
                         for t in status["tools"]
                     ]
                 return make_response(
@@ -366,8 +374,83 @@ class MCPOAuthStatus(Resource):
                 )
         except Exception as e:
             current_app.logger.error(
-                f"Error getting OAuth status for task {task_id}: {str(e)}", exc_info=True
+                f"Error getting OAuth status for task {task_id}: {str(e)}",
+                exc_info=True,
             )
             return make_response(
-                jsonify({"success": False, "error": "Failed to get OAuth status", "task_id": task_id}), 500
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Failed to get OAuth status",
+                        "task_id": task_id,
+                    }
+                ),
+                500,
+            )
+
+
+@tools_mcp_ns.route("/mcp_server/auth_status")
+class MCPAuthStatus(Resource):
+    @api.doc(
+        description="Batch check auth status for all MCP tools. "
+        "Lightweight DB-only check — no network calls to MCP servers."
+    )
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        try:
+            mcp_tools = list(
+                user_tools_collection.find(
+                    {"user": user, "name": "mcp_tool"},
+                    {"_id": 1, "config": 1},
+                )
+            )
+            if not mcp_tools:
+                return make_response(jsonify({"success": True, "statuses": {}}), 200)
+
+            oauth_server_urls = {}
+            statuses = {}
+            for tool in mcp_tools:
+                tool_id = str(tool["_id"])
+                config = tool.get("config", {})
+                auth_type = config.get("auth_type", "none")
+                if auth_type == "oauth":
+                    server_url = config.get("server_url", "")
+                    if server_url:
+                        parsed = urlparse(server_url)
+                        base_url = f"{parsed.scheme}://{parsed.netloc}"
+                        oauth_server_urls[tool_id] = base_url
+                    else:
+                        statuses[tool_id] = "needs_auth"
+                else:
+                    statuses[tool_id] = "configured"
+
+            if oauth_server_urls:
+                unique_urls = list(set(oauth_server_urls.values()))
+                sessions = list(
+                    _connector_sessions.find(
+                        {"user_id": user, "server_url": {"$in": unique_urls}},
+                        {"server_url": 1, "tokens": 1},
+                    )
+                )
+                url_has_tokens = {
+                    doc["server_url"]: bool(doc.get("tokens", {}).get("access_token"))
+                    for doc in sessions
+                }
+                for tool_id, base_url in oauth_server_urls.items():
+                    if url_has_tokens.get(base_url):
+                        statuses[tool_id] = "connected"
+                    else:
+                        statuses[tool_id] = "needs_auth"
+
+            return make_response(jsonify({"success": True, "statuses": statuses}), 200)
+        except Exception as e:
+            current_app.logger.error(
+                "Error checking MCP auth status: %s", e, exc_info=True
+            )
+            return make_response(
+                jsonify({"success": False, "error": "Failed to check auth status"}),
+                500,
             )

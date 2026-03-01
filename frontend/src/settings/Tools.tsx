@@ -46,6 +46,9 @@ export default function Tools() {
   const [reconnectModalState, setReconnectModalState] =
     React.useState<ActiveState>('INACTIVE');
   const [reconnectTool, setReconnectTool] = React.useState<any>(null);
+  const [mcpStatuses, setMcpStatuses] = React.useState<{
+    [toolId: string]: string;
+  }>({});
 
   React.useEffect(() => {
     userTools.forEach((tool) => {
@@ -64,6 +67,7 @@ export default function Tools() {
     if (toolToDelete) {
       userService.deleteTool({ id: toolToDelete.id }, token).then(() => {
         getUserTools();
+        fetchMcpStatuses();
         setDeleteModalState('INACTIVE');
         setToolToDelete(null);
       });
@@ -120,6 +124,18 @@ export default function Tools() {
     return options;
   };
 
+  const fetchMcpStatuses = React.useCallback(() => {
+    userService
+      .getMCPAuthStatus(token)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.statuses) {
+          setMcpStatuses(data.statuses);
+        }
+      })
+      .catch(() => {});
+  }, [token]);
+
   const getUserTools = () => {
     setLoading(true);
     userService
@@ -159,6 +175,7 @@ export default function Tools() {
   const handleGoBack = () => {
     setSelectedTool(null);
     getUserTools();
+    fetchMcpStatuses();
   };
 
   const handleToolAdded = (toolId: string) => {
@@ -180,6 +197,7 @@ export default function Tools() {
 
   React.useEffect(() => {
     getUserTools();
+    fetchMcpStatuses();
   }, []);
   return (
     <div>
@@ -273,12 +291,32 @@ export default function Tools() {
                           />
                         </div>
                         <div className="w-full">
-                          <div className="flex w-full items-center px-1">
+                          <div className="flex w-full items-center gap-2 px-1">
                             <img
                               src={`/toolIcons/tool_${tool.name}.svg`}
                               alt={`${tool.displayName} icon`}
                               className="h-6 w-6"
                             />
+                            {tool.name === 'mcp_tool' &&
+                              mcpStatuses[tool.id] && (
+                                <span
+                                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium leading-none ${
+                                    mcpStatuses[tool.id] === 'connected'
+                                      ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                                      : mcpStatuses[tool.id] === 'needs_auth'
+                                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                                        : 'bg-gray-100 text-gray-600 dark:bg-gray-700/40 dark:text-gray-300'
+                                  }`}
+                                >
+                                  {mcpStatuses[tool.id] === 'connected'
+                                    ? t('settings.tools.authStatus.connected')
+                                    : mcpStatuses[tool.id] === 'needs_auth'
+                                      ? t('settings.tools.authStatus.needsAuth')
+                                      : t(
+                                          'settings.tools.authStatus.configured',
+                                        )}
+                                </span>
+                              )}
                           </div>
                           <div className="mt-[9px]">
                             <p
@@ -339,6 +377,7 @@ export default function Tools() {
             onServerSaved={() => {
               setReconnectTool(null);
               getUserTools();
+              fetchMcpStatuses();
             }}
           />
         </div>

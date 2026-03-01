@@ -156,20 +156,15 @@ export default function ContextMenu({
                     className={`cursor-pointer ${option.iconClassName || ''}`}
                   />
                 ) : (
-                  (() => {
-                    const Icon = option.icon as LucideIcon;
-                    return (
-                      <Icon
-                        size={Math.max(
-                          option.iconWidth || 16,
-                          option.iconHeight || 16,
-                        )}
-                        strokeWidth={1.75}
-                        aria-hidden="true"
-                        className={`cursor-pointer ${option.iconClassName || ''}`}
-                      />
-                    );
-                  })()
+                  <option.icon
+                    size={Math.max(
+                      option.iconWidth || 16,
+                      option.iconHeight || 16,
+                    )}
+                    strokeWidth={1.75}
+                    aria-hidden="true"
+                    className={`cursor-pointer ${option.iconClassName || ''}`}
+                  />
                 )}
               </div>
             )}

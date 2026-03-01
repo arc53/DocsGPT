@@ -155,6 +155,11 @@
       "edit": "Edit",
       "delete": "Delete",
       "reconnect": "Reconnect",
+      "authStatus": {
+        "connected": "Connected",
+        "needsAuth": "Needs Auth",
+        "configured": "Configured"
+      },
       "deleteWarning": "Are you sure you want to delete the tool \"{{toolName}}\" ?",
       "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
       "leaveWithoutSaving": "Leave without Saving",
