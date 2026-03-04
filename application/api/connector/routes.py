@@ -210,8 +210,7 @@ class ConnectorFiles(Resource):
         "folder_id": fields.String(required=False),
         "limit": fields.Integer(required=False),
         "page_token": fields.String(required=False),
-        "search_query": fields.String(required=False),
-        "shared": fields.Boolean(required=False)
+        "search_query": fields.String(required=False)
     }))
     @api.doc(description="List files from a connector provider (supports pagination and search)")
     def post(self):
@@ -223,8 +222,7 @@ class ConnectorFiles(Resource):
             limit = data.get('limit', 10)
             page_token = data.get('page_token')
             search_query = data.get('search_query')
-            shared = data.get('shared', False)
-            
+
             if not provider or not session_token:
                 return make_response(jsonify({"success": False, "error": "provider and session_token are required"}), 400)
 
@@ -243,7 +241,6 @@ class ConnectorFiles(Resource):
                 'session_token': session_token,
                 'folder_id': folder_id,
                 'page_token': page_token,
-                'shared': shared
             }
             if search_query:
                 input_config['search_query'] = search_query

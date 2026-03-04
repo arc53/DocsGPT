@@ -132,17 +132,9 @@ class SharePointLoader(BaseConnectorLoader):
             load_content = not list_only
             page_token = inputs.get('page_token')
             search_query = inputs.get('search_query')
-            shared = inputs.get('shared', False)
             self.next_page_token = None
 
-            if shared and not file_ids and not folder_id:
-                documents = self._list_shared_items(
-                    limit=limit,
-                    load_content=load_content,
-                    page_token=page_token,
-                    search_query=search_query
-                )
-            elif file_ids:
+            if file_ids:
                 for file_id in file_ids:
                     try:
                         doc = self._load_file_by_id(file_id, load_content=load_content)
@@ -266,87 +258,7 @@ class SharePointLoader(BaseConnectorLoader):
             logging.error(f"Error listing items under parent {parent_id}: {e}")
             return documents
 
-    def _list_shared_items(self, limit: int = 100, load_content: bool = False,
-                           page_token: Optional[str] = None,
-                           search_query: Optional[str] = None) -> List[Document]:
-        self._ensure_valid_token()
-        documents: List[Document] = []
 
-        try:
-            url = f"{self.GRAPH_API_BASE}/me/drive/sharedWithMe"
-            params = {'$top': min(100, limit) if limit else 100}
-            if page_token:
-                params['$skipToken'] = page_token
-
-            response = requests.get(url, headers=self._get_headers(), params=params)
-            response.raise_for_status()
-            results = response.json()
-
-            for item in results.get('value', []):
-                remote = item.get('remoteItem', {})
-                drive_id = remote.get('parentReference', {}).get('driveId')
-                item_id = remote.get('id')
-                name = remote.get('name', item.get('name', 'Unknown'))
-
-                if not drive_id or not item_id:
-                    continue
-
-                if search_query and search_query.lower() not in name.lower():
-                    continue
-
-                composite_id = f"{drive_id}:{item_id}"
-
-                if 'folder' in remote:
-                    doc_metadata = {
-                        'file_name': name,
-                        'mime_type': 'folder',
-                        'size': remote.get('size'),
-                        'created_time': remote.get('createdDateTime'),
-                        'modified_time': remote.get('lastModifiedDateTime'),
-                        'source': 'share_point',
-                        'is_folder': True
-                    }
-                    documents.append(Document(text="", doc_id=composite_id, extra_info=doc_metadata))
-                elif 'file' in remote:
-                    mime_type = remote.get('file', {}).get('mimeType', 'application/octet-stream')
-                    if mime_type not in self.SUPPORTED_MIME_TYPES:
-                        continue
-
-                    doc_metadata = {
-                        'file_name': name,
-                        'mime_type': mime_type,
-                        'size': remote.get('size'),
-                        'created_time': remote.get('createdDateTime'),
-                        'modified_time': remote.get('lastModifiedDateTime'),
-                        'source': 'share_point'
-                    }
-
-                    if load_content:
-                        content = self._download_file_content(composite_id)
-                        if content is None:
-                            continue
-                        documents.append(Document(text=content, doc_id=composite_id, extra_info=doc_metadata))
-                    else:
-                        documents.append(Document(text="", doc_id=composite_id, extra_info=doc_metadata))
-
-                if limit and len(documents) >= limit:
-                    break
-
-            next_link = results.get('@odata.nextLink')
-            if next_link:
-                from urllib.parse import urlparse, parse_qs
-                parsed = urlparse(next_link)
-                query_params = parse_qs(parsed.query)
-                skiptoken_list = query_params.get('$skiptoken')
-                self.next_page_token = skiptoken_list[0] if skiptoken_list else None
-            else:
-                self.next_page_token = None
-
-            return documents
-
-        except Exception as e:
-            logging.error(f"Error listing shared items: {e}")
-            return documents
 
 
     def _download_file_content(self, file_id: str) -> Optional[str]:

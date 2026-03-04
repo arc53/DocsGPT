@@ -18,6 +18,7 @@ class SharePointAuth(BaseConnectorAuth):
 
     SCOPES = [
         "Files.Read",
+        "Sites.Read.All",
         "User.Read",
     ]
 

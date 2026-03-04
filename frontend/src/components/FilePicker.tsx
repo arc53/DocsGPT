@@ -92,7 +92,6 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   const [authError, setAuthError] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
-  const [shared, setShared] = useState(false);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -112,7 +111,6 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       folderId: string | null,
       pageToken?: string,
       searchQuery = '',
-      isShared = false,
     ) => {
       // Cancel any in-flight request so stale responses never overwrite new state
       abortControllerRef.current?.abort();
@@ -135,9 +133,6 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
           page_token: pageToken,
           search_query: searchQuery,
         };
-        if (isShared) {
-          body.shared = true;
-        }
         const response = await fetch(`${apiHost}/api/connectors/files`, {
           method: 'POST',
           headers: {
@@ -223,7 +218,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
             name: getProviderConfig(provider).rootName,
           },
         ]);
-        loadCloudFiles(sessionToken, null, undefined, '', false);
+        loadCloudFiles(sessionToken, null, undefined, '');
       } else {
         removeSessionToken(provider);
         setIsConnected(false);
@@ -258,7 +253,6 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
           currentFolderId,
           nextPageToken,
           searchQuery,
-          shared,
         );
       }
     }
@@ -270,7 +264,6 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     searchQuery,
     provider,
     loadCloudFiles,
-    shared,
   ]);
 
   useEffect(() => {
@@ -300,7 +293,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     searchTimeoutRef.current = setTimeout(() => {
       const sessionToken = getSessionToken(provider);
       if (sessionToken) {
-        loadCloudFiles(sessionToken, currentFolderId, undefined, query, shared);
+        loadCloudFiles(sessionToken, currentFolderId, undefined, query);
       }
     }, 300);
   };
@@ -318,7 +311,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
     const sessionToken = getSessionToken(provider);
     if (sessionToken) {
-      loadCloudFiles(sessionToken, folderId, undefined, '', shared);
+      loadCloudFiles(sessionToken, folderId, undefined, '');
     }
   };
 
@@ -334,27 +327,11 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
     const sessionToken = getSessionToken(provider);
     if (sessionToken) {
-      loadCloudFiles(sessionToken, newFolderId, undefined, '', shared);
+      loadCloudFiles(sessionToken, newFolderId, undefined, '');
     }
   };
 
-  const handleTabSwitch = (isShared: boolean) => {
-    if (isShared === shared) return;
-    setShared(isShared);
-    setFiles([]);
-    setCurrentFolderId(null);
-    setSearchQuery('');
-    setNextPageToken(null);
-    setHasMoreFiles(false);
-    const rootName = isShared
-      ? t('filePicker.sharedWithMe')
-      : getProviderConfig(provider).rootName;
-    setFolderPath([{ id: null, name: rootName }]);
-    const sessionToken = getSessionToken(provider);
-    if (sessionToken) {
-      loadCloudFiles(sessionToken, null, undefined, '', isShared);
-    }
-  };
+
 
   const handleFileSelect = (fileId: string, isFolder: boolean) => {
     if (isFolder) {
@@ -387,7 +364,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
           if (data.session_token) {
             setSessionToken(provider, data.session_token);
-            loadCloudFiles(data.session_token, null, undefined, '', shared);
+            loadCloudFiles(data.session_token, null, undefined, '');
           }
         }}
         onError={(error) => {
@@ -433,30 +410,6 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       {isConnected && (
         <div className="mt-3 overflow-hidden rounded-lg border border-[#D7D7D7] dark:border-[#6A6A6A]">
           <div className="rounded-t-lg border-[#EEE6FF78] dark:border-[#6A6A6A]">
-            {provider === 'share_point' && (
-              <div className="flex border-b border-[#D7D7D7] dark:border-[#6A6A6A]">
-                <button
-                  onClick={() => handleTabSwitch(false)}
-                  className={`px-4 py-2 text-sm font-medium ${
-                    !shared
-                      ? 'border-b-2 border-[#A076F6] text-[#A076F6]'
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                  }`}
-                >
-                  {t('filePicker.myFiles')}
-                </button>
-                <button
-                  onClick={() => handleTabSwitch(true)}
-                  className={`px-4 py-2 text-sm font-medium ${
-                    shared
-                      ? 'border-b-2 border-[#A076F6] text-[#A076F6]'
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                  }`}
-                >
-                  {t('filePicker.sharedWithMe')}
-                </button>
-              </div>
-            )}
             <div className="rounded-t-lg bg-[#EEE6FF78] px-4 pt-4 dark:bg-[#2A262E]">
               <div className="mb-2 flex items-center gap-1">
                 {folderPath.map((path, index) => (
