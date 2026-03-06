@@ -5,6 +5,7 @@ from application.llm.docsgpt_provider import DocsGPTAPILLM
 from application.llm.google_ai import GoogleLLM
 from application.llm.groq import GroqLLM
 from application.llm.llama_cpp import LlamaCpp
+from application.llm.modelslab import ModelsLabLLM
 from application.llm.novita import NovitaLLM
 from application.llm.openai import AzureOpenAILLM, OpenAILLM
 from application.llm.premai import PremAILLM
@@ -25,6 +26,7 @@ class LLMCreator:
         "premai": PremAILLM,
         "groq": GroqLLM,
         "google": GoogleLLM,
+        "modelslab": ModelsLabLLM,
         "novita": NovitaLLM,
         "openrouter": OpenRouterLLM,
     }
