@@ -52,6 +52,7 @@ networkx==3.6.1
 numpy==2.4.0
 openai==2.14.0
 openapi3-parser==1.1.22
+oracledb>=2.0.0
 orjson==3.11.5
 packaging==24.2
 pandas==2.3.3
