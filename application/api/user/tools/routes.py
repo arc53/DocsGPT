@@ -56,6 +56,55 @@ def _validate_config(config, config_requirements, has_existing_secrets=False):
     return errors
 
 
+def _merge_secrets_on_update(new_config, existing_config, config_requirements, user_id):
+    """Merge incoming config with existing encrypted secrets and re-encrypt.
+
+    For updates, the client may omit unchanged secret values.  This helper
+    decrypts any previously stored secrets, overlays whatever the client *did*
+    send, strips plain-text secrets from the stored config, and re-encrypts
+    the merged result.
+
+    Returns the final ``config`` dict ready for persistence.
+    """
+    secret_keys = [
+        key for key, spec in config_requirements.items()
+        if spec.get("secret")
+    ]
+
+    if not secret_keys:
+        return new_config
+
+    existing_secrets = {}
+    if "encrypted_credentials" in existing_config:
+        existing_secrets = decrypt_credentials(
+            existing_config["encrypted_credentials"], user_id
+        )
+
+    merged_secrets = existing_secrets.copy()
+    for key in secret_keys:
+        if key in new_config and new_config[key]:
+            merged_secrets[key] = new_config[key]
+
+    # Start from existing non-secret values, then overlay incoming non-secrets
+    storage_config = {
+        k: v for k, v in existing_config.items()
+        if k not in secret_keys and k != "encrypted_credentials"
+    }
+    storage_config.update(
+        {k: v for k, v in new_config.items() if k not in secret_keys}
+    )
+
+    if merged_secrets:
+        storage_config["encrypted_credentials"] = encrypt_credentials(
+            merged_secrets, user_id
+        )
+    else:
+        storage_config.pop("encrypted_credentials", None)
+
+    storage_config.pop("has_encrypted_credentials", None)
+    return storage_config
+
+
 def transform_actions(actions_metadata):
     """Set default flags on action metadata for storage.
 
@@ -297,12 +346,17 @@ class UpdateTool(Resource):
                 tool_doc = user_tools_collection.find_one(
                     {"_id": ObjectId(data["id"]), "user": user}
                 )
-                tool_name = tool_doc.get("name") if tool_doc else data.get("name")
+                if not tool_doc:
+                    return make_response(
+                        jsonify({"success": False, "message": "Tool not found"}),
+                        404,
+                    )
+                tool_name = tool_doc.get("name", data.get("name"))
                 tool_instance = tool_manager.tools.get(tool_name)
                 config_requirements = (
                     tool_instance.get_config_requirements() if tool_instance else {}
                 )
-                existing_config = tool_doc.get("config", {}) if tool_doc else {}
+                existing_config = tool_doc.get("config", {})
                 has_existing_secrets = "encrypted_credentials" in existing_config
 
                 if config_requirements:
@@ -320,45 +374,9 @@ class UpdateTool(Resource):
                             400,
                         )
 
-                secret_keys = [
-                    key for key, spec in config_requirements.items()
-                    if spec.get("secret")
-                ]
-
-                if secret_keys:
-                    config = data["config"]
-                    existing_secrets = {}
-                    if "encrypted_credentials" in existing_config:
-                        existing_secrets = decrypt_credentials(
-                            existing_config["encrypted_credentials"], user
-                        )
-
-                    merged_secrets = existing_secrets.copy()
-                    for key in secret_keys:
-                        if key in config and config[key]:
-                            merged_secrets[key] = config[key]
-
-                    storage_config = {
-                        k: v for k, v in config.items() if k not in secret_keys
-                    }
-                    non_secret_existing = {
-                        k: v for k, v in existing_config.items()
-                        if k not in secret_keys and k != "encrypted_credentials"
-                    }
-                    non_secret_existing.update(storage_config)
-                    storage_config = non_secret_existing
-
-                    if merged_secrets:
-                        storage_config["encrypted_credentials"] = encrypt_credentials(
-                            merged_secrets, user
-                        )
-                    else:
-                        storage_config.pop("encrypted_credentials", None)
-
-                    storage_config.pop("has_encrypted_credentials", None)
-                    update_data["config"] = storage_config
-                else:
-                    update_data["config"] = data["config"]
+                update_data["config"] = _merge_secrets_on_update(
+                    data["config"], existing_config, config_requirements, user
+                )
             if "status" in data:
                 update_data["status"] = data["status"]
             user_tools_collection.update_one(
@@ -425,45 +443,9 @@ class UpdateToolConfig(Resource):
                         400,
                     )
 
-            secret_keys = [
-                key for key, spec in config_requirements.items()
-                if spec.get("secret")
-            ]
-
-            if secret_keys:
-                config = data["config"]
-                existing_secrets = {}
-                if "encrypted_credentials" in existing_config:
-                    existing_secrets = decrypt_credentials(
-                        existing_config["encrypted_credentials"], user
-                    )
-
-                merged_secrets = existing_secrets.copy()
-                for key in secret_keys:
-                    if key in config and config[key]:
-                        merged_secrets[key] = config[key]
-
-                storage_config = {
-                    k: v for k, v in config.items() if k not in secret_keys
-                }
-                non_secret_existing = {
-                    k: v for k, v in existing_config.items()
-                    if k not in secret_keys and k != "encrypted_credentials"
-                }
-                non_secret_existing.update(storage_config)
-                storage_config = non_secret_existing
-
-                if merged_secrets:
-                    storage_config["encrypted_credentials"] = encrypt_credentials(
-                        merged_secrets, user
-                    )
-                else:
-                    storage_config.pop("encrypted_credentials", None)
-
-                storage_config.pop("has_encrypted_credentials", None)
-                final_config = storage_config
-            else:
-                final_config = data["config"]
+            final_config = _merge_secrets_on_update(
+                data["config"], existing_config, config_requirements, user
+            )
 
             user_tools_collection.update_one(
                 {"_id": ObjectId(data["id"]), "user": user},
@@ -577,11 +559,13 @@ class DeleteTool(Resource):
                 {"_id": ObjectId(data["id"]), "user": user}
             )
             if result.deleted_count == 0:
-                return {"success": False, "message": "Tool not found"}, 404
+                return make_response(
+                    jsonify({"success": False, "message": "Tool not found"}), 404
+                )
         except Exception as err:
             current_app.logger.error(f"Error deleting tool: {err}", exc_info=True)
-            return {"success": False}, 400
-        return {"success": True}, 200
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify({"success": True}), 200)
 
 
 @tools_ns.route("/parse_spec")

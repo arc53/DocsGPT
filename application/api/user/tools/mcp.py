@@ -14,8 +14,7 @@ from application.api.user.tools.routes import transform_actions
 from application.cache import get_redis_instance
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
-from application.security.encryption import (decrypt_credentials,
-                                             encrypt_credentials)
+from application.security.encryption import decrypt_credentials, encrypt_credentials
 from application.utils import check_required_fields
 
 tools_mcp_ns = Namespace("tools", description="Tool management operations", path="/api")
@@ -23,6 +22,45 @@ tools_mcp_ns = Namespace("tools", description="Tool management operations", path
 _mongo = MongoDB.get_client()
 _db = _mongo[settings.MONGO_DB_NAME]
 _connector_sessions = _db["connector_sessions"]
+
+_ALLOWED_TRANSPORTS = {"auto", "sse", "http"}
+
+
+def _sanitize_mcp_transport(config):
+    """Normalise and validate the transport_type field.
+
+    Strips ``command`` / ``args`` keys that are only valid for local STDIO
+    transports and returns the cleaned transport type string.
+    """
+    transport_type = (config.get("transport_type") or "auto").lower()
+    if transport_type not in _ALLOWED_TRANSPORTS:
+        raise ValueError(f"Unsupported transport_type: {transport_type}")
+    config.pop("command", None)
+    config.pop("args", None)
+    config["transport_type"] = transport_type
+    return transport_type
+
+
+def _extract_auth_credentials(config):
+    """Build an ``auth_credentials`` dict from the raw MCP config."""
+    auth_credentials = {}
+    auth_type = config.get("auth_type", "none")
+
+    if auth_type == "api_key":
+        if config.get("api_key"):
+            auth_credentials["api_key"] = config["api_key"]
+        if config.get("api_key_header"):
+            auth_credentials["api_key_header"] = config["api_key_header"]
+    elif auth_type == "bearer":
+        if config.get("bearer_token"):
+            auth_credentials["bearer_token"] = config["bearer_token"]
+    elif auth_type == "basic":
+        if config.get("username"):
+            auth_credentials["username"] = config["username"]
+        if config.get("password"):
+            auth_credentials["password"] = config["password"]
+
+    return auth_credentials
 
 
 @tools_mcp_ns.route("/mcp_server/test")
@@ -51,31 +89,15 @@ class TestMCPServerConfig(Resource):
             return missing_fields
         try:
             config = data["config"]
-            transport_type = (config.get("transport_type") or "auto").lower()
-            allowed_transports = {"auto", "sse", "http"}
-            if transport_type not in allowed_transports:
+            try:
+                _sanitize_mcp_transport(config)
+            except ValueError:
                 return make_response(
                     jsonify({"success": False, "error": "Unsupported transport_type"}),
                     400,
                 )
-            config.pop("command", None)
-            config.pop("args", None)
-            config["transport_type"] = transport_type
 
-            auth_credentials = {}
-            auth_type = config.get("auth_type", "none")
-
-            if auth_type == "api_key" and "api_key" in config:
-                auth_credentials["api_key"] = config["api_key"]
-                if "api_key_header" in config:
-                    auth_credentials["api_key_header"] = config["api_key_header"]
-            elif auth_type == "bearer" and "bearer_token" in config:
-                auth_credentials["bearer_token"] = config["bearer_token"]
-            elif auth_type == "basic":
-                if "username" in config:
-                    auth_credentials["username"] = config["username"]
-                if "password" in config:
-                    auth_credentials["password"] = config["password"]
+            auth_credentials = _extract_auth_credentials(config)
             test_config = config.copy()
             test_config["auth_credentials"] = auth_credentials
 
@@ -135,32 +157,16 @@ class MCPServerSave(Resource):
             return missing_fields
         try:
             config = data["config"]
-            transport_type = (config.get("transport_type") or "auto").lower()
-            allowed_transports = {"auto", "sse", "http"}
-            if transport_type not in allowed_transports:
+            try:
+                _sanitize_mcp_transport(config)
+            except ValueError:
                 return make_response(
                     jsonify({"success": False, "error": "Unsupported transport_type"}),
                     400,
                 )
-            config.pop("command", None)
-            config.pop("args", None)
-            config["transport_type"] = transport_type
 
-            auth_credentials = {}
+            auth_credentials = _extract_auth_credentials(config)
             auth_type = config.get("auth_type", "none")
-            if auth_type == "api_key":
-                if "api_key" in config and config["api_key"]:
-                    auth_credentials["api_key"] = config["api_key"]
-                if "api_key_header" in config:
-                    auth_credentials["api_key_header"] = config["api_key_header"]
-            elif auth_type == "bearer":
-                if "bearer_token" in config and config["bearer_token"]:
-                    auth_credentials["bearer_token"] = config["bearer_token"]
-            elif auth_type == "basic":
-                if "username" in config and config["username"]:
-                    auth_credentials["username"] = config["username"]
-                if "password" in config and config["password"]:
-                    auth_credentials["password"] = config["password"]
             mcp_config = config.copy()
             mcp_config["auth_credentials"] = auth_credentials
 

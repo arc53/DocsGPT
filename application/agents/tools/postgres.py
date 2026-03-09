@@ -1,5 +1,11 @@
+import logging
+
 import psycopg2
+
 from application.agents.tools.base import Tool
+
+logger = logging.getLogger(__name__)
+
 
 class PostgresTool(Tool):
     """
@@ -27,7 +33,7 @@ class PostgresTool(Tool):
         """
         Executes an SQL query against the PostgreSQL database using a connection string.
         """
-        conn = None  # Initialize conn to None for error handling
+        conn = None
         try:
             conn = psycopg2.connect(self.connection_string)
             cur = conn.cursor()
@@ -58,21 +64,21 @@ class PostgresTool(Tool):
 
         except psycopg2.Error as e:
             error_message = f"Database error: {e}"
-            print(f"Database error: {e}")
+            logger.error("PostgreSQL execute_sql error: %s", e)
             return {
                 "status_code": 500,
                 "message": "Failed to execute SQL query.",
                 "error": error_message,
             }
         finally:
-            if conn:  # Ensure connection is closed even if errors occur
+            if conn:
                 conn.close()
 
     def _get_schema(self, db_name):
         """
         Retrieves the schema of the PostgreSQL database using a connection string.
         """
-        conn = None  # Initialize conn to None for error handling
+        conn = None
         try:
             conn = psycopg2.connect(self.connection_string)
             cur = conn.cursor()
@@ -118,14 +124,14 @@ class PostgresTool(Tool):
 
         except psycopg2.Error as e:
             error_message = f"Database error: {e}"
-            print(f"Database error: {e}")
+            logger.error("PostgreSQL get_schema error: %s", e)
             return {
                 "status_code": 500,
                 "message": "Failed to retrieve database schema.",
                 "error": error_message,
             }
         finally:
-            if conn: # Ensure connection is closed even if errors occur
+            if conn:
                 conn.close()
 
     def get_actions_metadata(self):

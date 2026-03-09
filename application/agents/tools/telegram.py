@@ -1,5 +1,10 @@
+import logging
+
 import requests
+
 from application.agents.tools.base import Tool
+
+logger = logging.getLogger(__name__)
 
 
 class TelegramTool(Tool):
@@ -25,14 +30,14 @@ class TelegramTool(Tool):
             raise ValueError(f"Unknown action: {action_name}")
 
     def _send_message(self, text, chat_id):
-        print(f"Sending message: {text}")
+        logger.debug("Sending Telegram message to chat_id=%s", chat_id)
         url = f"https://api.telegram.org/bot{self.token}/sendMessage"
         payload = {"chat_id": chat_id, "text": text}
         response = requests.post(url, data=payload)
         return {"status_code": response.status_code, "message": "Message sent"}
 
     def _send_image(self, image_url, chat_id):
-        print(f"Sending image: {image_url}")
+        logger.debug("Sending Telegram image to chat_id=%s", chat_id)
         url = f"https://api.telegram.org/bot{self.token}/sendPhoto"
         payload = {"chat_id": chat_id, "photo": image_url}
         response = requests.post(url, data=payload)
