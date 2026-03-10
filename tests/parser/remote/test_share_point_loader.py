@@ -67,8 +67,9 @@ class TestSharePointLoaderLoadFileById:
 
     @patch("application.parser.connectors.share_point.loader.requests.get")
     @patch("application.parser.connectors.share_point.loader.SharePointAuth.get_token_info_from_session")
+    @patch("application.parser.connectors.share_point.loader.SharePointAuth.__init__", return_value=None)
     @patch("application.parser.connectors.share_point.loader.SharePointLoader._ensure_valid_token")
-    def test_load_file_by_id_includes_size_in_select(self, mock_ensure_token, mock_get_token, mock_get):
+    def test_load_file_by_id_includes_size_in_select(self, mock_ensure_token, mock_auth_init, mock_get_token, mock_get):
         """Should include size field in $select parameter."""
         mock_get_token.return_value = {
             "access_token": "test-token",
@@ -97,8 +98,9 @@ class TestSharePointLoaderLoadFileById:
 
     @patch("application.parser.connectors.share_point.loader.requests.get")
     @patch("application.parser.connectors.share_point.loader.SharePointAuth.get_token_info_from_session")
+    @patch("application.parser.connectors.share_point.loader.SharePointAuth.__init__", return_value=None)
     @patch("application.parser.connectors.share_point.loader.SharePointLoader._ensure_valid_token")
-    def test_load_file_by_id_returns_document_with_size(self, mock_ensure_token, mock_get_token, mock_get):
+    def test_load_file_by_id_returns_document_with_size(self, mock_ensure_token, mock_auth_init, mock_get_token, mock_get):
         """Should return document with size from API response."""
         mock_get_token.return_value = {
             "access_token": "test-token",
@@ -133,8 +135,9 @@ class TestSharePointLoaderListItems:
 
     @patch("application.parser.connectors.share_point.loader.requests.get")
     @patch("application.parser.connectors.share_point.loader.SharePointAuth.get_token_info_from_session")
+    @patch("application.parser.connectors.share_point.loader.SharePointAuth.__init__", return_value=None)
     @patch("application.parser.connectors.share_point.loader.SharePointLoader._ensure_valid_token")
-    def test_list_items_includes_size_in_select(self, mock_ensure_token, mock_get_token, mock_get):
+    def test_list_items_includes_size_in_select(self, mock_ensure_token, mock_auth_init, mock_get_token, mock_get):
         """Should include size field in $select parameter when listing items."""
         mock_get_token.return_value = {
             "access_token": "test-token",
@@ -167,8 +170,9 @@ class TestSharePointLoaderListItems:
 
     @patch("application.parser.connectors.share_point.loader.requests.get")
     @patch("application.parser.connectors.share_point.loader.SharePointAuth.get_token_info_from_session")
+    @patch("application.parser.connectors.share_point.loader.SharePointAuth.__init__", return_value=None)
     @patch("application.parser.connectors.share_point.loader.SharePointLoader._ensure_valid_token")
-    def test_list_items_folders_include_size(self, mock_ensure_token, mock_get_token, mock_get):
+    def test_list_items_folders_include_size(self, mock_ensure_token, mock_auth_init, mock_get_token, mock_get):
         """Should include size for folders as well."""
         mock_get_token.return_value = {
             "access_token": "test-token",
