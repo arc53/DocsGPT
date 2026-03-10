@@ -5,7 +5,8 @@ Loads documents from SharePoint/OneDrive using Microsoft Graph API.
 
 import logging
 import os
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
+from urllib.parse import quote
 
 import requests
 
@@ -33,9 +34,10 @@ class SharePointLoader(BaseConnectorLoader):
         'application/epub+zip': '.epub',
         'application/rtf': '.rtf',
         'image/jpeg': '.jpg',
-        'image/jpg': '.jpg',
         'image/png': '.png',
     }
+
+    EXTENSION_TO_MIME = {v: k for k, v in SUPPORTED_MIME_TYPES.items()}
 
     GRAPH_API_BASE = "https://graph.microsoft.com/v1.0"
 
@@ -46,6 +48,7 @@ class SharePointLoader(BaseConnectorLoader):
         token_info = self.auth.get_token_info_from_session(session_token)
         self.access_token = token_info.get('access_token')
         self.refresh_token = token_info.get('refresh_token')
+        self.allows_shared_content = token_info.get('allows_shared_content', False)
 
         if not self.access_token:
             raise ValueError("No access token found in session")
@@ -68,9 +71,7 @@ class SharePointLoader(BaseConnectorLoader):
             try:
                 new_token_info = self.auth.refresh_access_token(self.refresh_token)
                 self.access_token = new_token_info.get('access_token')
-                logging.info("Token refreshed successfully")
-            except Exception as e:
-                logging.error(f"Failed to refresh token: {e}")
+            except Exception:
                 raise ValueError("Failed to refresh access token")
 
     def _get_item_url(self, item_ref: str) -> str:
@@ -134,6 +135,8 @@ class SharePointLoader(BaseConnectorLoader):
             search_query = inputs.get('search_query')
             self.next_page_token = None
 
+            shared = inputs.get('shared', False)
+
             if file_ids:
                 for file_id in file_ids:
                     try:
@@ -146,6 +149,16 @@ class SharePointLoader(BaseConnectorLoader):
                     except Exception as e:
                         logging.error(f"Error loading file {file_id}: {e}")
                         continue
+            elif shared:
+                if not self.allows_shared_content:
+                    logging.warning("Shared content is only available for work/school Microsoft accounts")
+                    return []
+                documents = self._list_shared_items(
+                    limit=limit,
+                    load_content=load_content,
+                    page_token=page_token,
+                    search_query=search_query
+                )
             else:
                 parent_id = folder_id if folder_id else 'root'
                 documents = self._list_items_in_parent(
@@ -205,11 +218,12 @@ class SharePointLoader(BaseConnectorLoader):
                 params['$skipToken'] = page_token
 
             if search_query:
+                encoded_query = quote(search_query, safe='')
                 if ':' in parent_id:
                     drive_id = parent_id.split(':', 1)[0]
-                    search_url = f"{self.GRAPH_API_BASE}/drives/{drive_id}/root/search(q='{search_query}')"
+                    search_url = f"{self.GRAPH_API_BASE}/drives/{drive_id}/root/search(q='{encoded_query}')"
                 else:
-                    search_url = f"{self.GRAPH_API_BASE}/me/drive/search(q='{search_query}')"
+                    search_url = f"{self.GRAPH_API_BASE}/me/drive/search(q='{encoded_query}')"
                 response = requests.get(search_url, headers=self._get_headers(), params=params)
             else:
                 response = requests.get(url, headers=self._get_headers(), params=params)
@@ -261,6 +275,186 @@ class SharePointLoader(BaseConnectorLoader):
 
 
 
+    def _resolve_mime_type(self, resource: Dict[str, Any]) -> Tuple[str, bool]:
+        """Resolve mime type from resource, falling back to file extension."""
+        file_data = resource.get('file', {})
+        mime_type = file_data.get('mimeType') if file_data else None
+
+        if mime_type and mime_type in self.SUPPORTED_MIME_TYPES:
+            return mime_type, True
+
+        name = resource.get('name', '')
+        ext = os.path.splitext(name)[1].lower()
+        if ext in self.EXTENSION_TO_MIME:
+            return self.EXTENSION_TO_MIME[ext], True
+
+        return mime_type or 'application/octet-stream', False
+
+    def _get_user_drive_web_url(self) -> Optional[str]:
+        """Fetch the current user's OneDrive web URL for KQL path exclusion."""
+        try:
+            response = requests.get(
+                f"{self.GRAPH_API_BASE}/me/drive",
+                headers=self._get_headers(),
+                params={'$select': 'webUrl'}
+            )
+            response.raise_for_status()
+            return response.json().get('webUrl')
+        except Exception as e:
+            logging.warning(f"Could not fetch user drive web URL: {e}")
+            return None
+
+    def _build_shared_kql_query(self, search_query: Optional[str], user_drive_url: Optional[str]) -> str:
+        """Build KQL query string that excludes the user's own drive items."""
+        base_query = search_query if search_query else "*"
+        if user_drive_url:
+            return f'{base_query} AND -path:"{user_drive_url}"'
+        return base_query
+
+    def _list_shared_items(self, limit: int = 100, load_content: bool = False, page_token: Optional[str] = None, search_query: Optional[str] = None) -> List[Document]:
+        """Fetch shared drive items using Microsoft Graph Search API with local offset paging.
+
+        We always fetch up to a fixed maximum number of hits from Graph (single request),
+        then page through that array locally using `page_token` as a simple integer offset.
+        This avoids relying on buggy or inconsistent remote `from`/`size` semantics.
+        """
+        self._ensure_valid_token()
+        documents: List[Document] = []
+
+        try:
+            user_drive_url = self._get_user_drive_web_url()
+            query_text = self._build_shared_kql_query(search_query, user_drive_url)
+
+            url = f"{self.GRAPH_API_BASE}/search/query"
+            page_size = 500  # maximum number of hits we care about for selection
+
+            body = {
+                "requests": [
+                    {
+                        "entityTypes": ["driveItem"],
+                        "query": {"queryString": query_text},
+                        "from": 0,
+                        "size": page_size,
+                    }
+                ]
+            }
+
+            headers = self._get_headers()
+            headers["Content-Type"] = "application/json"
+            response = requests.post(url, headers=headers, json=body)
+            response.raise_for_status()
+            results = response.json()
+
+            search_response = results.get("value", [])
+            if not search_response:
+                logging.warning("Search API returned empty value array")
+                self.next_page_token = None
+                return documents
+
+            hits_containers = search_response[0].get("hitsContainers", [])
+            if not hits_containers:
+                logging.warning("Search API returned no hitsContainers")
+                self.next_page_token = None
+                return documents
+
+            container = hits_containers[0]
+            total = container.get("total", 0)
+            raw_hits = container.get("hits", [])
+
+            # Deduplicate by effective item ID (driveId:itemId) to avoid the same
+            # resource appearing multiple times across the result set.
+            deduped_hits = []
+            seen_ids = set()
+            for hit in raw_hits:
+                resource = hit.get("resource", {})
+                item_id = resource.get("id")
+                drive_id = resource.get("parentReference", {}).get("driveId")
+                effective_id = f"{drive_id}:{item_id}" if drive_id and item_id else item_id
+                if not effective_id or effective_id in seen_ids:
+                    continue
+                seen_ids.add(effective_id)
+                deduped_hits.append(hit)
+
+            hits = deduped_hits
+            logging.info(
+                f"Search API returned {total} total results, {len(raw_hits)} raw hits, {len(hits)} unique hits in this batch"
+            )
+            try:
+                offset = int(page_token) if page_token is not None else 0
+            except (TypeError, ValueError):
+                logging.warning(
+                    f"Invalid page_token '{page_token}' for shared items search, defaulting to 0"
+                )
+                offset = 0
+
+            if offset < 0:
+                offset = 0
+            if offset >= len(hits):
+                self.next_page_token = None
+                return documents
+
+            end_index = offset + limit if limit else len(hits)
+            end_index = min(end_index, len(hits))
+
+            for hit in hits[offset:end_index]:
+                resource = hit.get("resource", {})
+                item_name = resource.get("name", "Unknown")
+                item_id = resource.get("id")
+                drive_id = resource.get("parentReference", {}).get("driveId")
+
+                effective_id = f"{drive_id}:{item_id}" if drive_id and item_id else item_id
+
+                is_folder = "folder" in resource
+
+                if is_folder:
+                    doc_metadata = {
+                        "file_name": item_name,
+                        "mime_type": "folder",
+                        "size": resource.get("size"),
+                        "created_time": resource.get("createdDateTime"),
+                        "modified_time": resource.get("lastModifiedDateTime"),
+                        "source": "share_point",
+                        "is_folder": True,
+                    }
+                    documents.append(
+                        Document(text="", doc_id=effective_id, extra_info=doc_metadata)
+                    )
+                else:
+                    mime_type, supported = self._resolve_mime_type(resource)
+                    if not supported:
+                        logging.info(
+                            f"Skipping unsupported shared file: {item_name} (mime: {mime_type})"
+                        )
+                        continue
+
+                    doc_metadata = {
+                        "file_name": item_name,
+                        "mime_type": mime_type,
+                        "size": resource.get("size"),
+                        "created_time": resource.get("createdDateTime"),
+                        "modified_time": resource.get("lastModifiedDateTime"),
+                        "source": "share_point",
+                    }
+
+                    content = ""
+                    if load_content:
+                        content = self._download_file_content(effective_id) or ""
+
+                    documents.append(
+                        Document(text=content, doc_id=effective_id, extra_info=doc_metadata)
+                    )
+
+            if limit and end_index < len(hits):
+                self.next_page_token = str(end_index)
+            else:
+                self.next_page_token = None
+
+            return documents
+
+        except Exception as e:
+            logging.error(f"Error listing shared items via search API: {e}", exc_info=True)
+            return documents
+
     def _download_file_content(self, file_id: str) -> Optional[str]:
         self._ensure_valid_token()
 
@@ -269,18 +463,11 @@ class SharePointLoader(BaseConnectorLoader):
             response = requests.get(url, headers=self._get_headers())
             response.raise_for_status()
 
-            content_bytes = response.content
-
             try:
-                content = content_bytes.decode('utf-8')
+                return response.content.decode('utf-8')
             except UnicodeDecodeError:
-                try:
-                    content = content_bytes.decode('latin-1')
-                except UnicodeDecodeError:
-                    logging.error(f"Could not decode file {file_id} as text")
-                    return None
-
-            return content
+                logging.error(f"Could not decode file {file_id} as text")
+                return None
 
         except requests.exceptions.HTTPError as e:
             if e.response.status_code in [401, 403]:
@@ -290,16 +477,11 @@ class SharePointLoader(BaseConnectorLoader):
                     self.access_token = new_token_info.get('access_token')
                     response = requests.get(url, headers=self._get_headers())
                     response.raise_for_status()
-                    content_bytes = response.content
                     try:
-                        content = content_bytes.decode('utf-8')
+                        return response.content.decode('utf-8')
                     except UnicodeDecodeError:
-                        try:
-                            content = content_bytes.decode('latin-1')
-                        except UnicodeDecodeError:
-                            logging.error(f"Could not decode file {file_id} as text")
-                            return None
-                    return content
+                        logging.error(f"Could not decode file {file_id} as text")
+                        return None
                 except Exception as refresh_error:
                     raise ValueError(f"Authentication failed and could not be refreshed: {refresh_error}")
             logging.error(f"HTTP error downloading file {file_id}: {e}")

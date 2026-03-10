@@ -158,12 +158,7 @@ class ConnectorsCallback(Resource):
                     current_app.logger.warning(f"Could not get user info: {e}")
                     user_email = 'Connected User'
 
-                sanitized_token_info = {
-                    "access_token": token_info.get("access_token"),
-                    "refresh_token": token_info.get("refresh_token"),
-                    "token_uri": token_info.get("token_uri"),
-                    "expiry": token_info.get("expiry")
-                }
+                sanitized_token_info = auth.sanitize_token_info(token_info)
 
                 sessions_collection.find_one_and_update(
                     {"_id": ObjectId(state_object_id), "provider": provider},
@@ -210,7 +205,7 @@ class ConnectorFiles(Resource):
         "folder_id": fields.String(required=False),
         "limit": fields.Integer(required=False),
         "page_token": fields.String(required=False),
-        "search_query": fields.String(required=False)
+        "search_query": fields.String(required=False),
     }))
     @api.doc(description="List files from a connector provider (supports pagination and search)")
     def post(self):
@@ -218,10 +213,7 @@ class ConnectorFiles(Resource):
             data = request.get_json()
             provider = data.get('provider')
             session_token = data.get('session_token')
-            folder_id = data.get('folder_id')
             limit = data.get('limit', 10)
-            page_token = data.get('page_token')
-            search_query = data.get('search_query')
 
             if not provider or not session_token:
                 return make_response(jsonify({"success": False, "error": "provider and session_token are required"}), 400)
@@ -235,15 +227,12 @@ class ConnectorFiles(Resource):
                 return make_response(jsonify({"success": False, "error": "Invalid or unauthorized session"}), 401)
 
             loader = ConnectorCreator.create_connector(provider, session_token)
+
+            generic_keys = {'provider', 'session_token'}
             input_config = {
-                'limit': limit,
-                'list_only': True,
-                'session_token': session_token,
-                'folder_id': folder_id,
-                'page_token': page_token,
+                k: v for k, v in data.items() if k not in generic_keys
             }
-            if search_query:
-                input_config['search_query'] = search_query
+            input_config['list_only'] = True
                 
             documents = loader.load_data(input_config)
 
@@ -310,12 +299,7 @@ class ConnectorValidateSession(Resource):
             if is_expired and token_info.get('refresh_token'):
                 try:
                     refreshed_token_info = auth.refresh_access_token(token_info.get('refresh_token'))
-                    sanitized_token_info = {
-                    "access_token": refreshed_token_info.get("access_token"),
-                    "refresh_token": refreshed_token_info.get("refresh_token"),
-                    "token_uri": refreshed_token_info.get("token_uri"),
-                    "expiry": refreshed_token_info.get("expiry")
-                }    
+                    sanitized_token_info = auth.sanitize_token_info(refreshed_token_info)
                     sessions_collection.update_one(
                         {"session_token": session_token},
                         {"$set": {"token_info": sanitized_token_info}}
@@ -332,12 +316,18 @@ class ConnectorValidateSession(Resource):
                     "error": "Session token has expired. Please reconnect."
                 }), 401)
 
-            return make_response(jsonify({
+            _base_fields = {"access_token", "refresh_token", "token_uri", "expiry"}
+            provider_extras = {k: v for k, v in token_info.items() if k not in _base_fields}
+
+            response_data = {
                 "success": True,
                 "expired": False,
                 "user_email": session.get('user_email', 'Connected User'),
-                "access_token": token_info.get('access_token')
-            }), 200)
+                "access_token": token_info.get('access_token'),
+                **provider_extras,
+            }
+
+            return make_response(jsonify(response_data), 200)
         except Exception as e:
             current_app.logger.error(f"Error validating connector session: {e}", exc_info=True)
             return make_response(jsonify({"success": False, "error": "Failed to validate session"}), 500)

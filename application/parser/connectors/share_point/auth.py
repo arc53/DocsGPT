@@ -1,11 +1,13 @@
-import logging
 import datetime
+import logging
 from typing import Optional, Dict, Any
 
 from msal import ConfidentialClientApplication
 
 from application.core.settings import settings
 from application.parser.connectors.base import BaseConnectorAuth
+
+logger = logging.getLogger(__name__)
 
 
 class SharePointAuth(BaseConnectorAuth):
@@ -40,8 +42,6 @@ class SharePointAuth(BaseConnectorAuth):
         self.tenant_id = settings.MICROSOFT_TENANT_ID
         self.authority = getattr(settings, "MICROSOFT_AUTHORITY", f"https://login.microsoftonline.com/{self.tenant_id}")
 
-        logging.info(f"SharePointAuth initialized with: client_id={self.client_id[:8]}, tenant_id={self.tenant_id}, redirect_uri={self.redirect_uri}, authority={self.authority}")
-
         self.auth_app = ConfidentialClientApplication(
             client_id=self.client_id,
             client_credential=self.client_secret,
@@ -54,32 +54,25 @@ class SharePointAuth(BaseConnectorAuth):
         )
 
     def exchange_code_for_tokens(self, authorization_code: str) -> Dict[str, Any]:
-        logging.info(f"Exchanging authorization code for token with scopes: {self.SCOPES}")
-        logging.info(f"Redirect URI: {self.redirect_uri}")
-        
         result = self.auth_app.acquire_token_by_authorization_code(
-            code=authorization_code, 
-            scopes=self.SCOPES, 
+            code=authorization_code,
+            scopes=self.SCOPES,
             redirect_uri=self.redirect_uri
         )
 
         if "error" in result:
-            error_msg = f"Error acquiring token: {result.get('error_description')}"
-            logging.error(f"{error_msg} - Full result: {result}")
-            raise ValueError(error_msg)
+            logger.error("Token exchange failed: %s", result.get("error_description"))
+            raise ValueError(f"Error acquiring token: {result.get('error_description')}")
 
-        logging.info(f"Token acquired successfully")
         return self.map_token_response(result)
 
     def refresh_access_token(self, refresh_token: str) -> Dict[str, Any]:
-        logging.info(f"Refreshing access token")
         result = self.auth_app.acquire_token_by_refresh_token(refresh_token=refresh_token, scopes=self.SCOPES)
 
         if "error" in result:
-            logging.error(f"Error refreshing token: {result.get('error_description')} - Full result: {result}")
-            raise ValueError(f"Error acquiring token: {result.get('error_description')}")
+            logger.error("Token refresh failed: %s", result.get("error_description"))
+            raise ValueError(f"Error refreshing token: {result.get('error_description')}")
 
-        logging.info(f"Token refreshed successfully")
         return self.map_token_response(result)
 
     def get_token_info_from_session(self, session_token: str) -> Dict[str, Any]:
@@ -108,19 +101,13 @@ class SharePointAuth(BaseConnectorAuth):
             if missing_fields:
                 raise ValueError(f"Missing required token fields: {missing_fields}")
 
-            if 'client_id' not in token_info:
-                token_info['client_id'] = settings.MICROSOFT_CLIENT_ID
-            if 'tenant_id' not in token_info:
-                token_info['tenant_id'] = settings.MICROSOFT_TENANT_ID
-            if 'client_secret' not in token_info:
-                token_info['client_secret'] = settings.MICROSOFT_CLIENT_SECRET
             if 'token_uri' not in token_info:
                 token_info['token_uri'] = f"https://login.microsoftonline.com/{settings.MICROSOFT_TENANT_ID}/oauth2/v2.0/token"
 
-            logging.info(f"Retrieved token from session. Expiry: {token_info.get('expiry')}")
             return token_info
 
         except Exception as e:
+            logger.error("Failed to retrieve token from session: %s", e)
             raise ValueError(f"Failed to retrieve SharePoint token information: {str(e)}")
 
     def is_token_expired(self, token_info: Dict[str, Any]) -> bool:
@@ -130,29 +117,36 @@ class SharePointAuth(BaseConnectorAuth):
         expiry_timestamp = token_info.get("expiry")
 
         if expiry_timestamp is None:
-            logging.warning("Token expiry is None, treating as expired")
             return True
 
         current_timestamp = int(datetime.datetime.now().timestamp())
-        expires_in = expiry_timestamp - current_timestamp
-        
-        if expires_in < 60:
-            logging.info(f"Token expires in {expires_in} seconds, treating as expired")
-            return True
-        
-        logging.debug(f"Token not expired. Expires in {expires_in} seconds")
-        return False
+        return (expiry_timestamp - current_timestamp) < 60
+
+    def sanitize_token_info(self, token_info: Dict[str, Any], **extra_fields) -> Dict[str, Any]:
+        return super().sanitize_token_info(
+            token_info,
+            allows_shared_content=token_info.get("allows_shared_content", False),
+            **extra_fields,
+        )
+
+    PERSONAL_ACCOUNT_TENANT_ID = "9188040d-6c67-4c5b-b112-36a304b66dad"
+
+    def _allows_shared_content(self, id_token_claims: Dict[str, Any]) -> bool:
+        """Return True when the account is a work/school tenant that can access SharePoint shared content."""
+        tid = id_token_claims.get("tid", "")
+        return bool(tid) and tid != self.PERSONAL_ACCOUNT_TENANT_ID
 
     def map_token_response(self, result) -> Dict[str, Any]:
+        claims = result.get("id_token_claims", {})
         return {
             "access_token": result.get("access_token"),
             "refresh_token": result.get("refresh_token"),
-            "token_uri": result.get("id_token_claims", {}).get("iss"),
+            "token_uri": claims.get("iss"),
             "scopes": result.get("scope"),
-            "expiry": result.get("id_token_claims", {}).get("exp"),
+            "expiry": claims.get("exp"),
+            "allows_shared_content": self._allows_shared_content(claims),
             "user_info": {
-                "name": result.get("id_token_claims", {}).get("name"),
-                "email": result.get("id_token_claims", {}).get("preferred_username"),
+                "name": claims.get("name"),
+                "email": claims.get("preferred_username"),
             },
-            "raw_token": result,
         }

@@ -65,9 +65,6 @@ class Settings(BaseSettings):
         "http://127.0.0.1:7091/api/connectors/callback"  ##add redirect url as it is to your provider's console(gcp)
     )
 
-    # GitHub source
-    GITHUB_ACCESS_TOKEN: Optional[str] = None  # PAT token with read repo access
-
     # Microsoft Entra ID (Azure AD) integration
     MICROSOFT_CLIENT_ID: Optional[str] = None  # Azure AD Application (client) ID
     MICROSOFT_CLIENT_SECRET: Optional[str] = None  # Azure AD Application client secret
