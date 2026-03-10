@@ -1,6 +1,5 @@
 """Tests for SharePoint loader."""
 
-import pytest
 from unittest.mock import patch, MagicMock
 
 from application.parser.connectors.share_point.loader import SharePointLoader
