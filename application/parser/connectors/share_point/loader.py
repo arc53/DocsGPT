@@ -3,6 +3,7 @@ SharePoint/OneDrive loader for DocsGPT.
 Loads documents from SharePoint/OneDrive using Microsoft Graph API.
 """
 
+import functools
 import logging
 import os
 from typing import List, Dict, Any, Optional, Tuple
@@ -13,6 +14,27 @@ import requests
 from application.parser.connectors.base import BaseConnectorLoader
 from application.parser.connectors.share_point.auth import SharePointAuth
 from application.parser.schema.base import Document
+
+
+def _retry_on_auth_failure(func):
+    """Retry once after refreshing the access token on 401/403 responses."""
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return func(self, *args, **kwargs)
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code in (401, 403):
+                logging.info(f"Auth failure in {func.__name__}, refreshing token and retrying")
+                try:
+                    new_token_info = self.auth.refresh_access_token(self.refresh_token)
+                    self.access_token = new_token_info.get('access_token')
+                except Exception as refresh_error:
+                    raise ValueError(
+                        f"Authentication failed and could not be refreshed: {refresh_error}"
+                    ) from e
+                return func(self, *args, **kwargs)
+            raise
+    return wrapper
 
 
 class SharePointLoader(BaseConnectorLoader):
@@ -176,6 +198,7 @@ class SharePointLoader(BaseConnectorLoader):
             logging.error(f"Error loading data from SharePoint/OneDrive: {e}", exc_info=True)
             raise
 
+    @_retry_on_auth_failure
     def _load_file_by_id(self, file_id: str, load_content: bool = True) -> Optional[Document]:
         self._ensure_valid_token()
 
@@ -188,24 +211,13 @@ class SharePointLoader(BaseConnectorLoader):
             file_metadata = response.json()
             return self._process_file(file_metadata, load_content=load_content)
 
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code in [401, 403]:
-                logging.error(f"Authentication error loading file {file_id}")
-                try:
-                    new_token_info = self.auth.refresh_access_token(self.refresh_token)
-                    self.access_token = new_token_info.get('access_token')
-                    response = requests.get(url, headers=self._get_headers(), params=params)
-                    response.raise_for_status()
-                    file_metadata = response.json()
-                    return self._process_file(file_metadata, load_content=load_content)
-                except Exception as refresh_error:
-                    raise ValueError(f"Authentication failed and could not be refreshed: {refresh_error}")
-            logging.error(f"HTTP error loading file {file_id}: {e}")
-            return None
+        except requests.exceptions.HTTPError:
+            raise
         except Exception as e:
             logging.error(f"Error loading file {file_id}: {e}")
             return None
 
+    @_retry_on_auth_failure
     def _list_items_in_parent(self, parent_id: str, limit: int = 100, load_content: bool = False, page_token: Optional[str] = None, search_query: Optional[str] = None) -> List[Document]:
         self._ensure_valid_token()
 
@@ -255,7 +267,6 @@ class SharePointLoader(BaseConnectorLoader):
 
             next_link = results.get('@odata.nextLink')
             if next_link:
-                # Extract skiptoken from the full URL
                 from urllib.parse import urlparse, parse_qs
                 parsed = urlparse(next_link)
                 query_params = parse_qs(parsed.query)
@@ -455,6 +466,7 @@ class SharePointLoader(BaseConnectorLoader):
             logging.error(f"Error listing shared items via search API: {e}", exc_info=True)
             return documents
 
+    @_retry_on_auth_failure
     def _download_file_content(self, file_id: str) -> Optional[str]:
         self._ensure_valid_token()
 
@@ -469,23 +481,8 @@ class SharePointLoader(BaseConnectorLoader):
                 logging.error(f"Could not decode file {file_id} as text")
                 return None
 
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code in [401, 403]:
-                logging.error(f"Authentication error downloading file {file_id}")
-                try:
-                    new_token_info = self.auth.refresh_access_token(self.refresh_token)
-                    self.access_token = new_token_info.get('access_token')
-                    response = requests.get(url, headers=self._get_headers())
-                    response.raise_for_status()
-                    try:
-                        return response.content.decode('utf-8')
-                    except UnicodeDecodeError:
-                        logging.error(f"Could not decode file {file_id} as text")
-                        return None
-                except Exception as refresh_error:
-                    raise ValueError(f"Authentication failed and could not be refreshed: {refresh_error}")
-            logging.error(f"HTTP error downloading file {file_id}: {e}")
-            return None
+        except requests.exceptions.HTTPError:
+            raise
         except Exception as e:
             logging.error(f"Error downloading file {file_id}: {e}")
             return None
