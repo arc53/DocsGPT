@@ -350,9 +350,35 @@ class StreamProcessor:
         self.source = {}
         self.all_sources = []
 
+    def _resolve_agent_id(self) -> Optional[str]:
+        """Resolve agent_id from request, then fall back to conversation context."""
+        request_agent_id = self.data.get("agent_id")
+        if request_agent_id:
+            return str(request_agent_id)
+
+        if not self.conversation_id or not self.initial_user_id:
+            return None
+
+        try:
+            conversation = self.conversation_service.get_conversation(
+                self.conversation_id, self.initial_user_id
+            )
+        except Exception:
+            return None
+
+        if not conversation:
+            return None
+
+        conversation_agent_id = conversation.get("agent_id")
+        if conversation_agent_id:
+            return str(conversation_agent_id)
+
+        return None
+
     def _configure_agent(self):
         """Configure the agent based on request data"""
-        agent_id = self.data.get("agent_id")
+        agent_id = self._resolve_agent_id()
+
         self.agent_key, self.is_shared_usage, self.shared_token = self._get_agent_key(
             agent_id, self.initial_user_id
         )
@@ -471,7 +497,7 @@ class StreamProcessor:
 
     def pre_fetch_docs(self, question: str) -> tuple[Optional[str], Optional[list]]:
         """Pre-fetch documents for template rendering before agent creation"""
-        if self.data.get("isNoneDoc", False):
+        if self.data.get("isNoneDoc", False) and not self.agent_id:
             logger.info("Pre-fetch skipped: isNoneDoc=True")
             return None, None
         try:

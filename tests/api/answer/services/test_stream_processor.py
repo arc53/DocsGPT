@@ -1,5 +1,5 @@
 import pytest
-from bson import ObjectId
+from bson import DBRef, ObjectId
 
 
 @pytest.mark.unit
@@ -213,6 +213,122 @@ class TestStreamProcessorAgentConfiguration:
 
         assert isinstance(processor.agent_config, dict)
         assert processor.agent_id is None
+
+    def test_conversation_agent_overrides_request_active_docs(self, mock_mongo_db):
+        from application.api.answer.services.stream_processor import StreamProcessor
+        from application.core.settings import settings
+
+        db = mock_mongo_db[settings.MONGO_DB_NAME]
+        agents_collection = db["agents"]
+        sources_collection = db["sources"]
+        conversations_collection = db["conversations"]
+
+        agent_id = ObjectId()
+        conversation_id = ObjectId()
+        agent_source_id = ObjectId()
+        request_source_id = ObjectId()
+
+        sources_collection.insert_many(
+            [
+                {"_id": agent_source_id, "name": "Agent source", "retriever": "classic"},
+                {
+                    "_id": request_source_id,
+                    "name": "Request source",
+                    "retriever": "hybrid",
+                },
+            ]
+        )
+
+        agents_collection.insert_one(
+            {
+                "_id": agent_id,
+                "key": "agent_key_2",
+                "user": "user_123",
+                "prompt_id": "default",
+                "agent_type": "classic",
+                "source": DBRef("sources", agent_source_id),
+            }
+        )
+
+        conversations_collection.insert_one(
+            {
+                "_id": conversation_id,
+                "user": "user_123",
+                "agent_id": str(agent_id),
+                "queries": [],
+            }
+        )
+
+        processor = StreamProcessor(
+            {
+                "question": "Test",
+                "conversation_id": str(conversation_id),
+                "active_docs": str(request_source_id),
+            },
+            {"sub": "user_123"},
+        )
+
+        processor._configure_agent()
+        processor._configure_source()
+
+        assert processor.agent_id == str(agent_id)
+        assert processor.source["active_docs"] == str(agent_source_id)
+
+
+@pytest.mark.unit
+class TestStreamProcessorDocPrefetch:
+
+    def test_prefetch_not_skipped_for_agent_when_isNoneDoc_true(self, mock_mongo_db):
+        from unittest.mock import MagicMock
+
+        from application.api.answer.services.stream_processor import StreamProcessor
+        from application.core.settings import settings
+
+        db = mock_mongo_db[settings.MONGO_DB_NAME]
+        agents_collection = db["agents"]
+        sources_collection = db["sources"]
+
+        agent_id = ObjectId()
+        source_id = ObjectId()
+
+        sources_collection.insert_one(
+            {"_id": source_id, "name": "Agent source", "retriever": "classic"}
+        )
+        agents_collection.insert_one(
+            {
+                "_id": agent_id,
+                "key": "agent_prefetch_key",
+                "user": "user_123",
+                "prompt_id": "default",
+                "agent_type": "classic",
+                "source": DBRef("sources", source_id),
+            }
+        )
+
+        processor = StreamProcessor(
+            {
+                "question": "Summarize context",
+                "agent_id": str(agent_id),
+                "isNoneDoc": True,
+            },
+            {"sub": "user_123"},
+        )
+        processor.initialize()
+
+        mock_retriever = MagicMock()
+        mock_retriever.chunks = 2
+        mock_retriever.doc_token_limit = 50000
+        mock_retriever.search.return_value = [
+            {"text": "Agent doc content", "source": "agent.pdf"}
+        ]
+        processor.create_retriever = MagicMock(return_value=mock_retriever)
+
+        docs_together, docs = processor.pre_fetch_docs("Summarize context")
+
+        processor.create_retriever.assert_called_once()
+        assert docs is not None
+        assert docs_together is not None
+        assert "Agent doc content" in docs_together
 
 
 @pytest.mark.unit
