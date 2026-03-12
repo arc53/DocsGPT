@@ -567,6 +567,7 @@ class LLMHandler(ABC):
                 getattr(agent, "user_api_key", None),
                 getattr(agent, "decoded_token", None),
                 model_id=compression_model,
+                agent_id=getattr(agent, "agent_id", None),
             )
 
             # Create service without DB persistence capability

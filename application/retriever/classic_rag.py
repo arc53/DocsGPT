@@ -18,6 +18,7 @@ class ClassicRAG(BaseRetriever):
         doc_token_limit=50000,
         model_id="docsgpt-local",
         user_api_key=None,
+        agent_id=None,
         llm_name=settings.LLM_PROVIDER,
         api_key=settings.API_KEY,
         decoded_token=None,
@@ -43,6 +44,7 @@ class ClassicRAG(BaseRetriever):
         self.model_id = model_id
         self.doc_token_limit = doc_token_limit
         self.user_api_key = user_api_key
+        self.agent_id = agent_id
         self.llm_name = llm_name
         self.api_key = api_key
         self.llm = LLMCreator.create_llm(
@@ -50,6 +52,7 @@ class ClassicRAG(BaseRetriever):
             api_key=self.api_key,
             user_api_key=self.user_api_key,
             decoded_token=decoded_token,
+            agent_id=self.agent_id,
         )
 
         if "active_docs" in source and source["active_docs"] is not None:

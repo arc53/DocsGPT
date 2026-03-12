@@ -7,7 +7,10 @@ import {
   getSessionToken,
   setSessionToken,
   removeSessionToken,
+  validateProviderSession,
 } from '../utils/providerUtils';
+import ConnectedStateSkeleton from './ConnectedStateSkeleton';
+import FilesSectionSkeleton from './FileSelectionSkeleton';
 
 interface PickerFile {
   id: string;
@@ -50,20 +53,9 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
 
   const validateSession = async (sessionToken: string) => {
     try {
-      const apiHost = import.meta.env.VITE_API_HOST;
-      const validateResponse = await fetch(
-        `${apiHost}/api/connectors/validate-session`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            provider: 'google_drive',
-            session_token: sessionToken,
-          }),
-        },
+      const validateResponse = await validateProviderSession(
+        token,
+        'google_drive',
       );
 
       if (!validateResponse.ok) {
@@ -233,30 +225,6 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
     setAuthError('');
     onSelectionChange([], []);
   };
-
-  const ConnectedStateSkeleton = () => (
-    <div className="mb-4">
-      <div className="flex w-full animate-pulse items-center justify-between rounded-[10px] bg-gray-200 px-4 py-2 dark:bg-gray-700">
-        <div className="flex items-center gap-2">
-          <div className="h-4 w-4 rounded bg-gray-300 dark:bg-gray-600"></div>
-          <div className="h-4 w-32 rounded bg-gray-300 dark:bg-gray-600"></div>
-        </div>
-        <div className="h-4 w-16 rounded bg-gray-300 dark:bg-gray-600"></div>
-      </div>
-    </div>
-  );
-
-  const FilesSectionSkeleton = () => (
-    <div className="rounded-lg border border-[#EEE6FF78] dark:border-[#6A6A6A]">
-      <div className="p-4">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="h-5 w-24 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-          <div className="h-8 w-24 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-        </div>
-        <div className="h-4 w-40 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-      </div>
-    </div>
-  );
 
   return (
     <div>

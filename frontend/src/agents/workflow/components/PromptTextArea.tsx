@@ -9,8 +9,69 @@ import {
 } from '@/components/ui/popover';
 
 interface WorkflowVariable {
-  name: string;
+  label: string;
+  templatePath: string;
   section: string;
+}
+
+const GLOBAL_CONTEXT_VARIABLES: WorkflowVariable[] = [
+  {
+    label: 'source.content',
+    templatePath: 'source.content',
+    section: 'Global context',
+  },
+  {
+    label: 'source.summaries',
+    templatePath: 'source.summaries',
+    section: 'Global context',
+  },
+  {
+    label: 'source.documents',
+    templatePath: 'source.documents',
+    section: 'Global context',
+  },
+  {
+    label: 'source.count',
+    templatePath: 'source.count',
+    section: 'Global context',
+  },
+  {
+    label: 'system.date',
+    templatePath: 'system.date',
+    section: 'Global context',
+  },
+  {
+    label: 'system.time',
+    templatePath: 'system.time',
+    section: 'Global context',
+  },
+  {
+    label: 'system.timestamp',
+    templatePath: 'system.timestamp',
+    section: 'Global context',
+  },
+  {
+    label: 'system.request_id',
+    templatePath: 'system.request_id',
+    section: 'Global context',
+  },
+  {
+    label: 'system.user_id',
+    templatePath: 'system.user_id',
+    section: 'Global context',
+  },
+];
+
+function toAgentTemplatePath(variableName: string): string {
+  const trimmed = variableName.trim();
+  if (!trimmed) return 'agent';
+
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
+    return `agent.${trimmed}`;
+  }
+
+  const escaped = trimmed.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return `agent['${escaped}']`;
 }
 
 function getUpstreamNodeIds(nodeId: string, edges: Edge[]): Set<string> {
@@ -36,32 +97,69 @@ function extractUpstreamVariables(
   selectedNodeId: string,
 ): WorkflowVariable[] {
   const variables: WorkflowVariable[] = [
-    { name: 'query', section: 'Workflow input' },
-    { name: 'chat_history', section: 'Workflow input' },
+    {
+      label: 'agent.query',
+      templatePath: 'agent.query',
+      section: 'Workflow input',
+    },
+    {
+      label: 'agent.chat_history',
+      templatePath: 'agent.chat_history',
+      section: 'Workflow input',
+    },
+    ...GLOBAL_CONTEXT_VARIABLES,
   ];
-  const seen = new Set(['query', 'chat_history']);
+  const seen = new Set(variables.map((variable) => variable.templatePath));
   const upstreamIds = getUpstreamNodeIds(selectedNodeId, edges);
 
   for (const node of nodes) {
     if (!upstreamIds.has(node.id)) continue;
 
-    if (node.type === 'agent' && node.data?.config?.output_variable) {
-      const name = node.data.config.output_variable;
-      if (!seen.has(name)) {
-        seen.add(name);
+    if (node.type === 'agent') {
+      const defaultOutputTemplatePath = toAgentTemplatePath(
+        `node_${node.id}_output`,
+      );
+      if (!seen.has(defaultOutputTemplatePath)) {
+        seen.add(defaultOutputTemplatePath);
         variables.push({
-          name,
+          label: defaultOutputTemplatePath,
+          templatePath: defaultOutputTemplatePath,
           section: node.data.title || node.data.label || 'Agent',
         });
       }
+
+      const outputVariable = String(
+        node.data?.config?.output_variable || '',
+      ).trim();
+      if (outputVariable) {
+        const templatePath = toAgentTemplatePath(outputVariable);
+        if (!seen.has(templatePath)) {
+          seen.add(templatePath);
+          variables.push({
+            label: templatePath,
+            templatePath,
+            section: node.data.title || node.data.label || 'Agent',
+          });
+        }
+      }
     }
-    if (node.type === 'state' && node.data?.variable) {
-      const name = node.data.variable;
-      if (!seen.has(name)) {
-        seen.add(name);
+
+    if (node.type === 'state') {
+      const operations = node.data?.config?.operations;
+      if (!Array.isArray(operations)) continue;
+
+      for (const operation of operations) {
+        const targetVariable = String(operation?.target_variable || '').trim();
+        if (!targetVariable) continue;
+
+        const templatePath = toAgentTemplatePath(targetVariable);
+        if (seen.has(templatePath)) continue;
+
+        seen.add(templatePath);
         variables.push({
-          name,
-          section: 'Set State',
+          label: templatePath,
+          templatePath,
+          section: node.data.title || node.data.label || 'Set State',
         });
       }
     }
@@ -106,14 +204,16 @@ function VariableListWithSearch({
   onSelect,
 }: {
   variables: WorkflowVariable[];
-  onSelect: (name: string) => void;
+  onSelect: (templatePath: string) => void;
 }) {
   const [search, setSearch] = useState('');
 
   const filtered = useMemo(
     () =>
       variables.filter((v) =>
-        v.name.toLowerCase().includes(search.toLowerCase()),
+        `${v.label} ${v.templatePath}`
+          .toLowerCase()
+          .includes(search.toLowerCase()),
       ),
     [variables, search],
   );
@@ -146,17 +246,17 @@ function VariableListWithSearch({
               </div>
               {vars.map((v) => (
                 <button
-                  key={v.name}
+                  key={`${section}-${v.templatePath}`}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    onSelect(v.name);
+                    onSelect(v.templatePath);
                   }}
                   className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-gray-50 dark:hover:bg-[#383838]"
                 >
                   <Braces className="text-violets-are-blue h-3.5 w-3.5 shrink-0" />
                   <span className="truncate font-medium text-gray-800 dark:text-gray-200">
-                    {v.name}
+                    {v.label}
                   </span>
                 </button>
               ))}
@@ -206,7 +306,9 @@ export default function PromptTextArea({
   const filtered = useMemo(
     () =>
       variables.filter((v) =>
-        v.name.toLowerCase().includes(filterText.toLowerCase()),
+        `${v.label} ${v.templatePath}`
+          .toLowerCase()
+          .includes(filterText.toLowerCase()),
       ),
     [variables, filterText],
   );
@@ -217,10 +319,12 @@ export default function PromptTextArea({
 
     const cursorPos = textarea.selectionStart;
     const textBeforeCursor = value.slice(0, cursorPos);
-    const triggerMatch = textBeforeCursor.match(/\{\{(\w*)$/);
+    const triggerMatch = textBeforeCursor.match(
+      /\{\{\s*([A-Za-z0-9_.[\]'"]*)$/,
+    );
 
     if (triggerMatch) {
-      setFilterText(triggerMatch[1]);
+      setFilterText(triggerMatch[1].trim());
       setCursorInsertPos(cursorPos);
 
       const wrapper = wrapperRef.current;
@@ -237,15 +341,17 @@ export default function PromptTextArea({
   }, [value]);
 
   const insertVariable = useCallback(
-    (varName: string) => {
+    (templatePath: string) => {
       if (cursorInsertPos === null) return;
 
       const textBeforeCursor = value.slice(0, cursorInsertPos);
-      const triggerMatch = textBeforeCursor.match(/\{\{(\w*)$/);
+      const triggerMatch = textBeforeCursor.match(
+        /\{\{\s*([A-Za-z0-9_.[\]'"]*)$/,
+      );
       if (!triggerMatch) return;
 
       const startPos = cursorInsertPos - triggerMatch[0].length;
-      const insertion = `{{${varName}}}`;
+      const insertion = `{{ ${templatePath} }}`;
       const newValue =
         value.slice(0, startPos) + insertion + value.slice(cursorInsertPos);
 
@@ -262,10 +368,10 @@ export default function PromptTextArea({
   );
 
   const insertVariableFromButton = useCallback(
-    (varName: string) => {
+    (templatePath: string) => {
       const textarea = textareaRef.current;
       const cursorPos = textarea?.selectionStart ?? value.length;
-      const insertion = `{{${varName}}}`;
+      const insertion = `{{ ${templatePath} }}`;
       const newValue =
         value.slice(0, cursorPos) + insertion + value.slice(cursorPos);
 

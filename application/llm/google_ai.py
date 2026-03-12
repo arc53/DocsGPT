@@ -13,7 +13,7 @@ class GoogleLLM(BaseLLM):
     def __init__(
         self, api_key=None, user_api_key=None, decoded_token=None, *args, **kwargs
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(decoded_token=decoded_token, *args, **kwargs)
         self.api_key = api_key or settings.GOOGLE_API_KEY or settings.API_KEY
         self.user_api_key = user_api_key
 

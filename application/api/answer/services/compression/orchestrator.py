@@ -134,6 +134,7 @@ class CompressionOrchestrator:
                 user_api_key=None,
                 decoded_token=decoded_token,
                 model_id=compression_model,
+                agent_id=conversation.get("agent_id"),
             )
 
             # Create compression service with DB update capability

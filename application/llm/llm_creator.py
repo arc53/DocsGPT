@@ -31,7 +31,15 @@ class LLMCreator:
 
     @classmethod
     def create_llm(
-        cls, type, api_key, user_api_key, decoded_token, model_id=None, *args, **kwargs
+        cls,
+        type,
+        api_key,
+        user_api_key,
+        decoded_token,
+        model_id=None,
+        agent_id=None,
+        *args,
+        **kwargs,
     ):
         from application.core.model_utils import get_base_url_for_model
 
@@ -49,6 +57,7 @@ class LLMCreator:
             user_api_key,
             decoded_token=decoded_token,
             model_id=model_id,
+            agent_id=agent_id,
             base_url=base_url,
             *args,
             **kwargs,

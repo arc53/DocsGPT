@@ -211,8 +211,21 @@ class WorkflowAgent(BaseAgent):
     def _serialize_state(self, state: Dict[str, Any]) -> Dict[str, Any]:
         serialized: Dict[str, Any] = {}
         for key, value in state.items():
-            if isinstance(value, (str, int, float, bool, type(None))):
-                serialized[key] = value
-            else:
-                serialized[key] = str(value)
+            serialized[key] = self._serialize_state_value(value)
         return serialized
+
+    def _serialize_state_value(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                str(dict_key): self._serialize_state_value(dict_value)
+                for dict_key, dict_value in value.items()
+            }
+        if isinstance(value, list):
+            return [self._serialize_state_value(item) for item in value]
+        if isinstance(value, tuple):
+            return [self._serialize_state_value(item) for item in value]
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, (str, int, float, bool, type(None))):
+            return value
+        return str(value)

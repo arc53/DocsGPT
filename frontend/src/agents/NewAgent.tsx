@@ -439,10 +439,24 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const data = await response.json();
       const transformed = modelService.transformModels(data.models || []);
       setAvailableModels(transformed);
+
+      if (mode === 'new' && transformed.length > 0) {
+        const preferredDefaultModelId =
+          transformed.find((model) => model.id === data.default_model_id)?.id ||
+          transformed[0].id;
+
+        if (preferredDefaultModelId) {
+          setSelectedModelIds((prevSelectedModelIds) =>
+            prevSelectedModelIds.size > 0
+              ? prevSelectedModelIds
+              : new Set([preferredDefaultModelId]),
+          );
+        }
+      }
     };
     getTools();
     getModels();
-  }, [token]);
+  }, [token, mode]);
 
   // Validate folder_id from URL against user's folders
   useEffect(() => {

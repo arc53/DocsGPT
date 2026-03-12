@@ -23,6 +23,10 @@ from application.api.user.base import (
     workflow_nodes_collection,
     workflows_collection,
 )
+from application.core.json_schema_utils import (
+    JsonSchemaValidationError,
+    normalize_json_schema_payload,
+)
 from application.core.settings import settings
 from application.utils import (
     check_required_fields,
@@ -479,41 +483,15 @@ class CreateAgent(Resource):
                     data["models"] = []
         print(f"Received data: {data}")
 
-        # Validate JSON schema if provided
-
-        if data.get("json_schema"):
+        # Validate and normalize JSON schema if provided
+        if "json_schema" in data:
             try:
-                # Basic validation - ensure it's a valid JSON structure
-
-                json_schema = data.get("json_schema")
-                if not isinstance(json_schema, dict):
-                    return make_response(
-                        jsonify(
-                            {
-                                "success": False,
-                                "message": "JSON schema must be a valid JSON object",
-                            }
-                        ),
-                        400,
-                    )
-                # Validate that it has either a 'schema' property or is itself a schema
-
-                if "schema" not in json_schema and "type" not in json_schema:
-                    return make_response(
-                        jsonify(
-                            {
-                                "success": False,
-                                "message": "JSON schema must contain either a 'schema' property or be a valid JSON schema with 'type' property",
-                            }
-                        ),
-                        400,
-                    )
-            except Exception as e:
-                current_app.logger.error(f"Invalid JSON schema: {e}")
+                data["json_schema"] = normalize_json_schema_payload(
+                    data.get("json_schema")
+                )
+            except JsonSchemaValidationError as exc:
                 return make_response(
-                    jsonify(
-                        {"success": False, "message": "Invalid JSON schema format"}
-                    ),
+                    jsonify({"success": False, "message": f"JSON schema {exc}"}),
                     400,
                 )
         if data.get("status") not in ["draft", "published"]:
@@ -732,6 +710,8 @@ class UpdateAgent(Resource):
                                 ),
                                 400,
                             )
+                if data.get("json_schema") == "":
+                    data["json_schema"] = None
         except Exception as err:
             current_app.logger.error(
                 f"Error parsing request data: {err}", exc_info=True
@@ -892,17 +872,15 @@ class UpdateAgent(Resource):
             elif field == "json_schema":
                 json_schema = data.get("json_schema")
                 if json_schema is not None:
-                    if not isinstance(json_schema, dict):
+                    try:
+                        update_fields[field] = normalize_json_schema_payload(
+                            json_schema
+                        )
+                    except JsonSchemaValidationError as exc:
                         return make_response(
-                            jsonify(
-                                {
-                                    "success": False,
-                                    "message": "JSON schema must be a valid object",
-                                }
-                            ),
+                            jsonify({"success": False, "message": f"JSON schema {exc}"}),
                             400,
                         )
-                    update_fields[field] = json_schema
                 else:
                     update_fields[field] = None
             elif field == "limited_token_mode":

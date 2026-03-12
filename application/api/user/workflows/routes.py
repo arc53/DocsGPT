@@ -1,7 +1,7 @@
 """Workflow management routes."""
 
 from datetime import datetime, timezone
-from typing import Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from flask import current_app, request
 from flask_restx import Namespace, Resource
@@ -11,6 +11,11 @@ from application.api.user.base import (
     workflow_nodes_collection,
     workflows_collection,
 )
+from application.core.json_schema_utils import (
+    JsonSchemaValidationError,
+    normalize_json_schema_payload,
+)
+from application.core.model_utils import get_model_capabilities
 from application.api.user.utils import (
     check_resource_ownership,
     error_response,
@@ -83,6 +88,50 @@ def fetch_graph_documents(collection, workflow_id: str, graph_version: int) -> L
             )
         )
     return docs
+
+
+def validate_json_schema_payload(
+    json_schema: Any,
+) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Validate and normalize optional JSON schema payload for structured output."""
+    if json_schema is None:
+        return None, None
+    try:
+        return normalize_json_schema_payload(json_schema), None
+    except JsonSchemaValidationError as exc:
+        return None, str(exc)
+
+
+def normalize_agent_node_json_schemas(nodes: List[Dict]) -> List[Dict]:
+    """Normalize agent-node JSON schema payloads before persistence."""
+    normalized_nodes: List[Dict] = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            normalized_nodes.append(node)
+            continue
+
+        normalized_node = dict(node)
+        if normalized_node.get("type") != "agent":
+            normalized_nodes.append(normalized_node)
+            continue
+
+        raw_config = normalized_node.get("data")
+        if not isinstance(raw_config, dict) or "json_schema" not in raw_config:
+            normalized_nodes.append(normalized_node)
+            continue
+
+        normalized_config = dict(raw_config)
+        try:
+            normalized_config["json_schema"] = normalize_json_schema_payload(
+                raw_config.get("json_schema")
+            )
+        except JsonSchemaValidationError:
+            # Validation runs before normalization; keep original on unexpected shape.
+            normalized_config["json_schema"] = raw_config.get("json_schema")
+        normalized_node["data"] = normalized_config
+        normalized_nodes.append(normalized_node)
+
+    return normalized_nodes
 
 
 def validate_workflow_structure(nodes: List[Dict], edges: List[Dict]) -> List[str]:
@@ -216,6 +265,28 @@ def validate_workflow_structure(nodes: List[Dict], edges: List[Dict]) -> List[st
                         f"must eventually reach an end node"
                     )
 
+    agent_nodes = [n for n in nodes if n.get("type") == "agent"]
+    for agent_node in agent_nodes:
+        agent_title = agent_node.get("title", agent_node.get("id", "unknown"))
+        raw_config = agent_node.get("data", {}) or {}
+        if not isinstance(raw_config, dict):
+            errors.append(f"Agent node '{agent_title}' has invalid configuration")
+            continue
+        normalized_schema, schema_error = validate_json_schema_payload(
+            raw_config.get("json_schema")
+        )
+        has_json_schema = normalized_schema is not None
+
+        model_id = raw_config.get("model_id")
+        if has_json_schema and isinstance(model_id, str) and model_id.strip():
+            capabilities = get_model_capabilities(model_id.strip())
+            if capabilities and not capabilities.get("supports_structured_output", False):
+                errors.append(
+                    f"Agent node '{agent_title}' selected model does not support structured output"
+                )
+        if schema_error:
+            errors.append(f"Agent node '{agent_title}' JSON schema {schema_error}")
+
     for node in nodes:
         if not node.get("id"):
             errors.append("All nodes must have an id")
@@ -301,6 +372,7 @@ class WorkflowList(Resource):
             return error_response(
                 "Workflow validation failed", errors=validation_errors
             )
+        nodes_data = normalize_agent_node_json_schemas(nodes_data)
 
         now = datetime.now(timezone.utc)
         workflow_doc = {
@@ -391,6 +463,7 @@ class WorkflowDetail(Resource):
             return error_response(
                 "Workflow validation failed", errors=validation_errors
             )
+        nodes_data = normalize_agent_node_json_schemas(nodes_data)
 
         current_graph_version = get_workflow_graph_version(workflow)
         next_graph_version = current_graph_version + 1

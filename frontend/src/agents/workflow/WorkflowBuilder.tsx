@@ -94,6 +94,20 @@ interface UserTool {
   displayName: string;
 }
 
+function validateJsonSchemaConfig(schema: unknown): string | null {
+  if (schema === undefined || schema === null) return null;
+  if (typeof schema !== 'object' || Array.isArray(schema)) {
+    return 'must be a valid JSON object';
+  }
+
+  const schemaObject = schema as Record<string, unknown>;
+  if (!('schema' in schemaObject) && !('type' in schemaObject)) {
+    return 'must include either a "type" or "schema" field';
+  }
+
+  return null;
+}
+
 function createEmptyWorkflowAgent(): Agent {
   return {
     id: '',
@@ -130,16 +144,45 @@ function parseSimpleCel(expression: string): {
   operator: string;
   value: string;
 } {
-  let match = expression.match(
+  const trimmedExpression = expression.trim();
+
+  let match = trimmedExpression.match(
     /^(\w+)\.(contains|startsWith)\(["'](.*)["']\)$/,
   );
   if (match) return { variable: match[1], operator: match[2], value: match[3] };
 
-  match = expression.match(/^(\w+)\s*(==|!=|>=|<=|>|<)\s*["'](.*)["']$/);
+  match = trimmedExpression.match(/^(\w+)\.(contains|startsWith)\((.*)\)$/);
+  if (match) {
+    const rawValue = match[3].trim();
+    const unquotedValue = rawValue.replace(/^["'](.*)["']$/, '$1');
+    return {
+      variable: match[1],
+      operator: match[2],
+      value: unquotedValue,
+    };
+  }
+
+  match = trimmedExpression.match(/^(contains|startsWith)\(["'](.*)["']\)$/);
+  if (match) return { variable: '', operator: match[1], value: match[2] };
+
+  match = trimmedExpression.match(/^(contains|startsWith)\((.*)\)$/);
+  if (match) {
+    const rawValue = match[2].trim();
+    const unquotedValue = rawValue.replace(/^["'](.*)["']$/, '$1');
+    return { variable: '', operator: match[1], value: unquotedValue };
+  }
+
+  match = trimmedExpression.match(/^(\w+)\s*(==|!=|>=|<=|>|<)\s*["'](.*)["']$/);
   if (match) return { variable: match[1], operator: match[2], value: match[3] };
 
-  match = expression.match(/^(\w+)\s*(==|!=|>=|<=|>|<)\s*(.*)$/);
+  match = trimmedExpression.match(/^(==|!=|>=|<=|>|<)\s*["'](.*)["']$/);
+  if (match) return { variable: '', operator: match[1], value: match[2] };
+
+  match = trimmedExpression.match(/^(\w+)\s*(==|!=|>=|<=|>|<)\s*(.*)$/);
   if (match) return { variable: match[1], operator: match[2], value: match[3] };
+
+  match = trimmedExpression.match(/^(==|!=|>=|<=|>|<)\s*(.*)$/);
+  if (match) return { variable: '', operator: match[1], value: match[2] };
 
   return { variable: '', operator: '==', value: '' };
 }
@@ -149,13 +192,24 @@ function buildSimpleCel(
   operator: string,
   value: string,
 ): string {
-  if (!variable) return '';
-  const isNumeric = value !== '' && !isNaN(Number(value));
-  const isBool = value === 'true' || value === 'false';
-  const quoted = isNumeric || isBool ? value : `"${value}"`;
-  if (operator === 'contains') return `${variable}.contains(${quoted})`;
-  if (operator === 'startsWith') return `${variable}.startsWith(${quoted})`;
-  return `${variable} ${operator} ${quoted}`;
+  const trimmedValue = value.trim();
+  const isNumeric = trimmedValue !== '' && !isNaN(Number(trimmedValue));
+  const isBool = trimmedValue === 'true' || trimmedValue === 'false';
+  const literalValue =
+    isNumeric || isBool ? trimmedValue : JSON.stringify(value);
+  const stringValue = JSON.stringify(value);
+  if (operator === 'contains') {
+    return variable
+      ? `${variable}.contains(${stringValue})`
+      : `contains(${stringValue})`;
+  }
+  if (operator === 'startsWith') {
+    return variable
+      ? `${variable}.startsWith(${stringValue})`
+      : `startsWith(${stringValue})`;
+  }
+  if (!variable) return `${operator} ${literalValue}`;
+  return `${variable} ${operator} ${literalValue}`;
 }
 
 function normalizeConditionCases(cases: ConditionCase[]): ConditionCase[] {
@@ -283,7 +337,14 @@ function WorkflowBuilderInner() {
   >(null);
   const workflowSettingsRef = useRef<HTMLDivElement>(null);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
+  const [defaultAgentModelId, setDefaultAgentModelId] = useState('');
   const [availableTools, setAvailableTools] = useState<UserTool[]>([]);
+  const [agentJsonSchemaDrafts, setAgentJsonSchemaDrafts] = useState<
+    Record<string, string>
+  >({});
+  const [agentJsonSchemaErrors, setAgentJsonSchemaErrors] = useState<
+    Record<string, string | null>
+  >({});
 
   const nodeTypes = useMemo<NodeTypes>(
     () => ({
@@ -404,8 +465,14 @@ function WorkflowBuilderInner() {
       };
 
       if (type === 'agent') {
+        const defaultModelId = defaultAgentModelId || availableModels[0]?.id;
+        const defaultModelProvider = availableModels.find(
+          (model) => model.id === defaultModelId,
+        )?.provider;
         baseNode.data.config = {
           agent_type: 'classic',
+          model_id: defaultModelId,
+          llm_name: defaultModelProvider || '',
           system_prompt: 'You are a helpful assistant.',
           prompt_template: '',
           stream_to_user: true,
@@ -430,7 +497,7 @@ function WorkflowBuilderInner() {
 
       setNodes((nds) => nds.concat(baseNode));
     },
-    [reactFlowInstance],
+    [reactFlowInstance, availableModels, defaultAgentModelId],
   );
 
   const handleNodeClick = useCallback(
@@ -449,6 +516,18 @@ function WorkflowBuilderInner() {
         (e) => e.source !== selectedNode.id && e.target !== selectedNode.id,
       ),
     );
+    setAgentJsonSchemaDrafts((prev) => {
+      if (!(selectedNode.id in prev)) return prev;
+      const next = { ...prev };
+      delete next[selectedNode.id];
+      return next;
+    });
+    setAgentJsonSchemaErrors((prev) => {
+      if (!(selectedNode.id in prev)) return prev;
+      const next = { ...prev };
+      delete next[selectedNode.id];
+      return next;
+    });
     setSelectedNode(null);
     setShowNodeConfig(false);
   }, [selectedNode]);
@@ -466,6 +545,49 @@ function WorkflowBuilderInner() {
       );
     },
     [selectedNode],
+  );
+
+  const handleAgentJsonSchemaChange = useCallback(
+    (text: string) => {
+      if (!selectedNode || selectedNode.type !== 'agent') return;
+
+      const nodeId = selectedNode.id;
+      setAgentJsonSchemaDrafts((prev) => ({ ...prev, [nodeId]: text }));
+
+      if (text.trim() === '') {
+        setAgentJsonSchemaErrors((prev) => ({ ...prev, [nodeId]: null }));
+        handleUpdateNodeData({
+          config: {
+            ...(selectedNode.data.config || {}),
+            json_schema: undefined,
+          },
+        });
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(text);
+        const validationError = validateJsonSchemaConfig(parsed);
+        setAgentJsonSchemaErrors((prev) => ({
+          ...prev,
+          [nodeId]: validationError,
+        }));
+        if (!validationError) {
+          handleUpdateNodeData({
+            config: {
+              ...(selectedNode.data.config || {}),
+              json_schema: parsed,
+            },
+          });
+        }
+      } catch {
+        setAgentJsonSchemaErrors((prev) => ({
+          ...prev,
+          [nodeId]: 'must be valid JSON',
+        }));
+      }
+    },
+    [handleUpdateNodeData, selectedNode],
   );
 
   const handleUpload = useCallback((files: File[]) => {
@@ -564,7 +686,17 @@ function WorkflowBuilderInner() {
         const modelsResponse = await modelService.getModels(null);
         if (modelsResponse.ok) {
           const modelsData = await modelsResponse.json();
-          setAvailableModels(modelService.transformModels(modelsData.models));
+          const transformedModels = modelService.transformModels(
+            modelsData.models || [],
+          );
+          setAvailableModels(transformedModels);
+          const preferredDefaultModel =
+            transformedModels.find(
+              (model) => model.id === modelsData.default_model_id,
+            )?.id ||
+            transformedModels[0]?.id ||
+            '';
+          setDefaultAgentModelId(preferredDefaultModel);
         }
 
         const toolsResponse = await userService.getUserTools(null);
@@ -578,6 +710,51 @@ function WorkflowBuilderInner() {
     };
     loadModelsAndTools();
   }, []);
+
+  useEffect(() => {
+    if (!selectedNode || selectedNode.type !== 'agent') return;
+    if (!defaultAgentModelId) return;
+    if (selectedNode.data.config?.model_id) return;
+
+    handleUpdateNodeData({
+      config: {
+        ...(selectedNode.data.config || {}),
+        model_id: defaultAgentModelId,
+        llm_name:
+          availableModels.find((model) => model.id === defaultAgentModelId)
+            ?.provider || '',
+      },
+    });
+  }, [
+    selectedNode,
+    defaultAgentModelId,
+    availableModels,
+    handleUpdateNodeData,
+  ]);
+
+  useEffect(() => {
+    if (!selectedNode || selectedNode.type !== 'agent') return;
+    const nodeId = selectedNode.id;
+    const rawSchema = selectedNode.data.config?.json_schema;
+
+    setAgentJsonSchemaDrafts((prev) => {
+      if (prev[nodeId] !== undefined) return prev;
+      if (rawSchema === undefined || rawSchema === null) {
+        return { ...prev, [nodeId]: '' };
+      }
+
+      try {
+        return { ...prev, [nodeId]: JSON.stringify(rawSchema, null, 2) };
+      } catch {
+        return { ...prev, [nodeId]: String(rawSchema) };
+      }
+    });
+
+    setAgentJsonSchemaErrors((prev) => {
+      if (prev[nodeId] !== undefined) return prev;
+      return { ...prev, [nodeId]: validateJsonSchemaConfig(rawSchema) };
+    });
+  }, [selectedNode]);
 
   useEffect(() => {
     const loadAgentDetails = async () => {
@@ -655,6 +832,8 @@ function WorkflowBuilderInner() {
         );
         setWorkflowName(nextWorkflowName);
         setWorkflowDescription(nextWorkflowDescription);
+        setAgentJsonSchemaDrafts({});
+        setAgentJsonSchemaErrors({});
         setNodes(mappedNodes);
         setEdges(mappedEdges);
         setSavedWorkflowSignature(
@@ -711,6 +890,33 @@ function WorkflowBuilderInner() {
           `Agent "${node.data?.title || node.id}" must have a model selected`,
         );
       }
+
+      const hasSchema =
+        config?.json_schema !== undefined && config?.json_schema !== null;
+      if (hasSchema && config?.model_id) {
+        const selectedModel = availableModels.find(
+          (model) => model.id === config.model_id,
+        );
+        if (selectedModel && !selectedModel.supports_structured_output) {
+          errors.push(
+            `Agent "${node.data?.title || node.id}" selected model does not support structured output`,
+          );
+        }
+      }
+
+      const schemaValidationError = validateJsonSchemaConfig(
+        config?.json_schema,
+      );
+      const draftSchemaError = agentJsonSchemaErrors[node.id];
+      const effectiveSchemaError =
+        draftSchemaError !== undefined
+          ? draftSchemaError
+          : schemaValidationError;
+      if (effectiveSchemaError) {
+        errors.push(
+          `Agent "${node.data?.title || node.id}" JSON schema ${effectiveSchemaError}`,
+        );
+      }
     });
 
     if (startNodes.length === 1) {
@@ -743,6 +949,7 @@ function WorkflowBuilderInner() {
     const conditionNodes = nodes.filter((n) => n.type === 'condition');
     conditionNodes.forEach((node) => {
       const conditionTitle = node.data?.title || node.id;
+      const conditionMode = node.data?.config?.mode || 'simple';
       const cases = (node.data?.config?.cases || []) as ConditionCase[];
       if (
         !cases.length ||
@@ -831,6 +1038,16 @@ function WorkflowBuilderInner() {
             `Condition "${conditionTitle}" case "${handle}" has a branch connection but no expression`,
           );
         }
+        if (conditionMode === 'simple' && hasExpression) {
+          const parsedCondition = parseSimpleCel(
+            conditionCase.expression || '',
+          );
+          if (!parsedCondition.variable.trim()) {
+            errors.push(
+              `Condition "${conditionTitle}" case "${handle}" must specify a variable in Simple mode`,
+            );
+          }
+        }
       });
 
       outgoing.forEach((edge) => {
@@ -844,7 +1061,7 @@ function WorkflowBuilderInner() {
     });
 
     return errors;
-  }, [workflowName, nodes, edges]);
+  }, [workflowName, nodes, edges, agentJsonSchemaErrors, availableModels]);
 
   const canManageAgent = Boolean(currentAgentId || currentAgent.id);
   const effectiveAgentId = currentAgentId || currentAgent.id || '';
@@ -1076,6 +1293,42 @@ function WorkflowBuilderInner() {
       workflowId,
     ],
   );
+
+  const selectedAgentJsonSchemaText = useMemo(() => {
+    if (!selectedNode || selectedNode.type !== 'agent') return '';
+
+    const draft = agentJsonSchemaDrafts[selectedNode.id];
+    if (draft !== undefined) return draft;
+
+    const schema = selectedNode.data.config?.json_schema;
+    if (schema === undefined || schema === null) return '';
+
+    try {
+      return JSON.stringify(schema, null, 2);
+    } catch {
+      return String(schema);
+    }
+  }, [selectedNode, agentJsonSchemaDrafts]);
+
+  const selectedAgentJsonSchemaError = useMemo(() => {
+    if (!selectedNode || selectedNode.type !== 'agent') return null;
+
+    const cachedError = agentJsonSchemaErrors[selectedNode.id];
+    if (cachedError !== undefined) return cachedError;
+
+    return validateJsonSchemaConfig(selectedNode.data.config?.json_schema);
+  }, [selectedNode, agentJsonSchemaErrors]);
+
+  const selectedAgentModelSupportsStructuredOutput = useMemo(() => {
+    if (!selectedNode || selectedNode.type !== 'agent') return true;
+    const modelId = selectedNode.data.config?.model_id;
+    if (!modelId) return true;
+
+    const selectedModel = availableModels.find((model) => model.id === modelId);
+    if (!selectedModel) return true;
+
+    return selectedModel.supports_structured_output;
+  }, [selectedNode, availableModels]);
 
   return (
     <>
@@ -1577,7 +1830,7 @@ function WorkflowBuilderInner() {
                                   nodes={nodes}
                                   edges={edges}
                                   selectedNodeId={selectedNode.id}
-                                  placeholder="Use {{variable}} for dynamic content"
+                                  placeholder="Use {{ agent.variable }} for dynamic content"
                                 />
                                 <div>
                                   <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -1589,14 +1842,15 @@ function WorkflowBuilderInner() {
                                       selectedNode.data.config
                                         ?.output_variable || ''
                                     }
-                                    onChange={(e) =>
+                                    onChange={(e) => {
+                                      const nextOutputVariable = e.target.value;
                                       handleUpdateNodeData({
                                         config: {
                                           ...(selectedNode.data.config || {}),
-                                          output_variable: e.target.value,
+                                          output_variable: nextOutputVariable,
                                         },
-                                      })
-                                    }
+                                      });
+                                    }}
                                     className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
                                     placeholder="Variable name for output"
                                   />
@@ -1650,6 +1904,48 @@ function WorkflowBuilderInner() {
                                     searchPlaceholder="Search tools..."
                                     emptyText="No tools available"
                                   />
+                                </div>
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Structured Output (JSON Schema)
+                                  </label>
+                                  {!selectedAgentModelSupportsStructuredOutput && (
+                                    <p className="mb-2 text-xs text-red-600 dark:text-red-400">
+                                      Selected model does not support structured
+                                      output.
+                                    </p>
+                                  )}
+                                  <textarea
+                                    value={selectedAgentJsonSchemaText}
+                                    onChange={(e) =>
+                                      handleAgentJsonSchemaChange(
+                                        e.target.value,
+                                      )
+                                    }
+                                    className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 font-mono text-xs transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                                    rows={8}
+                                    placeholder={`{
+  "type": "object",
+  "properties": {
+    "summary": { "type": "string" }
+  },
+  "required": ["summary"]
+}`}
+                                  />
+                                  {selectedAgentJsonSchemaText.trim() !==
+                                    '' && (
+                                    <p
+                                      className={`mt-2 text-xs ${
+                                        selectedAgentJsonSchemaError
+                                          ? 'text-red-600 dark:text-red-400'
+                                          : 'text-green-600 dark:text-green-400'
+                                      }`}
+                                    >
+                                      {selectedAgentJsonSchemaError
+                                        ? `Invalid JSON schema: ${selectedAgentJsonSchemaError}`
+                                        : 'Valid JSON schema'}
+                                    </p>
+                                  )}
                                 </div>
                               </>
                             )}

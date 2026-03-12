@@ -85,10 +85,10 @@ export const AgentNode = memo(function AgentNode({
         )}
         {config.output_variable && (
           <div
-            className="truncate text-xs text-green-600 dark:text-green-400"
-            title={`Output ➔ ${config.output_variable}`}
+            className="truncate text-xs text-gray-500 dark:text-gray-400"
+            title={`Output: ${config.output_variable}`}
           >
-            Output ➔ {config.output_variable}
+            Output: {config.output_variable}
           </div>
         )}
       </div>

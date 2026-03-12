@@ -87,7 +87,9 @@ function ExecutionDetails({
 
   const formatValue = (value: unknown): string => {
     if (typeof value === 'string') return value;
-    return JSON.stringify(value, null, 2);
+    if (value === undefined) return '';
+    const formatted = JSON.stringify(value, null, 2);
+    return formatted ?? String(value);
   };
 
   return (
@@ -136,6 +138,11 @@ function ExecutionDetails({
                 if (text.length <= maxLength) return text;
                 return text.slice(0, maxLength) + '...';
               };
+              const hasOutput =
+                step.output !== undefined &&
+                step.output !== null &&
+                formatValue(step.output) !== '';
+              const formattedOutput = hasOutput ? formatValue(step.output) : '';
 
               return (
                 <div
@@ -171,15 +178,15 @@ function ExecutionDetails({
                       )}
                     </div>
                   </div>
-                  {(step.output || step.error || stateVars.length > 0) && (
+                  {(hasOutput || step.error || stateVars.length > 0) && (
                     <div className="mt-3 space-y-2 text-sm">
-                      {step.output && (
+                      {hasOutput && (
                         <div className="rounded-lg bg-white p-2 dark:bg-[#2A2A2A]">
                           <span className="font-medium text-gray-600 dark:text-gray-400">
                             Output:{' '}
                           </span>
                           <span className="wrap-break-word whitespace-pre-wrap text-gray-900 dark:text-gray-100">
-                            {truncateText(step.output, 300)}
+                            {truncateText(formattedOutput, 300)}
                           </span>
                         </div>
                       )}
@@ -254,7 +261,7 @@ function WorkflowMiniMap({
     return step?.status || 'pending';
   };
 
-  const getStatusColor = (nodeId: string, nodeType: string) => {
+  const getStatusColor = (nodeId: string) => {
     const status = getNodeStatus(nodeId);
     const isActive = nodeId === activeNodeId;
 
@@ -275,18 +282,28 @@ function WorkflowMiniMap({
   };
 
   const executedOrder = new Map(executionSteps.map((s, i) => [s.nodeId, i]));
-  const sortedNodes = [...nodes].sort((a, b) => {
-    const aIdx = executedOrder.get(a.id);
-    const bIdx = executedOrder.get(b.id);
-    if (aIdx !== undefined && bIdx !== undefined) return aIdx - bIdx;
-    if (aIdx !== undefined) return -1;
-    if (bIdx !== undefined) return 1;
-    if (a.type === 'start') return -1;
-    if (b.type === 'start') return 1;
-    if (a.type === 'end') return 1;
-    if (b.type === 'end') return -1;
-    return (a.position?.y || 0) - (b.position?.y || 0);
-  });
+  const startNode = nodes.find((node) => node.type === 'start');
+  const visibleNodeIds = new Set(executionSteps.map((step) => step.nodeId));
+  if (activeNodeId) {
+    visibleNodeIds.add(activeNodeId);
+  }
+  if (startNode) {
+    visibleNodeIds.add(startNode.id);
+  }
+
+  const sortedNodes = nodes
+    .filter((node) => visibleNodeIds.has(node.id))
+    .sort((a, b) => {
+      if (a.type === 'start') return -1;
+      if (b.type === 'start') return 1;
+
+      const aIdx = executedOrder.get(a.id);
+      const bIdx = executedOrder.get(b.id);
+      if (aIdx !== undefined && bIdx !== undefined) return aIdx - bIdx;
+      if (aIdx !== undefined) return -1;
+      if (bIdx !== undefined) return 1;
+      return (a.position?.y || 0) - (b.position?.y || 0);
+    });
 
   const hasStepData = (nodeId: string) => {
     const step = executionSteps.find((s) => s.nodeId === nodeId);
@@ -306,7 +323,7 @@ function WorkflowMiniMap({
             disabled={!hasStepData(node.id)}
             className={cn(
               'flex h-12 w-full items-center gap-2 rounded-lg border px-3 text-xs transition-all',
-              getStatusColor(node.id, node.type),
+              getStatusColor(node.id),
               hasStepData(node.id) && 'cursor-pointer hover:opacity-80',
             )}
           >
@@ -533,6 +550,10 @@ export default function WorkflowPreview({
                   const querySteps = query.executionSteps || [];
                   const hasResponse = !!(query.response || query.error);
                   const isLastQuery = index === queries.length - 1;
+                  const isStreamingLastQuery =
+                    status === 'loading' && isLastQuery;
+                  const shouldShowThought =
+                    !isStreamingLastQuery && Boolean(query.thought);
                   const isOpen =
                     openDetailsIndex === index ||
                     (!hasResponse && isLastQuery && querySteps.length > 0);
@@ -567,17 +588,19 @@ export default function WorkflowPreview({
 
                       {/* Response bubble */}
                       {(query.response ||
-                        query.thought ||
+                        shouldShowThought ||
                         query.tool_calls) && (
                         <ConversationBubble
                           className={isLastQuery ? 'mb-32' : 'mb-7'}
                           message={query.response}
                           type="ANSWER"
-                          thought={query.thought}
+                          thought={
+                            shouldShowThought ? query.thought : undefined
+                          }
                           sources={query.sources}
                           toolCalls={query.tool_calls}
                           feedback={query.feedback}
-                          isStreaming={status === 'loading' && isLastQuery}
+                          isStreaming={isStreamingLastQuery}
                         />
                       )}
 

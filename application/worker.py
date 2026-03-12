@@ -322,6 +322,7 @@ def run_agent_logic(agent_config, input_data):
         chunks = int(agent_config.get("chunks", 2))
         prompt_id = agent_config.get("prompt_id", "default")
         user_api_key = agent_config["key"]
+        agent_id = str(agent_config.get("_id")) if agent_config.get("_id") else None
         agent_type = agent_config.get("agent_type", "classic")
         decoded_token = {"sub": agent_config.get("user")}
         json_schema = agent_config.get("json_schema")
@@ -352,6 +353,7 @@ def run_agent_logic(agent_config, input_data):
             doc_token_limit=doc_token_limit,
             model_id=model_id,
             user_api_key=user_api_key,
+            agent_id=agent_id,
             decoded_token=decoded_token,
         )
 
@@ -370,6 +372,7 @@ def run_agent_logic(agent_config, input_data):
             llm_name=provider or settings.LLM_PROVIDER,
             model_id=model_id,
             api_key=system_api_key,
+            agent_id=agent_id,
             user_api_key=user_api_key,
             prompt=prompt,
             chat_history=[],

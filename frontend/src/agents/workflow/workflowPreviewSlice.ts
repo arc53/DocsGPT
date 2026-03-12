@@ -13,7 +13,7 @@ export interface WorkflowExecutionStep {
   startedAt?: number;
   completedAt?: number;
   stateSnapshot?: Record<string, unknown>;
-  output?: string;
+  output?: unknown;
   error?: string;
 }
 
@@ -321,7 +321,9 @@ export const workflowPreviewSlice = createSlice({
       }
 
       const querySteps = state.queries[index].executionSteps!;
-      const existingIndex = querySteps.findIndex((s) => s.nodeId === step.nodeId);
+      const existingIndex = querySteps.findIndex(
+        (s) => s.nodeId === step.nodeId,
+      );
 
       const updatedStep: WorkflowExecutionStep = {
         nodeId: step.nodeId,
@@ -332,7 +334,10 @@ export const workflowPreviewSlice = createSlice({
         stateSnapshot: step.stateSnapshot,
         output: step.output,
         error: step.error,
-        startedAt: existingIndex !== -1 ? querySteps[existingIndex].startedAt : Date.now(),
+        startedAt:
+          existingIndex !== -1
+            ? querySteps[existingIndex].startedAt
+            : Date.now(),
         completedAt:
           step.status === 'completed' || step.status === 'failed'
             ? Date.now()
@@ -342,7 +347,8 @@ export const workflowPreviewSlice = createSlice({
       };
 
       if (existingIndex !== -1) {
-        updatedStep.stateSnapshot = step.stateSnapshot ?? querySteps[existingIndex].stateSnapshot;
+        updatedStep.stateSnapshot =
+          step.stateSnapshot ?? querySteps[existingIndex].stateSnapshot;
         updatedStep.output = step.output ?? querySteps[existingIndex].output;
         updatedStep.error = step.error ?? querySteps[existingIndex].error;
         querySteps[existingIndex] = updatedStep;
@@ -350,7 +356,9 @@ export const workflowPreviewSlice = createSlice({
         querySteps.push(updatedStep);
       }
 
-      const globalIndex = state.executionSteps.findIndex((s) => s.nodeId === step.nodeId);
+      const globalIndex = state.executionSteps.findIndex(
+        (s) => s.nodeId === step.nodeId,
+      );
       if (globalIndex !== -1) {
         state.executionSteps[globalIndex] = updatedStep;
       } else {
