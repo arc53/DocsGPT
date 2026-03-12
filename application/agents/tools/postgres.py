@@ -1,5 +1,11 @@
+import logging
+
 import psycopg2
+
 from application.agents.tools.base import Tool
+
+logger = logging.getLogger(__name__)
+
 
 class PostgresTool(Tool):
     """
@@ -17,17 +23,12 @@ class PostgresTool(Tool):
             "postgres_execute_sql": self._execute_sql,
             "postgres_get_schema": self._get_schema,
         }
-
-        if action_name in actions:
-            return actions[action_name](**kwargs)
-        else:
+        if action_name not in actions:
             raise ValueError(f"Unknown action: {action_name}")
+        return actions[action_name](**kwargs)
 
     def _execute_sql(self, sql_query):
-        """
-        Executes an SQL query against the PostgreSQL database using a connection string.
-        """
-        conn = None  # Initialize conn to None for error handling
+        conn = None
         try:
             conn = psycopg2.connect(self.connection_string)
             cur = conn.cursor()
@@ -54,14 +55,14 @@ class PostgresTool(Tool):
 
         except psycopg2.Error as e:
             error_message = f"Database error: {e}"
-            print(f"Database error: {e}")
+            logger.error(error_message)
             return {
                 "status_code": 500,
                 "message": "Failed to execute SQL query.",
                 "error": error_message,
             }
         finally:
-            if conn:  # Ensure connection is closed even if errors occur
+            if conn:
                 conn.close()
 
     def _get_schema(self, db_name):
@@ -110,14 +111,14 @@ class PostgresTool(Tool):
 
         except psycopg2.Error as e:
             error_message = f"Database error: {e}"
-            print(f"Database error: {e}")
+            logger.error(error_message)
             return {
                 "status_code": 500,
                 "message": "Failed to retrieve database schema.",
                 "error": error_message,
             }
         finally:
-            if conn: # Ensure connection is closed even if errors occur
+            if conn:
                 conn.close()
 
     def get_actions_metadata(self):

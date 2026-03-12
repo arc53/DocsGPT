@@ -28,6 +28,8 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAu
 from pydantic import AnyHttpUrl, ValidationError
 from redis import Redis
 
+logger = logging.getLogger(__name__)
+
 mongo = MongoDB.get_client()
 db = mongo[settings.MONGO_DB_NAME]
 
@@ -263,7 +265,7 @@ class MCPTool(Tool):
                 finally:
                     loop.close()
         except Exception as e:
-            print(f"Error occurred while running async operation: {e}")
+            logger.error(f"Error occurred while running async operation: {e}")
             raise
 
     def discover_tools(self) -> List[Dict]:
