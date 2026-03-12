@@ -65,8 +65,14 @@ class Settings(BaseSettings):
         "http://127.0.0.1:7091/api/connectors/callback"  ##add redirect url as it is to your provider's console(gcp)
     )
 
+    # Microsoft Entra ID (Azure AD) integration
+    MICROSOFT_CLIENT_ID: Optional[str] = None  # Azure AD Application (client) ID
+    MICROSOFT_CLIENT_SECRET: Optional[str] = None  # Azure AD Application client secret
+    MICROSOFT_TENANT_ID: Optional[str] = "common"  # Azure AD Tenant ID (or 'common' for multi-tenant)
+    MICROSOFT_AUTHORITY: Optional[str] = None  # e.g., "https://login.microsoftonline.com/{tenant_id}"
+
     # GitHub source
-    GITHUB_ACCESS_TOKEN: Optional[str] = None  # PAT token with read repo access
+    GITHUB_ACCESS_TOKEN: Optional[str] = None # PAT token with read repo access
 
     # LLM Cache
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"
