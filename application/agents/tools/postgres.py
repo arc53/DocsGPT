@@ -23,11 +23,9 @@ class PostgresTool(Tool):
             "postgres_execute_sql": self._execute_sql,
             "postgres_get_schema": self._get_schema,
         }
-
-        if action_name in actions:
-            return actions[action_name](**kwargs)
-        else:
+        if action_name not in actions:
             raise ValueError(f"Unknown action: {action_name}")
+        return actions[action_name](**kwargs)
 
     def _execute_sql(self, sql_query):
         """

@@ -23,11 +23,9 @@ class TelegramTool(Tool):
             "telegram_send_message": self._send_message,
             "telegram_send_image": self._send_image,
         }
-
-        if action_name in actions:
-            return actions[action_name](**kwargs)
-        else:
+        if action_name not in actions:
             raise ValueError(f"Unknown action: {action_name}")
+        return actions[action_name](**kwargs)
 
     def _send_message(self, text, chat_id):
         logger.debug("Sending Telegram message to chat_id=%s", chat_id)

@@ -14,3 +14,21 @@ export const setSessionToken = (provider: string, token: string): void => {
 export const removeSessionToken = (provider: string): void => {
   localStorage.removeItem(`${provider}_session_token`);
 };
+
+export const validateProviderSession = async (
+  token: string | null,
+  provider: string,
+) => {
+  const apiHost = import.meta.env.VITE_API_HOST;
+  return await fetch(`${apiHost}/api/connectors/validate-session`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      provider: provider,
+      session_token: getSessionToken(provider),
+    }),
+  });
+};

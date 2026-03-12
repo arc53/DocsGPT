@@ -285,6 +285,7 @@ class MCPTool(Tool):
                 return self._run_in_new_loop(operation, *args, **kwargs)
         except Exception as e:
             raise self._map_error(operation, e) from e
+            raise self._map_error(operation, e) from e
 
     def _run_in_new_loop(self, operation, *args, **kwargs):
         loop = asyncio.new_event_loop()
