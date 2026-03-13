@@ -4,7 +4,7 @@ from application.vectorstore.milvus import MilvusStore
 from application.vectorstore.mongodb import MongoDBVectorStore
 from application.vectorstore.qdrant import QdrantStore
 from application.vectorstore.pgvector import PGVectorStore
-
+from application.vectorstore.oracle import OracleVectorStore
 
 class VectorCreator:
     vectorstores = {
@@ -13,7 +13,8 @@ class VectorCreator:
         "mongodb": MongoDBVectorStore,
         "qdrant": QdrantStore,
         "milvus": MilvusStore,
-        "pgvector": PGVectorStore
+        "pgvector": PGVectorStore,
+        "oracle": OracleVectorStore,
     }
 
     @classmethod

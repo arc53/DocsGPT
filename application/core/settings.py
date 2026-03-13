@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     DOCLING_OCR_ENABLED: bool = False  # Enable OCR for docling parsers (PDF, images)
     DOCLING_OCR_ATTACHMENTS_ENABLED: bool = False  # Enable OCR for docling when parsing attachments
     VECTOR_STORE: str = (
-        "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector"
+        "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector" or "oracle"
     )
     RETRIEVERS_ENABLED: list = ["classic_rag"]
     AGENT_NAME: str = "classic"
@@ -137,6 +137,13 @@ class Settings(BaseSettings):
     MILVUS_COLLECTION_NAME: Optional[str] = "docsgpt"
     MILVUS_URI: Optional[str] = "./milvus_local.db"  # milvus lite version as default
     MILVUS_TOKEN: Optional[str] = ""
+
+    # Oracle vectorstore config (Oracle AI Database Free (26ai) with native VECTOR support)
+    ORACLE_USER:             Optional[str] = None
+    ORACLE_PASSWORD:         Optional[str] = None
+    ORACLE_DSN:              Optional[str] = None
+    ORACLE_WALLET_LOCATION:  Optional[str] = None
+    ORACLE_WALLET_PASSWORD:  Optional[str] = None
 
     # LanceDB vectorstore config
     LANCEDB_PATH: str = "./data/lancedb"  # Path where LanceDB stores its local data
