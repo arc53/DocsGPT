@@ -222,3 +222,37 @@ def create_custom_openai_model(model_name: str, base_url: str) -> AvailableModel
             supported_attachment_types=OPENAI_ATTACHMENTS,
         ),
     )
+
+
+MODELSLAB_MODELS = [
+    AvailableModel(
+        id="meta-llama/Meta-Llama-3-8B-Instruct",
+        provider=ModelProvider.MODELSLAB,
+        display_name="Llama 3 8B (ModelsLab)",
+        description="Meta Llama 3 8B instruction-tuned model via ModelsLab API",
+        capabilities=ModelCapabilities(
+            supports_tools=False,
+            context_window=8192,
+        ),
+    ),
+    AvailableModel(
+        id="meta-llama/Meta-Llama-3-70B-Instruct",
+        provider=ModelProvider.MODELSLAB,
+        display_name="Llama 3 70B (ModelsLab)",
+        description="Meta Llama 3 70B instruction-tuned model via ModelsLab API",
+        capabilities=ModelCapabilities(
+            supports_tools=False,
+            context_window=8192,
+        ),
+    ),
+    AvailableModel(
+        id="mistralai/Mistral-7B-Instruct-v0.2",
+        provider=ModelProvider.MODELSLAB,
+        display_name="Mistral 7B (ModelsLab)",
+        description="Mistral 7B instruction-tuned model via ModelsLab API",
+        capabilities=ModelCapabilities(
+            supports_tools=False,
+            context_window=32768,
+        ),
+    ),
+]
