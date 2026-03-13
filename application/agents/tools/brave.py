@@ -46,7 +46,7 @@ class BraveSearchTool(Tool):
         """
         Performs a web search using the Brave Search API.
         """
-        logger.info(f"Brave web search: {query}")
+        logger.debug("Performing Brave web search for: %s", query)
 
         url = f"{self.base_url}/web/search"
 
@@ -99,7 +99,7 @@ class BraveSearchTool(Tool):
         """
         Performs an image search using the Brave Search API.
         """
-        logger.info(f"Brave image search: {query}")
+        logger.debug("Performing Brave image search for: %s", query)
 
         url = f"{self.base_url}/images/search"
 
@@ -182,6 +182,10 @@ class BraveSearchTool(Tool):
         return {
             "token": {
                 "type": "string",
+                "label": "API Key",
                 "description": "Brave Search API key for authentication",
+                "required": True,
+                "secret": True,
+                "order": 1,
             },
         }

@@ -28,6 +28,9 @@ class PostgresTool(Tool):
         return actions[action_name](**kwargs)
 
     def _execute_sql(self, sql_query):
+        """
+        Executes an SQL query against the PostgreSQL database using a connection string.
+        """
         conn = None
         try:
             conn = psycopg2.connect(self.connection_string)
@@ -36,7 +39,9 @@ class PostgresTool(Tool):
             conn.commit()
 
             if sql_query.strip().lower().startswith("select"):
-                column_names = [desc[0] for desc in cur.description] if cur.description else []
+                column_names = (
+                    [desc[0] for desc in cur.description] if cur.description else []
+                )
                 results = []
                 rows = cur.fetchall()
                 for row in rows:
@@ -44,7 +49,9 @@ class PostgresTool(Tool):
                 response_data = {"data": results, "column_names": column_names}
             else:
                 row_count = cur.rowcount
-                response_data = {"message": f"Query executed successfully, {row_count} rows affected."}
+                response_data = {
+                    "message": f"Query executed successfully, {row_count} rows affected."
+                }
 
             cur.close()
             return {
@@ -55,7 +62,7 @@ class PostgresTool(Tool):
 
         except psycopg2.Error as e:
             error_message = f"Database error: {e}"
-            logger.error(error_message)
+            logger.error("PostgreSQL execute_sql error: %s", e)
             return {
                 "status_code": 500,
                 "message": "Failed to execute SQL query.",
@@ -69,12 +76,13 @@ class PostgresTool(Tool):
         """
         Retrieves the schema of the PostgreSQL database using a connection string.
         """
-        conn = None # Initialize conn to None for error handling
+        conn = None
         try:
             conn = psycopg2.connect(self.connection_string)
             cur = conn.cursor()
 
-            cur.execute("""
+            cur.execute(
+                """
                 SELECT
                     table_name,
                     column_name,
@@ -88,19 +96,22 @@ class PostgresTool(Tool):
                 ORDER BY
                     table_name,
                     ordinal_position;
-            """)
+            """
+            )
 
             schema_data = {}
             for row in cur.fetchall():
                 table_name, column_name, data_type, column_default, is_nullable = row
                 if table_name not in schema_data:
                     schema_data[table_name] = []
-                schema_data[table_name].append({
-                    "column_name": column_name,
-                    "data_type": data_type,
-                    "column_default": column_default,
-                    "is_nullable": is_nullable
-                })
+                schema_data[table_name].append(
+                    {
+                        "column_name": column_name,
+                        "data_type": data_type,
+                        "column_default": column_default,
+                        "is_nullable": is_nullable,
+                    }
+                )
 
             cur.close()
             return {
@@ -111,7 +122,7 @@ class PostgresTool(Tool):
 
         except psycopg2.Error as e:
             error_message = f"Database error: {e}"
-            logger.error(error_message)
+            logger.error("PostgreSQL get_schema error: %s", e)
             return {
                 "status_code": 500,
                 "message": "Failed to retrieve database schema.",
@@ -159,6 +170,10 @@ class PostgresTool(Tool):
         return {
             "token": {
                 "type": "string",
-                "description": "PostgreSQL database connection string (e.g., 'postgresql://user:password@host:port/dbname')",
+                "label": "Connection String",
+                "description": "PostgreSQL database connection string",
+                "required": True,
+                "secret": True,
+                "order": 1,
             },
         }

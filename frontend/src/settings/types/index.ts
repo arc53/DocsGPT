@@ -1,3 +1,5 @@
+import { ConfigRequirements } from '../../modals/types';
+
 export type ChunkType = {
   doc_id: string;
   text: string;
@@ -46,8 +48,9 @@ export type UserToolType = {
   description: string;
   status: boolean;
   config: {
-    [key: string]: string;
+    [key: string]: any;
   };
+  configRequirements?: ConfigRequirements;
   actions: {
     name: string;
     description: string;
@@ -101,4 +104,5 @@ export type APIToolType = {
   description: string;
   status: boolean;
   config: { actions: { [key: string]: APIActionType } };
+  configRequirements?: ConfigRequirements;
 };

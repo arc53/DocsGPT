@@ -154,6 +154,12 @@
       "manageTools": "Go to Tools",
       "edit": "Edit",
       "delete": "Delete",
+      "reconnect": "Reconnect",
+      "authStatus": {
+        "connected": "Connected",
+        "needsAuth": "Needs Auth",
+        "configured": "Configured"
+      },
       "deleteWarning": "Are you sure you want to delete the tool \"{{toolName}}\" ?",
       "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
       "leaveWithoutSaving": "Leave without Saving",
@@ -180,6 +186,8 @@
       "deleteActionWarning": "Are you sure you want to delete the action \"{{name}}\"?",
       "backToAllTools": "Back to all tools",
       "save": "Save",
+      "saving": "Saving...",
+      "saveFailed": "Failed to save tool configuration",
       "fieldName": "Field Name",
       "fieldType": "Field Type",
       "filledByLLM": "Filled by LLM",
@@ -195,6 +203,8 @@
       "mcp": {
         "addServer": "Add MCP Server",
         "editServer": "Edit Server",
+        "reconnectServer": "Reconnect Server",
+        "reenterCredentials": "Re-enter your credentials to test and update the connection.",
         "serverName": "Server Name",
         "serverUrl": "Server URL",
         "headerName": "Header Name",
@@ -207,6 +217,8 @@
         "noAuth": "No Authentication",
         "oauthInProgress": "Waiting for OAuth completion...",
         "oauthCompleted": "OAuth completed successfully",
+        "oauthPopupBlocked": "Popup blocked by browser. Click below to authorize:",
+        "openAuthPage": "Open authorization page",
         "authType": "Authentication Type",
         "defaultServerName": "My MCP Server",
         "authTypes": {

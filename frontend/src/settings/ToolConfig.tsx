@@ -10,9 +10,11 @@ import CircleX from '../assets/circle-x.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import Trash from '../assets/trash.svg';
+import ConfigFields from '../components/ConfigFields';
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import ToggleSwitch from '../components/ToggleSwitch';
+import { Input as ShadInput } from '../components/ui/input';
 import { useDarkTheme } from '../hooks';
 import AddActionModal from '../modals/AddActionModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -44,21 +46,21 @@ export default function ToolConfig({
   handleGoBack: () => void;
 }) {
   const token = useSelector(selectToken);
-  const [authKey, setAuthKey] = React.useState<string>(() => {
-    if (tool.name === 'mcp_tool') {
-      const config = tool.config as any;
-      if (config.auth_type === 'api_key') {
-        return config.api_key || '';
-      } else if (config.auth_type === 'bearer') {
-        return config.encrypted_token || '';
-      } else if (config.auth_type === 'basic') {
-        return config.password || '';
+  const configRequirements = React.useMemo(
+    () => tool.configRequirements ?? {},
+    [tool.configRequirements],
+  );
+  const [configValues, setConfigValues] = React.useState<{
+    [key: string]: any;
+  }>(() => {
+    const vals: { [key: string]: any } = {};
+    const cfg = tool.config as { [key: string]: any } | undefined;
+    Object.keys(configRequirements).forEach((key) => {
+      if (cfg && key in cfg) {
+        vals[key] = cfg[key];
       }
-      return '';
-    } else if ('token' in tool.config) {
-      return tool.config.token;
-    }
-    return '';
+    });
+    return vals;
   });
   const [customName, setCustomName] = React.useState<string>(
     tool.customName || '',
@@ -69,12 +71,17 @@ export default function ToolConfig({
     React.useState<ActiveState>('INACTIVE');
   const [initialState, setInitialState] = React.useState({
     customName: tool.customName || '',
-    authKey: 'token' in tool.config ? tool.config.token : '',
+    configValues: { ...configValues } as { [key: string]: any },
     config: tool.config,
     actions: 'actions' in tool ? tool.actions : [],
   });
   const [hasUnsavedChanges, setHasUnsavedChanges] = React.useState(false);
   const [showUnsavedModal, setShowUnsavedModal] = React.useState(false);
+  const [configErrors, setConfigErrors] = React.useState<{
+    [key: string]: string;
+  }>({});
+  const [saving, setSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState('');
   const [userActionsSearch, setUserActionsSearch] = React.useState('');
   const [expandedUserActions, setExpandedUserActions] = React.useState<
     Set<number>
@@ -115,16 +122,76 @@ export default function ToolConfig({
     }
   };
 
+  const handleFieldChange = (key: string, value: any) => {
+    setConfigValues((prev) => ({ ...prev, [key]: value }));
+    if (configErrors[key]) setConfigErrors((prev) => ({ ...prev, [key]: '' }));
+  };
+
+  const validateConfig = () => {
+    if (tool.name === 'api_tool') return true;
+    const newErrors: { [key: string]: string } = {};
+    Object.entries(configRequirements).forEach(([key, spec]) => {
+      if (spec.depends_on) {
+        const visible = Object.entries(spec.depends_on).every(
+          ([dk, dv]) => configValues[dk] === dv,
+        );
+        if (!visible) return;
+      }
+      if (spec.required && !configValues[key]?.toString().trim()) {
+        const hasEncCreds = !!(tool as any).config?.has_encrypted_credentials;
+        if (!(spec.secret && hasEncCreds)) {
+          newErrors[key] = `${spec.label || key} is required`;
+        }
+      }
+      if (
+        spec.type === 'number' &&
+        configValues[key] !== undefined &&
+        configValues[key] !== ''
+      ) {
+        const num = Number(configValues[key]);
+        if (isNaN(num) || num < 1) {
+          newErrors[key] = 'Must be a positive number';
+        }
+        if (key === 'timeout' && num > 300) {
+          newErrors[key] = 'Maximum timeout is 300 seconds';
+        }
+      }
+    });
+    setConfigErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const buildConfigToSave = () => {
+    if (tool.name === 'api_tool') return tool.config;
+    const config: { [key: string]: any } = {};
+    Object.entries(configRequirements).forEach(([key, spec]) => {
+      const val = configValues[key];
+      if (val !== undefined && val !== '') {
+        config[key] = val;
+      } else if (spec.secret) {
+        return;
+      } else {
+        const cfg = tool.config as { [key: string]: any } | undefined;
+        if (cfg && key in cfg) {
+          config[key] = cfg[key];
+        } else if (spec.default !== undefined) {
+          config[key] = spec.default;
+        }
+      }
+    });
+    return config;
+  };
+
   React.useEffect(() => {
     const currentState = {
       customName,
-      authKey,
+      configValues,
       config: tool.config,
       actions: 'actions' in tool ? tool.actions : [],
     };
 
     setHasUnsavedChanges(!areObjectsEqual(initialState, currentState));
-  }, [customName, authKey, tool]);
+  }, [customName, configValues, tool]);
 
   const handleCheckboxChange = (actionIndex: number, property: string) => {
     setTool({
@@ -156,29 +223,15 @@ export default function ToolConfig({
     });
   };
 
-  const handleSaveChanges = () => {
-    let configToSave;
-    if (tool.name === 'api_tool') {
-      configToSave = tool.config;
-    } else if (tool.name === 'mcp_tool') {
-      configToSave = { ...tool.config } as any;
-      const mcpConfig = tool.config as any;
+  const handleSaveChanges = async () => {
+    if (!validateConfig()) return;
+    const configToSave = buildConfigToSave();
 
-      if (authKey.trim()) {
-        if (mcpConfig.auth_type === 'api_key') {
-          configToSave.api_key = authKey;
-        } else if (mcpConfig.auth_type === 'bearer') {
-          configToSave.encrypted_token = authKey;
-        } else if (mcpConfig.auth_type === 'basic') {
-          configToSave.password = authKey;
-        }
-      }
-    } else {
-      configToSave = { token: authKey };
-    }
+    setSaving(true);
+    setSaveError('');
 
-    userService
-      .updateTool(
+    try {
+      await userService.updateTool(
         {
           id: tool.id,
           name: tool.name,
@@ -190,18 +243,20 @@ export default function ToolConfig({
           status: tool.status,
         },
         token,
-      )
-      .then(() => {
-        // Update initialState to match current state
-        setInitialState({
-          customName,
-          authKey,
-          config: tool.config,
-          actions: 'actions' in tool ? tool.actions : [],
-        });
-        setHasUnsavedChanges(false);
-        handleGoBack();
+      );
+      setInitialState({
+        customName,
+        configValues: { ...configValues },
+        config: tool.config,
+        actions: 'actions' in tool ? tool.actions : [],
       });
+      setHasUnsavedChanges(false);
+      handleGoBack();
+    } catch {
+      setSaveError(t('settings.tools.saveFailed'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = () => {
@@ -285,65 +340,53 @@ export default function ToolConfig({
           <p className="mt-px">{t('settings.tools.backToAllTools')}</p>
         </div>
         <button
-          className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-3 py-2 text-xs text-nowrap text-white sm:px-4 sm:py-2"
+          className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-3 py-2 text-xs text-nowrap text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:py-2"
           onClick={handleSaveChanges}
+          disabled={!hasUnsavedChanges || saving}
         >
-          {t('settings.tools.save')}
+          {saving ? t('settings.tools.saving') : t('settings.tools.save')}
         </button>
       </div>
-      {/* Custom name section */}
+      {saveError && (
+        <div className="mb-2 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+          {saveError}
+        </div>
+      )}
       <div className="mt-1">
         <p className="text-eerie-black dark:text-bright-gray text-sm font-semibold">
           {t('settings.tools.customName')}
         </p>
         <div className="relative mt-4 w-full max-w-96">
-          <Input
+          <ShadInput
             type="text"
             value={customName}
             onChange={(e) => setCustomName(e.target.value)}
-            borderVariant="thin"
             placeholder={t('settings.tools.customNamePlaceholder')}
+            className="rounded-xl"
           />
         </div>
       </div>
       <div className="mt-1">
-        {Object.keys(tool?.config).length !== 0 && tool.name !== 'api_tool' && (
-          <p className="text-eerie-black dark:text-bright-gray text-sm font-semibold">
-            {tool.name === 'mcp_tool'
-              ? (tool.config as any)?.auth_type === 'bearer'
-                ? 'Bearer Token'
-                : (tool.config as any)?.auth_type === 'api_key'
-                  ? 'API Key'
-                  : (tool.config as any)?.auth_type === 'basic'
-                    ? 'Password'
-                    : t('settings.tools.authentication')
-              : t('settings.tools.authentication')}
-          </p>
-        )}
-        <div className="mt-4 flex flex-col items-start gap-2 sm:flex-row sm:items-center">
-          {Object.keys(tool?.config).length !== 0 &&
-            tool.name !== 'api_tool' && (
-              <div className="relative w-full max-w-96">
-                <Input
-                  type="text"
-                  value={authKey}
-                  onChange={(e) => setAuthKey(e.target.value)}
-                  borderVariant="thin"
-                  placeholder={
-                    tool.name === 'mcp_tool'
-                      ? (tool.config as any)?.auth_type === 'bearer'
-                        ? 'Bearer Token'
-                        : (tool.config as any)?.auth_type === 'api_key'
-                          ? 'API Key'
-                          : (tool.config as any)?.auth_type === 'basic'
-                            ? 'Password'
-                            : t('modals.configTool.apiKeyPlaceholder')
-                      : t('modals.configTool.apiKeyPlaceholder')
+        {tool.name !== 'api_tool' &&
+          Object.keys(configRequirements).length > 0 && (
+            <div>
+              <p className="text-eerie-black dark:text-bright-gray mb-4 text-sm font-semibold">
+                {t('settings.tools.authentication')}
+              </p>
+              <div className="max-w-96">
+                <ConfigFields
+                  configRequirements={configRequirements}
+                  values={configValues}
+                  onChange={handleFieldChange}
+                  errors={configErrors}
+                  isEditing
+                  hasEncryptedCredentials={
+                    !!(tool as any).config?.has_encrypted_credentials
                   }
                 />
               </div>
-            )}
-        </div>
+            </div>
+          )}
       </div>
       <div className="flex flex-col gap-4">
         <div className="mx-0 my-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40"></div>
@@ -522,7 +565,7 @@ export default function ToolConfig({
                                       <td>
                                         <label
                                           htmlFor={uniqueKey}
-                                          className="ml-[10px] flex cursor-pointer items-start gap-4"
+                                          className="ml-2.5 flex cursor-pointer items-start gap-4"
                                         >
                                           <div className="flex items-center">
                                             &#8203;
@@ -658,29 +701,17 @@ export default function ToolConfig({
             modalState="ACTIVE"
             setModalState={(state) => setShowUnsavedModal(state === 'ACTIVE')}
             submitLabel={t('settings.tools.saveAndLeave')}
-            handleSubmit={() => {
-              let configToSave;
-              if (tool.name === 'api_tool') {
-                configToSave = tool.config;
-              } else if (tool.name === 'mcp_tool') {
-                configToSave = { ...tool.config } as any;
-                const mcpConfig = tool.config as any;
-
-                if (authKey.trim()) {
-                  if (mcpConfig.auth_type === 'api_key') {
-                    configToSave.api_key = authKey;
-                  } else if (mcpConfig.auth_type === 'bearer') {
-                    configToSave.encrypted_token = authKey;
-                  } else if (mcpConfig.auth_type === 'basic') {
-                    configToSave.password = authKey;
-                  }
-                }
-              } else {
-                configToSave = { token: authKey };
+            handleSubmit={async () => {
+              if (!validateConfig()) {
+                setShowUnsavedModal(false);
+                return;
               }
+              const configToSave = buildConfigToSave();
+              setSaving(true);
+              setSaveError('');
 
-              userService
-                .updateTool(
+              try {
+                await userService.updateTool(
                   {
                     id: tool.id,
                     name: tool.name,
@@ -692,11 +723,15 @@ export default function ToolConfig({
                     status: tool.status,
                   },
                   token,
-                )
-                .then(() => {
-                  setShowUnsavedModal(false);
-                  handleGoBack();
-                });
+                );
+                setShowUnsavedModal(false);
+                handleGoBack();
+              } catch {
+                setSaveError(t('settings.tools.saveFailed'));
+                setShowUnsavedModal(false);
+              } finally {
+                setSaving(false);
+              }
             }}
             cancelLabel={t('settings.tools.leaveWithoutSaving')}
             handleCancel={() => {
@@ -1091,7 +1126,6 @@ function APIToolConfig({
         })}
       </div>
 
-      {/* Confirmation Modal */}
       {deleteModalState === 'ACTIVE' && actionToDelete && (
         <ConfirmationModal
           message={t('settings.tools.deleteActionWarning', {
@@ -1365,7 +1399,7 @@ function APIActionTable({
                 </select>
               </td>
               <td>
-                <label className="ml-[10px] flex cursor-pointer items-start gap-4">
+                <label className="ml-2.5 flex cursor-pointer items-start gap-4">
                   <div className="flex items-center">
                     <input
                       checked={param.filled_by_llm}
@@ -1456,13 +1490,13 @@ function APIActionTable({
             <td colSpan={3} className="text-right">
               <button
                 onClick={handleAddProperty}
-                className="bg-purple-30 hover:bg-violets-are-blue mr-1 rounded-full px-5 py-[4px] text-sm text-white"
+                className="bg-purple-30 hover:bg-violets-are-blue mr-1 rounded-full px-5 py-1 text-sm text-white"
               >
                 {t('settings.tools.add')}
               </button>
               <button
                 onClick={handleAddPropertyCancel}
-                className="rounded-full border border-solid border-red-500 px-5 py-[4px] text-sm text-red-500 hover:bg-red-500 hover:text-white"
+                className="rounded-full border border-solid border-red-500 px-5 py-1 text-sm text-red-500 hover:bg-red-500 hover:text-white"
               >
                 {t('settings.tools.cancel')}
               </button>
@@ -1481,7 +1515,7 @@ function APIActionTable({
             <td colSpan={5}>
               <button
                 onClick={() => handleAddPropertyStart(section)}
-                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue flex items-start rounded-full border border-solid px-5 py-[4px] text-sm text-nowrap transition-colors hover:text-white"
+                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue flex items-start rounded-full border border-solid px-5 py-1 text-sm text-nowrap transition-colors hover:text-white"
               >
                 {t('settings.tools.addNew')}
               </button>
@@ -1614,13 +1648,13 @@ function APIActionTable({
             <td colSpan={2} className="text-right">
               <button
                 onClick={handleAddProperty}
-                className="bg-purple-30 hover:bg-violets-are-blue mr-1 rounded-full px-5 py-[4px] text-sm text-white"
+                className="bg-purple-30 hover:bg-violets-are-blue mr-1 rounded-full px-5 py-1 text-sm text-white"
               >
                 {t('settings.tools.add')}
               </button>
               <button
                 onClick={handleAddPropertyCancel}
-                className="rounded-full border border-solid border-red-500 px-5 py-[4px] text-sm text-red-500 hover:bg-red-500 hover:text-white"
+                className="rounded-full border border-solid border-red-500 px-5 py-1 text-sm text-red-500 hover:bg-red-500 hover:text-white"
               >
                 {t('settings.tools.cancel')}
               </button>
@@ -1639,7 +1673,7 @@ function APIActionTable({
             <td colSpan={3}>
               <button
                 onClick={() => handleAddPropertyStart('headers')}
-                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue flex items-start rounded-full border border-solid px-5 py-[4px] text-sm text-nowrap transition-colors hover:text-white"
+                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue flex items-start rounded-full border border-solid px-5 py-1 text-sm text-nowrap transition-colors hover:text-white"
               >
                 {t('settings.tools.addNew')}
               </button>

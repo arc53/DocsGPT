@@ -116,12 +116,13 @@ class NtfyTool(Tool):
         ]
 
     def get_config_requirements(self):
-        """
-        Specify the configuration requirements.
-
-        Returns:
-            dict: Dictionary describing required config parameters.
-        """
         return {
-            "token": {"type": "string", "description": "Access token for authentication"},
+            "token": {
+                "type": "string",
+                "label": "Access Token",
+                "description": "Ntfy access token for authentication",
+                "required": True,
+                "secret": True,
+                "order": 1,
+            },
         }

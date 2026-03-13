@@ -24,7 +24,15 @@ export default function WrapperModal({
     if (isPerformingTask) return;
 
     const handleClickOutside = (event: MouseEvent) => {
-      if (modalRef.current && !modalRef.current.contains(event.target as Node))
+      const target = event.target as Node;
+      if (
+        (target as Element)?.closest?.(
+          '[data-radix-popper-content-wrapper], [data-radix-select-viewport], [role="listbox"]',
+        )
+      )
+        return;
+      if (document.querySelector('[data-radix-select-content]')) return;
+      if (modalRef.current && !modalRef.current.contains(target))
         close();
     };
 
@@ -43,7 +51,7 @@ export default function WrapperModal({
 
   const modalContent = (
     <div
-      className="fixed top-0 left-0 z-[100] flex h-screen w-screen items-center justify-center"
+      className="fixed top-0 left-0 z-100 flex h-screen w-screen items-center justify-center"
       onClick={(e: React.MouseEvent) => e.stopPropagation()}
       onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
     >

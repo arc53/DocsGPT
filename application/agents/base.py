@@ -16,6 +16,7 @@ from application.core.settings import settings
 from application.llm.handlers.handler_creator import LLMHandlerCreator
 from application.llm.llm_creator import LLMCreator
 from application.logging import build_stack_data, log_activity, LogContext
+from application.security.encryption import decrypt_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -264,12 +265,18 @@ class BaseAgent(ABC):
                 )
         else:
             tool_config = tool_data["config"].copy() if tool_data["config"] else {}
-            # Add tool_id from MongoDB _id for tools that need instance isolation (like memory tool)
-            # Use MongoDB _id if available, otherwise fall back to enumerated tool_id
-
+            if tool_config.get("encrypted_credentials") and self.user:
+                decrypted = decrypt_credentials(
+                    tool_config["encrypted_credentials"], self.user
+                )
+                tool_config.update(decrypted)
+                tool_config["auth_credentials"] = decrypted
+                tool_config.pop("encrypted_credentials", None)
             tool_config["tool_id"] = str(tool_data.get("_id", tool_id))
             if hasattr(self, "conversation_id") and self.conversation_id:
                 tool_config["conversation_id"] = self.conversation_id
+            if tool_data["name"] == "mcp_tool":
+                tool_config["query_mode"] = True
         tool = tm.load_tool(
             tool_data["name"],
             tool_config=tool_config,

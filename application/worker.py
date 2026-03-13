@@ -1449,34 +1449,28 @@ def ingest_connector(
 def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, Any]:
     """Worker to handle MCP OAuth flow asynchronously."""
 
-    logging.info(
-        "[MCP OAuth] Worker started for user_id=%s, config=%s", user_id, config
-    )
     try:
         import asyncio
 
         from application.agents.tools.mcp_tool import MCPTool
 
         task_id = self.request.id
-        logging.info("[MCP OAuth] Task ID: %s", task_id)
         redis_client = get_redis_instance()
 
         def update_status(status_data: Dict[str, Any]):
-            logging.info("[MCP OAuth] Updating status: %s", status_data)
             status_key = f"mcp_oauth_status:{task_id}"
             redis_client.setex(status_key, 600, json.dumps(status_data))
 
         update_status(
             {
                 "status": "in_progress",
-                "message": "Starting OAuth flow...",
+                "message": "Starting OAuth...",
                 "task_id": task_id,
             }
         )
 
         tool_config = config.copy()
         tool_config["oauth_task_id"] = task_id
-        logging.info("[MCP OAuth] Initializing MCPTool with config: %s", tool_config)
         mcp_tool = MCPTool(tool_config, user_id)
 
         async def run_oauth_discovery():
@@ -1487,7 +1481,7 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
         update_status(
             {
                 "status": "awaiting_redirect",
-                "message": "Waiting for OAuth redirect...",
+                "message": "Awaiting OAuth redirect...",
                 "task_id": task_id,
             }
         )
@@ -1496,66 +1490,40 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
         asyncio.set_event_loop(loop)
 
         try:
-            logging.info("[MCP OAuth] Starting event loop for OAuth discovery...")
-            tools_response = loop.run_until_complete(run_oauth_discovery())
-            logging.info(
-                "[MCP OAuth] Tools response after async call: %s", tools_response
-            )
-
-            status_key = f"mcp_oauth_status:{task_id}"
-            redis_status = redis_client.get(status_key)
-            if redis_status:
-                logging.info(
-                    "[MCP OAuth] Redis status after async call: %s", redis_status
-                )
-            else:
-                logging.warning(
-                    "[MCP OAuth] No Redis status found after async call for key: %s",
-                    status_key,
-                )
+            loop.run_until_complete(run_oauth_discovery())
             tools = mcp_tool.get_actions_metadata()
 
             update_status(
                 {
                     "status": "completed",
-                    "message": f"OAuth completed successfully. Found {len(tools)} tools.",
+                    "message": f"Connected \u2014 found {len(tools)} tool{'s' if len(tools) != 1 else ''}.",
                     "tools": tools,
                     "tools_count": len(tools),
                     "task_id": task_id,
                 }
             )
 
-            logging.info(
-                "[MCP OAuth] OAuth flow completed successfully for task_id=%s", task_id
-            )
             return {"success": True, "tools": tools, "tools_count": len(tools)}
         except Exception as e:
-            error_msg = f"OAuth flow failed: {str(e)}"
-            logging.error(
-                "[MCP OAuth] Exception in OAuth discovery: %s", error_msg, exc_info=True
-            )
+            error_msg = f"OAuth failed: {str(e)}"
+            logging.error("MCP OAuth discovery failed: %s", error_msg, exc_info=True)
             update_status(
                 {
                     "status": "error",
                     "message": error_msg,
-                    "error": str(e),
                     "task_id": task_id,
                 }
             )
             return {"success": False, "error": error_msg}
         finally:
-            logging.info("[MCP OAuth] Closing event loop for task_id=%s", task_id)
             loop.close()
     except Exception as e:
-        error_msg = f"Failed to initialize OAuth flow: {str(e)}"
-        logging.error(
-            "[MCP OAuth] Exception during initialization: %s", error_msg, exc_info=True
-        )
+        error_msg = f"OAuth init failed: {str(e)}"
+        logging.error("MCP OAuth init failed: %s", error_msg, exc_info=True)
         update_status(
             {
                 "status": "error",
                 "message": error_msg,
-                "error": str(e),
                 "task_id": task_id,
             }
         )
