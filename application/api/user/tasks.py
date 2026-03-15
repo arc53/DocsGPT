@@ -8,13 +8,25 @@ from application.worker import (
     mcp_oauth,
     mcp_oauth_status,
     remote_worker,
+    sync,
     sync_worker,
 )
 
 
 @celery.task(bind=True)
-def ingest(self, directory, formats, job_name, user, file_path, filename):
-    resp = ingest_worker(self, directory, formats, job_name, file_path, filename, user)
+def ingest(
+    self, directory, formats, job_name, user, file_path, filename, file_name_map=None
+):
+    resp = ingest_worker(
+        self,
+        directory,
+        formats,
+        job_name,
+        file_path,
+        filename,
+        user,
+        file_name_map=file_name_map,
+    )
     return resp
 
 
@@ -35,6 +47,30 @@ def reingest_source_task(self, source_id, user):
 @celery.task(bind=True)
 def schedule_syncs(self, frequency):
     resp = sync_worker(self, frequency)
+    return resp
+
+
+@celery.task(bind=True)
+def sync_source(
+    self,
+    source_data,
+    job_name,
+    user,
+    loader,
+    sync_frequency,
+    retriever,
+    doc_id,
+):
+    resp = sync(
+        self,
+        source_data,
+        job_name,
+        user,
+        loader,
+        sync_frequency,
+        retriever,
+        doc_id,
+    )
     return resp
 
 

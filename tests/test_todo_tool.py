@@ -24,14 +24,21 @@ class FakeCursor(list):
 class FakeCollection:
     def __init__(self):
         self.docs = {}
+        self._id_counter = 0
+
+    def _generate_id(self):
+        self._id_counter += 1
+        return f"fake_id_{self._id_counter}"
 
     def create_index(self, *args, **kwargs):
         pass
 
     def insert_one(self, doc):
         key = (doc["user_id"], doc["tool_id"], doc["todo_id"])
+        if "_id" not in doc:
+            doc["_id"] = self._generate_id()
         self.docs[key] = doc
-        return type("res", (), {"inserted_id": key})
+        return type("res", (), {"inserted_id": doc["_id"]})
 
     def find_one(self, query):
         key = (query.get("user_id"), query.get("tool_id"), query.get("todo_id"))
@@ -52,11 +59,24 @@ class FakeCollection:
             self.docs[key].update(update.get("$set", {}))
             return type("res", (), {"matched_count": 1})
         elif upsert:
-            new_doc = {**query, **update.get("$set", {})}
+            new_doc = {**query, **update.get("$set", {}), "_id": self._generate_id()}
             self.docs[key] = new_doc
             return type("res", (), {"matched_count": 1})
         else:
             return type("res", (), {"matched_count": 0})
+
+    def find_one_and_update(self, query, update):
+        key = (query.get("user_id"), query.get("tool_id"), query.get("todo_id"))
+        if key in self.docs:
+            self.docs[key].update(update.get("$set", {}))
+            return self.docs[key]
+        return None
+
+    def find_one_and_delete(self, query):
+        key = (query.get("user_id"), query.get("tool_id"), query.get("todo_id"))
+        if key in self.docs:
+            return self.docs.pop(key)
+        return None
 
     def delete_one(self, query):
         key = (query.get("user_id"), query.get("tool_id"), query.get("todo_id"))

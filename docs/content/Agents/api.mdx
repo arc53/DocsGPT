@@ -1,0 +1,342 @@
+---
+title: Interacting with Agents via API
+description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
+---
+
+import { Callout, Tabs } from 'nextra/components';
+
+# Interacting with Agents via API
+
+DocsGPT Agents can be accessed programmatically through API endpoints. This page covers:
+
+- Non-streaming answers (`/api/answer`)
+- Streaming answers over SSE (`/stream`)
+- File/image attachments (`/api/store_attachment` + `/api/task_status` + `/stream`)
+
+When you use an agent `api_key`, DocsGPT loads that agent's configuration automatically (prompt, tools, sources, default model). You usually only need to send `question` and `api_key`.
+
+## Base URL
+
+<Callout type="info">
+For DocsGPT Cloud, use `https://gptcloud.arc53.com` as the base URL.
+</Callout>
+
+- Local: `http://localhost:7091`
+- Cloud: `https://gptcloud.arc53.com`
+
+## How Request Resolution Works
+
+DocsGPT resolves your request in this order:
+
+1. If `api_key` is provided, DocsGPT loads the mapped agent and executes with that config.
+2. If `agent_id` is provided (typically with JWT auth), DocsGPT loads that agent if allowed.
+3. If neither is provided, DocsGPT uses request-level fields (`prompt_id`, `active_docs`, `retriever`, etc.).
+
+Authentication:
+
+- Agent API-key flow: include `api_key` in JSON/form payload.
+- JWT flow (if auth enabled): include `Authorization: Bearer <token>`.
+
+## Endpoints
+
+- `POST /api/answer` (non-streaming)
+- `POST /stream` (SSE streaming)
+- `POST /api/store_attachment` (multipart upload)
+- `GET /api/task_status?task_id=...` (Celery task polling)
+
+## Request Parameters
+
+Common request body fields:
+
+| Field | Type | Required | Applies to | Notes |
+| --- | --- | --- | --- | --- |
+| `question` | `string` | Yes | `/api/answer`, `/stream` | User query. |
+| `api_key` | `string` | Usually | `/api/answer`, `/stream` | Recommended for agent API use. Loads agent config from key. |
+| `conversation_id` | `string` | No | `/api/answer`, `/stream` | Continue an existing conversation. |
+| `history` | `string` (JSON-encoded array) | No | `/api/answer`, `/stream` | Used for new conversations. Format: `[{\"prompt\":\"...\",\"response\":\"...\"}]`. |
+| `model_id` | `string` | No | `/api/answer`, `/stream` | Override model for this request. |
+| `save_conversation` | `boolean` | No | `/api/answer`, `/stream` | Default `true`. If `false`, no conversation is persisted. |
+| `passthrough` | `object` | No | `/api/answer`, `/stream` | Dynamic values injected into prompt templates. |
+| `prompt_id` | `string` | No | `/api/answer`, `/stream` | Ignored when `api_key` already defines prompt. |
+| `active_docs` | `string` or `string[]` | No | `/api/answer`, `/stream` | Overrides active docs when not using key-owned source config. |
+| `retriever` | `string` | No | `/api/answer`, `/stream` | Retriever type (for example `classic`). |
+| `chunks` | `number` | No | `/api/answer`, `/stream` | Retrieval chunk count, default `2`. |
+| `isNoneDoc` | `boolean` | No | `/api/answer`, `/stream` | Skip document retrieval. |
+| `agent_id` | `string` | No | `/api/answer`, `/stream` | Alternative to `api_key` when using authenticated user context. |
+
+Streaming-only fields:
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `attachments` | `string[]` | No | List of attachment IDs from `/api/task_status` success result. |
+| `index` | `number` | No | Update an existing query index. If provided, `conversation_id` is required. |
+
+## Non-Streaming API (`/api/answer`)
+
+`/api/answer` waits for completion and returns one JSON response.
+
+<Callout type="info">
+`attachments` are currently handled through `/stream`. For file/image-attached queries, use the streaming endpoint.
+</Callout>
+
+Response fields:
+
+- `conversation_id`
+- `answer`
+- `sources`
+- `tool_calls`
+- `thought`
+- Optional structured output metadata (`structured`, `schema`) when enabled
+
+### Examples
+
+<Tabs items={['cURL', 'Python', 'JavaScript']}>
+  <Tabs.Tab>
+    ```bash
+    curl -X POST http://localhost:7091/api/answer \
+    -H "Content-Type: application/json" \
+    -d '{"question":"your question here","api_key":"your_agent_api_key"}'
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```python
+    import requests
+
+    API_URL = "http://localhost:7091/api/answer"
+    API_KEY = "your_agent_api_key"
+    QUESTION = "your question here"
+
+    response = requests.post(
+        API_URL,
+        json={"question": QUESTION, "api_key": API_KEY}
+    )
+
+    if response.status_code == 200:
+        print(response.json())
+    else:
+        print(f"Error: {response.status_code}")
+        print(response.text)
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```javascript
+    const apiUrl = 'http://localhost:7091/api/answer';
+    const apiKey = 'your_agent_api_key';
+    const question = 'your question here';
+
+    async function getAnswer() {
+    try {
+        const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ question, api_key: apiKey }),
+        });
+
+        if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log(data);
+    } catch (error) {
+        console.error("Failed to fetch answer:", error);
+    }
+    }
+
+    getAnswer();
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+---
+
+## Streaming API (`/stream`)
+
+`/stream` returns a Server-Sent Events (SSE) stream so you can render output token-by-token.
+
+### SSE Event Types
+
+Each `data:` frame is JSON with `type`:
+
+- `answer`: incremental answer chunk
+- `source`: source list/chunks
+- `tool_calls`: tool invocation results/metadata
+- `thought`: reasoning/thought chunk (agent dependent)
+- `structured_answer`: final structured payload (when schema mode is active)
+- `id`: final conversation ID
+- `error`: error message
+- `end`: stream is complete
+
+### Examples
+
+<Tabs items={['cURL', 'Python', 'JavaScript']}>
+  <Tabs.Tab>
+    ```bash
+    curl -X POST http://localhost:7091/stream \
+    -H "Content-Type: application/json" \
+    -H "Accept: text/event-stream" \
+    -d '{"question":"your question here","api_key":"your_agent_api_key"}'
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```python
+    import requests
+    import json
+
+    API_URL = "http://localhost:7091/stream"
+    payload = {
+        "question": "your question here",
+        "api_key": "your_agent_api_key"
+    }
+
+    with requests.post(API_URL, json=payload, stream=True) as r:
+        for line in r.iter_lines():
+            if line:
+                decoded_line = line.decode('utf-8')
+                if decoded_line.startswith('data: '):
+                    try:
+                        data = json.loads(decoded_line[6:])
+                        print(data)
+                    except json.JSONDecodeError:
+                        pass
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```javascript
+    const apiUrl = 'http://localhost:7091/stream';
+    const apiKey = 'your_agent_api_key';
+    const question = 'your question here';
+
+    async function getStream() {
+    try {
+        const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream'
+        },
+        body: JSON.stringify({ question, api_key: apiKey }),
+        });
+
+        if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        // Note: This parsing method assumes each chunk contains whole lines.
+        // For a more robust production implementation, buffer the chunks
+        // and process them line by line.
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+            try {
+                const data = JSON.parse(line.substring(6));
+                console.log(data);
+            } catch (e) {
+                console.error("Failed to parse JSON from SSE event:", e);
+            }
+            }
+        }
+        }
+    } catch (error) {
+        console.error("Failed to fetch stream:", error);
+    }
+    }
+
+    getStream();
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+---
+
+## Attachments API (Including Images)
+
+To attach an image (or other file) to a query:
+
+1. Upload file(s) to `/api/store_attachment` (multipart/form-data).
+2. Poll `/api/task_status` until `status=SUCCESS`.
+3. Read `result.attachment_id` from task result.
+4. Send that ID in `/stream` as `attachments: ["..."]`.
+
+<Callout type="warning">
+Attachments are processed asynchronously. Do not call `/stream` with an attachment until its task has finished with `SUCCESS`.
+</Callout>
+
+### Step 1: Upload Attachment
+
+`POST /api/store_attachment`
+
+- Content type: `multipart/form-data`
+- Form fields:
+  - `file` (required, can be repeated for multi-file upload)
+  - `api_key` (optional if JWT is present; useful for API-key-only flows)
+
+Example upload (single image):
+
+```bash
+curl -X POST http://localhost:7091/api/store_attachment \
+  -F "file=@/absolute/path/to/image.png" \
+  -F "api_key=your_agent_api_key"
+```
+
+Possible response (single-file upload):
+
+```json
+{
+  "success": true,
+  "task_id": "34f1cb56-7c7f-4d5f-a973-4ea7e65f7a10",
+  "message": "File uploaded successfully. Processing started."
+}
+```
+
+### Step 2: Poll Task Status
+
+```bash
+curl "http://localhost:7091/api/task_status?task_id=34f1cb56-7c7f-4d5f-a973-4ea7e65f7a10"
+```
+
+When complete:
+
+```json
+{
+  "status": "SUCCESS",
+  "result": {
+    "attachment_id": "67b4f8f2618dc9f19384a9e1",
+    "filename": "image.png",
+    "mime_type": "image/png"
+  }
+}
+```
+
+### Step 3: Attach to `/stream` Request
+
+Use the `attachment_id` in `attachments`.
+
+```bash
+curl -X POST http://localhost:7091/stream \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -d '{
+    "question": "Describe this image",
+    "api_key": "your_agent_api_key",
+    "attachments": ["67b4f8f2618dc9f19384a9e1"]
+  }'
+```
+
+### Image/Attachment Behavior Notes
+
+- Typical image MIME types supported for native vision flows: `image/png`, `image/jpeg`, `image/jpg`, `image/webp`, `image/gif`.
+- If the selected model/provider does not support a file type natively, DocsGPT falls back to parsed text content.
+- For providers that support images but not native PDF file attachments, DocsGPT can convert PDF pages to images (synthetic PDF support).
+- Attachments are user-scoped. Upload and query must be done under the same user context (same API key owner or same JWT user).

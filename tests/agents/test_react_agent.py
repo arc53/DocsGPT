@@ -23,7 +23,7 @@ class TestReActAgent:
 
         assert agent.endpoint == agent_base_params["endpoint"]
         assert agent.llm_name == agent_base_params["llm_name"]
-        assert agent.gpt_model == agent_base_params["gpt_model"]
+        assert agent.model_id == agent_base_params["model_id"]
 
 
 @pytest.mark.unit

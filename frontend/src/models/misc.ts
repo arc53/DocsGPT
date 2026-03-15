@@ -13,6 +13,7 @@ export type Doc = {
   retriever?: string;
   syncFrequency?: string;
   isNested?: boolean;
+  provider?: string;
 };
 
 export type GetDocsResponse = {

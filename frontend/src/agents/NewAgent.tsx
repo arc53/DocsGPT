@@ -2,8 +2,9 @@ import isEqual from 'lodash/isEqual';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
+import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import SourceIcon from '../assets/source.svg';
@@ -15,20 +16,23 @@ import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import {
+  selectAgentFolders,
   selectSelectedAgent,
   selectSourceDocs,
   selectToken,
+  selectPrompts,
+  setAgentFolders,
   setSelectedAgent,
+  setPrompts,
 } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
 import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
 import AgentPreview from './AgentPreview';
 import { Agent, ToolSummary } from './types';
+import WorkflowBuilder from './workflow/WorkflowBuilder';
 
-const embeddingsName =
-  import.meta.env.VITE_EMBEDDINGS_NAME ||
-  'huggingface_sentence-transformers/all-mpnet-base-v2';
+import type { Model } from '../models/types';
 
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const { t } = useTranslation();
@@ -36,9 +40,18 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const dispatch = useDispatch();
   const { agentId } = useParams();
 
+  const [searchParams] = useSearchParams();
+  const folderIdFromUrl = searchParams.get('folder_id');
+
   const token = useSelector(selectToken);
   const sourceDocs = useSelector(selectSourceDocs);
   const selectedAgent = useSelector(selectSelectedAgent);
+  const prompts = useSelector(selectPrompts);
+  const agentFolders = useSelector(selectAgentFolders);
+
+  const [validatedFolderId, setValidatedFolderId] = useState<string | null>(
+    null,
+  );
 
   const [effectiveMode, setEffectiveMode] = useState(mode);
   const [agent, setAgent] = useState<Agent>({
@@ -59,18 +72,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     token_limit: undefined,
     limited_request_mode: false,
     request_limit: undefined,
+    models: [],
+    default_model_id: '',
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [prompts, setPrompts] = useState<
-    { name: string; id: string; type: string }[]
-  >([]);
   const [userTools, setUserTools] = useState<OptionType[]>([]);
+  const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [isSourcePopupOpen, setIsSourcePopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
+  const [isModelsPopupOpen, setIsModelsPopupOpen] = useState(false);
   const [selectedSourceIds, setSelectedSourceIds] = useState<
     Set<string | number>
   >(new Set());
   const [selectedTools, setSelectedTools] = useState<ToolSummary[]>([]);
+  const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
@@ -86,6 +103,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const initialAgentRef = useRef<Agent | null>(null);
   const sourceAnchorButtonRef = useRef<HTMLButtonElement>(null);
   const toolAnchorButtonRef = useRef<HTMLButtonElement>(null);
+  const modelAnchorButtonRef = useRef<HTMLButtonElement>(null);
 
   const modeConfig = {
     new: {
@@ -142,15 +160,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
   }, []);
 
+  const navigateBackToAgents = useCallback(() => {
+    const targetPath = validatedFolderId
+      ? `/agents?folder=${validatedFolderId}`
+      : '/agents';
+    navigate(targetPath);
+  }, [navigate, validatedFolderId]);
+
   const handleCancel = () => {
     if (selectedAgent) dispatch(setSelectedAgent(null));
-    navigate('/agents');
+    navigateBackToAgents();
   };
 
   const handleDelete = async (agentId: string) => {
     const response = await userService.deleteAgent(agentId, token);
     if (!response.ok) throw new Error('Failed to delete agent');
-    navigate('/agents');
+    navigateBackToAgents();
   };
 
   const handleSaveDraft = async () => {
@@ -222,6 +247,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
     if (agent.json_schema) {
       formData.append('json_schema', JSON.stringify(agent.json_schema));
+    }
+
+    if (agent.models && agent.models.length > 0) {
+      formData.append('models', JSON.stringify(agent.models));
+    }
+    if (agent.default_model_id) {
+      formData.append('default_model_id', agent.default_model_id);
+    }
+    if (agent.agent_type === 'workflow' && agent.workflow) {
+      formData.append('workflow', JSON.stringify(agent.workflow));
+    }
+
+    if (effectiveMode === 'new' && validatedFolderId) {
+      formData.append('folder_id', validatedFolderId);
     }
 
     try {
@@ -320,6 +359,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       formData.append('request_limit', '0');
     }
 
+    if (agent.models && agent.models.length > 0) {
+      formData.append('models', JSON.stringify(agent.models));
+    }
+    if (agent.default_model_id) {
+      formData.append('default_model_id', agent.default_model_id);
+    }
+    if (agent.agent_type === 'workflow' && agent.workflow) {
+      formData.append('workflow', JSON.stringify(agent.workflow));
+    }
+
+    if (effectiveMode === 'new' && validatedFolderId) {
+      formData.append('folder_id', validatedFolderId);
+    }
+
     try {
       setPublishLoading(true);
       const response =
@@ -380,17 +433,60 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       }));
       setUserTools(tools);
     };
-    const getPrompts = async () => {
-      const response = await userService.getPrompts(token);
-      if (!response.ok) {
-        throw new Error('Failed to fetch prompts');
-      }
+    const getModels = async () => {
+      const response = await modelService.getModels(null);
+      if (!response.ok) throw new Error('Failed to fetch models');
       const data = await response.json();
-      setPrompts(data);
+      const transformed = modelService.transformModels(data.models || []);
+      setAvailableModels(transformed);
+
+      if (mode === 'new' && transformed.length > 0) {
+        const preferredDefaultModelId =
+          transformed.find((model) => model.id === data.default_model_id)?.id ||
+          transformed[0].id;
+
+        if (preferredDefaultModelId) {
+          setSelectedModelIds((prevSelectedModelIds) =>
+            prevSelectedModelIds.size > 0
+              ? prevSelectedModelIds
+              : new Set([preferredDefaultModelId]),
+          );
+        }
+      }
     };
     getTools();
-    getPrompts();
-  }, [token]);
+    getModels();
+  }, [token, mode]);
+
+  // Validate folder_id from URL against user's folders
+  useEffect(() => {
+    const validateAndSetFolder = async () => {
+      if (!folderIdFromUrl) {
+        setValidatedFolderId(null);
+        return;
+      }
+
+      let folders = agentFolders;
+      if (!folders) {
+        try {
+          const response = await userService.getAgentFolders(token);
+          if (response.ok) {
+            const data = await response.json();
+            folders = data.folders || [];
+            dispatch(setAgentFolders(folders));
+          }
+        } catch {
+          setValidatedFolderId(null);
+          return;
+        }
+      }
+
+      const folderExists = folders?.some((f) => f.id === folderIdFromUrl);
+      setValidatedFolderId(folderExists ? folderIdFromUrl : null);
+    };
+
+    validateAndSetFolder();
+  }, [folderIdFromUrl, agentFolders, token, dispatch]);
 
   // Auto-select default source if none selected
   useEffect(() => {
@@ -463,6 +559,34 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   }, [agentId, mode, token]);
 
   useEffect(() => {
+    if (agent.models && agent.models.length > 0 && availableModels.length > 0) {
+      const agentModelIds = new Set(agent.models);
+      if (agentModelIds.size > 0 && selectedModelIds.size === 0) {
+        setSelectedModelIds(agentModelIds);
+      }
+    }
+  }, [agent.models, availableModels.length]);
+
+  useEffect(() => {
+    const modelsArray = Array.from(selectedModelIds);
+    if (modelsArray.length > 0) {
+      setAgent((prev) => ({
+        ...prev,
+        models: modelsArray,
+        default_model_id: modelsArray.includes(prev.default_model_id || '')
+          ? prev.default_model_id
+          : modelsArray[0],
+      }));
+    } else {
+      setAgent((prev) => ({
+        ...prev,
+        models: [],
+        default_model_id: '',
+      }));
+    }
+  }, [selectedModelIds]);
+
+  useEffect(() => {
     const selectedSources = Array.from(selectedSourceIds)
       .map((id) =>
         sourceDocs?.find(
@@ -488,22 +612,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       } else {
         // Single source selected - maintain backward compatibility
         const selectedSource = selectedSources[0];
-        if (selectedSource?.model === embeddingsName) {
-          if (selectedSource && 'id' in selectedSource) {
-            setAgent((prev) => ({
-              ...prev,
-              source: selectedSource?.id || 'default',
-              sources: [], // Clear sources array for single source
-              retriever: '',
-            }));
-          } else {
-            setAgent((prev) => ({
-              ...prev,
-              source: '',
-              sources: [], // Clear sources array
-              retriever: selectedSource?.retriever || 'classic',
-            }));
-          }
+        if (selectedSource && 'id' in selectedSource) {
+          setAgent((prev) => ({
+            ...prev,
+            source: selectedSource?.id || 'default',
+            sources: [], // Clear sources array for single source
+            retriever: '',
+          }));
+        } else {
+          setAgent((prev) => ({
+            ...prev,
+            source: '',
+            sources: [], // Clear sources array
+            retriever: selectedSource?.retriever || 'classic',
+          }));
         }
       }
     } else {
@@ -549,7 +671,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     setHasChanges(isChanged);
   }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText]);
   return (
-    <div className="flex flex-col px-4 pt-4 pb-2 max-[1179px]:min-h-[100dvh] min-[1180px]:h-[100dvh] md:px-12 md:pt-12 md:pb-3">
+    <div className="flex flex-col px-4 pt-4 pb-2 max-[1179px]:min-h-dvh min-[1180px]:h-dvh md:px-12 md:pt-12 md:pb-3">
       <div className="flex items-center gap-3 px-4">
         <button
           className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
@@ -565,6 +687,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         <h1 className="text-eerie-black m-0 text-[32px] font-bold lg:text-[40px] dark:text-white">
           {modeConfig[effectiveMode].heading}
         </h1>
+        {agent.agent_type === 'workflow' && (
+          <div className="mt-4 w-full">
+            <WorkflowBuilder />
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-1">
           <button
             className="text-purple-30 dark:text-light-gray mr-4 rounded-3xl py-2 text-sm font-medium dark:bg-transparent"
@@ -631,7 +758,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         </div>
       </div>
       <div className="mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-[30px] bg-[#F6F6F6] p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden dark:bg-[#383838]">
-        <div className="scrollbar-thin col-span-2 flex flex-col gap-5 max-[1179px]:overflow-visible min-[1180px]:max-h-full min-[1180px]:overflow-y-auto min-[1180px]:pr-3">
+        <div className="scrollbar-overlay col-span-2 flex flex-col gap-5 max-[1179px]:overflow-visible min-[1180px]:max-h-full min-[1180px]:overflow-y-auto min-[1180px]:pr-3">
           <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.meta')}
@@ -779,12 +906,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   prompts={prompts}
                   selectedPrompt={
                     prompts.find((prompt) => prompt.id === agent.prompt_id) ||
-                    prompts[0]
+                    prompts[0] || {
+                      name: 'default',
+                      id: 'default',
+                      type: 'public',
+                    }
                   }
                   onSelectPrompt={(name, id, type) =>
                     setAgent({ ...agent, prompt_id: id })
                   }
-                  setPrompts={setPrompts}
+                  setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
                   title={t('agents.form.sections.prompt')}
                   titleClassName="text-lg font-semibold dark:text-[#E0E0E0]"
                   showAddButton={false}
@@ -880,6 +1011,82 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 placeholderClassName="text-gray-400 dark:text-silver"
                 contentSize="text-sm"
               />
+            </div>
+          </div>
+          <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
+            <h2 className="text-lg font-semibold">
+              {t('agents.form.sections.models')}
+            </h2>
+            <div className="mt-3 flex flex-col gap-3">
+              <button
+                ref={modelAnchorButtonRef}
+                onClick={() => setIsModelsPopupOpen(!isModelsPopupOpen)}
+                className={`border-silver dark:bg-raisin-black w-full truncate rounded-3xl border bg-white px-5 py-3 text-left text-sm dark:border-[#7E7E7E] ${
+                  selectedModelIds.size > 0
+                    ? 'text-jet dark:text-bright-gray'
+                    : 'dark:text-silver text-gray-400'
+                }`}
+              >
+                {selectedModelIds.size > 0
+                  ? availableModels
+                      .filter((m) => selectedModelIds.has(m.id))
+                      .map((m) => m.display_name)
+                      .join(', ')
+                  : t('agents.form.placeholders.selectModels')}
+              </button>
+              <MultiSelectPopup
+                isOpen={isModelsPopupOpen}
+                onClose={() => setIsModelsPopupOpen(false)}
+                anchorRef={modelAnchorButtonRef}
+                options={availableModels.map((model) => ({
+                  id: model.id,
+                  label: model.display_name,
+                }))}
+                selectedIds={selectedModelIds}
+                onSelectionChange={(newSelectedIds: Set<string | number>) =>
+                  setSelectedModelIds(
+                    new Set(Array.from(newSelectedIds).map(String)),
+                  )
+                }
+                title={t('agents.form.modelsPopup.title')}
+                searchPlaceholder={t(
+                  'agents.form.modelsPopup.searchPlaceholder',
+                )}
+                noOptionsMessage={t('agents.form.modelsPopup.noOptionsMessage')}
+              />
+              {selectedModelIds.size > 0 && (
+                <div>
+                  <label className="mb-2 block text-sm font-medium">
+                    {t('agents.form.labels.defaultModel')}
+                  </label>
+                  <Dropdown
+                    options={availableModels
+                      .filter((m) => selectedModelIds.has(m.id))
+                      .map((m) => ({
+                        label: m.display_name,
+                        value: m.id,
+                      }))}
+                    selectedValue={
+                      availableModels.find(
+                        (m) => m.id === agent.default_model_id,
+                      )?.display_name || null
+                    }
+                    onSelect={(option: { label: string; value: string }) =>
+                      setAgent({ ...agent, default_model_id: option.value })
+                    }
+                    size="w-full"
+                    rounded="3xl"
+                    border="border"
+                    buttonClassName="bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]"
+                    optionsClassName="bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E]"
+                    placeholder={t(
+                      'agents.form.placeholders.selectDefaultModel',
+                    )}
+                    placeholderClassName="text-gray-400 dark:text-silver"
+                    contentSize="text-sm"
+                  />
+                </div>
+              )}
             </div>
           </div>
           <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
@@ -1104,7 +1311,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       />
       <AddPromptModal
         prompts={prompts}
-        setPrompts={setPrompts}
         isOpen={addPromptModal}
         onClose={() => setAddPromptModal('INACTIVE')}
         onSelect={(name: string, id: string, type: string) => {
@@ -1138,17 +1344,16 @@ function AgentPreviewArea() {
 
 function AddPromptModal({
   prompts,
-  setPrompts,
   isOpen,
   onClose,
   onSelect,
 }: {
   prompts: Prompt[];
-  setPrompts?: React.Dispatch<React.SetStateAction<Prompt[]>>;
   isOpen: ActiveState;
   onClose: () => void;
   onSelect?: (name: string, id: string, type: string) => void;
 }) {
+  const dispatch = useDispatch();
   const token = useSelector(selectToken);
 
   const [newPromptName, setNewPromptName] = useState('');
@@ -1167,12 +1372,13 @@ function AddPromptModal({
         throw new Error('Failed to add prompt');
       }
       const newPrompt = await response.json();
-      if (setPrompts) {
+      // Update Redux store with new prompt
+      dispatch(
         setPrompts([
           ...prompts,
           { name: newPromptName, id: newPrompt.id, type: 'private' },
-        ]);
-      }
+        ]),
+      );
       onClose();
       setNewPromptName('');
       setNewPromptContent('');

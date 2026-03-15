@@ -2,6 +2,7 @@ const endpoints = {
   USER: {
     CONFIG: '/api/config',
     NEW_TOKEN: '/api/generate_token',
+    MODELS: '/api/models',
     DOCS: '/api/sources',
     DOCS_PAGINATED: '/api/sources/paginated',
     API_KEYS: '/api/get_api_keys',
@@ -33,12 +34,14 @@ const endpoints = {
     FEEDBACK_ANALYTICS: '/api/get_feedback_analytics',
     LOGS: `/api/get_user_logs`,
     MANAGE_SYNC: '/api/manage_sync',
+    SYNC_SOURCE: '/api/sync_source',
     GET_AVAILABLE_TOOLS: '/api/available_tools',
     GET_USER_TOOLS: '/api/get_tools',
     CREATE_TOOL: '/api/create_tool',
     UPDATE_TOOL_STATUS: '/api/update_tool_status',
     UPDATE_TOOL: '/api/update_tool',
     DELETE_TOOL: '/api/delete_tool',
+    PARSE_SPEC: '/api/parse_spec',
     SYNC_CONNECTOR: '/api/connectors/sync',
     GET_CHUNKS: (
       docId: string,
@@ -62,6 +65,13 @@ const endpoints = {
     MCP_SAVE_SERVER: '/api/mcp_server/save',
     MCP_OAUTH_STATUS: (task_id: string) =>
       `/api/mcp_server/oauth_status/${task_id}`,
+    MCP_AUTH_STATUS: '/api/mcp_server/auth_status',
+    AGENT_FOLDERS: '/api/agents/folders/',
+    AGENT_FOLDER: (id: string) => `/api/agents/folders/${id}`,
+    MOVE_AGENT_TO_FOLDER: '/api/agents/folders/move_agent',
+    GET_ARTIFACT: (artifactId: string) => `/api/artifact/${artifactId}`,
+    WORKFLOWS: '/api/workflows',
+    WORKFLOW: (id: string) => `/api/workflows/${id}`,
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

@@ -14,38 +14,35 @@ import { UserToolType } from '../settings/types';
 
 const variablePattern = /(\{\{\s*[^{}]+\s*\}\}|\{(?!\{)[^{}]+\})/g;
 
-const escapeHtml = (value: string) =>
-  value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
-const highlightPromptVariables = (text: string) => {
+const highlightPromptVariables = (text: string): React.ReactNode[] => {
   if (!text) {
-    return '&#8203;';
+    return ['\u200B'];
   }
   variablePattern.lastIndex = 0;
-  let result = '';
+  const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
+  let key = 0;
 
   while ((match = variablePattern.exec(text)) !== null) {
     const precedingText = text.slice(lastIndex, match.index);
     if (precedingText) {
-      result += escapeHtml(precedingText);
+      parts.push(precedingText);
     }
-    result += `<span class="prompt-variable-highlight">${escapeHtml(match[0])}</span>`;
+    parts.push(
+      <span key={key++} className="prompt-variable-highlight">
+        {match[0]}
+      </span>,
+    );
     lastIndex = match.index + match[0].length;
   }
 
   const remainingText = text.slice(lastIndex);
   if (remainingText) {
-    result += escapeHtml(remainingText);
+    parts.push(remainingText);
   }
 
-  return result || '&#8203;';
+  return parts.length > 0 ? parts : ['\u200B'];
 };
 
 const systemVariableOptionDefinitions = [
@@ -131,12 +128,13 @@ function PromptTextarea({
           style={{
             transform: `translate(${-scrollOffsets.left}px, ${-scrollOffsets.top}px)`,
           }}
-          dangerouslySetInnerHTML={{ __html: highlightedValue }}
-        />
+        >
+          {highlightedValue}
+        </div>
       </div>
       <textarea
         id={id}
-        className="peer border-silver dark:border-silver/40 relative z-10 h-48 w-full resize-none rounded border-2 bg-transparent px-3 py-2 text-base text-gray-800 outline-none dark:bg-transparent dark:text-white"
+        className="peer border-silver dark:border-silver/40 relative z-10 h-48 w-full resize-none rounded border-2 bg-transparent px-3 py-2 text-base text-gray-800 outline-none md:h-64 lg:h-80 dark:bg-transparent dark:text-white"
         value={value}
         onChange={onChange}
         onScroll={handleScroll}
@@ -191,7 +189,7 @@ const useToolVariables = () => {
                     }
                     filteredActions.push({
                       label: `${action.name} (${tool.displayName || tool.name})`,
-                      value: `tools.${toolIdentifier}.${action.name}`,
+                      value: `tools['${toolIdentifier}'].${action.name}`,
                     });
                   }
                 }
@@ -765,7 +763,7 @@ export default function PromptsModal({
           setNewPromptContent('');
         }
       }}
-      className="mx-4 mt-16 w-[95vw] max-w-[650px] rounded-2xl bg-white px-4 py-4 sm:px-6 sm:py-6 md:px-8 md:py-6 dark:bg-[#1E1E2A]"
+      className="mx-4 mt-16 w-[95vw] max-w-[650px] rounded-2xl bg-white px-4 py-4 sm:px-6 sm:py-6 md:max-w-[860px] md:px-8 md:py-6 lg:max-w-[980px] dark:bg-[#1E1E2A]"
       contentClassName="!overflow-visible"
     >
       {view}

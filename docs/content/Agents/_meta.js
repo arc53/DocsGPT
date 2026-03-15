@@ -1,0 +1,18 @@
+export default {
+  "basics": {
+    "title": "🤖 Agent Basics",
+    "href": "/Agents/basics"
+  },
+  "api": {
+    "title": "🔌 Agent API",
+    "href": "/Agents/api"
+  },
+  "webhooks": {
+    "title": "🪝 Agent Webhooks",
+    "href": "/Agents/webhooks"
+  },
+  "nodes": {
+    "title": "🧩 Workflow Nodes",
+    "href": "/Agents/nodes"
+  }
+}

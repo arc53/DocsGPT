@@ -67,6 +67,7 @@
       "preLoaded": "Pre-loaded",
       "private": "Private",
       "sync": "Sync",
+      "syncNow": "Sync now",
       "syncing": "Syncing...",
       "syncConfirmation": "Are you sure you want to sync \"{{sourceName}}\"? This will update the content with your cloud storage and may override any edits you made to individual chunks.",
       "syncFrequency": {
@@ -153,6 +154,12 @@
       "manageTools": "Go to Tools",
       "edit": "Edit",
       "delete": "Delete",
+      "reconnect": "Reconnect",
+      "authStatus": {
+        "connected": "Connected",
+        "needsAuth": "Needs Auth",
+        "configured": "Configured"
+      },
       "deleteWarning": "Are you sure you want to delete the tool \"{{toolName}}\" ?",
       "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
       "leaveWithoutSaving": "Leave without Saving",
@@ -162,18 +169,25 @@
       "authentication": "Authentication",
       "actions": "Actions",
       "addAction": "Add action",
+      "importSpec": "Import Spec",
+      "searchActions": "Search actions...",
+      "noActionsMatch": "No actions match your search",
+      "actionAlreadyExists": "An action with this name already exists",
       "noActionsFound": "No actions found",
       "url": "URL",
       "urlPlaceholder": "Enter URL",
       "method": "Method",
       "description": "Description",
       "descriptionPlaceholder": "Enter description",
+      "bodyContentType": "Body Content Type",
       "headers": "Headers",
       "queryParameters": "Query Parameters",
       "body": "Body",
       "deleteActionWarning": "Are you sure you want to delete the action \"{{name}}\"?",
       "backToAllTools": "Back to all tools",
       "save": "Save",
+      "saving": "Saving...",
+      "saveFailed": "Failed to save tool configuration",
       "fieldName": "Field Name",
       "fieldType": "Field Type",
       "filledByLLM": "Filled by LLM",
@@ -189,6 +203,8 @@
       "mcp": {
         "addServer": "Add MCP Server",
         "editServer": "Edit Server",
+        "reconnectServer": "Reconnect Server",
+        "reenterCredentials": "Re-enter your credentials to test and update the connection.",
         "serverName": "Server Name",
         "serverUrl": "Server URL",
         "headerName": "Header Name",
@@ -201,6 +217,8 @@
         "noAuth": "No Authentication",
         "oauthInProgress": "Waiting for OAuth completion...",
         "oauthCompleted": "OAuth completed successfully",
+        "oauthPopupBlocked": "Popup blocked by browser. Click below to authorize:",
+        "openAuthPage": "Open authorization page",
         "authType": "Authentication Type",
         "defaultServerName": "My MCP Server",
         "authTypes": {
@@ -311,6 +329,14 @@
         "google_drive": {
           "label": "Google Drive",
           "heading": "Upload from Google Drive"
+        },
+        "s3": {
+          "label": "Amazon S3",
+          "heading": "Add content from Amazon S3"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "Upload from SharePoint"
         }
       },
       "connectors": {
@@ -330,6 +356,24 @@
           "validateFailed": "Failed to validate session. Please reconnect.",
           "noSession": "No valid session found. Please reconnect to Google Drive.",
           "noAccessToken": "No access token available. Please reconnect to Google Drive.",
+          "pickerFailed": "Failed to open file picker. Please try again.",
+          "selectedFiles": "Selected Files",
+          "selectFiles": "Select Files",
+          "loading": "Loading...",
+          "noFilesSelected": "No files or folders selected",
+          "folders": "Folders",
+          "files": "Files",
+          "remove": "Remove",
+          "folderAlt": "Folder",
+          "fileAlt": "File"
+        },
+        "sharePoint": {
+          "connect": "Connect to SharePoint",
+          "sessionExpired": "Session expired. Please reconnect to SharePoint.",
+          "sessionExpiredGeneric": "Session expired. Please reconnect your account.",
+          "validateFailed": "Failed to validate session. Please reconnect.",
+          "noSession": "No valid session found. Please reconnect to SharePoint.",
+          "noAccessToken": "No access token available. Please reconnect to SharePoint.",
           "pickerFailed": "Failed to open file picker. Please try again.",
           "selectedFiles": "Selected Files",
           "selectFiles": "Select Files",
@@ -441,6 +485,22 @@
       "generate": "Generate",
       "test": "Test",
       "learnMore": "Learn more"
+    },
+    "importSpec": {
+      "title": "Import API Specification",
+      "description": "Upload an OpenAPI 3.x or Swagger 2.0 specification file to automatically generate actions.",
+      "dropzoneText": "Click to upload or drag and drop",
+      "supportedFormats": "JSON or YAML format",
+      "invalidFileType": "Invalid file type. Please upload a JSON or YAML file.",
+      "parseError": "Failed to parse the specification. Please check the file format.",
+      "version": "Version",
+      "baseUrl": "Base URL",
+      "actionsFound": "{{count}} actions found",
+      "selectAll": "Select all",
+      "deselectAll": "Deselect all",
+      "cancel": "Cancel",
+      "parse": "Parse",
+      "import": "Import ({{count}})"
     }
   },
   "sharedConv": {
@@ -491,6 +551,15 @@
     "description": "Discover and create custom versions of DocsGPT that combine instructions, extra knowledge, and any combination of skills",
     "newAgent": "New Agent",
     "backToAll": "Back to all agents",
+    "searchPlaceholder": "Search...",
+    "noSearchResults": "No agents found",
+    "tryDifferentSearch": "Try a different search term",
+    "filters": {
+      "all": "All",
+      "byDocsGPT": "By DocsGPT",
+      "byMe": "By Me",
+      "shared": "Shared With Me"
+    },
     "sections": {
       "template": {
         "title": "By DocsGPT",
@@ -530,6 +599,7 @@
         "prompt": "Prompt",
         "tools": "Tools",
         "agentType": "Agent type",
+        "models": "Models",
         "advanced": "Advanced",
         "preview": "Preview"
       },
@@ -540,6 +610,8 @@
         "chunksPerQuery": "Chunks per query",
         "selectType": "Select type",
         "selectTools": "Select tools",
+        "selectModels": "Select models for this agent",
+        "selectDefaultModel": "Select default model",
         "enterTokenLimit": "Enter token limit",
         "enterRequestLimit": "Enter request limit"
       },
@@ -553,6 +625,11 @@
         "searchPlaceholder": "Search tools...",
         "noOptionsMessage": "No tools available"
       },
+      "modelsPopup": {
+        "title": "Select Models",
+        "searchPlaceholder": "Search models...",
+        "noOptionsMessage": "No models available"
+      },
       "upload": {
         "clickToUpload": "Click to upload",
         "dragAndDrop": " or drag and drop"
@@ -560,6 +637,9 @@
       "agentTypes": {
         "classic": "Classic",
         "react": "ReAct"
+      },
+      "labels": {
+        "defaultModel": "Default Model"
       },
       "advanced": {
         "jsonSchema": "JSON response schema",
@@ -588,7 +668,24 @@
     "preview": {
       "testMessage": "Test your agent here. Published agents can be used in conversations."
     },
-    "deleteConfirmation": "Are you sure you want to delete this agent?"
+    "deleteConfirmation": "Are you sure you want to delete this agent?",
+    "folders": {
+      "newFolder": "New Folder",
+      "createFolder": "Create Folder",
+      "folderName": "Folder name",
+      "rename": "Rename",
+      "delete": "Delete",
+      "deleteConfirm": "Are you sure you want to delete this folder? Agents inside will be moved out of the folder.",
+      "empty": "This folder is empty",
+      "moveToFolder": "Move to folder",
+      "moveTo": "Move",
+      "move": "Move",
+      "noFolder": "No folder (root)",
+      "backToRoot": "Back",
+      "currentFolder": "This folder",
+      "noSubfolders": "No subfolders",
+      "noFolders": "No folders yet"
+    }
   },
   "components": {
     "fileUpload": {
@@ -609,7 +706,10 @@
     "itemsSelected": "{{count}} selected",
     "name": "Name",
     "lastModified": "Last Modified",
-    "size": "Size"
+    "size": "Size",
+    "myFiles": "My Files",
+    "sharedWithMe": "Shared with Me",
+    "loadingMore": "Loading more files..."
   },
   "actionButtons": {
     "openNewChat": "Open New Chat",

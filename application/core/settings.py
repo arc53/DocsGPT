@@ -2,7 +2,8 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from pydantic_settings import BaseSettings
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 current_dir = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -10,27 +11,26 @@ current_dir = os.path.dirname(
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(extra="ignore")
+
     AUTH_TYPE: Optional[str] = None  # simple_jwt, session_jwt, or None
     LLM_PROVIDER: str = "docsgpt"
     LLM_NAME: Optional[str] = (
         None  # if LLM_PROVIDER is openai, LLM_NAME can be gpt-4 or gpt-3.5-turbo
     )
     EMBEDDINGS_NAME: str = "huggingface_sentence-transformers/all-mpnet-base-v2"
+    EMBEDDINGS_BASE_URL: Optional[str] = None  # Remote embeddings API URL (OpenAI-compatible)
+    EMBEDDINGS_KEY: Optional[str] = (
+        None  # api key for embeddings (if using openai, just copy API_KEY)
+    )
+    
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
     MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
     MONGO_DB_NAME: str = "docsgpt"
     LLM_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     DEFAULT_MAX_HISTORY: int = 150
-    LLM_TOKEN_LIMITS: dict = {
-        "gpt-4o": 128000,
-        "gpt-4o-mini": 128000,
-        "gpt-4": 8192,
-        "gpt-3.5-turbo": 4096,
-        "claude-2": int(1e5),
-        "gemini-2.5-flash": int(1e6),
-    }
-    DEFAULT_LLM_TOKEN_LIMIT: int = 128000
+    DEFAULT_LLM_TOKEN_LIMIT: int = 128000  # Fallback when model not found in registry
     RESERVED_TOKENS: dict = {
         "system_prompt": 500,
         "current_query": 500,
@@ -43,8 +43,10 @@ class Settings(BaseSettings):
     UPLOAD_FOLDER: str = "inputs"
     PARSE_PDF_AS_IMAGE: bool = False
     PARSE_IMAGE_REMOTE: bool = False
+    DOCLING_OCR_ENABLED: bool = False  # Enable OCR for docling parsers (PDF, images)
+    DOCLING_OCR_ATTACHMENTS_ENABLED: bool = False  # Enable OCR for docling when parsing attachments
     VECTOR_STORE: str = (
-        "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb"
+        "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector"
     )
     RETRIEVERS_ENABLED: list = ["classic_rag"]
     AGENT_NAME: str = "classic"
@@ -63,6 +65,12 @@ class Settings(BaseSettings):
         "http://127.0.0.1:7091/api/connectors/callback"  ##add redirect url as it is to your provider's console(gcp)
     )
 
+    # Microsoft Entra ID (Azure AD) integration
+    MICROSOFT_CLIENT_ID: Optional[str] = None  # Azure AD Application (client) ID
+    MICROSOFT_CLIENT_SECRET: Optional[str] = None  # Azure AD Application client secret
+    MICROSOFT_TENANT_ID: Optional[str] = "common"  # Azure AD Tenant ID (or 'common' for multi-tenant)
+    MICROSOFT_AUTHORITY: Optional[str] = None  # e.g., "https://login.microsoftonline.com/{tenant_id}"
+
     # GitHub source
     GITHUB_ACCESS_TOKEN: Optional[str] = None # PAT token with read repo access
 
@@ -70,11 +78,19 @@ class Settings(BaseSettings):
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"
 
     API_URL: str = "http://localhost:7091"  # backend url for celery worker
+    MCP_OAUTH_REDIRECT_URI: Optional[str] = None  # public callback URL for MCP OAuth
+    INTERNAL_KEY: Optional[str] = None  # internal api key for worker-to-backend auth
 
-    API_KEY: Optional[str] = None  # LLM api key
-    EMBEDDINGS_KEY: Optional[str] = (
-        None  # api key for embeddings (if using openai, just copy API_KEY)
-    )
+    API_KEY: Optional[str] = None  # LLM api key (used by LLM_PROVIDER)
+
+    # Provider-specific API keys (for multi-model support)
+    OPENAI_API_KEY: Optional[str] = None
+    ANTHROPIC_API_KEY: Optional[str] = None
+    GOOGLE_API_KEY: Optional[str] = None
+    GROQ_API_KEY: Optional[str] = None
+    HUGGINGFACE_API_KEY: Optional[str] = None
+    OPEN_ROUTER_API_KEY: Optional[str] = None
+
     OPENAI_API_BASE: Optional[str] = None  # azure openai api base url
     OPENAI_API_VERSION: Optional[str] = None  # azure openai api version
     AZURE_DEPLOYMENT_NAME: Optional[str] = None  # azure deployment name for answering
@@ -124,7 +140,7 @@ class Settings(BaseSettings):
     MILVUS_TOKEN: Optional[str] = ""
 
     # LanceDB vectorstore config
-    LANCEDB_PATH: str = "/tmp/lancedb"  # Path where LanceDB stores its local data
+    LANCEDB_PATH: str = "./data/lancedb"  # Path where LanceDB stores its local data
     LANCEDB_TABLE_NAME: Optional[str] = (
         "docsgpts"  # Name of the table to use for storing vectors
     )
@@ -138,11 +154,50 @@ class Settings(BaseSettings):
     # Encryption settings
     ENCRYPTION_SECRET_KEY: str = "default-docsgpt-encryption-key"
 
-    TTS_PROVIDER: str = "google_tts" # google_tts or elevenlabs
+    TTS_PROVIDER: str = "google_tts"  # google_tts or elevenlabs
     ELEVENLABS_API_KEY: Optional[str] = None
 
     # Tool pre-fetch settings
     ENABLE_TOOL_PREFETCH: bool = True
 
-path = Path(__file__).parent.parent.absolute()
+    # Conversation Compression Settings
+    ENABLE_CONVERSATION_COMPRESSION: bool = True
+    COMPRESSION_THRESHOLD_PERCENTAGE: float = 0.8  # Trigger at 80% of context
+    COMPRESSION_MODEL_OVERRIDE: Optional[str] = None  # Use different model for compression
+    COMPRESSION_PROMPT_VERSION: str = "v1.0"  # Track prompt iterations
+    COMPRESSION_MAX_HISTORY_POINTS: int = 3  # Keep only last N compression points to prevent DB bloat
+
+    @field_validator(
+        "API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GOOGLE_API_KEY",
+        "GROQ_API_KEY",
+        "HUGGINGFACE_API_KEY",
+        "EMBEDDINGS_KEY",
+        "FALLBACK_LLM_API_KEY",
+        "QDRANT_API_KEY",
+        "ELEVENLABS_API_KEY",
+        "INTERNAL_KEY",
+        mode="before",
+    )
+    @classmethod
+    def normalize_api_key(cls, v: Optional[str]) -> Optional[str]:
+        """
+        Normalize API keys: convert 'None', 'none', empty strings,
+        and whitespace-only strings to actual None.
+        Handles Pydantic loading 'None' from .env as string "None".
+        """
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            return v
+        stripped = v.strip()
+        if stripped == "" or stripped.lower() == "none":
+            return None
+        return stripped
+
+
+# Project root is one level above application/
+path = Path(__file__).parent.parent.parent.absolute()
 settings = Settings(_env_file=path.joinpath(".env"), _env_file_encoding="utf-8")

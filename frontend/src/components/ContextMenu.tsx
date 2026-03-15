@@ -1,7 +1,9 @@
-import { SyntheticEvent, useRef, useEffect, CSSProperties } from 'react';
+import { CSSProperties, SyntheticEvent, useEffect, useRef } from 'react';
+
+import type { LucideIcon } from 'lucide-react';
 
 export interface MenuOption {
-  icon?: string;
+  icon?: string | LucideIcon;
   label: string;
   onClick: (event: SyntheticEvent) => void;
   variant?: 'primary' | 'danger';
@@ -145,16 +147,28 @@ export default function ContextMenu({
           >
             {option.icon && (
               <div className="flex w-4 min-w-4 shrink-0 justify-center">
-                <img
-                  width={option.iconWidth || 16}
-                  height={option.iconHeight || 16}
-                  src={option.icon}
-                  alt={option.label}
-                  className={`cursor-pointer ${option.iconClassName || ''}`}
-                />
+                {typeof option.icon === 'string' ? (
+                  <img
+                    width={option.iconWidth || 16}
+                    height={option.iconHeight || 16}
+                    src={option.icon}
+                    alt={option.label}
+                    className={`cursor-pointer ${option.iconClassName || ''}`}
+                  />
+                ) : (
+                  <option.icon
+                    size={Math.max(
+                      option.iconWidth || 16,
+                      option.iconHeight || 16,
+                    )}
+                    strokeWidth={1.75}
+                    aria-hidden="true"
+                    className={`cursor-pointer ${option.iconClassName || ''}`}
+                  />
+                )}
               </div>
             )}
-            <span className="break-words hyphens-auto">{option.label}</span>
+            <span className="wrap-break-word hyphens-auto">{option.label}</span>
           </button>
         ))}
       </div>

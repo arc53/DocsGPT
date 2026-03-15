@@ -203,7 +203,7 @@ export default function ConversationTile({
             <input
               autoFocus
               type="text"
-              className="h-6 w-full bg-transparent px-1 text-sm leading-6 font-normal focus:outline-[#0075FF]"
+              className="h-6 w-full bg-transparent px-1 text-sm leading-6 rounded-2xl font-normal outline-none"
               value={conversationName}
               onChange={(e) => setConversationsName(e.target.value)}
               onKeyDown={handleRenameKeyDown}
@@ -248,7 +248,7 @@ export default function ConversationTile({
                   event.stopPropagation();
                   setOpen(!isOpen);
                 }}
-                className="mr-2 flex w-4 justify-center"
+                className="mr-2 flex h-6 w-6 items-center justify-center rounded-full transition-colors duration-200 hover:bg-gray-200 dark:hover:bg-gray-700"
               >
                 <img src={threeDots} width={8} alt="menu" />
               </button>
