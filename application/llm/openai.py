@@ -490,13 +490,12 @@ class OpenAILLM(BaseLLM):
 
         if not self.storage.file_exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
+        def _upload(local_path, **kwargs):
+            with open(local_path, "rb") as f:
+                return self.client.files.create(file=f, purpose="assistants").id
+
         try:
-            file_id = self.storage.process_file(
-                file_path,
-                lambda local_path, **kwargs: self.client.files.create(
-                    file=open(local_path, "rb"), purpose="assistants"
-                ).id,
-            )
+            file_id = self.storage.process_file(file_path, _upload)
 
             from application.core.mongo_db import MongoDB
 
@@ -517,7 +516,7 @@ class AzureOpenAILLM(OpenAILLM):
 
     def __init__(self, api_key, user_api_key, *args, **kwargs):
 
-        super().__init__(api_key)
+        super().__init__(api_key, user_api_key, *args, **kwargs)
         self.api_base = (settings.OPENAI_API_BASE,)
         self.api_version = (settings.OPENAI_API_VERSION,)
         self.deployment_name = (settings.AZURE_DEPLOYMENT_NAME,)
