@@ -452,7 +452,7 @@ class BaseAnswerResource:
                     thought = event["thought"]
                 elif event["type"] == "error":
                     logger.error(f"Error from stream: {event['error']}")
-                    return None, None, None, None, event["error"], None
+                    return None, None, None, None, None, event["error"]
                 elif event["type"] == "end":
                     stream_ended = True
             except (json.JSONDecodeError, KeyError) as e:
@@ -460,7 +460,7 @@ class BaseAnswerResource:
                 continue
         if not stream_ended:
             logger.error("Stream ended unexpectedly without an 'end' event.")
-            return None, None, None, None, "Stream ended unexpectedly", None
+            return None, None, None, None, None, "Stream ended unexpectedly"
         result = (
             conversation_id,
             response_full,

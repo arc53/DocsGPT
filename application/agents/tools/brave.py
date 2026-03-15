@@ -6,6 +6,8 @@ from application.agents.tools.base import Tool
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_TIMEOUT = 30  # seconds
+
 
 class BraveSearchTool(Tool):
     """
@@ -73,7 +75,7 @@ class BraveSearchTool(Tool):
             "X-Subscription-Token": self.token,
         }
 
-        response = requests.get(url, params=params, headers=headers)
+        response = requests.get(url, params=params, headers=headers, timeout=DEFAULT_TIMEOUT)
 
         if response.status_code == 200:
             return {
@@ -118,7 +120,7 @@ class BraveSearchTool(Tool):
             "X-Subscription-Token": self.token,
         }
 
-        response = requests.get(url, params=params, headers=headers)
+        response = requests.get(url, params=params, headers=headers, timeout=DEFAULT_TIMEOUT)
 
         if response.status_code == 200:
             return {
