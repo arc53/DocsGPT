@@ -1,5 +1,6 @@
 from application.tts.google_tts import GoogleTTS
 from application.tts.elevenlabs import ElevenlabsTTS
+from application.tts.minimax_tts import MiniMaxTTS
 from application.tts.base import BaseTTS
 
 
@@ -8,6 +9,7 @@ class TTSCreator:
     tts_providers = {
         "google_tts": GoogleTTS,
         "elevenlabs": ElevenlabsTTS,
+        "minimax_tts": MiniMaxTTS,
     }
 
     @classmethod

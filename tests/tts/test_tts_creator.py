@@ -57,5 +57,7 @@ def test_tts_providers_integrity(tts_creator):
     providers = tts_creator.tts_providers
     assert "google_tts" in providers
     assert "elevenlabs" in providers
+    assert "minimax_tts" in providers
     assert callable(providers["google_tts"])
     assert callable(providers["elevenlabs"])
+    assert callable(providers["minimax_tts"])
