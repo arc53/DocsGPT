@@ -74,15 +74,17 @@ export default function Conversation() {
   const handleQuestion = useCallback(
     ({
       question,
+      imageBase64,
       isRetry = false,
       index = undefined,
     }: {
       question: string;
+      imageBase64?: string;
       isRetry?: boolean;
       index?: number;
     }) => {
       const trimmedQuestion = question.trim();
-      if (trimmedQuestion === '') return;
+      if (trimmedQuestion === '' && !imageBase64) return;
 
       const filesAttached = completedAttachments
         .filter((a) => a.id)
@@ -90,16 +92,23 @@ export default function Conversation() {
 
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
-        handleFetchAnswer({ question: trimmedQuestion, index });
+        handleFetchAnswer({
+          question: trimmedQuestion,
+          index,
+        });
       } else {
         if (!isRetry)
           dispatch(
             addQuery({
               prompt: trimmedQuestion,
               attachments: filesAttached,
+              imageBase64,
             }),
           );
-        handleFetchAnswer({ question: trimmedQuestion, index });
+        handleFetchAnswer({
+          question: trimmedQuestion,
+          index,
+        });
       }
     },
     [dispatch, handleFetchAnswer, completedAttachments],
@@ -133,28 +142,34 @@ export default function Conversation() {
     question?: string,
     updated?: boolean,
     indx?: number,
+    imageBase64?: string,
   ) => {
     if (updated === true) {
-      handleQuestion({ question: question as string, index: indx });
-    } else if (question && status !== 'loading') {
+      handleQuestion({ question: question as string, index: indx, imageBase64 });
+    // FIXED: Now checks if EITHER question or imageBase64 exists
+    } else if ((question || imageBase64) && status !== 'loading') {
+      const promptText = (question || '').trim();
+
       if (lastQueryReturnedErr && queries.length > 0) {
         const retryIndex = queries.length - 1;
         dispatch(
           updateQuery({
             index: retryIndex,
             query: {
-              prompt: question,
+              prompt: promptText,
             },
           }),
         );
         handleQuestion({
-          question,
+          question: promptText,
           isRetry: true,
           index: retryIndex,
+          imageBase64,
         });
       } else {
         handleQuestion({
-          question,
+          question: promptText,
+          imageBase64,
         });
       }
     }
@@ -254,8 +269,8 @@ export default function Conversation() {
           <div className="flex w-full items-center rounded-[40px] px-2">
             <MessageInput
               key={conversationId || 'new'}
-              onSubmit={(text) => {
-                handleQuestionSubmission(text);
+              onSubmit={({ text, imageBase64 }) => {
+                handleQuestionSubmission(text, false, undefined, imageBase64);
               }}
               loading={status === 'loading'}
               showSourceButton={selectedAgent ? false : true}

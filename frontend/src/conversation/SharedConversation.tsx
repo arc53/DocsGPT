@@ -44,14 +44,14 @@ export const SharedConversation = () => {
 
   useEffect(() => {
     identifier && dispatch(setIdentifier(identifier));
-  }, []);
+  }, [identifier, dispatch]);
 
   useEffect(() => {
     if (queries.length) {
       queries[queries.length - 1].error && setLastQueryReturnedErr(true);
-      queries[queries.length - 1].response && setLastQueryReturnedErr(false); //considering a query that initially returned error can later include a response property on retry
+      queries[queries.length - 1].response && setLastQueryReturnedErr(false); 
     }
-  }, [queries[queries.length - 1]]);
+  }, [queries]);
 
   const fetchQueries = () => {
     identifier &&
@@ -77,37 +77,47 @@ export const SharedConversation = () => {
         });
   };
 
-  const handleQuestionSubmission = (question?: string) => {
-    if (question && status !== 'loading') {
+  const handleQuestionSubmission = (
+    question?: string,
+    updated?: boolean,
+    indx?: number,
+    imageBase64?: string,
+  ) => {
+    // FIXED: Safely checking for either text or image
+    if ((question || imageBase64) && status !== 'loading') {
+      const trimmedQuestion = (question || '').trim(); // FIXED: Safe fallback to empty string
+      
       if (lastQueryReturnedErr) {
-        // update last failed query with new prompt
         dispatch(
           updateQuery({
             index: queries.length - 1,
             query: {
-              prompt: question,
+              prompt: trimmedQuestion,
             },
           }),
         );
         handleQuestion({
           question: queries[queries.length - 1].prompt,
           isRetry: true,
+          imageBase64,
         });
       } else {
-        handleQuestion({ question });
+        handleQuestion({ question: trimmedQuestion, imageBase64 });
       }
     }
   };
 
   const handleQuestion = ({
     question,
+    imageBase64,
     isRetry = false,
   }: {
     question: string;
+    imageBase64?: string;
     isRetry?: boolean;
   }) => {
-    question = question.trim();
-    if (question === '') return;
+    const promptText = question.trim();
+    if (promptText === '' && !imageBase64) return;
 
     const filesAttached = completedAttachments
       .filter((a) => a.id)
@@ -116,13 +126,20 @@ export const SharedConversation = () => {
     !isRetry &&
       dispatch(
         addQuery({
-          prompt: question,
+          prompt: promptText,
           attachments: filesAttached,
+          imageBase64,
         }),
-      ); //dispatch only new queries
+      );
 
-    dispatch(fetchSharedAnswer({ question }));
+    dispatch(
+      fetchSharedAnswer({
+        question: promptText,
+        imageBase64, 
+      }),
+    );
   };
+  
   useEffect(() => {
     fetchQueries();
   }, []);
@@ -163,8 +180,8 @@ export const SharedConversation = () => {
           {apiKey ? (
             <div className="w-full px-2">
               <MessageInput
-                onSubmit={(text) => {
-                  handleQuestionSubmission(text);
+                onSubmit={({ text, imageBase64 }) => {
+                  handleQuestionSubmission(text, false, undefined, imageBase64);
                 }}
                 loading={status === 'loading'}
                 showSourceButton={false}
