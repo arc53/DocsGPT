@@ -9,6 +9,10 @@ from application.api import api
 from application.api.answer.routes.base import answer_ns, BaseAnswerResource
 
 from application.api.answer.services.stream_processor import StreamProcessor
+from application.api.answer.services.multimodal_service import (
+    normalize_question_payload,
+    run_multimodal_completion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +27,15 @@ class StreamResource(Resource, BaseAnswerResource):
         "StreamModel",
         {
             "question": fields.String(
-                required=True, description="Question to be asked"
+                required=False, description="Question to be asked"
+            ),
+            "imageBase64": fields.String(
+                required=False,
+                description="Optional base64-encoded user image for multimodal requests",
+            ),
+            "imageMimeType": fields.String(
+                required=False,
+                description="Optional MIME type for imageBase64 (e.g. image/png)",
             ),
             "history": fields.List(
                 fields.String,
@@ -74,8 +86,19 @@ class StreamResource(Resource, BaseAnswerResource):
     @api.expect(stream_model)
     @api.doc(description="Stream a response based on the question and retriever")
     def post(self):
-        data = request.get_json()
-        if error := self.validate_request(data, "index" in data):
+        data = normalize_question_payload(request.get_json() or {})
+        has_image = bool(data.get("image_base64"))
+
+        if not data.get("question") and not has_image:
+            return Response(
+                self.error_stream_generate("question is required"),
+                status=400,
+                mimetype="text/event-stream",
+            )
+
+        if error := self.validate_request(
+            {"question": data.get("question", " ")}, "index" in data
+        ):
             return error
         decoded_token = getattr(request, "decoded_token", None)
         processor = StreamProcessor(data, decoded_token)
@@ -88,15 +111,33 @@ class StreamResource(Resource, BaseAnswerResource):
                     mimetype="text/event-stream",
                 )
 
-            docs_together, docs_list = processor.pre_fetch_docs(data["question"])
+            docs_together, docs_list = processor.pre_fetch_docs(data.get("question", ""))
             tools_data = processor.pre_fetch_tools()
+
+            if error := self.check_usage(processor.agent_config):
+                return error
+
+            if has_image:
+                response_text = run_multimodal_completion(
+                    question=data.get("question", ""),
+                    image_base64=data["image_base64"],
+                    docs_together=docs_together,
+                    model_id=data.get("model_id") or processor.model_id,
+                    image_mime_type=data.get("image_mime_type"),
+                )
+
+                def multimodal_stream():
+                    import json
+
+                    yield f"data: {json.dumps({'type': 'answer', 'answer': response_text})}\n\n"
+                    yield "data: {\"type\": \"end\"}\n\n"
+
+                return Response(multimodal_stream(), mimetype="text/event-stream")
 
             agent = processor.create_agent(
                 docs_together=docs_together, docs=docs_list, tools_data=tools_data
             )
 
-            if error := self.check_usage(processor.agent_config):
-                return error
             return Response(
                 self.complete_stream(
                     question=data["question"],

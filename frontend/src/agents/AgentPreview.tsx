@@ -41,25 +41,33 @@ export default function AgentPreview() {
   const handleQuestion = useCallback(
     ({
       question,
+      imageBase64,
       isRetry = false,
       index = undefined,
     }: {
       question: string;
+      imageBase64?: string;
       isRetry?: boolean;
       index?: number;
     }) => {
       const trimmedQuestion = question.trim();
-      if (trimmedQuestion === '') return;
+      if (trimmedQuestion === '' && !imageBase64) return;
 
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
-        handleFetchAnswer({ question: trimmedQuestion, index });
+        handleFetchAnswer({
+          question: trimmedQuestion,
+          index,
+        });
       } else {
         if (!isRetry) {
-          const newQuery: Query = { prompt: trimmedQuestion };
+          const newQuery: Query = { prompt: trimmedQuestion, imageBase64 };
           dispatch(addQuery(newQuery));
         }
-        handleFetchAnswer({ question: trimmedQuestion, index: undefined });
+        handleFetchAnswer({
+          question: trimmedQuestion,
+          index: undefined,
+        });
       }
     },
     [dispatch, handleFetchAnswer],
@@ -69,25 +77,29 @@ export default function AgentPreview() {
     question?: string,
     updated?: boolean,
     indx?: number,
+    imageBase64?: string,
   ) => {
     if (updated === true && question !== undefined && indx !== undefined) {
       handleQuestion({
         question,
+        imageBase64,
         index: indx,
         isRetry: false,
       });
-    } else if (question && status !== 'loading') {
-      const currentInput = question.trim();
+    } else if ((question || imageBase64) && status !== 'loading') {
+      const trimmedInput = (question || '').trim();
       if (lastQueryReturnedErr && queries.length > 0) {
         const lastQueryIndex = queries.length - 1;
         handleQuestion({
-          question: currentInput,
+          question: trimmedInput,
+          imageBase64,
           isRetry: true,
           index: lastQueryIndex,
         });
       } else {
         handleQuestion({
-          question: currentInput,
+          question: trimmedInput,
+          imageBase64,
           isRetry: false,
           index: undefined,
         });
@@ -110,6 +122,7 @@ export default function AgentPreview() {
       setLastQueryReturnedErr(!!lastQuery.error);
     } else setLastQueryReturnedErr(false);
   }, [queries]);
+
   return (
     <div className="relative h-full w-full">
       <div className="scrollbar-overlay absolute inset-0 bottom-[180px] overflow-hidden px-4 pt-4 [&>div>div]:w-full! [&>div>div]:max-w-none!">
@@ -124,7 +137,9 @@ export default function AgentPreview() {
       <div className="absolute right-0 bottom-0 left-0 flex w-full flex-col gap-4 pb-2">
         <div className="w-full px-4">
           <MessageInput
-            onSubmit={(text) => handleQuestionSubmission(text)}
+            onSubmit={({ text, imageBase64 }) =>
+              handleQuestionSubmission(text, false, undefined, imageBase64)
+            }
             loading={status === 'loading'}
             showSourceButton={selectedAgent ? false : true}
             showToolButton={selectedAgent ? false : true}

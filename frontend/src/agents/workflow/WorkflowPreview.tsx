@@ -195,7 +195,7 @@ function ExecutionDetails({
                           <span className="font-medium text-red-700 dark:text-red-300">
                             Error:{' '}
                           </span>
-                          <span className="wrap-break-word whitespace-pre-wrap text-red-800 dark:text-red-200">
+                          <span className="wrap-break-word whitespace-pre-wrap text-red-800 text-red-200">
                             {step.error}
                           </span>
                         </div>
@@ -413,25 +413,33 @@ export default function WorkflowPreview({
   const handleQuestion = useCallback(
     ({
       question,
+      imageBase64,
       isRetry = false,
       index = undefined,
     }: {
       question: string;
+      imageBase64?: string;
       isRetry?: boolean;
       index?: number;
     }) => {
       const trimmedQuestion = question.trim();
-      if (trimmedQuestion === '') return;
+      if (trimmedQuestion === '' && !imageBase64) return;
 
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
-        handleFetchAnswer({ question: trimmedQuestion, index });
+        handleFetchAnswer({
+          question: trimmedQuestion,
+          index,
+        });
       } else {
         if (!isRetry) {
-          const newQuery: Query = { prompt: trimmedQuestion };
+          const newQuery: Query = { prompt: trimmedQuestion, imageBase64 };
           dispatch(addQuery(newQuery));
         }
-        handleFetchAnswer({ question: trimmedQuestion, index: undefined });
+        handleFetchAnswer({
+          question: trimmedQuestion,
+          index: undefined,
+        });
       }
     },
     [dispatch, handleFetchAnswer],
@@ -441,25 +449,30 @@ export default function WorkflowPreview({
     question?: string,
     updated?: boolean,
     indx?: number,
+    imageBase64?: string, 
   ) => {
     if (updated === true && question !== undefined && indx !== undefined) {
       handleQuestion({
         question,
+        imageBase64,
         index: indx,
         isRetry: false,
       });
-    } else if (question && status !== 'loading') {
-      const currentInput = question.trim();
+    // FIXED: Added the check for imageBase64 here
+    } else if ((question || imageBase64) && status !== 'loading') {
+      const trimmedInput = (question || '').trim(); // FIXED: Handled undefined/empty question safely
       if (lastQueryReturnedErr && queries.length > 0) {
         const lastQueryIndex = queries.length - 1;
         handleQuestion({
-          question: currentInput,
+          question: trimmedInput,
+          imageBase64,
           isRetry: true,
           index: lastQueryIndex,
         });
       } else {
         handleQuestion({
-          question: currentInput,
+          question: trimmedInput,
+          imageBase64, 
           isRetry: false,
           index: undefined,
         });
@@ -620,7 +633,9 @@ export default function WorkflowPreview({
           </div>
           <div className="dark:bg-raisin-black absolute right-0 bottom-0 left-0 flex w-full flex-col gap-2 bg-white px-4 pt-2 pb-4">
             <MessageInput
-              onSubmit={(text) => handleQuestionSubmission(text)}
+              onSubmit={({ text, imageBase64 }) =>
+                handleQuestionSubmission(text, false, undefined, imageBase64) 
+              }
               loading={status === 'loading'}
               showSourceButton={false}
               showToolButton={false}

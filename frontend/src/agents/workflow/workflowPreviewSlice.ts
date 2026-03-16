@@ -58,12 +58,14 @@ interface ThunkState {
   workflowPreview: WorkflowPreviewState;
 }
 
+// FIXED: Added imageBase64 to payload type
 export const fetchWorkflowPreviewAnswer = createAsyncThunk<
   void,
   {
     question: string;
     workflowData: WorkflowData;
     indx?: number;
+    imageBase64?: string;
   },
   { state: ThunkState }
 >(
@@ -75,11 +77,17 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
 
     const state = getState();
 
+    // FIXED: Grab the image from the Redux store
+    const targetIndex = indx ?? state.workflowPreview.queries.length - 1;
+    const imageBase64 = state.workflowPreview.queries[targetIndex]?.imageBase64;
+
     if (state.preference) {
+      // FIXED: Attached the image securely to the API payload in snake_case
       const payload = {
         question,
         workflow: workflowData,
         save_conversation: false,
+        image_base64: imageBase64, 
       };
 
       await new Promise<void>((resolve, reject) => {
@@ -111,7 +119,7 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
                 if (line.startsWith('data:')) {
                   try {
                     const data = JSON.parse(line.slice(5));
-                    const targetIndex =
+                    const currentTargetIndex =
                       indx ?? currentState.workflowPreview.queries.length - 1;
 
                     if (data.type === 'end') {
@@ -119,14 +127,14 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
                     } else if (data.type === 'thought') {
                       dispatch(
                         updateThought({
-                          index: targetIndex,
+                          index: currentTargetIndex,
                           query: { thought: data.thought },
                         }),
                       );
                     } else if (data.type === 'workflow_step') {
                       dispatch(
                         updateExecutionStep({
-                          index: targetIndex,
+                          index: currentTargetIndex,
                           step: {
                             nodeId: data.node_id,
                             nodeType: data.node_type,
@@ -145,14 +153,14 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
                     } else if (data.type === 'source') {
                       dispatch(
                         updateStreamingSource({
-                          index: targetIndex,
+                          index: currentTargetIndex,
                           query: { sources: data.source ?? [] },
                         }),
                       );
                     } else if (data.type === 'tool_call') {
                       dispatch(
                         updateToolCall({
-                          index: targetIndex,
+                          index: currentTargetIndex,
                           tool_call: data.data,
                         }),
                       );
@@ -162,14 +170,14 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
                       );
                       dispatch(
                         workflowPreviewSlice.actions.raiseError({
-                          index: targetIndex,
+                          index: currentTargetIndex,
                           message: data.error,
                         }),
                       );
                     } else if (data.type === 'structured_answer') {
                       dispatch(
                         updateStreamingQuery({
-                          index: targetIndex,
+                          index: currentTargetIndex,
                           query: {
                             response: data.answer,
                             structured: data.structured,
@@ -180,7 +188,7 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
                     } else if (data.answer !== undefined) {
                       dispatch(
                         updateStreamingQuery({
-                          index: targetIndex,
+                          index: currentTargetIndex,
                           query: { response: data.answer },
                         }),
                       );

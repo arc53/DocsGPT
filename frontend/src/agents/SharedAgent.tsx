@@ -65,25 +65,33 @@ export default function SharedAgent() {
   const handleQuestion = useCallback(
     ({
       question,
+      imageBase64,
       isRetry = false,
       index = undefined,
     }: {
       question: string;
+      imageBase64?: string;
       isRetry?: boolean;
       index?: number;
     }) => {
       const trimmedQuestion = question.trim();
-      if (trimmedQuestion === '') return;
+      if (trimmedQuestion === '' && !imageBase64) return;
 
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
-        handleFetchAnswer({ question: trimmedQuestion, index });
+        handleFetchAnswer({
+          question: trimmedQuestion,
+          index,
+        });
       } else {
         if (!isRetry) {
-          const newQuery: Query = { prompt: trimmedQuestion };
+          const newQuery: Query = { prompt: trimmedQuestion, imageBase64 }; 
           dispatch(addQuery(newQuery));
         }
-        handleFetchAnswer({ question: trimmedQuestion, index: undefined });
+        handleFetchAnswer({
+          question: trimmedQuestion,
+          index: undefined,
+        });
       }
     },
     [dispatch, handleFetchAnswer],
@@ -93,25 +101,30 @@ export default function SharedAgent() {
     question?: string,
     updated?: boolean,
     indx?: number,
+    imageBase64?: string, 
   ) => {
     if (updated === true && question !== undefined && indx !== undefined) {
       handleQuestion({
         question,
+        imageBase64, 
         index: indx,
         isRetry: false,
       });
-    } else if (question && status !== 'loading') {
-      const currentInput = question.trim();
+    // FIXED: Now checks if EITHER question or imageBase64 exists
+    } else if ((question || imageBase64) && status !== 'loading') {
+      const trimmedInput = (question || '').trim(); // FIXED: Safely falls back to empty string
       if (lastQueryReturnedErr && queries.length > 0) {
         const lastQueryIndex = queries.length - 1;
         handleQuestion({
-          question: currentInput,
+          question: trimmedInput,
+          imageBase64,
           isRetry: true,
           index: lastQueryIndex,
         });
       } else {
         handleQuestion({
-          question: currentInput,
+          question: trimmedInput,
+          imageBase64,
           isRetry: false,
           index: undefined,
         });
@@ -179,7 +192,9 @@ export default function SharedAgent() {
         <div className="flex w-[95%] max-w-[1500px] flex-col items-center pb-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
           <div className="w-full px-2">
             <MessageInput
-              onSubmit={(text) => handleQuestionSubmission(text)}
+              onSubmit={({ text, imageBase64 }) =>
+                handleQuestionSubmission(text, false, undefined, imageBase64)
+              }
               loading={status === 'loading'}
               showSourceButton={sharedAgent ? false : true}
               showToolButton={sharedAgent ? false : true}

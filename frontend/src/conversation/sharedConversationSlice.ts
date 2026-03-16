@@ -28,9 +28,12 @@ const initialState: SharedConversationsType = {
   status: 'idle',
 };
 
-export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
+export const fetchSharedAnswer = createAsyncThunk<
+  Answer,
+  { question: string; imageBase64?: string } 
+>(
   'shared/fetchAnswer',
-  async ({ question }, { dispatch, getState, signal }) => {
+  async ({ question, imageBase64 }, { dispatch, getState, signal }) => {
     const state = getState() as RootState;
 
     const attachmentIds = selectCompletedAttachments(state)
@@ -49,6 +52,7 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
           state.sharedConversation.apiKey,
           state.sharedConversation.queries,
           attachmentIds,
+          imageBase64, // Passing image to the streaming handler
           (event) => {
             const data = JSON.parse(event.data);
             // check if the 'end' event has been received
@@ -105,6 +109,7 @@ export const fetchSharedAnswer = createAsyncThunk<Answer, { question: string }>(
           signal,
           state.sharedConversation.apiKey,
           attachmentIds,
+          imageBase64, // Passing image to the standard handler
         );
         if (answer) {
           let sourcesPrepped = [];
@@ -302,5 +307,4 @@ export const selectDate = (state: RootState) => state.sharedConversation.date;
 
 type RootState = ReturnType<typeof store.getState>;
 
-sharedConversationSlice;
 export default sharedConversationSlice.reducer;

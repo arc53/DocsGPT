@@ -5,6 +5,10 @@ from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
 from application.retriever.base import BaseRetriever
 from application.utils import num_tokens_from_string
+from application.retriever.markdown_images import (
+    build_multimodal_rag_context,
+    extract_public_markdown_image_urls,
+)
 from application.vectorstore.vector_creator import VectorCreator
 
 
@@ -164,16 +168,23 @@ class ClassicRAG(BaseRetriever):
                             filename = title
                         source_path = metadata.get("source") or vectorstore_id
 
-                        doc_text_with_header = f"{filename}\n{page_content}"
+                        multimodal_page_content = build_multimodal_rag_context(
+                            page_content
+                        )
+                        image_urls = extract_public_markdown_image_urls(page_content)
+                        doc_text_with_header = (
+                            f"{filename}\n{multimodal_page_content}"
+                        )
                         doc_tokens = num_tokens_from_string(doc_text_with_header)
 
                         if cumulative_tokens + doc_tokens < token_budget:
                             all_docs.append(
                                 {
                                     "title": title,
-                                    "text": page_content,
+                                    "text": multimodal_page_content,
                                     "source": source_path,
                                     "filename": filename,
+                                    "image_urls": image_urls,
                                 }
                             )
                             cumulative_tokens += doc_tokens
