@@ -19,6 +19,7 @@ class ModelProvider(str, Enum):
     PREMAI = "premai"
     SAGEMAKER = "sagemaker"
     NOVITA = "novita"
+    MINIMAX = "minimax"
 
 
 @dataclass
@@ -118,6 +119,10 @@ class ModelRegistry:
             settings.LLM_PROVIDER == "huggingface" and settings.API_KEY
         ):
             self._add_huggingface_models(settings)
+        if settings.MINIMAX_API_KEY or (
+            settings.LLM_PROVIDER == "minimax" and settings.API_KEY
+        ):
+            self._add_minimax_models(settings)
         # Default model selection
         if settings.LLM_NAME:
             # Parse LLM_NAME (may be comma-separated)
@@ -272,6 +277,21 @@ class ModelRegistry:
             ),
         )
         self.models[model_id] = model
+
+    def _add_minimax_models(self, settings):
+        from application.core.model_configs import MINIMAX_MODELS
+
+        if settings.MINIMAX_API_KEY:
+            for model in MINIMAX_MODELS:
+                self.models[model.id] = model
+            return
+        if settings.LLM_PROVIDER == "minimax" and settings.LLM_NAME:
+            for model in MINIMAX_MODELS:
+                if model.id == settings.LLM_NAME:
+                    self.models[model.id] = model
+                    return
+        for model in MINIMAX_MODELS:
+            self.models[model.id] = model
 
     def _parse_model_names(self, llm_name: str) -> List[str]:
         """

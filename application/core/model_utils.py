@@ -14,6 +14,7 @@ def get_api_key_for_provider(provider: str) -> Optional[str]:
         "google": settings.GOOGLE_API_KEY,
         "groq": settings.GROQ_API_KEY,
         "huggingface": settings.HUGGINGFACE_API_KEY,
+        "minimax": settings.MINIMAX_API_KEY,
         "azure_openai": settings.API_KEY,
         "docsgpt": None,
         "llama.cpp": None,

@@ -154,9 +154,10 @@ prompt_cloud_api_provider_options() {
     echo -e "${YELLOW}5) HuggingFace Inference API${NC}"
     echo -e "${YELLOW}6) Azure OpenAI${NC}"
     echo -e "${YELLOW}7) Novita${NC}"
+    echo -e "${YELLOW}8) MiniMax${NC}"
     echo -e "${YELLOW}b) Back to Main Menu${NC}"
     echo
-    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-7, or b): ${NC}")" provider_choice
+    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-8, or b): ${NC}")" provider_choice
 }
 
 # Function to prompt for Ollama CPU/GPU options
@@ -707,8 +708,14 @@ connect_cloud_api_provider() {
                 model_name="deepseek/deepseek-r1"
                 get_api_key
                 break ;;
+            8) # MiniMax
+                provider_name="MiniMax"
+                llm_provider="minimax"
+                model_name="MiniMax-M2.5"
+                get_api_key
+                break ;;
             b|B) clear; return 1 ;; # Clear screen and Back to Main Menu
-            *) echo -e "\n${RED}Invalid choice. Please choose 1-7, or b.${NC}" ; sleep 1 ;;
+            *) echo -e "\n${RED}Invalid choice. Please choose 1-8, or b.${NC}" ; sleep 1 ;;
         esac
     done
 
