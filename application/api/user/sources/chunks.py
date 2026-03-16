@@ -55,9 +55,14 @@ class GetChunks(Resource):
 
                 if path:
                     chunk_source = metadata.get("source", "")
-                    # Check if the chunk's source matches the requested path
+                    chunk_file_path = metadata.get("file_path", "")
+                    # Check if the chunk matches the requested path
+                    # For file uploads: source ends with path (e.g., "inputs/.../file.pdf" ends with "file.pdf")
+                    # For crawlers: file_path ends with path (e.g., "guides/setup.md" ends with "setup.md")
+                    source_match = chunk_source and chunk_source.endswith(path)
+                    file_path_match = chunk_file_path and chunk_file_path.endswith(path)
 
-                    if not chunk_source or not chunk_source.endswith(path):
+                    if not (source_match or file_path_match):
                         continue
                 # Filter by search term if provided
 

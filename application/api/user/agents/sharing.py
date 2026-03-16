@@ -255,8 +255,8 @@ class ShareAgent(Resource):
                     {"$unset": {"shared_metadata": ""}},
                 )
         except Exception as err:
-            current_app.logger.error(f"Error sharing/unsharing agent: {err}")
-            return make_response(jsonify({"success": False, "error": str(err)}), 400)
+            current_app.logger.error(f"Error sharing/unsharing agent: {err}", exc_info=True)
+            return make_response(jsonify({"success": False, "error": "Failed to update agent sharing status"}), 400)
         shared_token = shared_token if shared else None
         return make_response(
             jsonify({"success": True, "shared_token": shared_token}), 200

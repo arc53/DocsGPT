@@ -72,6 +72,8 @@ const userService = {
     apiClient.post(endpoints.USER.LOGS, data, token),
   manageSync: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MANAGE_SYNC, data, token),
+  syncSource: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.SYNC_SOURCE, data, token),
   getAvailableTools: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.GET_AVAILABLE_TOOLS, token),
   getUserTools: (token: string | null): Promise<any> =>
@@ -84,6 +86,11 @@ const userService = {
     apiClient.post(endpoints.USER.UPDATE_TOOL, data, token),
   deleteTool: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.DELETE_TOOL, data, token),
+  parseSpec: (file: File, token: string | null): Promise<any> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiClient.postFormData(endpoints.USER.PARSE_SPEC, formData, token);
+  },
   getDocumentChunks: (
     docId: string,
     page: number,
@@ -116,6 +123,8 @@ const userService = {
     apiClient.post(endpoints.USER.MCP_SAVE_SERVER, data, token),
   getMCPOAuthStatus: (task_id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.MCP_OAUTH_STATUS(task_id), token),
+  getMCPAuthStatus: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.MCP_AUTH_STATUS, token),
   syncConnector: (
     docId: string,
     provider: string,
@@ -132,6 +141,37 @@ const userService = {
       token,
     );
   },
+  getAgentFolders: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.AGENT_FOLDERS, token),
+  createAgentFolder: (
+    data: { name: string; parent_id?: string },
+    token: string | null,
+  ): Promise<any> => apiClient.post(endpoints.USER.AGENT_FOLDERS, data, token),
+  getAgentFolder: (id: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.AGENT_FOLDER(id), token),
+  updateAgentFolder: (
+    id: string,
+    data: { name?: string; parent_id?: string },
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.put(endpoints.USER.AGENT_FOLDER(id), data, token),
+  deleteAgentFolder: (id: string, token: string | null): Promise<any> =>
+    apiClient.delete(endpoints.USER.AGENT_FOLDER(id), token),
+  moveAgentToFolder: (
+    data: { agent_id: string; folder_id?: string | null },
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.post(endpoints.USER.MOVE_AGENT_TO_FOLDER, data, token),
+  getArtifact: (artifactId: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.GET_ARTIFACT(artifactId), token),
+  getWorkflow: (id: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.WORKFLOW(id), token),
+  createWorkflow: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.WORKFLOWS, data, token),
+  updateWorkflow: (id: string, data: any, token: string | null): Promise<any> =>
+    apiClient.put(endpoints.USER.WORKFLOW(id), data, token),
+  deleteWorkflow: (id: string, token: string | null): Promise<any> =>
+    apiClient.delete(endpoints.USER.WORKFLOW(id), token),
 };
 
 export default userService;

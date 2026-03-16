@@ -11,10 +11,10 @@ export function handleFetchAnswer(
   conversationId: string | null,
   promptId: string | null,
   chunks: string,
-  token_limit: number,
   agentId?: string,
   attachments?: string[],
   save_conversation = true,
+  modelId?: string,
 ): Promise<
   | {
       result: any;
@@ -41,11 +41,14 @@ export function handleFetchAnswer(
     conversation_id: conversationId,
     prompt_id: promptId,
     chunks: chunks,
-    token_limit: token_limit,
     isNoneDoc: selectedDocs.length === 0,
     agent_id: agentId,
     save_conversation: save_conversation,
   };
+
+  if (modelId) {
+    payload.model_id = modelId;
+  }
 
   // Add attachments to payload if they exist
   if (attachments && attachments.length > 0) {
@@ -95,24 +98,27 @@ export function handleFetchAnswerSteaming(
   conversationId: string | null,
   promptId: string | null,
   chunks: string,
-  token_limit: number,
   onEvent: (event: MessageEvent) => void,
   indx?: number,
   agentId?: string,
   attachments?: string[],
   save_conversation = true,
+  modelId?: string,
 ): Promise<Answer> {
   const payload: RetrievalPayload = {
     question: question,
     conversation_id: conversationId,
     prompt_id: promptId,
     chunks: chunks,
-    token_limit: token_limit,
     isNoneDoc: selectedDocs.length === 0,
     index: indx,
     agent_id: agentId,
     save_conversation: save_conversation,
   };
+
+  if (modelId) {
+    payload.model_id = modelId;
+  }
 
   // Add attachments to payload if they exist
   if (attachments && attachments.length > 0) {
@@ -188,13 +194,11 @@ export function handleSearch(
   selectedDocs: Doc[],
   conversation_id: string | null,
   chunks: string,
-  token_limit: number,
 ) {
   const payload: RetrievalPayload = {
     question: question,
     conversation_id: conversation_id,
     chunks: chunks,
-    token_limit: token_limit,
     isNoneDoc: selectedDocs.length === 0,
   };
   if (selectedDocs.length > 0) {

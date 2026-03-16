@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from urllib.parse import urlparse
 
 import pytest
 import requests
@@ -27,6 +28,21 @@ def _fake_extract(value: str) -> SimpleNamespace:
         domain = host
         suffix = ""
     return SimpleNamespace(domain=domain, suffix=suffix)
+
+
+def _mock_validate_url(url):
+    """Mock validate_url that allows test URLs through."""
+    if not urlparse(url).scheme:
+        url = "http://" + url
+    return url
+
+
+@pytest.fixture(autouse=True)
+def _patch_validate_url(monkeypatch):
+    monkeypatch.setattr(
+        "application.parser.remote.crawler_markdown.validate_url",
+        _mock_validate_url,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -112,7 +128,7 @@ def test_load_data_allows_subdomains(_patch_markdownify):
     assert len(docs) == 2
 
 
-def test_load_data_handles_fetch_errors(monkeypatch, _patch_markdownify):
+def test_load_data_handles_fetch_errors(monkeypatch, _patch_markdownify, _patch_validate_url):
     root_html = """
     <html><head><title>Home</title></head>
     <body><a href="/about">About</a></body>
@@ -136,4 +152,22 @@ def test_load_data_handles_fetch_errors(monkeypatch, _patch_markdownify):
     assert len(docs) == 1
     assert docs[0].text == "Home Markdown"
     assert mock_print.called
+
+
+def test_load_data_returns_empty_on_ssrf_validation_failure(monkeypatch):
+    """Test that SSRF validation failure returns empty list."""
+    from application.core.url_validation import SSRFError
+
+    def raise_ssrf_error(url):
+        raise SSRFError("Access to private IP not allowed")
+
+    monkeypatch.setattr(
+        "application.parser.remote.crawler_markdown.validate_url",
+        raise_ssrf_error,
+    )
+
+    loader = CrawlerLoader()
+    result = loader.load_data("http://192.168.1.1")
+
+    assert result == []
 

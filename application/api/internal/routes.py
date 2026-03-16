@@ -1,7 +1,7 @@
 import os
 import datetime
 import json
-from flask import Blueprint, request, send_from_directory
+from flask import Blueprint, request, send_from_directory, jsonify
 from werkzeug.utils import secure_filename
 from bson.objectid import ObjectId
 import logging
@@ -22,6 +22,16 @@ current_dir = os.path.dirname(
 
 
 internal = Blueprint("internal", __name__)
+
+
+@internal.before_request
+def verify_internal_key():
+    """Verify INTERNAL_KEY for all internal endpoint requests."""
+    if settings.INTERNAL_KEY:
+        internal_key = request.headers.get("X-Internal-Key")
+        if not internal_key or internal_key != settings.INTERNAL_KEY:
+            logger.warning(f"Unauthorized internal API access attempt from {request.remote_addr}")
+            return jsonify({"error": "Unauthorized", "message": "Invalid or missing internal key"}), 401
 
 
 @internal.route("/api/download", methods=["get"])
@@ -51,6 +61,7 @@ def upload_index_files():
     
     file_path = request.form.get("file_path")
     directory_structure = request.form.get("directory_structure")
+    file_name_map = request.form.get("file_name_map")
     
     if directory_structure:
         try:
@@ -60,6 +71,14 @@ def upload_index_files():
             directory_structure = {}
     else:
         directory_structure = {}
+    if file_name_map:
+        try:
+            file_name_map = json.loads(file_name_map)
+        except Exception:
+            logger.error("Error parsing file_name_map")
+            file_name_map = None
+    else:
+        file_name_map = None
 
     storage = StorageCreator.get_storage()
     index_base_path = f"indexes/{id}"
@@ -87,41 +106,43 @@ def upload_index_files():
 
     existing_entry = sources_collection.find_one({"_id": ObjectId(id)})
     if existing_entry:
+        update_fields = {
+            "user": user,
+            "name": job_name,
+            "language": job_name,
+            "date": datetime.datetime.now(),
+            "model": settings.EMBEDDINGS_NAME,
+            "type": type,
+            "tokens": tokens,
+            "retriever": retriever,
+            "remote_data": remote_data,
+            "sync_frequency": sync_frequency,
+            "file_path": file_path,
+            "directory_structure": directory_structure,
+        }
+        if file_name_map is not None:
+            update_fields["file_name_map"] = file_name_map
         sources_collection.update_one(
             {"_id": ObjectId(id)},
-            {
-                "$set": {
-                    "user": user,
-                    "name": job_name,
-                    "language": job_name,
-                    "date": datetime.datetime.now(),
-                    "model": settings.EMBEDDINGS_NAME,
-                    "type": type,
-                    "tokens": tokens,
-                    "retriever": retriever,
-                    "remote_data": remote_data,
-                    "sync_frequency": sync_frequency,
-                    "file_path": file_path,
-                    "directory_structure": directory_structure,
-                }
-            },
+            {"$set": update_fields},
         )
     else:
-        sources_collection.insert_one(
-            {
-                "_id": ObjectId(id),
-                "user": user,
-                "name": job_name,
-                "language": job_name,
-                "date": datetime.datetime.now(),
-                "model": settings.EMBEDDINGS_NAME,
-                "type": type,
-                "tokens": tokens,
-                "retriever": retriever,
-                "remote_data": remote_data,
-                "sync_frequency": sync_frequency,
-                "file_path": file_path,
-                "directory_structure": directory_structure,
-            }
-        )
+        insert_doc = {
+            "_id": ObjectId(id),
+            "user": user,
+            "name": job_name,
+            "language": job_name,
+            "date": datetime.datetime.now(),
+            "model": settings.EMBEDDINGS_NAME,
+            "type": type,
+            "tokens": tokens,
+            "retriever": retriever,
+            "remote_data": remote_data,
+            "sync_frequency": sync_frequency,
+            "file_path": file_path,
+            "directory_structure": directory_structure,
+        }
+        if file_name_map is not None:
+            insert_doc["file_name_map"] = file_name_map
+        sources_collection.insert_one(insert_doc)
     return {"status": "ok"}

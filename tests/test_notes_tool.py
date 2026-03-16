@@ -10,20 +10,23 @@ def notes_tool(monkeypatch) -> NotesTool:
     class FakeCollection:
         def __init__(self) -> None:
             self.docs = {}  # key: user_id:tool_id -> doc
+            self._id_counter = 0
+
+        def _generate_id(self):
+            self._id_counter += 1
+            return f"fake_id_{self._id_counter}"
 
         def update_one(self, q, u, upsert=False):
             user_id = q.get("user_id")
             tool_id = q.get("tool_id")
             key = f"{user_id}:{tool_id}"
 
-            # emulate single-note storage with optional upsert
-
             if key not in self.docs and not upsert:
                 return type("res", (), {"modified_count": 0})
             if key not in self.docs and upsert:
-                self.docs[key] = {"user_id": user_id, "tool_id": tool_id, "note": ""}
-            if "$set" in u and "note" in u["$set"]:
-                self.docs[key]["note"] = u["$set"]["note"]
+                self.docs[key] = {"user_id": user_id, "tool_id": tool_id, "note": "", "_id": self._generate_id()}
+            if "$set" in u:
+                self.docs[key].update(u["$set"])
             return type("res", (), {"modified_count": 1})
 
         def find_one(self, q):
@@ -31,6 +34,28 @@ def notes_tool(monkeypatch) -> NotesTool:
             tool_id = q.get("tool_id")
             key = f"{user_id}:{tool_id}"
             return self.docs.get(key)
+
+        def find_one_and_update(self, q, u, upsert=False, return_document=None):
+            user_id = q.get("user_id")
+            tool_id = q.get("tool_id")
+            key = f"{user_id}:{tool_id}"
+
+            if key not in self.docs and not upsert:
+                return None
+            if key not in self.docs and upsert:
+                self.docs[key] = {"user_id": user_id, "tool_id": tool_id, "note": "", "_id": self._generate_id()}
+            if "$set" in u:
+                self.docs[key].update(u["$set"])
+            return self.docs[key]
+
+        def find_one_and_delete(self, q):
+            user_id = q.get("user_id")
+            tool_id = q.get("tool_id")
+            key = f"{user_id}:{tool_id}"
+            if key in self.docs:
+                doc = self.docs.pop(key)
+                return doc
+            return None
 
         def delete_one(self, q):
             user_id = q.get("user_id")
@@ -147,12 +172,9 @@ def test_insert_line(notes_tool: NotesTool) -> None:
 
 @pytest.mark.unit
 def test_delete_nonexistent_note(monkeypatch):
-    class FakeResult:
-        deleted_count = 0
-
     class FakeCollection:
-        def delete_one(self, *args, **kwargs):
-            return FakeResult()
+        def find_one_and_delete(self, q):
+            return None
 
     monkeypatch.setattr(
         "application.core.mongo_db.MongoDB.get_client",
@@ -171,6 +193,11 @@ def test_notes_tool_isolation(monkeypatch) -> None:
     class FakeCollection:
         def __init__(self) -> None:
             self.docs = {}
+            self._id_counter = 0
+
+        def _generate_id(self):
+            self._id_counter += 1
+            return f"fake_id_{self._id_counter}"
 
         def update_one(self, q, u, upsert=False):
             user_id = q.get("user_id")
@@ -180,9 +207,9 @@ def test_notes_tool_isolation(monkeypatch) -> None:
             if key not in self.docs and not upsert:
                 return type("res", (), {"modified_count": 0})
             if key not in self.docs and upsert:
-                self.docs[key] = {"user_id": user_id, "tool_id": tool_id, "note": ""}
-            if "$set" in u and "note" in u["$set"]:
-                self.docs[key]["note"] = u["$set"]["note"]
+                self.docs[key] = {"user_id": user_id, "tool_id": tool_id, "note": "", "_id": self._generate_id()}
+            if "$set" in u:
+                self.docs[key].update(u["$set"])
             return type("res", (), {"modified_count": 1})
 
         def find_one(self, q):
@@ -190,6 +217,19 @@ def test_notes_tool_isolation(monkeypatch) -> None:
             tool_id = q.get("tool_id")
             key = f"{user_id}:{tool_id}"
             return self.docs.get(key)
+
+        def find_one_and_update(self, q, u, upsert=False, return_document=None):
+            user_id = q.get("user_id")
+            tool_id = q.get("tool_id")
+            key = f"{user_id}:{tool_id}"
+
+            if key not in self.docs and not upsert:
+                return None
+            if key not in self.docs and upsert:
+                self.docs[key] = {"user_id": user_id, "tool_id": tool_id, "note": "", "_id": self._generate_id()}
+            if "$set" in u:
+                self.docs[key].update(u["$set"])
+            return self.docs[key]
 
     fake_collection = FakeCollection()
     fake_db = {"notes": fake_collection}

@@ -7,11 +7,16 @@ from bson.objectid import ObjectId
 
 from application.agents.tools.tool_action_parser import ToolActionParser
 from application.agents.tools.tool_manager import ToolManager
+from application.core.json_schema_utils import (
+    JsonSchemaValidationError,
+    normalize_json_schema_payload,
+)
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.llm.handlers.handler_creator import LLMHandlerCreator
 from application.llm.llm_creator import LLMCreator
 from application.logging import build_stack_data, log_activity, LogContext
+from application.security.encryption import decrypt_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +26,9 @@ class BaseAgent(ABC):
         self,
         endpoint: str,
         llm_name: str,
-        gpt_model: str,
+        model_id: str,
         api_key: str,
+        agent_id: Optional[str] = None,
         user_api_key: Optional[str] = None,
         prompt: str = "",
         chat_history: Optional[List[Dict]] = None,
@@ -34,11 +40,13 @@ class BaseAgent(ABC):
         token_limit: Optional[int] = settings.DEFAULT_AGENT_LIMITS["token_limit"],
         limited_request_mode: Optional[bool] = False,
         request_limit: Optional[int] = settings.DEFAULT_AGENT_LIMITS["request_limit"],
+        compressed_summary: Optional[str] = None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
-        self.gpt_model = gpt_model
+        self.model_id = model_id
         self.api_key = api_key
+        self.agent_id = agent_id
         self.user_api_key = user_api_key
         self.prompt = prompt
         self.decoded_token = decoded_token or {}
@@ -52,17 +60,27 @@ class BaseAgent(ABC):
             api_key=api_key,
             user_api_key=user_api_key,
             decoded_token=decoded_token,
+            model_id=model_id,
+            agent_id=agent_id,
         )
         self.retrieved_docs = retrieved_docs or []
         self.llm_handler = LLMHandlerCreator.create_handler(
             llm_name if llm_name else "default"
         )
         self.attachments = attachments or []
-        self.json_schema = json_schema
+        self.json_schema = None
+        if json_schema is not None:
+            try:
+                self.json_schema = normalize_json_schema_payload(json_schema)
+            except JsonSchemaValidationError as exc:
+                logger.warning("Ignoring invalid JSON schema payload: %s", exc)
         self.limited_token_mode = limited_token_mode
         self.token_limit = token_limit
         self.limited_request_mode = limited_request_mode
         self.request_limit = request_limit
+        self.compressed_summary = compressed_summary
+        self.current_token_count = 0
+        self.context_limit_reached = False
 
     @log_activity()
     def gen(
@@ -115,10 +133,10 @@ class BaseAgent(ABC):
                         params["properties"][k] = {
                             key: value
                             for key, value in v.items()
-                            if key != "filled_by_llm" and key != "value"
+                            if key not in ("filled_by_llm", "value", "required")
                         }
-
-                        params["required"].append(k)
+                        if v.get("required", False):
+                            params["required"].append(k)
         return params
 
     def _prepare_tools(self, tools_dict):
@@ -214,7 +232,11 @@ class BaseAgent(ABC):
         for param_type, target_dict in param_types.items():
             if param_type in action_data and action_data[param_type].get("properties"):
                 for param, details in action_data[param_type]["properties"].items():
-                    if param not in call_args and "value" in details:
+                    if (
+                        param not in call_args
+                        and "value" in details
+                        and details["value"]
+                    ):
                         target_dict[param] = details["value"]
         for param, value in call_args.items():
             for param_type, target_dict in param_types.items():
@@ -227,36 +249,86 @@ class BaseAgent(ABC):
         # Prepare tool_config and add tool_id for memory tools
 
         if tool_data["name"] == "api_tool":
+            action_config = tool_data["config"]["actions"][action_name]
             tool_config = {
-                "url": tool_data["config"]["actions"][action_name]["url"],
-                "method": tool_data["config"]["actions"][action_name]["method"],
+                "url": action_config["url"],
+                "method": action_config["method"],
                 "headers": headers,
                 "query_params": query_params,
             }
+            if "body_content_type" in action_config:
+                tool_config["body_content_type"] = action_config.get(
+                    "body_content_type", "application/json"
+                )
+                tool_config["body_encoding_rules"] = action_config.get(
+                    "body_encoding_rules", {}
+                )
         else:
             tool_config = tool_data["config"].copy() if tool_data["config"] else {}
-            # Add tool_id from MongoDB _id for tools that need instance isolation (like memory tool)
-            # Use MongoDB _id if available, otherwise fall back to enumerated tool_id
-
+            if tool_config.get("encrypted_credentials") and self.user:
+                decrypted = decrypt_credentials(
+                    tool_config["encrypted_credentials"], self.user
+                )
+                tool_config.update(decrypted)
+                tool_config["auth_credentials"] = decrypted
+                tool_config.pop("encrypted_credentials", None)
             tool_config["tool_id"] = str(tool_data.get("_id", tool_id))
+            if hasattr(self, "conversation_id") and self.conversation_id:
+                tool_config["conversation_id"] = self.conversation_id
+            if tool_data["name"] == "mcp_tool":
+                tool_config["query_mode"] = True
         tool = tm.load_tool(
             tool_data["name"],
             tool_config=tool_config,
-            user_id=self.user,  # Pass user ID for MCP tools credential decryption
+            user_id=self.user,
+        )
+        resolved_arguments = (
+            {"query_params": query_params, "headers": headers, "body": body}
+            if tool_data["name"] == "api_tool"
+            else parameters
         )
         if tool_data["name"] == "api_tool":
-            print(
+            logger.debug(
                 f"Executing api: {action_name} with query_params: {query_params}, headers: {headers}, body: {body}"
             )
             result = tool.execute_action(action_name, **body)
         else:
-            print(f"Executing tool: {action_name} with args: {call_args}")
+            logger.debug(f"Executing tool: {action_name} with args: {call_args}")
             result = tool.execute_action(action_name, **parameters)
-        tool_call_data["result"] = (
-            f"{str(result)[:50]}..." if len(str(result)) > 50 else result
+
+        get_artifact_id = (
+            getattr(tool, "get_artifact_id", None)
+            if tool_data["name"] != "api_tool"
+            else None
         )
 
-        yield {"type": "tool_call", "data": {**tool_call_data, "status": "completed"}}
+        artifact_id = None
+        if callable(get_artifact_id):
+            try:
+                artifact_id = get_artifact_id(action_name, **parameters)
+            except Exception:
+                logger.exception(
+                    "Failed to extract artifact_id from tool %s for action %s",
+                    tool_data["name"],
+                    action_name,
+                )
+
+        artifact_id = str(artifact_id).strip() if artifact_id is not None else ""
+        if artifact_id:
+            tool_call_data["artifact_id"] = artifact_id
+        result_full = str(result)
+        tool_call_data["resolved_arguments"] = resolved_arguments
+        tool_call_data["result_full"] = result_full
+        tool_call_data["result"] = (
+            f"{result_full[:50]}..." if len(result_full) > 50 else result_full
+        )
+
+        stream_tool_call_data = {
+            key: value
+            for key, value in tool_call_data.items()
+            if key not in {"result_full", "resolved_arguments"}
+        }
+        yield {"type": "tool_call", "data": {**stream_tool_call_data, "status": "completed"}}
         self.tool_calls.append(tool_call_data)
 
         return result, call_id
@@ -264,7 +336,11 @@ class BaseAgent(ABC):
     def _get_truncated_tool_calls(self):
         return [
             {
-                **tool_call,
+                "tool_name": tool_call.get("tool_name"),
+                "call_id": tool_call.get("call_id"),
+                "action_name": tool_call.get("action_name"),
+                "arguments": tool_call.get("arguments"),
+                "artifact_id": tool_call.get("artifact_id"),
                 "result": (
                     f"{str(tool_call['result'])[:50]}..."
                     if len(str(tool_call["result"])) > 50
@@ -275,15 +351,176 @@ class BaseAgent(ABC):
             for tool_call in self.tool_calls
         ]
 
+    def _calculate_current_context_tokens(self, messages: List[Dict]) -> int:
+        """
+        Calculate total tokens in current context (messages).
+
+        Args:
+            messages: List of message dicts
+
+        Returns:
+            Total token count
+        """
+        from application.api.answer.services.compression.token_counter import (
+            TokenCounter,
+        )
+
+        return TokenCounter.count_message_tokens(messages)
+
+    def _check_context_limit(self, messages: List[Dict]) -> bool:
+        """
+        Check if we're approaching context limit (80%).
+
+        Args:
+            messages: Current message list
+
+        Returns:
+            True if at or above 80% of context limit
+        """
+        from application.core.model_utils import get_token_limit
+        from application.core.settings import settings
+
+        try:
+            # Calculate current tokens
+            current_tokens = self._calculate_current_context_tokens(messages)
+            self.current_token_count = current_tokens
+
+            # Get context limit for model
+            context_limit = get_token_limit(self.model_id)
+
+            # Calculate threshold (80%)
+            threshold = int(context_limit * settings.COMPRESSION_THRESHOLD_PERCENTAGE)
+
+            # Check if we've reached the limit
+            if current_tokens >= threshold:
+                logger.warning(
+                    f"Context limit approaching: {current_tokens}/{context_limit} tokens "
+                    f"({(current_tokens/context_limit)*100:.1f}%)"
+                )
+                return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Error checking context limit: {str(e)}", exc_info=True)
+            return False
+
+    def _validate_context_size(self, messages: List[Dict]) -> None:
+        """
+        Pre-flight validation before calling LLM. Logs warnings but never raises errors.
+
+        Args:
+            messages: Messages to be sent to LLM
+        """
+        from application.core.model_utils import get_token_limit
+
+        current_tokens = self._calculate_current_context_tokens(messages)
+        self.current_token_count = current_tokens
+        context_limit = get_token_limit(self.model_id)
+
+        percentage = (current_tokens / context_limit) * 100
+
+        # Log based on usage level
+        if current_tokens >= context_limit:
+            logger.warning(
+                f"Context at limit: {current_tokens:,}/{context_limit:,} tokens "
+                f"({percentage:.1f}%). Model: {self.model_id}"
+            )
+        elif current_tokens >= int(
+            context_limit * settings.COMPRESSION_THRESHOLD_PERCENTAGE
+        ):
+            logger.info(
+                f"Context approaching limit: {current_tokens:,}/{context_limit:,} tokens "
+                f"({percentage:.1f}%)"
+            )
+
+    def _truncate_text_middle(self, text: str, max_tokens: int) -> str:
+        """
+        Truncate text by removing content from the middle, preserving start and end.
+
+        Args:
+            text: Text to truncate
+            max_tokens: Maximum tokens allowed
+
+        Returns:
+            Truncated text with middle removed if needed
+        """
+        from application.utils import num_tokens_from_string
+
+        current_tokens = num_tokens_from_string(text)
+        if current_tokens <= max_tokens:
+            return text
+
+        # Estimate chars per token (roughly 4 chars per token for English)
+        chars_per_token = len(text) / current_tokens if current_tokens > 0 else 4
+        target_chars = int(max_tokens * chars_per_token * 0.95)  # 5% safety margin
+
+        if target_chars <= 0:
+            return ""
+
+        # Split: keep 40% from start, 40% from end, remove middle
+        start_chars = int(target_chars * 0.4)
+        end_chars = int(target_chars * 0.4)
+
+        truncation_marker = "\n\n[... content truncated to fit context limit ...]\n\n"
+
+        truncated = text[:start_chars] + truncation_marker + text[-end_chars:]
+
+        logger.info(
+            f"Truncated text from {current_tokens:,} to ~{max_tokens:,} tokens "
+            f"(removed middle section)"
+        )
+
+        return truncated
+
     def _build_messages(
         self,
         system_prompt: str,
         query: str,
     ) -> List[Dict]:
         """Build messages using pre-rendered system prompt"""
+        from application.core.model_utils import get_token_limit
+        from application.utils import num_tokens_from_string
+
+        # Append compression summary to system prompt if present
+        if self.compressed_summary:
+            compression_context = (
+                "\n\n---\n\n"
+                "This session is being continued from a previous conversation that "
+                "has been compressed to fit within context limits. "
+                "The conversation is summarized below:\n\n"
+                f"{self.compressed_summary}"
+            )
+            system_prompt = system_prompt + compression_context
+
+        context_limit = get_token_limit(self.model_id)
+        system_tokens = num_tokens_from_string(system_prompt)
+
+        # Reserve 10% for response/tools
+        safety_buffer = int(context_limit * 0.1)
+        available_after_system = context_limit - system_tokens - safety_buffer
+
+        # Max tokens for query: 80% of available space (leave room for history)
+        max_query_tokens = int(available_after_system * 0.8)
+        query_tokens = num_tokens_from_string(query)
+
+        # Truncate query from middle if it exceeds 80% of available context
+        if query_tokens > max_query_tokens:
+            query = self._truncate_text_middle(query, max_query_tokens)
+            query_tokens = num_tokens_from_string(query)
+
+        # Calculate remaining budget for chat history
+        available_for_history = max(available_after_system - query_tokens, 0)
+
+        # Truncate chat history to fit within available budget
+        working_history = self._truncate_history_to_fit(
+            self.chat_history,
+            available_for_history,
+        )
+
         messages = [{"role": "system", "content": system_prompt}]
 
-        for i in self.chat_history:
+        for i in working_history:
             if "prompt" in i and "response" in i:
                 messages.append({"role": "user", "content": i["prompt"]})
                 messages.append({"role": "assistant", "content": i["response"]})
@@ -315,8 +552,69 @@ class BaseAgent(ABC):
         messages.append({"role": "user", "content": query})
         return messages
 
+    def _truncate_history_to_fit(
+        self,
+        history: List[Dict],
+        max_tokens: int,
+    ) -> List[Dict]:
+        """
+        Truncate chat history to fit within token budget, keeping most recent messages.
+
+        Args:
+            history: Full chat history
+            max_tokens: Maximum tokens allowed for history
+
+        Returns:
+            Truncated history (most recent messages that fit)
+        """
+        from application.utils import num_tokens_from_string
+
+        if not history or max_tokens <= 0:
+            return []
+
+        truncated = []
+        current_tokens = 0
+
+        # Iterate from newest to oldest
+        for message in reversed(history):
+            message_tokens = 0
+
+            if "prompt" in message and "response" in message:
+                message_tokens += num_tokens_from_string(message["prompt"])
+                message_tokens += num_tokens_from_string(message["response"])
+
+            if "tool_calls" in message:
+                for tool_call in message["tool_calls"]:
+                    tool_str = (
+                        f"Tool: {tool_call.get('tool_name')} | "
+                        f"Action: {tool_call.get('action_name')} | "
+                        f"Args: {tool_call.get('arguments')} | "
+                        f"Response: {tool_call.get('result')}"
+                    )
+                    message_tokens += num_tokens_from_string(tool_str)
+
+            if current_tokens + message_tokens <= max_tokens:
+                current_tokens += message_tokens
+                truncated.insert(0, message)  # Maintain chronological order
+            else:
+                break
+
+        if len(truncated) < len(history):
+            logger.info(
+                f"Truncated chat history from {len(history)} to {len(truncated)} messages "
+                f"to fit within {max_tokens:,} token budget"
+            )
+
+        return truncated
+
     def _llm_gen(self, messages: List[Dict], log_context: Optional[LogContext] = None):
-        gen_kwargs = {"model": self.gpt_model, "messages": messages}
+        # Pre-flight context validation - fail fast if over limit
+        self._validate_context_size(messages)
+
+        gen_kwargs = {"model": self.model_id, "messages": messages}
+        if self.attachments:
+            # Usage accounting only; stripped before provider invocation.
+            gen_kwargs["_usage_attachments"] = self.attachments
 
         if (
             hasattr(self.llm, "_supports_tools")

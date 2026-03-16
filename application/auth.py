@@ -19,9 +19,9 @@ def handle_auth(request, data={}):
                 options={"verify_exp": False},
             )
             return decoded_token
-        except Exception as e:
+        except Exception:
             return {
-                "message": f"Authentication error: {str(e)}",
+                "message": "Authentication error: invalid token",
                 "error": "invalid_token",
             }
     else:

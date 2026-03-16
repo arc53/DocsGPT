@@ -32,4 +32,18 @@ export type Agent = {
   token_limit?: number;
   limited_request_mode?: boolean;
   request_limit?: number;
+  models?: string[];
+  default_model_id?: string;
+  folder_id?: string;
+  workflow?: string;
 };
+
+export type AgentFolder = {
+  id: string;
+  name: string;
+  parent_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export * from './workflow';

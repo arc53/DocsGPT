@@ -1,0 +1,22 @@
+export default {
+  "api-key-guide": {
+    "title": "🔑 Getting API key",
+    "href": "/Extensions/api-key-guide"
+  },
+  "chat-widget": {
+    "title": "💬️ Chat Widget",
+    "href": "/Extensions/chat-widget"
+  },
+  "search-widget": {
+    "title": "🔎 Search Widget",
+    "href": "/Extensions/search-widget"
+  },
+  "Chrome-extension": {
+    "title": "🌐 Chrome Extension",
+    "href": "/Extensions/Chrome-extension"
+  },
+  "Chatwoot-extension": {
+    "title": "🗣️ Chatwoot Extension",
+    "href": "/Extensions/Chatwoot-extension"
+  }
+}

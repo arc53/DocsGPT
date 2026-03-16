@@ -327,15 +327,10 @@ class GoogleDriveLoader(BaseConnectorLoader):
             content_bytes = file_io.getvalue()
 
             try:
-                content = content_bytes.decode('utf-8')
+                return content_bytes.decode('utf-8')
             except UnicodeDecodeError:
-                try:
-                    content = content_bytes.decode('latin-1')
-                except UnicodeDecodeError:
-                    logging.error(f"Could not decode file {file_id} as text")
-                    return None
-
-            return content
+                logging.error(f"Could not decode file {file_id} as text")
+                return None
 
         except HttpError as e:
             logging.error(f"HTTP error downloading file {file_id}: {e.resp.status} - {e.content}")

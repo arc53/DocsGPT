@@ -7,7 +7,7 @@ RUN apt-get update && \
     apt-get install -y software-properties-common && \
     add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
-    apt-get install -y --no-install-recommends gcc wget unzip libc6-dev python3.12 python3.12-venv && \
+    apt-get install -y --no-install-recommends gcc g++ wget unzip libc6-dev python3.12 python3.12-venv python3.12-dev && \
     rm -rf /var/lib/apt/lists/* 
 
 # Verify Python installation and setup symlink
@@ -48,7 +48,12 @@ FROM ubuntu:24.04 as final
 RUN apt-get update && \
     apt-get install -y software-properties-common && \
     add-apt-repository ppa:deadsnakes/ppa && \
-    apt-get update && apt-get install -y --no-install-recommends python3.12 && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        python3.12 \
+        libgl1 \
+        libglib2.0-0 \
+        poppler-utils \
+        && \
     ln -s /usr/bin/python3.12 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 

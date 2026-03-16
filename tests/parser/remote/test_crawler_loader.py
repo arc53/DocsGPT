@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 from application.parser.remote.crawler_loader import CrawlerLoader
 from application.parser.schema.base import Document
-from langchain.docstore.document import Document as LCDocument
+from langchain_core.documents import Document as LCDocument
 
 
 class DummyResponse:
@@ -13,8 +13,17 @@ class DummyResponse:
         return None
 
 
+def _mock_validate_url(url):
+    """Mock validate_url that allows test URLs through."""
+    from urllib.parse import urlparse
+    if not urlparse(url).scheme:
+        url = "http://" + url
+    return url
+
+
+@patch("application.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
 @patch("application.parser.remote.crawler_loader.requests.get")
-def test_load_data_crawls_same_domain_links(mock_requests_get):
+def test_load_data_crawls_same_domain_links(mock_requests_get, mock_validate_url):
     responses = {
         "http://example.com": DummyResponse(
             """
@@ -29,7 +38,7 @@ def test_load_data_crawls_same_domain_links(mock_requests_get):
         "http://example.com/about": DummyResponse("<html><body>About page</body></html>"),
     }
 
-    def response_side_effect(url: str):
+    def response_side_effect(url: str, timeout=30):
         if url not in responses:
             raise AssertionError(f"Unexpected request for URL: {url}")
         return responses[url]
@@ -69,6 +78,9 @@ def test_load_data_crawls_same_domain_links(mock_requests_get):
     sources = {doc.extra_info.get("source") for doc in result}
     assert sources == {"http://example.com", "http://example.com/about"}
 
+    paths = {doc.extra_info.get("file_path") for doc in result}
+    assert paths == {"index.md", "about.md"}
+
     texts = {doc.text for doc in result}
     assert texts == {"Root content", "About content"}
 
@@ -76,8 +88,9 @@ def test_load_data_crawls_same_domain_links(mock_requests_get):
     assert loader_call_order == ["http://example.com", "http://example.com/about"]
 
 
+@patch("application.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
 @patch("application.parser.remote.crawler_loader.requests.get")
-def test_load_data_accepts_list_input_and_adds_scheme(mock_requests_get):
+def test_load_data_accepts_list_input_and_adds_scheme(mock_requests_get, mock_validate_url):
     mock_requests_get.return_value = DummyResponse("<html><body>No links here</body></html>")
 
     doc = MagicMock(spec=LCDocument)
@@ -92,16 +105,20 @@ def test_load_data_accepts_list_input_and_adds_scheme(mock_requests_get):
 
     result = crawler.load_data(["example.com", "unused.com"])
 
-    mock_requests_get.assert_called_once_with("http://example.com")
+    mock_requests_get.assert_called_once_with("http://example.com", timeout=30)
     crawler.loader.assert_called_once_with(["http://example.com"])
 
     assert len(result) == 1
     assert result[0].text == "Homepage"
-    assert result[0].extra_info == {"source": "http://example.com"}
+    assert result[0].extra_info == {
+        "source": "http://example.com",
+        "file_path": "index.md",
+    }
 
 
+@patch("application.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
 @patch("application.parser.remote.crawler_loader.requests.get")
-def test_load_data_respects_limit(mock_requests_get):
+def test_load_data_respects_limit(mock_requests_get, mock_validate_url):
     responses = {
         "http://example.com": DummyResponse(
             """
@@ -115,7 +132,7 @@ def test_load_data_respects_limit(mock_requests_get):
         "http://example.com/about": DummyResponse("<html><body>About</body></html>"),
     }
 
-    mock_requests_get.side_effect = lambda url: responses[url]
+    mock_requests_get.side_effect = lambda url, timeout=30: responses[url]
 
     root_doc = MagicMock(spec=LCDocument)
     root_doc.page_content = "Root content"
@@ -143,9 +160,10 @@ def test_load_data_respects_limit(mock_requests_get):
     assert crawler.loader.call_count == 1
 
 
+@patch("application.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
 @patch("application.parser.remote.crawler_loader.logging")
 @patch("application.parser.remote.crawler_loader.requests.get")
-def test_load_data_logs_and_skips_on_loader_error(mock_requests_get, mock_logging):
+def test_load_data_logs_and_skips_on_loader_error(mock_requests_get, mock_logging, mock_validate_url):
     mock_requests_get.return_value = DummyResponse("<html><body>Error route</body></html>")
 
     failing_loader_instance = MagicMock()
@@ -157,7 +175,7 @@ def test_load_data_logs_and_skips_on_loader_error(mock_requests_get, mock_loggin
     result = crawler.load_data("http://example.com")
 
     assert result == []
-    mock_requests_get.assert_called_once_with("http://example.com")
+    mock_requests_get.assert_called_once_with("http://example.com", timeout=30)
     failing_loader_instance.load.assert_called_once()
 
     mock_logging.error.assert_called_once()
@@ -165,3 +183,30 @@ def test_load_data_logs_and_skips_on_loader_error(mock_requests_get, mock_loggin
     assert "Error processing URL http://example.com" in message
     assert mock_logging.error.call_args.kwargs.get("exc_info") is True
 
+
+@patch("application.parser.remote.crawler_loader.validate_url")
+def test_load_data_returns_empty_on_ssrf_validation_failure(mock_validate_url):
+    """Test that SSRF validation failure returns empty list."""
+    from application.core.url_validation import SSRFError
+    mock_validate_url.side_effect = SSRFError("Access to private IP not allowed")
+
+    crawler = CrawlerLoader()
+    result = crawler.load_data("http://192.168.1.1")
+
+    assert result == []
+    mock_validate_url.assert_called_once()
+
+
+def test_url_to_virtual_path_variants():
+    crawler = CrawlerLoader()
+
+    assert crawler._url_to_virtual_path("https://docs.docsgpt.cloud/") == "index.md"
+    assert (
+        crawler._url_to_virtual_path("https://docs.docsgpt.cloud/guides/setup")
+        == "guides/setup.md"
+    )
+    assert (
+        crawler._url_to_virtual_path("https://docs.docsgpt.cloud/guides/setup/")
+        == "guides/setup.md"
+    )
+    assert crawler._url_to_virtual_path("https://example.com/page.html") == "page.md"

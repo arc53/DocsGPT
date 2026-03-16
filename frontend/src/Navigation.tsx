@@ -31,7 +31,6 @@ import {
 } from './conversation/conversationSlice';
 import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme, useMediaQuery } from './hooks';
-import useDefaultDocument from './hooks/useDefaultDocument';
 import useTokenAuth from './hooks/useTokenAuth';
 import DeleteConvModal from './modals/DeleteConvModal';
 import JWTModal from './modals/JWTModal';
@@ -155,7 +154,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   }, [agents, sharedAgents, token, dispatch]);
 
   useEffect(() => {
-    if (!conversations?.data) fetchConversations();
     if (queries.length === 0) resetConversation();
   }, [conversations?.data, dispatch]);
 
@@ -290,7 +288,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     setNavOpen(!(isMobile || isTablet));
   }, [isMobile, isTablet]);
 
-  useDefaultDocument();
   return (
     <>
       {(isMobile || isTablet) && navOpen && (
@@ -397,7 +394,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </NavLink>
         <div
           id="conversationsMainDiv"
-          className="mb-auto h-[78vh] overflow-x-hidden overflow-y-auto dark:text-white"
+          className="mb-auto h-[78vh] overflow-x-hidden overflow-y-auto scrollbar-overlay dark:text-white"
         >
           {conversations?.loading && !isDeletingConversation && (
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform">

@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+experiments/
 
 experiments
 # C extensions
@@ -70,6 +71,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/public/_pagefind/
 
 # PyBuilder
 target/
@@ -145,6 +147,10 @@ frontend/yarn-debug.log*
 frontend/yarn-error.log*
 frontend/pnpm-debug.log*
 frontend/lerna-debug.log*
+
+# Keep frontend utility helpers tracked (overrides global lib/ ignore)
+!frontend/src/lib/
+!frontend/src/lib/**
 
 frontend/node_modules
 frontend/dist

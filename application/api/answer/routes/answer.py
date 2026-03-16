@@ -40,9 +40,9 @@ class AnswerResource(Resource, BaseAnswerResource):
             "chunks": fields.Integer(
                 required=False, default=2, description="Number of chunks"
             ),
-            "token_limit": fields.Integer(required=False, description="Token limit"),
             "retriever": fields.String(required=False, description="Retriever type"),
             "api_key": fields.String(required=False, description="API key"),
+            "agent_id": fields.String(required=False, description="Agent ID"),
             "active_docs": fields.String(
                 required=False, description="Active documents"
             ),
@@ -53,6 +53,10 @@ class AnswerResource(Resource, BaseAnswerResource):
                 required=False,
                 default=True,
                 description="Whether to save the conversation",
+            ),
+            "model_id": fields.String(
+                required=False,
+                description="Model ID to use for this request",
             ),
             "passthrough": fields.Raw(
                 required=False,
@@ -97,6 +101,10 @@ class AnswerResource(Resource, BaseAnswerResource):
                 isNoneDoc=data.get("isNoneDoc"),
                 index=None,
                 should_save_conversation=data.get("save_conversation", True),
+                agent_id=processor.agent_id,
+                is_shared_usage=processor.is_shared_usage,
+                shared_token=processor.shared_token,
+                model_id=processor.model_id,
             )
             stream_result = self.process_response_stream(stream)
 
@@ -133,5 +141,5 @@ class AnswerResource(Resource, BaseAnswerResource):
                 f"/api/answer - error: {str(e)} - traceback: {traceback.format_exc()}",
                 extra={"error": str(e), "traceback": traceback.format_exc()},
             )
-            return make_response({"error": str(e)}, 500)
+            return make_response({"error": "An error occurred processing your request"}, 500)
         return make_response(result, 200)

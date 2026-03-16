@@ -49,6 +49,9 @@ export const fetchAnswer = createAsyncThunk<
   }
 
   const currentConversationId = state.conversation.conversationId;
+  const modelId =
+    state.preference.selectedAgent?.default_model_id ||
+    state.preference.selectedModel?.id;
 
   if (state.preference) {
     if (API_STREAMING) {
@@ -60,7 +63,6 @@ export const fetchAnswer = createAsyncThunk<
         currentConversationId,
         state.preference.prompt.id,
         state.preference.chunks,
-        state.preference.token_limit,
         (event) => {
           const data = JSON.parse(event.data);
           const targetIndex = indx ?? state.conversation.queries.length - 1;
@@ -156,7 +158,8 @@ export const fetchAnswer = createAsyncThunk<
         indx,
         state.preference.selectedAgent?.id,
         attachmentIds,
-        true, // Always save conversation
+        true,
+        modelId,
       );
     } else {
       const answer = await handleFetchAnswer(
@@ -167,10 +170,10 @@ export const fetchAnswer = createAsyncThunk<
         state.conversation.conversationId,
         state.preference.prompt.id,
         state.preference.chunks,
-        state.preference.token_limit,
         state.preference.selectedAgent?.id,
         attachmentIds,
-        true, // Always save conversation
+        true,
+        modelId,
       );
       if (answer) {
         let sourcesPrepped = [];
@@ -238,12 +241,21 @@ export const conversationSlice = createSlice({
     },
     resendQuery(
       state,
-      action: PayloadAction<{ index: number; prompt: string; query?: Query }>,
+      action: PayloadAction<{ index: number; prompt: string }>,
     ) {
-      state.queries = [
-        ...state.queries.splice(0, action.payload.index),
-        action.payload,
-      ];
+      const { index, prompt } = action.payload;
+      if (index < 0 || index >= state.queries.length) return;
+
+      state.queries.splice(index + 1);
+      state.queries[index].prompt = prompt;
+      delete state.queries[index].response;
+      delete state.queries[index].thought;
+      delete state.queries[index].sources;
+      delete state.queries[index].tool_calls;
+      delete state.queries[index].error;
+      delete state.queries[index].structured;
+      delete state.queries[index].schema;
+      delete state.queries[index].feedback;
     },
     updateStreamingQuery(
       state,
@@ -367,7 +379,7 @@ export const conversationSlice = createSlice({
       .addCase(fetchAnswer.rejected, (state, action) => {
         if (action.meta.aborted) {
           state.status = 'idle';
-          return state;
+          return;
         }
         state.status = 'failed';
         if (state.queries.length > 0) {

@@ -36,7 +36,7 @@ class ToolManager:
     def execute_action(self, tool_name, action_name, user_id=None, **kwargs):
         if tool_name not in self.tools:
             raise ValueError(f"Tool '{tool_name}' not loaded")
-        if tool_name in {"mcp_tool", "memory", "todo_list"} and user_id:
+        if tool_name in {"mcp_tool", "memory", "todo_list", "notes"} and user_id:
             tool_config = self.config.get(tool_name, {})
             tool = self.load_tool(tool_name, tool_config, user_id)
             return tool.execute_action(action_name, **kwargs)

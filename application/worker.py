@@ -25,7 +25,7 @@ from application.core.settings import settings
 from application.parser.chunking import Chunker
 from application.parser.connectors.connector_creator import ConnectorCreator
 from application.parser.embedding_pipeline import embed_and_store_documents
-from application.parser.file.bulk import SimpleDirectoryReader
+from application.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
 from application.parser.remote.remote_creator import RemoteCreator
 from application.parser.schema.base import Document
 from application.retriever.retriever_creator import RetrieverCreator
@@ -52,6 +52,41 @@ def metadata_from_filename(title):
     return {"title": title}
 
 
+def _normalize_file_name_map(file_name_map):
+    if not file_name_map:
+        return {}
+    if isinstance(file_name_map, str):
+        try:
+            file_name_map = json.loads(file_name_map)
+        except Exception:
+            return {}
+    return file_name_map if isinstance(file_name_map, dict) else {}
+
+
+def _get_display_name(file_name_map, rel_path):
+    if not file_name_map or not rel_path:
+        return None
+    if rel_path in file_name_map:
+        return file_name_map[rel_path]
+    base_name = os.path.basename(rel_path)
+    return file_name_map.get(base_name)
+
+
+def _apply_display_names_to_structure(structure, file_name_map, prefix=""):
+    if not isinstance(structure, dict) or not file_name_map:
+        return structure
+    for name, node in structure.items():
+        if isinstance(node, dict) and "type" in node and "size_bytes" in node:
+            rel_path = f"{prefix}/{name}" if prefix else name
+            display_name = _get_display_name(file_name_map, rel_path)
+            if display_name:
+                node["display_name"] = display_name
+        elif isinstance(node, dict):
+            next_prefix = f"{prefix}/{name}" if prefix else name
+            _apply_display_names_to_structure(node, file_name_map, next_prefix)
+    return structure
+
+
 # Define a function to generate a random string of a given length.
 
 
@@ -63,10 +98,111 @@ current_dir = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
 
+# Zip extraction security limits
+MAX_UNCOMPRESSED_SIZE = 500 * 1024 * 1024  # 500 MB max uncompressed size
+MAX_FILE_COUNT = 10000  # Maximum number of files to extract
+MAX_COMPRESSION_RATIO = 100  # Maximum compression ratio (to detect zip bombs)
+
+
+class ZipExtractionError(Exception):
+    """Raised when zip extraction fails due to security constraints."""
+    pass
+
+
+def _is_path_safe(base_path: str, target_path: str) -> bool:
+    """
+    Check if target_path is safely within base_path (prevents zip slip attacks).
+
+    Args:
+        base_path: The base directory where extraction should occur.
+        target_path: The full path where a file would be extracted.
+
+    Returns:
+        True if the path is safe, False otherwise.
+    """
+    # Resolve to absolute paths and check containment
+    base_resolved = os.path.realpath(base_path)
+    target_resolved = os.path.realpath(target_path)
+    return target_resolved.startswith(base_resolved + os.sep) or target_resolved == base_resolved
+
+
+def _validate_zip_safety(zip_path: str, extract_to: str) -> None:
+    """
+    Validate a zip file for security issues before extraction.
+
+    Checks for:
+    - Zip bombs (excessive compression ratio or uncompressed size)
+    - Too many files
+    - Path traversal attacks (zip slip)
+
+    Args:
+        zip_path: Path to the zip file.
+        extract_to: Destination directory.
+
+    Raises:
+        ZipExtractionError: If the zip file fails security validation.
+    """
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            # Get compressed size
+            compressed_size = os.path.getsize(zip_path)
+
+            # Calculate total uncompressed size and file count
+            total_uncompressed = 0
+            file_count = 0
+
+            for info in zip_ref.infolist():
+                file_count += 1
+
+                # Check file count limit
+                if file_count > MAX_FILE_COUNT:
+                    raise ZipExtractionError(
+                        f"Zip file contains too many files (>{MAX_FILE_COUNT}). "
+                        "This may be a zip bomb attack."
+                    )
+
+                # Accumulate uncompressed size
+                total_uncompressed += info.file_size
+
+                # Check total uncompressed size
+                if total_uncompressed > MAX_UNCOMPRESSED_SIZE:
+                    raise ZipExtractionError(
+                        f"Zip file uncompressed size exceeds limit "
+                        f"({total_uncompressed / (1024*1024):.1f} MB > "
+                        f"{MAX_UNCOMPRESSED_SIZE / (1024*1024):.1f} MB). "
+                        "This may be a zip bomb attack."
+                    )
+
+                # Check for path traversal (zip slip)
+                target_path = os.path.join(extract_to, info.filename)
+                if not _is_path_safe(extract_to, target_path):
+                    raise ZipExtractionError(
+                        f"Zip file contains path traversal attempt: {info.filename}"
+                    )
+
+            # Check compression ratio (only if compressed size is meaningful)
+            if compressed_size > 0 and total_uncompressed > 0:
+                compression_ratio = total_uncompressed / compressed_size
+                if compression_ratio > MAX_COMPRESSION_RATIO:
+                    raise ZipExtractionError(
+                        f"Zip file has suspicious compression ratio ({compression_ratio:.1f}:1 > "
+                        f"{MAX_COMPRESSION_RATIO}:1). This may be a zip bomb attack."
+                    )
+
+    except zipfile.BadZipFile as e:
+        raise ZipExtractionError(f"Invalid or corrupted zip file: {e}")
+
 
 def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
     """
-    Recursively extract zip files with a limit on recursion depth.
+    Recursively extract zip files with security protections.
+
+    Security measures:
+    - Limits recursion depth to prevent infinite loops
+    - Validates uncompressed size to prevent zip bombs
+    - Limits number of files to prevent resource exhaustion
+    - Checks compression ratio to detect zip bombs
+    - Validates paths to prevent zip slip attacks
 
     Args:
         zip_path (str): Path to the zip file to be extracted.
@@ -77,20 +213,33 @@ def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
     if current_depth > max_depth:
         logging.warning(f"Reached maximum recursion depth of {max_depth}")
         return
+
     try:
+        # Validate zip file safety before extraction
+        _validate_zip_safety(zip_path, extract_to)
+
+        # Safe to extract
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(extract_to)
         os.remove(zip_path)  # Remove the zip file after extracting
+
+    except ZipExtractionError as e:
+        logging.error(f"Zip security validation failed for {zip_path}: {e}")
+        # Remove the potentially malicious zip file
+        try:
+            os.remove(zip_path)
+        except OSError:
+            pass
+        return
     except Exception as e:
         logging.error(f"Error extracting zip file {zip_path}: {e}", exc_info=True)
         return
-    # Check for nested zip files and extract them
 
+    # Check for nested zip files and extract them
     for root, dirs, files in os.walk(extract_to):
         for file in files:
             if file.endswith(".zip"):
                 # If a nested zip file is found, extract it recursively
-
                 file_path = os.path.join(root, file)
                 extract_zip_recursive(file_path, root, current_depth + 1, max_depth)
 
@@ -109,6 +258,10 @@ def download_file(url, params, dest_path):
 def upload_index(full_path, file_data):
     files = None
     try:
+        headers = {}
+        if settings.INTERNAL_KEY:
+            headers["X-Internal-Key"] = settings.INTERNAL_KEY
+
         if settings.VECTOR_STORE == "faiss":
             faiss_path = full_path + "/index.faiss"
             pkl_path = full_path + "/index.pkl"
@@ -129,10 +282,13 @@ def upload_index(full_path, file_data):
                 urljoin(settings.API_URL, "/api/upload_index"),
                 files=files,
                 data=file_data,
+                headers=headers,
             )
         else:
             response = requests.post(
-                urljoin(settings.API_URL, "/api/upload_index"), data=file_data
+                urljoin(settings.API_URL, "/api/upload_index"),
+                data=file_data,
+                headers=headers,
             )
         response.raise_for_status()
     except (requests.RequestException, FileNotFoundError) as e:
@@ -146,6 +302,14 @@ def upload_index(full_path, file_data):
 
 def run_agent_logic(agent_config, input_data):
     try:
+        from application.core.model_utils import (
+            get_api_key_for_provider,
+            get_default_model_id,
+            get_provider_from_model_id,
+            validate_model_id,
+        )
+        from application.utils import calculate_doc_token_budget
+
         source = agent_config.get("source")
         retriever = agent_config.get("retriever", "classic")
         if isinstance(source, DBRef):
@@ -158,33 +322,66 @@ def run_agent_logic(agent_config, input_data):
         chunks = int(agent_config.get("chunks", 2))
         prompt_id = agent_config.get("prompt_id", "default")
         user_api_key = agent_config["key"]
+        agent_id = str(agent_config.get("_id")) if agent_config.get("_id") else None
         agent_type = agent_config.get("agent_type", "classic")
         decoded_token = {"sub": agent_config.get("user")}
+        json_schema = agent_config.get("json_schema")
         prompt = get_prompt(prompt_id, db["prompts"])
-        agent = AgentCreator.create_agent(
-            agent_type,
-            endpoint="webhook",
-            llm_name=settings.LLM_PROVIDER,
-            gpt_model=settings.LLM_NAME,
-            api_key=settings.API_KEY,
-            user_api_key=user_api_key,
-            prompt=prompt,
-            chat_history=[],
-            decoded_token=decoded_token,
-            attachments=[],
+
+        # Determine model_id: check agent's default_model_id, fallback to system default
+        agent_default_model = agent_config.get("default_model_id", "")
+        if agent_default_model and validate_model_id(agent_default_model):
+            model_id = agent_default_model
+        else:
+            model_id = get_default_model_id()
+
+        # Get provider and API key for the selected model
+        provider = get_provider_from_model_id(model_id) if model_id else settings.LLM_PROVIDER
+        system_api_key = get_api_key_for_provider(provider or settings.LLM_PROVIDER)
+
+        # Calculate proper doc_token_limit based on model's context window
+        doc_token_limit = calculate_doc_token_budget(
+            model_id=model_id
         )
+
         retriever = RetrieverCreator.create_retriever(
             retriever,
             source=source,
             chat_history=[],
             prompt=prompt,
             chunks=chunks,
-            token_limit=settings.DEFAULT_MAX_HISTORY,
-            gpt_model=settings.LLM_NAME,
+            doc_token_limit=doc_token_limit,
+            model_id=model_id,
             user_api_key=user_api_key,
+            agent_id=agent_id,
             decoded_token=decoded_token,
         )
-        answer = agent.gen(query=input_data, retriever=retriever)
+
+        # Pre-fetch documents using the retriever
+        retrieved_docs = []
+        try:
+            docs = retriever.search(input_data)
+            if docs:
+                retrieved_docs = docs
+        except Exception as e:
+            logging.warning(f"Failed to retrieve documents: {e}")
+
+        agent = AgentCreator.create_agent(
+            agent_type,
+            endpoint="webhook",
+            llm_name=provider or settings.LLM_PROVIDER,
+            model_id=model_id,
+            api_key=system_api_key,
+            agent_id=agent_id,
+            user_api_key=user_api_key,
+            prompt=prompt,
+            chat_history=[],
+            retrieved_docs=retrieved_docs,
+            decoded_token=decoded_token,
+            attachments=[],
+            json_schema=json_schema,
+        )
+        answer = agent.gen(query=input_data)
         response_full = ""
         thought = ""
         source_log_docs = []
@@ -216,7 +413,15 @@ def run_agent_logic(agent_config, input_data):
 
 
 def ingest_worker(
-    self, directory, formats, job_name, file_path, filename, user, retriever="classic"
+    self,
+    directory,
+    formats,
+    job_name,
+    file_path,
+    filename,
+    user,
+    retriever="classic",
+    file_name_map=None,
 ):
     """
     Ingest and process documents.
@@ -230,6 +435,7 @@ def ingest_worker(
         filename (str): Original unsanitized filename provided by the user.
         user (str): Identifier for the user initiating the ingestion (original, unsanitized).
         retriever (str): Type of retriever to use for processing the documents.
+        file_name_map (dict|str|None): Optional mapping of safe relative paths to original filenames.
 
     Returns:
         dict: Information about the completed ingestion task, including input parameters and a "limited" flag.
@@ -309,6 +515,22 @@ def ingest_worker(
 
             directory_structure = getattr(reader, "directory_structure", {})
             logging.info(f"Directory structure from reader: {directory_structure}")
+            file_name_map = _normalize_file_name_map(file_name_map)
+            if file_name_map:
+                for doc in raw_docs:
+                    extra_info = getattr(doc, "extra_info", None)
+                    if not isinstance(extra_info, dict):
+                        continue
+                    rel_path = extra_info.get("source") or extra_info.get("file_path")
+                    display_name = _get_display_name(file_name_map, rel_path)
+                    if display_name:
+                        display_name = str(display_name)
+                        extra_info["filename"] = display_name
+                        extra_info["file_name"] = display_name
+                        extra_info["title"] = display_name
+                directory_structure = _apply_display_names_to_structure(
+                    directory_structure, file_name_map
+                )
 
             chunker = Chunker(
                 chunking_strategy="classic_chunk",
@@ -345,6 +567,8 @@ def ingest_worker(
                 "file_path": file_path,
                 "directory_structure": json.dumps(directory_structure),
             }
+            if file_name_map:
+                file_data["file_name_map"] = json.dumps(file_name_map)
 
             upload_index(vector_store_path, file_data)
         except Exception as e:
@@ -388,6 +612,7 @@ def reingest_source_worker(self, source_id, user):
 
         storage = StorageCreator.get_storage()
         source_file_path = source.get("file_path", "")
+        file_name_map = _normalize_file_name_map(source.get("file_name_map"))
 
         self.update_state(
             state="PROGRESS", meta={"current": 20, "status": "Scanning current files"}
@@ -622,6 +847,14 @@ def reingest_source_worker(self, source_id, user):
                                         )
                                 except Exception:
                                     pass
+                                display_name = _get_display_name(
+                                    file_name_map, meta.get("source")
+                                )
+                                if display_name:
+                                    display_name = str(display_name)
+                                    meta["filename"] = display_name
+                                    meta["file_name"] = display_name
+                                    meta["title"] = display_name
 
                                 vector_store.add_chunk(d.text, metadata=meta)
                                 added += 1
@@ -636,6 +869,9 @@ def reingest_source_worker(self, source_id, user):
                 # 3) Update source directory structure timestamp
                 try:
                     total_tokens = sum(reader.file_token_counts.values())
+                    directory_structure = _apply_display_names_to_structure(
+                        directory_structure, file_name_map
+                    )
 
                     sources_collection.update_one(
                         {"_id": ObjectId(source_id)},
@@ -709,6 +945,76 @@ def remote_worker(
         tokens = count_tokens_docs(docs)
         logging.info("Total tokens calculated: %d", tokens)
 
+        # Build directory structure from loaded documents
+        # Format matches local file uploads: nested structure with type, size_bytes, token_count
+        directory_structure = {}
+        for doc in raw_docs:
+            # Get the file path from extra_info
+            # For crawlers: file_path is a virtual path like "guides/setup.md"
+            # For other remotes: use key or title as fallback
+            file_path = ""
+            if doc.extra_info:
+                file_path = (
+                    doc.extra_info.get("file_path", "")
+                    or doc.extra_info.get("key", "")
+                    or doc.extra_info.get("title", "")
+                )
+            if not file_path:
+                file_path = doc.doc_id or ""
+
+            if file_path:
+                # Calculate token count
+                token_count = num_tokens_from_string(doc.text) if doc.text else 0
+
+                # Estimate size in bytes from text content
+                size_bytes = len(doc.text.encode("utf-8")) if doc.text else 0
+
+                # Guess mime type from extension
+                file_name = (
+                    file_path.split("/")[-1] if "/" in file_path else file_path
+                )
+                ext = os.path.splitext(file_name)[1].lower()
+                mime_types = {
+                    ".txt": "text/plain",
+                    ".md": "text/markdown",
+                    ".pdf": "application/pdf",
+                    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ".doc": "application/msword",
+                    ".html": "text/html",
+                    ".json": "application/json",
+                    ".csv": "text/csv",
+                    ".xml": "application/xml",
+                    ".py": "text/x-python",
+                    ".js": "text/javascript",
+                    ".ts": "text/typescript",
+                    ".jsx": "text/jsx",
+                    ".tsx": "text/tsx",
+                }
+                file_type = mime_types.get(ext, "application/octet-stream")
+
+                # Build nested directory structure from path
+                # e.g., "guides/setup.md" -> {"guides": {"setup.md": {...}}}
+                path_parts = file_path.split("/")
+                current_level = directory_structure
+                for i, part in enumerate(path_parts):
+                    if i == len(path_parts) - 1:
+                        # Last part is the file
+                        current_level[part] = {
+                            "type": file_type,
+                            "size_bytes": size_bytes,
+                            "token_count": token_count,
+                        }
+                    else:
+                        # Intermediate parts are directories
+                        if part not in current_level:
+                            current_level[part] = {}
+                        current_level = current_level[part]
+
+        logging.info(
+            f"Built directory structure with {len(directory_structure)} files: "
+            f"{list(directory_structure.keys())}"
+        )
+
         if operation_mode == "upload":
             id = ObjectId()
             embed_and_store_documents(docs, full_path, id, self)
@@ -720,6 +1026,10 @@ def remote_worker(
             embed_and_store_documents(docs, full_path, id, self)
         self.update_state(state="PROGRESS", meta={"current": 100})
 
+        # Serialize remote_data as JSON if it's a dict (for S3, Reddit, etc.)
+        remote_data_serialized = (
+            json.dumps(source_data) if isinstance(source_data, dict) else source_data
+        )
         file_data = {
             "name": name_job,
             "user": user,
@@ -727,8 +1037,9 @@ def remote_worker(
             "retriever": retriever,
             "id": str(id),
             "type": loader,
-            "remote_data": source_data,
+            "remote_data": remote_data_serialized,
             "sync_frequency": sync_frequency,
+            "directory_structure": json.dumps(directory_structure),
         }
 
         if operation_mode == "sync":
@@ -826,10 +1137,16 @@ def attachment_worker(self, file_info, user):
             state="PROGRESS", meta={"current": 30, "status": "Processing content"}
         )
 
+        file_extractor = get_default_file_extractor(
+            ocr_enabled=settings.DOCLING_OCR_ATTACHMENTS_ENABLED
+        )
         content = storage.process_file(
             relative_path,
             lambda local_path, **kwargs: SimpleDirectoryReader(
-                input_files=[local_path], exclude_hidden=True, errors="ignore"
+                input_files=[local_path],
+                exclude_hidden=True,
+                errors="ignore",
+                file_extractor=file_extractor,
             )
             .load_data()[0]
             .text,
@@ -915,13 +1232,14 @@ def agent_webhook_worker(self, agent_id, payload):
         result = run_agent_logic(agent_config, input_data)
     except Exception as e:
         logging.error(f"Error running agent logic: {e}", exc_info=True)
-        return {"status": "error", "error": str(e)}
-    finally:
-        self.update_state(state="PROGRESS", meta={"current": 100})
+        return {"status": "error"}
+    else:
         logging.info(
             f"Webhook processed for agent {agent_id}", extra={"agent_id": agent_id}
         )
         return {"status": "success", "result": result}
+    finally:
+        self.update_state(state="PROGRESS", meta={"current": 100})
 
 
 def ingest_connector(
@@ -1131,34 +1449,28 @@ def ingest_connector(
 def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, Any]:
     """Worker to handle MCP OAuth flow asynchronously."""
 
-    logging.info(
-        "[MCP OAuth] Worker started for user_id=%s, config=%s", user_id, config
-    )
     try:
         import asyncio
 
         from application.agents.tools.mcp_tool import MCPTool
 
         task_id = self.request.id
-        logging.info("[MCP OAuth] Task ID: %s", task_id)
         redis_client = get_redis_instance()
 
         def update_status(status_data: Dict[str, Any]):
-            logging.info("[MCP OAuth] Updating status: %s", status_data)
             status_key = f"mcp_oauth_status:{task_id}"
             redis_client.setex(status_key, 600, json.dumps(status_data))
 
         update_status(
             {
                 "status": "in_progress",
-                "message": "Starting OAuth flow...",
+                "message": "Starting OAuth...",
                 "task_id": task_id,
             }
         )
 
         tool_config = config.copy()
         tool_config["oauth_task_id"] = task_id
-        logging.info("[MCP OAuth] Initializing MCPTool with config: %s", tool_config)
         mcp_tool = MCPTool(tool_config, user_id)
 
         async def run_oauth_discovery():
@@ -1169,7 +1481,7 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
         update_status(
             {
                 "status": "awaiting_redirect",
-                "message": "Waiting for OAuth redirect...",
+                "message": "Awaiting OAuth redirect...",
                 "task_id": task_id,
             }
         )
@@ -1178,66 +1490,40 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
         asyncio.set_event_loop(loop)
 
         try:
-            logging.info("[MCP OAuth] Starting event loop for OAuth discovery...")
-            tools_response = loop.run_until_complete(run_oauth_discovery())
-            logging.info(
-                "[MCP OAuth] Tools response after async call: %s", tools_response
-            )
-
-            status_key = f"mcp_oauth_status:{task_id}"
-            redis_status = redis_client.get(status_key)
-            if redis_status:
-                logging.info(
-                    "[MCP OAuth] Redis status after async call: %s", redis_status
-                )
-            else:
-                logging.warning(
-                    "[MCP OAuth] No Redis status found after async call for key: %s",
-                    status_key,
-                )
+            loop.run_until_complete(run_oauth_discovery())
             tools = mcp_tool.get_actions_metadata()
 
             update_status(
                 {
                     "status": "completed",
-                    "message": f"OAuth completed successfully. Found {len(tools)} tools.",
+                    "message": f"Connected \u2014 found {len(tools)} tool{'s' if len(tools) != 1 else ''}.",
                     "tools": tools,
                     "tools_count": len(tools),
                     "task_id": task_id,
                 }
             )
 
-            logging.info(
-                "[MCP OAuth] OAuth flow completed successfully for task_id=%s", task_id
-            )
             return {"success": True, "tools": tools, "tools_count": len(tools)}
         except Exception as e:
-            error_msg = f"OAuth flow failed: {str(e)}"
-            logging.error(
-                "[MCP OAuth] Exception in OAuth discovery: %s", error_msg, exc_info=True
-            )
+            error_msg = f"OAuth failed: {str(e)}"
+            logging.error("MCP OAuth discovery failed: %s", error_msg, exc_info=True)
             update_status(
                 {
                     "status": "error",
                     "message": error_msg,
-                    "error": str(e),
                     "task_id": task_id,
                 }
             )
             return {"success": False, "error": error_msg}
         finally:
-            logging.info("[MCP OAuth] Closing event loop for task_id=%s", task_id)
             loop.close()
     except Exception as e:
-        error_msg = f"Failed to initialize OAuth flow: {str(e)}"
-        logging.error(
-            "[MCP OAuth] Exception during initialization: %s", error_msg, exc_info=True
-        )
+        error_msg = f"OAuth init failed: {str(e)}"
+        logging.error("MCP OAuth init failed: %s", error_msg, exc_info=True)
         update_status(
             {
                 "status": "error",
                 "message": error_msg,
-                "error": str(e),
                 "task_id": task_id,
             }
         )

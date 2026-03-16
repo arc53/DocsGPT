@@ -1,8 +1,10 @@
 import { configureStore } from '@reduxjs/toolkit';
 
 import agentPreviewReducer from './agents/agentPreviewSlice';
+import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
 import { conversationSlice } from './conversation/conversationSlice';
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
+import { getStoredRecentDocs } from './preferences/preferenceApi';
 import {
   Preference,
   prefListenerMiddleware,
@@ -13,8 +15,7 @@ import uploadReducer from './upload/uploadSlice';
 const key = localStorage.getItem('DocsGPTApiKey');
 const prompt = localStorage.getItem('DocsGPTPrompt');
 const chunks = localStorage.getItem('DocsGPTChunks');
-const token_limit = localStorage.getItem('DocsGPTTokenLimit');
-const doc = localStorage.getItem('DocsGPTRecentDocs');
+const selectedModel = localStorage.getItem('DocsGPTSelectedModel');
 
 const preloadedState: { preference: Preference } = {
   preference: {
@@ -24,9 +25,13 @@ const preloadedState: { preference: Preference } = {
       prompt !== null
         ? JSON.parse(prompt)
         : { name: 'default', id: 'default', type: 'private' },
+    prompts: [
+      { name: 'default', id: 'default', type: 'public' },
+      { name: 'creative', id: 'creative', type: 'public' },
+      { name: 'strict', id: 'strict', type: 'public' },
+    ],
     chunks: JSON.parse(chunks ?? '2').toString(),
-    token_limit: token_limit ? parseInt(token_limit) : 2000,
-    selectedDocs: doc !== null ? JSON.parse(doc) : [],
+    selectedDocs: getStoredRecentDocs(),
     conversations: {
       data: null,
       loading: false,
@@ -47,6 +52,10 @@ const preloadedState: { preference: Preference } = {
     agents: null,
     sharedAgents: null,
     selectedAgent: null,
+    selectedModel: selectedModel ? JSON.parse(selectedModel) : null,
+    availableModels: [],
+    modelsLoading: false,
+    agentFolders: null,
   },
 };
 const store = configureStore({
@@ -57,6 +66,7 @@ const store = configureStore({
     sharedConversation: sharedConversationSlice.reducer,
     upload: uploadReducer,
     agentPreview: agentPreviewReducer,
+    workflowPreview: workflowPreviewReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(prefListenerMiddleware.middleware),

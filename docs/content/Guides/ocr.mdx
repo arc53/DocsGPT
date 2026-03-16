@@ -1,0 +1,80 @@
+---
+title: OCR for Sources and Attachments
+description: How OCR works in DocsGPT, how to configure it, and what changes for source ingestion vs chat attachments.
+---
+
+import { Callout } from 'nextra/components'
+
+# Docling OCR for Sources and Attachments
+
+DocsGPT uses Docling as the default parser layer for many document formats. OCR is optional and controlled by two settings:
+
+```env
+DOCLING_OCR_ENABLED=false
+DOCLING_OCR_ATTACHMENTS_ENABLED=false
+```
+
+- `DOCLING_OCR_ENABLED`: OCR behavior for Source Docs ingestion.
+- `DOCLING_OCR_ATTACHMENTS_ENABLED`: OCR behavior for chat attachments uploaded from the message box.
+
+## Processing Flow
+
+### Source Docs flow (Upload and Train)
+
+1. Files are uploaded through `/api/upload`.
+2. Ingestion runs asynchronously in Celery (`ingest_worker`).
+3. `SimpleDirectoryReader` parses files with `get_default_file_extractor`.
+4. For PDFs and image formats, Docling parsers are used. OCR in this path is controlled by `DOCLING_OCR_ENABLED`.
+5. Parsed text is chunked, embedded, and stored in the vector store.
+6. Retrieval during chat uses this indexed text and returns source citations.
+
+### Attachment flow (Chat-only file context)
+
+1. Files are uploaded through `/api/store_attachment`.
+2. Celery task `attachment_worker` parses and stores the attachment in MongoDB (`attachments` collection).
+3. OCR in this path is controlled by `DOCLING_OCR_ATTACHMENTS_ENABLED`.
+4. Attachments are not vectorized and are not added to the source index.
+5. During answer generation, selected attachment IDs are loaded and passed directly to the LLM pipeline.
+
+## How Docling OCR Works
+
+Docling OCR behavior is different for PDFs vs images:
+
+- PDF parser defaults to hybrid OCR:
+  - text regions: extracted directly
+  - bitmap/image regions: OCR only where needed
+- Image parser defaults to full-page OCR (the whole image is visual content).
+
+By default, Docling parser classes use RapidOCR options (language default: `english`).
+
+<Callout type="info" emoji="ℹ️">
+Parser internals like OCR language and force-full-page OCR are currently set by code defaults, not separate `.env` settings.
+</Callout>
+
+## Attachment Behavior by Model Support
+
+When attachments are used in chat, behavior depends on the selected model/provider:
+
+- If a MIME type is supported, DocsGPT sends files/images through provider-native attachment APIs.
+- If unsupported, DocsGPT falls back to the parsed text content stored for the attachment.
+- For providers that support images but not native PDF attachments, PDF files are converted to images (synthetic PDF support).
+
+This means OCR quality is especially important for text fallback paths and for models without native attachment support.
+
+## Recommended Configuration
+
+For most OCR-enabled use cases, enable both flags:
+
+```env
+DOCLING_OCR_ENABLED=true
+DOCLING_OCR_ATTACHMENTS_ENABLED=true
+```
+
+After changing these settings, restart the API and Celery worker.
+
+## Legacy Fallback Notes
+
+- If Docling is unavailable, DocsGPT falls back to legacy parsers.
+- With OCR disabled, text-based PDFs can still parse, but scanned/image-heavy content may produce little text.
+- For image parsing without Docling OCR, the legacy image parser only extracts text when `PARSE_IMAGE_REMOTE=true`.
+

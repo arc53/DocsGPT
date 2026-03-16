@@ -1,0 +1,65 @@
+# Workflow Nodes
+
+DocsGPT workflows are composed of **Nodes** that are connected to form a processing graph. These nodes interact with a **Shared State**—a global dictionary of variables that persists throughout the execution of the workflow.
+
+## The Shared State
+
+Every workflow run maintains a state object (a JSON-like dictionary).
+- **Initial State**: Contains the user's input query (`{{query}}`) and chat history (`{{chat_history}}`).
+- **Accessing Variables**: You can access any variable in the state using the double-curly braces syntax: `{{variable_name}}`.
+- **Modifying State**: Nodes read from this state and write their outputs back to it.
+
+---
+
+## AI Agent Node
+
+The **AI Agent Node** is the core processing unit. It uses a Large Language Model (LLM) to generate text, answer questions, or perform tasks using tools.
+
+### Inputs (Template Variables)
+
+The primary input is the **Prompt Template**. This field supports variable substitution.
+
+- **Prompt Template**: The text sent to the model.
+  - *Example*: `"Summarize the following text: {{user_input_text}}"`
+  - If left empty, it defaults to the initial user query (`{{query}}`).
+- **System Prompt**: Instructions that define the agent's persona and constraints.
+- **Tools**: A list of tools the agent can use (e.g., search, calculator).
+- **LLM Settings**: Specific provider, model name, and parameters.
+
+### Outputs (Emissions)
+
+When the agent completes its task, it stores the result in the shared state.
+
+- **Output Variable**: The name of the variable where the result will be saved.
+  - *Default*: If not specified, it is saved as `node_{node_id}_output`.
+  - *Custom*: You can set this to something meaningful, like `summary` or `translated_text`.
+- **Streaming**: If "Stream to user" is enabled, the output is sent to the user in real-time as it is generated, in addition to being saved to the state.
+
+---
+
+## Set State Node
+
+The **Set State Node** allows you to manipulate variables within the shared state directly without calling an LLM. This is useful for initialization, formatting, or control flow logic.
+
+### Operations
+
+You can define multiple operations in a single node. Each operation targets a specific **Key** (variable name).
+
+1.  **Set**: Assigns a specific value to a variable.
+    - *Value*: Can be a static string or a template using variables.
+    - *Example*: Set `current_step` to `1`.
+    - *Example*: Set `formatted_response` to `Analysis: {{analysis_result}}`.
+
+2.  **Increment**: Increases the value of a numeric variable.
+    - *Value*: The amount to add (default is 1).
+    - *Example*: Increment `retry_count` by `1`.
+
+3.  **Append**: Adds a value to a list variable.
+    - *Value*: The item to add to the list.
+    - *Example*: Append `{{last_result}}` to `history_list`.
+
+### Usage Examples
+
+- **Loop Counters**: Use a *Set State* node to initialize a counter (`i = 0`) before a loop, and another to increment it inside the loop.
+- **Accumulators**: Use *Append* to collect results from multiple parallel branches into a single list.
+- **Renaming**: Copy the output of a previous node to a more generic name (e.g., set `context` to `{{search_results}}`) so subsequent nodes can use a standard variable name.
