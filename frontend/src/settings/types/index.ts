@@ -1,3 +1,5 @@
+import { ConfigRequirements } from '../../modals/types';
+
 export type ChunkType = {
   doc_id: string;
   text: string;
@@ -33,6 +35,7 @@ export type ParameterGroupType = {
       description: string;
       value: string | number;
       filled_by_llm: boolean;
+      required?: boolean;
     };
   };
 };
@@ -45,8 +48,9 @@ export type UserToolType = {
   description: string;
   status: boolean;
   config: {
-    [key: string]: string;
+    [key: string]: any;
   };
+  configRequirements?: ConfigRequirements;
   actions: {
     name: string;
     description: string;
@@ -57,6 +61,7 @@ export type UserToolType = {
           description: string;
           filled_by_llm: boolean;
           value: string;
+          required?: boolean;
         };
       };
       additionalProperties: boolean;
@@ -71,11 +76,24 @@ export type APIActionType = {
   name: string;
   url: string;
   description: string;
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS';
   query_params: ParameterGroupType;
   headers: ParameterGroupType;
   body: ParameterGroupType;
   active: boolean;
+  body_content_type?:
+    | 'application/json'
+    | 'application/x-www-form-urlencoded'
+    | 'multipart/form-data'
+    | 'text/plain'
+    | 'application/xml'
+    | 'application/octet-stream';
+  body_encoding_rules?: {
+    [key: string]: {
+      style?: 'form' | 'spaceDelimited' | 'pipeDelimited' | 'deepObject';
+      explode?: boolean;
+    };
+  };
 };
 
 export type APIToolType = {
@@ -86,4 +104,5 @@ export type APIToolType = {
   description: string;
   status: boolean;
   config: { actions: { [key: string]: APIActionType } };
+  configRequirements?: ConfigRequirements;
 };

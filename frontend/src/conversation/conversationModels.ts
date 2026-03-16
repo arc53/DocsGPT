@@ -59,10 +59,10 @@ export interface RetrievalPayload {
   conversation_id: string | null;
   prompt_id?: string | null;
   chunks: string;
-  token_limit: number;
   isNoneDoc: boolean;
   index?: number;
   agent_id?: string;
   attachments?: string[];
   save_conversation?: boolean;
+  model_id?: string;
 }

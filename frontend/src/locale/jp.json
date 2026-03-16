@@ -67,6 +67,7 @@
       "preLoaded": "プリロード済み",
       "private": "プライベート",
       "sync": "同期",
+      "syncNow": "今すぐ同期",
       "syncing": "同期中...",
       "syncConfirmation": "\"{{sourceName}}\"を同期してもよろしいですか？これにより、コンテンツがクラウドストレージで更新され、個々のチャンクに加えた編集が上書きされる可能性があります。",
       "syncFrequency": {
@@ -162,12 +163,17 @@
       "authentication": "認証",
       "actions": "アクション",
       "addAction": "アクションを追加",
+      "importSpec": "仕様をインポート",
+      "searchActions": "アクションを検索...",
+      "noActionsMatch": "検索に一致するアクションがありません",
+      "actionAlreadyExists": "この名前のアクションは既に存在します",
       "noActionsFound": "アクションが見つかりません",
       "url": "URL",
       "urlPlaceholder": "URLを入力",
       "method": "メソッド",
       "description": "説明",
       "descriptionPlaceholder": "説明を入力",
+      "bodyContentType": "ボディのコンテンツタイプ",
       "headers": "ヘッダー",
       "queryParameters": "クエリパラメータ",
       "body": "ボディ",
@@ -311,6 +317,14 @@
         "google_drive": {
           "label": "Google Drive",
           "heading": "Google Driveからアップロード"
+        },
+        "s3": {
+          "label": "Amazon S3",
+          "heading": "Amazon S3からコンテンツを追加"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "SharePointからアップロード"
         }
       },
       "connectors": {
@@ -330,6 +344,24 @@
           "validateFailed": "セッションの検証に失敗しました。再接続してください。",
           "noSession": "有効なセッションが見つかりません。Google Driveに再接続してください。",
           "noAccessToken": "アクセストークンが利用できません。Google Driveに再接続してください。",
+          "pickerFailed": "ファイルピッカーを開けませんでした。もう一度お試しください。",
+          "selectedFiles": "選択されたファイル",
+          "selectFiles": "ファイルを選択",
+          "loading": "読み込み中...",
+          "noFilesSelected": "ファイルまたはフォルダが選択されていません",
+          "folders": "フォルダ",
+          "files": "ファイル",
+          "remove": "削除",
+          "folderAlt": "フォルダ",
+          "fileAlt": "ファイル"
+        },
+        "sharePoint": {
+          "connect": "SharePointに接続",
+          "sessionExpired": "セッションが期限切れです。SharePointに再接続してください。",
+          "sessionExpiredGeneric": "セッションが期限切れです。アカウントに再接続してください。",
+          "validateFailed": "セッションの検証に失敗しました。再接続してください。",
+          "noSession": "有効なセッションが見つかりません。SharePointに再接続してください。",
+          "noAccessToken": "アクセストークンが利用できません。SharePointに再接続してください。",
           "pickerFailed": "ファイルピッカーを開けませんでした。もう一度お試しください。",
           "selectedFiles": "選択されたファイル",
           "selectFiles": "ファイルを選択",
@@ -441,6 +473,22 @@
       "generate": "Generate",
       "test": "Test",
       "learnMore": "Learn more"
+    },
+    "importSpec": {
+      "title": "API仕様のインポート",
+      "description": "OpenAPI 3.x または Swagger 2.0 の仕様ファイルをアップロードして、アクションを自動生成します。",
+      "dropzoneText": "クリックしてアップロード、またはドラッグ＆ドロップ",
+      "supportedFormats": "JSON または YAML 形式",
+      "invalidFileType": "無効なファイル形式です。JSON または YAML ファイルをアップロードしてください。",
+      "parseError": "仕様の解析に失敗しました。ファイル形式を確認してください。",
+      "version": "バージョン",
+      "baseUrl": "ベースURL",
+      "actionsFound": "{{count}} 件のアクションが見つかりました",
+      "selectAll": "すべて選択",
+      "deselectAll": "すべて解除",
+      "cancel": "キャンセル",
+      "parse": "解析",
+      "import": "インポート ({{count}})"
     }
   },
   "sharedConv": {
@@ -491,6 +539,15 @@
     "description": "指示、追加知識、スキルの組み合わせを含むDocsGPTのカスタムバージョンを発見して作成します",
     "newAgent": "新しいエージェント",
     "backToAll": "すべてのエージェントに戻る",
+    "searchPlaceholder": "検索...",
+    "noSearchResults": "エージェントが見つかりません",
+    "tryDifferentSearch": "別の検索語をお試しください",
+    "filters": {
+      "all": "すべて",
+      "byDocsGPT": "DocsGPT提供",
+      "byMe": "自分の",
+      "shared": "共有された"
+    },
     "sections": {
       "template": {
         "title": "DocsGPT提供",
@@ -530,6 +587,7 @@
         "prompt": "プロンプト",
         "tools": "ツール",
         "agentType": "エージェントタイプ",
+        "models": "モデル",
         "advanced": "詳細設定",
         "preview": "プレビュー"
       },
@@ -540,6 +598,8 @@
         "chunksPerQuery": "クエリごとのチャンク数",
         "selectType": "タイプを選択",
         "selectTools": "ツールを選択",
+        "selectModels": "このエージェントのモデルを選択",
+        "selectDefaultModel": "デフォルトモデルを選択",
         "enterTokenLimit": "トークン制限を入力",
         "enterRequestLimit": "リクエスト制限を入力"
       },
@@ -553,6 +613,11 @@
         "searchPlaceholder": "ツールを検索...",
         "noOptionsMessage": "利用可能なツールがありません"
       },
+      "modelsPopup": {
+        "title": "モデルを選択",
+        "searchPlaceholder": "モデルを検索...",
+        "noOptionsMessage": "利用可能なモデルがありません"
+      },
       "upload": {
         "clickToUpload": "クリックしてアップロード",
         "dragAndDrop": " またはドラッグ＆ドロップ"
@@ -560,6 +625,9 @@
       "agentTypes": {
         "classic": "クラシック",
         "react": "ReAct"
+      },
+      "labels": {
+        "defaultModel": "デフォルトモデル"
       },
       "advanced": {
         "jsonSchema": "JSON応答スキーマ",
@@ -588,7 +656,23 @@
     "preview": {
       "testMessage": "ここでエージェントをテストできます。公開されたエージェントは会話で使用できます。"
     },
-    "deleteConfirmation": "このエージェントを削除してもよろしいですか？"
+    "deleteConfirmation": "このエージェントを削除してもよろしいですか？",
+    "folders": {
+      "newFolder": "新しいフォルダ",
+      "createFolder": "フォルダを作成",
+      "folderName": "フォルダ名",
+      "rename": "名前を変更",
+      "delete": "削除",
+      "deleteConfirm": "このフォルダを削除してもよろしいですか？フォルダ内のエージェントは移動されます。",
+      "empty": "このフォルダは空です",
+      "moveToFolder": "フォルダに移動",
+      "moveTo": "移動",
+      "move": "移動",
+      "noFolder": "フォルダなし (ルート)",
+      "backToRoot": "戻る",
+      "noSubfolders": "サブフォルダなし",
+      "noFolders": "フォルダがありません"
+    }
   },
   "components": {
     "fileUpload": {
@@ -609,7 +693,10 @@
     "itemsSelected": "{{count}} 件選択済み",
     "name": "名前",
     "lastModified": "最終更新日",
-    "size": "サイズ"
+    "size": "サイズ",
+    "myFiles": "マイファイル",
+    "sharedWithMe": "共有アイテム",
+    "loadingMore": "さらに読み込み中..."
   },
   "actionButtons": {
     "openNewChat": "新しいチャットを開く",

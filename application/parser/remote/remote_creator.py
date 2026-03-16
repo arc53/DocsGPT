@@ -3,6 +3,7 @@ from application.parser.remote.crawler_loader import CrawlerLoader
 from application.parser.remote.web_loader import WebLoader
 from application.parser.remote.reddit_loader import RedditPostsLoaderRemote
 from application.parser.remote.github_loader import GitHubLoader
+from application.parser.remote.s3_loader import S3Loader
 
 
 class RemoteCreator:
@@ -22,6 +23,7 @@ class RemoteCreator:
         "crawler": CrawlerLoader,
         "reddit": RedditPostsLoaderRemote,
         "github": GitHubLoader,
+        "s3": S3Loader,
     }
 
     @classmethod

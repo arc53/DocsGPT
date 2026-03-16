@@ -67,6 +67,7 @@
       "preLoaded": "Предзагруженный",
       "private": "Частный",
       "sync": "Синхронизация",
+      "syncNow": "Синхронизировать сейчас",
       "syncing": "Синхронизация...",
       "syncConfirmation": "Вы уверены, что хотите синхронизировать \"{{sourceName}}\"? Это обновит содержимое с вашим облачным хранилищем и может перезаписать любые изменения, внесенные вами в отдельные фрагменты.",
       "syncFrequency": {
@@ -162,12 +163,17 @@
       "authentication": "Аутентификация",
       "actions": "Действия",
       "addAction": "Добавить действие",
+      "importSpec": "Импорт спецификации",
+      "searchActions": "Поиск действий...",
+      "noActionsMatch": "Нет действий, соответствующих вашему поиску",
+      "actionAlreadyExists": "Действие с таким именем уже существует",
       "noActionsFound": "Действия не найдены",
       "url": "URL",
       "urlPlaceholder": "Введите URL",
       "method": "Метод",
       "description": "Описание",
       "descriptionPlaceholder": "Введите описание",
+      "bodyContentType": "Тип содержимого тела",
       "headers": "Заголовки",
       "queryParameters": "Параметры запроса",
       "body": "Тело запроса",
@@ -311,6 +317,14 @@
         "google_drive": {
           "label": "Google Drive",
           "heading": "Загрузить из Google Drive"
+        },
+        "s3": {
+          "label": "Amazon S3",
+          "heading": "Добавить контент из Amazon S3"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "Загрузить из SharePoint"
         }
       },
       "connectors": {
@@ -330,6 +344,24 @@
           "validateFailed": "Не удалось проверить сеанс. Пожалуйста, переподключитесь.",
           "noSession": "Действительный сеанс не найден. Пожалуйста, переподключитесь к Google Drive.",
           "noAccessToken": "Токен доступа недоступен. Пожалуйста, переподключитесь к Google Drive.",
+          "pickerFailed": "Не удалось открыть средство выбора файлов. Пожалуйста, попробуйте еще раз.",
+          "selectedFiles": "Выбранные файлы",
+          "selectFiles": "Выбрать файлы",
+          "loading": "Загрузка...",
+          "noFilesSelected": "Файлы или папки не выбраны",
+          "folders": "Папки",
+          "files": "Файлы",
+          "remove": "Удалить",
+          "folderAlt": "Папка",
+          "fileAlt": "Файл"
+        },
+        "sharePoint": {
+          "connect": "Подключиться к SharePoint",
+          "sessionExpired": "Сеанс истек. Пожалуйста, переподключитесь к SharePoint.",
+          "sessionExpiredGeneric": "Сеанс истек. Пожалуйста, переподключите свою учетную запись.",
+          "validateFailed": "Не удалось проверить сеанс. Пожалуйста, переподключитесь.",
+          "noSession": "Действительный сеанс не найден. Пожалуйста, переподключитесь к SharePoint.",
+          "noAccessToken": "Токен доступа недоступен. Пожалуйста, переподключитесь к SharePoint.",
           "pickerFailed": "Не удалось открыть средство выбора файлов. Пожалуйста, попробуйте еще раз.",
           "selectedFiles": "Выбранные файлы",
           "selectFiles": "Выбрать файлы",
@@ -441,6 +473,22 @@
       "generate": "Generate",
       "test": "Test",
       "learnMore": "Learn more"
+    },
+    "importSpec": {
+      "title": "Импорт спецификации API",
+      "description": "Загрузите файл спецификации OpenAPI 3.x или Swagger 2.0 для автоматического создания действий.",
+      "dropzoneText": "Нажмите для загрузки или перетащите файл",
+      "supportedFormats": "Формат JSON или YAML",
+      "invalidFileType": "Неверный тип файла. Пожалуйста, загрузите файл JSON или YAML.",
+      "parseError": "Не удалось разобрать спецификацию. Проверьте формат файла.",
+      "version": "Версия",
+      "baseUrl": "Базовый URL",
+      "actionsFound": "{{count}} действий найдено",
+      "selectAll": "Выбрать все",
+      "deselectAll": "Снять выделение со всех",
+      "cancel": "Отмена",
+      "parse": "Разобрать",
+      "import": "Импорт ({{count}})"
     }
   },
   "sharedConv": {
@@ -491,6 +539,15 @@
     "description": "Откройте и создайте пользовательские версии DocsGPT, которые объединяют инструкции, дополнительные знания и любую комбинацию навыков",
     "newAgent": "Новый Агент",
     "backToAll": "Вернуться ко всем агентам",
+    "searchPlaceholder": "Поиск...",
+    "noSearchResults": "Агенты не найдены",
+    "tryDifferentSearch": "Попробуйте другой поисковый запрос",
+    "filters": {
+      "all": "Все",
+      "byDocsGPT": "От DocsGPT",
+      "byMe": "Мои",
+      "shared": "Поделились со мной"
+    },
     "sections": {
       "template": {
         "title": "От DocsGPT",
@@ -530,6 +587,7 @@
         "prompt": "Промпт",
         "tools": "Инструменты",
         "agentType": "Тип агента",
+        "models": "Модели",
         "advanced": "Расширенные",
         "preview": "Предпросмотр"
       },
@@ -540,6 +598,8 @@
         "chunksPerQuery": "Фрагментов на запрос",
         "selectType": "Выберите тип",
         "selectTools": "Выберите инструменты",
+        "selectModels": "Выберите модели для этого агента",
+        "selectDefaultModel": "Выберите модель по умолчанию",
         "enterTokenLimit": "Введите лимит токенов",
         "enterRequestLimit": "Введите лимит запросов"
       },
@@ -553,6 +613,11 @@
         "searchPlaceholder": "Поиск инструментов...",
         "noOptionsMessage": "Нет доступных инструментов"
       },
+      "modelsPopup": {
+        "title": "Выберите Модели",
+        "searchPlaceholder": "Поиск моделей...",
+        "noOptionsMessage": "Нет доступных моделей"
+      },
       "upload": {
         "clickToUpload": "Нажмите для загрузки",
         "dragAndDrop": " или перетащите"
@@ -560,6 +625,9 @@
       "agentTypes": {
         "classic": "Классический",
         "react": "ReAct"
+      },
+      "labels": {
+        "defaultModel": "Модель по умолчанию"
       },
       "advanced": {
         "jsonSchema": "Схема ответа JSON",
@@ -588,7 +656,23 @@
     "preview": {
       "testMessage": "Протестируйте своего агента здесь. Опубликованные агенты можно использовать в разговорах."
     },
-    "deleteConfirmation": "Вы уверены, что хотите удалить этого агента?"
+    "deleteConfirmation": "Вы уверены, что хотите удалить этого агента?",
+    "folders": {
+      "newFolder": "Новая папка",
+      "createFolder": "Создать папку",
+      "folderName": "Имя папки",
+      "rename": "Переименовать",
+      "delete": "Удалить",
+      "deleteConfirm": "Вы уверены, что хотите удалить эту папку? Агенты в папке будут перемещены.",
+      "empty": "Эта папка пуста",
+      "moveToFolder": "Переместить в папку",
+      "moveTo": "Переместить",
+      "move": "Переместить",
+      "noFolder": "Без папки (корень)",
+      "backToRoot": "Назад",
+      "noSubfolders": "Нет подпапок",
+      "noFolders": "Пока нет папок"
+    }
   },
   "components": {
     "fileUpload": {
@@ -609,7 +693,10 @@
     "itemsSelected": "{{count}} выбрано",
     "name": "Имя",
     "lastModified": "Последнее изменение",
-    "size": "Размер"
+    "size": "Размер",
+    "myFiles": "Мои файлы",
+    "sharedWithMe": "Доступные мне",
+    "loadingMore": "Загрузка файлов..."
   },
   "actionButtons": {
     "openNewChat": "Открыть новый чат",

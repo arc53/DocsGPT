@@ -62,6 +62,7 @@ const ConversationBubble = forwardRef<
       index?: number,
     ) => void;
     filesAttached?: { id: string; fileName: string }[];
+    onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
   }
 >(function ConversationBubble(
   {
@@ -78,6 +79,7 @@ const ConversationBubble = forwardRef<
     isStreaming,
     handleUpdatedQuestionSubmission,
     filesAttached,
+    onOpenArtifact,
   },
   ref,
 ) {
@@ -95,6 +97,21 @@ const ConversationBubble = forwardRef<
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
+
+  const completedArtifactCalls = (toolCalls ?? []).filter(
+    (toolCall) => toolCall.artifact_id && toolCall.status === 'completed',
+  );
+  const primaryArtifactCall =
+    completedArtifactCalls[completedArtifactCalls.length - 1] ?? null;
+  const artifactCount = completedArtifactCalls.length;
+
+  const formatToolName = (toolName: string | undefined): string => {
+    if (!toolName) return '';
+    return toolName
+      .split('_')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
 
   useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
 
@@ -150,7 +167,7 @@ const ConversationBubble = forwardRef<
             {!isEditClicked && (
               <>
                 <div className="relative mr-2 flex w-full flex-col">
-                  <div className="from-medium-purple to-slate-blue mr-2 ml-2 flex max-w-full items-start gap-2 rounded-[28px] bg-linear-to-b px-5 py-4 text-sm leading-normal break-words whitespace-pre-wrap text-white sm:text-base">
+                  <div className="from-medium-purple to-slate-blue mr-2 ml-2 flex max-w-full items-start gap-2 rounded-[28px] bg-linear-to-b px-5 py-4 text-sm leading-normal wrap-break-word whitespace-pre-wrap text-white sm:text-base">
                     <div
                       ref={messageRef}
                       className={`${isQuestionCollapsed ? 'line-clamp-4' : ''} w-full`}
@@ -305,15 +322,15 @@ const ConversationBubble = forwardRef<
                     {sources?.slice(0, 3)?.map((source, index) => (
                       <div key={index} className="relative">
                         <div
-                          className="bg-gray-1000 dark:bg-gun-metal h-28 cursor-pointer rounded-[20px] p-4 hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
+                          className="bg-gray-1000 dark:bg-gun-metal h-28 cursor-pointer rounded-4xl p-4 hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
                           onMouseOver={() => setActiveTooltip(index)}
                           onMouseOut={() => setActiveTooltip(null)}
                         >
-                          <p className="ellipsis-text h-12 text-xs break-words">
+                          <p className="ellipsis-text h-12 text-xs wrap-break-word">
                             {source.text}
                           </p>
                           <div
-                            className={`mt-[14px] flex flex-row items-center gap-[6px] underline-offset-2 ${
+                            className={`mt-3.5 flex flex-row items-center gap-1.5 underline-offset-2 ${
                               source.link && source.link !== 'local'
                                 ? 'hover:text-[#007DFF] hover:underline dark:hover:text-[#48A0FF]'
                                 : ''
@@ -334,7 +351,7 @@ const ConversationBubble = forwardRef<
                               className="h-[17px] w-[17px] object-fill"
                             />
                             <p
-                              className="mt-[2px] truncate text-xs"
+                              className="mt-0.5 truncate text-xs"
                               title={
                                 source.link && source.link !== 'local'
                                   ? source.link
@@ -353,7 +370,7 @@ const ConversationBubble = forwardRef<
                             onMouseOver={() => setActiveTooltip(index)}
                             onMouseOut={() => setActiveTooltip(null)}
                           >
-                            <p className="line-clamp-6 max-h-[164px] overflow-hidden rounded-md text-sm break-words text-ellipsis">
+                            <p className="line-clamp-6 max-h-[164px] overflow-hidden rounded-md text-sm wrap-break-word text-ellipsis">
                               {source.text}
                             </p>
                           </div>
@@ -362,7 +379,7 @@ const ConversationBubble = forwardRef<
                     ))}
                     {(sources?.length ?? 0) > 3 && (
                       <div
-                        className="bg-gray-1000 text-purple-30 dark:bg-gun-metal flex h-28 cursor-pointer flex-col-reverse rounded-[20px] p-4 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
+                        className="bg-gray-1000 text-purple-30 dark:bg-gun-metal flex h-28 cursor-pointer flex-col-reverse rounded-4xl p-4 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
                         onClick={() => setIsSidebarOpen(true)}
                       >
                         <p className="ellipsis-text h-22 text-xs">
@@ -378,6 +395,45 @@ const ConversationBubble = forwardRef<
             )}
         {toolCalls && toolCalls.length > 0 && (
           <ToolCalls toolCalls={toolCalls} />
+        )}
+        {!message && primaryArtifactCall?.artifact_id && onOpenArtifact && (
+          <div className="my-2 ml-2 flex justify-start">
+            <button
+              type="button"
+              onClick={() =>
+                onOpenArtifact({
+                  id: primaryArtifactCall.artifact_id!,
+                  toolName: primaryArtifactCall.tool_name,
+                })
+              }
+              className="flex items-center gap-2 rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                />
+              </svg>
+              {primaryArtifactCall.tool_name
+                ? formatToolName(primaryArtifactCall.tool_name)
+                : artifactCount > 1
+                  ? `View artifacts (${artifactCount})`
+                  : 'View artifact'}
+            </button>
+          </div>
         )}
         {thought && (
           <Thought thought={thought} preprocessLaTeX={preprocessLaTeX} />
@@ -414,7 +470,7 @@ const ConversationBubble = forwardRef<
                       <Fragment key={index}>
                         {segment.type === 'text' ? (
                           <ReactMarkdown
-                            className="fade-in flex flex-col gap-3 leading-normal break-words whitespace-pre-wrap"
+                            className="fade-in flex flex-col gap-3 leading-normal wrap-break-word whitespace-pre-wrap"
                             remarkPlugins={[remarkGfm, remarkMath]}
                             rehypePlugins={[rehypeKatex]}
                             components={{
@@ -455,14 +511,13 @@ const ConversationBubble = forwardRef<
                                       customStyle={{
                                         margin: 0,
                                         borderRadius: 0,
-                                        scrollbarWidth: 'thin',
                                       }}
                                     >
                                       {String(children).replace(/\n$/, '')}
                                     </SyntaxHighlighter>
                                   </div>
                                 ) : (
-                                  <code className="dark:bg-independence dark:text-bright-gray rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal whitespace-pre-line">
+                                  <code className="dark:bg-independence dark:text-bright-gray rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
                                     {children}
                                   </code>
                                 );
@@ -549,6 +604,46 @@ const ConversationBubble = forwardRef<
               </div>
             ) : (
               <>
+                {primaryArtifactCall?.artifact_id && onOpenArtifact && (
+                  <div className="relative mr-2 flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onOpenArtifact({
+                          id: primaryArtifactCall.artifact_id!,
+                          toolName: primaryArtifactCall.tool_name,
+                        })
+                      }
+                      className="flex items-center gap-2 rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+                      aria-label="View artifacts"
+                    >
+                      <svg
+                        className="h-4 w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                        />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                        />
+                      </svg>
+                      {primaryArtifactCall.tool_name
+                        ? formatToolName(primaryArtifactCall.tool_name)
+                        : artifactCount > 1
+                          ? `Artifacts (${artifactCount})`
+                          : 'Artifact'}
+                    </button>
+                  </div>
+                )}
                 {!isStreaming && (
                   <>
                     <div className="relative mr-2 block items-center justify-center">
@@ -645,13 +740,13 @@ function AllSources(sources: AllSourcesProps) {
         <p className="text-left text-xl">{`${sources.sources.length} ${t('conversation.sources.title')}`}</p>
         <div className="mx-1 mt-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40 lg:w-[95%]"></div>
       </div>
-      <div className="scrollbar-thin mt-6 flex h-[90%] w-52 flex-col gap-4 overflow-y-auto pr-3 sm:w-64">
+      <div className="mt-6 flex h-[90%] w-52 flex-col gap-4 overflow-y-auto pr-3 sm:w-64">
         {sources.sources.map((source, index) => {
           const isExternalSource = source.link && source.link !== 'local';
           return (
             <div
               key={index}
-              className={`group/card bg-gray-1000 relative w-full rounded-[20px] p-4 transition-colors hover:bg-[#F1F1F1] dark:bg-[#28292E] dark:hover:bg-[#2C2E3C] ${
+              className={`group/card bg-gray-1000 relative w-full rounded-4xl p-4 transition-colors hover:bg-[#F1F1F1] dark:bg-[#28292E] dark:hover:bg-[#2C2E3C] ${
                 isExternalSource ? 'cursor-pointer' : ''
               }`}
               onClick={() =>
@@ -660,7 +755,7 @@ function AllSources(sources: AllSourcesProps) {
             >
               <p
                 title={source.title}
-                className={`ellipsis-text text-left text-sm font-semibold break-words ${
+                className={`ellipsis-text text-left text-sm font-semibold wrap-break-word ${
                   isExternalSource
                     ? 'group-hover/card:text-purple-30 dark:group-hover/card:text-[#8C67D7]'
                     : ''
@@ -679,7 +774,7 @@ function AllSources(sources: AllSourcesProps) {
                   />
                 )}
               </p>
-              <p className="dark:text-chinese-silver mt-3 line-clamp-4 rounded-md text-left text-xs break-words text-black">
+              <p className="dark:text-chinese-silver mt-3 line-clamp-4 rounded-md text-left text-xs wrap-break-word text-black">
                 {source.text}
               </p>
             </div>
@@ -693,106 +788,107 @@ export default ConversationBubble;
 
 function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
   const [isToolCallsOpen, setIsToolCallsOpen] = useState(false);
+
   return (
-    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-      <div className="my-2 flex flex-row items-center justify-center gap-3">
-        <Avatar
-          className="h-[26px] w-[30px] text-xl"
-          avatar={
-            <img
-              src={Sources}
-              alt={'ToolCalls'}
-              className="h-full w-full object-fill"
-            />
-          }
-        />
-        <button
-          className="flex flex-row items-center gap-2"
-          onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}
-        >
-          <p className="text-base font-semibold">Tool Calls</p>
-          <img
-            src={ChevronDown}
-            alt="ChevronDown"
-            className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen ? 'rotate-180' : ''}`}
+		<div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+        <div className="my-2 flex flex-row items-center justify-center gap-3">
+          <Avatar
+            className="h-[26px] w-[30px] text-xl"
+            avatar={
+              <img
+                src={Sources}
+                alt={'ToolCalls'}
+                className="h-full w-full object-fill"
+              />
+            }
           />
-        </button>
-      </div>
-      {isToolCallsOpen && (
-        <div className="fade-in mr-5 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
-          <div className="grid grid-cols-1 gap-2">
-            {toolCalls.map((toolCall, index) => (
-              <Accordion
-                key={`tool-call-${index}`}
-                title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
-                className="bg-gray-1000 dark:bg-gun-metal w-full rounded-[20px] hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
-                titleClassName="px-6 py-2 text-sm font-semibold"
-              >
-                <div className="flex flex-col gap-1">
-                  <div className="border-silver dark:border-silver/20 flex flex-col rounded-2xl border">
-                    <p className="dark:bg-eerie-black-2 flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold break-words">
-                      <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                        Arguments
-                      </span>{' '}
-                      <CopyButton
-                        textToCopy={JSON.stringify(toolCall.arguments, null, 2)}
-                      />
-                    </p>
-                    <p className="dark:tex dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm break-words">
-                      <span
-                        className="leading-[23px] text-black dark:text-gray-400"
-                        style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                      >
-                        {JSON.stringify(toolCall.arguments, null, 2)}
-                      </span>
-                    </p>
-                  </div>
-                  <div className="border-silver dark:border-silver/20 flex flex-col rounded-2xl border">
-                    <p className="dark:bg-eerie-black-2 flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold break-words">
-                      <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                        Response
-                      </span>{' '}
-                      <CopyButton
-                        textToCopy={
-                          toolCall.status === 'error'
-                            ? toolCall.error || 'Unknown error'
-                            : JSON.stringify(toolCall.result, null, 2)
-                        }
-                      />
-                    </p>
-                    {toolCall.status === 'pending' && (
-                      <span className="dark:bg-raisin-black flex w-full items-center justify-center rounded-b-2xl p-2">
-                        <Spinner size="small" />
-                      </span>
-                    )}
-                    {toolCall.status === 'completed' && (
-                      <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm break-words">
+          <button
+            className="flex flex-row items-center gap-2"
+            onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}
+          >
+            <p className="text-base font-semibold">Tool Calls</p>
+            <img
+              src={ChevronDown}
+              alt="ChevronDown"
+              className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+        </div>
+        {isToolCallsOpen && (
+          <div className="fade-in mr-5 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
+            <div className="grid grid-cols-1 gap-2">
+              {toolCalls.map((toolCall, index) => (
+                <Accordion
+                  key={`tool-call-${index}`}
+                  title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
+                  className="bg-gray-1000 dark:bg-gun-metal w-full rounded-4xl hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
+                  titleClassName="px-6 py-2 text-sm font-semibold"
+                >
+                  <div className="flex flex-col gap-1">
+                    <div className="border-silver dark:border-silver/20 flex flex-col rounded-2xl border">
+                      <p className="dark:bg-eerie-black-2 flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
+                        <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                          Arguments
+                        </span>{' '}
+                        <CopyButton
+                          textToCopy={JSON.stringify(toolCall.arguments, null, 2)}
+                        />
+                      </p>
+                      <p className="dark:tex dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
                         <span
                           className="leading-[23px] text-black dark:text-gray-400"
                           style={{ fontFamily: 'IBMPlexMono-Medium' }}
                         >
-                          {JSON.stringify(toolCall.result, null, 2)}
+                          {JSON.stringify(toolCall.arguments, null, 2)}
                         </span>
                       </p>
-                    )}
-                    {toolCall.status === 'error' && (
-                      <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm break-words">
-                        <span
-                          className="leading-[23px] text-red-500 dark:text-red-400"
-                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                        >
-                          {toolCall.error}
-                        </span>
+                    </div>
+                    <div className="border-silver dark:border-silver/20 flex flex-col rounded-2xl border">
+                      <p className="dark:bg-eerie-black-2 flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
+                        <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                          Response
+                        </span>{' '}
+                        <CopyButton
+                          textToCopy={
+                            toolCall.status === 'error'
+                              ? toolCall.error || 'Unknown error'
+                              : JSON.stringify(toolCall.result, null, 2)
+                          }
+                        />
                       </p>
-                    )}
+                      {toolCall.status === 'pending' && (
+                        <span className="dark:bg-raisin-black flex w-full items-center justify-center rounded-b-2xl p-2">
+                          <Spinner size="small" />
+                        </span>
+                      )}
+                      {toolCall.status === 'completed' && (
+                        <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                          <span
+                            className="leading-[23px] text-black dark:text-gray-400"
+                            style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                          >
+                            {JSON.stringify(toolCall.result, null, 2)}
+                          </span>
+                        </p>
+                      )}
+                      {toolCall.status === 'error' && (
+                        <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                          <span
+                            className="leading-[23px] text-red-500 dark:text-red-400"
+                            style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                          >
+                            {toolCall.error}
+                          </span>
+                        </p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </Accordion>
-            ))}
+                </Accordion>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+		</div>
   );
 }
 
@@ -805,7 +901,7 @@ function Thought({
 }) {
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
-  const [isThoughtOpen, setIsThoughtOpen] = useState(true);
+  const [isThoughtOpen, setIsThoughtOpen] = useState(false);
 
   return (
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
@@ -838,7 +934,7 @@ function Thought({
         <div className="fade-in mr-5 ml-2 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
           <div className="bg-gray-1000 dark:bg-gun-metal rounded-[28px] px-7 py-[18px]">
             <ReactMarkdown
-              className="fade-in leading-normal break-words whitespace-pre-wrap"
+              className="fade-in leading-normal wrap-break-word whitespace-pre-wrap"
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[rehypeKatex]}
               components={{
@@ -866,14 +962,13 @@ function Thought({
                         customStyle={{
                           margin: 0,
                           borderRadius: 0,
-                          scrollbarWidth: 'thin',
                         }}
                       >
                         {String(children).replace(/\n$/, '')}
                       </SyntaxHighlighter>
                     </div>
                   ) : (
-                    <code className="dark:bg-independence dark:text-bright-gray rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal whitespace-pre-line">
+                    <code className="dark:bg-independence dark:text-bright-gray rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
                       {children}
                     </code>
                   );

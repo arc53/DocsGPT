@@ -150,7 +150,7 @@ def agent_base_params(decoded_token):
     return {
         "endpoint": "https://api.example.com",
         "llm_name": "openai",
-        "gpt_model": "gpt-4",
+        "model_id": "gpt-4",
         "api_key": "test_api_key",
         "user_api_key": None,
         "prompt": "You are a helpful assistant.",
@@ -191,3 +191,11 @@ def mock_tool_manager(mock_tool, monkeypatch):
         "application.agents.base.ToolManager", Mock(return_value=manager)
     )
     return manager
+
+
+@pytest.fixture
+def flask_app():
+    from flask import Flask
+
+    app = Flask(__name__)
+    return app

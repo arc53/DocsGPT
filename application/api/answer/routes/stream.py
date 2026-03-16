@@ -40,9 +40,9 @@ class StreamResource(Resource, BaseAnswerResource):
             "chunks": fields.Integer(
                 required=False, default=2, description="Number of chunks"
             ),
-            "token_limit": fields.Integer(required=False, description="Token limit"),
             "retriever": fields.String(required=False, description="Retriever type"),
             "api_key": fields.String(required=False, description="API key"),
+            "agent_id": fields.String(required=False, description="Agent ID"),
             "active_docs": fields.String(
                 required=False, description="Active documents"
             ),
@@ -56,6 +56,10 @@ class StreamResource(Resource, BaseAnswerResource):
                 required=False,
                 default=True,
                 description="Whether to save the conversation",
+            ),
+            "model_id": fields.String(
+                required=False,
+                description="Model ID to use for this request",
             ),
             "attachments": fields.List(
                 fields.String, required=False, description="List of attachment IDs"
@@ -77,6 +81,12 @@ class StreamResource(Resource, BaseAnswerResource):
         processor = StreamProcessor(data, decoded_token)
         try:
             processor.initialize()
+            if not processor.decoded_token:
+                return Response(
+                    self.error_stream_generate("Unauthorized"),
+                    status=401,
+                    mimetype="text/event-stream",
+                )
 
             docs_together, docs_list = processor.pre_fetch_docs(data["question"])
             tools_data = processor.pre_fetch_tools()
@@ -98,9 +108,10 @@ class StreamResource(Resource, BaseAnswerResource):
                     index=data.get("index"),
                     should_save_conversation=data.get("save_conversation", True),
                     attachment_ids=data.get("attachments", []),
-                    agent_id=data.get("agent_id"),
+                    agent_id=processor.agent_id,
                     is_shared_usage=processor.is_shared_usage,
                     shared_token=processor.shared_token,
+                    model_id=processor.model_id,
                 ),
                 mimetype="text/event-stream",
             )

@@ -67,6 +67,7 @@
       "preLoaded": "預載入",
       "private": "私人",
       "sync": "同步",
+      "syncNow": "立即同步",
       "syncing": "同步中...",
       "syncConfirmation": "您確定要同步 \"{{sourceName}}\" 嗎？這將使用您的雲端儲存更新內容，並可能覆蓋您對個別文本塊所做的任何編輯。",
       "syncFrequency": {
@@ -162,12 +163,17 @@
       "authentication": "認證",
       "actions": "操作",
       "addAction": "新增操作",
+      "importSpec": "匯入規格",
+      "searchActions": "搜尋操作...",
+      "noActionsMatch": "沒有符合搜尋的操作",
+      "actionAlreadyExists": "已存在同名操作",
       "noActionsFound": "找不到操作",
       "url": "URL",
       "urlPlaceholder": "輸入url",
       "method": "方法",
       "description": "描述",
       "descriptionPlaceholder": "輸入描述",
+      "bodyContentType": "主體內容類型",
       "headers": "標頭",
       "queryParameters": "查詢參數",
       "body": "主體",
@@ -311,6 +317,14 @@
         "google_drive": {
           "label": "Google Drive",
           "heading": "從Google Drive上傳"
+        },
+        "s3": {
+          "label": "Amazon S3",
+          "heading": "從Amazon S3新增內容"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "從SharePoint上傳"
         }
       },
       "connectors": {
@@ -330,6 +344,24 @@
           "validateFailed": "驗證工作階段失敗。請重新連接。",
           "noSession": "未找到有效工作階段。請重新連接到 Google Drive。",
           "noAccessToken": "存取權杖不可用。請重新連接到 Google Drive。",
+          "pickerFailed": "無法開啟檔案選擇器。請重試。",
+          "selectedFiles": "已選擇的檔案",
+          "selectFiles": "選擇檔案",
+          "loading": "載入中...",
+          "noFilesSelected": "未選擇檔案或資料夾",
+          "folders": "資料夾",
+          "files": "檔案",
+          "remove": "移除",
+          "folderAlt": "資料夾",
+          "fileAlt": "檔案"
+        },
+        "sharePoint": {
+          "connect": "連接到 SharePoint",
+          "sessionExpired": "工作階段已過期。請重新連接到 SharePoint。",
+          "sessionExpiredGeneric": "工作階段已過期。請重新連接您的帳戶。",
+          "validateFailed": "驗證工作階段失敗。請重新連接。",
+          "noSession": "未找到有效工作階段。請重新連接到 SharePoint。",
+          "noAccessToken": "存取權杖不可用。請重新連接到 SharePoint。",
           "pickerFailed": "無法開啟檔案選擇器。請重試。",
           "selectedFiles": "已選擇的檔案",
           "selectFiles": "選擇檔案",
@@ -441,6 +473,22 @@
       "generate": "Generate",
       "test": "Test",
       "learnMore": "Learn more"
+    },
+    "importSpec": {
+      "title": "匯入 API 規格",
+      "description": "上傳 OpenAPI 3.x 或 Swagger 2.0 規格檔以自動產生操作。",
+      "dropzoneText": "點擊上傳或拖放",
+      "supportedFormats": "JSON 或 YAML 格式",
+      "invalidFileType": "無效的檔案類型。請上傳 JSON 或 YAML 檔案。",
+      "parseError": "解析規格失敗。請檢查檔案格式。",
+      "version": "版本",
+      "baseUrl": "基礎 URL",
+      "actionsFound": "找到 {{count}} 個操作",
+      "selectAll": "全選",
+      "deselectAll": "取消全選",
+      "cancel": "取消",
+      "parse": "解析",
+      "import": "匯入 ({{count}})"
     }
   },
   "sharedConv": {
@@ -491,6 +539,15 @@
     "description": "探索並創建結合指令、額外知識和任意技能組合的DocsGPT自訂版本",
     "newAgent": "新建代理",
     "backToAll": "返回所有代理",
+    "searchPlaceholder": "搜尋...",
+    "noSearchResults": "未找到代理",
+    "tryDifferentSearch": "請嘗試不同的搜尋詞",
+    "filters": {
+      "all": "全部",
+      "byDocsGPT": "由DocsGPT提供",
+      "byMe": "我的",
+      "shared": "與我共享"
+    },
     "sections": {
       "template": {
         "title": "由DocsGPT提供",
@@ -530,6 +587,7 @@
         "prompt": "提示詞",
         "tools": "工具",
         "agentType": "代理類型",
+        "models": "模型",
         "advanced": "進階",
         "preview": "預覽"
       },
@@ -540,6 +598,8 @@
         "chunksPerQuery": "每次查詢的區塊數",
         "selectType": "選擇類型",
         "selectTools": "選擇工具",
+        "selectModels": "為此代理選擇模型",
+        "selectDefaultModel": "選擇預設模型",
         "enterTokenLimit": "輸入權杖限制",
         "enterRequestLimit": "輸入請求限制"
       },
@@ -553,6 +613,11 @@
         "searchPlaceholder": "搜尋工具...",
         "noOptionsMessage": "沒有可用的工具"
       },
+      "modelsPopup": {
+        "title": "選擇模型",
+        "searchPlaceholder": "搜尋模型...",
+        "noOptionsMessage": "沒有可用的模型"
+      },
       "upload": {
         "clickToUpload": "點擊上傳",
         "dragAndDrop": " 或拖放"
@@ -560,6 +625,9 @@
       "agentTypes": {
         "classic": "經典",
         "react": "ReAct"
+      },
+      "labels": {
+        "defaultModel": "預設模型"
       },
       "advanced": {
         "jsonSchema": "JSON回應架構",
@@ -588,7 +656,23 @@
     "preview": {
       "testMessage": "在此測試您的代理。已發佈的代理可以在對話中使用。"
     },
-    "deleteConfirmation": "您確定要刪除此代理嗎？"
+    "deleteConfirmation": "您確定要刪除此代理嗎？",
+    "folders": {
+      "newFolder": "新建資料夾",
+      "createFolder": "建立資料夾",
+      "folderName": "資料夾名稱",
+      "rename": "重新命名",
+      "delete": "刪除",
+      "deleteConfirm": "確定要刪除此資料夾嗎？資料夾中的代理將被移出。",
+      "empty": "此資料夾為空",
+      "moveToFolder": "移動到資料夾",
+      "moveTo": "移動",
+      "move": "移動",
+      "noFolder": "無資料夾 (根目錄)",
+      "backToRoot": "返回",
+      "noSubfolders": "沒有子資料夾",
+      "noFolders": "暫無資料夾"
+    }
   },
   "components": {
     "fileUpload": {
@@ -609,7 +693,10 @@
     "itemsSelected": "已選擇 {{count}} 項",
     "name": "名稱",
     "lastModified": "最後修改",
-    "size": "大小"
+    "size": "大小",
+    "myFiles": "我的檔案",
+    "sharedWithMe": "與我共用",
+    "loadingMore": "載入更多檔案..."
   },
   "actionButtons": {
     "openNewChat": "開啟新聊天",

@@ -232,10 +232,6 @@ class GoogleDriveAuth(BaseConnectorAuth):
             if missing_fields:
                 raise ValueError(f"Missing required token fields: {missing_fields}")
 
-            if 'client_id' not in token_info:
-                token_info['client_id'] = settings.GOOGLE_CLIENT_ID
-            if 'client_secret' not in token_info:
-                token_info['client_secret'] = settings.GOOGLE_CLIENT_SECRET
             if 'token_uri' not in token_info:
                 token_info['token_uri'] = 'https://oauth2.googleapis.com/token'
 

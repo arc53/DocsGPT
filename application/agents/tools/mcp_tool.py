@@ -1,20 +1,12 @@
 import asyncio
 import base64
+import concurrent.futures
 import json
 import logging
 import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
-from application.agents.tools.base import Tool
-from application.api.user.tasks import mcp_oauth_status_task, mcp_oauth_task
-from application.cache import get_redis_instance
-
-from application.core.mongo_db import MongoDB
-
-from application.core.settings import settings
-
-from application.security.encryption import decrypt_credentials
 from fastmcp import Client
 from fastmcp.client.auth import BearerAuth
 from fastmcp.client.transports import (
@@ -24,9 +16,17 @@ from fastmcp.client.transports import (
 )
 from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
-
 from pydantic import AnyHttpUrl, ValidationError
 from redis import Redis
+
+from application.agents.tools.base import Tool
+from application.api.user.tasks import mcp_oauth_status_task, mcp_oauth_task
+from application.cache import get_redis_instance
+from application.core.mongo_db import MongoDB
+from application.core.settings import settings
+from application.security.encryption import decrypt_credentials
+
+logger = logging.getLogger(__name__)
 
 mongo = MongoDB.get_client()
 db = mongo[settings.MONGO_DB_NAME]
@@ -56,6 +56,7 @@ class MCPTool(Tool):
                 - args: Arguments for STDIO transport
                 - oauth_scopes: OAuth scopes for oauth auth type
                 - oauth_client_name: OAuth client name for oauth auth type
+                - query_mode: If True, use non-interactive OAuth (fail-fast on 401)
             user_id: User ID for decrypting credentials (required if encrypted_credentials exist)
         """
         self.config = config
@@ -76,23 +77,40 @@ class MCPTool(Tool):
         self.oauth_scopes = config.get("oauth_scopes", [])
         self.oauth_task_id = config.get("oauth_task_id", None)
         self.oauth_client_name = config.get("oauth_client_name", "DocsGPT-MCP")
-        self.redirect_uri = f"{settings.API_URL}/api/mcp_server/callback"
+        self.redirect_uri = self._resolve_redirect_uri(config.get("redirect_uri"))
 
         self.available_tools = []
         self._cache_key = self._generate_cache_key()
         self._client = None
-
-        # Only validate and setup if server_url is provided and not OAuth
+        self.query_mode = config.get("query_mode", False)
 
         if self.server_url and self.auth_type != "oauth":
             self._setup_client()
+
+    def _resolve_redirect_uri(self, configured_redirect_uri: Optional[str]) -> str:
+        if configured_redirect_uri:
+            return configured_redirect_uri.rstrip("/")
+
+        explicit = getattr(settings, "MCP_OAUTH_REDIRECT_URI", None)
+        if explicit:
+            return explicit.rstrip("/")
+
+        connector_base = getattr(settings, "CONNECTOR_REDIRECT_BASE_URI", None)
+        if connector_base:
+            parsed = urlparse(connector_base)
+            if parsed.scheme and parsed.netloc:
+                return f"{parsed.scheme}://{parsed.netloc}/api/mcp_server/callback"
+
+        return f"{settings.API_URL.rstrip('/')}/api/mcp_server/callback"
 
     def _generate_cache_key(self) -> str:
         """Generate a unique cache key for this MCP server configuration."""
         auth_key = ""
         if self.auth_type == "oauth":
             scopes_str = ",".join(self.oauth_scopes) if self.oauth_scopes else "none"
-            auth_key = f"oauth:{self.oauth_client_name}:{scopes_str}"
+            auth_key = (
+                f"oauth:{self.oauth_client_name}:{scopes_str}:{self.redirect_uri}"
+            )
         elif self.auth_type in ["bearer"]:
             token = self.auth_credentials.get(
                 "bearer_token", ""
@@ -109,11 +127,10 @@ class MCPTool(Tool):
         return f"{self.server_url}#{self.transport_type}#{auth_key}"
 
     def _setup_client(self):
-        """Setup FastMCP client with proper transport and authentication."""
         global _mcp_clients_cache
         if self._cache_key in _mcp_clients_cache:
             cached_data = _mcp_clients_cache[self._cache_key]
-            if time.time() - cached_data["created_at"] < 1800:
+            if time.time() - cached_data["created_at"] < 300:
                 self._client = cached_data["client"]
                 return
             else:
@@ -123,15 +140,25 @@ class MCPTool(Tool):
 
         if self.auth_type == "oauth":
             redis_client = get_redis_instance()
-            auth = DocsGPTOAuth(
-                mcp_url=self.server_url,
-                scopes=self.oauth_scopes,
-                redis_client=redis_client,
-                redirect_uri=self.redirect_uri,
-                task_id=self.oauth_task_id,
-                db=db,
-                user_id=self.user_id,
-            )
+            if self.query_mode:
+                auth = NonInteractiveOAuth(
+                    mcp_url=self.server_url,
+                    scopes=self.oauth_scopes,
+                    redis_client=redis_client,
+                    redirect_uri=self.redirect_uri,
+                    db=db,
+                    user_id=self.user_id,
+                )
+            else:
+                auth = DocsGPTOAuth(
+                    mcp_url=self.server_url,
+                    scopes=self.oauth_scopes,
+                    redis_client=redis_client,
+                    redirect_uri=self.redirect_uri,
+                    task_id=self.oauth_task_id,
+                    db=db,
+                    user_id=self.user_id,
+                )
         elif self.auth_type == "bearer":
             token = self.auth_credentials.get(
                 "bearer_token", ""
@@ -169,6 +196,8 @@ class MCPTool(Tool):
                 transport_type = "http"
         else:
             transport_type = self.transport_type
+        if transport_type == "stdio":
+            raise ValueError("STDIO transport is disabled")
         if transport_type == "sse":
             headers.update({"Accept": "text/event-stream", "Cache-Control": "no-cache"})
             return SSETransport(url=self.server_url, headers=headers)
@@ -231,38 +260,53 @@ class MCPTool(Tool):
             else:
                 raise Exception(f"Unknown operation: {operation}")
 
+    _ERROR_MAP = [
+        (concurrent.futures.TimeoutError, lambda op, t, _: f"Timed out after {t}s"),
+        (ConnectionRefusedError, lambda *_: "Connection refused"),
+    ]
+
+    _ERROR_PATTERNS = {
+        ("403", "Forbidden"): "Access denied (403 Forbidden)",
+        ("401", "Unauthorized"): "Authentication failed (401 Unauthorized)",
+        ("ECONNREFUSED",): "Connection refused",
+        ("SSL", "certificate"): "SSL/TLS error",
+    }
+
     def _run_async_operation(self, operation: str, *args, **kwargs):
-        """Run async operation in sync context."""
         try:
             try:
-                loop = asyncio.get_running_loop()
-                import concurrent.futures
-
-                def run_in_thread():
-                    new_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(new_loop)
-                    try:
-                        return new_loop.run_until_complete(
-                            self._execute_with_client(operation, *args, **kwargs)
-                        )
-                    finally:
-                        new_loop.close()
-
+                asyncio.get_running_loop()
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(run_in_thread)
+                    future = executor.submit(
+                        self._run_in_new_loop, operation, *args, **kwargs
+                    )
                     return future.result(timeout=self.timeout)
             except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    return loop.run_until_complete(
-                        self._execute_with_client(operation, *args, **kwargs)
-                    )
-                finally:
-                    loop.close()
+                return self._run_in_new_loop(operation, *args, **kwargs)
         except Exception as e:
-            print(f"Error occurred while running async operation: {e}")
-            raise
+            raise self._map_error(operation, e) from e
+            raise self._map_error(operation, e) from e
+
+    def _run_in_new_loop(self, operation, *args, **kwargs):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(
+                self._execute_with_client(operation, *args, **kwargs)
+            )
+        finally:
+            loop.close()
+
+    def _map_error(self, operation: str, exc: Exception) -> Exception:
+        for exc_type, msg_fn in self._ERROR_MAP:
+            if isinstance(exc, exc_type):
+                return Exception(msg_fn(operation, self.timeout, exc))
+        error_msg = str(exc)
+        for patterns, friendly in self._ERROR_PATTERNS.items():
+            if any(p.lower() in error_msg.lower() for p in patterns):
+                return Exception(friendly)
+        logger.error("MCP %s failed: %s", operation, exc)
+        return exc
 
     def discover_tools(self) -> List[Dict]:
         """
@@ -283,16 +327,6 @@ class MCPTool(Tool):
             raise Exception(f"Failed to discover tools from MCP server: {str(e)}")
 
     def execute_action(self, action_name: str, **kwargs) -> Any:
-        """
-        Execute an action on the remote MCP server using FastMCP.
-
-        Args:
-            action_name: Name of the action to execute
-            **kwargs: Parameters for the action
-
-        Returns:
-            Result from the MCP server
-        """
         if not self.server_url:
             raise Exception("No MCP server configured")
         if not self._client:
@@ -308,7 +342,37 @@ class MCPTool(Tool):
             )
             return self._format_result(result)
         except Exception as e:
-            raise Exception(f"Failed to execute action '{action_name}': {str(e)}")
+            error_msg = str(e)
+            lower_msg = error_msg.lower()
+            is_auth_error = (
+                "401" in error_msg
+                or "unauthorized" in lower_msg
+                or "session expired" in lower_msg
+                or "re-authorize" in lower_msg
+            )
+            if is_auth_error:
+                if self.auth_type == "oauth":
+                    raise Exception(
+                        f"Action '{action_name}' failed: OAuth session expired. "
+                        "Please re-authorize this MCP server in tool settings."
+                    ) from e
+                global _mcp_clients_cache
+                _mcp_clients_cache.pop(self._cache_key, None)
+                self._client = None
+                self._setup_client()
+                try:
+                    result = self._run_async_operation(
+                        "call_tool", action_name, **cleaned_kwargs
+                    )
+                    return self._format_result(result)
+                except Exception as retry_e:
+                    raise Exception(
+                        f"Action '{action_name}' failed after re-auth attempt: {retry_e}. "
+                        "Your credentials may have expired — please re-authorize in tool settings."
+                    ) from retry_e
+            raise Exception(
+                f"Failed to execute action '{action_name}': {error_msg}"
+            ) from e
 
     def _format_result(self, result) -> Dict:
         """Format FastMCP result to match expected format."""
@@ -331,23 +395,35 @@ class MCPTool(Tool):
             return result
 
     def test_connection(self) -> Dict:
-        """
-        Test the connection to the MCP server and validate functionality.
-
-        Returns:
-            Dictionary with connection test results including tool count
-        """
         if not self.server_url:
             return {
                 "success": False,
-                "message": "No MCP server URL configured",
+                "message": "No server URL configured",
                 "tools_count": 0,
-                "transport_type": self.transport_type,
-                "auth_type": self.auth_type,
-                "error_type": "ConfigurationError",
+            }
+        try:
+            parsed = urlparse(self.server_url)
+            if parsed.scheme not in ("http", "https"):
+                return {
+                    "success": False,
+                    "message": f"Invalid URL scheme '{parsed.scheme}' — use http:// or https://",
+                    "tools_count": 0,
+                }
+        except Exception:
+            return {
+                "success": False,
+                "message": "Invalid URL format",
+                "tools_count": 0,
             }
         if not self._client:
-            self._setup_client()
+            try:
+                self._setup_client()
+            except Exception as e:
+                return {
+                    "success": False,
+                    "message": f"Client init failed: {str(e)}",
+                    "tools_count": 0,
+                }
         try:
             if self.auth_type == "oauth":
                 return self._test_oauth_connection()
@@ -358,55 +434,93 @@ class MCPTool(Tool):
                 "success": False,
                 "message": f"Connection failed: {str(e)}",
                 "tools_count": 0,
-                "transport_type": self.transport_type,
-                "auth_type": self.auth_type,
-                "error_type": type(e).__name__,
             }
 
     def _test_regular_connection(self) -> Dict:
-        """Test connection for non-OAuth auth types."""
+        ping_ok = False
+        ping_error = None
         try:
             self._run_async_operation("ping")
-            ping_success = True
-        except Exception:
-            ping_success = False
-        tools = self.discover_tools()
+            ping_ok = True
+        except Exception as e:
+            ping_error = str(e)
 
-        message = f"Successfully connected to MCP server. Found {len(tools)} tools."
-        if not ping_success:
-            message += " (Ping not supported, but tool discovery worked)"
-        return {
-            "success": True,
-            "message": message,
-            "tools_count": len(tools),
-            "transport_type": self.transport_type,
-            "auth_type": self.auth_type,
-            "ping_supported": ping_success,
-            "tools": [tool.get("name", "unknown") for tool in tools],
-        }
-
-    def _test_oauth_connection(self) -> Dict:
-        """Test connection for OAuth auth type with proper async handling."""
         try:
-            task = mcp_oauth_task.delay(config=self.config, user=self.user_id)
-            if not task:
-                raise Exception("Failed to start OAuth authentication")
-            return {
-                "success": True,
-                "requires_oauth": True,
-                "task_id": task.id,
-                "status": "pending",
-                "message": "OAuth flow started",
-            }
+            tools = self.discover_tools()
         except Exception as e:
             return {
                 "success": False,
-                "message": f"OAuth connection failed: {str(e)}",
+                "message": f"Connection failed: {ping_error or str(e)}",
                 "tools_count": 0,
-                "transport_type": self.transport_type,
-                "auth_type": self.auth_type,
-                "error_type": type(e).__name__,
             }
+
+        if not tools and not ping_ok:
+            return {
+                "success": False,
+                "message": f"Connection failed: {ping_error or 'No tools found'}",
+                "tools_count": 0,
+            }
+
+        return {
+            "success": True,
+            "message": f"Connected — found {len(tools)} tool{'s' if len(tools) != 1 else ''}.",
+            "tools_count": len(tools),
+            "tools": [
+                {
+                    "name": tool.get("name", "unknown"),
+                    "description": tool.get("description", ""),
+                }
+                for tool in tools
+            ],
+        }
+
+    def _test_oauth_connection(self) -> Dict:
+        storage = DBTokenStorage(
+            server_url=self.server_url, user_id=self.user_id, db_client=db
+        )
+        loop = asyncio.new_event_loop()
+        try:
+            tokens = loop.run_until_complete(storage.get_tokens())
+        finally:
+            loop.close()
+
+        if tokens and tokens.access_token:
+            self.query_mode = True
+            _mcp_clients_cache.pop(self._cache_key, None)
+            self._client = None
+            self._setup_client()
+            try:
+                tools = self.discover_tools()
+                return {
+                    "success": True,
+                    "message": f"Connected — found {len(tools)} tool{'s' if len(tools) != 1 else ''}.",
+                    "tools_count": len(tools),
+                    "tools": [
+                        {
+                            "name": t.get("name", "unknown"),
+                            "description": t.get("description", ""),
+                        }
+                        for t in tools
+                    ],
+                }
+            except Exception as e:
+                logger.warning("OAuth token validation failed: %s", e)
+                _mcp_clients_cache.pop(self._cache_key, None)
+                self._client = None
+
+        return self._start_oauth_task()
+
+    def _start_oauth_task(self) -> Dict:
+        task_config = self.config.copy()
+        task_config.pop("query_mode", None)
+        result = mcp_oauth_task.delay(task_config, self.user_id)
+        return {
+            "success": False,
+            "requires_oauth": True,
+            "task_id": result.id,
+            "message": "OAuth authorization required.",
+            "tools_count": 0,
+        }
 
     def get_actions_metadata(self) -> List[Dict]:
         """
@@ -453,107 +567,88 @@ class MCPTool(Tool):
         return actions
 
     def get_config_requirements(self) -> Dict:
-        """Get configuration requirements for the MCP tool."""
         return {
             "server_url": {
                 "type": "string",
-                "description": "URL of the remote MCP server (e.g., https://api.example.com/mcp or https://docs.mcp.cloudflare.com/sse)",
+                "label": "Server URL",
+                "description": "URL of the remote MCP server",
                 "required": True,
-            },
-            "transport_type": {
-                "type": "string",
-                "description": "Transport type for connection",
-                "enum": ["auto", "sse", "http", "stdio"],
-                "default": "auto",
-                "required": False,
-                "help": {
-                    "auto": "Automatically detect best transport",
-                    "sse": "Server-Sent Events (for real-time streaming)",
-                    "http": "HTTP streaming (recommended for production)",
-                    "stdio": "Standard I/O (for local servers)",
-                },
+                "secret": False,
+                "order": 1,
             },
             "auth_type": {
                 "type": "string",
-                "description": "Authentication type",
+                "label": "Authentication Type",
+                "description": "Authentication method for the MCP server",
                 "enum": ["none", "bearer", "oauth", "api_key", "basic"],
                 "default": "none",
                 "required": True,
-                "help": {
-                    "none": "No authentication",
-                    "bearer": "Bearer token authentication",
-                    "oauth": "OAuth 2.1 authentication (with frontend integration)",
-                    "api_key": "API key authentication",
-                    "basic": "Basic authentication",
-                },
+                "secret": False,
+                "order": 2,
             },
-            "auth_credentials": {
-                "type": "object",
-                "description": "Authentication credentials (varies by auth_type)",
+            "api_key": {
+                "type": "string",
+                "label": "API Key",
+                "description": "API key for authentication",
                 "required": False,
-                "properties": {
-                    "bearer_token": {
-                        "type": "string",
-                        "description": "Bearer token for bearer auth",
-                    },
-                    "access_token": {
-                        "type": "string",
-                        "description": "Access token for OAuth (if pre-obtained)",
-                    },
-                    "api_key": {
-                        "type": "string",
-                        "description": "API key for api_key auth",
-                    },
-                    "api_key_header": {
-                        "type": "string",
-                        "description": "Header name for API key (default: X-API-Key)",
-                    },
-                    "username": {
-                        "type": "string",
-                        "description": "Username for basic auth",
-                    },
-                    "password": {
-                        "type": "string",
-                        "description": "Password for basic auth",
-                    },
-                },
+                "secret": True,
+                "order": 3,
+                "depends_on": {"auth_type": "api_key"},
+            },
+            "api_key_header": {
+                "type": "string",
+                "label": "API Key Header",
+                "description": "Header name for API key (default: X-API-Key)",
+                "default": "X-API-Key",
+                "required": False,
+                "secret": False,
+                "order": 4,
+                "depends_on": {"auth_type": "api_key"},
+            },
+            "bearer_token": {
+                "type": "string",
+                "label": "Bearer Token",
+                "description": "Bearer token for authentication",
+                "required": False,
+                "secret": True,
+                "order": 3,
+                "depends_on": {"auth_type": "bearer"},
+            },
+            "username": {
+                "type": "string",
+                "label": "Username",
+                "description": "Username for basic authentication",
+                "required": False,
+                "secret": False,
+                "order": 3,
+                "depends_on": {"auth_type": "basic"},
+            },
+            "password": {
+                "type": "string",
+                "label": "Password",
+                "description": "Password for basic authentication",
+                "required": False,
+                "secret": True,
+                "order": 4,
+                "depends_on": {"auth_type": "basic"},
             },
             "oauth_scopes": {
-                "type": "array",
-                "description": "OAuth scopes to request (for oauth auth_type)",
-                "items": {"type": "string"},
-                "required": False,
-                "default": [],
-            },
-            "oauth_client_name": {
                 "type": "string",
-                "description": "Client name for OAuth registration (for oauth auth_type)",
-                "default": "DocsGPT-MCP",
+                "label": "OAuth Scopes",
+                "description": "Comma-separated OAuth scopes to request",
                 "required": False,
-            },
-            "headers": {
-                "type": "object",
-                "description": "Custom headers to send with requests",
-                "required": False,
+                "secret": False,
+                "order": 3,
+                "depends_on": {"auth_type": "oauth"},
             },
             "timeout": {
-                "type": "integer",
-                "description": "Request timeout in seconds",
+                "type": "number",
+                "label": "Timeout (seconds)",
+                "description": "Request timeout in seconds (1-300)",
                 "default": 30,
-                "minimum": 1,
-                "maximum": 300,
                 "required": False,
-            },
-            "command": {
-                "type": "string",
-                "description": "Command to run for STDIO transport (e.g., 'python')",
-                "required": False,
-            },
-            "args": {
-                "type": "array",
-                "description": "Arguments for STDIO command",
-                "items": {"type": "string"},
-                "required": False,
+                "secret": False,
+                "order": 10,
             },
         }
 
@@ -575,23 +670,8 @@ class DocsGPTOAuth(OAuthClientProvider):
         user_id=None,
         db=None,
         additional_client_metadata: dict[str, Any] | None = None,
+        skip_redirect_validation: bool = False,
     ):
-        """
-        Initialize custom OAuth client provider for DocsGPT.
-
-        Args:
-            mcp_url: Full URL to the MCP endpoint
-            redirect_uri: Custom redirect URI for DocsGPT frontend
-            redis_client: Redis client for storing auth state
-            redis_prefix: Prefix for Redis keys
-            task_id: Task ID for tracking auth status
-            scopes: OAuth scopes to request
-            client_name: Name for this client during registration
-            user_id: User ID for token storage
-            db: Database instance for token storage
-            additional_client_metadata: Extra fields for OAuthClientMetadata
-        """
-
         self.redirect_uri = redirect_uri
         self.redis_client = redis_client
         self.redis_prefix = redis_prefix
@@ -614,7 +694,10 @@ class DocsGPTOAuth(OAuthClientProvider):
         )
 
         storage = DBTokenStorage(
-            server_url=self.server_base_url, user_id=self.user_id, db_client=self.db
+            server_url=self.server_base_url,
+            user_id=self.user_id,
+            db_client=self.db,
+            expected_redirect_uri=None if skip_redirect_validation else redirect_uri,
         )
 
         super().__init__(
@@ -646,22 +729,20 @@ class DocsGPTOAuth(OAuthClientProvider):
     async def redirect_handler(self, authorization_url: str) -> None:
         """Store auth URL and state in Redis for frontend to use."""
         auth_url, state = self._process_auth_url(authorization_url)
-        logging.info(
-            "[DocsGPTOAuth] Processed auth_url: %s, state: %s", auth_url, state
-        )
+        logger.info("Processed auth_url: %s, state: %s", auth_url, state)
         self.auth_url = auth_url
         self.extracted_state = state
 
         if self.redis_client and self.extracted_state:
             key = f"{self.redis_prefix}auth_url:{self.extracted_state}"
             self.redis_client.setex(key, 600, auth_url)
-            logging.info("[DocsGPTOAuth] Stored auth_url in Redis: %s", key)
+            logger.info("Stored auth_url in Redis: %s", key)
 
             if self.task_id:
                 status_key = f"mcp_oauth_status:{self.task_id}"
                 status_data = {
                     "status": "requires_redirect",
-                    "message": "OAuth authorization required",
+                    "message": "Authorization required",
                     "authorization_url": self.auth_url,
                     "state": self.extracted_state,
                     "requires_oauth": True,
@@ -681,7 +762,7 @@ class DocsGPTOAuth(OAuthClientProvider):
             status_key = f"mcp_oauth_status:{self.task_id}"
             status_data = {
                 "status": "awaiting_callback",
-                "message": "Waiting for OAuth callback...",
+                "message": "Waiting for authorization...",
                 "authorization_url": self.auth_url,
                 "state": self.extracted_state,
                 "requires_oauth": True,
@@ -706,7 +787,7 @@ class DocsGPTOAuth(OAuthClientProvider):
                 if self.task_id:
                     status_data = {
                         "status": "callback_received",
-                        "message": "OAuth callback received, completing authentication...",
+                        "message": "Completing authentication...",
                         "task_id": self.task_id,
                     }
                     self.redis_client.setex(status_key, 600, json.dumps(status_data))
@@ -726,14 +807,44 @@ class DocsGPTOAuth(OAuthClientProvider):
             await asyncio.sleep(poll_interval)
         self.redis_client.delete(f"{self.redis_prefix}auth_url:{self.extracted_state}")
         self.redis_client.delete(f"{self.redis_prefix}state:{self.extracted_state}")
-        raise Exception("OAuth callback timeout: no code received within 5 minutes")
+        raise Exception("OAuth timeout: no code received within 5 minutes")
+
+
+class NonInteractiveOAuth(DocsGPTOAuth):
+    """OAuth provider that fails fast on 401 instead of starting interactive auth.
+
+    Used during query execution to prevent the streaming response from blocking
+    while waiting for user authorization that will never come.
+    """
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("task_id", None)
+        kwargs["skip_redirect_validation"] = True
+        super().__init__(**kwargs)
+
+    async def redirect_handler(self, authorization_url: str) -> None:
+        raise Exception(
+            "OAuth session expired — please re-authorize this MCP server in tool settings."
+        )
+
+    async def callback_handler(self) -> tuple[str, str | None]:
+        raise Exception(
+            "OAuth session expired — please re-authorize this MCP server in tool settings."
+        )
 
 
 class DBTokenStorage(TokenStorage):
-    def __init__(self, server_url: str, user_id: str, db_client):
+    def __init__(
+        self,
+        server_url: str,
+        user_id: str,
+        db_client,
+        expected_redirect_uri: Optional[str] = None,
+    ):
         self.server_url = server_url
         self.user_id = user_id
         self.db_client = db_client
+        self.expected_redirect_uri = expected_redirect_uri
         self.collection = db_client["connector_sessions"]
 
     @staticmethod
@@ -752,10 +863,9 @@ class DBTokenStorage(TokenStorage):
         if not doc or "tokens" not in doc:
             return None
         try:
-            tokens = OAuthToken.model_validate(doc["tokens"])
-            return tokens
+            return OAuthToken.model_validate(doc["tokens"])
         except ValidationError as e:
-            logging.error(f"Could not load tokens: {e}")
+            logger.error("Could not load tokens: %s", e)
             return None
 
     async def set_tokens(self, tokens: OAuthToken) -> None:
@@ -765,28 +875,38 @@ class DBTokenStorage(TokenStorage):
             {"$set": {"tokens": tokens.model_dump()}},
             True,
         )
-        logging.info(f"Saved tokens for {self.get_base_url(self.server_url)}")
+        logger.info("Saved tokens for %s", self.get_base_url(self.server_url))
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
         doc = await asyncio.to_thread(self.collection.find_one, self.get_db_key())
         if not doc or "client_info" not in doc:
+            logger.debug(
+                "No client_info in DB for %s", self.get_base_url(self.server_url)
+            )
             return None
         try:
             client_info = OAuthClientInformationFull.model_validate(doc["client_info"])
-            tokens = await self.get_tokens()
-            if tokens is None:
-                logging.debug(
-                    "No tokens found, clearing client info to force fresh registration."
-                )
-                await asyncio.to_thread(
-                    self.collection.update_one,
-                    self.get_db_key(),
-                    {"$unset": {"client_info": ""}},
-                )
-                return None
+            if self.expected_redirect_uri:
+                stored_uris = [
+                    str(uri).rstrip("/") for uri in client_info.redirect_uris
+                ]
+                expected_uri = self.expected_redirect_uri.rstrip("/")
+                if expected_uri not in stored_uris:
+                    logger.warning(
+                        "Redirect URI mismatch for %s: expected=%s stored=%s — clearing.",
+                        self.get_base_url(self.server_url),
+                        expected_uri,
+                        stored_uris,
+                    )
+                    await asyncio.to_thread(
+                        self.collection.update_one,
+                        self.get_db_key(),
+                        {"$unset": {"client_info": "", "tokens": ""}},
+                    )
+                    return None
             return client_info
         except ValidationError as e:
-            logging.error(f"Could not load client info: {e}")
+            logger.error("Could not load client info: %s", e)
             return None
 
     def _serialize_client_info(self, info: dict) -> dict:
@@ -802,17 +922,17 @@ class DBTokenStorage(TokenStorage):
             {"$set": {"client_info": serialized_info}},
             True,
         )
-        logging.info(f"Saved client info for {self.get_base_url(self.server_url)}")
+        logger.info("Saved client info for %s", self.get_base_url(self.server_url))
 
     async def clear(self) -> None:
         await asyncio.to_thread(self.collection.delete_one, self.get_db_key())
-        logging.info(f"Cleared OAuth cache for {self.get_base_url(self.server_url)}")
+        logger.info("Cleared OAuth cache for %s", self.get_base_url(self.server_url))
 
     @classmethod
     async def clear_all(cls, db_client) -> None:
         collection = db_client["connector_sessions"]
         await asyncio.to_thread(collection.delete_many, {})
-        logging.info("Cleared all OAuth client cache data.")
+        logger.info("Cleared all OAuth client cache data.")
 
 
 class MCPOAuthManager:
@@ -851,7 +971,7 @@ class MCPOAuthManager:
 
             return True
         except Exception as e:
-            logging.error(f"Error handling OAuth callback: {e}")
+            logger.error("Error handling OAuth callback: %s", e)
             return False
 
     def get_oauth_status(self, task_id: str) -> Dict[str, Any]:

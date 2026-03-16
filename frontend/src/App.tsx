@@ -11,6 +11,7 @@ import UploadToast from './components/UploadToast';
 import Conversation from './conversation/Conversation';
 import { SharedConversation } from './conversation/SharedConversation';
 import { useDarkTheme, useMediaQuery } from './hooks';
+import useDataInitializer from './hooks/useDataInitializer';
 import useTokenAuth from './hooks/useTokenAuth';
 import Navigation from './Navigation';
 import PageNotFound from './PageNotFound';
@@ -19,6 +20,7 @@ import Notification from './components/Notification';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { isAuthLoading } = useTokenAuth();
+  useDataInitializer(isAuthLoading);
 
   if (isAuthLoading) {
     return (

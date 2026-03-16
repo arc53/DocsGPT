@@ -2,9 +2,9 @@ from pathlib import Path
 from unittest.mock import mock_open, patch
 
 import pytest
-import tiktoken
 
 from application.parser.file.markdown_parser import MarkdownParser
+from application import utils
 
 
 class _Enc:
@@ -14,7 +14,7 @@ class _Enc:
 
 @pytest.fixture(autouse=True)
 def _patch_tokenizer(monkeypatch):
-    monkeypatch.setattr(tiktoken, "get_encoding", lambda _: _Enc())
+    monkeypatch.setattr(utils, "get_encoding", lambda: _Enc())
 
 def test_markdown_init_parser():
     parser = MarkdownParser()
@@ -57,4 +57,3 @@ def test_markdown_token_chunking_via_max_tokens():
     assert len(tups) > 1
     for _hdr, chunk in tups:
         assert len(chunk) <= 4
-

@@ -16,11 +16,6 @@ import {
 } from '../preferences/preferenceSlice';
 import WrapperModal from './WrapperModal';
 
-const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
-const embeddingsName =
-  import.meta.env.VITE_EMBEDDINGS_NAME ||
-  'huggingface_sentence-transformers/all-mpnet-base-v2';
-
 type StatusType = 'loading' | 'idle' | 'fetched' | 'failed';
 
 export const ShareConversationModal = ({
@@ -47,14 +42,12 @@ export const ShareConversationModal = ({
 
   const extractDocPaths = (docs: Doc[]) =>
     docs
-      ? docs
-          .filter((doc) => doc.model === embeddingsName)
-          .map((doc: Doc) => {
-            return {
-              label: doc.name,
-              value: doc.id ?? 'default',
-            };
-          })
+      ? docs.map((doc: Doc) => {
+          return {
+            label: doc.name,
+            value: doc.id ?? 'default',
+          };
+        })
       : [];
 
   const [sourcePath, setSourcePath] = useState<{

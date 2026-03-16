@@ -67,6 +67,7 @@
       "preLoaded": "预加载",
       "private": "私有",
       "sync": "同步",
+      "syncNow": "立即同步",
       "syncing": "同步中...",
       "syncConfirmation": "您确定要同步 \"{{sourceName}}\" 吗？这将使用您的云存储更新内容，并可能覆盖您对单个文本块所做的任何编辑。",
       "syncFrequency": {
@@ -162,12 +163,17 @@
       "authentication": "认证",
       "actions": "操作",
       "addAction": "添加操作",
+      "importSpec": "导入规范",
+      "searchActions": "搜索操作...",
+      "noActionsMatch": "没有与搜索匹配的操作",
+      "actionAlreadyExists": "已存在同名操作",
       "noActionsFound": "未找到操作",
       "url": "URL",
       "urlPlaceholder": "输入url",
       "method": "方法",
       "description": "描述",
       "descriptionPlaceholder": "输入描述",
+      "bodyContentType": "请求体内容类型",
       "headers": "请求头",
       "queryParameters": "查询参数",
       "body": "请求体",
@@ -311,6 +317,14 @@
         "google_drive": {
           "label": "Google Drive",
           "heading": "从Google Drive上传"
+        },
+        "s3": {
+          "label": "Amazon S3",
+          "heading": "从Amazon S3添加内容"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "从SharePoint上传"
         }
       },
       "connectors": {
@@ -330,6 +344,24 @@
           "validateFailed": "验证会话失败。请重新连接。",
           "noSession": "未找到有效会话。请重新连接到 Google Drive。",
           "noAccessToken": "访问令牌不可用。请重新连接到 Google Drive。",
+          "pickerFailed": "无法打开文件选择器。请重试。",
+          "selectedFiles": "已选择的文件",
+          "selectFiles": "选择文件",
+          "loading": "加载中...",
+          "noFilesSelected": "未选择文件或文件夹",
+          "folders": "文件夹",
+          "files": "文件",
+          "remove": "删除",
+          "folderAlt": "文件夹",
+          "fileAlt": "文件"
+        },
+        "sharePoint": {
+          "connect": "连接到 SharePoint",
+          "sessionExpired": "会话已过期。请重新连接到 SharePoint。",
+          "sessionExpiredGeneric": "会话已过期。请重新连接您的账户。",
+          "validateFailed": "验证会话失败。请重新连接。",
+          "noSession": "未找到有效会话。请重新连接到 SharePoint。",
+          "noAccessToken": "访问令牌不可用。请重新连接到 SharePoint。",
           "pickerFailed": "无法打开文件选择器。请重试。",
           "selectedFiles": "已选择的文件",
           "selectFiles": "选择文件",
@@ -441,6 +473,22 @@
       "generate": "Generate",
       "test": "Test",
       "learnMore": "Learn more"
+    },
+    "importSpec": {
+      "title": "导入 API 规范",
+      "description": "上传 OpenAPI 3.x 或 Swagger 2.0 规范文件以自动生成操作。",
+      "dropzoneText": "点击上传或拖拽到此处",
+      "supportedFormats": "JSON 或 YAML 格式",
+      "invalidFileType": "文件类型无效。请上传 JSON 或 YAML 文件。",
+      "parseError": "解析规范失败。请检查文件格式。",
+      "version": "版本",
+      "baseUrl": "基础 URL",
+      "actionsFound": "找到 {{count}} 个操作",
+      "selectAll": "全选",
+      "deselectAll": "取消全选",
+      "cancel": "取消",
+      "parse": "解析",
+      "import": "导入 ({{count}})"
     }
   },
   "sharedConv": {
@@ -491,6 +539,15 @@
     "description": "发现并创建结合指令、额外知识和任意技能组合的DocsGPT自定义版本",
     "newAgent": "新建代理",
     "backToAll": "返回所有代理",
+    "searchPlaceholder": "搜索...",
+    "noSearchResults": "未找到代理",
+    "tryDifferentSearch": "请尝试不同的搜索词",
+    "filters": {
+      "all": "全部",
+      "byDocsGPT": "由DocsGPT提供",
+      "byMe": "我的",
+      "shared": "与我共享"
+    },
     "sections": {
       "template": {
         "title": "由DocsGPT提供",
@@ -530,6 +587,7 @@
         "prompt": "提示词",
         "tools": "工具",
         "agentType": "代理类型",
+        "models": "模型",
         "advanced": "高级",
         "preview": "预览"
       },
@@ -540,6 +598,8 @@
         "chunksPerQuery": "每次查询的块数",
         "selectType": "选择类型",
         "selectTools": "选择工具",
+        "selectModels": "为此代理选择模型",
+        "selectDefaultModel": "选择默认模型",
         "enterTokenLimit": "输入令牌限制",
         "enterRequestLimit": "输入请求限制"
       },
@@ -553,6 +613,11 @@
         "searchPlaceholder": "搜索工具...",
         "noOptionsMessage": "没有可用的工具"
       },
+      "modelsPopup": {
+        "title": "选择模型",
+        "searchPlaceholder": "搜索模型...",
+        "noOptionsMessage": "没有可用的模型"
+      },
       "upload": {
         "clickToUpload": "点击上传",
         "dragAndDrop": " 或拖放"
@@ -560,6 +625,9 @@
       "agentTypes": {
         "classic": "经典",
         "react": "ReAct"
+      },
+      "labels": {
+        "defaultModel": "默认模型"
       },
       "advanced": {
         "jsonSchema": "JSON响应架构",
@@ -588,7 +656,23 @@
     "preview": {
       "testMessage": "在此测试您的代理。已发布的代理可以在对话中使用。"
     },
-    "deleteConfirmation": "您确定要删除此代理吗？"
+    "deleteConfirmation": "您确定要删除此代理吗？",
+    "folders": {
+      "newFolder": "新建文件夹",
+      "createFolder": "创建文件夹",
+      "folderName": "文件夹名称",
+      "rename": "重命名",
+      "delete": "删除",
+      "deleteConfirm": "确定要删除此文件夹吗？文件夹中的代理将被移出。",
+      "empty": "此文件夹为空",
+      "moveToFolder": "移动到文件夹",
+      "moveTo": "移动",
+      "move": "移动",
+      "noFolder": "无文件夹 (根目录)",
+      "backToRoot": "返回",
+      "noSubfolders": "没有子文件夹",
+      "noFolders": "暂无文件夹"
+    }
   },
   "components": {
     "fileUpload": {
@@ -609,7 +693,10 @@
     "itemsSelected": "已选择 {{count}} 项",
     "name": "名称",
     "lastModified": "最后修改",
-    "size": "大小"
+    "size": "大小",
+    "myFiles": "我的文件",
+    "sharedWithMe": "与我共享",
+    "loadingMore": "加载更多文件..."
   },
   "actionButtons": {
     "openNewChat": "打开新聊天",

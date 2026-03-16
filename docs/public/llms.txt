@@ -1,0 +1,63 @@
+# DocsGPT
+
+> DocsGPT is an open-source platform for building AI agents and assistants with document retrieval, tools, and multi-model support.
+
+This file is a curated map of DocsGPT documentation for LLM and agent use.
+Prioritize Core, Deploying, and Agents for implementation tasks.
+
+## Core
+
+- [Docs Home](https://docs.docsgpt.cloud/): Main documentation landing page.
+- [Quickstart](https://docs.docsgpt.cloud/quickstart): Fastest path to run DocsGPT locally.
+- [Architecture](https://docs.docsgpt.cloud/Guides/Architecture): High-level system architecture.
+- [Development Environment](https://docs.docsgpt.cloud/Deploying/Development-Environment): Backend and frontend local setup.
+- [DocsGPT Settings](https://docs.docsgpt.cloud/Deploying/DocsGPT-Settings): Environment variables and core app configuration.
+
+## Deploying
+
+- [Docker Deployment](https://docs.docsgpt.cloud/Deploying/Docker-Deploying): Run DocsGPT with Docker and Docker Compose.
+- [Kubernetes Deployment](https://docs.docsgpt.cloud/Deploying/Kubernetes-Deploying): Deploy DocsGPT on Kubernetes clusters.
+- [Hosting DocsGPT](https://docs.docsgpt.cloud/Deploying/Hosting-the-app): Hosting overview with cloud options.
+
+## Agents
+
+- [Agent Basics](https://docs.docsgpt.cloud/Agents/basics): Core concepts for building and managing agents.
+- [Workflow Nodes](https://docs.docsgpt.cloud/Agents/nodes): Node types and behavior in agent workflows.
+- [Agent API](https://docs.docsgpt.cloud/Agents/api): Programmatic agent interaction (streaming and non-streaming).
+- [Agent Webhooks](https://docs.docsgpt.cloud/Agents/webhooks): Trigger and automate agents with webhooks.
+
+## Tools
+
+- [Tools Basics](https://docs.docsgpt.cloud/Tools/basics): How tools extend agent capabilities.
+- [Generic API Tool](https://docs.docsgpt.cloud/Tools/api-tool): Configure API calls without custom code.
+- [Creating a Custom Tool](https://docs.docsgpt.cloud/Tools/creating-a-tool): Build custom Python tools for DocsGPT.
+
+## Models
+
+- [Cloud LLM Providers](https://docs.docsgpt.cloud/Models/cloud-providers): Configure hosted model providers.
+- [Local Inference](https://docs.docsgpt.cloud/Models/local-inference): Connect DocsGPT to local inference backends.
+- [Embeddings](https://docs.docsgpt.cloud/Models/embeddings): Select and configure embedding models.
+
+## Extensions
+
+- [API Keys for Integrations](https://docs.docsgpt.cloud/Extensions/api-key-guide): Generate and use DocsGPT API keys.
+- [Chat Widget](https://docs.docsgpt.cloud/Extensions/chat-widget): Embed the DocsGPT chat widget.
+- [Search Widget](https://docs.docsgpt.cloud/Extensions/search-widget): Embed the DocsGPT search widget.
+- [Chrome Extension](https://docs.docsgpt.cloud/Extensions/Chrome-extension): Install and use the browser extension.
+- [Chatwoot Extension](https://docs.docsgpt.cloud/Extensions/Chatwoot-extension): Integrate DocsGPT with Chatwoot.
+
+## Integrations
+
+- [Google Drive Connector](https://docs.docsgpt.cloud/Guides/Integrations/google-drive-connector): Ingest and sync files from Google Drive.
+
+## Optional
+
+- [Customizing Prompts](https://docs.docsgpt.cloud/Guides/Customising-prompts): Template-based prompt customization.
+- [How to Train on Other Documentation](https://docs.docsgpt.cloud/Guides/How-to-train-on-other-documentation): Add additional documentation sources.
+- [Context Compression](https://docs.docsgpt.cloud/Guides/compression): Reduce context while preserving key information.
+- [OCR for Sources and Attachments](https://docs.docsgpt.cloud/Guides/ocr): OCR behavior for ingestion and chat uploads.
+- [How to Use Different LLMs](https://docs.docsgpt.cloud/Guides/How-to-use-different-LLM): Additional model-selection guidance.
+- [Avoiding Hallucinations](https://docs.docsgpt.cloud/Guides/My-AI-answers-questions-using-external-knowledge): Improve answer grounding with external knowledge.
+- [Amazon Lightsail Deployment](https://docs.docsgpt.cloud/Deploying/Amazon-Lightsail): Deploy DocsGPT on AWS Lightsail.
+- [Railway Deployment](https://docs.docsgpt.cloud/Deploying/Railway): Deploy DocsGPT on Railway.
+- [Changelog](https://docs.docsgpt.cloud/changelog): Project release history.

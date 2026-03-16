@@ -220,8 +220,23 @@ class GetPubliclySharedConversations(Resource):
                 shared
                 and "conversation_id" in shared
             ):
-                # conversation_id is now stored as an ObjectId, not a DBRef
+                # Handle DBRef (legacy), ObjectId, dict, and string formats for conversation_id
                 conversation_id = shared["conversation_id"]
+                if isinstance(conversation_id, DBRef):
+                    conversation_id = conversation_id.id
+                elif isinstance(conversation_id, dict):
+                    # Handle dict representation of DBRef (e.g., {"$ref": "...", "$id": "..."})
+                    if "$id" in conversation_id:
+                        conv_id = conversation_id["$id"]
+                        # $id might be a dict like {"$oid": "..."} or a string
+                        if isinstance(conv_id, dict) and "$oid" in conv_id:
+                            conversation_id = ObjectId(conv_id["$oid"])
+                        else:
+                            conversation_id = ObjectId(conv_id)
+                    elif "_id" in conversation_id:
+                        conversation_id = ObjectId(conversation_id["_id"])
+                elif isinstance(conversation_id, str):
+                    conversation_id = ObjectId(conversation_id)
                 conversation = conversations_collection.find_one(
                     {"_id": conversation_id}
                 )

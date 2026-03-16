@@ -33,6 +33,9 @@ import SourcesPopup from './SourcesPopup';
 import ToolsPopup from './ToolsPopup';
 import { handleAbort } from '../conversation/conversationSlice';
 
+const generateId = (): string =>
+  `${Date.now()}-${Math.random().toString(36).substring(2)}`;
+
 type MessageInputProps = {
   onSubmit: (text: string) => void;
   loading: boolean;
@@ -99,7 +102,7 @@ export default function MessageInput({
 
         files.forEach((file, i) => {
           formData.append('file', file);
-          const uiId = crypto.randomUUID();
+          const uiId = generateId();
           indexToUiId[i] = uiId;
           dispatch(
             addAttachment({
@@ -285,7 +288,7 @@ export default function MessageInput({
         const formData = new FormData();
         formData.append('file', file);
         const xhr = new XMLHttpRequest();
-        const uniqueId = crypto.randomUUID();
+        const uniqueId = generateId();
 
         const newAttachment = {
           id: uniqueId,
@@ -500,7 +503,7 @@ export default function MessageInput({
     return () => clearInterval(interval);
   }, [attachments, dispatch]);
 
-  const handleInput = () => {
+  const handleInput = useCallback(() => {
     if (inputRef.current) {
       if (window.innerWidth < 350) inputRef.current.style.height = 'auto';
       else inputRef.current.style.height = '64px';
@@ -509,12 +512,21 @@ export default function MessageInput({
         96,
       )}px`;
     }
-  };
+  }, []);
+
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
     handleInput();
-  }, []);
+  }, [autoFocus, handleInput]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value);
@@ -525,10 +537,31 @@ export default function MessageInput({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
-      if (inputRef.current) {
-        inputRef.current.value = '';
-        handleInput();
+      handleInput();
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const clipboardItems = e.clipboardData?.items;
+    const files: File[] = [];
+
+    if (!clipboardItems) return;
+
+    for (let i = 0; i < clipboardItems.length; i++) {
+      const item = clipboardItems[i];
+
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file) {
+          files.push(file);
+        }
       }
+    }
+
+    if (files.length > 0) {
+      // Prevent weird binary stuff from being pasted as text
+      e.preventDefault();
+      uploadFiles(files);
     }
   };
 
@@ -540,6 +573,14 @@ export default function MessageInput({
     if (value.trim() && !loading) {
       onSubmit(value);
       setValue('');
+      // Refocus input after submission if autoFocus is enabled
+      if (autoFocus) {
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            inputRef.current?.focus();
+          }
+        }, 0);
+      }
     }
   };
 
@@ -691,6 +732,7 @@ export default function MessageInput({
             className="inputbox-style no-scrollbar bg-lotion dark:text-bright-gray dark:placeholder:text-bright-gray/50 w-full overflow-x-hidden overflow-y-auto rounded-t-[23px] px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3 dark:bg-transparent"
             onInput={handleInput}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             aria-label={t('inputPlaceholder')}
           />
         </div>

@@ -1,6 +1,6 @@
 import conversationService from '../api/services/conversationService';
 import userService from '../api/services/userService';
-import { Doc, GetDocsResponse } from '../models/misc';
+import { Doc, GetDocsResponse, Prompt } from '../models/misc';
 import { GetConversationsResult, ConversationSummary } from './types';
 
 //Fetches all JSON objects from the source. We only use the objects with the "model" property in SelectDocsModal.tsx. Hopefully can clean up the source file later.
@@ -90,12 +90,49 @@ export function getLocalApiKey(): string | null {
   return key;
 }
 
-export function getLocalRecentDocs(sourceDocs?: Doc[] | null): Doc[] | null {
-  const docsString = localStorage.getItem('DocsGPTRecentDocs');
-  const selectedDocs = docsString ? (JSON.parse(docsString) as Doc[]) : null;
+function parseStoredRecentDocs(docsString: string | null): Doc[] | null {
+  if (!docsString) {
+    return null;
+  }
 
-  if (!sourceDocs || !selectedDocs || selectedDocs.length === 0) {
-    return selectedDocs;
+  try {
+    const parsedDocs: unknown = JSON.parse(docsString);
+
+    if (Array.isArray(parsedDocs)) {
+      const docs = parsedDocs.filter(
+        (doc): doc is Doc => typeof doc === 'object' && doc !== null,
+      );
+      return docs.length > 0 ? docs : null;
+    }
+
+    if (typeof parsedDocs === 'object' && parsedDocs !== null) {
+      return [parsedDocs as Doc];
+    }
+  } catch (error) {
+    console.warn('Failed to parse DocsGPTRecentDocs from localStorage', error);
+  }
+
+  return null;
+}
+
+export function getStoredRecentDocs(): Doc[] {
+  const recentDocs = parseStoredRecentDocs(
+    localStorage.getItem('DocsGPTRecentDocs'),
+  );
+
+  if (!recentDocs || recentDocs.length === 0) {
+    localStorage.removeItem('DocsGPTRecentDocs');
+    return [];
+  }
+
+  return recentDocs;
+}
+
+export function getLocalRecentDocs(sourceDocs?: Doc[] | null): Doc[] | null {
+  const selectedDocs = getStoredRecentDocs();
+
+  if (!sourceDocs || selectedDocs.length === 0) {
+    return selectedDocs.length > 0 ? selectedDocs : null;
   }
   const isDocAvailable = (selected: Doc) => {
     return sourceDocs.some((source) => {
@@ -113,17 +150,40 @@ export function getLocalRecentDocs(sourceDocs?: Doc[] | null): Doc[] | null {
   return validDocs.length > 0 ? validDocs : null;
 }
 
-export function getLocalPrompt(): string | null {
-  const prompt = localStorage.getItem('DocsGPTPrompt');
-  return prompt;
+export function getLocalPrompt(
+  availablePrompts?: Prompt[] | null,
+): Prompt | null {
+  const promptString = localStorage.getItem('DocsGPTPrompt');
+  const selectedPrompt = promptString
+    ? (JSON.parse(promptString) as Prompt)
+    : null;
+
+  if (!availablePrompts || !selectedPrompt) {
+    return selectedPrompt;
+  }
+
+  const isPromptAvailable = (selected: Prompt) => {
+    return availablePrompts.some((available) => {
+      return available.id === selected.id;
+    });
+  };
+
+  const isValid = isPromptAvailable(selectedPrompt);
+
+  if (!isValid) {
+    localStorage.removeItem('DocsGPTPrompt');
+    return null;
+  }
+
+  return selectedPrompt;
 }
 
 export function setLocalApiKey(key: string): void {
   localStorage.setItem('DocsGPTApiKey', key);
 }
 
-export function setLocalPrompt(prompt: string): void {
-  localStorage.setItem('DocsGPTPrompt', prompt);
+export function setLocalPrompt(prompt: Prompt): void {
+  localStorage.setItem('DocsGPTPrompt', JSON.stringify(prompt));
 }
 
 export function setLocalRecentDocs(docs: Doc[] | null): void {
@@ -131,5 +191,19 @@ export function setLocalRecentDocs(docs: Doc[] | null): void {
     localStorage.setItem('DocsGPTRecentDocs', JSON.stringify(docs));
   } else {
     localStorage.removeItem('DocsGPTRecentDocs');
+  }
+}
+
+export async function getPrompts(token: string | null): Promise<Prompt[]> {
+  try {
+    const response = await userService.getPrompts(token);
+    if (!response.ok) {
+      throw new Error('Failed to fetch prompts');
+    }
+    const data = await response.json();
+    return data as Prompt[];
+  } catch (error) {
+    console.error('Error fetching prompts:', error);
+    return [];
   }
 }
