@@ -25,11 +25,13 @@ type ConversationMessagesProps = {
     question: string;
     isRetry?: boolean;
     index?: number;
+    imageBase64?: string
   }) => void;
   handleQuestionSubmission: (
     updatedQuestion?: string,
     updated?: boolean,
     index?: number,
+    imageBase64?: string, 
   ) => void;
   handleFeedback?: (query: Query, feedback: FEEDBACK, index: number) => void;
   queries: Query[];
@@ -174,6 +176,7 @@ export default function ConversationMessages({
               question: questionToRetry,
               isRetry: true,
               index,
+              imageBase64: queries[index].imageBase64
             });
           }}
           aria-label={t('Retry') || 'Retry'}
@@ -235,6 +238,7 @@ export default function ConversationMessages({
                 key={`${index}-QUESTION`}
                 message={query.prompt}
                 type="QUESTION"
+                imageBase64={query.imageBase64}
                 handleUpdatedQuestionSubmission={handleQuestionSubmission}
                 questionNumber={index}
                 sources={query.sources}

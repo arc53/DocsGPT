@@ -32,7 +32,7 @@ export function handleAbort() {
 
 export const fetchAnswer = createAsyncThunk<
   Answer,
-  { question: string; indx?: number }
+  { question: string; indx?: number; imageBase64?: string }
 >('fetchAnswer', async ({ question, indx }, { dispatch, getState }) => {
   if (abortController) abortController.abort();
   abortController = new AbortController();
@@ -40,6 +40,10 @@ export const fetchAnswer = createAsyncThunk<
 
   let isSourceUpdated = false;
   const state = getState() as RootState;
+  
+  const targetIndex = indx ?? state.conversation.queries.length - 1;
+  const imageBase64 = state.conversation.queries[targetIndex]?.imageBase64;
+
   const attachmentIds = selectCompletedAttachments(state)
     .filter((a) => a.id)
     .map((a) => a.id) as string[];
@@ -65,7 +69,6 @@ export const fetchAnswer = createAsyncThunk<
         state.preference.chunks,
         (event) => {
           const data = JSON.parse(event.data);
-          const targetIndex = indx ?? state.conversation.queries.length - 1;
 
           // Only process events if they match the current conversation
           if (currentConversationId === state.conversation.conversationId) {
@@ -88,7 +91,6 @@ export const fetchAnswer = createAsyncThunk<
                 );
               }
             } else if (data.type === 'id') {
-              // Only update the conversationId if it's currently null
               const currentState = getState() as RootState;
               if (currentState.conversation.conversationId === null) {
                 dispatch(
@@ -160,6 +162,7 @@ export const fetchAnswer = createAsyncThunk<
         attachmentIds,
         true,
         modelId,
+        imageBase64 
       );
     } else {
       const answer = await handleFetchAnswer(
@@ -174,6 +177,7 @@ export const fetchAnswer = createAsyncThunk<
         attachmentIds,
         true,
         modelId,
+        imageBase64 
       );
       if (answer) {
         let sourcesPrepped = [];
@@ -187,8 +191,6 @@ export const fetchAnswer = createAsyncThunk<
           }
           return source;
         });
-
-        const targetIndex = indx ?? state.conversation.queries.length - 1;
 
         dispatch(
           updateQuery({

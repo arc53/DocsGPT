@@ -3,12 +3,14 @@ import traceback
 
 from flask import make_response, request
 from flask_restx import fields, Resource
-
 from application.api import api
 
 from application.api.answer.routes.base import answer_ns, BaseAnswerResource
-
 from application.api.answer.services.stream_processor import StreamProcessor
+from application.api.answer.services.multimodal_service import (
+    normalize_question_payload,
+    run_multimodal_completion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,15 @@ class AnswerResource(Resource, BaseAnswerResource):
         "AnswerModel",
         {
             "question": fields.String(
-                required=True, description="Question to be asked"
+                required=False, description="Question to be asked"
+            ),
+            "imageBase64": fields.String(
+                required=False,
+                description="Optional base64-encoded user image for multimodal requests",
+            ),
+            "imageMimeType": fields.String(
+                required=False,
+                description="Optional MIME type for imageBase64 (e.g. image/png)",
             ),
             "history": fields.List(
                 fields.String,
@@ -65,11 +75,16 @@ class AnswerResource(Resource, BaseAnswerResource):
         },
     )
 
+
     @api.expect(answer_model)
     @api.doc(description="Provide a response based on the question and retriever")
     def post(self):
-        data = request.get_json()
-        if error := self.validate_request(data):
+        data = request.get_json() or {}
+        data = normalize_question_payload(data)
+        has_image = bool(data.get("image_base64"))
+        if not data.get("question") and not has_image:
+            return make_response({"error": "question is required"}, 400)
+        if error := self.validate_request({"question": data.get("question", " ")}):
             return error
         decoded_token = getattr(request, "decoded_token", None)
         processor = StreamProcessor(data, decoded_token)
@@ -83,14 +98,35 @@ class AnswerResource(Resource, BaseAnswerResource):
             )
             tools_data = processor.pre_fetch_tools()
 
+            if error := self.check_usage(processor.agent_config):
+                return error
+
+            # Scenario 1: direct user upload for multimodal vision requests.
+            image_base64 = data.get("image_base64")
+            if image_base64:
+                response = run_multimodal_completion(
+                    question=data["question"],
+                    image_base64=image_base64,
+                    docs_together=docs_together,
+                    model_id=data.get("model_id") or "gpt-4o",
+                    image_mime_type=data.get("image_mime_type"),
+                )
+                return make_response(
+                    {
+                        "conversation_id": processor.conversation_id,
+                        "answer": response,
+                        "sources": docs_list or [],
+                        "tool_calls": [],
+                        "thought": "",
+                    },
+                    200,
+                )
+
             agent = processor.create_agent(
                 docs_together=docs_together,
                 docs=docs_list,
                 tools_data=tools_data,
             )
-
-            if error := self.check_usage(processor.agent_config):
-                return error
 
             stream = self.complete_stream(
                 question=data["question"],

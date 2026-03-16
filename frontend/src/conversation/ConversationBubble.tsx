@@ -62,6 +62,7 @@ const ConversationBubble = forwardRef<
       index?: number,
     ) => void;
     filesAttached?: { id: string; fileName: string }[];
+    imageBase64?: string; // --- ADDED THIS LINE ---
     onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
   }
 >(function ConversationBubble(
@@ -79,6 +80,7 @@ const ConversationBubble = forwardRef<
     isStreaming,
     handleUpdatedQuestionSubmission,
     filesAttached,
+    imageBase64, // --- DESTRUCTURED HERE ---
     onOpenArtifact,
   },
   ref,
@@ -153,6 +155,19 @@ const ConversationBubble = forwardRef<
               ))}
             </div>
           )}
+
+          {/* --- NEW IMAGE RENDERING BLOCK --- */}
+          {imageBase64 && (
+            <div className="mr-12 mb-3 max-w-sm overflow-hidden rounded-2xl border border-gray-200 shadow-sm dark:border-gray-700">
+              <img
+                src={imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`}
+                alt="User input"
+                className="h-auto w-full max-h-64 object-cover"
+              />
+            </div>
+          )}
+          {/* ---------------------------------- */}
+
           <div
             ref={ref}
             className={`flex flex-row-reverse justify-items-start`}
@@ -790,7 +805,7 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
   const [isToolCallsOpen, setIsToolCallsOpen] = useState(false);
 
   return (
-		<div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
         <div className="my-2 flex flex-row items-center justify-center gap-3">
           <Avatar
             className="h-[26px] w-[30px] text-xl"
@@ -888,7 +903,7 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
             </div>
           </div>
         )}
-		</div>
+    </div>
   );
 }
 
