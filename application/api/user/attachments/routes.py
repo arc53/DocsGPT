@@ -283,9 +283,14 @@ class SpeechToText(Resource):
 
         try:
             _enforce_uploaded_audio_size_limit(file, filename)
-        except AudioFileTooLargeError as err:
+        except AudioFileTooLargeError:
             return make_response(
-                jsonify({"success": False, "message": str(err)}),
+                jsonify(
+                    {
+                        "success": False,
+                        "message": build_stt_file_size_limit_message(),
+                    }
+                ),
                 413,
             )
 
@@ -456,9 +461,14 @@ class LiveSpeechToTextChunk(Resource):
 
         try:
             _enforce_uploaded_audio_size_limit(file, filename)
-        except AudioFileTooLargeError as err:
+        except AudioFileTooLargeError:
             return make_response(
-                jsonify({"success": False, "message": str(err)}),
+                jsonify(
+                    {
+                        "success": False,
+                        "message": build_stt_file_size_limit_message(),
+                    }
+                ),
                 413,
             )
 

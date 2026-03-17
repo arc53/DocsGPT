@@ -740,13 +740,7 @@ class UpdateAgent(Resource):
             request, existing_agent.get("image", ""), user, storage
         )
         if error:
-            current_app.logger.error(
-                f"Image upload error for agent {agent_id}: {error}"
-            )
-            return make_response(
-                jsonify({"success": False, "message": f"Image upload failed: {error}"}),
-                400,
-            )
+            return error
         update_fields = {}
         allowed_fields = [
             "name",

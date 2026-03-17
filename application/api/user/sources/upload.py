@@ -18,6 +18,7 @@ from application.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
 from application.storage.storage_creator import StorageCreator
 from application.stt.upload_limits import (
     AudioFileTooLargeError,
+    build_stt_file_size_limit_message,
     enforce_audio_file_size_limit,
     is_audio_filename,
 )
@@ -148,9 +149,14 @@ class UploadFile(Resource):
                 filename=dir_name,
                 file_name_map=file_name_map,
             )
-        except AudioFileTooLargeError as err:
+        except AudioFileTooLargeError:
             return make_response(
-                jsonify({"success": False, "message": str(err)}),
+                jsonify(
+                    {
+                        "success": False,
+                        "message": build_stt_file_size_limit_message(),
+                    }
+                ),
                 413,
             )
         except Exception as err:
