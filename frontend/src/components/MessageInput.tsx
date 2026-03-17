@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { LoaderCircle, Mic, Square } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -22,7 +23,7 @@ import {
   reorderAttachments,
 } from '../upload/uploadSlice';
 
-import { ActiveState } from '../models/misc';
+import { ActiveState, Doc } from '../models/misc';
 import {
   selectSelectedDocs,
   selectToken,
@@ -32,9 +33,151 @@ import { getOS, isTouchDevice } from '../utils/browserUtils';
 import SourcesPopup from './SourcesPopup';
 import ToolsPopup from './ToolsPopup';
 import { handleAbort } from '../conversation/conversationSlice';
+import {
+  FILE_UPLOAD_ACCEPT,
+  FILE_UPLOAD_ACCEPT_ATTR,
+} from '../constants/fileUpload';
 
 const generateId = (): string =>
   `${Date.now()}-${Math.random().toString(36).substring(2)}`;
+
+type RecordingState = 'idle' | 'recording' | 'transcribing' | 'error';
+
+const LIVE_TRANSCRIPTION_TIMESLICE_MS = 1000;
+const LIVE_CAPTURE_SAMPLE_RATE = 16000;
+const LIVE_CAPTURE_MAX_BUFFER_SECONDS = 20;
+const LIVE_SILENCE_RMS_THRESHOLD = 0.015;
+const ENABLE_VOICE_INPUT = import.meta.env.VITE_ENABLE_VOICE_INPUT === 'true';
+
+type AudioContextWindow = Window &
+  typeof globalThis & {
+    webkitAudioContext?: typeof AudioContext;
+  };
+
+type LiveAudioSnapshot = {
+  blob: Blob;
+  chunkIndex: number;
+  isSilence: boolean;
+};
+
+const getAudioContextConstructor = (): typeof AudioContext | null => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const audioWindow = window as AudioContextWindow;
+  return audioWindow.AudioContext || audioWindow.webkitAudioContext || null;
+};
+
+const downsampleFloat32Buffer = (
+  source: Float32Array,
+  inputSampleRate: number,
+  outputSampleRate: number,
+): Float32Array => {
+  if (
+    !source.length ||
+    inputSampleRate <= 0 ||
+    outputSampleRate <= 0 ||
+    inputSampleRate === outputSampleRate
+  ) {
+    return source;
+  }
+
+  if (outputSampleRate > inputSampleRate) {
+    return source;
+  }
+
+  const ratio = inputSampleRate / outputSampleRate;
+  const outputLength = Math.max(1, Math.round(source.length / ratio));
+  const output = new Float32Array(outputLength);
+
+  let outputOffset = 0;
+  let inputOffset = 0;
+  while (outputOffset < output.length) {
+    const nextInputOffset = Math.min(
+      source.length,
+      Math.round((outputOffset + 1) * ratio),
+    );
+    let accumulator = 0;
+    let count = 0;
+    for (let index = inputOffset; index < nextInputOffset; index += 1) {
+      accumulator += source[index];
+      count += 1;
+    }
+    output[outputOffset] =
+      count > 0 ? accumulator / count : source[inputOffset];
+    outputOffset += 1;
+    inputOffset = nextInputOffset;
+  }
+
+  return output;
+};
+
+const concatenateFloat32Chunks = (
+  chunks: Float32Array[],
+  totalLength: number,
+): Float32Array => {
+  const output = new Float32Array(totalLength);
+  let offset = 0;
+  chunks.forEach((chunk) => {
+    output.set(chunk, offset);
+    offset += chunk.length;
+  });
+  return output;
+};
+
+const encodeWavFromFloat32 = (
+  samples: Float32Array,
+  sampleRate: number,
+): Blob => {
+  const bytesPerSample = 2;
+  const blockAlign = bytesPerSample;
+  const buffer = new ArrayBuffer(44 + samples.length * bytesPerSample);
+  const view = new DataView(buffer);
+  let offset = 0;
+
+  const writeString = (value: string) => {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset + index, value.charCodeAt(index));
+    }
+    offset += value.length;
+  };
+
+  writeString('RIFF');
+  view.setUint32(offset, 36 + samples.length * bytesPerSample, true);
+  offset += 4;
+  writeString('WAVE');
+  writeString('fmt ');
+  view.setUint32(offset, 16, true);
+  offset += 4;
+  view.setUint16(offset, 1, true);
+  offset += 2;
+  view.setUint16(offset, 1, true);
+  offset += 2;
+  view.setUint32(offset, sampleRate, true);
+  offset += 4;
+  view.setUint32(offset, sampleRate * blockAlign, true);
+  offset += 4;
+  view.setUint16(offset, blockAlign, true);
+  offset += 2;
+  view.setUint16(offset, 16, true);
+  offset += 2;
+  writeString('data');
+  view.setUint32(offset, samples.length * bytesPerSample, true);
+  offset += 4;
+
+  for (let index = 0; index < samples.length; index += 1) {
+    const clamped = Math.max(-1, Math.min(1, samples[index]));
+    view.setInt16(
+      offset,
+      clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff,
+      true,
+    );
+    offset += 2;
+  }
+
+  return new Blob([buffer], { type: 'audio/wav' });
+};
 
 type MessageInputProps = {
   onSubmit: (text: string) => void;
@@ -61,15 +204,81 @@ export default function MessageInput({
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
   const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
+  const [recordingState, setRecordingState] = useState<RecordingState>('idle');
+  const [voiceError, setVoiceError] = useState<string | null>(null);
 
   const selectedDocs = useSelector(selectSelectedDocs);
   const token = useSelector(selectToken);
   const attachments = useSelector(selectAttachments);
 
   const dispatch = useDispatch();
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const audioProcessorNodeRef = useRef<ScriptProcessorNode | null>(null);
+  const audioSilenceGainRef = useRef<GainNode | null>(null);
+  const snapshotIntervalRef = useRef<number | null>(null);
+  const pcmChunksRef = useRef<Float32Array[]>([]);
+  const totalBufferedSamplesRef = useRef(0);
+  const totalCapturedSamplesRef = useRef(0);
+  const lastSnapshotCapturedSamplesRef = useRef(0);
+  const recentWindowRmsRef = useRef({ sumSquares: 0, sampleCount: 0 });
+  const liveSessionIdRef = useRef<string | null>(null);
+  const livePendingSnapshotRef = useRef<LiveAudioSnapshot | null>(null);
+  const liveChunkIndexRef = useRef(0);
+  const liveUploadInFlightRef = useRef(false);
+  const liveStopRequestedRef = useRef(false);
+  const voiceBaseValueRef = useRef('');
+  const liveTranscriptRef = useRef('');
 
   const browserOS = getOS();
   const isTouch = isTouchDevice();
+
+  const stopMediaStream = () => {
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+  };
+
+  const stopAudioProcessing = () => {
+    if (snapshotIntervalRef.current !== null) {
+      window.clearInterval(snapshotIntervalRef.current);
+      snapshotIntervalRef.current = null;
+    }
+
+    if (audioProcessorNodeRef.current) {
+      audioProcessorNodeRef.current.onaudioprocess = null;
+      audioProcessorNodeRef.current.disconnect();
+      audioProcessorNodeRef.current = null;
+    }
+    if (audioSourceNodeRef.current) {
+      audioSourceNodeRef.current.disconnect();
+      audioSourceNodeRef.current = null;
+    }
+    if (audioSilenceGainRef.current) {
+      audioSilenceGainRef.current.disconnect();
+      audioSilenceGainRef.current = null;
+    }
+    if (audioContextRef.current) {
+      void audioContextRef.current.close().catch(() => undefined);
+      audioContextRef.current = null;
+    }
+    stopMediaStream();
+  };
+
+  const resetLiveTranscriptionState = () => {
+    pcmChunksRef.current = [];
+    totalBufferedSamplesRef.current = 0;
+    totalCapturedSamplesRef.current = 0;
+    lastSnapshotCapturedSamplesRef.current = 0;
+    recentWindowRmsRef.current = { sumSquares: 0, sampleCount: 0 };
+    liveSessionIdRef.current = null;
+    livePendingSnapshotRef.current = null;
+    liveChunkIndexRef.current = 0;
+    liveUploadInFlightRef.current = false;
+    liveStopRequestedRef.current = false;
+    voiceBaseValueRef.current = '';
+    liveTranscriptRef.current = '';
+  };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -89,6 +298,13 @@ export default function MessageInput({
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [browserOS]);
+
+  useEffect(() => {
+    return () => {
+      stopAudioProcessing();
+      resetLiveTranscriptionState();
+    };
+  }, []);
 
   const uploadFiles = useCallback(
     (files: File[]) => {
@@ -143,42 +359,114 @@ export default function MessageInput({
                   filename?: string;
                   attachment_id?: string;
                   path?: string;
+                  upload_index?: number;
                 }>;
+                const errors = Array.isArray(response?.errors)
+                  ? (response.errors as Array<{
+                      filename?: string;
+                      error?: string;
+                      upload_index?: number;
+                    }>)
+                  : [];
+                const hasIndexedResults =
+                  tasks.some((task) => typeof task.upload_index === 'number') ||
+                  errors.some(
+                    (errorItem) => typeof errorItem.upload_index === 'number',
+                  );
 
-                tasks.forEach((t, idx) => {
-                  const uiId = indexToUiId[idx];
-                  if (!uiId) return;
-                  if (t?.task_id) {
-                    dispatch(
-                      updateAttachment({
-                        id: uiId,
-                        updates: {
-                          taskId: t.task_id,
-                          status: 'processing',
-                          progress: 10,
-                        },
-                      }),
-                    );
-                  } else {
-                    dispatch(
-                      updateAttachment({
-                        id: uiId,
-                        updates: { status: 'failed' },
-                      }),
-                    );
-                  }
-                });
+                if (hasIndexedResults) {
+                  const tasksByIndex = new Map<
+                    number,
+                    (typeof tasks)[number]
+                  >();
+                  const failedIndices = new Set<number>();
 
-                if (tasks.length < files.length) {
-                  for (let i = tasks.length; i < files.length; i++) {
-                    const uiId = indexToUiId[i];
-                    if (uiId) {
+                  tasks.forEach((task, taskOrderIndex) => {
+                    const uploadIndex =
+                      typeof task.upload_index === 'number'
+                        ? task.upload_index
+                        : taskOrderIndex;
+                    tasksByIndex.set(uploadIndex, task);
+                  });
+
+                  errors.forEach((errorItem) => {
+                    if (typeof errorItem.upload_index === 'number') {
+                      failedIndices.add(errorItem.upload_index);
+                    }
+                  });
+
+                  files.forEach((_, index) => {
+                    const uiId = indexToUiId[index];
+                    if (!uiId) return;
+
+                    const task = tasksByIndex.get(index);
+                    if (task?.task_id) {
+                      dispatch(
+                        updateAttachment({
+                          id: uiId,
+                          updates: {
+                            taskId: task.task_id,
+                            status: 'processing',
+                            progress: 10,
+                          },
+                        }),
+                      );
+                      return;
+                    }
+
+                    if (failedIndices.has(index)) {
                       dispatch(
                         updateAttachment({
                           id: uiId,
                           updates: { status: 'failed' },
                         }),
                       );
+                      return;
+                    }
+
+                    dispatch(
+                      updateAttachment({
+                        id: uiId,
+                        updates: { status: 'failed' },
+                      }),
+                    );
+                  });
+                } else {
+                  tasks.forEach((t, idx) => {
+                    const uiId = indexToUiId[idx];
+                    if (!uiId) return;
+                    if (t?.task_id) {
+                      dispatch(
+                        updateAttachment({
+                          id: uiId,
+                          updates: {
+                            taskId: t.task_id,
+                            status: 'processing',
+                            progress: 10,
+                          },
+                        }),
+                      );
+                    } else {
+                      dispatch(
+                        updateAttachment({
+                          id: uiId,
+                          updates: { status: 'failed' },
+                        }),
+                      );
+                    }
+                  });
+
+                  if (tasks.length < files.length) {
+                    for (let i = tasks.length; i < files.length; i++) {
+                      const uiId = indexToUiId[i];
+                      if (uiId) {
+                        dispatch(
+                          updateAttachment({
+                            id: uiId,
+                            updates: { status: 'failed' },
+                          }),
+                        );
+                      }
                     }
                   }
                 }
@@ -421,27 +709,7 @@ export default function MessageInput({
       setHandleDragActive(false);
     },
     maxSize: 25000000,
-    accept: {
-      'application/pdf': ['.pdf'],
-      'text/plain': ['.txt'],
-      'text/x-rst': ['.rst'],
-      'text/x-markdown': ['.md'],
-      'application/zip': ['.zip'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        ['.docx'],
-      'application/json': ['.json'],
-      'text/csv': ['.csv'],
-      'text/html': ['.html'],
-      'application/epub+zip': ['.epub'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
-        '.xlsx',
-      ],
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-        ['.pptx'],
-      'image/png': ['.png'],
-      'image/jpeg': ['.jpeg'],
-      'image/jpg': ['.jpg'],
-    },
+    accept: FILE_UPLOAD_ACCEPT,
   });
 
   useEffect(() => {
@@ -514,6 +782,359 @@ export default function MessageInput({
     }
   }, []);
 
+  const buildVoiceDraftValue = (baseText: string, transcript: string) => {
+    const normalizedBaseText = baseText ?? '';
+    const normalizedTranscript = transcript.trim();
+
+    if (!normalizedTranscript) {
+      return normalizedBaseText;
+    }
+
+    return normalizedBaseText.trim()
+      ? `${normalizedBaseText}${
+          normalizedBaseText.endsWith('\n') ? '' : '\n'
+        }${normalizedTranscript}`
+      : normalizedTranscript;
+  };
+
+  const applyLiveTranscript = (transcript: string) => {
+    const normalizedTranscript = transcript.trim();
+    liveTranscriptRef.current = normalizedTranscript;
+    setValue(
+      buildVoiceDraftValue(voiceBaseValueRef.current, normalizedTranscript),
+    );
+    setTimeout(() => {
+      handleInput();
+    }, 0);
+  };
+
+  const trimLivePcmBuffer = () => {
+    const maxBufferedSamples =
+      LIVE_CAPTURE_SAMPLE_RATE * LIVE_CAPTURE_MAX_BUFFER_SECONDS;
+
+    while (
+      totalBufferedSamplesRef.current > maxBufferedSamples &&
+      pcmChunksRef.current.length > 1
+    ) {
+      const removedChunk = pcmChunksRef.current.shift();
+      if (!removedChunk) {
+        break;
+      }
+      totalBufferedSamplesRef.current -= removedChunk.length;
+    }
+
+    if (
+      totalBufferedSamplesRef.current > maxBufferedSamples &&
+      pcmChunksRef.current.length === 1
+    ) {
+      const onlyChunk = pcmChunksRef.current[0];
+      if (!onlyChunk || onlyChunk.length <= maxBufferedSamples) {
+        return;
+      }
+
+      const trimmedChunk = onlyChunk.slice(
+        onlyChunk.length - maxBufferedSamples,
+      );
+      pcmChunksRef.current = [trimmedChunk];
+      totalBufferedSamplesRef.current = trimmedChunk.length;
+    }
+  };
+
+  const cleanupLiveSession = async () => {
+    const sessionId = liveSessionIdRef.current;
+    if (!sessionId) {
+      return;
+    }
+
+    liveSessionIdRef.current = null;
+    try {
+      await userService.finishLiveTranscription(sessionId, token);
+    } catch {
+      // Best-effort cleanup only.
+    }
+  };
+
+  const failLiveTranscription = async (message: string) => {
+    console.error('Live audio transcription failed', message);
+    stopAudioProcessing();
+    await cleanupLiveSession();
+    resetLiveTranscriptionState();
+    setRecordingState('error');
+    setVoiceError(message);
+  };
+
+  const finalizeLiveTranscription = async () => {
+    const sessionId = liveSessionIdRef.current;
+    if (!sessionId) {
+      resetLiveTranscriptionState();
+      setRecordingState('idle');
+      return;
+    }
+
+    try {
+      const response = await userService.finishLiveTranscription(
+        sessionId,
+        token,
+      );
+      const data = await response.json();
+
+      if (!response.ok || !data?.success) {
+        throw new Error(
+          data?.message || 'Failed to finalize live transcription.',
+        );
+      }
+
+      if (typeof data.text === 'string') {
+        applyLiveTranscript(data.text);
+      }
+
+      setRecordingState('idle');
+      if (autoFocus) {
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 0);
+      }
+    } catch (error) {
+      console.error('Finalizing live audio transcription failed', error);
+      setRecordingState('error');
+      setVoiceError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to finalize live transcription.',
+      );
+    } finally {
+      resetLiveTranscriptionState();
+    }
+  };
+
+  const maybeFinalizeLiveTranscription = async () => {
+    if (
+      !liveStopRequestedRef.current ||
+      liveUploadInFlightRef.current ||
+      livePendingSnapshotRef.current
+    ) {
+      return;
+    }
+
+    await finalizeLiveTranscription();
+  };
+
+  const processPendingLiveSnapshot = async () => {
+    if (liveUploadInFlightRef.current) {
+      return;
+    }
+
+    const nextSnapshot = livePendingSnapshotRef.current;
+    const sessionId = liveSessionIdRef.current;
+    if (!nextSnapshot || !sessionId) {
+      await maybeFinalizeLiveTranscription();
+      return;
+    }
+
+    livePendingSnapshotRef.current = null;
+    liveUploadInFlightRef.current = true;
+
+    try {
+      const file = new File(
+        [nextSnapshot.blob],
+        `voice-live-${nextSnapshot.chunkIndex}.wav`,
+        {
+          type: 'audio/wav',
+        },
+      );
+      const response = await userService.transcribeLiveAudioChunk(
+        sessionId,
+        nextSnapshot.chunkIndex,
+        file,
+        token,
+        nextSnapshot.isSilence,
+      );
+      const data = await response.json();
+
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || 'Failed to transcribe audio.');
+      }
+
+      if (typeof data.transcript_text === 'string') {
+        applyLiveTranscript(data.transcript_text);
+      }
+    } catch (error) {
+      await failLiveTranscription(
+        error instanceof Error ? error.message : 'Failed to transcribe audio.',
+      );
+      return;
+    } finally {
+      liveUploadInFlightRef.current = false;
+    }
+
+    if (livePendingSnapshotRef.current) {
+      void processPendingLiveSnapshot();
+      return;
+    }
+
+    void maybeFinalizeLiveTranscription();
+  };
+
+  const queueCurrentLiveSnapshot = (forceSilence = false) => {
+    if (
+      totalCapturedSamplesRef.current === lastSnapshotCapturedSamplesRef.current
+    ) {
+      return;
+    }
+
+    if (!pcmChunksRef.current.length || totalBufferedSamplesRef.current <= 0) {
+      return;
+    }
+
+    const pcmSnapshot = concatenateFloat32Chunks(
+      pcmChunksRef.current,
+      totalBufferedSamplesRef.current,
+    );
+    if (!pcmSnapshot.length) {
+      return;
+    }
+
+    const { sumSquares, sampleCount } = recentWindowRmsRef.current;
+    const averageRms =
+      sampleCount > 0 ? Math.sqrt(sumSquares / sampleCount) : 0;
+    const isSilence = forceSilence || averageRms < LIVE_SILENCE_RMS_THRESHOLD;
+
+    recentWindowRmsRef.current = { sumSquares: 0, sampleCount: 0 };
+    lastSnapshotCapturedSamplesRef.current = totalCapturedSamplesRef.current;
+    livePendingSnapshotRef.current = {
+      blob: encodeWavFromFloat32(pcmSnapshot, LIVE_CAPTURE_SAMPLE_RATE),
+      chunkIndex: liveChunkIndexRef.current,
+      isSilence,
+    };
+    liveChunkIndexRef.current += 1;
+    void processPendingLiveSnapshot();
+  };
+
+  const handleVoiceInput = async () => {
+    if (recordingState === 'transcribing') {
+      return;
+    }
+
+    if (recordingState === 'recording') {
+      setRecordingState('transcribing');
+      liveStopRequestedRef.current = true;
+      stopAudioProcessing();
+      queueCurrentLiveSnapshot();
+      void maybeFinalizeLiveTranscription();
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setRecordingState('error');
+      setVoiceError('Voice input is not supported in this browser.');
+      return;
+    }
+
+    const AudioContextConstructor = getAudioContextConstructor();
+    if (!AudioContextConstructor) {
+      setRecordingState('error');
+      setVoiceError('Voice input is not supported in this browser.');
+      return;
+    }
+
+    let stream: MediaStream | null = null;
+    try {
+      setVoiceError(null);
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const liveStartResponse = await userService.startLiveTranscription(token);
+      const liveStartData = await liveStartResponse.json();
+      if (!liveStartResponse.ok || !liveStartData?.success) {
+        throw new Error(
+          liveStartData?.message || 'Failed to start live transcription.',
+        );
+      }
+
+      const audioContext = new AudioContextConstructor();
+      await audioContext.resume().catch(() => undefined);
+      const sourceNode = audioContext.createMediaStreamSource(stream);
+      const processorNode = audioContext.createScriptProcessor(4096, 1, 1);
+      const silenceGain = audioContext.createGain();
+      silenceGain.gain.value = 0;
+
+      pcmChunksRef.current = [];
+      totalBufferedSamplesRef.current = 0;
+      totalCapturedSamplesRef.current = 0;
+      lastSnapshotCapturedSamplesRef.current = 0;
+      recentWindowRmsRef.current = { sumSquares: 0, sampleCount: 0 };
+      liveSessionIdRef.current = liveStartData.session_id;
+      livePendingSnapshotRef.current = null;
+      liveChunkIndexRef.current = 0;
+      liveUploadInFlightRef.current = false;
+      liveStopRequestedRef.current = false;
+      voiceBaseValueRef.current = value;
+      liveTranscriptRef.current = '';
+      applyLiveTranscript('');
+
+      processorNode.onaudioprocess = (event: AudioProcessingEvent) => {
+        const inputData = event.inputBuffer.getChannelData(0);
+        if (!inputData.length) {
+          return;
+        }
+
+        const capturedChunk = new Float32Array(inputData.length);
+        capturedChunk.set(inputData);
+
+        const downsampledChunk = downsampleFloat32Buffer(
+          capturedChunk,
+          audioContext.sampleRate,
+          LIVE_CAPTURE_SAMPLE_RATE,
+        );
+        if (!downsampledChunk.length) {
+          return;
+        }
+
+        pcmChunksRef.current.push(downsampledChunk);
+        totalBufferedSamplesRef.current += downsampledChunk.length;
+        totalCapturedSamplesRef.current += downsampledChunk.length;
+
+        let sumSquares = 0;
+        for (let index = 0; index < downsampledChunk.length; index += 1) {
+          const sample = downsampledChunk[index];
+          sumSquares += sample * sample;
+        }
+
+        recentWindowRmsRef.current.sumSquares += sumSquares;
+        recentWindowRmsRef.current.sampleCount += downsampledChunk.length;
+        trimLivePcmBuffer();
+      };
+
+      sourceNode.connect(processorNode);
+      processorNode.connect(silenceGain);
+      silenceGain.connect(audioContext.destination);
+
+      mediaStreamRef.current = stream;
+      audioContextRef.current = audioContext;
+      audioSourceNodeRef.current = sourceNode;
+      audioProcessorNodeRef.current = processorNode;
+      audioSilenceGainRef.current = silenceGain;
+      snapshotIntervalRef.current = window.setInterval(() => {
+        if (!liveStopRequestedRef.current) {
+          queueCurrentLiveSnapshot();
+        }
+      }, LIVE_TRANSCRIPTION_TIMESLICE_MS);
+
+      setRecordingState('recording');
+    } catch (error) {
+      console.error('Microphone access failed', error);
+      stream?.getTracks().forEach((track) => track.stop());
+      stopAudioProcessing();
+      await cleanupLiveSession();
+      resetLiveTranscriptionState();
+      setRecordingState('error');
+      setVoiceError(
+        error instanceof Error
+          ? error.message
+          : 'Microphone access was denied.',
+      );
+    }
+  };
+
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -565,12 +1186,18 @@ export default function MessageInput({
     }
   };
 
-  const handlePostDocumentSelect = (doc: any) => {
-    console.log('Selected document:', doc);
+  const handlePostDocumentSelect = (_docs: Doc[] | null) => {
+    // SourcesPopup updates Redux selection directly; this preserves the prop contract.
+    void _docs;
   };
 
   const handleSubmit = () => {
-    if (value.trim() && !loading) {
+    if (
+      value.trim() &&
+      !loading &&
+      recordingState !== 'recording' &&
+      recordingState !== 'transcribing'
+    ) {
       onSubmit(value);
       setValue('');
       // Refocus input after submission if autoFocus is enabled
@@ -598,7 +1225,7 @@ export default function MessageInput({
     try {
       e.dataTransfer.setData('text/plain', id);
       e.dataTransfer.effectAllowed = 'move';
-    } catch (err) {
+    } catch {
       // ignore
     }
   };
@@ -620,6 +1247,19 @@ export default function MessageInput({
     dispatch(reorderAttachments({ sourceIndex, destinationIndex: destIndex }));
     setDraggingId(null);
   };
+
+  const voiceButtonLabel =
+    recordingState === 'recording'
+      ? 'Stop recording'
+      : recordingState === 'transcribing'
+        ? 'Transcribing audio'
+        : 'Voice input';
+  const voiceButtonText =
+    recordingState === 'recording'
+      ? 'Stop'
+      : recordingState === 'transcribing'
+        ? 'Transcribing'
+        : 'Voice';
 
   return (
     <div {...getRootProps()} className="flex w-full flex-col">
@@ -718,6 +1358,12 @@ export default function MessageInput({
           })}
         </div>
 
+        {voiceError && (
+          <div className="px-2 pb-1 text-xs text-[#B42318] sm:px-3">
+            {voiceError}
+          </div>
+        )}
+
         <div className="w-full">
           <label htmlFor="message-input" className="sr-only">
             {t('inputPlaceholder')}
@@ -727,6 +1373,10 @@ export default function MessageInput({
             ref={inputRef}
             value={value}
             onChange={handleChange}
+            readOnly={
+              recordingState === 'recording' ||
+              recordingState === 'transcribing'
+            }
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
             className="inputbox-style no-scrollbar bg-lotion dark:text-bright-gray dark:placeholder:text-bright-gray/50 w-full overflow-x-hidden overflow-y-auto rounded-t-[23px] px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3 dark:bg-transparent"
@@ -786,6 +1436,43 @@ export default function MessageInput({
                 </span>
               </button>
             )}
+            {ENABLE_VOICE_INPUT && (
+              <button
+                type="button"
+                onClick={() => {
+                  void handleVoiceInput();
+                }}
+                aria-label={voiceButtonLabel}
+                title={voiceButtonLabel}
+                disabled={loading || recordingState === 'transcribing'}
+                className={`xs:px-3 xs:py-1.5 dark:border-purple-taupe flex items-center rounded-[32px] border px-2 py-1 transition-colors ${
+                  recordingState === 'recording'
+                    ? 'border-[#B42318] bg-[#FEE4E2] text-[#B42318] dark:bg-[#4A2323]'
+                    : 'border-[#AAAAAA] hover:bg-gray-100 dark:hover:bg-[#2C2E3C]'
+                } ${
+                  loading || recordingState === 'transcribing'
+                    ? 'cursor-not-allowed opacity-60'
+                    : ''
+                }`}
+              >
+                {recordingState === 'transcribing' ? (
+                  <LoaderCircle className="mr-1 h-3.5 w-3.5 animate-spin sm:mr-1.5 sm:h-4 sm:w-4" />
+                ) : recordingState === 'recording' ? (
+                  <Square className="mr-1 h-3.5 w-3.5 fill-current sm:mr-1.5 sm:h-4 sm:w-4" />
+                ) : (
+                  <Mic className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4" />
+                )}
+                <span
+                  className={`xs:text-[12px] dark:text-bright-gray text-[10px] font-medium sm:text-[14px] ${
+                    recordingState === 'recording'
+                      ? 'text-[#B42318]'
+                      : 'text-[#5D5D5D]'
+                  }`}
+                >
+                  {voiceButtonText}
+                </span>
+              </button>
+            )}
             <label className="xs:px-3 xs:py-1.5 dark:border-purple-taupe flex cursor-pointer items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:hover:bg-[#2C2E3C]">
               <img
                 src={ClipIcon}
@@ -799,6 +1486,7 @@ export default function MessageInput({
                 type="file"
                 className="hidden"
                 multiple
+                accept={FILE_UPLOAD_ACCEPT_ATTR}
                 onChange={handleFileAttachment}
               />
             </label>
@@ -819,11 +1507,19 @@ export default function MessageInput({
               onClick={handleSubmit}
               aria-label={t('send')}
               className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ease-in-out sm:h-9 sm:w-9 ${
-                value.trim() && !loading
+                value.trim() &&
+                !loading &&
+                recordingState !== 'recording' &&
+                recordingState !== 'transcribing'
                   ? 'bg-purple-30 text-white'
                   : 'bg-[#EDEDED] text-[#959595] dark:bg-[#37383D] dark:text-[#77787D]'
               }`}
-              disabled={!value.trim() || loading}
+              disabled={
+                !value.trim() ||
+                loading ||
+                recordingState === 'recording' ||
+                recordingState === 'transcribing'
+              }
             >
               <SendArrowIcon
                 className="mx-auto my-auto block h-3.5 w-3.5 sm:h-4 sm:w-4"

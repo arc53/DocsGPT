@@ -32,6 +32,7 @@ import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
 
 import { FilePicker } from '../components/FilePicker';
 import GoogleDrivePicker from '../components/GoogleDrivePicker';
+import { FILE_UPLOAD_ACCEPT } from '../constants/fileUpload';
 
 import ChevronRight from '../assets/chevron-right.svg';
 
@@ -561,7 +562,11 @@ function Upload({
       files.forEach((file) => {
         formData.append('file', file);
       });
-    } else if (hasRemoteFilePicker || hasGoogleDrivePicker || hasSharePointPicker) {
+    } else if (
+      hasRemoteFilePicker ||
+      hasGoogleDrivePicker ||
+      hasSharePointPicker
+    ) {
       const sessionToken = getSessionToken(ingestor.type as string);
       configData = {
         provider: ingestor.type as string,
@@ -692,27 +697,7 @@ function Upload({
     onDragOver: doNothing,
     onDragLeave: doNothing,
     maxSize: 25000000,
-    accept: {
-      'application/pdf': ['.pdf'],
-      'text/plain': ['.txt'],
-      'text/x-rst': ['.rst'],
-      'text/x-markdown': ['.md'],
-      'application/zip': ['.zip'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        ['.docx'],
-      'application/json': ['.json'],
-      'text/csv': ['.csv'],
-      'text/html': ['.html'],
-      'application/epub+zip': ['.epub'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
-        '.xlsx',
-      ],
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-        ['.pptx'],
-      'image/png': ['.png'],
-      'image/jpeg': ['.jpeg'],
-      'image/jpg': ['.jpg'],
-    },
+    accept: FILE_UPLOAD_ACCEPT,
   });
 
   const isUploadDisabled = (): boolean => {
@@ -745,7 +730,11 @@ function Upload({
       if (files.length === 0) {
         return true;
       }
-    } else if (hasRemoteFilePicker || hasGoogleDrivePicker || hasSharePointPicker) {
+    } else if (
+      hasRemoteFilePicker ||
+      hasGoogleDrivePicker ||
+      hasSharePointPicker
+    ) {
       if (selectedFiles.length === 0 && selectedFolders.length === 0) {
         return true;
       }

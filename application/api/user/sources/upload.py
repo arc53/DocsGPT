@@ -14,6 +14,7 @@ from application.api.user.base import sources_collection
 from application.api.user.tasks import ingest, ingest_connector_task, ingest_remote
 from application.core.settings import settings
 from application.parser.connectors.connector_creator import ConnectorCreator
+from application.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
 from application.storage.storage_creator import StorageCreator
 from application.utils import check_required_fields, safe_filename
 
@@ -124,23 +125,7 @@ class UploadFile(Resource):
                             storage.save_file(f, file_path)
             task = ingest.delay(
                 settings.UPLOAD_FOLDER,
-                [
-                    ".rst",
-                    ".md",
-                    ".pdf",
-                    ".txt",
-                    ".docx",
-                    ".csv",
-                    ".epub",
-                    ".html",
-                    ".mdx",
-                    ".json",
-                    ".xlsx",
-                    ".pptx",
-                    ".png",
-                    ".jpg",
-                    ".jpeg",
-                ],
+                list(SUPPORTED_SOURCE_EXTENSIONS),
                 job_name,
                 user,
                 file_path=base_path,

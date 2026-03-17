@@ -13,6 +13,7 @@ import ArrowLeft from '../assets/arrow-left.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import EyeView from '../assets/eye-view.svg';
 import Trash from '../assets/red-trash.svg';
+import { SOURCE_FILE_TREE_ACCEPT_ATTR } from '../constants/fileUpload';
 import { useOutsideAlerter, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import {
@@ -413,8 +414,7 @@ const FileTree: React.FC<FileTreeProps> = ({
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.multiple = true;
-    fileInput.accept =
-      '.rst,.md,.pdf,.txt,.docx,.csv,.epub,.html,.mdx,.json,.xlsx,.pptx,.png,.jpg,.jpeg';
+    fileInput.accept = SOURCE_FILE_TREE_ACCEPT_ATTR;
 
     fileInput.onchange = async (event) => {
       const fileList = (event.target as HTMLInputElement).files;

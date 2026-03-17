@@ -91,6 +91,56 @@ const userService = {
     formData.append('file', file);
     return apiClient.postFormData(endpoints.USER.PARSE_SPEC, formData, token);
   },
+  transcribeAudio: (
+    file: File,
+    token: string | null,
+    language?: string,
+  ): Promise<Response> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (language) {
+      formData.append('language', language);
+    }
+    return apiClient.postFormData(endpoints.USER.STT, formData, token);
+  },
+  startLiveTranscription: (
+    token: string | null,
+    language?: string,
+  ): Promise<Response> =>
+    apiClient.post(
+      endpoints.USER.LIVE_STT_START,
+      language ? { language } : {},
+      token,
+    ),
+  transcribeLiveAudioChunk: (
+    sessionId: string,
+    chunkIndex: number,
+    file: File,
+    token: string | null,
+    isSilence?: boolean,
+  ): Promise<Response> => {
+    const formData = new FormData();
+    formData.append('session_id', sessionId);
+    formData.append('chunk_index', String(chunkIndex));
+    if (typeof isSilence === 'boolean') {
+      formData.append('is_silence', String(isSilence));
+    }
+    formData.append('file', file);
+    return apiClient.postFormData(
+      endpoints.USER.LIVE_STT_CHUNK,
+      formData,
+      token,
+    );
+  },
+  finishLiveTranscription: (
+    sessionId: string,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(
+      endpoints.USER.LIVE_STT_FINISH,
+      { session_id: sessionId },
+      token,
+    ),
   getDocumentChunks: (
     docId: string,
     page: number,
