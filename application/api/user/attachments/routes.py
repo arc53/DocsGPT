@@ -15,6 +15,12 @@ from application.stt.constants import (
     SUPPORTED_AUDIO_EXTENSIONS,
     SUPPORTED_AUDIO_MIME_TYPES,
 )
+from application.stt.upload_limits import (
+    AudioFileTooLargeError,
+    build_stt_file_size_limit_message,
+    enforce_audio_file_size_limit,
+    is_audio_filename,
+)
 from application.stt.live_session import (
     apply_live_stt_hypothesis,
     create_live_stt_session,
@@ -70,6 +76,14 @@ def _is_supported_audio_mimetype(mimetype: str) -> bool:
         return True
     normalized = mimetype.split(";")[0].strip().lower()
     return normalized.startswith("audio/") or normalized in SUPPORTED_AUDIO_MIME_TYPES
+
+
+def _enforce_uploaded_audio_size_limit(file, filename: str) -> None:
+    if not is_audio_filename(filename):
+        return
+    size_bytes = _get_uploaded_file_size(file)
+    if size_bytes:
+        enforce_audio_file_size_limit(size_bytes)
 
 
 def _require_live_stt_redis():
@@ -139,6 +153,7 @@ class StoreAttachment(Resource):
                 try:
                     attachment_id = ObjectId()
                     original_filename = safe_filename(os.path.basename(file.filename))
+                    _enforce_uploaded_audio_size_limit(file, original_filename)
                     relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"
 
                     metadata = storage.save_file(file, relative_path)
@@ -165,6 +180,20 @@ class StoreAttachment(Resource):
                     })
             
             if not tasks:
+                if errors and all(
+                    error.get("error") == build_stt_file_size_limit_message()
+                    for error in errors
+                ):
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": build_stt_file_size_limit_message(),
+                                "errors": errors,
+                            }
+                        ),
+                        413,
+                    )
                 return make_response(
                     jsonify({"status": "error", "message": "No valid files to upload"}),
                     400,
@@ -246,16 +275,11 @@ class SpeechToText(Resource):
                 400,
             )
 
-        max_size_bytes = settings.STT_MAX_FILE_SIZE_MB * 1024 * 1024
-        file_size = _get_uploaded_file_size(file)
-        if file_size and file_size > max_size_bytes:
+        try:
+            _enforce_uploaded_audio_size_limit(file, filename)
+        except AudioFileTooLargeError as err:
             return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "message": f"Audio file exceeds {settings.STT_MAX_FILE_SIZE_MB}MB limit",
-                    }
-                ),
+                jsonify({"success": False, "message": str(err)}),
                 413,
             )
 
@@ -424,16 +448,11 @@ class LiveSpeechToTextChunk(Resource):
                 400,
             )
 
-        max_size_bytes = settings.STT_MAX_FILE_SIZE_MB * 1024 * 1024
-        file_size = _get_uploaded_file_size(file)
-        if file_size and file_size > max_size_bytes:
+        try:
+            _enforce_uploaded_audio_size_limit(file, filename)
+        except AudioFileTooLargeError as err:
             return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "message": f"Audio file exceeds {settings.STT_MAX_FILE_SIZE_MB}MB limit",
-                    }
-                ),
+                jsonify({"success": False, "message": str(err)}),
                 413,
             )
 

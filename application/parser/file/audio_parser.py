@@ -4,6 +4,7 @@ from typing import Dict, Union
 from application.core.settings import settings
 from application.parser.file.base_parser import BaseParser
 from application.stt.stt_creator import STTCreator
+from application.stt.upload_limits import enforce_audio_file_size_limit
 
 
 class AudioParser(BaseParser):
@@ -16,6 +17,10 @@ class AudioParser(BaseParser):
 
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, list[str]]:
         _ = errors
+        try:
+            enforce_audio_file_size_limit(file.stat().st_size)
+        except OSError:
+            pass
         stt = STTCreator.create_stt(settings.STT_PROVIDER)
         result = stt.transcribe(
             file,

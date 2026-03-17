@@ -77,6 +77,36 @@ class TestStoreAttachmentEndpoint:
                 assert [task["upload_index"] for task in payload["tasks"]] == [0, 2]
                 assert payload["errors"][0]["upload_index"] == 1
 
+    @patch("application.api.user.tasks.store_attachment.delay")
+    @patch("application.stt.upload_limits.settings")
+    def test_store_attachment_rejects_oversized_audio_files(
+        self, mock_limit_settings, mock_store_attachment, flask_app, mock_mongo_db
+    ):
+        from application.api.user.attachments.routes import StoreAttachment
+
+        app = Flask(__name__)
+        mock_limit_settings.STT_MAX_FILE_SIZE_MB = 1
+
+        with app.test_request_context(
+            "/api/store_attachment",
+            method="POST",
+            data={
+                "file": (
+                    io.BytesIO(b"x" * (2 * 1024 * 1024)),
+                    "meeting.wav",
+                )
+            },
+            content_type="multipart/form-data",
+        ):
+            request.decoded_token = {"sub": "test_user"}
+
+            resource = StoreAttachment()
+            response = resource.post()
+
+            assert _get_response_status(response) == 413
+            assert "exceeds" in _get_response_json(response)["message"]
+            mock_store_attachment.assert_not_called()
+
 
 class TestSpeechToTextEndpoint:
     def test_stt_returns_400_when_file_is_missing(self, flask_app, mock_mongo_db):
