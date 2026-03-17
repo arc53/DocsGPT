@@ -76,6 +76,7 @@ class TestStoreAttachmentEndpoint:
                 assert _get_response_status(response) == 200
                 assert [task["upload_index"] for task in payload["tasks"]] == [0, 2]
                 assert payload["errors"][0]["upload_index"] == 1
+                assert payload["errors"][0]["error"] == "Failed to process file"
 
     @patch("application.api.user.tasks.store_attachment.delay")
     @patch("application.stt.upload_limits.settings")
@@ -380,3 +381,57 @@ class TestLiveSpeechToTextEndpoint:
 
             assert _get_response_status(response) == 404
             assert _get_response_json(response)["message"] == "Live transcription session not found"
+
+    @patch("application.api.user.attachments.routes.STTCreator.create_stt")
+    @patch("application.api.user.attachments.routes.get_redis_instance")
+    def test_live_stt_chunk_hides_internal_value_errors(
+        self, mock_get_redis, mock_create_stt, flask_app, mock_mongo_db
+    ):
+        from application.api.user.attachments.routes import (
+            LiveSpeechToTextChunk,
+            LiveSpeechToTextStart,
+        )
+
+        app = Flask(__name__)
+        fake_redis = FakeRedis()
+        mock_get_redis.return_value = fake_redis
+
+        start_resource = LiveSpeechToTextStart()
+        with app.test_request_context(
+            "/api/stt/live/start",
+            method="POST",
+            json={"language": "ru"},
+        ):
+            request.decoded_token = {"sub": "test_user"}
+            start_response = start_resource.post()
+            session_id = _get_response_json(start_response)["session_id"]
+
+        mock_stt = MagicMock()
+        mock_stt.transcribe.return_value = {
+            "text": "hello there",
+            "language": "ru",
+            "duration_s": 1.0,
+            "segments": [],
+            "provider": "openai",
+        }
+        mock_create_stt.return_value = mock_stt
+
+        chunk_resource = LiveSpeechToTextChunk()
+        with app.test_request_context(
+            "/api/stt/live/chunk",
+            method="POST",
+            data={
+                "session_id": session_id,
+                "chunk_index": "-1",
+                "file": (io.BytesIO(b"chunk-neg"), "chunk-neg.wav"),
+            },
+            content_type="multipart/form-data",
+        ):
+            request.decoded_token = {"sub": "test_user"}
+            response = chunk_resource.post()
+
+            assert _get_response_status(response) == 409
+            assert (
+                _get_response_json(response)["message"]
+                == "Invalid live transcription chunk"
+            )

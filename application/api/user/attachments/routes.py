@@ -86,6 +86,12 @@ def _enforce_uploaded_audio_size_limit(file, filename: str) -> None:
         enforce_audio_file_size_limit(size_bytes)
 
 
+def _get_store_attachment_user_error(exc: Exception) -> str:
+    if isinstance(exc, AudioFileTooLargeError):
+        return build_stt_file_size_limit_message()
+    return "Failed to process file"
+
+
 def _require_live_stt_redis():
     redis_client = get_redis_instance()
     if redis_client:
@@ -176,7 +182,7 @@ class StoreAttachment(Resource):
                     errors.append({
                         "upload_index": idx,
                         "filename": file.filename,
-                        "error": str(file_err)
+                        "error": _get_store_attachment_user_error(file_err),
                     })
             
             if not tasks:
@@ -473,12 +479,27 @@ class LiveSpeechToTextChunk(Resource):
             if not session_state.get("language") and transcript.get("language"):
                 session_state["language"] = transcript["language"]
 
-            apply_live_stt_hypothesis(
-                session_state,
-                str(transcript.get("text", "")),
-                chunk_index,
-                is_silence=is_silence,
-            )
+            try:
+                apply_live_stt_hypothesis(
+                    session_state,
+                    str(transcript.get("text", "")),
+                    chunk_index,
+                    is_silence=is_silence,
+                )
+            except ValueError:
+                current_app.logger.warning(
+                    "Invalid live transcription chunk",
+                    exc_info=True,
+                )
+                return make_response(
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": "Invalid live transcription chunk",
+                        }
+                    ),
+                    409,
+                )
             save_live_stt_session(redis_client, session_state)
 
             return make_response(
@@ -504,11 +525,6 @@ class LiveSpeechToTextChunk(Resource):
                     }
                 ),
                 200,
-            )
-        except ValueError as err:
-            return make_response(
-                jsonify({"success": False, "message": str(err)}),
-                409,
             )
         except Exception as err:
             current_app.logger.error(
