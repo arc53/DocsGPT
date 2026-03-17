@@ -14,13 +14,26 @@ from application.api.user.base import sources_collection
 from application.api.user.tasks import ingest, ingest_connector_task, ingest_remote
 from application.core.settings import settings
 from application.parser.connectors.connector_creator import ConnectorCreator
+from application.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
 from application.storage.storage_creator import StorageCreator
+from application.stt.upload_limits import (
+    AudioFileTooLargeError,
+    build_stt_file_size_limit_message,
+    enforce_audio_file_size_limit,
+    is_audio_filename,
+)
 from application.utils import check_required_fields, safe_filename
 
 
 sources_upload_ns = Namespace(
     "sources", description="Source document management operations", path="/api"
 )
+
+
+def _enforce_audio_path_size_limit(file_path: str, filename: str) -> None:
+    if not is_audio_filename(filename):
+        return
+    enforce_audio_file_size_limit(os.path.getsize(file_path))
 
 
 @sources_upload_ns.route("/upload")
@@ -78,6 +91,7 @@ class UploadFile(Resource):
                 with tempfile.TemporaryDirectory() as temp_dir:
                     temp_file_path = os.path.join(temp_dir, safe_file)
                     file.save(temp_file_path)
+                    _enforce_audio_path_size_limit(temp_file_path, safe_file)
 
                     # Only extract actual .zip files, not Office formats (.docx, .xlsx, .pptx)
                     # which are technically zip archives but should be processed as-is
@@ -102,6 +116,10 @@ class UploadFile(Resource):
                                             os.path.join(root, extracted_file), temp_dir
                                         )
                                         storage_path = f"{base_path}/{rel_path}"
+                                        _enforce_audio_path_size_limit(
+                                            os.path.join(root, extracted_file),
+                                            extracted_file,
+                                        )
 
                                         with open(
                                             os.path.join(root, extracted_file), "rb"
@@ -124,28 +142,22 @@ class UploadFile(Resource):
                             storage.save_file(f, file_path)
             task = ingest.delay(
                 settings.UPLOAD_FOLDER,
-                [
-                    ".rst",
-                    ".md",
-                    ".pdf",
-                    ".txt",
-                    ".docx",
-                    ".csv",
-                    ".epub",
-                    ".html",
-                    ".mdx",
-                    ".json",
-                    ".xlsx",
-                    ".pptx",
-                    ".png",
-                    ".jpg",
-                    ".jpeg",
-                ],
+                list(SUPPORTED_SOURCE_EXTENSIONS),
                 job_name,
                 user,
                 file_path=base_path,
                 filename=dir_name,
                 file_name_map=file_name_map,
+            )
+        except AudioFileTooLargeError:
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": build_stt_file_size_limit_message(),
+                    }
+                ),
+                413,
             )
         except Exception as err:
             current_app.logger.error(f"Error uploading file: {err}", exc_info=True)

@@ -36,3 +36,8 @@ class BaseParser:
     @abstractmethod
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
         """Parse file."""
+
+    def get_file_metadata(self, file: Path) -> Dict:
+        """Return parser-specific metadata for the most recently parsed file."""
+        _ = file
+        return {}

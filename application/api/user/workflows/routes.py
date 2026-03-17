@@ -30,6 +30,11 @@ from application.api.user.utils import (
 workflows_ns = Namespace("workflows", path="/api")
 
 
+def _workflow_error_response(message: str, err: Exception):
+    current_app.logger.error(f"{message}: {err}", exc_info=True)
+    return error_response(message)
+
+
 def serialize_workflow(w: Dict) -> Dict:
     """Serialize workflow document to API response format."""
     return {
@@ -396,11 +401,11 @@ class WorkflowList(Resource):
         try:
             create_workflow_nodes(workflow_id, nodes_data, 1)
             create_workflow_edges(workflow_id, edges_data, 1)
-        except Exception as e:
+        except Exception as err:
             workflow_nodes_collection.delete_many({"workflow_id": workflow_id})
             workflow_edges_collection.delete_many({"workflow_id": workflow_id})
             workflows_collection.delete_one({"_id": result.inserted_id})
-            return error_response(f"Failed to create workflow structure: {str(e)}")
+            return _workflow_error_response("Failed to create workflow structure", err)
 
         return success_response({"id": workflow_id}, 201)
 
@@ -470,14 +475,14 @@ class WorkflowDetail(Resource):
         try:
             create_workflow_nodes(workflow_id, nodes_data, next_graph_version)
             create_workflow_edges(workflow_id, edges_data, next_graph_version)
-        except Exception as e:
+        except Exception as err:
             workflow_nodes_collection.delete_many(
                 {"workflow_id": workflow_id, "graph_version": next_graph_version}
             )
             workflow_edges_collection.delete_many(
                 {"workflow_id": workflow_id, "graph_version": next_graph_version}
             )
-            return error_response(f"Failed to update workflow structure: {str(e)}")
+            return _workflow_error_response("Failed to update workflow structure", err)
 
         now = datetime.now(timezone.utc)
         _, error = safe_db_operation(
@@ -535,7 +540,7 @@ class WorkflowDetail(Resource):
             workflow_nodes_collection.delete_many({"workflow_id": workflow_id})
             workflow_edges_collection.delete_many({"workflow_id": workflow_id})
             workflows_collection.delete_one({"_id": workflow["_id"], "user": user_id})
-        except Exception as e:
-            return error_response(f"Failed to delete workflow: {str(e)}")
+        except Exception as err:
+            return _workflow_error_response("Failed to delete workflow", err)
 
         return success_response()

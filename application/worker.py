@@ -26,6 +26,7 @@ from application.parser.chunking import Chunker
 from application.parser.connectors.connector_creator import ConnectorCreator
 from application.parser.embedding_pipeline import embed_and_store_documents
 from application.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
+from application.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
 from application.parser.remote.remote_creator import RemoteCreator
 from application.parser.schema.base import Document
 from application.retriever.retriever_creator import RetrieverCreator
@@ -646,23 +647,7 @@ def reingest_source_worker(self, source_id, user):
             reader = SimpleDirectoryReader(
                 input_dir=temp_dir,
                 recursive=True,
-                required_exts=[
-                    ".rst",
-                    ".md",
-                    ".pdf",
-                    ".txt",
-                    ".docx",
-                    ".csv",
-                    ".epub",
-                    ".html",
-                    ".mdx",
-                    ".json",
-                    ".xlsx",
-                    ".pptx",
-                    ".png",
-                    ".jpg",
-                    ".jpeg",
-                ],
+                required_exts=list(SUPPORTED_SOURCE_EXTENSIONS),
                 exclude_hidden=True,
                 file_metadata=metadata_from_filename,
             )
@@ -1140,17 +1125,25 @@ def attachment_worker(self, file_info, user):
         file_extractor = get_default_file_extractor(
             ocr_enabled=settings.DOCLING_OCR_ATTACHMENTS_ENABLED
         )
-        content = storage.process_file(
+        attachment_document = storage.process_file(
             relative_path,
             lambda local_path, **kwargs: SimpleDirectoryReader(
                 input_files=[local_path],
                 exclude_hidden=True,
                 errors="ignore",
                 file_extractor=file_extractor,
+                file_metadata=metadata_from_filename,
             )
-            .load_data()[0]
-            .text,
+            .load_data()[0],
         )
+        content = attachment_document.text
+        parser_metadata = {
+            key: value
+            for key, value in (attachment_document.extra_info or {}).items()
+            if key.startswith("transcript_")
+        }
+        if parser_metadata:
+            metadata = {**metadata, **parser_metadata}
 
         token_count = num_tokens_from_string(content)
         if token_count > 100000:
@@ -1333,23 +1326,7 @@ def ingest_connector(
             reader = SimpleDirectoryReader(
                 input_dir=temp_dir,
                 recursive=True,
-                required_exts=[
-                    ".rst",
-                    ".md",
-                    ".pdf",
-                    ".txt",
-                    ".docx",
-                    ".csv",
-                    ".epub",
-                    ".html",
-                    ".mdx",
-                    ".json",
-                    ".xlsx",
-                    ".pptx",
-                    ".png",
-                    ".jpg",
-                    ".jpeg",
-                ],
+                required_exts=list(SUPPORTED_SOURCE_EXTENSIONS),
                 exclude_hidden=True,
                 file_metadata=metadata_from_filename,
             )
