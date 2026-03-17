@@ -22,6 +22,11 @@ Thank you for choosing to contribute to DocsGPT! We are all very grateful!
 
 - We have a frontend built on React (Vite) and a backend in Python.
 
+> **Required for every PR:** Please attach screenshots or a short screen
+> recording that shows the working version of your changes. This makes the
+> requirement visible to reviewers and helps them quickly verify what you are
+> submitting.
+
   
 Before creating issues, please check out how the latest version of our app looks and works by launching it via [Quickstart](https://github.com/arc53/DocsGPT#quickstart) the version on our live demo is slightly modified with login. Your issues should relate to the version you can launch via [Quickstart](https://github.com/arc53/DocsGPT#quickstart).
 
@@ -125,7 +130,7 @@ Here's a step-by-step guide on how to contribute to DocsGPT:
      ```
 
 9. **Submit a Pull Request (PR):**
-   - Create a Pull Request from your branch to the main repository. Make sure to include a detailed description of your changes and reference any related issues.
+   - Create a Pull Request from your branch to the main repository. Make sure to include a detailed description of your changes, reference any related issues, and attach screenshots or a screen recording showing the working version.
 
 10. **Collaborate:**
    - Be responsive to comments and feedback on your PR.
