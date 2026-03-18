@@ -34,6 +34,7 @@ import SourcesPopup from './SourcesPopup';
 import ToolsPopup from './ToolsPopup';
 import { handleAbort } from '../conversation/conversationSlice';
 import {
+  AUDIO_FILE_ACCEPT_ATTR,
   FILE_UPLOAD_ACCEPT,
   FILE_UPLOAD_ACCEPT_ATTR,
 } from '../constants/fileUpload';
@@ -54,6 +55,24 @@ type AudioContextWindow = Window &
     webkitAudioContext?: typeof AudioContext;
   };
 
+type LegacyNavigator = Navigator & {
+  getUserMedia?: (
+    constraints: MediaStreamConstraints,
+    successCallback: (stream: MediaStream) => void,
+    errorCallback: (error: DOMException) => void,
+  ) => void;
+  webkitGetUserMedia?: (
+    constraints: MediaStreamConstraints,
+    successCallback: (stream: MediaStream) => void,
+    errorCallback: (error: DOMException) => void,
+  ) => void;
+  mozGetUserMedia?: (
+    constraints: MediaStreamConstraints,
+    successCallback: (stream: MediaStream) => void,
+    errorCallback: (error: DOMException) => void,
+  ) => void;
+};
+
 type LiveAudioSnapshot = {
   blob: Blob;
   chunkIndex: number;
@@ -67,6 +86,90 @@ const getAudioContextConstructor = (): typeof AudioContext | null => {
 
   const audioWindow = window as AudioContextWindow;
   return audioWindow.AudioContext || audioWindow.webkitAudioContext || null;
+};
+
+const getLegacyGetUserMedia = () => {
+  if (typeof navigator === 'undefined') {
+    return null;
+  }
+
+  const legacyNavigator = navigator as LegacyNavigator;
+  return (
+    legacyNavigator.getUserMedia ||
+    legacyNavigator.webkitGetUserMedia ||
+    legacyNavigator.mozGetUserMedia ||
+    null
+  );
+};
+
+const getVoiceInputSupportError = (): string | null => {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return 'Voice input is unavailable right now.';
+  }
+
+  if (!window.isSecureContext) {
+    return 'Voice input requires a secure connection (HTTPS or localhost).';
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia && !getLegacyGetUserMedia()) {
+    return 'Voice input is not available in this browser.';
+  }
+
+  if (!getAudioContextConstructor()) {
+    return 'Voice input requires Web Audio support in this browser.';
+  }
+
+  return null;
+};
+
+const getUserMediaStream = (
+  constraints: MediaStreamConstraints,
+): Promise<MediaStream> => {
+  if (navigator.mediaDevices?.getUserMedia) {
+    return navigator.mediaDevices.getUserMedia(constraints);
+  }
+
+  const legacyGetUserMedia = getLegacyGetUserMedia();
+  if (!legacyGetUserMedia) {
+    return Promise.reject(
+      new Error('Voice input is not available in this browser.'),
+    );
+  }
+
+  return new Promise((resolve, reject) => {
+    legacyGetUserMedia.call(navigator, constraints, resolve, reject);
+  });
+};
+
+const getVoiceInputErrorMessage = (error: unknown): string => {
+  if (typeof window !== 'undefined' && !window.isSecureContext) {
+    return 'Voice input requires a secure connection (HTTPS or localhost).';
+  }
+
+  if (error instanceof DOMException) {
+    switch (error.name) {
+      case 'NotAllowedError':
+      case 'PermissionDeniedError':
+      case 'SecurityError':
+        return 'Microphone access was blocked. Allow microphone permission and try again.';
+      case 'NotFoundError':
+      case 'DevicesNotFoundError':
+        return 'No microphone was found on this device.';
+      case 'NotReadableError':
+      case 'TrackStartError':
+        return 'The microphone is unavailable or already in use.';
+      case 'AbortError':
+        return 'Microphone access was interrupted before recording started.';
+      default:
+        break;
+    }
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return 'Microphone access was denied.';
 };
 
 const downsampleFloat32Buffer = (
@@ -197,6 +300,7 @@ export default function MessageInput({
   const { t } = useTranslation();
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const voiceFileInputRef = useRef<HTMLInputElement>(null);
   const sourceButtonRef = useRef<HTMLButtonElement>(null);
   const toolButtonRef = useRef<HTMLButtonElement>(null);
   const [isSourcesPopupOpen, setIsSourcesPopupOpen] = useState(false);
@@ -808,6 +912,48 @@ export default function MessageInput({
     }, 0);
   };
 
+  const promptVoiceFileFallback = (message: string) => {
+    setRecordingState('idle');
+    setVoiceError(`${message} Choose or record an audio file instead.`);
+    setTimeout(() => {
+      voiceFileInputRef.current?.click();
+    }, 0);
+  };
+
+  const transcribeUploadedAudioFile = async (file: File) => {
+    try {
+      setVoiceError(null);
+      setRecordingState('transcribing');
+      voiceBaseValueRef.current = value;
+      liveTranscriptRef.current = '';
+
+      const response = await userService.transcribeAudio(file, token);
+      const data = await response.json();
+
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.message || 'Failed to transcribe audio.');
+      }
+
+      if (typeof data.text !== 'string' || !data.text.trim()) {
+        throw new Error('No transcript was returned for this audio file.');
+      }
+
+      applyLiveTranscript(data.text);
+      setRecordingState('idle');
+      if (autoFocus) {
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 0);
+      }
+    } catch (error) {
+      console.error('Uploaded audio transcription failed', error);
+      setRecordingState('error');
+      setVoiceError(
+        error instanceof Error ? error.message : 'Failed to transcribe audio.',
+      );
+    }
+  };
+
   const trimLivePcmBuffer = () => {
     const maxBufferedSamples =
       LIVE_CAPTURE_SAMPLE_RATE * LIVE_CAPTURE_MAX_BUFFER_SECONDS;
@@ -1024,24 +1170,29 @@ export default function MessageInput({
       return;
     }
 
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setRecordingState('error');
-      setVoiceError('Voice input is not supported in this browser.');
+    const voiceInputSupportError = getVoiceInputSupportError();
+    if (voiceInputSupportError) {
+      promptVoiceFileFallback(voiceInputSupportError);
       return;
     }
 
     const AudioContextConstructor = getAudioContextConstructor();
     if (!AudioContextConstructor) {
       setRecordingState('error');
-      setVoiceError('Voice input is not supported in this browser.');
+      setVoiceError('Voice input requires Web Audio support in this browser.');
       return;
     }
 
     let stream: MediaStream | null = null;
     try {
       setVoiceError(null);
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await getUserMediaStream({ audio: true });
+    } catch (error) {
+      promptVoiceFileFallback(getVoiceInputErrorMessage(error));
+      return;
+    }
 
+    try {
       const liveStartResponse = await userService.startLiveTranscription(token);
       const liveStartData = await liveStartResponse.json();
       if (!liveStartResponse.ok || !liveStartData?.success) {
@@ -1121,7 +1272,7 @@ export default function MessageInput({
 
       setRecordingState('recording');
     } catch (error) {
-      console.error('Microphone access failed', error);
+      console.error('Live voice transcription failed', error);
       stream?.getTracks().forEach((track) => track.stop());
       stopAudioProcessing();
       await cleanupLiveSession();
@@ -1130,7 +1281,7 @@ export default function MessageInput({
       setVoiceError(
         error instanceof Error
           ? error.message
-          : 'Microphone access was denied.',
+          : 'Failed to start live transcription.',
       );
     }
   };
@@ -1184,6 +1335,19 @@ export default function MessageInput({
       e.preventDefault();
       uploadFiles(files);
     }
+  };
+
+  const handleVoiceFileAttachment = (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    void transcribeUploadedAudioFile(file);
   };
 
   const handlePostDocumentSelect = (_docs: Doc[] | null) => {
@@ -1265,6 +1429,14 @@ export default function MessageInput({
     <div {...getRootProps()} className="flex w-full flex-col">
       {/* react-dropzone input (for drag/drop) */}
       <input {...getInputProps()} />
+      <input
+        ref={voiceFileInputRef}
+        type="file"
+        className="hidden"
+        accept={AUDIO_FILE_ACCEPT_ATTR}
+        capture="user"
+        onChange={handleVoiceFileAttachment}
+      />
 
       <div className="border-dark-gray bg-lotion dark:border-grey relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
         <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">

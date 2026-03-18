@@ -711,7 +711,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           {modeConfig[effectiveMode].showSaveDraft && (
             <button
               disabled={isJsonSchemaInvalid()}
-              className={`border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue w-28 rounded-3xl border border-solid py-2 text-sm font-medium transition-colors hover:text-white ${
+              className={`border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue flex min-w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-white ${
                 isJsonSchemaInvalid() ? 'cursor-not-allowed opacity-30' : ''
               }`}
               onClick={handleSaveDraft}
@@ -744,7 +744,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
           <button
             disabled={!isPublishable() || !hasChanges}
-            className={`${!isPublishable() || !hasChanges ? 'cursor-not-allowed opacity-30' : ''} bg-purple-30 hover:bg-violets-are-blue flex w-28 items-center justify-center rounded-3xl py-2 text-sm font-medium text-white`}
+            className={`${!isPublishable() || !hasChanges ? 'cursor-not-allowed opacity-30' : ''} bg-purple-30 hover:bg-violets-are-blue flex min-w-28 items-center justify-center rounded-3xl px-5 py-2 text-sm font-medium whitespace-nowrap text-white`}
             onClick={handlePublish}
           >
             <span className="flex items-center justify-center transition-all duration-200">
@@ -933,7 +933,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 />
               </div>
               <button
-                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue w-20 shrink-0 basis-full rounded-3xl border-2 border-solid px-5 py-[11px] text-sm transition-colors hover:text-white sm:basis-auto"
+                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue min-w-20 shrink-0 basis-full rounded-3xl border-2 border-solid px-5 py-[11px] text-sm whitespace-nowrap transition-colors hover:text-white sm:basis-auto"
                 onClick={() => setAddPromptModal('ACTIVE')}
               >
                 {t('agents.form.buttons.add')}
