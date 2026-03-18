@@ -159,7 +159,7 @@ class Settings(BaseSettings):
     STT_PROVIDER: str = "openai"  # openai or faster_whisper
     OPENAI_STT_MODEL: str = "gpt-4o-mini-transcribe"
     STT_LANGUAGE: Optional[str] = None
-    STT_MAX_FILE_SIZE_MB: int = 25
+    STT_MAX_FILE_SIZE_MB: int = 50
     STT_ENABLE_TIMESTAMPS: bool = False
     STT_ENABLE_DIARIZATION: bool = False
 

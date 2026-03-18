@@ -111,7 +111,7 @@ For an end-to-end walkthrough, see the [Speech and Audio Guide](/Guides/speech-a
 | `STT_PROVIDER` | Speech-to-text backend provider. | `openai`, `faster_whisper` |
 | `OPENAI_STT_MODEL` | OpenAI transcription model used when `STT_PROVIDER=openai`. | `gpt-4o-mini-transcribe` |
 | `STT_LANGUAGE` | Optional language hint passed to the provider. Leave unset for auto-detection when supported. | `en`, `es`, unset |
-| `STT_MAX_FILE_SIZE_MB` | Maximum file size accepted by the synchronous `/api/stt` endpoint. | `25` |
+| `STT_MAX_FILE_SIZE_MB` | Maximum file size accepted by the synchronous `/api/stt` endpoint. | `50` |
 | `STT_ENABLE_TIMESTAMPS` | Include timestamp segments in the normalized transcript response and stored parser metadata. | `true`, `false` |
 | `STT_ENABLE_DIARIZATION` | Reserved provider option for speaker diarization. Some providers may ignore it. | `true`, `false` |
 
@@ -122,7 +122,7 @@ STT_PROVIDER=openai
 OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 OPENAI_STT_MODEL=gpt-4o-mini-transcribe
 STT_LANGUAGE=
-STT_MAX_FILE_SIZE_MB=25
+STT_MAX_FILE_SIZE_MB=50
 STT_ENABLE_TIMESTAMPS=false
 STT_ENABLE_DIARIZATION=false
 ```
@@ -224,4 +224,3 @@ These are just the basic settings to get you started. The `settings.py` file con
 - And many more!
 
 For a complete list of available settings and their descriptions, refer to the `settings.py` file in `application/core`. Remember to restart your Docker containers after making changes to your `.env` file or `settings.py` for the changes to take effect.
-
