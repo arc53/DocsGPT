@@ -111,12 +111,12 @@ def test_raw_gen_returns_content(minimax_llm):
         {"role": "user", "content": "hello"},
     ]
     content = minimax_llm._raw_gen(
-        minimax_llm, model="MiniMax-M2.5", messages=msgs, stream=False
+        minimax_llm, model="MiniMax-M2.7", messages=msgs, stream=False
     )
     assert content == "hello from minimax"
 
     passed = minimax_llm.client.chat.completions.last_kwargs
-    assert passed["model"] == "MiniMax-M2.5"
+    assert passed["model"] == "MiniMax-M2.7"
     assert passed["stream"] is False
 
 
@@ -124,7 +124,7 @@ def test_raw_gen_returns_content(minimax_llm):
 def test_raw_gen_stream_yields_chunks(minimax_llm):
     msgs = [{"role": "user", "content": "hi"}]
     gen = minimax_llm._raw_gen_stream(
-        minimax_llm, model="MiniMax-M2.5", messages=msgs, stream=True
+        minimax_llm, model="MiniMax-M2.7", messages=msgs, stream=True
     )
     chunks = list(gen)
     assert "chunk1" in "".join(chunks)
@@ -136,7 +136,7 @@ def test_temperature_clamped_to_minimum(minimax_llm):
     msgs = [{"role": "user", "content": "test"}]
     minimax_llm._raw_gen(
         minimax_llm,
-        model="MiniMax-M2.5",
+        model="MiniMax-M2.7",
         messages=msgs,
         stream=False,
         temperature=0,
@@ -150,7 +150,7 @@ def test_temperature_clamped_to_maximum(minimax_llm):
     msgs = [{"role": "user", "content": "test"}]
     minimax_llm._raw_gen(
         minimax_llm,
-        model="MiniMax-M2.5",
+        model="MiniMax-M2.7",
         messages=msgs,
         stream=False,
         temperature=2.0,
@@ -164,7 +164,7 @@ def test_valid_temperature_passed_through(minimax_llm):
     msgs = [{"role": "user", "content": "test"}]
     minimax_llm._raw_gen(
         minimax_llm,
-        model="MiniMax-M2.5",
+        model="MiniMax-M2.7",
         messages=msgs,
         stream=False,
         temperature=0.7,
@@ -178,7 +178,7 @@ def test_stream_temperature_clamped(minimax_llm):
     msgs = [{"role": "user", "content": "test"}]
     gen = minimax_llm._raw_gen_stream(
         minimax_llm,
-        model="MiniMax-M2.5",
+        model="MiniMax-M2.7",
         messages=msgs,
         stream=True,
         temperature=0,
@@ -193,7 +193,7 @@ def test_response_format_dropped(minimax_llm):
     msgs = [{"role": "user", "content": "test"}]
     minimax_llm._raw_gen(
         minimax_llm,
-        model="MiniMax-M2.5",
+        model="MiniMax-M2.7",
         messages=msgs,
         stream=False,
         response_format={"type": "json_object"},
@@ -210,3 +210,29 @@ def test_does_not_support_structured_output(minimax_llm):
 @pytest.mark.unit
 def test_supports_tools(minimax_llm):
     assert minimax_llm._supports_tools() is True
+
+
+@pytest.mark.unit
+def test_model_list_contains_m27():
+    from application.core.model_configs import MINIMAX_MODELS
+
+    model_ids = [m.id for m in MINIMAX_MODELS]
+    assert "MiniMax-M2.7" in model_ids
+    assert "MiniMax-M2.7-highspeed" in model_ids
+
+
+@pytest.mark.unit
+def test_m27_is_first_in_model_list():
+    from application.core.model_configs import MINIMAX_MODELS
+
+    assert MINIMAX_MODELS[0].id == "MiniMax-M2.7"
+    assert MINIMAX_MODELS[1].id == "MiniMax-M2.7-highspeed"
+
+
+@pytest.mark.unit
+def test_old_models_still_available():
+    from application.core.model_configs import MINIMAX_MODELS
+
+    model_ids = [m.id for m in MINIMAX_MODELS]
+    assert "MiniMax-M2.5" in model_ids
+    assert "MiniMax-M2.5-highspeed" in model_ids
