@@ -20,6 +20,10 @@ from application.api.connector.routes import connector  # noqa: E402
 from application.celery_init import celery  # noqa: E402
 from application.core.settings import settings  # noqa: E402
 from application.core.service_checks import required_service_checks, summarize_checks  # noqa: E402
+from application.stt.upload_limits import (  # noqa: E402
+    build_stt_file_size_limit_message,
+    should_reject_stt_request,
+)
 
 
 if platform.system() == "Windows":
@@ -101,6 +105,23 @@ def generate_token():
         )
         return jsonify({"token": token})
     return jsonify({"error": "Token generation not allowed in current auth mode"}), 400
+
+
+@app.before_request
+def enforce_stt_request_size_limits():
+    if request.method == "OPTIONS":
+        return None
+    if should_reject_stt_request(request.path, request.content_length):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": build_stt_file_size_limit_message(),
+                }
+            ),
+            413,
+        )
+    return None
 
 
 @app.before_request

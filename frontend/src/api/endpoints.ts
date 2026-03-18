@@ -58,6 +58,10 @@ const endpoints = {
       `/api/delete_chunk?id=${docId}&chunk_id=${chunkId}`,
     UPDATE_CHUNK: '/api/update_chunk',
     STORE_ATTACHMENT: '/api/store_attachment',
+    STT: '/api/stt',
+    LIVE_STT_START: '/api/stt/live/start',
+    LIVE_STT_CHUNK: '/api/stt/live/chunk',
+    LIVE_STT_FINISH: '/api/stt/live/finish',
     DIRECTORY_STRUCTURE: (docId: string) =>
       `/api/directory_structure?id=${docId}`,
     MANAGE_SOURCE_FILES: '/api/manage_source_files',

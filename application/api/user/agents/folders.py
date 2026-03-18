@@ -5,7 +5,7 @@ Provides virtual folder organization for agents (Google Drive-like structure).
 
 import datetime
 from bson.objectid import ObjectId
-from flask import jsonify, make_response, request
+from flask import current_app, jsonify, make_response, request
 from flask_restx import Namespace, Resource, fields
 
 from application.api import api
@@ -17,6 +17,11 @@ from application.api.user.base import (
 agents_folders_ns = Namespace(
     "agents_folders", description="Agent folder management", path="/api/agents/folders"
 )
+
+
+def _folder_error_response(message: str, err: Exception):
+    current_app.logger.error(f"{message}: {err}", exc_info=True)
+    return make_response(jsonify({"success": False, "message": message}), 400)
 
 
 @agents_folders_ns.route("/")
@@ -40,8 +45,8 @@ class AgentFolders(Resource):
                 for f in folders
             ]
             return make_response(jsonify({"folders": result}), 200)
-        except Exception as e:
-            return make_response(jsonify({"success": False, "message": str(e)}), 400)
+        except Exception as err:
+            return _folder_error_response("Failed to fetch folders", err)
 
     @api.doc(description="Create a new folder")
     @api.expect(
@@ -82,8 +87,8 @@ class AgentFolders(Resource):
                 jsonify({"id": str(result.inserted_id), "name": data["name"], "parent_id": parent_id}),
                 201,
             )
-        except Exception as e:
-            return make_response(jsonify({"success": False, "message": str(e)}), 400)
+        except Exception as err:
+            return _folder_error_response("Failed to create folder", err)
 
 
 @agents_folders_ns.route("/<string:folder_id>")
@@ -117,8 +122,8 @@ class AgentFolder(Resource):
                 }),
                 200,
             )
-        except Exception as e:
-            return make_response(jsonify({"success": False, "message": str(e)}), 400)
+        except Exception as err:
+            return _folder_error_response("Failed to fetch folder", err)
 
     @api.doc(description="Update a folder")
     def put(self, folder_id):
@@ -145,8 +150,8 @@ class AgentFolder(Resource):
             if result.matched_count == 0:
                 return make_response(jsonify({"success": False, "message": "Folder not found"}), 404)
             return make_response(jsonify({"success": True}), 200)
-        except Exception as e:
-            return make_response(jsonify({"success": False, "message": str(e)}), 400)
+        except Exception as err:
+            return _folder_error_response("Failed to update folder", err)
 
     @api.doc(description="Delete a folder")
     def delete(self, folder_id):
@@ -165,8 +170,8 @@ class AgentFolder(Resource):
             if result.deleted_count == 0:
                 return make_response(jsonify({"success": False, "message": "Folder not found"}), 404)
             return make_response(jsonify({"success": True}), 200)
-        except Exception as e:
-            return make_response(jsonify({"success": False, "message": str(e)}), 400)
+        except Exception as err:
+            return _folder_error_response("Failed to delete folder", err)
 
 
 @agents_folders_ns.route("/move_agent")
@@ -211,8 +216,8 @@ class MoveAgentToFolder(Resource):
                 )
 
             return make_response(jsonify({"success": True}), 200)
-        except Exception as e:
-            return make_response(jsonify({"success": False, "message": str(e)}), 400)
+        except Exception as err:
+            return _folder_error_response("Failed to move agent", err)
 
 
 @agents_folders_ns.route("/bulk_move")
@@ -257,5 +262,5 @@ class BulkMoveAgents(Resource):
                     {"$unset": {"folder_id": ""}},
                 )
             return make_response(jsonify({"success": True}), 200)
-        except Exception as e:
-            return make_response(jsonify({"success": False, "message": str(e)}), 400)
+        except Exception as err:
+            return _folder_error_response("Failed to move agents", err)

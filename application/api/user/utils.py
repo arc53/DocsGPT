@@ -5,7 +5,14 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from bson.errors import InvalidId
 from bson.objectid import ObjectId
-from flask import jsonify, make_response, request, Response
+from flask import (
+    Response,
+    current_app,
+    has_app_context,
+    jsonify,
+    make_response,
+    request,
+)
 from pymongo.collection import Collection
 
 
@@ -319,8 +326,10 @@ def safe_db_operation(
     try:
         result = operation()
         return result, None
-    except Exception as e:
-        return None, error_response(f"{error_message}: {str(e)}")
+    except Exception as err:
+        if has_app_context():
+            current_app.logger.error(f"{error_message}: {err}", exc_info=True)
+        return None, error_response(error_message)
 
 
 def validate_enum(
