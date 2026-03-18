@@ -141,11 +141,11 @@ const Overlay = styled.div`
 `
 
 
-const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
+const WidgetContainer = styled.div<{ $modal?: boolean }>`
     all: initial;
     position: fixed;
-    right: ${props => props.modal ? '50%' : '10px'};
-    bottom: ${props => props.modal ? '50%' : '10px'};
+    right: ${props => props.$modal ? '50%' : '10px'};
+    bottom: ${props => props.$modal ? '50%' : '10px'};
     z-index: 1001;
     transform-origin:100% 100%;
     display: block;
@@ -162,7 +162,7 @@ const WidgetContainer = styled.div<{ modal?: boolean, isOpen?: boolean }>`
     text-align: left;
 `;
 
-const StyledContainer = styled.div<{ isOpen: boolean }>`
+const StyledContainer = styled.div<{ $isOpen: boolean }>`
     all: initial;
     max-height: ${(props) => props.theme.dimensions.maxHeight};
     max-width: ${(props) => props.theme.dimensions.maxWidth};
@@ -179,12 +179,12 @@ const StyledContainer = styled.div<{ isOpen: boolean }>`
     border-radius: 12px;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
     padding: 26px 26px 0px 26px;
-    animation: ${({ isOpen, theme }) =>
+    animation: ${({ $isOpen, theme }) =>
     theme.dimensions.size === 'large'
-      ? isOpen
+      ? $isOpen
         ? css`${fadeIn} 150ms ease-in forwards`
         : css` ${fadeOut} 150ms ease-in forwards`
-      : isOpen
+      : $isOpen
         ? css`${openContainer} 150ms ease-in forwards`
         : css`${closeContainer} 250ms ease-in forwards`};
     @media only screen and (max-width: 768px) {
@@ -194,9 +194,9 @@ const StyledContainer = styled.div<{ isOpen: boolean }>`
     }
 `;
 
-const FloatingButton = styled.div<{ bgcolor: string, hidden: boolean, isAnimatingButton: boolean }>`
+const FloatingButton = styled.div<{ $bgcolor: string, $hidden: boolean, $isAnimatingButton: boolean }>`
     position: fixed;
-    display: ${props => props.hidden ? "none" : "flex"};
+    display: ${props => props.$hidden ? "none" : "flex"};
     z-index: 500;
     justify-content: center;
     gap: 8px;
@@ -208,10 +208,10 @@ const FloatingButton = styled.div<{ bgcolor: string, hidden: boolean, isAnimatin
     right: 16px;
     font-weight: 500;
     border-radius: 9999px;
-    background: ${props => props.bgcolor};
+    background: ${props => props.$bgcolor};
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     cursor: pointer;
-    animation: ${props => props.isAnimatingButton ? css`${scaleAnimation} 200ms forwards` : 'none'};
+    animation: ${props => props.$isAnimatingButton ? css`${scaleAnimation} 200ms forwards` : 'none'};
     &:hover {
       transform: scale(1.1);
       transition: transform 0.2s ease-in-out;
@@ -284,7 +284,7 @@ const Feedback = styled.div`
   padding: 6px;
   clear: both;
 `;
-const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
+const MessageBubble = styled.div<{ $type: MESSAGE_TYPE }>`
     display: block;
     font-size: 16px;
     position: relative;
@@ -297,14 +297,14 @@ const MessageBubble = styled.div<{ type: MESSAGE_TYPE }>`
     
   }
 `;
-const Message = styled.div<{ type: MESSAGE_TYPE }>`
-    background: ${props => props.type === 'QUESTION' ?
+const Message = styled.div<{ $type: MESSAGE_TYPE }>`
+    background: ${props => props.$type === 'QUESTION' ?
     'linear-gradient(to bottom right, #8860DB, #6D42C5)' :
     props.theme.secondary.bg};
-    color: ${props => props.type === 'ANSWER' ? props.theme.primary.text : '#fff'};
+    color: ${props => props.$type === 'ANSWER' ? props.theme.primary.text : '#fff'};
     border: none;
-    float: ${props => props.type === 'QUESTION' ? 'right' : 'left'};
-    max-width: ${props => props.type === 'ANSWER' ? '90%' : '80%'};
+    float: ${props => props.$type === 'QUESTION' ? 'right' : 'left'};
+    max-width: ${props => props.$type === 'ANSWER' ? '90%' : '80%'};
     overflow: auto;
     margin: 4px;
     display: block;
@@ -447,8 +447,8 @@ const DotAnimation = styled.div`
   animation: ${dotBounce} 1s infinite ease-in-out;
 `;
 // delay classes as styled components
-const Delay = styled(DotAnimation) <{ delay: number }>`
-  animation-delay: ${props => props.delay + 'ms'};
+const Delay = styled(DotAnimation) <{ $delay: number }>`
+  animation-delay: ${props => props.$delay + 'ms'};
 `;
 const PromptContainer = styled.form`
   background-color: transparent;
@@ -676,7 +676,7 @@ export const DocsGPTWidget = (props: WidgetProps) => {
   }
   return (
     <>
-      <FloatingButton bgcolor={buttonBg} onClick={handleOpen} hidden={!isFloatingButtonVisible} isAnimatingButton={isAnimatingButton}>
+      <FloatingButton $bgcolor={buttonBg} onClick={handleOpen} $hidden={!isFloatingButtonVisible} $isAnimatingButton={isAnimatingButton}>
         <img width={24} src={buttonIcon} />
         <span>{buttonText}</span>
       </FloatingButton>
@@ -687,7 +687,7 @@ export const DocsGPTWidget = (props: WidgetProps) => {
 
 export const WidgetCore = ({
   apiHost = 'https://gptcloud.arc53.com',
-  apiKey = "82962c9a-aa77-4152-94e5-a4f84fd44c6a",
+  apiKey = "527686a3-e867-4b4d-9fec-f5f45fdb613a",
   avatar = 'https://d3dg1063dc54p9.cloudfront.net/cute-docsgpt.png',
   title = 'Get AI assistance',
   description = 'DocsGPT\'s AI Chatbot is here to help',
@@ -958,8 +958,8 @@ export const WidgetCore = ({
         <Overlay onClick={handleClose} />
       }
       {(
-        <WidgetContainer className={`${size !== 'large' ? (isOpen ? "open" : "close") : "modal"}`} modal={size === 'large'}>
-          <StyledContainer isOpen={isOpen}>
+        <WidgetContainer className={`${size !== 'large' ? (isOpen ? "open" : "close") : "modal"}`} $modal={size === 'large'}>
+          <StyledContainer $isOpen={isOpen}>
             <div>
               <CancelButton onClick={handleClose}>
                 <Cross2Icon width={24} height={24} color={theme === 'light' ? 'black' : 'white'} />
@@ -983,21 +983,21 @@ export const WidgetCore = ({
                     <React.Fragment key={index}>
                       {
                         query.prompt &&
-                        <MessageBubble type='QUESTION'>
+                        <MessageBubble $type='QUESTION'>
                           <Message
-                            type='QUESTION'
+                            $type='QUESTION'
                             ref={(!(query.response || query.error) && index === queries.length - 1) ? endMessageRef : null}>
                             {query.prompt}
                           </Message>
                         </MessageBubble>
                       }
                       {
-                        query.response ? <MessageBubble onMouseOver={() => { isBubbleHovered.current = true }} type='ANSWER'>
+                        query.response ? <MessageBubble onMouseOver={() => { isBubbleHovered.current = true }} $type='ANSWER'>
                           {showSources && query.sources && query.sources.length > 0 && query.sources.some(source => source.source !== 'local') && (
                             <SourcesComponent sources={query.sources.filter(source => source.source !== 'local')} />
                           )}
                           <Message
-                            type='ANSWER'
+                            $type='ANSWER'
                             ref={(index === queries.length - 1) ? endMessageRef : null}
                           >
                             <Markdown
@@ -1047,11 +1047,11 @@ export const WidgetCore = ({
                                   <span style={{ margin: 2, fontSize: '13px' }}>{query.error}</span>
                                 </div>
                               </ErrorAlert>
-                                : <MessageBubble type='ANSWER'>
-                                  <Message type='ANSWER' style={{ fontWeight: 600 }}>
+                                : <MessageBubble $type='ANSWER'>
+                                  <Message $type='ANSWER' style={{ fontWeight: 600 }}>
                                     <DotAnimation>.</DotAnimation>
-                                    <Delay delay={200}>.</Delay>
-                                    <Delay delay={400}>.</Delay>
+                                    <Delay $delay={200}>.</Delay>
+                                    <Delay $delay={400}>.</Delay>
                                   </Message>
                                 </MessageBubble>
                             }

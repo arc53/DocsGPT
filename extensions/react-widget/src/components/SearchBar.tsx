@@ -61,10 +61,10 @@ const Main = styled.div`
     all: initial;
     font-family: 'Geist', sans-serif;
 `
-const SearchButton = styled.button<{ inputWidth: string }>`
+const SearchButton = styled.button<{ $inputWidth: string }>`
     padding: 6px 6px;
     font-family: inherit;
-    width: ${({ inputWidth }) => inputWidth};
+    width: ${({ $inputWidth }) => $inputWidth};
     border-radius: 8px;
     display: inline;
     color: ${props => props.theme.secondary.text};
@@ -455,7 +455,7 @@ export const SearchBar = ({
                 <Container ref={containerRef}>
                     <SearchButton
                         onClick={() => setIsResultVisible(true)}
-                        inputWidth={width}
+                        $inputWidth={width}
                     >
                         {buttonText}
                     </SearchButton>
