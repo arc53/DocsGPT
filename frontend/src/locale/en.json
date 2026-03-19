@@ -270,6 +270,7 @@
       "start": "Start Chatting",
       "name": "Name",
       "choose": "Choose Files",
+      "chooseFolder": "Choose Folder",
       "info": "Please upload .pdf, .txt, .rst, .csv, .xlsx, .docx, .md, .html, .epub, .json, .pptx, .zip limited to 25mb",
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
