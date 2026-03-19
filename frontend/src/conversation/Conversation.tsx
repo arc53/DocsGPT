@@ -89,7 +89,7 @@ export default function Conversation() {
         .map((a) => ({ id: a.id as string, fileName: a.fileName }));
 
       if (index !== undefined) {
-        if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
+        dispatch(resendQuery({ index, prompt: trimmedQuestion }));
         handleFetchAnswer({ question: trimmedQuestion, index });
       } else {
         if (!isRetry)

@@ -9,6 +9,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import ArrowDown from '../assets/arrow-down.svg';
+import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import RetryIcon from '../components/RetryIcon';
 import Hero from '../Hero';
 import { useDarkTheme } from '../hooks';
@@ -191,6 +192,37 @@ export default function ConversationMessages({
         />
       );
     }
+
+    if (status === 'loading' && isLastMessage) {
+      return (
+        <div
+          className={`fade-in-bubble flex flex-wrap self-start ${bubbleMargin} group dark:text-bright-gray flex-col`}
+        >
+          <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+            <div className="my-2 flex flex-row items-center justify-center gap-3">
+              <div className="flex h-[34px] w-[34px] items-center justify-center overflow-hidden rounded-full">
+                <img
+                  src={DocsGPT3}
+                  alt={t('conversation.answer')}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <p className="text-base font-semibold">
+                {t('conversation.answer')}
+              </p>
+            </div>
+            <div className="bg-gray-1000 dark:bg-gun-metal mr-5 flex rounded-3xl px-6 py-5">
+              <div className="thinking-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return null;
   };
 
