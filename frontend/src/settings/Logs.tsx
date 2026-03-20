@@ -16,6 +16,7 @@ type LogsProps = {
 };
 
 export default function Logs({ agentId, tableHeader }: LogsProps) {
+  const { t } = useTranslation();
   const token = useSelector(selectToken);
   const [logsByPage, setLogsByPage] = useState<Record<number, LogData[]>>({});
   const [page, setPage] = useState(1);
@@ -56,8 +57,11 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     if (hasMore) fetchLogs();
   }, [page, agentId]);
   return (
-    <div className="mt-12">
-      <div className="mt-8">
+    <div className="mt-8">
+      <p className="mb-5 text-[15px] leading-6 text-muted-foreground">
+        {t('settings.logs.subtitle')}
+      </p>
+      <div>
         <LogsTable
           logs={logs}
           setPage={setPage}
@@ -113,8 +117,8 @@ function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
   }, []);
 
   return (
-    <div className="logs-table border-light-silver h-[55vh] w-full overflow-hidden rounded-xl border bg-white dark:border-transparent dark:bg-black">
-      <div className="dark:bg-eerie-black-2 flex h-8 flex-col items-start justify-center bg-black/10">
+    <div className="logs-table border-border h-[55vh] w-full overflow-hidden rounded-xl border bg-card dark:bg-black">
+      <div className="flex h-8 flex-col items-start justify-center bg-black/10 dark:bg-white/5">
         <p className="dark:text-gray-6000 px-3 text-xs">
           {tableHeader ? tableHeader : t('settings.logs.tableHeader')}
         </p>
@@ -164,11 +168,11 @@ function Log({
   const { id, action, timestamp, ...filteredLog } = log;
 
   return (
-    <div className="group dark:hover:bg-dark-charcoal w-full rounded-xl bg-transparent hover:bg-[#F9F9F9]">
+    <div className="group dark:hover:bg-accent w-full rounded-xl bg-transparent hover:bg-muted">
       <div
         onClick={() => onToggle(log.id)}
         className={`flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 text-gray-900 ${
-          isOpen ? 'rounded-t-xl bg-[#F1F1F1] dark:bg-[#1B1B1B]' : ''
+          isOpen ? 'rounded-t-xl bg-[#F1F1F1] dark:bg-background' : ''
         }`}
       >
         <img
@@ -177,10 +181,10 @@ function Log({
           className={`mt-[3px] h-3 w-3 transition duration-300 ${isOpen ? 'rotate-90' : ''}`}
         />
         <span className="flex flex-row gap-2">
-          <h2 className="dark:text-bright-gray text-xs text-black/60">{`${log.timestamp}`}</h2>
-          <h2 className="text-xs text-[#913400] dark:text-[#DF5200]">{`[${log.action}]`}</h2>
+          <h2 className="dark:text-foreground text-xs text-black/60">{`${log.timestamp}`}</h2>
+          <h2 className="text-xs text-[#913400] dark:text-orange-500">{`[${log.action}]`}</h2>
           <h2
-            className={`max-w-72 text-xs ${logLevelColor[log.level]} break-words`}
+            className={`max-w-72 text-xs ${logLevelColor[log.level]} wrap-break-word`}
           >
             {`${log.question}`.length > 250
               ? `${log.question.substring(0, 250)}...`
@@ -189,9 +193,9 @@ function Log({
         </span>
       </div>
       {isOpen && (
-        <div className="rounded-b-xl bg-[#F1F1F1] px-4 py-3 dark:bg-[#1B1B1B]">
+        <div className="rounded-b-xl bg-[#F1F1F1] px-4 py-3 dark:bg-background">
           <div className="scrollbar-overlay overflow-y-auto">
-            <pre className="px-2 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap text-gray-700 dark:text-gray-400">
+            <pre className="px-2 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap text-gray-700 dark:text-gray-400">
               {JSON.stringify(filteredLog, null, 2)}
             </pre>
           </div>

@@ -167,7 +167,7 @@ export default function ConversationMessages({
     if (query.error) {
       const retryButton = (
         <button
-          className="dark:text-bright-gray flex items-center justify-center gap-3 self-center rounded-full px-5 py-3 text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed"
+          className="dark:text-foreground flex items-center justify-center gap-3 self-center rounded-full px-5 py-3 text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed"
           disabled={status === 'loading'}
           onClick={() => {
             const questionToRetry = queries[index].prompt;
@@ -240,7 +240,7 @@ export default function ConversationMessages({
             scrollConversationToBottom();
           }}
           aria-label={t('Scroll to bottom') || 'Scroll to bottom'}
-          className="border-gray-alpha bg-opacity-50 dark:bg-gunmetal md:bg-opacity-100 fixed right-14 bottom-40 z-10 flex h-7 w-7 items-center justify-center rounded-full border-[0.5px] bg-gray-100 md:h-9 md:w-9"
+          className="border-border fixed right-14 bottom-40 z-10 flex h-7 w-7 items-center justify-center rounded-full border bg-card md:h-9 md:w-9"
         >
           <img
             src={ArrowDown}

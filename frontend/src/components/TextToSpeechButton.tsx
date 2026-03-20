@@ -177,8 +177,8 @@ export default function SpeakButton({ text }: { text: string }) {
       type="button"
       className={`flex cursor-pointer items-center justify-center rounded-full p-2 ${
         isSpeaking || isLoading
-          ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
-          : 'bg-white-3000 dark:hover:bg-purple-taupe hover:bg-[#EEEEEE] dark:bg-transparent'
+          ? 'bg-accent'
+          : 'bg-transparent hover:bg-accent'
       }`}
       onClick={handleSpeakClick}
       aria-label={

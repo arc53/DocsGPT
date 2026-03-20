@@ -575,12 +575,12 @@ function WorkflowBuilderInner() {
   ]);
 
   return (
-    <div className="bg-lotion dark:bg-outer-space flex h-screen w-full flex-col">
-      <div className="border-light-silver dark:bg-raisin-black flex items-center justify-between border-b bg-white px-6 py-4 dark:border-[#3A3A3A]">
+    <div className="flex h-screen w-full flex-col bg-background">
+      <div className="flex items-center justify-between border-b border-border bg-card px-6 py-4">
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate('/agents')}
-            className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
+            className="rounded-full border border-border p-3 text-sm text-muted-foreground hover:bg-accent"
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
@@ -609,7 +609,7 @@ function WorkflowBuilderInner() {
             {showWorkflowSettings && (
               <div
                 ref={workflowSettingsRef}
-                className="dark:bg-raisin-black absolute top-full left-0 z-50 mt-2 w-80 rounded-xl border border-[#E5E5E5] bg-white p-4 shadow-lg dark:border-[#3A3A3A]"
+                className="absolute top-full left-0 z-50 mt-2 w-80 rounded-xl border border-border bg-card p-4 shadow-lg"
               >
                 <div className="mb-3">
                   <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -619,7 +619,7 @@ function WorkflowBuilderInner() {
                     type="text"
                     value={workflowName}
                     onChange={(e) => setWorkflowName(e.target.value)}
-                    className="focus:ring-purple-30 w-full rounded-lg border border-[#E5E5E5] bg-white px-3 py-2 text-sm outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                     placeholder="Enter workflow name"
                   />
                 </div>
@@ -630,14 +630,14 @@ function WorkflowBuilderInner() {
                   <textarea
                     value={workflowDescription}
                     onChange={(e) => setWorkflowDescription(e.target.value)}
-                    className="focus:ring-purple-30 w-full rounded-lg border border-[#E5E5E5] bg-white px-3 py-2 text-sm outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
                     rows={3}
                     placeholder="Describe what this workflow does"
                   />
                 </div>
                 <button
                   onClick={() => setShowWorkflowSettings(false)}
-                  className="bg-violets-are-blue hover:bg-purple-30 w-full rounded-lg px-3 py-2 text-sm font-medium text-white"
+                  className="w-full rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
                 >
                   Done
                 </button>
@@ -656,7 +656,7 @@ function WorkflowBuilderInner() {
               }
               setShowPreview(true);
             }}
-            className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-gray-200 dark:hover:bg-[#383838]"
+            className="flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
             <Play size={16} />
             Preview
@@ -664,7 +664,7 @@ function WorkflowBuilderInner() {
           <button
             onClick={handlePublish}
             disabled={isPublishing}
-            className="bg-violets-are-blue hover:bg-purple-30 rounded-full px-6 py-2 text-sm font-medium text-white shadow-sm transition-colors disabled:opacity-50"
+            className="rounded-full bg-primary px-6 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             {isPublishing ? 'Publishing...' : 'Publish'}
           </button>
@@ -701,20 +701,20 @@ function WorkflowBuilderInner() {
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="border-light-silver dark:bg-raisin-black flex w-64 flex-col gap-6 border-r bg-gray-50 p-4 dark:border-[#3A3A3A]">
+        <div className="flex w-64 flex-col gap-6 border-r border-border bg-muted p-4">
           <div>
             <h3 className="mb-3 text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
               Core Nodes
             </h3>
             <div className="flex flex-col gap-2">
               <div
-                className="group flex cursor-move items-center gap-3 rounded-full border bg-white px-4 py-3 shadow-sm transition-all hover:shadow-md dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:hover:bg-[#383838]"
+                className="group flex cursor-move items-center gap-3 rounded-full border border-border bg-card px-4 py-3 shadow-sm transition-all hover:bg-accent hover:shadow-md"
                 draggable
                 onDragStart={(e) =>
                   e.dataTransfer.setData('application/reactflow', 'agent')
                 }
               >
-                <div className="text-violets-are-blue group-hover:bg-violets-are-blue flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 transition-colors group-hover:text-white">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
                   <Bot size={18} />
                 </div>
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -722,7 +722,7 @@ function WorkflowBuilderInner() {
                 </span>
               </div>
               <div
-                className="group flex cursor-move items-center gap-3 rounded-full border bg-white px-4 py-3 shadow-sm transition-all hover:shadow-md dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:hover:bg-[#383838]"
+                className="group flex cursor-move items-center gap-3 rounded-full border border-border bg-card px-4 py-3 shadow-sm transition-all hover:bg-accent hover:shadow-md"
                 draggable
                 onDragStart={(e) =>
                   e.dataTransfer.setData('application/reactflow', 'end')
@@ -736,7 +736,7 @@ function WorkflowBuilderInner() {
                 </span>
               </div>
               <div
-                className="group flex cursor-move items-center gap-3 rounded-full border bg-white px-4 py-3 shadow-sm transition-all hover:shadow-md dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:hover:bg-[#383838]"
+                className="group flex cursor-move items-center gap-3 rounded-full border border-border bg-card px-4 py-3 shadow-sm transition-all hover:bg-accent hover:shadow-md"
                 draggable
                 onDragStart={(e) =>
                   e.dataTransfer.setData('application/reactflow', 'note')
@@ -758,7 +758,7 @@ function WorkflowBuilderInner() {
             </h3>
             <div className="flex flex-col gap-2">
               <div
-                className="group flex cursor-move items-center gap-3 rounded-full border bg-white px-4 py-3 shadow-sm transition-all hover:shadow-md dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:hover:bg-[#383838]"
+                className="group flex cursor-move items-center gap-3 rounded-full border border-border bg-card px-4 py-3 shadow-sm transition-all hover:bg-accent hover:shadow-md"
                 draggable
                 onDragStart={(e) =>
                   e.dataTransfer.setData('application/reactflow', 'state')
@@ -782,7 +782,7 @@ function WorkflowBuilderInner() {
 
         <div
           ref={reactFlowWrapper}
-          className="dark:bg-raisin-black/10 relative flex-1 bg-gray-50"
+          className="relative flex-1 bg-muted"
         >
           <ReactFlow
             nodes={nodes}
@@ -803,9 +803,9 @@ function WorkflowBuilderInner() {
           {showNodeConfig && selectedNode && (
             <div
               ref={configPanelRef}
-              className="border-light-silver dark:bg-raisin-black absolute top-4 right-4 w-96 rounded-2xl border bg-white shadow-[0px_4px_40px_-3px_#0000001A] dark:border-[#3A3A3A]"
+              className="absolute top-4 right-4 w-96 rounded-2xl border border-border bg-card shadow-[0px_4px_40px_-3px_#0000001A]"
             >
-              <div className="border-light-silver flex items-center justify-between border-b p-4 dark:border-[#3A3A3A]">
+              <div className="flex items-center justify-between border-b border-border p-4">
                 <h3 className="font-semibold text-gray-900 dark:text-white">
                   {selectedNode.type === 'start' && 'Start Node'}
                   {selectedNode.type === 'end' && 'End Node'}
@@ -823,7 +823,7 @@ function WorkflowBuilderInner() {
 
               <div className="max-h-[calc(100vh-200px)] overflow-y-auto p-4">
                 <div className="mb-4 flex flex-col gap-2">
-                  <div className="rounded-lg bg-gray-50 p-3 dark:bg-[#2C2C2C]">
+                  <div className="rounded-lg bg-muted p-3">
                     <div className="mb-1 text-xs text-gray-500 dark:text-gray-400">
                       Node ID
                     </div>
@@ -852,7 +852,7 @@ function WorkflowBuilderInner() {
                                 label: e.target.value,
                               })
                             }
-                            className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                            className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground transition-all outline-none focus:ring-2 focus:ring-ring"
                             placeholder="Enter node title"
                           />
                         </div>
@@ -936,7 +936,7 @@ function WorkflowBuilderInner() {
                                     },
                                   })
                                 }
-                                className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground transition-all outline-none focus:ring-2 focus:ring-ring"
                                 rows={3}
                                 placeholder="System prompt for the agent"
                               />
@@ -958,7 +958,7 @@ function WorkflowBuilderInner() {
                                     },
                                   })
                                 }
-                                className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground transition-all outline-none focus:ring-2 focus:ring-ring"
                                 rows={4}
                                 placeholder="Use {{variable}} for dynamic content"
                               />
@@ -981,7 +981,7 @@ function WorkflowBuilderInner() {
                                     },
                                   })
                                 }
-                                className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground transition-all outline-none focus:ring-2 focus:ring-ring"
                                 placeholder="Variable name for output"
                               />
                             </div>
@@ -1048,7 +1048,7 @@ function WorkflowBuilderInner() {
                                   content: e.target.value,
                                 })
                               }
-                              className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground transition-all outline-none focus:ring-2 focus:ring-ring"
                               rows={4}
                               placeholder="Enter note content"
                             />
@@ -1069,7 +1069,7 @@ function WorkflowBuilderInner() {
                                     variable: e.target.value,
                                   })
                                 }
-                                className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground transition-all outline-none focus:ring-2 focus:ring-ring"
                                 placeholder="e.g. analysis_type"
                               />
                             </div>
@@ -1085,7 +1085,7 @@ function WorkflowBuilderInner() {
                                     value: e.target.value,
                                   })
                                 }
-                                className="border-light-silver focus:ring-purple-30 w-full rounded-xl border bg-white px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+                                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground transition-all outline-none focus:ring-2 focus:ring-ring"
                                 placeholder="e.g. price_check"
                               />
                             </div>
@@ -1116,7 +1116,7 @@ function WorkflowBuilderInner() {
         <SheetContent
           side="right"
           showCloseButton={false}
-          className="dark:bg-raisin-black w-full max-w-none p-0 sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px] dark:border-[#3A3A3A]"
+          className="w-full max-w-none border-border bg-card p-0 sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px]"
         >
           <WorkflowPreview
             workflowData={{

@@ -674,17 +674,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     <div className="flex flex-col px-4 pt-4 pb-2 max-[1179px]:min-h-dvh min-[1180px]:h-dvh md:px-12 md:pt-12 md:pb-3">
       <div className="flex items-center gap-3 px-4">
         <button
-          className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
+          className="border-border text-muted-foreground hover:bg-accent rounded-full border p-3 text-sm"
           onClick={handleCancel}
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
         </button>
-        <p className="text-eerie-black dark:text-bright-gray mt-px text-sm font-semibold">
+        <p className="text-foreground dark:text-foreground mt-px text-sm font-semibold">
           {t('agents.backToAll')}
         </p>
       </div>
       <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
-        <h1 className="text-eerie-black m-0 text-[32px] font-bold lg:text-[40px] dark:text-white">
+        <h1 className="text-foreground m-0 text-[32px] font-bold lg:text-[40px] dark:text-white">
           {modeConfig[effectiveMode].heading}
         </h1>
         {agent.agent_type === 'workflow' && (
@@ -694,14 +694,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         )}
         <div className="flex flex-wrap items-center gap-1">
           <button
-            className="text-purple-30 dark:text-light-gray mr-4 rounded-3xl py-2 text-sm font-medium dark:bg-transparent"
+            className="text-primary dark:text-foreground mr-4 rounded-3xl py-2 text-sm font-medium"
             onClick={handleCancel}
           >
             {t('agents.form.buttons.cancel')}
           </button>
           {modeConfig[effectiveMode].showDelete && agent.id && (
             <button
-              className="group border-red-2000 text-red-2000 hover:bg-red-2000 flex items-center gap-2 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
+              className="group border-destructive text-destructive hover:bg-destructive flex items-center gap-2 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
               onClick={() => setDeleteConfirmation('ACTIVE')}
             >
               <span className="block h-4 w-4 bg-[url('/src/assets/red-trash.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/white-trash.svg')]" />
@@ -711,7 +711,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           {modeConfig[effectiveMode].showSaveDraft && (
             <button
               disabled={isJsonSchemaInvalid()}
-              className={`border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue flex min-w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-white ${
+              className={`border-primary text-primary hover:bg-primary/90 flex min-w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-white ${
                 isJsonSchemaInvalid() ? 'cursor-not-allowed opacity-30' : ''
               }`}
               onClick={handleSaveDraft}
@@ -727,7 +727,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
           {modeConfig[effectiveMode].showAccessDetails && (
             <button
-              className="group border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue flex items-center gap-2 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
+              className="group border-primary text-primary hover:bg-primary/90 flex items-center gap-2 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
               onClick={() => navigate(`/agents/logs/${agent.id}`)}
             >
               <span className="block h-5 w-5 bg-[url('/src/assets/monitoring-purple.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/monitoring-white.svg')]" />
@@ -736,7 +736,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
           {modeConfig[effectiveMode].showAccessDetails && (
             <button
-              className="hover:bg-vi</button>olets-are-blue border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
+              className="hover:bg-vi</button>olets-are-blue border-primary text-primary hover:bg-primary/90 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
               onClick={() => setAgentDetails('ACTIVE')}
             >
               {t('agents.form.buttons.accessDetails')}
@@ -744,7 +744,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
           <button
             disabled={!isPublishable() || !hasChanges}
-            className={`${!isPublishable() || !hasChanges ? 'cursor-not-allowed opacity-30' : ''} bg-purple-30 hover:bg-violets-are-blue flex min-w-28 items-center justify-center rounded-3xl px-5 py-2 text-sm font-medium whitespace-nowrap text-white`}
+            className={`${!isPublishable() || !hasChanges ? 'cursor-not-allowed opacity-30' : ''} bg-primary hover:bg-primary/90 flex min-w-28 items-center justify-center rounded-3xl px-5 py-2 text-sm font-medium whitespace-nowrap text-white`}
             onClick={handlePublish}
           >
             <span className="flex items-center justify-center transition-all duration-200">
@@ -757,21 +757,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           </button>
         </div>
       </div>
-      <div className="mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-[30px] bg-[#F6F6F6] p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden dark:bg-[#383838]">
+      <div className="bg-muted dark:bg-accent mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-[30px] p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden">
         <div className="scrollbar-overlay col-span-2 flex flex-col gap-5 max-[1179px]:overflow-visible min-[1180px]:max-h-full min-[1180px]:overflow-y-auto min-[1180px]:pr-3">
-          <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
+          <div className="bg-card rounded-[30px] px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.meta')}
             </h2>
             <input
-              className="border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver mt-3 w-full rounded-3xl border bg-white px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E]"
+              className="border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-3 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400"
               type="text"
               value={agent.name}
               placeholder={t('agents.form.placeholders.agentName')}
               onChange={(e) => setAgent({ ...agent, name: e.target.value })}
             />
             <textarea
-              className="border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver mt-3 h-32 w-full rounded-xl border bg-white px-5 py-4 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E]"
+              className="border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-3 h-32 w-full rounded-xl border px-5 py-4 text-sm outline-hidden placeholder:text-gray-400"
               placeholder={t('agents.form.placeholders.describeAgent')}
               value={agent.description}
               onChange={(e) =>
@@ -781,7 +781,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             <div className="mt-3">
               <FileUpload
                 showPreview
-                className="dark:bg-raisin-black"
+                className="bg-card"
                 onUpload={handleUpload}
                 onRemove={() => setImageFile(null)}
                 uploadText={[
@@ -797,7 +797,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               />
             </div>
           </div>
-          <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
+          <div className="bg-card rounded-[30px] px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.source')}
             </h2>
@@ -806,10 +806,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 <button
                   ref={sourceAnchorButtonRef}
                   onClick={() => setIsSourcePopupOpen(!isSourcePopupOpen)}
-                  className={`border-silver dark:bg-raisin-black w-full truncate rounded-3xl border bg-white px-5 py-3 text-left text-sm dark:border-[#7E7E7E] ${
+                  className={`border-border bg-card dark:border-border w-full truncate rounded-3xl border px-5 py-3 text-left text-sm ${
                     selectedSourceIds.size > 0
-                      ? 'text-jet dark:text-bright-gray'
-                      : 'dark:text-silver text-gray-400'
+                      ? 'text-foreground dark:text-foreground'
+                      : 'dark:text-muted-foreground text-gray-400'
                   }`}
                 >
                   {selectedSourceIds.size > 0
@@ -889,17 +889,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   }
                   size="w-full"
                   rounded="3xl"
-                  border="border"
-                  buttonClassName="bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]"
-                  optionsClassName="bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E]"
                   placeholder={t('agents.form.placeholders.chunksPerQuery')}
-                  placeholderClassName="text-gray-400 dark:text-silver"
                   contentSize="text-sm"
                 />
               </div>
             </div>
           </div>
-          <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
+          <div className="bg-card rounded-[30px] px-6 py-3">
             <div className="flex flex-wrap items-end gap-1">
               <div className="min-w-20 grow basis-full sm:basis-0">
                 <Prompts
@@ -917,30 +913,24 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   }
                   setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
                   title={t('agents.form.sections.prompt')}
-                  titleClassName="text-lg font-semibold dark:text-[#E0E0E0]"
+                  titleClassName="text-lg font-semibold"
                   showAddButton={false}
                   dropdownProps={{
                     size: 'w-full',
                     rounded: '3xl',
-                    border: 'border',
-                    buttonClassName:
-                      'bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]',
-                    optionsClassName:
-                      'bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E]',
-                    placeholderClassName: 'text-gray-400 dark:text-silver',
                     contentSize: 'text-sm',
                   }}
                 />
               </div>
               <button
-                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue min-w-20 shrink-0 basis-full rounded-3xl border-2 border-solid px-5 py-[11px] text-sm whitespace-nowrap transition-colors hover:text-white sm:basis-auto"
+                className="border-primary text-primary hover:bg-primary/90 min-w-20 shrink-0 basis-full rounded-3xl border border-solid px-5 py-3 text-sm whitespace-nowrap transition-colors hover:text-white sm:basis-auto"
                 onClick={() => setAddPromptModal('ACTIVE')}
               >
                 {t('agents.form.buttons.add')}
               </button>
             </div>
           </div>
-          <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
+          <div className="bg-card rounded-[30px] px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.tools')}
             </h2>
@@ -948,10 +938,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               <button
                 ref={toolAnchorButtonRef}
                 onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
-                className={`border-silver dark:bg-raisin-black w-full truncate rounded-3xl border bg-white px-5 py-3 text-left text-sm dark:border-[#7E7E7E] ${
+                className={`border-border bg-card dark:border-border w-full truncate rounded-3xl border px-5 py-3 text-left text-sm ${
                   selectedTools.length > 0
-                    ? 'text-jet dark:text-bright-gray'
-                    : 'dark:text-silver text-gray-400'
+                    ? 'text-foreground dark:text-foreground'
+                    : 'dark:text-muted-foreground text-gray-400'
                 }`}
               >
                 {selectedTools.length > 0
@@ -986,7 +976,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               />
             </div>
           </div>
-          <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
+          <div className="bg-card rounded-[30px] px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.agentType')}
             </h2>
@@ -1004,16 +994,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 }
                 size="w-full"
                 rounded="3xl"
-                border="border"
-                buttonClassName="bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]"
-                optionsClassName="bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E]"
                 placeholder={t('agents.form.placeholders.selectType')}
-                placeholderClassName="text-gray-400 dark:text-silver"
                 contentSize="text-sm"
               />
             </div>
           </div>
-          <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
+          <div className="bg-card rounded-[30px] px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.models')}
             </h2>
@@ -1021,10 +1007,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               <button
                 ref={modelAnchorButtonRef}
                 onClick={() => setIsModelsPopupOpen(!isModelsPopupOpen)}
-                className={`border-silver dark:bg-raisin-black w-full truncate rounded-3xl border bg-white px-5 py-3 text-left text-sm dark:border-[#7E7E7E] ${
+                className={`border-border bg-card dark:border-border w-full truncate rounded-3xl border px-5 py-3 text-left text-sm ${
                   selectedModelIds.size > 0
-                    ? 'text-jet dark:text-bright-gray'
-                    : 'dark:text-silver text-gray-400'
+                    ? 'text-foreground dark:text-foreground'
+                    : 'dark:text-muted-foreground text-gray-400'
                 }`}
               >
                 {selectedModelIds.size > 0
@@ -1076,20 +1062,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     }
                     size="w-full"
                     rounded="3xl"
-                    border="border"
-                    buttonClassName="bg-white dark:bg-[#222327] border-silver dark:border-[#7E7E7E]"
-                    optionsClassName="bg-white dark:bg-[#383838] border-silver dark:border-[#7E7E7E]"
                     placeholder={t(
                       'agents.form.placeholders.selectDefaultModel',
                     )}
-                    placeholderClassName="text-gray-400 dark:text-silver"
                     contentSize="text-sm"
                   />
                 </div>
               )}
             </div>
           </div>
-          <div className="dark:bg-raisin-black rounded-[30px] bg-white px-6 py-3 dark:text-[#E0E0E0]">
+          <div className="bg-card rounded-[30px] px-6 py-3">
             <button
               onClick={() =>
                 setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)
@@ -1142,7 +1124,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   "additionalProperties": false
 }`}
                   rows={9}
-                  className={`border-silver text-jet dark:bg-raisin-black dark:text-bright-gray mt-2 w-full rounded-2xl border bg-white px-4 py-3 font-mono text-sm outline-hidden dark:border-[#7E7E7E]`}
+                  className={`border-border text-foreground dark:text-foreground bg-card dark:border-border mt-2 w-full rounded-2xl border px-4 py-3 font-mono text-sm outline-hidden`}
                 />
                 {jsonSchemaText.trim() !== '' && (
                   <div
@@ -1188,7 +1170,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       }}
                       className={`relative h-6 w-11 rounded-full transition-colors ${
                         agent.limited_token_mode
-                          ? 'bg-purple-30'
+                          ? 'bg-primary'
                           : 'bg-gray-300 dark:bg-gray-600'
                       }`}
                     >
@@ -1213,7 +1195,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     }
                     disabled={!agent.limited_token_mode}
                     placeholder={t('agents.form.placeholders.enterTokenLimit')}
-                    className={`border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver mt-2 w-full rounded-3xl border bg-white px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E] ${
+                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${
                       !agent.limited_token_mode
                         ? 'cursor-not-allowed opacity-50'
                         : ''
@@ -1244,7 +1226,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       }}
                       className={`relative h-6 w-11 rounded-full transition-colors ${
                         agent.limited_request_mode
-                          ? 'bg-purple-30'
+                          ? 'bg-primary'
                           : 'bg-gray-300 dark:bg-gray-600'
                       }`}
                     >
@@ -1271,7 +1253,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     placeholder={t(
                       'agents.form.placeholders.enterRequestLimit',
                     )}
-                    className={`border-silver text-jet dark:bg-raisin-black dark:text-bright-gray dark:placeholder:text-silver mt-2 w-full rounded-3xl border bg-white px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 dark:border-[#7E7E7E] ${
+                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${
                       !agent.limited_request_mode
                         ? 'cursor-not-allowed opacity-50'
                         : ''
@@ -1282,7 +1264,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             )}
           </div>
         </div>
-        <div className="col-span-3 flex flex-col gap-2 max-[1179px]:h-auto max-[1179px]:px-0 max-[1179px]:py-0 min-[1180px]:h-full min-[1180px]:py-2 dark:text-[#E0E0E0]">
+        <div className="col-span-3 flex flex-col gap-2 max-[1179px]:h-auto max-[1179px]:px-0 max-[1179px]:py-0 min-[1180px]:h-full min-[1180px]:py-2">
           <h2 className="text-lg font-semibold">
             {t('agents.form.sections.preview')}
           </h2>
@@ -1325,7 +1307,7 @@ function AgentPreviewArea() {
   const { t } = useTranslation();
   const selectedAgent = useSelector(selectSelectedAgent);
   return (
-    <div className="dark:bg-raisin-black w-full rounded-[30px] border border-[#F6F6F6] bg-white max-[1179px]:h-[600px] min-[1180px]:h-full dark:border-[#7E7E7E]">
+    <div className="bg-card dark:border-border w-full rounded-[30px] border border-[#F6F6F6] max-[1179px]:h-[600px] min-[1180px]:h-full">
       {selectedAgent?.status === 'published' ? (
         <div className="flex h-full w-full flex-col overflow-hidden rounded-[30px]">
           <AgentPreview />
@@ -1333,7 +1315,7 @@ function AgentPreviewArea() {
       ) : (
         <div className="flex h-full w-full flex-col items-center justify-center gap-2">
           <span className="block h-12 w-12 bg-[url('/src/assets/science-spark.svg')] bg-contain bg-center bg-no-repeat transition-all dark:bg-[url('/src/assets/science-spark-dark.svg')]" />{' '}
-          <p className="dark:text-gray-4000 text-xs text-[#18181B]">
+          <p className="text-muted-foreground text-xs">
             {t('agents.form.preview.publishedPreview')}
           </p>
         </div>

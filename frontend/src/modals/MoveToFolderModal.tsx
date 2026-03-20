@@ -139,7 +139,7 @@ export default function MoveToFolderModal({
       <div className="w-[800px] max-w-[90vw]">
         <div className="px-6 pt-4">
           <h2
-            className="text-jet dark:text-bright-gray mb-2 font-semibold"
+            className="text-foreground dark:text-foreground mb-2 font-semibold"
             style={{
               fontFamily: 'Inter, sans-serif',
               fontSize: '22px',
@@ -151,12 +151,12 @@ export default function MoveToFolderModal({
           </h2>
         </div>
         <div
-          className="flex items-center gap-1 bg-[#F6F8FA] px-8 py-2 text-xs font-semibold text-[#59636E] dark:bg-[#2A2A2A] dark:text-gray-400"
+          className="flex items-center gap-1 bg-muted px-8 py-2 text-xs font-semibold text-[#59636E] dark:bg-muted dark:text-gray-400"
           style={{ fontFamily: "'Segoe UI', sans-serif" }}
         >
           <button
             onClick={() => handleNavigateToPath(-1)}
-            className={`hover:text-[#18181B] dark:hover:text-white ${folderPath.length > 0 ? 'opacity-70' : ''}`}
+            className={`hover:text-foreground dark:hover:text-white ${folderPath.length > 0 ? 'opacity-70' : ''}`}
           >
             {t('agents.filters.byMe')}
           </button>
@@ -180,7 +180,7 @@ export default function MoveToFolderModal({
               ) : (
                 <button
                   onClick={() => handleNavigateToPath(index)}
-                  className="opacity-70 hover:text-[#18181B] dark:hover:text-white"
+                  className="opacity-70 hover:text-foreground dark:hover:text-white"
                 >
                   {item.name}
                 </button>
@@ -188,7 +188,7 @@ export default function MoveToFolderModal({
             </span>
           ))}
         </div>
-        <div className="max-h-60 min-h-[200px] overflow-y-auto border-t border-gray-200 dark:border-[#3A3A3A]">
+        <div className="max-h-60 min-h-[200px] overflow-y-auto border-t border-gray-200">
           {isLoading ? (
             <div className="flex h-[200px] items-center justify-center">
               <span className="text-[14px] text-gray-500">
@@ -204,10 +204,10 @@ export default function MoveToFolderModal({
                     e.stopPropagation();
                     setSelectedFolderId(null);
                   }}
-                  className={`flex w-full items-center gap-2 border-b border-gray-200 px-8 py-2 text-left text-[14px] dark:border-[#3A3A3A] ${
+                  className={`flex w-full items-center gap-2 border-b border-gray-200 px-8 py-2 text-left text-[14px] ${
                     selectedFolderId === null
                       ? 'bg-[#7D54D1] text-white'
-                      : 'bg-[#F9F9F9] hover:bg-gray-100 dark:bg-[#2A2A2A] dark:hover:bg-[#383838]'
+                      : 'bg-muted hover:bg-accent dark:bg-muted'
                   }`}
                 >
                   <span
@@ -226,10 +226,10 @@ export default function MoveToFolderModal({
                 <button
                   key={folder.id}
                   onClick={() => setSelectedFolderId(folder.id)}
-                  className={`flex w-full cursor-pointer items-center justify-between border-b border-gray-200 px-8 py-2 text-left text-[14px] dark:border-[#3A3A3A] ${
+                  className={`flex w-full cursor-pointer items-center justify-between border-b border-gray-200 px-8 py-2 text-left text-[14px] ${
                     selectedFolderId === folder.id
                       ? 'bg-[#7D54D1] text-white'
-                      : 'bg-[#F9F9F9] hover:bg-gray-100 dark:bg-[#2A2A2A] dark:hover:bg-[#383838]'
+                      : 'bg-muted hover:bg-accent dark:bg-muted'
                   }`}
                 >
                   <span className="flex flex-1 items-center gap-2">
@@ -239,7 +239,7 @@ export default function MoveToFolderModal({
                       className={`h-4 w-4 ${selectedFolderId === folder.id ? 'brightness-0 invert' : ''}`}
                     />
                     <span
-                      className={`truncate ${selectedFolderId === folder.id ? 'text-white' : 'text-[#18181B] dark:text-[#E0E0E0]'}`}
+                      className={`truncate ${selectedFolderId === folder.id ? 'text-white' : 'text-foreground'}`}
                     >
                       {folder.name}
                     </span>
@@ -271,14 +271,14 @@ export default function MoveToFolderModal({
                 </button>
               ))}
               {currentLevelFolders.length === 0 && folderPath.length > 0 && (
-                <div className="flex h-[200px] items-center justify-center text-sm text-[#71717A]">
+                <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
                   {t('agents.folders.noSubfolders')}
                 </div>
               )}
               {currentLevelFolders.length === 0 &&
                 folderPath.length === 0 &&
                 !currentFolderId && (
-                  <div className="flex h-[200px] items-center justify-center text-sm text-[#71717A]">
+                  <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
                     {t('agents.folders.noFolders')}
                   </div>
                 )}
@@ -286,7 +286,7 @@ export default function MoveToFolderModal({
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-gray-200 px-8 py-4 dark:border-[#3A3A3A]">
+        <div className="flex items-center justify-between border-t border-gray-200 px-8 py-4">
           {isCreatingFolder ? (
             <input
               ref={newFolderInputRef}
@@ -309,7 +309,7 @@ export default function MoveToFolderModal({
                 }
               }}
               placeholder={t('agents.folders.newFolder')}
-              className="rounded-full border border-[#7D54D1] bg-transparent px-6 py-2 text-sm font-medium text-[#7D54D1] outline-none placeholder:text-[#7D54D1]/60 dark:text-[#B794F4] dark:placeholder:text-[#B794F4]/60"
+              className="rounded-full border border-[#7D54D1] bg-transparent px-6 py-2 text-sm font-medium text-[#7D54D1] outline-none placeholder:text-[#7D54D1]/60 dark:text-primary dark:placeholder:text-[#B794F4]/60"
               autoFocus
             />
           ) : (
@@ -336,7 +336,7 @@ export default function MoveToFolderModal({
                   setModalState('INACTIVE');
                 }
               }}
-              className="dark:text-light-gray cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
+              className="dark:text-foreground cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-accent dark:hover:bg-accent"
             >
               {t('cancel')}
             </button>
@@ -351,7 +351,7 @@ export default function MoveToFolderModal({
                   }
                 }}
                 disabled={!newFolderName.trim()}
-                className="bg-purple-30 hover:bg-violets-are-blue rounded-3xl px-5 py-2 text-sm text-white disabled:opacity-50"
+                className="bg-primary hover:bg-primary/90 rounded-3xl px-5 py-2 text-sm text-white disabled:opacity-50"
               >
                 {t('agents.folders.createFolder')}
               </button>
@@ -361,7 +361,7 @@ export default function MoveToFolderModal({
                   e.stopPropagation();
                   handleMove();
                 }}
-                className="bg-purple-30 hover:bg-violets-are-blue rounded-3xl px-5 py-2 text-sm text-white disabled:opacity-50"
+                className="bg-primary hover:bg-primary/90 rounded-3xl px-5 py-2 text-sm text-white disabled:opacity-50"
               >
                 {t('agents.folders.move')}
               </button>

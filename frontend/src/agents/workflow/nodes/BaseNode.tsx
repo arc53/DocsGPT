@@ -21,14 +21,14 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
   icon,
   handles = { source: true, target: true },
 }) => {
-  let bgColor = 'bg-white dark:bg-[#2C2C2C]';
-  let borderColor = 'border-gray-200 dark:border-[#3A3A3A]';
+  let bgColor = 'bg-card';
+  let borderColor = 'border-border';
   let iconBg = 'bg-gray-100 dark:bg-gray-800';
   let iconColor = 'text-gray-600 dark:text-gray-400';
 
   if (selected) {
     borderColor =
-      'border-violets-are-blue ring-2 ring-purple-300 dark:ring-violets-are-blue';
+      'border-primary ring-2 ring-primary';
   }
 
   if (type === 'start') {
@@ -56,7 +56,7 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
           type="target"
           position={Position.Left}
           isConnectable={true}
-          className="hover:bg-violets-are-blue! -left-1! h-3! w-3! rounded-full! border-2! border-white! bg-gray-400! transition-colors dark:border-[#2C2C2C]!"
+          className="hover:bg-primary/90! -left-1! h-3! w-3! rounded-full! border-2! border-card! bg-gray-400! transition-colors!"
         />
       )}
 
@@ -86,7 +86,7 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
           type="source"
           position={Position.Right}
           isConnectable={true}
-          className="hover:bg-violets-are-blue! -right-1! h-3! w-3! rounded-full! border-2! border-white! bg-gray-400! transition-colors dark:border-[#2C2C2C]!"
+          className="hover:bg-primary/90! -right-1! h-3! w-3! rounded-full! border-2! border-card! bg-gray-400! transition-colors!"
         />
       )}
     </div>

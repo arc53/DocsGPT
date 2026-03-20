@@ -137,7 +137,7 @@ export default function ToolsPopup({
   const popupContent = (
     <div
       ref={popupRef}
-      className="border-light-silver bg-lotion dark:border-dim-gray dark:bg-charleston-green-2 fixed z-50 rounded-lg border shadow-[0px_9px_46px_8px_#0000001F,0px_24px_38px_3px_#00000024,0px_11px_15px_-7px_#00000033]"
+      className="border-border bg-background dark:border-border dark:bg-card fixed z-50 rounded-lg border shadow-[0px_9px_46px_8px_#0000001F,0px_24px_38px_3px_#00000024,0px_11px_15px_-7px_#00000033]"
       style={{
         top: popupPosition.showAbove ? popupPosition.top : undefined,
         bottom: popupPosition.showAbove
@@ -163,7 +163,7 @@ export default function ToolsPopup({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder={t('settings.tools.searchPlaceholder')}
-            labelBgClassName="bg-lotion dark:bg-charleston-green-2"
+            labelBgClassName="bg-background dark:bg-card"
             borderVariant="thin"
             className="mb-4"
           />
@@ -174,7 +174,7 @@ export default function ToolsPopup({
             <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-gray-900 dark:border-white"></div>
           </div>
         ) : (
-          <div className="dark:border-dim-gray mx-4 grow overflow-hidden rounded-md border border-[#D9D9D9]">
+          <div className="dark:border-border mx-4 grow overflow-hidden rounded-md border border-[#D9D9D9]">
             <div className="h-full overflow-y-auto scrollbar-overlay">
               {filteredTools.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center py-8">
@@ -192,7 +192,7 @@ export default function ToolsPopup({
                   <div
                     key={tool.id}
                     onClick={() => updateToolStatus(tool.id, !tool.status)}
-                    className="dark:border-dim-gray dark:hover:bg-charleston-green-3 flex items-center justify-between border-b border-[#D9D9D9] p-3 hover:bg-gray-100"
+                    className="dark:border-border dark:hover:bg-accent flex items-center justify-between border-b border-[#D9D9D9] p-3 hover:bg-accent"
                   >
                     <div className="mr-3 flex grow items-center">
                       <img
@@ -208,7 +208,7 @@ export default function ToolsPopup({
                     </div>
                     <div className="flex shrink-0 items-center">
                       <div
-                        className={`flex h-4 w-4 items-center justify-center rounded-xs border-2 border-[#C6C6C6] p-[0.5px] dark:border-[#757783]`}
+                        className={`flex h-4 w-4 items-center justify-center rounded-xs border-2 border-[#C6C6C6] p-[0.5px] dark:border-border`}
                       >
                         {tool.status && (
                           <img
@@ -230,7 +230,7 @@ export default function ToolsPopup({
         <div className="shrink-0 p-4 opacity-75 transition-opacity duration-200 hover:opacity-100">
           <a
             href="/settings/tools"
-            className="text-purple-30 inline-flex items-center text-base font-medium"
+            className="text-primary inline-flex items-center text-base font-medium"
           >
             {t('settings.tools.manageTools')}
             <img

@@ -71,16 +71,16 @@ export default function FolderCard({
       <div
         className={`relative flex cursor-pointer items-center justify-between rounded-[1.2rem] px-4 py-3 sm:w-48 ${
           isExpanded
-            ? 'bg-[#E5E5E5] dark:bg-[#454545]'
-            : 'bg-[#F6F6F6] hover:bg-[#ECECEC] dark:bg-[#383838] dark:hover:bg-[#383838]/80'
+            ? 'bg-accent'
+            : 'bg-muted hover:bg-accent'
         }`}
         onClick={() => onToggleExpand(folder.id)}
       >
         <div className="flex items-center gap-2 overflow-hidden">
-          <span className="truncate text-sm font-medium text-[#18181B] dark:text-[#E0E0E0]">
+          <span className="truncate text-sm font-medium text-foreground">
             {folder.name}
           </span>
-          <span className="shrink-0 text-xs text-[#71717A]">
+          <span className="shrink-0 text-xs text-muted-foreground">
             ({agentCount})
           </span>
         </div>

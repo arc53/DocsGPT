@@ -87,7 +87,7 @@ export default function Notification({
           ))}
         </div>
 
-        <p className="text-white-3000 relative z-10 text-xs leading-6 font-semibold xl:text-sm xl:leading-7">
+        <p className="text-white relative z-10 text-xs leading-6 font-semibold xl:text-sm xl:leading-7">
           {notificationText}
         </p>
         <span className="relative z-10 flex items-center">

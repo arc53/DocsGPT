@@ -36,20 +36,20 @@ const Help = () => {
       <button
         ref={buttonRef}
         onClick={toggleDropdown}
-        className="mx-4 my-auto flex h-9 w-full items-center gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E]"
+        className="mx-4 my-auto flex h-9 w-full items-center gap-4 rounded-3xl hover:bg-sidebar-accent"
       >
         <img src={Info} alt="info" className="ml-2 w-5 filter dark:invert" />
         {t('help')}
       </button>
       {isOpen && (
         <div
-          className={`dark:bg-outer-space absolute z-10 w-48 translate-x-4 -translate-y-28 rounded-xl bg-white shadow-lg`}
+          className={`dark:bg-card absolute z-10 w-48 translate-x-4 -translate-y-28 rounded-xl bg-card shadow-lg`}
         >
           <a
             href="https://docs.docsgpt.cloud/"
             target="_blank"
             rel="noopener noreferrer"
-            className="hover:bg-bright-gray flex items-start gap-4 rounded-t-xl px-4 py-2 text-black dark:text-white dark:hover:bg-[#545561]"
+            className="hover:bg-muted flex items-start gap-4 rounded-t-xl px-4 py-2 text-foreground"
           >
             <img
               src={PageIcon}
@@ -61,7 +61,7 @@ const Help = () => {
           </a>
           <a
             href="mailto:support@docsgpt.cloud"
-            className="hover:bg-bright-gray flex items-start gap-4 rounded-b-xl px-4 py-2 text-black dark:text-white dark:hover:bg-[#545561]"
+            className="hover:bg-muted flex items-start gap-4 rounded-b-xl px-4 py-2 text-foreground"
           >
             <img
               src={EmailIcon}

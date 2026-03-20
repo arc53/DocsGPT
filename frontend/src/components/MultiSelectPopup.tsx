@@ -168,7 +168,7 @@ export default function MultiSelectPopup({
   return (
     <div
       ref={popupRef}
-      className="border-light-silver bg-lotion dark:border-dim-gray dark:bg-charleston-green-2 fixed z-9999 flex flex-col rounded-lg border shadow-[0px_9px_46px_8px_#0000001F,0px_24px_38px_3px_#00000024,0px_11px_15px_-7px_#00000033]"
+      className="border-border bg-background dark:border-border dark:bg-card fixed z-9999 flex flex-col rounded-lg border shadow-[0px_9px_46px_8px_#0000001F,0px_24px_38px_3px_#00000024,0px_11px_15px_-7px_#00000033]"
       style={{
         top: popupPosition.showAbove ? undefined : popupPosition.top,
         bottom: popupPosition.showAbove
@@ -198,7 +198,7 @@ export default function MultiSelectPopup({
                 searchPlaceholder ||
                 t('settings.tools.searchPlaceholder', 'Search...')
               }
-              labelBgClassName="bg-lotion dark:bg-charleston-green-2"
+              labelBgClassName="bg-background dark:bg-card"
               borderVariant="thin"
               className="mb-4"
               textSize="small"
@@ -206,7 +206,7 @@ export default function MultiSelectPopup({
           )}
         </div>
       )}
-      <div className="dark:border-dim-gray mx-4 mb-4 grow overflow-auto rounded-md border border-[#D9D9D9]">
+      <div className="dark:border-border mx-4 mb-4 grow overflow-auto rounded-md border border-[#D9D9D9]">
         {loading ? (
           <div className="flex h-full items-center justify-center py-4">
             <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-gray-900 dark:border-white"></div>
@@ -233,7 +233,7 @@ export default function MultiSelectPopup({
                   <div
                     key={option.id}
                     onClick={() => handleOptionClick(option.id)}
-                    className="dark:border-dim-gray dark:hover:bg-charleston-green-3 flex cursor-pointer items-center justify-between border-b border-[#D9D9D9] p-3 last:border-b-0 hover:bg-gray-100"
+                    className="dark:border-border dark:hover:bg-accent flex cursor-pointer items-center justify-between border-b border-[#D9D9D9] p-3 last:border-b-0 hover:bg-accent"
                     role="option"
                     aria-selected={isSelected}
                   >
@@ -248,7 +248,7 @@ export default function MultiSelectPopup({
                     </div>
                     <div className="shrink-0">
                       <div
-                        className={`dark:bg-charleston-green-2 flex h-4 w-4 items-center justify-center rounded-xs border-2 border-[#C6C6C6] bg-white dark:border-[#757783]`}
+                        className={`flex h-4 w-4 items-center justify-center rounded-xs border-2 border-border bg-card`}
                         aria-hidden="true"
                       >
                         {isSelected && (
@@ -269,7 +269,7 @@ export default function MultiSelectPopup({
         )}
       </div>
       {footerContent && (
-        <div className="border-light-silver dark:border-dim-gray shrink-0 border-t p-4">
+        <div className="border-border dark:border-border shrink-0 border-t p-4">
           {footerContent}
         </div>
       )}

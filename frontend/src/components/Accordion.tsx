@@ -37,7 +37,7 @@ export default function Accordion({
         className={`flex w-full items-center justify-between focus:outline-hidden ${titleClassName}`}
         onClick={toggleAccordion}
       >
-        <p className="break-words">{title}</p>
+        <p className="wrap-break-word">{title}</p>
         <img
           src={ChevronDown}
           className={`h-5 w-5 transform transition-transform duration-200 dark:invert ${

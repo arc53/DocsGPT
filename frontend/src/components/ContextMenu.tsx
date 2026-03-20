@@ -127,7 +127,7 @@ export default function ContextMenu({
       onClick={(e) => e.stopPropagation()}
     >
       <div
-        className="bg-lotion dark:bg-charleston-green-2 flex flex-col rounded-xl text-sm shadow-xl"
+        className="bg-background dark:bg-card flex flex-col rounded-xl text-sm shadow-xl"
         style={{ minWidth: '144px' }}
       >
         {options.map((option, index) => (
@@ -141,8 +141,8 @@ export default function ContextMenu({
             }}
             className={`flex items-center justify-start gap-4 p-3 transition-colors duration-200 ease-in-out ${index === 0 ? 'rounded-t-xl' : ''} ${index === options.length - 1 ? 'rounded-b-xl' : ''} ${
               option.variant === 'danger'
-                ? 'text-rosso-corsa hover:bg-bright-gray dark:text-red-2000 dark:hover:bg-charcoal-grey/20'
-                : 'text-eerie-black hover:bg-bright-gray dark:text-bright-gray dark:hover:bg-charcoal-grey/20'
+                ? 'text-destructive hover:bg-muted'
+                : 'text-foreground hover:bg-muted'
             } `}
           >
             {option.icon && (

@@ -192,9 +192,9 @@ export default function ConversationTile({
           conversationId !== conversation.id &&
             selectConversation(conversation.id);
         }}
-        className={`hover:bg-bright-gray dark:hover:bg-dark-charcoal mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl pl-4 ${
+        className={`hover:bg-sidebar-accent mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl pl-4 ${
           conversationId === conversation.id || isOpen || isHovered || isEdit
-            ? 'bg-bright-gray dark:bg-dark-charcoal'
+            ? 'bg-sidebar-accent'
             : ''
         }`}
       >
@@ -209,13 +209,13 @@ export default function ConversationTile({
               onKeyDown={handleRenameKeyDown}
             />
           ) : (
-            <p className="text-eerie-black dark:text-bright-gray my-auto overflow-hidden text-sm leading-6 font-normal text-ellipsis whitespace-nowrap">
+            <p className="text-foreground dark:text-foreground my-auto overflow-hidden text-sm leading-6 font-normal text-ellipsis whitespace-nowrap">
               {conversationName}
             </p>
           )}
         </div>
         {(conversationId === conversation.id || isHovered || isOpen) && (
-          <div className="dark:text-sonic-silver flex text-white" ref={menuRef}>
+          <div className="dark:text-muted-foreground flex text-white" ref={menuRef}>
             {isEdit ? (
               <div className="flex gap-1">
                 <img
@@ -248,7 +248,7 @@ export default function ConversationTile({
                   event.stopPropagation();
                   setOpen(!isOpen);
                 }}
-                className="mr-2 flex h-6 w-6 items-center justify-center rounded-full transition-colors duration-200 hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="mr-2 flex h-6 w-6 items-center justify-center rounded-full transition-colors duration-200 hover:bg-accent dark:hover:bg-accent"
               >
                 <img src={threeDots} width={8} alt="menu" />
               </button>

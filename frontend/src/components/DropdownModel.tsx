@@ -80,15 +80,15 @@ export default function DropdownModel() {
   return (
     <div ref={dropdownRef}>
       <div
-        className={`bg-gray-1000 dark:bg-dark-charcoal mx-auto flex w-full cursor-pointer justify-between p-1 dark:text-white ${isOpen ? 'rounded-t-3xl' : 'rounded-3xl'}`}
+        className={`border-border text-foreground mx-auto flex w-full cursor-pointer items-center justify-between border bg-transparent px-3 py-4 ${isOpen ? 'rounded-t-4xl' : 'rounded-4xl'}`}
         onClick={() => setIsOpen(!isOpen)}
       >
         {selectedModel?.display_name ? (
-          <p className="mx-4 my-3 truncate overflow-hidden whitespace-nowrap">
+          <p className="ml-3 truncate overflow-hidden whitespace-nowrap">
             {selectedModel.display_name}
           </p>
         ) : (
-          <p className="mx-4 my-3 truncate overflow-hidden whitespace-nowrap">
+          <p className="text-muted-foreground truncate overflow-hidden whitespace-nowrap">
             Select Model
           </p>
         )}
@@ -101,7 +101,7 @@ export default function DropdownModel() {
         />
       </div>
       {isOpen && (
-        <div className="no-scrollbar dark:bg-dark-charcoal absolute right-0 left-0 z-20 -mt-1 max-h-52 w-full overflow-y-auto rounded-b-3xl bg-white shadow-md">
+        <div className="no-scrollbar border-border bg-card absolute right-0 left-0 z-20 -mt-1 max-h-52 w-full overflow-y-auto rounded-b-3xl border border-t-0 shadow-md">
           {availableModels && (availableModels?.length ?? 0) > 0 ? (
             availableModels.map((model: Model) => (
               <div
@@ -110,7 +110,7 @@ export default function DropdownModel() {
                   dispatch(setSelectedModel(model));
                   setIsOpen(false);
                 }}
-                className={`border-gray-3000/75 dark:border-purple-taupe/50 hover:bg-gray-3000/75 dark:hover:bg-purple-taupe flex h-10 w-full cursor-pointer items-center justify-between border-t`}
+                className={`border-border/50 hover:bg-muted flex h-10 w-full cursor-pointer items-center justify-between border-t`}
               >
                 <div className="flex w-full items-center justify-between">
                   <p className="flex-1 truncate py-3 pr-2 pl-5">
@@ -127,8 +127,8 @@ export default function DropdownModel() {
               </div>
             ))
           ) : (
-            <div className="h-10 w-full border-x-2 border-b-2">
-              <p className="ml-5 py-3 text-gray-500">No models available</p>
+            <div className="border-border/50 flex h-10 w-full items-center border-t">
+              <p className="pl-5 text-sm text-muted-foreground">No models available</p>
             </div>
           )}
         </div>

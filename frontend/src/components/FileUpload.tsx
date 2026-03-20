@@ -41,7 +41,7 @@ export const FileUpload = ({
   showPreview = false,
   previewSize = 80,
   children,
-  className = 'border-2 border-dashed rounded-3xl p-6 text-center cursor-pointer transition-colors border-silver dark:border-[#7E7E7E]',
+  className = 'border-2 border-dashed rounded-3xl p-6 text-center cursor-pointer transition-colors border-border dark:border-border',
   activeClassName = 'border-blue-500 bg-blue-50',
   acceptClassName = 'border-green-500 dark:border-green-500 bg-green-50 dark:bg-green-50/10',
   rejectClassName = 'border-red-500 bg-red-50 dark:bg-red-500/10 dark:border-red-500',
@@ -133,7 +133,7 @@ export const FileUpload = ({
   });
 
   const currentClassName = twMerge(
-    'border-2 border-dashed rounded-3xl p-8 text-center cursor-pointer transition-colors border-silver dark:border-[#7E7E7E]',
+    'border-2 border-dashed rounded-3xl p-8 text-center cursor-pointer transition-colors border-border dark:border-border',
     className,
     isDragActive && activeClassName,
     isDragAccept && acceptClassName,

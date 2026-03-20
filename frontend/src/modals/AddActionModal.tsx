@@ -40,7 +40,7 @@ export default function AddActionModal({
   return (
     <WrapperModal close={() => setModalState('INACTIVE')} className="sm:w-lg">
       <div>
-        <h2 className="text-jet dark:text-bright-gray px-3 text-xl font-semibold">
+        <h2 className="text-foreground dark:text-foreground px-3 text-xl font-semibold">
           {t('modals.addAction.title')}
         </h2>
         <div className="relative mt-6 px-3">
@@ -53,7 +53,7 @@ export default function AddActionModal({
               setFunctionNameError(!isValidFunctionName(value));
             }}
             borderVariant="thin"
-            labelBgClassName="bg-white dark:bg-charleston-green-2"
+            labelBgClassName="bg-card"
             placeholder={t('modals.addAction.actionNamePlaceholder')}
             required={true}
           />
@@ -70,7 +70,7 @@ export default function AddActionModal({
         <div className="mt-3 flex flex-row-reverse gap-1 px-3">
           <button
             onClick={handleAddAction}
-            className="bg-purple-30 hover:bg-violets-are-blue rounded-3xl px-5 py-2 text-sm text-white transition-all"
+            className="bg-primary hover:bg-primary/90 rounded-3xl px-5 py-2 text-sm text-white transition-all"
           >
             {t('modals.addAction.addButton')}
           </button>
@@ -80,7 +80,7 @@ export default function AddActionModal({
               setModalState('INACTIVE');
               setActionName('');
             }}
-            className="dark:text-light-gray cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
+            className="dark:text-foreground cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-accent dark:hover:bg-accent"
           >
             {t('modals.configTool.closeButton')}
           </button>

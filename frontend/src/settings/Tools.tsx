@@ -7,9 +7,9 @@ import userService from '../api/services/userService';
 import Edit from '../assets/edit.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
+import SearchIcon from '../assets/search.svg';
 import ThreeDotsIcon from '../assets/three-dots.svg';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
-import Input from '../components/Input';
 import Spinner from '../components/Spinner';
 import ToggleSwitch from '../components/ToggleSwitch';
 import { useDarkTheme } from '../hooks';
@@ -210,9 +210,13 @@ export default function Tools() {
       ) : (
         <div className="mt-8">
           <div className="relative flex flex-col">
+            <p className="mb-5 text-[15px] leading-6 text-muted-foreground">
+              {t('settings.tools.subtitle')}
+            </p>
             <div className="my-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="w-full sm:w-auto">
-                <Input
+              <div className="relative w-full max-w-md">
+                <img src={SearchIcon} alt="" className="absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 opacity-40" />
+                <input
                   maxLength={256}
                   placeholder={t('settings.tools.searchPlaceholder')}
                   name="Document-search-input"
@@ -220,11 +224,11 @@ export default function Tools() {
                   id="tool-search-input"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  borderVariant="thin"
+                  className="h-11 w-full rounded-full border border-border bg-card py-2 pr-5 pl-11 text-sm text-foreground shadow-[0_1px_4px_rgba(0,0,0,0.06)] outline-none transition-shadow placeholder:text-muted-foreground focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-none"
                 />
               </div>
               <button
-                className="bg-purple-30 hover:bg-violets-are-blue flex h-8 min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white"
+                className="bg-primary hover:bg-primary/90 flex h-11 min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white"
                 onClick={() => {
                   setAddToolModalState('ACTIVE');
                 }}
@@ -232,7 +236,7 @@ export default function Tools() {
                 {t('settings.tools.addTool')}
               </button>
             </div>
-            <div className="border-light-silver dark:border-dim-gray mt-5 mb-8 border-b" />
+            <div className="border-border dark:border-border mt-5 mb-8 border-b" />
             {loading ? (
               <div className="grid grid-cols-2 gap-6 lg:grid-cols-3">
                 <div className="col-span-2 mt-24 flex h-32 items-center justify-center lg:col-span-3">
@@ -252,17 +256,28 @@ export default function Tools() {
                       {t('settings.tools.noToolsFound')}
                     </p>
                   </div>
-                ) : (
-                  userTools
-                    .filter((tool) =>
-                      (tool.customName || tool.displayName)
-                        .toLowerCase()
-                        .includes(searchTerm.toLowerCase()),
-                    )
-                    .map((tool, index) => (
+                ) : (() => {
+                  const filtered = userTools.filter((tool) =>
+                    (tool.customName || tool.displayName)
+                      .toLowerCase()
+                      .includes(searchTerm.toLowerCase()),
+                  );
+                  return filtered.length === 0 ? (
+                    <div className="flex w-full flex-col items-center justify-center py-12">
+                      <img
+                        src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
+                        alt={t('settings.tools.noToolsFound')}
+                        className="mx-auto mb-6 h-32 w-32"
+                      />
+                      <p className="text-center text-lg text-gray-500 dark:text-gray-400">
+                        {t('settings.tools.noToolsFound')}
+                      </p>
+                    </div>
+                  ) : (
+                    filtered.map((tool, index) => (
                       <div
                         key={index}
-                        className="relative flex h-52 w-[300px] flex-col justify-between overflow-hidden rounded-2xl bg-[#F5F5F5] p-6 hover:bg-[#ECECEC] dark:bg-[#383838] dark:hover:bg-[#303030]"
+                        className="relative flex h-52 w-[300px] flex-col justify-between overflow-hidden rounded-2xl bg-muted p-6 hover:bg-accent"
                       >
                         <div
                           ref={menuRefs.current[tool.id]}
@@ -321,12 +336,12 @@ export default function Tools() {
                           <div className="mt-[9px]">
                             <p
                               title={tool.customName || tool.displayName}
-                              className="text-raisin-black-light dark:text-bright-gray truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
+                              className="text-foreground dark:text-foreground truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
                             >
                               {tool.customName || tool.displayName}
                             </p>
                             <p
-                              className="text-old-silver dark:text-sonic-silver-light mt-1 line-clamp-4 max-h-24 overflow-hidden px-1 text-[12px] leading-relaxed break-all"
+                              className="text-muted-foreground mt-1 line-clamp-4 max-h-24 overflow-hidden px-1 text-[12px] leading-relaxed break-all"
                               title={tool.description}
                             >
                               {tool.description}
@@ -348,7 +363,8 @@ export default function Tools() {
                         </div>
                       </div>
                     ))
-                )}
+                  );
+                })()}
               </div>
             )}
           </div>

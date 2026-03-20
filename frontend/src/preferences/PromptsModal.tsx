@@ -1,4 +1,4 @@
-import { ActiveState } from '../models/misc';
+﻿import { ActiveState } from '../models/misc';
 import Input from '../components/Input';
 import { Link } from 'react-router-dom';
 
@@ -120,11 +120,11 @@ function PromptTextarea({
   return (
     <>
       <div
-        className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded bg-white px-3 py-2 dark:bg-[#26272E]"
+        className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded bg-card px-3 py-2"
         aria-hidden="true"
       >
         <div
-          className="min-h-full text-base leading-[1.5] break-words whitespace-pre-wrap text-transparent"
+          className="min-h-full text-base leading-normal wrap-break-word whitespace-pre-wrap text-transparent"
           style={{
             transform: `translate(${-scrollOffsets.left}px, ${-scrollOffsets.top}px)`,
           }}
@@ -134,7 +134,7 @@ function PromptTextarea({
       </div>
       <textarea
         id={id}
-        className="peer border-silver dark:border-silver/40 relative z-10 h-48 w-full resize-none rounded border-2 bg-transparent px-3 py-2 text-base text-gray-800 outline-none md:h-64 lg:h-80 dark:bg-transparent dark:text-white"
+        className="peer border-border dark:border-border relative z-10 h-48 w-full resize-none rounded border-2 bg-transparent px-3 py-2 text-base text-gray-800 outline-none md:h-64 lg:h-80 dark:text-white"
         value={value}
         onChange={onChange}
         onScroll={handleScroll}
@@ -239,7 +239,7 @@ function AddPrompt({
       <p className="mb-1 text-xl font-semibold text-[#2B2B2B] dark:text-white">
         {t('modals.prompts.addPrompt')}
       </p>
-      <p className="mb-6 text-sm text-[#6B6B6B] dark:text-[#9A9AA0]">
+      <p className="mb-6 text-sm text-[#6B6B6B] dark:text-muted-foreground">
         {t('modals.prompts.addDescription')}
       </p>
       <div>
@@ -251,7 +251,7 @@ function AddPrompt({
           textSize="medium"
           value={newPromptName}
           onChange={(e) => setNewPromptName(e.target.value)}
-          labelBgClassName="bg-white dark:bg-[#26272E]"
+          labelBgClassName="bg-card"
           borderVariant="thick"
         />
 
@@ -266,7 +266,7 @@ function AddPrompt({
             htmlFor="new-prompt-content"
             className={`absolute z-20 select-none ${
               newPromptContent ? '-top-2.5 left-3 text-xs' : ''
-            } text-gray-4000 pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden bg-white px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs dark:bg-[#26272E] dark:text-gray-400`}
+            } text-muted-foreground pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden bg-card px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs`}
           >
             {t('modals.prompts.promptText')}
           </label>
@@ -326,7 +326,6 @@ function AddPrompt({
             placeholder={t('modals.prompts.systemVariablesDropdownLabel')}
             size="w-[140px] sm:w-[185px]"
             rounded="3xl"
-            border="border"
             contentSize="text-[12px] sm:text-[14px]"
           />
 
@@ -371,7 +370,6 @@ function AddPrompt({
             placeholder="Tool Variables"
             size="w-[140px] sm:w-[171px]"
             rounded="3xl"
-            border="border"
             contentSize="text-[12px] sm:text-[14px]"
           />
         </div>
@@ -387,7 +385,7 @@ function AddPrompt({
             <img
               src={BookIcon}
               alt=""
-              className="flex h-4 w-3 flex-shrink-0 items-center justify-center"
+              className="flex h-4 w-3 shrink-0 items-center justify-center"
               aria-hidden="true"
             />
             <span className="text-[14px] font-bold">
@@ -448,7 +446,7 @@ function EditPrompt({
       <p className="mb-1 text-xl font-semibold text-[#2B2B2B] dark:text-white">
         {t('modals.prompts.editPrompt')}
       </p>
-      <p className="mb-6 text-sm text-[#6B6B6B] dark:text-[#9A9AA0]">
+      <p className="mb-6 text-sm text-[#6B6B6B] dark:text-muted-foreground">
         {t('modals.prompts.editDescription')}
       </p>
       <div>
@@ -460,7 +458,7 @@ function EditPrompt({
           textSize="medium"
           value={editPromptName}
           onChange={(e) => setEditPromptName(e.target.value)}
-          labelBgClassName="bg-white dark:bg-[#26272E]"
+          labelBgClassName="bg-card"
           borderVariant="thick"
         />
 
@@ -475,7 +473,7 @@ function EditPrompt({
             htmlFor="edit-prompt-content"
             className={`absolute z-20 select-none ${
               editPromptContent ? '-top-2.5 left-3 text-xs' : ''
-            } text-gray-4000 pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden bg-white px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs dark:bg-[#26272E] dark:text-gray-400`}
+            } text-muted-foreground pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden bg-card px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs`}
           >
             {t('modals.prompts.promptText')}
           </label>
@@ -535,7 +533,6 @@ function EditPrompt({
             placeholder={t('modals.prompts.systemVariablesDropdownLabel')}
             size="w-[140px] sm:w-[185px]"
             rounded="3xl"
-            border="border"
             contentSize="text-[12px] sm:text-[14px]"
           />
 
@@ -580,7 +577,6 @@ function EditPrompt({
             placeholder="Tool Variables"
             size="w-[140px] sm:w-[171px]"
             rounded="3xl"
-            border="border"
             contentSize="text-[12px] sm:text-[14px]"
           />
         </div>
@@ -596,7 +592,7 @@ function EditPrompt({
             <img
               src={BookIcon}
               alt=""
-              className="flex h-4 w-3 flex-shrink-0 items-center justify-center"
+              className="flex h-4 w-3 shrink-0 items-center justify-center"
               aria-hidden="true"
             />
             <span className="text-[14px] font-bold">
@@ -763,7 +759,7 @@ export default function PromptsModal({
           setNewPromptContent('');
         }
       }}
-      className="mx-4 mt-16 w-[95vw] max-w-[650px] rounded-2xl bg-white px-4 py-4 sm:px-6 sm:py-6 md:max-w-[860px] md:px-8 md:py-6 lg:max-w-[980px] dark:bg-[#1E1E2A]"
+      className="mx-4 mt-16 w-[95vw] max-w-[650px] rounded-2xl bg-card px-4 py-4 sm:px-6 sm:py-6 md:max-w-[860px] md:px-8 md:py-6 lg:max-w-[980px] dark:bg-card"
       contentClassName="!overflow-visible"
     >
       {view}

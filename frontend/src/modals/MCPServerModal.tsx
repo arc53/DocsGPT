@@ -559,7 +559,7 @@ export default function MCPServerModal({
       >
         <div className="flex h-full flex-col">
           <div className="px-6 py-4">
-            <h2 className="text-jet dark:text-bright-gray text-xl font-semibold">
+            <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
               {server
                 ? t('settings.tools.mcp.reconnectServer', {
                     defaultValue: 'Reconnect Server',
@@ -711,7 +711,7 @@ export default function MCPServerModal({
               )}
 
               {discoveredTools.length > 0 && testResult?.success && (
-                <div className="border-silver dark:border-silver/40 rounded-xl border p-4">
+                <div className="border-border dark:border-border rounded-xl border p-4">
                   <h4 className="mb-2 text-sm font-medium text-gray-900 dark:text-white">
                     {t('settings.tools.mcp.discoveredTools', {
                       count: discoveredTools.length,
@@ -724,7 +724,7 @@ export default function MCPServerModal({
                         key={tool.name}
                         className="flex items-start gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-white/5"
                       >
-                        <span className="text-purple-30 mt-0.5">&#9679;</span>
+                        <span className="text-primary mt-0.5">&#9679;</span>
                         <div className="min-w-0">
                           <span className="font-medium text-gray-900 dark:text-white">
                             {tool.name}
@@ -753,7 +753,7 @@ export default function MCPServerModal({
               <button
                 onClick={testConnection}
                 disabled={testing}
-                className="border-silver dark:border-silver/40 dark:text-light-gray w-full rounded-3xl border px-6 py-2 text-sm font-medium transition-all hover:bg-gray-100 disabled:opacity-50 sm:w-auto dark:hover:bg-[#767183]/50"
+                className="border-border dark:border-border dark:text-foreground w-full rounded-3xl border px-6 py-2 text-sm font-medium transition-all hover:bg-accent disabled:opacity-50 sm:w-auto dark:hover:bg-muted/50"
               >
                 {testing ? (
                   <div className="flex items-center justify-center">
@@ -773,14 +773,14 @@ export default function MCPServerModal({
                     setModalState('INACTIVE');
                     resetForm();
                   }}
-                  className="dark:text-light-gray w-full cursor-pointer rounded-3xl px-6 py-2 text-sm font-medium hover:bg-gray-100 sm:w-auto dark:bg-transparent dark:hover:bg-[#767183]/50"
+                  className="dark:text-foreground w-full cursor-pointer rounded-3xl px-6 py-2 text-sm font-medium hover:bg-accent sm:w-auto dark:hover:bg-muted/50"
                 >
                   {t('settings.tools.mcp.cancel')}
                 </button>
                 <button
                   onClick={handleSave}
                   disabled={loading || !saveActive}
-                  className="bg-purple-30 hover:bg-violets-are-blue w-full rounded-3xl px-6 py-2 text-sm font-medium text-white transition-all disabled:opacity-50 sm:w-auto"
+                  className="bg-primary hover:bg-primary/90 w-full rounded-3xl px-6 py-2 text-sm font-medium text-white transition-all disabled:opacity-50 sm:w-auto"
                 >
                   {loading ? (
                     <div className="flex items-center justify-center">

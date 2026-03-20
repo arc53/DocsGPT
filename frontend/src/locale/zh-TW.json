@@ -54,6 +54,7 @@
     },
     "sources": {
       "title": "在這裡您可以管理所有可用的來源檔案以及您上傳的檔案。",
+      "subtitle": "上傳並管理您的回答所依賴的文件和知識來源",
       "label": "來源",
       "name": "來源名稱",
       "date": "向量日期",
@@ -118,6 +119,7 @@
     },
     "analytics": {
       "label": "分析",
+      "subtitle": "追蹤您賃戶的訊息量、Token 使用量和使用者回饋",
       "filterByChatbot": "按聊天機器人篩選",
       "selectChatbot": "選擇聊天機器人",
       "filterOptions": {
@@ -137,6 +139,7 @@
     },
     "logs": {
       "label": "日誌",
+      "subtitle": "查看和監控 API 呼叫及會話日誌",
       "filterByChatbot": "按聊天機器人篩選",
       "selectChatbot": "選擇聊天機器人",
       "none": "無",
@@ -144,6 +147,7 @@
     },
     "tools": {
       "label": "工具",
+      "subtitle": "瀏覽、連接並設定驅動您的智能體的工具和整合",
       "searchPlaceholder": "搜尋工具...",
       "addTool": "新增工具",
       "noToolsFound": "找不到工具",

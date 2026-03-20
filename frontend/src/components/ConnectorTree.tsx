@@ -325,7 +325,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
         {/* Left side with path navigation */}
         <div className="flex w-full items-center sm:w-auto">
           <button
-            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm font-medium text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
+            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm font-medium text-gray-400 dark:border-0 dark:text-gray-500"
             onClick={handleBackNavigation}
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
@@ -340,7 +340,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
                 <span className="mx-1 flex-shrink-0 text-gray-500">/</span>
                 {currentPath.map((dir, index) => (
                   <React.Fragment key={index}>
-                    <span className="break-words text-gray-700 dark:text-[#E0E0E0]">
+                    <span className="break-words text-gray-700">
                       {dir}
                     </span>
                     {index < currentPath.length - 1 && (
@@ -365,7 +365,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
             className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] font-medium whitespace-nowrap transition-colors ${
               isSyncing
                 ? 'cursor-not-allowed bg-gray-300 text-gray-600 dark:bg-gray-600 dark:text-gray-400'
-                : 'bg-purple-30 hover:bg-violets-are-blue text-white'
+                : 'bg-primary hover:bg-primary/90 text-white'
             }`}
             title={
               isSyncing
@@ -466,7 +466,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
-                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E]"
+                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB] dark:hover:bg-muted"
                   aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
@@ -527,7 +527,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
-                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E]"
+                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB] dark:hover:bg-muted"
                   aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
@@ -625,11 +625,11 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
             }
           }}
           placeholder={t('settings.sources.searchFiles')}
-          className={`h-[38px] w-full border border-[#D1D9E0] px-4 py-2 dark:border-[#6A6A6A] ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'} bg-transparent focus:outline-none dark:text-[#E0E0E0]`}
+          className={`h-[38px] w-full border border-border px-4 py-2 dark:border-border ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'} bg-transparent focus:outline-none`}
         />
 
         {searchQuery && (
-          <div className="absolute top-full right-0 left-0 z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-[12px] border border-t-0 border-[#D1D9E0] bg-white shadow-lg transition-all duration-200 dark:border-[#6A6A6A] dark:bg-[#1F2023]">
+          <div className="absolute top-full right-0 left-0 z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-[12px] border border-t-0 border-border bg-card shadow-lg transition-all duration-200 dark:border-border dark:bg-card">
             <div className="max-h-[calc(100vh-200px)] overflow-x-hidden overflow-y-auto overscroll-contain">
               {searchResults.length === 0 ? (
                 <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -641,9 +641,9 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
                     key={index}
                     onClick={() => handleSearchSelect(result)}
                     title={result.path}
-                    className={`flex min-w-0 cursor-pointer items-center px-3 py-2 hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${
+                    className={`flex min-w-0 cursor-pointer items-center px-3 py-2 hover:bg-muted dark:hover:bg-muted ${
                       index !== searchResults.length - 1
-                        ? 'border-b border-[#D1D9E0] dark:border-[#6A6A6A]'
+                        ? 'border-b border-border dark:border-border'
                         : ''
                     }`}
                   >
@@ -656,7 +656,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
                       }
                       className="mr-2 h-4 w-4 flex-shrink-0"
                     />
-                    <span className="flex-1 truncate text-sm dark:text-[#E0E0E0]">
+                    <span className="flex-1 truncate text-sm">
                       {result.name}
                     </span>
                   </div>

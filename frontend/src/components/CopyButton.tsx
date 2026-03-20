@@ -39,7 +39,7 @@ export default function CopyButton({
     'flex items-center justify-center rounded-full transition-colors duration-150 ease-in-out',
     padding,
     {
-      [`bg-[#FFFFFF}] dark:bg-transparent hover:bg-[#EEEEEE] dark:hover:bg-purple-taupe`]:
+      [`bg-transparent hover:bg-muted`]:
         !isCopied,
       'bg-green-100 dark:bg-green-900 hover:bg-green-100 dark:hover:bg-green-900':
         isCopied,

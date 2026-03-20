@@ -328,7 +328,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 />
               </button>
             )}
-            <div className="text-gray-4000 text-[20px] font-medium">
+            <div className="text-muted-foreground text-[20px] font-medium">
               DocsGPT
             </div>
           </div>
@@ -338,7 +338,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         ref={navRef}
         className={`${
           !navOpen && '-ml-96 md:-ml-72'
-        } bg-lotion dark:border-r-purple-taupe dark:bg-chinese-black fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-300 ease-in-out dark:text-white`}
+        } bg-sidebar dark:border-r-sidebar-border fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-300 ease-in-out dark:text-white`}
       >
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
@@ -380,7 +380,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           className={({ isActive }) =>
             `${
               isActive ? 'bg-transparent' : ''
-            } group border-silver hover:border-rainy-gray dark:border-purple-taupe sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border p-3 hover:bg-transparent dark:text-white`
+            } group border-sidebar-border hover:border-sidebar-border sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border p-3 hover:bg-transparent dark:text-white`
           }
         >
           <img
@@ -388,7 +388,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             alt="Create new chat"
             className="opacity-80 group-hover:opacity-100"
           />
-          <p className="text-dove-gray dark:text-chinese-silver dark:group-hover:text-bright-gray text-sm group-hover:text-neutral-600">
+          <p className="text-muted-foreground dark:text-foreground dark:group-hover:text-bright-gray text-sm group-hover:text-neutral-600">
             {t('newChat')}
           </p>
         </NavLink>
@@ -417,9 +417,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   {recentAgents.map((agent, idx) => (
                     <div
                       key={idx}
-                      className={`group hover:bg-bright-gray dark:hover:bg-dark-charcoal mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 ${
+                      className={`group hover:bg-sidebar-accent mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 ${
                         agent.id === selectedAgent?.id && !conversationId
-                          ? 'bg-bright-gray dark:bg-dark-charcoal'
+                          ? 'bg-sidebar-accent'
                           : ''
                       }`}
                       onClick={() => handleAgentClick(agent)}
@@ -432,7 +432,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                             className="h-6 w-6 rounded-full object-contain"
                           />
                         </div>
-                        <p className="text-eerie-black dark:text-bright-gray overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
+                        <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
                           {agent.name}
                         </p>
                       </div>
@@ -456,7 +456,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   ))}
                 </div>
                 <div
-                  className="hover:bg-bright-gray dark:hover:bg-dark-charcoal mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
+                  className="hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
                   onClick={() => {
                     dispatch(setSelectedAgent(null));
                     if (isMobile || isTablet) {
@@ -472,7 +472,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                       className="h-[18px] w-[18px]"
                     />
                   </div>
-                  <p className="text-eerie-black dark:text-bright-gray overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
+                  <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
                     {t('manageAgents')}
                   </p>
                 </div>
@@ -480,7 +480,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             </div>
           ) : (
             <div
-              className="hover:bg-bright-gray dark:hover:bg-dark-charcoal mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
+              className="hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
               onClick={() => {
                 if (isMobile || isTablet) {
                   setNavOpen(false);
@@ -496,7 +496,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   className="h-[18px] w-[18px]"
                 />
               </div>
-              <p className="text-eerie-black dark:text-bright-gray overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
+              <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
                 {t('manageAgents')}
               </p>
             </div>
@@ -529,8 +529,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <></>
           )}
         </div>
-        <div className="text-eerie-black flex h-auto flex-col justify-end dark:text-white">
-          <div className="dark:border-b-purple-taupe flex flex-col gap-2 border-b py-2">
+        <div className="text-foreground flex h-auto flex-col justify-end dark:text-white">
+          <div className="dark:border-b-sidebar-border flex flex-col gap-2 border-b py-2">
             <NavLink
               onClick={() => {
                 if (isMobile || isTablet) {
@@ -540,8 +540,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }}
               to="/settings"
               className={({ isActive }) =>
-                `mx-4 my-auto flex h-9 cursor-pointer items-center gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
-                  isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
+                `mx-4 my-auto flex h-9 cursor-pointer items-center gap-4 rounded-3xl hover:bg-sidebar-accent ${
+                  isActive ? 'bg-sidebar-accent' : ''
                 }`
               }
             >
@@ -552,12 +552,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 height={21}
                 className="my-auto ml-2 filter dark:invert"
               />
-              <p className="text-eerie-black text-sm dark:text-white">
+              <p className="text-foreground text-sm dark:text-white">
                 {t('settings.label')}
               </p>
             </NavLink>
           </div>
-          <div className="text-eerie-black flex flex-col justify-end dark:text-white">
+          <div className="text-foreground flex flex-col justify-end dark:text-white">
             <div className="flex items-center justify-between py-1">
               <Help />
 
@@ -566,7 +566,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   target="_blank"
                   to={'https://discord.gg/vN7YFfdMpj'}
                   className={
-                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
+                    'rounded-full hover:bg-sidebar-accent'
                   }
                 >
                   <img
@@ -581,7 +581,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   target="_blank"
                   to={'https://x.com/docsgptai'}
                   className={
-                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
+                    'rounded-full hover:bg-sidebar-accent'
                   }
                 >
                   <img
@@ -596,7 +596,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   target="_blank"
                   to={'https://github.com/arc53/docsgpt'}
                   className={
-                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
+                    'rounded-full hover:bg-sidebar-accent'
                   }
                 >
                   <img
@@ -612,7 +612,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </div>
         </div>
       </div>
-      <div className="dark:border-b-purple-taupe dark:bg-chinese-black sticky z-10 h-16 w-full border-b-2 bg-gray-50 lg:hidden">
+      <div className="dark:border-b-sidebar-border bg-sidebar sticky z-10 h-16 w-full border-b-2 lg:hidden">
         <div className="ml-6 flex h-full items-center gap-6">
           <button
             className="h-6 w-6 lg:hidden"
@@ -624,7 +624,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               className="w-7 filter dark:invert"
             />
           </button>
-          <div className="text-gray-4000 text-[20px] font-medium">DocsGPT</div>
+          <div className="text-muted-foreground text-[20px] font-medium">DocsGPT</div>
         </div>
       </div>
       <DeleteConvModal

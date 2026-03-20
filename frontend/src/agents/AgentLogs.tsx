@@ -41,25 +41,25 @@ export default function AgentLogs() {
     <div className="p-4 md:p-12">
       <div className="flex items-center gap-3 px-4">
         <button
-          className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
+          className="rounded-full border border-border p-3 text-sm text-muted-foreground hover:bg-accent"
           onClick={() => navigate('/agents')}
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
         </button>
-        <p className="text-eerie-black dark:text-bright-gray mt-px text-sm font-semibold">
+        <p className="text-foreground dark:text-foreground mt-px text-sm font-semibold">
           {t('agents.backToAll')}
         </p>
       </div>
       <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
-        <h1 className="text-eerie-black m-0 text-[32px] font-bold md:text-[40px] dark:text-white">
+        <h1 className="text-foreground m-0 text-[32px] font-bold md:text-[40px] dark:text-white">
           {t('agents.logs.title')}
         </h1>
       </div>
       <div className="mt-6 flex flex-col gap-3 px-4">
         {agent && (
           <div className="flex flex-col gap-1">
-            <p className="text-[#28292E] dark:text-[#E0E0E0]">{agent.name}</p>
-            <p className="text-xs text-[#28292E] dark:text-[#E0E0E0]/40">
+            <p className="text-foreground">{agent.name}</p>
+            <p className="text-xs text-muted-foreground">
               {agent.last_used_at
                 ? t('agents.logs.lastUsedAt') +
                   ' ' +

@@ -137,9 +137,9 @@ const ConversationBubble = forwardRef<
                 <div
                   key={index}
                   title={file.fileName}
-                  className="dark:text-bright-gray flex items-center rounded-xl bg-[#EFF3F4] p-2 text-[14px] text-[#5D5D5D] dark:bg-[#393B3D]"
+                  className="dark:text-foreground flex items-center rounded-xl bg-[#EFF3F4] p-2 text-[14px] text-[#5D5D5D] dark:bg-accent"
                 >
-                  <div className="bg-purple-30 mr-2 items-center justify-center rounded-lg p-[5.5px]">
+                  <div className="bg-primary mr-2 items-center justify-center rounded-lg p-[5.5px]">
                     <img
                       src={DocumentationDark}
                       alt="Attachment"
@@ -198,7 +198,7 @@ const ConversationBubble = forwardRef<
                     setIsEditClicked(true);
                     setEditInputBox(message ?? '');
                   }}
-                  className={`hover:bg-light-silver mt-3 flex h-fit shrink-0 cursor-pointer items-center rounded-full p-2 pt-1.5 pl-1.5 dark:hover:bg-[#35363B] ${isEditClicked ? 'visible' : 'invisible group-hover:visible'}`}
+                  className={`hover:bg-accent mt-3 flex h-fit shrink-0 cursor-pointer items-center rounded-full p-2 pt-1.5 pl-1.5 dark:hover:bg-accent ${isEditClicked ? 'visible' : 'invisible group-hover:visible'}`}
                 >
                   <img src={Edit} alt="Edit" className="cursor-pointer" />
                 </button>
@@ -223,17 +223,17 @@ const ConversationBubble = forwardRef<
                 }}
                 rows={5}
                 value={editInputBox}
-                className="border-silver text-carbon dark:border-philippine-grey dark:bg-raisin-black dark:text-chinese-white w-full resize-none rounded-3xl border px-4 py-3 text-base leading-relaxed focus:outline-hidden"
+                className="border-border text-carbon dark:border-philippine-grey dark:text-foreground w-full resize-none rounded-3xl border px-4 py-3 text-base leading-relaxed focus:outline-hidden"
               />
               <div className="flex items-center justify-end gap-2">
                 <button
-                  className="text-purple-30 hover:bg-gainsboro hover:text-chinese-black-2 dark:hover:bg-onyx-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors dark:hover:text-[#B9BCBE]"
+                  className="text-primary hover:bg-muted hover:text-foreground dark:hover:bg-accent rounded-full px-4 py-2 text-sm font-semibold transition-colors dark:hover:text-foreground"
                   onClick={() => setIsEditClicked(false)}
                 >
                   {t('conversation.edit.cancel')}
                 </button>
                 <button
-                  className="bg-purple-30 hover:bg-violets-are-blue dark:hover:bg-royal-purple rounded-full px-4 py-2 text-sm font-medium text-white transition-colors"
+                  className="bg-primary hover:bg-primary/90 dark:hover:bg-primary/90 rounded-full px-4 py-2 text-sm font-medium text-white transition-colors"
                   onClick={handleEditClick}
                 >
                   {t('conversation.edit.update')}
@@ -293,7 +293,7 @@ const ConversationBubble = forwardRef<
     bubble = (
       <div
         ref={ref}
-        className={`flex flex-wrap self-start ${className} group dark:text-bright-gray flex-col`}
+        className={`flex flex-wrap self-start ${className} group dark:text-foreground flex-col`}
       >
         {DisableSourceFE ||
         type === 'ERROR' ||
@@ -322,7 +322,7 @@ const ConversationBubble = forwardRef<
                     {sources?.slice(0, 3)?.map((source, index) => (
                       <div key={index} className="relative">
                         <div
-                          className="bg-gray-1000 dark:bg-gun-metal h-28 cursor-pointer rounded-4xl p-4 hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
+                          className="bg-muted dark:bg-answer-bubble h-28 cursor-pointer rounded-4xl p-4 hover:bg-muted dark:hover:bg-muted"
                           onMouseOver={() => setActiveTooltip(index)}
                           onMouseOut={() => setActiveTooltip(null)}
                         >
@@ -332,7 +332,7 @@ const ConversationBubble = forwardRef<
                           <div
                             className={`mt-3.5 flex flex-row items-center gap-1.5 underline-offset-2 ${
                               source.link && source.link !== 'local'
-                                ? 'hover:text-[#007DFF] hover:underline dark:hover:text-[#48A0FF]'
+                                ? 'hover:text-[#007DFF] hover:underline dark:hover:text-blue-400'
                                 : ''
                             }`}
                             onClick={() =>
@@ -366,7 +366,7 @@ const ConversationBubble = forwardRef<
                         </div>
                         {activeTooltip === index && (
                           <div
-                            className={`dark:bg-chinese-black dark:text-chinese-silver absolute left-1/2 z-50 max-h-48 w-40 translate-x-[-50%] translate-y-[3px] rounded-xl bg-[#FBFBFB] p-4 text-black shadow-xl sm:w-56`}
+                            className={`dark:bg-card dark:text-foreground absolute left-1/2 z-50 max-h-48 w-40 translate-x-[-50%] translate-y-[3px] rounded-xl bg-[#FBFBFB] p-4 text-black shadow-xl sm:w-56`}
                             onMouseOver={() => setActiveTooltip(index)}
                             onMouseOut={() => setActiveTooltip(null)}
                           >
@@ -379,7 +379,7 @@ const ConversationBubble = forwardRef<
                     ))}
                     {(sources?.length ?? 0) > 3 && (
                       <div
-                        className="bg-gray-1000 text-purple-30 dark:bg-gun-metal flex h-28 cursor-pointer flex-col-reverse rounded-4xl p-4 hover:bg-[#F1F1F1] hover:text-[#6D3ECC] dark:hover:bg-[#2C2E3C] dark:hover:text-[#8C67D7]"
+                        className="bg-muted text-primary dark:bg-answer-bubble flex h-28 cursor-pointer flex-col-reverse rounded-4xl p-4 hover:bg-muted hover:text-primary dark:hover:bg-muted dark:hover:text-primary"
                         onClick={() => setIsSidebarOpen(true)}
                       >
                         <p className="ellipsis-text h-22 text-xs">
@@ -456,9 +456,9 @@ const ConversationBubble = forwardRef<
               </p>
             </div>
             <div
-              className={`fade-in-bubble bg-gray-1000 dark:bg-gun-metal mr-5 flex max-w-full rounded-[18px] px-6 py-4.5 ${
+              className={`fade-in-bubble bg-answer-bubble mr-5 flex max-w-full rounded-[18px] px-6 py-4.5 ${
                 type === 'ERROR'
-                  ? 'text-red-3000 dark:border-red-2000 relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal dark:text-white'
+                  ? 'text-destructive/80 dark:border-destructive relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal dark:text-white'
                   : 'flex-col rounded-3xl'
               }`}
             >
@@ -488,9 +488,9 @@ const ConversationBubble = forwardRef<
                                 const language = match ? match[1] : '';
 
                                 return match ? (
-                                  <div className="group border-light-silver dark:border-raisin-black relative overflow-hidden rounded-[14px] border">
-                                    <div className="bg-platinum dark:bg-eerie-black-2 flex items-center justify-between px-2 py-1">
-                                      <span className="text-just-black dark:text-chinese-white text-xs font-medium">
+                                  <div className="group border-border relative overflow-hidden rounded-[14px] border">
+                                    <div className="bg-platinum-2 flex items-center justify-between px-2 py-1">
+                                      <span className="text-foreground dark:text-foreground text-xs font-medium">
                                         {language}
                                       </span>
                                       <CopyButton
@@ -517,7 +517,7 @@ const ConversationBubble = forwardRef<
                                     </SyntaxHighlighter>
                                   </div>
                                 ) : (
-                                  <code className="dark:bg-independence dark:text-bright-gray rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
+                                  <code className="dark:bg-accent dark:text-foreground rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
                                     {children}
                                   </code>
                                 );
@@ -542,8 +542,8 @@ const ConversationBubble = forwardRef<
                               },
                               table({ children }) {
                                 return (
-                                  <div className="border-silver/40 dark:border-silver/40 relative overflow-x-auto rounded-lg border">
-                                    <table className="dark:text-bright-gray w-full text-left text-gray-700">
+                                  <div className="border-silver/40 dark:border-border relative overflow-x-auto rounded-lg border">
+                                    <table className="dark:text-foreground w-full text-left text-gray-700">
                                       {children}
                                     </table>
                                   </div>
@@ -551,14 +551,14 @@ const ConversationBubble = forwardRef<
                               },
                               thead({ children }) {
                                 return (
-                                  <thead className="dark:text-bright-gray bg-gray-50 text-xs text-gray-900 uppercase dark:bg-[#26272E]/50">
+                                  <thead className="bg-muted text-xs text-foreground uppercase">
                                     {children}
                                   </thead>
                                 );
                               },
                               tr({ children }) {
                                 return (
-                                  <tr className="dark:border-silver/40 border-b border-gray-200 odd:bg-white even:bg-gray-50 dark:odd:bg-[#26272E] dark:even:bg-[#26272E]/50">
+                                  <tr className="border-b border-border odd:bg-card even:bg-muted">
                                     {children}
                                   </tr>
                                 );
@@ -657,7 +657,7 @@ const ConversationBubble = forwardRef<
                         <div className="relative mr-2 flex items-center justify-center">
                           <button
                             type="button"
-                            className="bg-white-3000 dark:hover:bg-purple-taupe flex cursor-pointer items-center justify-center rounded-full p-2 hover:bg-[#EEEEEE] dark:bg-transparent"
+                            className="bg-transparent hover:bg-accent flex cursor-pointer items-center justify-center rounded-full p-2"
                             onClick={() => {
                               if (feedback === 'LIKE') {
                                 handleFeedback?.(null);
@@ -670,7 +670,7 @@ const ConversationBubble = forwardRef<
                             }
                           >
                             <Like
-                              className={`${feedback === 'LIKE' ? 'fill-white-3000 stroke-purple-30 dark:fill-transparent' : 'stroke-gray-4000 fill-none'}`}
+                              className={`${feedback === 'LIKE' ? 'fill-white stroke-primary dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`}
                             ></Like>
                           </button>
                         </div>
@@ -678,7 +678,7 @@ const ConversationBubble = forwardRef<
                         <div className="relative mr-2 flex items-center justify-center">
                           <button
                             type="button"
-                            className="bg-white-3000 dark:hover:bg-purple-taupe flex cursor-pointer items-center justify-center rounded-full p-2 hover:bg-[#EEEEEE] dark:bg-transparent"
+                            className="bg-transparent hover:bg-accent flex cursor-pointer items-center justify-center rounded-full p-2"
                             onClick={() => {
                               if (feedback === 'DISLIKE') {
                                 handleFeedback?.(null);
@@ -693,7 +693,7 @@ const ConversationBubble = forwardRef<
                             }
                           >
                             <Dislike
-                              className={`${feedback === 'DISLIKE' ? 'fill-white-3000 stroke-red-2000 dark:fill-transparent' : 'stroke-gray-4000 fill-none'}`}
+                              className={`${feedback === 'DISLIKE' ? 'fill-white stroke-destructive dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`}
                             ></Dislike>
                           </button>
                         </div>
@@ -746,7 +746,7 @@ function AllSources(sources: AllSourcesProps) {
           return (
             <div
               key={index}
-              className={`group/card bg-gray-1000 relative w-full rounded-4xl p-4 transition-colors hover:bg-[#F1F1F1] dark:bg-[#28292E] dark:hover:bg-[#2C2E3C] ${
+              className={`group/card bg-muted relative w-full rounded-4xl p-4 transition-colors hover:bg-muted dark:bg-card dark:hover:bg-muted ${
                 isExternalSource ? 'cursor-pointer' : ''
               }`}
               onClick={() =>
@@ -757,7 +757,7 @@ function AllSources(sources: AllSourcesProps) {
                 title={source.title}
                 className={`ellipsis-text text-left text-sm font-semibold wrap-break-word ${
                   isExternalSource
-                    ? 'group-hover/card:text-purple-30 dark:group-hover/card:text-[#8C67D7]'
+                    ? 'group-hover/card:text-primary dark:group-hover/card:text-[#8C67D7]'
                     : ''
                 }`}
               >
@@ -774,7 +774,7 @@ function AllSources(sources: AllSourcesProps) {
                   />
                 )}
               </p>
-              <p className="dark:text-chinese-silver mt-3 line-clamp-4 rounded-md text-left text-xs wrap-break-word text-black">
+              <p className="dark:text-foreground mt-3 line-clamp-4 rounded-md text-left text-xs wrap-break-word text-black">
                 {source.text}
               </p>
             </div>
@@ -821,12 +821,12 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                 <Accordion
                   key={`tool-call-${index}`}
                   title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
-                  className="bg-gray-1000 dark:bg-gun-metal w-full rounded-4xl hover:bg-[#F1F1F1] dark:hover:bg-[#2C2E3C]"
+                  className="bg-muted dark:bg-answer-bubble w-full rounded-4xl"
                   titleClassName="px-6 py-2 text-sm font-semibold"
                 >
                   <div className="flex flex-col gap-1">
-                    <div className="border-silver dark:border-silver/20 flex flex-col rounded-2xl border">
-                      <p className="dark:bg-eerie-black-2 flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
+                    <div className="border-border flex flex-col rounded-2xl border">
+                      <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
                         <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
                           Arguments
                         </span>{' '}
@@ -834,17 +834,17 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                           textToCopy={JSON.stringify(toolCall.arguments, null, 2)}
                         />
                       </p>
-                      <p className="dark:tex dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                      <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
                         <span
-                          className="leading-[23px] text-black dark:text-gray-400"
+                          className="leading-[23px] text-black dark:text-muted-foreground"
                           style={{ fontFamily: 'IBMPlexMono-Medium' }}
                         >
                           {JSON.stringify(toolCall.arguments, null, 2)}
                         </span>
                       </p>
                     </div>
-                    <div className="border-silver dark:border-silver/20 flex flex-col rounded-2xl border">
-                      <p className="dark:bg-eerie-black-2 flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
+                    <div className="border-border flex flex-col rounded-2xl border">
+                      <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
                         <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
                           Response
                         </span>{' '}
@@ -857,14 +857,14 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                         />
                       </p>
                       {toolCall.status === 'pending' && (
-                        <span className="dark:bg-raisin-black flex w-full items-center justify-center rounded-b-2xl p-2">
+                        <span className="dark:bg-card flex w-full items-center justify-center rounded-b-2xl p-2">
                           <Spinner size="small" />
                         </span>
                       )}
                       {toolCall.status === 'completed' && (
-                        <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                        <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
                           <span
-                            className="leading-[23px] text-black dark:text-gray-400"
+                            className="leading-[23px] text-black dark:text-muted-foreground"
                             style={{ fontFamily: 'IBMPlexMono-Medium' }}
                           >
                             {JSON.stringify(toolCall.result, null, 2)}
@@ -872,7 +872,7 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                         </p>
                       )}
                       {toolCall.status === 'error' && (
-                        <p className="dark:bg-raisin-black rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                        <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
                           <span
                             className="leading-[23px] text-red-500 dark:text-red-400"
                             style={{ fontFamily: 'IBMPlexMono-Medium' }}
@@ -932,7 +932,7 @@ function Thought({
       </div>
       {isThoughtOpen && (
         <div className="fade-in mr-5 ml-2 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
-          <div className="bg-gray-1000 dark:bg-gun-metal rounded-[28px] px-7 py-[18px]">
+          <div className="bg-muted dark:bg-answer-bubble rounded-[28px] px-7 py-[18px]">
             <ReactMarkdown
               className="fade-in leading-normal wrap-break-word whitespace-pre-wrap"
               remarkPlugins={[remarkGfm, remarkMath]}
@@ -944,9 +944,9 @@ function Thought({
                   const language = match ? match[1] : '';
 
                   return match ? (
-                    <div className="group border-light-silver dark:border-raisin-black relative overflow-hidden rounded-[14px] border">
-                      <div className="bg-platinum dark:bg-eerie-black-2 flex items-center justify-between px-2 py-1">
-                        <span className="text-just-black dark:text-chinese-white text-xs font-medium">
+                    <div className="group border-border relative overflow-hidden rounded-[14px] border">
+                      <div className="bg-platinum-2 flex items-center justify-between px-2 py-1">
+                        <span className="text-foreground dark:text-foreground text-xs font-medium">
                           {language}
                         </span>
                         <CopyButton
@@ -968,7 +968,7 @@ function Thought({
                       </SyntaxHighlighter>
                     </div>
                   ) : (
-                    <code className="dark:bg-independence dark:text-bright-gray rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
+                    <code className="dark:bg-accent dark:text-foreground rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
                       {children}
                     </code>
                   );
@@ -989,8 +989,8 @@ function Thought({
                 },
                 table({ children }) {
                   return (
-                    <div className="border-silver/40 dark:border-silver/40 relative overflow-x-auto rounded-lg border">
-                      <table className="dark:text-bright-gray w-full text-left text-gray-700">
+                    <div className="border-silver/40 dark:border-border relative overflow-x-auto rounded-lg border">
+                      <table className="dark:text-foreground w-full text-left text-gray-700">
                         {children}
                       </table>
                     </div>
@@ -998,14 +998,14 @@ function Thought({
                 },
                 thead({ children }) {
                   return (
-                    <thead className="dark:text-bright-gray bg-gray-50 text-xs text-gray-900 uppercase dark:bg-[#26272E]/50">
+                    <thead className="bg-muted text-xs text-foreground uppercase">
                       {children}
                     </thead>
                   );
                 },
                 tr({ children }) {
                   return (
-                    <tr className="dark:border-silver/40 border-b border-gray-200 odd:bg-white even:bg-gray-50 dark:odd:bg-[#26272E] dark:even:bg-[#26272E]/50">
+                    <tr className="border-b border-border odd:bg-card even:bg-muted">
                       {children}
                     </tr>
                   );

@@ -97,7 +97,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       {[...Array(8)].map((_, idx) => (
         <div
           key={idx}
-          className="dark:hover:bg-dark-charcoal flex w-full items-start p-2 hover:bg-[#F9F9F9]"
+          className="dark:hover:bg-accent flex w-full items-start p-2 hover:bg-muted"
         >
           <div className="flex w-full items-center gap-2">
             <div className="h-3 w-3 rounded-lg bg-gray-300 dark:bg-gray-600"></div>
@@ -119,7 +119,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
           key={idx}
           className={`p-6 ${
             skeletonCount === 1 ? 'w-full' : 'w-60'
-          } dark:bg-raisin-black animate-pulse rounded-3xl`}
+          } animate-pulse rounded-3xl`}
         >
           <div className="space-y-4">
             <div>
@@ -156,7 +156,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       {[...Array(skeletonCount)].map((_, idx) => (
         <div
           key={idx}
-          className="dark:bg-raisin-black w-full animate-pulse rounded-3xl p-6"
+          className="bg-card w-full animate-pulse rounded-3xl p-6"
         >
           <div className="space-y-6">
             <div className="space-y-2">
@@ -189,10 +189,10 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       {Array.from({ length: count }).map((_, index) => (
         <div
           key={`chunk-skel-${index}`}
-          className="relative flex h-[197px] w-full max-w-[487px] animate-pulse flex-col overflow-hidden rounded-[5.86px] border border-[#D1D9E0] dark:border-[#6A6A6A]"
+          className="relative flex h-[197px] w-full max-w-[487px] animate-pulse flex-col overflow-hidden rounded-[5.86px] border border-border dark:border-border"
         >
           <div className="w-full">
-            <div className="flex w-full items-center justify-between border-b border-[#D1D9E0] bg-[#F6F8FA] px-4 py-3 dark:border-[#6A6A6A] dark:bg-[#27282D]">
+            <div className="flex w-full items-center justify-between border-b border-border bg-muted px-4 py-3 dark:border-border dark:bg-card">
               <div className="h-4 w-20 rounded bg-gray-300 dark:bg-gray-600"></div>
             </div>
             <div className="space-y-3 px-4 pt-4 pb-6">
@@ -214,7 +214,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       {Array.from({ length: count }).map((_, idx) => (
         <div
           key={`source-skel-${idx}`}
-          className="flex h-[130px] w-full animate-pulse flex-col rounded-2xl bg-[#F9F9F9] p-3 dark:bg-[#383838]"
+          className="flex h-[130px] w-full animate-pulse flex-col rounded-2xl bg-muted p-3 dark:bg-accent"
         >
           <div className="w-full flex-1">
             <div className="flex w-full items-center justify-between gap-2">

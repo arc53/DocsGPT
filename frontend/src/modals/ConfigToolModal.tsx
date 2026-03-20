@@ -115,7 +115,7 @@ export default function ConfigToolModal({
   return (
     <WrapperModal close={handleClose}>
       <div className="w-[400px] max-w-[90vw]">
-        <h2 className="text-eerie-black dark:text-bright-gray text-xl font-semibold">
+        <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
           {t('modals.configTool.title')}
         </h2>
         <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
@@ -152,7 +152,7 @@ export default function ConfigToolModal({
           <button
             onClick={handleAddTool}
             disabled={saving}
-            className="bg-purple-30 hover:bg-violets-are-blue disabled:opacity-60 rounded-full px-5 py-2 text-sm font-medium text-white transition-colors"
+            className="bg-primary hover:bg-primary/90 disabled:opacity-60 rounded-full px-5 py-2 text-sm font-medium text-white transition-colors"
           >
             {saving
               ? t('modals.configTool.addButton') + '…'
@@ -160,7 +160,7 @@ export default function ConfigToolModal({
           </button>
           <button
             onClick={handleClose}
-            className="dark:text-light-gray cursor-pointer rounded-full px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
+            className="dark:text-foreground cursor-pointer rounded-full px-5 py-2 text-sm font-medium hover:bg-accent dark:hover:bg-accent"
           >
             {t('modals.configTool.closeButton')}
           </button>

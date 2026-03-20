@@ -159,10 +159,10 @@ export default function AgentsList() {
 
   return (
     <div className="p-4 md:p-12">
-      <h1 className="text-eerie-black mb-0 text-[32px] font-bold lg:text-[40px] dark:text-[#E0E0E0]">
+      <h1 className="text-foreground mb-0 text-[32px] font-bold lg:text-[40px]">
         {t('agents.title')}
       </h1>
-      <p className="dark:text-gray-4000 mt-5 text-[15px] leading-6 text-[#71717A]">
+      <p className="mt-5 text-[15px] leading-6 text-muted-foreground">
         {t('agents.description')}
       </p>
 
@@ -178,7 +178,7 @@ export default function AgentsList() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('agents.searchPlaceholder')}
-            className="h-11 w-full rounded-full border border-[#E5E5E5] bg-white py-2 pr-5 pl-11 text-sm shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow outline-none placeholder:text-[#9CA3AF] focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white dark:shadow-none dark:placeholder:text-[#6B7280]"
+            className="h-11 w-full rounded-full border border-border bg-card py-2 pr-5 pl-11 text-sm text-foreground shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow outline-none placeholder:text-muted-foreground focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-none"
           />
         </div>
 
@@ -189,8 +189,8 @@ export default function AgentsList() {
               onClick={() => setActiveFilter(tab.id)}
               className={`rounded-full px-4 py-2 text-sm transition-colors ${
                 activeFilter === tab.id
-                  ? 'bg-[#E0E0E0] text-[#18181B] dark:bg-[#4A4A4A] dark:text-white'
-                  : 'dark:text-gray bg-transparent text-[#71717A] hover:bg-[#F5F5F5] dark:hover:bg-[#383838]/50'
+                  ? 'bg-border text-foreground dark:bg-accent dark:text-white'
+                  : 'dark:text-gray bg-transparent text-muted-foreground hover:bg-accent/50'
               }`}
             >
               {t(tab.labelKey)}
@@ -224,7 +224,7 @@ export default function AgentsList() {
       ))}
 
       {showSearchEmptyState && (
-        <div className="mt-12 flex flex-col items-center justify-center gap-2 text-[#71717A]">
+        <div className="mt-12 flex flex-col items-center justify-center gap-2 text-muted-foreground">
           <p className="text-lg">{t('agents.noSearchResults')}</p>
           <p className="text-sm">{t('agents.tryDifferentSearch')}</p>
         </div>
@@ -399,7 +399,7 @@ function AgentSection({
 
   if (isFilteredView && isSearchingWithNoResults) {
     return (
-      <div className="mt-12 flex flex-col items-center justify-center gap-2 text-[#71717A]">
+      <div className="mt-12 flex flex-col items-center justify-center gap-2 text-muted-foreground">
         <p className="text-lg">{t('agents.noSearchResults')}</p>
         <p className="text-sm">{t('agents.tryDifferentSearch')}</p>
       </div>
@@ -408,11 +408,11 @@ function AgentSection({
 
   if (isFilteredView && hasNoAgentsAtAll) {
     return (
-      <div className="mt-12 flex flex-col items-center justify-center gap-3 text-[#71717A]">
+      <div className="mt-12 flex flex-col items-center justify-center gap-3 text-muted-foreground">
         <p>{t(`agents.sections.${config.id}.emptyState`)}</p>
         {config.showNewAgentButton && (
           <button
-            className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-4 py-2 text-sm text-white"
+            className="bg-primary hover:bg-primary/90 rounded-full px-4 py-2 text-sm text-white"
             onClick={() => {
               setModalFolderId(null);
               setShowAgentTypeModal(true);
@@ -456,12 +456,12 @@ function AgentSection({
     <div className="mt-8 flex flex-col gap-4">
       <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2">
-          <h2 className="flex flex-wrap items-center gap-2 text-[18px] font-semibold text-[#18181B] dark:text-[#E0E0E0]">
+          <h2 className="flex flex-wrap items-center gap-2 text-[18px] font-semibold text-foreground">
             {config.id === 'user' && folderPath.length > 0 ? (
               <>
                 <button
                   onClick={() => handleNavigateToPath(-1)}
-                  className="text-[#71717A] hover:text-[#18181B] dark:hover:text-white"
+                  className="text-muted-foreground hover:text-foreground dark:hover:text-white"
                 >
                   {t(`agents.sections.${config.id}.title`)}
                 </button>
@@ -473,7 +473,7 @@ function AgentSection({
                     ) : (
                       <button
                         onClick={() => handleNavigateToPath(index)}
-                        className="text-[#71717A] hover:text-[#18181B] dark:hover:text-white"
+                        className="text-muted-foreground hover:text-foreground dark:hover:text-white"
                       >
                         {item.name}
                       </button>
@@ -485,7 +485,7 @@ function AgentSection({
               t(`agents.sections.${config.id}.title`)
             )}
           </h2>
-          <p className="text-[13px] text-[#71717A]">
+          <p className="text-[13px] text-muted-foreground">
             {t(`agents.sections.${config.id}.description`)}
           </p>
         </div>
@@ -513,12 +513,12 @@ function AgentSection({
                   }
                 }}
                 placeholder={t('agents.folders.newFolder')}
-                className="w-28 rounded-full border border-[#E5E5E5] bg-white px-4 py-2 text-sm text-[#18181B] outline-none placeholder:text-[#9CA3AF] sm:w-auto dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white dark:placeholder:text-[#6B7280]"
+                className="w-28 rounded-full border border-border bg-card px-4 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground sm:w-auto"
                 autoFocus
               />
             ) : (
               <button
-                className="shrink-0 rounded-full border border-[#E5E5E5] bg-white px-4 py-2 text-sm whitespace-nowrap text-[#18181B] hover:bg-[#F5F5F5] dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white dark:hover:bg-[#383838]"
+                className="shrink-0 rounded-full border border-border bg-card px-4 py-2 text-sm whitespace-nowrap text-foreground hover:bg-accent"
                 onClick={() => {
                   setIsCreatingFolder(true);
                   setTimeout(() => newFolderInputRef.current?.focus(), 0);
@@ -529,7 +529,7 @@ function AgentSection({
             ))}
           {config.showNewAgentButton && (
             <button
-              className="bg-purple-30 hover:bg-violets-are-blue shrink-0 rounded-full px-4 py-2 text-sm whitespace-nowrap text-white"
+              className="bg-primary hover:bg-primary/90 shrink-0 rounded-full px-4 py-2 text-sm whitespace-nowrap text-white"
               onClick={() => {
                 setModalFolderId(currentFolderId);
                 setShowAgentTypeModal(true);
@@ -579,7 +579,7 @@ function AgentSection({
                 ))}
               </div>
             ) : hasNoAgentsAtAll && currentLevelFolders.length === 0 ? (
-              <div className="flex h-40 w-full flex-col items-center justify-center gap-3 text-[#71717A]">
+              <div className="flex h-40 w-full flex-col items-center justify-center gap-3 text-muted-foreground">
                 <p>
                   {currentFolderId
                     ? t('agents.folders.empty')
@@ -587,7 +587,7 @@ function AgentSection({
                 </p>
                 {config.showNewAgentButton && !currentFolderId && (
                   <button
-                    className="bg-purple-30 hover:bg-violets-are-blue ml-2 rounded-full px-4 py-2 text-sm text-white"
+                    className="bg-primary hover:bg-primary/90 ml-2 rounded-full px-4 py-2 text-sm text-white"
                     onClick={() => {
                       setModalFolderId(currentFolderId);
                       setShowAgentTypeModal(true);

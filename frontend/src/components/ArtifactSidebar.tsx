@@ -1,19 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { useSelector } from 'react-redux';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import {
   oneLight,
   vscDarkPlus,
 } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import remarkGfm from 'remark-gfm';
 
-import Exit from '../assets/exit.svg';
-import { selectToken } from '../preferences/preferenceSlice';
 import userService from '../api/services/userService';
-import Spinner from './Spinner';
-import CopyButton from './CopyButton';
+import Exit from '../assets/exit.svg';
 import { useDarkTheme } from '../hooks';
+import { selectToken } from '../preferences/preferenceSlice';
+import CopyButton from './CopyButton';
+import Spinner from './Spinner';
 
 type TodoItem = {
   todo_id: number;
@@ -61,7 +61,8 @@ const ARTIFACT_TITLE_BY_TYPE: Record<ArtifactData['artifact_type'], string> = {
 };
 
 function getArtifactTitle(artifact: ArtifactData | null, toolName?: string) {
-  if (artifact) return ARTIFACT_TITLE_BY_TYPE[artifact.artifact_type] ?? 'Artifact';
+  if (artifact)
+    return ARTIFACT_TITLE_BY_TYPE[artifact.artifact_type] ?? 'Artifact';
 
   const formattedToolName = (toolName ?? '')
     .replace(/_/g, ' ')
@@ -161,7 +162,7 @@ function NoteView({ data }: { data: NoteArtifactData }) {
       <div className="flex-1 overflow-y-auto p-4">
         {data.content ? (
           <ReactMarkdown
-            className="flex flex-col gap-3 text-sm leading-normal break-words whitespace-pre-wrap text-gray-800 dark:text-gray-200"
+            className="flex flex-col gap-3 text-sm leading-normal wrap-break-word whitespace-pre-wrap text-gray-800 dark:text-gray-200"
             remarkPlugins={[remarkGfm]}
             components={{
               code(props) {
@@ -178,9 +179,9 @@ function NoteView({ data }: { data: NoteArtifactData }) {
                 const language = match ? match[1] : '';
 
                 return match ? (
-                  <div className="group border-light-silver dark:border-raisin-black relative my-2 overflow-hidden rounded-[14px] border">
-                    <div className="bg-platinum dark:bg-eerie-black-2 flex items-center justify-between px-2 py-1">
-                      <span className="text-just-black dark:text-chinese-white text-xs font-medium">
+                  <div className="group border-border relative my-2 overflow-hidden rounded-[14px] border">
+                    <div className="bg-platinum-2 flex items-center justify-between px-2 py-1">
+                      <span className="text-foreground dark:text-foreground text-xs font-medium">
                         {language}
                       </span>
                       <CopyButton
@@ -203,7 +204,7 @@ function NoteView({ data }: { data: NoteArtifactData }) {
                   </div>
                 ) : (
                   <code
-                    className="dark:bg-independence dark:text-bright-gray rounded-[6px] bg-gray-200 px-[8px] py-[4px] text-xs font-normal"
+                    className="dark:bg-accent dark:text-foreground rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal"
                     {...rest}
                   >
                     {children}
@@ -315,17 +316,17 @@ export default function ArtifactSidebar({
     // Generate a unique ID for this fetch
     const fetchId = `${effectiveArtifactId}-${Date.now()}`;
     currentFetchIdRef.current = fetchId;
-    
+
     setLoading(true);
     setError(null);
-    
+
     // Note: For todo artifacts, the endpoint always returns all todos for the tool; will be coversation scoped later
     userService
       .getArtifact(effectiveArtifactId, token)
       .then(async (res: any) => {
         // Ignore if this is not the current fetch
         if (currentFetchIdRef.current !== fetchId) return;
-        
+
         const isResponseLike = res && typeof res.json === 'function';
         const status = isResponseLike ? res.status : undefined;
         const ok = isResponseLike ? Boolean(res.ok) : true;
@@ -453,7 +454,7 @@ export default function ArtifactSidebar({
               {title}
             </span>
             <button
-              className="rounded-full p-1 hover:bg-gray-100 dark:hover:bg-gray-800"
+              className="hover:bg-accent dark:hover:bg-accent rounded-full p-1"
               onClick={onClose}
             >
               <img
@@ -472,7 +473,7 @@ export default function ArtifactSidebar({
   return (
     <div ref={sidebarRef} className="h-vh relative">
       <div
-        className={`dark:bg-chinese-black fixed top-0 right-0 z-50 flex h-full w-80 transform flex-col bg-white shadow-xl transition-all duration-300 sm:w-96 ${
+        className={`dark:bg-card bg-card fixed top-0 right-0 z-50 flex h-full w-80 transform flex-col shadow-xl transition-all duration-300 sm:w-96 ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         } border-l border-[#9ca3af]/10`}
       >
@@ -481,7 +482,7 @@ export default function ArtifactSidebar({
             {title}
           </span>
           <button
-            className="hover:bg-gray-1000 dark:hover:bg-gun-metal rounded-full p-2"
+            className="hover:bg-accent0 dark:hover:bg-accent rounded-full p-2"
             onClick={onClose}
           >
             <img
