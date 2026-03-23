@@ -977,8 +977,8 @@ function Connect-CloudAPIProvider {
             }
             "7" {  # Novita
                 $script:provider_name = "Novita"
-                $script:llm_name = "novita"
-                $script:model_name = "deepseek/deepseek-r1"
+                $script:llm_provider = "novita"
+                $script:model_name = "moonshotai/kimi-k2.5"
                 Get-APIKey
                 break
             }

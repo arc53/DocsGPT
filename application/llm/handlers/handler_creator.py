@@ -7,6 +7,7 @@ class LLMHandlerCreator:
     handlers = {
         "openai": OpenAILLMHandler,
         "google": GoogleLLMHandler,
+        "novita": OpenAILLMHandler,  # Novita uses OpenAI-compatible API
         "default": OpenAILLMHandler,
     }
 
