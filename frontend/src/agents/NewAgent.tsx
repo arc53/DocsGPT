@@ -736,7 +736,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
           {modeConfig[effectiveMode].showAccessDetails && (
             <button
-              className="hover:bg-vi</button>olets-are-blue border-primary text-primary hover:bg-primary/90 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
+              className="border-primary text-primary hover:bg-primary/90 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
               onClick={() => setAgentDetails('ACTIVE')}
             >
               {t('agents.form.buttons.accessDetails')}

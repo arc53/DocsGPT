@@ -39,7 +39,7 @@ export default function Sidebar({
       >
         <div className="flex w-full flex-row items-end justify-end px-4 pt-3">
           <button
-            className="hover:bg-accent0 dark:hover:bg-accent w-7 rounded-full p-2"
+            className="hover:bg-accent w-7 rounded-full p-2"
             onClick={() => toggleState(!isOpen)}
           >
             <img className="filter dark:invert" src={Exit} />
