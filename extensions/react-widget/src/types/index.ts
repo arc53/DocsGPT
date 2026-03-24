@@ -1,3 +1,30 @@
+import 'styled-components';
+
+declare module 'styled-components' {
+  export interface DefaultTheme {
+    bg: string;
+    text: string;
+    primary: {
+      text: string;
+      bg: string;
+    };
+    secondary: {
+      text: string;
+      bg: string;
+    };
+    /** Present only in SearchBar theme */
+    name?: string;
+    /** Present only in DocsGPTWidget theme (always provided when these styled components render) */
+    dimensions?: {
+      size: string;
+      width: string;
+      height: string;
+      maxWidth?: string;
+      maxHeight?: string;
+    };
+  }
+}
+
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
 
 export type Status = 'idle' | 'loading' | 'failed';

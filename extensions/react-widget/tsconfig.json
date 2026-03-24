@@ -1,9 +1,5 @@
 {
     "compilerOptions": {
-      "baseUrl": ".",
-      "paths": {
-        "@/*": ["src/*", "@/*"]
-      },
       "target": "ES2020",
       "useDefineForClassFields": true,
       "lib": ["ES2020", "DOM", "DOM.Iterable"],
@@ -23,8 +19,11 @@
       "noUnusedLocals": false,
       "noUnusedParameters": false,
       "noFallthroughCasesInSwitch": true,
-      /* The "typeRoots" configuration specifies the locations where 
-         TypeScript looks for type definitions (.d.ts files) to 
+      "paths": {
+        "@/*": ["./src/*"]
+      },
+      /* The "typeRoots" configuration specifies the locations where
+         TypeScript looks for type definitions (.d.ts files) to
          include in the compilation process.*/
          "typeRoots": ["./dist/index.d.ts", "node_modules/@types"]
         },
