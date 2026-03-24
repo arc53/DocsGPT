@@ -6,9 +6,21 @@ import { PaperPlaneIcon, RocketIcon, ExclamationTriangleIcon, Cross2Icon } from 
 import { FEEDBACK, MESSAGE_TYPE, Query, Status, WidgetCoreProps, WidgetProps } from '../types/index';
 import { fetchAnswerStreaming, sendFeedback } from '../requests/streamingApi';
 import { ThemeProvider } from 'styled-components';
-import Like from '../assets/like.svg';
-import Dislike from '../assets/dislike.svg';
 import MarkdownIt from 'markdown-it';
+
+const LikeIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg width="14" height="14" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" {...props}>
+    <path d="M9.39995 5.89997V3.09999C9.39995 2.54304 9.1787 2.0089 8.78487 1.61507C8.39105 1.22125 7.85691 1 7.29996 1L4.49998 7.29996V14.9999H12.3959C12.7336 15.0037 13.0612 14.8854 13.3185 14.6667C13.5757 14.448 13.7453 14.1437 13.7959 13.8099L14.7619 7.50996C14.7924 7.30931 14.7788 7.10444 14.7222 6.90954C14.6657 6.71464 14.5674 6.53437 14.4342 6.38123C14.301 6.22808 14.1362 6.10572 13.951 6.02262C13.7659 5.93952 13.5649 5.89767 13.3619 5.89997H9.39995ZM4.49998 14.9999H2.39999C2.02869 14.9999 1.6726 14.8524 1.41005 14.5899C1.1475 14.3273 1 13.9712 1 13.5999V8.69995C1 8.32865 1.1475 7.97256 1.41005 7.71001C1.6726 7.44746 2.02869 7.29996 2.39999 7.29996H4.49998" fill="none" />
+    <path d="M4.49998 7.29996L7.29996 1C7.85691 1 8.39105 1.22125 8.78487 1.61507C9.1787 2.0089 9.39995 2.54304 9.39995 3.09999V5.89997H13.3619C13.5649 5.89767 13.7659 5.93952 13.951 6.02262C14.1362 6.10572 14.301 6.22808 14.4342 6.38123C14.5674 6.53437 14.6657 6.71464 14.7223 6.90954C14.7788 7.10444 14.7924 7.30931 14.7619 7.50996L13.7959 13.8099C13.7453 14.1437 13.5757 14.448 13.3185 14.6667C13.0612 14.8854 12.7336 15.0037 12.3959 14.9999H4.49998M4.49998 7.29996V14.9999M4.49998 7.29996H2.39999C2.02869 7.29996 1.6726 7.44746 1.41005 7.71001C1.1475 7.97256 1 8.32865 1 8.69995V13.5999C1 13.9712 1.1475 14.3273 1.41005 14.5899C1.6726 14.8524 2.02869 14.9999 2.39999 14.9999H4.49998" strokeWidth="1.39999" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const DislikeIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg width="14" height="14" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" {...props}>
+    <path d="M6.37776 10.1001V12.9C6.37776 13.457 6.599 13.9911 6.99282 14.3849C7.38664 14.7788 7.92077 15 8.47772 15L11.2777 8.70011V1.00025H3.38181C3.04419 0.996436 2.71656 1.11477 2.45929 1.33344C2.20203 1.55212 2.03246 1.8564 1.98184 2.19023L1.01585 8.49012C0.985398 8.69076 0.998931 8.89563 1.05551 9.09053C1.1121 9.28543 1.21038 9.46569 1.34355 9.61884C1.47671 9.77198 1.64159 9.89434 1.82674 9.97744C2.01189 10.0605 2.2129 10.1024 2.41583 10.1001H6.37776ZM11.2777 1.00025H13.1466C13.5428 0.993247 13.9277 1.13195 14.2284 1.39002C14.5291 1.64809 14.7245 2.00758 14.7776 2.40023V7.30014C14.7245 7.69279 14.5291 8.05227 14.2284 8.31035C13.9277 8.56842 13.5428 8.70712 13.1466 8.70011H11.2777" fill="none" />
+    <path d="M11.2777 8.70011L8.47772 15C7.92077 15 7.38664 14.7788 6.99282 14.3849C6.599 13.9911 6.37776 13.457 6.37776 12.9V10.1001H2.41583C2.2129 10.1024 2.01189 10.0605 1.82674 9.97744C1.64159 9.89434 1.47671 9.77198 1.34355 9.61884C1.21038 9.46569 1.1121 9.28543 1.05551 9.09053C0.998931 8.89563 0.985398 8.69076 1.01585 8.49012L1.98184 2.19023C2.03246 1.8564 2.20203 1.55212 2.45929 1.33344C2.71656 1.11477 3.04419 0.996436 3.38181 1.00025H11.2777M11.2777 8.70011V1.00025M11.2777 8.70011H13.1466C13.5428 8.70712 13.9277 8.56842 14.2284 8.31035C14.5291 8.05227 14.7245 7.69279 14.7776 7.30014V2.40023C14.7245 2.00758 14.5291 1.64809 14.2284 1.39002C13.9277 1.13195 13.5428 0.993247 13.1466 1.00025H11.2777" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 
 const themes = {
   dark: {
@@ -78,14 +90,14 @@ const openContainer = keyframes`
         height: 100px;
       }
       100% {
-        width: ${(props) => props.theme.dimensions.width};
-        height: ${(props) => props.theme.dimensions.height};
+        width: ${(props) => props.theme.dimensions!.width};
+        height: ${(props) => props.theme.dimensions!.height};
         border-radius: 12px;
       }`
 const closeContainer = keyframes`
   0% {
-        width: ${(props) => props.theme.dimensions.width};
-        height: ${(props) => props.theme.dimensions.height};
+        width: ${(props) => props.theme.dimensions!.width};
+        height: ${(props) => props.theme.dimensions!.height};
         border-radius: 12px;
       }
       100% {
@@ -96,29 +108,29 @@ const closeContainer = keyframes`
 const fadeIn = keyframes`
   from {
         opacity: 0;
-        width: ${(props) => props.theme.dimensions.width};
-        height: ${(props) => props.theme.dimensions.height};
+        width: ${(props) => props.theme.dimensions!.width};
+        height: ${(props) => props.theme.dimensions!.height};
         transform: scale(0.9);
       }
       to {
         opacity: 1;
         transform: scale(1);
-        width: ${(props) => props.theme.dimensions.width};
-        height: ${(props) => props.theme.dimensions.height};
+        width: ${(props) => props.theme.dimensions!.width};
+        height: ${(props) => props.theme.dimensions!.height};
       }
 `
 
 const fadeOut = keyframes`
   from {
         opacity: 1;
-        width: ${(props) => props.theme.dimensions.width};
-        height: ${(props) => props.theme.dimensions.height};
+        width: ${(props) => props.theme.dimensions!.width};
+        height: ${(props) => props.theme.dimensions!.height};
       }
       to {
         opacity: 0;
         transform: scale(0.9);
-        width: ${(props) => props.theme.dimensions.width};
-        height: ${(props) => props.theme.dimensions.height};
+        width: ${(props) => props.theme.dimensions!.width};
+        height: ${(props) => props.theme.dimensions!.height};
       }
 `
 const scaleAnimation = keyframes`
@@ -164,10 +176,10 @@ const WidgetContainer = styled.div<{ $modal?: boolean }>`
 
 const StyledContainer = styled.div<{ $isOpen: boolean }>`
     all: initial;
-    max-height: ${(props) => props.theme.dimensions.maxHeight};
-    max-width: ${(props) => props.theme.dimensions.maxWidth};
-    width: ${(props) => props.theme.dimensions.width};
-    height: ${(props) => props.theme.dimensions.height} ;
+    max-height: ${(props) => props.theme.dimensions!.maxHeight};
+    max-width: ${(props) => props.theme.dimensions!.maxWidth};
+    width: ${(props) => props.theme.dimensions!.width};
+    height: ${(props) => props.theme.dimensions!.height} ;
     position: relative;
     flex-direction: column;
     justify-content: space-between;
@@ -180,7 +192,7 @@ const StyledContainer = styled.div<{ $isOpen: boolean }>`
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.1);
     padding: 26px 26px 0px 26px;
     animation: ${({ $isOpen, theme }) =>
-    theme.dimensions.size === 'large'
+    theme.dimensions!.size === 'large'
       ? $isOpen
         ? css`${fadeIn} 150ms ease-in forwards`
         : css` ${fadeOut} 150ms ease-in forwards`
@@ -452,7 +464,7 @@ const Delay = styled(DotAnimation) <{ $delay: number }>`
 `;
 const PromptContainer = styled.form`
   background-color: transparent;
-  min-height: ${props => props.theme.dimensions.size == 'large' ? '40px' : '23px'};
+  min-height: ${props => props.theme.dimensions!.size == 'large' ? '40px' : '23px'};
   max-height:150px;
   display: flex;
   align-items: end;
@@ -462,7 +474,7 @@ const StyledTextarea = styled.textarea`
   box-sizing: border-box;
   width: 100%;
   border: 1px solid #686877;
-  padding: ${props => props.theme.dimensions.size === 'large' ? '18px 12px 14px 12px' : '8px 12px 4px 12px'};
+  padding: ${props => props.theme.dimensions!.size === 'large' ? '18px 12px 14px 12px' : '8px 12px 4px 12px'};
   background-color: transparent;
   font-size: 16px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -475,7 +487,7 @@ const StyledTextarea = styled.textarea`
   white-space: pre-wrap;
   line-height: 1.4;
   text-align: left;
-  min-height: ${props => props.theme.dimensions.size === 'large' ? '60px' : '40px'};
+  min-height: ${props => props.theme.dimensions!.size === 'large' ? '60px' : '40px'};
   max-height: 140px;
   overflow-y: auto;
   scrollbar-width: thin;
@@ -503,8 +515,8 @@ const StyledButton = styled.button`
   background-image: linear-gradient(to bottom right, #5AF0EC, #E80D9D);
   background-color: rgba(0, 0, 0, 0.3);
   border-radius: 6px;
-  min-width: ${props => props.theme.dimensions.size === 'large' ? '60px' : '40px'};
-  height: ${props => props.theme.dimensions.size === 'large' ? '60px' : '40px'};
+  min-width: ${props => props.theme.dimensions!.size === 'large' ? '60px' : '40px'};
+  height: ${props => props.theme.dimensions!.size === 'large' ? '60px' : '40px'};
   margin-left:8px;
   padding: 0px;
   
@@ -1013,13 +1025,13 @@ export const WidgetCore = ({
                                 e.stopPropagation()
                                 handleFeedback("LIKE", index)}
                                 }>
-                              <Like
+                              <LikeIcon
                                 style={{
                                   stroke: query.feedback == 'LIKE' ? '#8860DB' : '#c0c0c0',
                                   visibility: query.feedback == 'LIKE' ? 'visible' : 'hidden'
                                 }}
                                 fill='none'
-                                 />
+                                />
                               </button>
                               <button
                                 style={{backgroundColor:'transparent', border:'none',cursor:'pointer'}}
@@ -1027,13 +1039,13 @@ export const WidgetCore = ({
                                 e.stopPropagation()
                                 handleFeedback("DISLIKE", index)}
                                 }>
-                              <Dislike
+                              <DislikeIcon
                                 style={{
                                   stroke: query.feedback == 'DISLIKE' ? '#ed8085' : '#c0c0c0',
                                   visibility: query.feedback == 'DISLIKE' ? 'visible' : 'hidden'
                                 }}
                                 fill='none'
-                                 />
+                                />
                               </button>
                             </Feedback>}
                         </MessageBubble>
