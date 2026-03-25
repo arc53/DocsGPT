@@ -2,7 +2,7 @@
 
 import json
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 from application.agents.research_agent import (
