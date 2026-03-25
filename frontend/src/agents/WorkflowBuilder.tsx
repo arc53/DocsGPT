@@ -55,7 +55,7 @@ import WorkflowPreview from './workflow/WorkflowPreview';
 
 import type { Model } from '../models/types';
 interface AgentNodeConfig {
-  agent_type: 'classic' | 'react';
+  agent_type: 'classic';
   llm_name?: string;
   model_id?: string;
   system_prompt: string;
@@ -884,7 +884,6 @@ function WorkflowBuilderInner() {
                                   <SelectItem value="classic">
                                     Classic
                                   </SelectItem>
-                                  <SelectItem value="react">ReAct</SelectItem>
                                 </SelectContent>
                               </Select>
                             </div>

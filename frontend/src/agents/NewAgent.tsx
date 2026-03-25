@@ -138,7 +138,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const chunks = ['0', '2', '4', '6', '8', '10'];
   const agentTypes = [
     { label: t('agents.form.agentTypes.classic'), value: 'classic' },
-    { label: t('agents.form.agentTypes.react'), value: 'react' },
   ];
 
   const isPublishable = () => {
