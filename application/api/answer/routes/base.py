@@ -206,9 +206,12 @@ class BaseAnswerResource:
             is_structured = False
             schema_info = None
             structured_chunks = []
+            query_metadata = {}
 
             for line in agent.gen(query=question):
-                if "answer" in line:
+                if "metadata" in line:
+                    query_metadata.update(line["metadata"])
+                elif "answer" in line:
                     response_full += str(line["answer"])
                     if line.get("structured"):
                         is_structured = True
@@ -295,6 +298,7 @@ class BaseAnswerResource:
                     is_shared_usage=is_shared_usage,
                     shared_token=shared_token,
                     attachment_ids=attachment_ids,
+                    metadata=query_metadata if query_metadata else None,
                 )
                 # Persist compression metadata/summary if it exists and wasn't saved mid-execution
                 compression_meta = getattr(agent, "compression_metadata", None)
@@ -384,6 +388,7 @@ class BaseAnswerResource:
                         is_shared_usage=is_shared_usage,
                         shared_token=shared_token,
                         attachment_ids=attachment_ids,
+                        metadata=query_metadata if query_metadata else None,
                     )
                     compression_meta = getattr(agent, "compression_metadata", None)
                     compression_saved = getattr(agent, "compression_saved", False)

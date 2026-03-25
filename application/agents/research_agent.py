@@ -42,6 +42,7 @@ def _load_prompt(name: str) -> str:
         return f.read()
 
 
+CLARIFICATION_PROMPT = _load_prompt("clarification.txt")
 PLANNING_PROMPT = _load_prompt("planning.txt")
 STEP_PROMPT = _load_prompt("step.txt")
 SYNTHESIS_PROMPT = _load_prompt("synthesis.txt")
@@ -163,6 +164,19 @@ class ResearchAgent(BaseAgent):
         self._start_time = time.monotonic()
         tools_dict = self._setup_tools()
 
+        # Phase 0: Clarification (skip if user is responding to a prior clarification)
+        if not self._is_follow_up():
+            clarification = self._clarification_phase(query)
+            if clarification:
+                yield {"metadata": {"is_clarification": True}}
+                yield {"answer": clarification}
+                yield {"sources": []}
+                yield {"tool_calls": []}
+                log_context.stacks.append(
+                    {"component": "agent", "data": {"clarification": True}}
+                )
+                return
+
         # Phase 1: Planning (with adaptive depth)
         yield {"type": "research_progress", "data": {"status": "planning"}}
         plan, complexity = self._planning_phase(query)
@@ -277,6 +291,98 @@ class ResearchAgent(BaseAgent):
         return tools_dict
 
     # ------------------------------------------------------------------
+    # Phase 0: Clarification
+    # ------------------------------------------------------------------
+
+    def _is_follow_up(self) -> bool:
+        """Check if the user is responding to a prior clarification.
+
+        Uses the metadata flag stored in the conversation DB — no string matching.
+        Only skip clarification when the last query was explicitly flagged
+        as a clarification by this agent.
+        """
+        if not self.chat_history:
+            return False
+        last = self.chat_history[-1]
+        meta = last.get("metadata", {})
+        return bool(meta.get("is_clarification"))
+
+    def _clarification_phase(self, question: str) -> Optional[str]:
+        """Ask the LLM whether the question needs clarification.
+
+        Returns formatted clarification text if needed, or None to proceed.
+        Uses response_format to force valid JSON output.
+        """
+        messages = [
+            {"role": "system", "content": CLARIFICATION_PROMPT},
+            {"role": "user", "content": question},
+        ]
+
+        try:
+            response = self.llm.gen(
+                model=self.model_id,
+                messages=messages,
+                tools=None,
+                response_format={"type": "json_object"},
+            )
+            text = self._extract_text(response)
+            self._track_tokens(self._snapshot_llm_tokens())
+            logger.info(f"ResearchAgent clarification response: {text[:300]}")
+
+            data = self._parse_clarification_json(text)
+            if not data or not data.get("needs_clarification"):
+                return None
+
+            questions = data.get("questions", [])
+            if not questions:
+                return None
+
+            # Format as a friendly response
+            lines = [
+                "Before I begin researching, I'd like to clarify a few things:\n"
+            ]
+            for i, q in enumerate(questions[:3], 1):
+                lines.append(f"{i}. {q}")
+            lines.append(
+                "\nPlease provide these details and I'll start the research."
+            )
+            return "\n".join(lines)
+
+        except Exception as e:
+            logger.error(f"Clarification phase failed: {e}", exc_info=True)
+            return None  # proceed with research on failure
+
+    def _parse_clarification_json(self, text: str) -> Optional[Dict]:
+        """Parse clarification JSON from LLM response."""
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # Try extracting from code fences
+        for marker in ["```json", "```"]:
+            if marker in text:
+                start = text.index(marker) + len(marker)
+                end = text.index("```", start) if "```" in text[start:] else len(text)
+                try:
+                    return json.loads(text[start:end].strip())
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+        # Try finding JSON object
+        for i, ch in enumerate(text):
+            if ch == "{":
+                for j in range(len(text) - 1, i, -1):
+                    if text[j] == "}":
+                        try:
+                            return json.loads(text[i : j + 1])
+                        except json.JSONDecodeError:
+                            continue
+                break
+
+        return None
+
+    # ------------------------------------------------------------------
     # Phase 1: Planning (with adaptive depth)
     # ------------------------------------------------------------------
 
@@ -292,7 +398,10 @@ class ResearchAgent(BaseAgent):
 
         try:
             response = self.llm.gen(
-                model=self.model_id, messages=messages, tools=None
+                model=self.model_id,
+                messages=messages,
+                tools=None,
+                response_format={"type": "json_object"},
             )
             text = self._extract_text(response)
             self._track_tokens(self._snapshot_llm_tokens())

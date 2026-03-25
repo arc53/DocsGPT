@@ -158,9 +158,17 @@ class StreamProcessor:
             if settings.ENABLE_CONVERSATION_COMPRESSION:
                 self._handle_compression(conversation)
             else:
-                # Original behavior - load all history
+                # Original behavior - load all history (include metadata if present)
                 self.history = [
-                    {"prompt": query["prompt"], "response": query["response"]}
+                    {
+                        "prompt": query["prompt"],
+                        "response": query["response"],
+                        **(
+                            {"metadata": query["metadata"]}
+                            if "metadata" in query
+                            else {}
+                        ),
+                    }
                     for query in conversation.get("queries", [])
                 ]
         else:
@@ -181,7 +189,11 @@ class StreamProcessor:
             if not result.success:
                 logger.error(f"Compression failed: {result.error}, using full history")
                 self.history = [
-                    {"prompt": query["prompt"], "response": query["response"]}
+                    {
+                        "prompt": query["prompt"],
+                        "response": query["response"],
+                        **({"metadata": query["metadata"]} if "metadata" in query else {}),
+                    }
                     for query in conversation.get("queries", [])
                 ]
                 return
@@ -197,6 +209,14 @@ class StreamProcessor:
                 )
 
             self.history = result.as_history()
+            # Preserve metadata from recent queries (as_history only has prompt/response)
+            recent = result.recent_queries if result.recent_queries else conversation.get("queries", [])
+            for i, entry in enumerate(self.history):
+                # Match by index from the end of recent queries
+                offset = len(recent) - len(self.history)
+                qi = offset + i
+                if 0 <= qi < len(recent) and "metadata" in recent[qi]:
+                    entry["metadata"] = recent[qi]["metadata"]
 
         except Exception as e:
             logger.error(
@@ -204,7 +224,11 @@ class StreamProcessor:
                 exc_info=True,
             )
             self.history = [
-                {"prompt": query["prompt"], "response": query["response"]}
+                {
+                    "prompt": query["prompt"],
+                    "response": query["response"],
+                    **({"metadata": query["metadata"]} if "metadata" in query else {}),
+                }
                 for query in conversation.get("queries", [])
             ]
 

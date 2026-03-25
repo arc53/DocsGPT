@@ -77,12 +77,16 @@ export const fetchAnswer = createAsyncThunk<
           if (currentConversationId === state.conversation.conversationId) {
             if (data.type === 'end') {
               dispatch(conversationSlice.actions.setStatus('idle'));
-              dispatch(
-                updateResearchProgress({
-                  index: targetIndex,
-                  progress: { status: 'complete' },
-                }),
-              );
+              // Only update research status if this query has research data
+              const currentState = getState() as RootState;
+              if (currentState.conversation.queries[targetIndex]?.research) {
+                dispatch(
+                  updateResearchProgress({
+                    index: targetIndex,
+                    progress: { status: 'complete' },
+                  }),
+                );
+              }
               getConversations(state.preference.token)
                 .then((fetchedConversations) => {
                   dispatch(setConversations(fetchedConversations));
