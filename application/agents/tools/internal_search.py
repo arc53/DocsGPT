@@ -112,7 +112,7 @@ class InternalSearchTool(Tool):
             docs = retriever.search(query)
         except Exception as e:
             logger.error(f"Internal search failed: {e}", exc_info=True)
-            return f"Search failed: {str(e)}"
+            return "Search failed: an internal error occurred."
 
         if not docs:
             return "No documents found matching your query."
