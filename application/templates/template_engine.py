@@ -3,12 +3,12 @@ from typing import Any, Dict, List, Optional, Set
 
 from jinja2 import (
     ChainableUndefined,
-    Environment,
     nodes,
     select_autoescape,
     TemplateSyntaxError,
 )
-from jinja2.exceptions import UndefinedError
+from jinja2.exceptions import SecurityError, UndefinedError
+from jinja2.sandbox import SandboxedEnvironment
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class TemplateEngine:
     """Jinja2-based template engine for dynamic prompt rendering"""
 
     def __init__(self):
-        self._env = Environment(
+        self._env = SandboxedEnvironment(
             undefined=ChainableUndefined,
             trim_blocks=True,
             lstrip_blocks=True,
@@ -55,6 +55,10 @@ class TemplateEngine:
             raise TemplateRenderError(error_msg) from e
         except UndefinedError as e:
             error_msg = f"Undefined variable in template: {e.message}"
+            logger.error(error_msg)
+            raise TemplateRenderError(error_msg) from e
+        except SecurityError as e:
+            error_msg = f"Template security violation: {str(e)}"
             logger.error(error_msg)
             raise TemplateRenderError(error_msg) from e
         except Exception as e:
