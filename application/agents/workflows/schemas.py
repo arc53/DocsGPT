@@ -18,6 +18,8 @@ class NodeType(str, Enum):
 class AgentType(str, Enum):
     CLASSIC = "classic"
     REACT = "react"
+    AGENTIC = "agentic"
+    RESEARCH = "research"
 
 
 class ExecutionStatus(str, Enum):

@@ -354,6 +354,59 @@ def build_internal_tool_entry(has_directory_structure: bool = False) -> Dict:
 INTERNAL_TOOL_ENTRY = build_internal_tool_entry(has_directory_structure=False)
 
 
+def sources_have_directory_structure(source: Dict) -> bool:
+    """Check if any of the active sources have directory_structure in MongoDB."""
+    active_docs = source.get("active_docs", [])
+    if not active_docs:
+        return False
+
+    try:
+        from bson.objectid import ObjectId
+        from application.core.mongo_db import MongoDB
+
+        mongo = MongoDB.get_client()
+        db = mongo[settings.MONGO_DB_NAME]
+        sources_collection = db["sources"]
+
+        if isinstance(active_docs, str):
+            active_docs = [active_docs]
+
+        for doc_id in active_docs:
+            try:
+                source_doc = sources_collection.find_one(
+                    {"_id": ObjectId(doc_id)},
+                    {"directory_structure": 1},
+                )
+                if source_doc and source_doc.get("directory_structure"):
+                    return True
+            except Exception:
+                continue
+    except Exception as e:
+        logger.debug(f"Could not check directory structure: {e}")
+
+    return False
+
+
+def add_internal_search_tool(tools_dict: Dict, retriever_config: Dict) -> None:
+    """Add the internal search tool to tools_dict if sources are configured.
+
+    Shared by AgenticAgent and ResearchAgent to avoid duplicate setup logic.
+    Mutates tools_dict in place.
+    """
+    source = retriever_config.get("source", {})
+    has_sources = bool(source.get("active_docs"))
+    if not retriever_config or not has_sources:
+        return
+
+    has_dir = sources_have_directory_structure(source)
+    internal_entry = build_internal_tool_entry(has_directory_structure=has_dir)
+    internal_entry["config"] = build_internal_tool_config(
+        **retriever_config,
+        has_directory_structure=has_dir,
+    )
+    tools_dict[INTERNAL_TOOL_ID] = internal_entry
+
+
 def build_internal_tool_config(
     source: Dict,
     retriever_name: str = "classic",

@@ -2,8 +2,10 @@
 
 from typing import Any, Dict, List, Optional, Type
 
+from application.agents.agentic_agent import AgenticAgent
 from application.agents.base import BaseAgent
 from application.agents.classic_agent import ClassicAgent
+from application.agents.research_agent import ResearchAgent
 from application.agents.workflows.schemas import AgentType
 
 
@@ -35,7 +37,8 @@ class ToolFilterMixin:
         return filtered_tools
 
 
-class WorkflowNodeClassicAgent(ToolFilterMixin, ClassicAgent):
+class _WorkflowNodeMixin:
+    """Common __init__ for all workflow node agents."""
 
     def __init__(
         self,
@@ -56,11 +59,25 @@ class WorkflowNodeClassicAgent(ToolFilterMixin, ClassicAgent):
         self._allowed_tool_ids = tool_ids or []
 
 
+class WorkflowNodeClassicAgent(ToolFilterMixin, _WorkflowNodeMixin, ClassicAgent):
+    pass
+
+
+class WorkflowNodeAgenticAgent(ToolFilterMixin, _WorkflowNodeMixin, AgenticAgent):
+    pass
+
+
+class WorkflowNodeResearchAgent(ToolFilterMixin, _WorkflowNodeMixin, ResearchAgent):
+    pass
+
+
 class WorkflowNodeAgentFactory:
 
     _agents: Dict[AgentType, Type[BaseAgent]] = {
         AgentType.CLASSIC: WorkflowNodeClassicAgent,
         AgentType.REACT: WorkflowNodeClassicAgent,  # backwards compat
+        AgentType.AGENTIC: WorkflowNodeAgenticAgent,
+        AgentType.RESEARCH: WorkflowNodeResearchAgent,
     }
 
     @classmethod

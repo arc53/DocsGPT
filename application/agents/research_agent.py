@@ -6,11 +6,9 @@ from typing import Dict, Generator, List, Optional
 
 from application.agents.base import BaseAgent
 from application.agents.tool_executor import ToolExecutor
-from application.agents.agentic_agent import _sources_have_directory_structure
 from application.agents.tools.internal_search import (
     INTERNAL_TOOL_ID,
-    build_internal_tool_config,
-    build_internal_tool_entry,
+    add_internal_search_tool,
 )
 from application.agents.tools.think import THINK_TOOL_ENTRY, THINK_TOOL_ID
 from application.logging import LogContext
@@ -130,6 +128,7 @@ class ResearchAgent(BaseAgent):
         self.citations = CitationManager()
         self._start_time: float = 0
         self._tokens_used: int = 0
+        self._last_token_snapshot: int = 0
 
     # ------------------------------------------------------------------
     # Budget & timeout helpers
@@ -153,7 +152,9 @@ class ResearchAgent(BaseAgent):
     def _snapshot_llm_tokens(self) -> int:
         """Read current token usage from LLM and return delta since last snapshot."""
         current = self.llm.token_usage.get("prompt_tokens", 0) + self.llm.token_usage.get("generated_tokens", 0)
-        return current
+        delta = current - self._last_token_snapshot
+        self._last_token_snapshot = current
+        return delta
 
     # ------------------------------------------------------------------
     # Main orchestration
@@ -272,21 +273,7 @@ class ResearchAgent(BaseAgent):
         """Build tools_dict with user tools + internal search + think."""
         tools_dict = self.tool_executor.get_tools()
 
-        # Only add internal search if sources are configured
-        source = self.retriever_config.get("source", {})
-        has_sources = bool(source.get("active_docs"))
-        if self.retriever_config and has_sources:
-            has_dir = _sources_have_directory_structure(source)
-            internal_entry = build_internal_tool_entry(
-                has_directory_structure=has_dir
-            )
-            internal_entry["config"] = build_internal_tool_config(
-                **self.retriever_config,
-                has_directory_structure=has_dir,
-            )
-            tools_dict[INTERNAL_TOOL_ID] = internal_entry
-        elif self.retriever_config and not has_sources:
-            logger.info("ResearchAgent: No sources configured, skipping internal_search tool")
+        add_internal_search_tool(tools_dict, self.retriever_config)
 
         think_entry = dict(THINK_TOOL_ENTRY)
         think_entry["config"] = {}
@@ -580,7 +567,14 @@ class ResearchAgent(BaseAgent):
             call_id = None
             while True:
                 try:
-                    next(gen)
+                    event = next(gen)
+                    # Log tool_call status events instead of discarding them
+                    if isinstance(event, dict) and event.get("type") == "tool_call":
+                        logger.debug(
+                            "Tool %s status: %s",
+                            event.get("data", {}).get("action_name", ""),
+                            event.get("data", {}).get("status", ""),
+                        )
                 except StopIteration as e:
                     result, call_id = e.value
                     break
