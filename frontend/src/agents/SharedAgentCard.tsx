@@ -1,4 +1,5 @@
 import AgentImage from '../components/AgentImage';
+import { getToolDisplayName } from '../utils/toolUtils';
 import { Agent } from './types';
 
 export default function SharedAgentCard({ agent }: { agent: Agent }) {
@@ -64,10 +65,10 @@ export default function SharedAgentCard({ agent }: { agent: Agent }) {
               >
                 <img
                   src={`/toolIcons/tool_${tool.name}.svg`}
-                  alt={`${tool.name} icon`}
+                  alt={`${getToolDisplayName(tool)} icon`}
                   className="h-3 w-3"
                 />{' '}
-                {tool.name}
+                {getToolDisplayName(tool)}
               </span>
             ))}
           </div>

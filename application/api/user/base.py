@@ -152,7 +152,9 @@ def resolve_tool_details(tool_ids):
         {
             "id": str(tool["_id"]),
             "name": tool.get("name", ""),
-            "display_name": tool.get("displayName", tool.get("name", "")),
+            "display_name": tool.get("customName")
+            or tool.get("displayName")
+            or tool.get("name", ""),
         }
         for tool in tools
     ]

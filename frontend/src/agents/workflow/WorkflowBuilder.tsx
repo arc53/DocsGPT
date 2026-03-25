@@ -55,6 +55,7 @@ import AgentDetailsModal from '../../modals/AgentDetailsModal';
 import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
 import { selectToken } from '../../preferences/preferenceSlice';
+import { getToolDisplayName } from '../../utils/toolUtils';
 import { Agent } from '../types';
 import { ConditionCase, WorkflowNode } from '../types/workflow';
 import MobileBlocker from './components/MobileBlocker';
@@ -92,6 +93,7 @@ interface UserTool {
   id: string;
   name: string;
   displayName: string;
+  customName?: string;
 }
 
 function validateJsonSchemaConfig(schema: unknown): string | null {
@@ -1887,7 +1889,7 @@ function WorkflowBuilderInner() {
                                   <MultiSelect
                                     options={availableTools.map((tool) => ({
                                       value: tool.id,
-                                      label: tool.displayName,
+                                      label: getToolDisplayName(tool),
                                     }))}
                                     selected={
                                       selectedNode.data.config?.tools || []

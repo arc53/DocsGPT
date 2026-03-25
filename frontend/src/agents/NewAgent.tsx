@@ -28,6 +28,7 @@ import {
 import PromptsModal from '../preferences/PromptsModal';
 import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
+import { getToolDisplayName } from '../utils/toolUtils';
 import AgentPreview from './AgentPreview';
 import { Agent, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
@@ -428,8 +429,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const data = await response.json();
       const tools: OptionType[] = data.tools.map((tool: UserToolType) => ({
         id: tool.id,
-        label: tool.customName ? tool.customName : tool.displayName,
+        label: getToolDisplayName(tool),
         icon: `/toolIcons/tool_${tool.name}.svg`,
+        name: tool.name,
       }));
       setUserTools(tools);
     };
@@ -956,7 +958,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               >
                 {selectedTools.length > 0
                   ? selectedTools
-                      .map((tool) => tool.display_name || tool.name)
+                      .map((tool) => getToolDisplayName(tool))
                       .filter(Boolean)
                       .join(', ')
                   : t('agents.form.placeholders.selectTools')}
@@ -973,7 +975,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       .filter((tool) => newSelectedIds.has(tool.id))
                       .map((tool) => ({
                         id: String(tool.id),
-                        name: tool.label,
+                        name:
+                          typeof tool.name === 'string'
+                            ? tool.name
+                            : tool.label,
                         display_name: tool.label,
                       })),
                   )
