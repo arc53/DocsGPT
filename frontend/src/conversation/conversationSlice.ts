@@ -11,7 +11,13 @@ import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
 } from './conversationHandlers';
-import { Answer, ConversationState, Query, Status } from './conversationModels';
+import {
+  Answer,
+  ConversationState,
+  Query,
+  ResearchStep,
+  Status,
+} from './conversationModels';
 import { ToolCallsType } from './types';
 
 const initialState: ConversationState = {
@@ -71,6 +77,12 @@ export const fetchAnswer = createAsyncThunk<
           if (currentConversationId === state.conversation.conversationId) {
             if (data.type === 'end') {
               dispatch(conversationSlice.actions.setStatus('idle'));
+              dispatch(
+                updateResearchProgress({
+                  index: targetIndex,
+                  progress: { status: 'complete' },
+                }),
+              );
               getConversations(state.preference.token)
                 .then((fetchedConversations) => {
                   dispatch(setConversations(fetchedConversations));
@@ -120,6 +132,21 @@ export const fetchAnswer = createAsyncThunk<
                 updateToolCall({
                   index: targetIndex,
                   tool_call: data.data as ToolCallsType,
+                }),
+              );
+            } else if (data.type === 'research_plan') {
+              dispatch(
+                updateResearchPlan({
+                  index: targetIndex,
+                  plan: data.data.steps,
+                  complexity: data.data.complexity,
+                }),
+              );
+            } else if (data.type === 'research_progress') {
+              dispatch(
+                updateResearchProgress({
+                  index: targetIndex,
+                  progress: data.data,
                 }),
               );
             } else if (data.type === 'error') {
@@ -256,6 +283,7 @@ export const conversationSlice = createSlice({
       delete state.queries[index].structured;
       delete state.queries[index].schema;
       delete state.queries[index].feedback;
+      delete state.queries[index].research;
     },
     updateStreamingQuery(
       state,
@@ -337,6 +365,77 @@ export const conversationSlice = createSlice({
         };
       } else state.queries[index].tool_calls.push(tool_call);
     },
+    updateResearchPlan(
+      state,
+      action: PayloadAction<{
+        index: number;
+        plan: ResearchStep[];
+        complexity?: string;
+      }>,
+    ) {
+      const { index, plan, complexity } = action.payload;
+      if (!state.queries[index].research) {
+        state.queries[index].research = {};
+      }
+      state.queries[index].research!.plan = plan.map((step) => ({
+        ...step,
+        status: 'pending',
+      }));
+      if (complexity) {
+        state.queries[index].research!.complexity = complexity;
+      }
+    },
+    updateResearchProgress(
+      state,
+      action: PayloadAction<{
+        index: number;
+        progress: {
+          status?: string;
+          step?: number;
+          total?: number;
+          query?: string;
+          elapsed_seconds?: number;
+          tokens_used?: number;
+        };
+      }>,
+    ) {
+      const { index, progress } = action.payload;
+      if (!state.queries[index].research) {
+        state.queries[index].research = {};
+      }
+      const research = state.queries[index].research!;
+      if (progress.elapsed_seconds !== undefined) {
+        research.elapsed_seconds = progress.elapsed_seconds;
+      }
+      if (progress.tokens_used !== undefined) {
+        research.tokens_used = progress.tokens_used;
+      }
+      // Update individual step status when step number is present
+      if (progress.step !== undefined) {
+        if (!research.plan) {
+          research.plan = [];
+        }
+        const stepIndex = progress.step - 1;
+        // Dynamically add step if it doesn't exist yet
+        while (research.plan.length <= stepIndex) {
+          research.plan.push({
+            query: progress.query || `Step ${research.plan.length + 1}`,
+            status: 'pending',
+          });
+        }
+        if (progress.status === 'researching' || progress.status === 'complete') {
+          research.plan[stepIndex].status = progress.status;
+        }
+        if (progress.query) {
+          research.plan[stepIndex].query = progress.query;
+        }
+        // Keep top-level status as "researching" while steps are running
+        research.status = 'researching';
+      } else if (progress.status) {
+        // Top-level status updates (planning, synthesizing)
+        research.status = progress.status;
+      }
+    },
     updateQuery(
       state,
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
@@ -405,6 +504,8 @@ export const {
   updateThought,
   updateStreamingSource,
   updateToolCall,
+  updateResearchPlan,
+  updateResearchProgress,
   setConversation,
   setStatus,
   raiseError,

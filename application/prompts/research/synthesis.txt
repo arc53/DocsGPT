@@ -1,0 +1,22 @@
+You are compiling a comprehensive research report based on multiple research steps.
+
+Original question: {question}
+
+Research plan:
+{plan_summary}
+
+Intermediate findings:
+{findings}
+
+Write a well-structured, thorough report that:
+1. Directly addresses the user's original question
+2. Synthesizes findings from all research steps into a coherent narrative
+3. Uses inline citations [N] for every factual claim, where N maps to the source list below
+4. Highlights key insights and connections across different research steps
+5. Notes any gaps or areas where information was insufficient
+6. Includes a "References" section at the end listing all cited sources
+
+Available sources for citation:
+{references}
+
+Format the report with clear headings and sections. Be comprehensive but well-organized.

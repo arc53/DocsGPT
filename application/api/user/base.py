@@ -145,9 +145,15 @@ def resolve_tool_details(tool_ids):
     Returns:
         List of tool details with id, name, and display_name
     """
+    valid_ids = []
+    for tid in tool_ids:
+        try:
+            valid_ids.append(ObjectId(tid))
+        except Exception:
+            continue
     tools = user_tools_collection.find(
-        {"_id": {"$in": [ObjectId(tid) for tid in tool_ids]}}
-    )
+        {"_id": {"$in": valid_ids}}
+    ) if valid_ids else []
     return [
         {
             "id": str(tool["_id"]),

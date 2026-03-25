@@ -138,6 +138,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const chunks = ['0', '2', '4', '6', '8', '10'];
   const agentTypes = [
     { label: t('agents.form.agentTypes.classic'), value: 'classic' },
+    { label: 'Agentic', value: 'agentic' },
+    { label: 'Research', value: 'research' },
   ];
 
   const isPublishable = () => {

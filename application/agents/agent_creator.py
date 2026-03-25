@@ -1,6 +1,8 @@
 import logging
 
+from application.agents.agentic_agent import AgenticAgent
 from application.agents.classic_agent import ClassicAgent
+from application.agents.research_agent import ResearchAgent
 from application.agents.workflow_agent import WorkflowAgent
 
 logger = logging.getLogger(__name__)
@@ -10,6 +12,8 @@ class AgentCreator:
     agents = {
         "classic": ClassicAgent,
         "react": ClassicAgent,  # backwards compat: react falls back to classic
+        "agentic": AgenticAgent,
+        "research": ResearchAgent,
         "workflow": WorkflowAgent,
     }
 

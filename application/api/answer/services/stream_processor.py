@@ -38,12 +38,22 @@ def get_prompt(prompt_id: str, prompts_collection=None) -> str:
     current_dir = Path(__file__).resolve().parents[3]
     prompts_dir = current_dir / "prompts"
 
-    preset_mapping = {
+    # Maps for classic agent types
+    CLASSIC_PRESETS = {
         "default": "chat_combine_default.txt",
         "creative": "chat_combine_creative.txt",
         "strict": "chat_combine_strict.txt",
         "reduce": "chat_reduce_prompt.txt",
     }
+
+    # Agentic counterparts — same styles, but with search tool instructions
+    AGENTIC_PRESETS = {
+        "default": "agentic/default.txt",
+        "creative": "agentic/creative.txt",
+        "strict": "agentic/strict.txt",
+    }
+
+    preset_mapping = {**CLASSIC_PRESETS, **{f"agentic_{k}": v for k, v in AGENTIC_PRESETS.items()}}
 
     if prompt_id in preset_mapping:
         file_path = os.path.join(prompts_dir, preset_mapping[prompt_id])
@@ -119,6 +129,14 @@ class StreamProcessor:
         create_agent() into a single convenience method.
         """
         self.initialize()
+
+        agent_type = self.agent_config.get("agent_type", "classic")
+
+        # Agentic/research agents skip pre-fetch — the LLM searches on-demand via tools
+        if agent_type in ("agentic", "research"):
+            tools_data = self.pre_fetch_tools()
+            return self.create_agent(tools_data=tools_data)
+
         docs_together, docs_list = self.pre_fetch_docs(question)
         tools_data = self.pre_fetch_tools()
         return self.create_agent(
@@ -735,11 +753,21 @@ class StreamProcessor:
         tools_data: Optional[Dict[str, Any]] = None,
     ):
         """Create and return the configured agent with rendered prompt"""
+        agent_type = self.agent_config["agent_type"]
+
+        # For agentic agents, swap standard presets for their agentic
+        # counterparts (which include search tool instructions instead of
+        # {summaries}). Custom / user-provided prompts pass through as-is.
         raw_prompt = self._get_prompt_content()
         if raw_prompt is None:
-            raw_prompt = get_prompt(
-                self.agent_config["prompt_id"], self.prompts_collection
-            )
+            prompt_id = self.agent_config.get("prompt_id", "default")
+            agentic_presets = {"default", "creative", "strict"}
+            if agent_type in ("agentic", "research") and prompt_id in agentic_presets:
+                raw_prompt = get_prompt(
+                    f"agentic_{prompt_id}", self.prompts_collection
+                )
+            else:
+                raw_prompt = get_prompt(prompt_id, self.prompts_collection)
             self._prompt_content = raw_prompt
 
         rendered_prompt = self.prompt_renderer.render_prompt(
@@ -758,8 +786,6 @@ class StreamProcessor:
             else settings.LLM_PROVIDER
         )
         system_api_key = get_api_key_for_provider(provider or settings.LLM_PROVIDER)
-
-        agent_type = self.agent_config["agent_type"]
 
         # Create LLM and handler (dependency injection)
         from application.llm.llm_creator import LLMCreator
@@ -806,8 +832,26 @@ class StreamProcessor:
             "tool_executor": tool_executor,
         }
 
-        # Workflow-specific kwargs for workflow agents
-        if agent_type == "workflow":
+        # Type-specific kwargs
+        if agent_type in ("agentic", "research"):
+            agent_kwargs["retriever_config"] = {
+                "source": self.source,
+                "retriever_name": self.retriever_config.get(
+                    "retriever_name", "classic"
+                ),
+                "chunks": self.retriever_config.get("chunks", 2),
+                "doc_token_limit": self.retriever_config.get(
+                    "doc_token_limit", 50000
+                ),
+                "model_id": self.model_id,
+                "user_api_key": self.agent_config["user_api_key"],
+                "agent_id": self.agent_id,
+                "llm_name": provider or settings.LLM_PROVIDER,
+                "api_key": system_api_key,
+                "decoded_token": self.decoded_token,
+            }
+
+        elif agent_type == "workflow":
             workflow_config = self.agent_config.get("workflow")
             if isinstance(workflow_config, str):
                 agent_kwargs["workflow_id"] = workflow_config
