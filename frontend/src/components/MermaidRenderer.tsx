@@ -264,7 +264,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
 
   return (
     <div className="w-inherit group border-border bg-card relative rounded-lg border">
-      <div className="bg-platinum-2 flex items-center justify-between px-2 py-1">
+      <div className="bg-platinum flex items-center justify-between px-2 py-1">
         <span className="text-foreground dark:text-foreground text-xs font-medium">
           mermaid
         </span>
@@ -401,7 +401,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
 
           {showCode && (
             <div className="border-border border-t">
-              <div className="bg-platinum-2 p-2">
+              <div className="bg-platinum p-2">
                 <span className="text-foreground dark:text-foreground text-xs font-medium">
                   Mermaid Code
                 </span>

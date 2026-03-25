@@ -1,4 +1,4 @@
-﻿import { ActiveState } from '../models/misc';
+import { ActiveState } from '../models/misc';
 import Input from '../components/Input';
 import { Link } from 'react-router-dom';
 

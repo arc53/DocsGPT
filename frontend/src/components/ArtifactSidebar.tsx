@@ -180,7 +180,7 @@ function NoteView({ data }: { data: NoteArtifactData }) {
 
                 return match ? (
                   <div className="group border-border relative my-2 overflow-hidden rounded-[14px] border">
-                    <div className="bg-platinum-2 flex items-center justify-between px-2 py-1">
+                    <div className="bg-platinum flex items-center justify-between px-2 py-1">
                       <span className="text-foreground dark:text-foreground text-xs font-medium">
                         {language}
                       </span>
@@ -482,7 +482,7 @@ export default function ArtifactSidebar({
             {title}
           </span>
           <button
-            className="hover:bg-accent0 dark:hover:bg-accent rounded-full p-2"
+            className="hover:bg-accent rounded-full p-2"
             onClick={onClose}
           >
             <img

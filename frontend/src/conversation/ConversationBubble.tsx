@@ -489,7 +489,7 @@ const ConversationBubble = forwardRef<
 
                                 return match ? (
                                   <div className="group border-border relative overflow-hidden rounded-[14px] border">
-                                    <div className="bg-platinum-2 flex items-center justify-between px-2 py-1">
+                                    <div className="bg-platinum flex items-center justify-between px-2 py-1">
                                       <span className="text-foreground dark:text-foreground text-xs font-medium">
                                         {language}
                                       </span>
@@ -945,7 +945,7 @@ function Thought({
 
                   return match ? (
                     <div className="group border-border relative overflow-hidden rounded-[14px] border">
-                      <div className="bg-platinum-2 flex items-center justify-between px-2 py-1">
+                      <div className="bg-platinum flex items-center justify-between px-2 py-1">
                         <span className="text-foreground dark:text-foreground text-xs font-medium">
                           {language}
                         </span>
