@@ -3,9 +3,9 @@ from typing import Dict, Generator, Optional
 
 from application.agents.base import BaseAgent
 from application.agents.tools.internal_search import (
-    INTERNAL_TOOL_ENTRY,
     INTERNAL_TOOL_ID,
     build_internal_tool_config,
+    build_internal_tool_entry,
 )
 from application.logging import LogContext
 
@@ -39,9 +39,13 @@ class AgenticAgent(BaseAgent):
         source = self.retriever_config.get("source", {})
         has_sources = bool(source.get("active_docs"))
         if self.retriever_config and has_sources:
-            internal_entry = dict(INTERNAL_TOOL_ENTRY)
+            has_dir = _sources_have_directory_structure(source)
+            internal_entry = build_internal_tool_entry(
+                has_directory_structure=has_dir
+            )
             internal_entry["config"] = build_internal_tool_config(
-                **self.retriever_config
+                **self.retriever_config,
+                has_directory_structure=has_dir,
             )
             tools_dict[INTERNAL_TOOL_ID] = internal_entry
 
@@ -74,3 +78,40 @@ class AgenticAgent(BaseAgent):
         tool = self.tool_executor._loaded_tools.get(cache_key)
         if tool and hasattr(tool, "retrieved_docs") and tool.retrieved_docs:
             self.retrieved_docs = tool.retrieved_docs
+
+
+def _sources_have_directory_structure(source: Dict) -> bool:
+    """Check if any of the active sources have directory_structure in MongoDB."""
+    active_docs = source.get("active_docs", [])
+    if not active_docs:
+        return False
+
+    try:
+        from bson.objectid import ObjectId
+        from application.core.mongo_db import MongoDB
+
+        mongo = MongoDB.get_client()
+        db = mongo[settings.MONGO_DB_NAME]
+        sources_collection = db["sources"]
+
+        if isinstance(active_docs, str):
+            active_docs = [active_docs]
+
+        for doc_id in active_docs:
+            try:
+                source_doc = sources_collection.find_one(
+                    {"_id": ObjectId(doc_id)},
+                    {"directory_structure": 1},
+                )
+                if source_doc and source_doc.get("directory_structure"):
+                    return True
+            except Exception:
+                continue
+    except Exception as e:
+        logger.debug(f"Could not check directory structure: {e}")
+
+    return False
+
+
+# Import settings at module level for _sources_have_directory_structure
+from application.core.settings import settings  # noqa: E402

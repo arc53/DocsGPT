@@ -6,10 +6,11 @@ from typing import Dict, Generator, List, Optional
 
 from application.agents.base import BaseAgent
 from application.agents.tool_executor import ToolExecutor
+from application.agents.agentic_agent import _sources_have_directory_structure
 from application.agents.tools.internal_search import (
-    INTERNAL_TOOL_ENTRY,
     INTERNAL_TOOL_ID,
     build_internal_tool_config,
+    build_internal_tool_entry,
 )
 from application.agents.tools.think import THINK_TOOL_ENTRY, THINK_TOOL_ID
 from application.logging import LogContext
@@ -275,9 +276,13 @@ class ResearchAgent(BaseAgent):
         source = self.retriever_config.get("source", {})
         has_sources = bool(source.get("active_docs"))
         if self.retriever_config and has_sources:
-            internal_entry = dict(INTERNAL_TOOL_ENTRY)
+            has_dir = _sources_have_directory_structure(source)
+            internal_entry = build_internal_tool_entry(
+                has_directory_structure=has_dir
+            )
             internal_entry["config"] = build_internal_tool_config(
-                **self.retriever_config
+                **self.retriever_config,
+                has_directory_structure=has_dir,
             )
             tools_dict[INTERNAL_TOOL_ID] = internal_entry
         elif self.retriever_config and not has_sources:
