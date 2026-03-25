@@ -80,7 +80,7 @@ export default function DropdownModel() {
   return (
     <div ref={dropdownRef}>
       <div
-        className={`border-border text-foreground mx-auto flex w-full cursor-pointer items-center justify-between border bg-transparent px-3 py-4 ${isOpen ? 'rounded-t-4xl' : 'rounded-4xl'}`}
+        className={`text-foreground bg-muted dark:bg-card mx-auto flex w-full cursor-pointer items-center justify-between px-3 py-4 ${isOpen ? 'rounded-t-4xl' : 'rounded-4xl'}`}
         onClick={() => setIsOpen(!isOpen)}
       >
         {selectedModel?.display_name ? (
@@ -101,7 +101,7 @@ export default function DropdownModel() {
         />
       </div>
       {isOpen && (
-        <div className="no-scrollbar border-border bg-card absolute right-0 left-0 z-20 -mt-1 max-h-52 w-full overflow-y-auto rounded-b-3xl border border-t-0 shadow-md">
+        <div className="no-scrollbar bg-muted dark:bg-card absolute right-0 left-0 z-20 -mt-1 max-h-52 w-full overflow-y-auto rounded-b-3xl shadow-md">
           {availableModels && (availableModels?.length ?? 0) > 0 ? (
             availableModels.map((model: Model) => (
               <div
@@ -110,7 +110,7 @@ export default function DropdownModel() {
                   dispatch(setSelectedModel(model));
                   setIsOpen(false);
                 }}
-                className={`border-border/50 hover:bg-muted flex h-10 w-full cursor-pointer items-center justify-between border-t`}
+                className={`border-border/30 hover:bg-accent flex h-10 w-full cursor-pointer items-center justify-between border-t`}
               >
                 <div className="flex w-full items-center justify-between">
                   <p className="flex-1 truncate py-3 pr-2 pl-5">
@@ -127,7 +127,7 @@ export default function DropdownModel() {
               </div>
             ))
           ) : (
-            <div className="border-border/50 flex h-10 w-full items-center border-t">
+            <div className="border-border/30 flex h-10 w-full items-center border-t">
               <p className="pl-5 text-sm text-muted-foreground">No models available</p>
             </div>
           )}

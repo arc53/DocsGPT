@@ -1438,7 +1438,7 @@ export default function MessageInput({
         onChange={handleVoiceFileAttachment}
       />
 
-      <div className="border-border bg-card relative flex w-full flex-col rounded-[23px] border">
+      <div className="border-border bg-card dark:bg-transparent relative flex w-full flex-col rounded-[23px] border">
         <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
           {attachments.map((attachment) => {
             return (

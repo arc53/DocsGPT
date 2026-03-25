@@ -44,7 +44,7 @@ export default function Hero({
                 <button
                   key={key}
                   onClick={() => handleQuestion({ question: demo.query })}
-                  className={`border-border text-foreground hover:bg-muted bg-card w-full rounded-[66px] border px-6 py-3.5 text-left transition-colors ${key >= 2 ? 'hidden md:block' : ''}`}
+                  className={`border-border text-foreground hover:bg-muted dark:hover:bg-muted/50 bg-card dark:bg-transparent w-full rounded-[66px] border px-6 py-3.5 text-left transition-colors ${key >= 2 ? 'hidden md:block' : ''}`}
                 >
                   <p className="text-black-1000 dark:text-foreground mb-2 font-semibold">
                     {demo.header}

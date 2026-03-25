@@ -157,7 +157,7 @@ function Dropdown<T extends DropdownOption>({
                 return (
                   <div
                     key={i}
-                    className={`flex cursor-pointer items-center justify-between hover:bg-muted ${active ? 'bg-muted' : ''}`}
+                    className={`flex cursor-pointer items-center justify-between hover:bg-accent ${active ? 'bg-accent' : ''}`}
                   >
                     <span
                       onClick={() => {

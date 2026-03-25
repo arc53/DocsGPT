@@ -5,7 +5,7 @@ export default function PageNotFound() {
   const { t } = useTranslation();
 
   return (
-    <div className="bg-card grid min-h-screen">
+    <div className="bg-background grid min-h-screen">
       <p className="text-foreground mx-auto my-auto mt-20 flex w-full max-w-6xl flex-col place-items-center gap-6 rounded-3xl bg-gray-100 p-6 lg:p-10 xl:p-16 dark:text-gray-100">
         <h1>{t('pageNotFound.title')}</h1>
         <p>{t('pageNotFound.message')}</p>
