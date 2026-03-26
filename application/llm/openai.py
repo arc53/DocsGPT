@@ -101,9 +101,13 @@ class OpenAILLM(BaseLLM):
                     for item in content:
                         if "function_call" in item:
                             # Function calls need their own message
-                            cleaned_args = self._remove_null_values(
-                                item["function_call"]["args"]
-                            )
+                            args = item["function_call"]["args"]
+                            if isinstance(args, str):
+                                try:
+                                    args = json.loads(args)
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+                            cleaned_args = self._remove_null_values(args)
                             tool_call = {
                                 "id": item["function_call"]["call_id"],
                                 "type": "function",
