@@ -1,6 +1,6 @@
 {
   "name": "docsgpt",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "private": false,
   "description": "DocsGPT 🦖 is an innovative open-source tool designed to simplify the retrieval of information from project documentation using advanced GPT models 🤖.",
   "source": "./src/index.html",
