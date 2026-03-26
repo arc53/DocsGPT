@@ -97,7 +97,7 @@ class TestMongoDBVectorStoreAddTexts:
             inserted_ids=list(range(100))
         )
 
-        result = store.add_texts(texts, metadatas)
+        store.add_texts(texts, metadatas)
 
         # Should have been called twice: batch of 100, then batch of 50
         assert mock_collection.insert_many.call_count == 2

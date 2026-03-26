@@ -1,7 +1,5 @@
 import io
-import os
-import tempfile
-from unittest.mock import MagicMock, Mock, PropertyMock, call, mock_open, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
