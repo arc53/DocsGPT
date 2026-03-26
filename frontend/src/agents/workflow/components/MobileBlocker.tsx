@@ -6,10 +6,10 @@ export default function MobileBlocker() {
       <div className="bg-primary/10 dark:bg-primary/20 mb-6 flex h-20 w-20 items-center justify-center rounded-2xl">
         <Monitor className="text-primary h-10 w-10" />
       </div>
-      <h2 className="mb-2 text-xl font-bold text-gray-900 dark:text-white">
+      <h2 className="mb-2 text-xl font-bold text-foreground">
         Desktop Required
       </h2>
-      <p className="max-w-sm text-sm leading-relaxed text-gray-500">
+      <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
         The Workflow Builder requires a larger screen for the best experience.
         Please open this page on a desktop or laptop computer.
       </p>

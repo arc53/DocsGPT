@@ -278,7 +278,7 @@ function AddPrompt({
           <span className="font-bold">
             {t('modals.prompts.variablesLabel')}
           </span>
-          <span className="text-xs text-[10px] font-medium text-gray-500">
+          <span className="text-xs text-[10px] font-medium text-muted-foreground">
             {t('modals.prompts.variablesDescription')}
           </span>
         </p>
@@ -485,7 +485,7 @@ function EditPrompt({
           <span className="font-bold">
             {t('modals.prompts.variablesLabel')}
           </span>
-          <span className="text-xs text-[10px] font-medium text-gray-500">
+          <span className="text-xs text-[10px] font-medium text-muted-foreground">
             {t('modals.prompts.variablesDescription')}
           </span>
         </p>

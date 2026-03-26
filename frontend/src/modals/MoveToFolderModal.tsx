@@ -188,10 +188,10 @@ export default function MoveToFolderModal({
             </span>
           ))}
         </div>
-        <div className="max-h-60 min-h-[200px] overflow-y-auto border-t border-gray-200">
+        <div className="max-h-60 min-h-[200px] overflow-y-auto border-t border-gray-200 dark:border-border">
           {isLoading ? (
             <div className="flex h-[200px] items-center justify-center">
-              <span className="text-[14px] text-gray-500">
+              <span className="text-[14px] text-muted-foreground">
                 {t('loading')}...
               </span>
             </div>
@@ -204,7 +204,7 @@ export default function MoveToFolderModal({
                     e.stopPropagation();
                     setSelectedFolderId(null);
                   }}
-                  className={`flex w-full items-center gap-2 border-b border-gray-200 px-8 py-2 text-left text-[14px] ${
+                  className={`flex w-full items-center gap-2 border-b border-gray-200 dark:border-border px-8 py-2 text-left text-[14px] ${
                     selectedFolderId === null
                       ? 'bg-[#7D54D1] text-white'
                       : 'bg-muted hover:bg-accent dark:bg-muted'
@@ -226,7 +226,7 @@ export default function MoveToFolderModal({
                 <button
                   key={folder.id}
                   onClick={() => setSelectedFolderId(folder.id)}
-                  className={`flex w-full cursor-pointer items-center justify-between border-b border-gray-200 px-8 py-2 text-left text-[14px] ${
+                  className={`flex w-full cursor-pointer items-center justify-between border-b border-gray-200 dark:border-border px-8 py-2 text-left text-[14px] ${
                     selectedFolderId === folder.id
                       ? 'bg-[#7D54D1] text-white'
                       : 'bg-muted hover:bg-accent dark:bg-muted'
@@ -286,7 +286,7 @@ export default function MoveToFolderModal({
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-gray-200 px-8 py-4">
+        <div className="flex items-center justify-between border-t border-gray-200 dark:border-border px-8 py-4">
           {isCreatingFolder ? (
             <input
               ref={newFolderInputRef}

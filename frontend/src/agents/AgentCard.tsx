@@ -283,7 +283,7 @@ export default function AgentCard({
             className="h-7 w-7 rounded-full object-contain"
           />
           {agent.status === 'draft' && (
-            <p className="text-xs text-black opacity-50">{`(Draft)`}</p>
+            <p className="text-xs text-foreground opacity-50">{`(Draft)`}</p>
           )}
         </div>
         <div className="mt-2">

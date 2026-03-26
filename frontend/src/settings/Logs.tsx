@@ -119,7 +119,7 @@ function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
   return (
     <div className="logs-table border-border h-[55vh] w-full overflow-hidden rounded-xl border bg-card dark:bg-black">
       <div className="flex h-8 flex-col items-start justify-center bg-black/10 dark:bg-white/5">
-        <p className="dark:text-gray-6000 px-3 text-xs">
+        <p className="px-3 text-xs text-muted-foreground">
           {tableHeader ? tableHeader : t('settings.logs.tableHeader')}
         </p>
       </div>
@@ -171,7 +171,7 @@ function Log({
     <div className="group dark:hover:bg-accent w-full rounded-xl bg-transparent hover:bg-muted">
       <div
         onClick={() => onToggle(log.id)}
-        className={`flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 text-gray-900 ${
+        className={`flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 text-foreground ${
           isOpen ? 'rounded-t-xl bg-[#F1F1F1] dark:bg-background' : ''
         }`}
       >

@@ -59,7 +59,7 @@ export default function AddActionModal({
           />
           <p
             className={`mt-2 ml-1 text-xs italic ${
-              functionNameError ? 'text-red-500' : 'text-gray-500'
+              functionNameError ? 'text-red-500' : 'text-muted-foreground'
             }`}
           >
             {functionNameError

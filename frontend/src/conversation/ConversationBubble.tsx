@@ -458,7 +458,7 @@ const ConversationBubble = forwardRef<
             <div
               className={`fade-in-bubble bg-answer-bubble mr-5 flex max-w-full rounded-[18px] px-6 py-4.5 ${
                 type === 'ERROR'
-                  ? 'text-destructive/80 dark:border-destructive relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal dark:text-white'
+                  ? 'text-destructive/80 dark:border-destructive relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal dark:bg-destructive/15 dark:text-white'
                   : 'flex-col rounded-3xl'
               }`}
             >

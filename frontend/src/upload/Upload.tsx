@@ -203,14 +203,14 @@ function Upload({
                 {files.map((file) => (
                   <p
                     key={file.name}
-                    className="text-gray-6000 truncate overflow-hidden text-ellipsis dark:text-foreground"
+                    className="truncate overflow-hidden text-ellipsis text-muted-foreground"
                     title={file.name}
                   >
                     {file.name}
                   </p>
                 ))}
                 {files.length === 0 && (
-                  <p className="text-gray-6000 dark:text-foreground text-[14px]">
+                  <p className="text-muted-foreground text-[14px]">
                     {t('modals.uploadDoc.noFilesSelected')}
                   </p>
                 )}
@@ -913,7 +913,7 @@ function Upload({
               disabled={isUploadDisabled()}
               className={`rounded-3xl px-4 py-2 text-[14px] font-medium ${
                 isUploadDisabled()
-                  ? 'cursor-not-allowed bg-gray-300 text-gray-500'
+                  ? 'cursor-not-allowed bg-gray-300 text-gray-500 dark:bg-muted dark:text-muted-foreground'
                   : 'bg-primary hover:bg-primary/90 cursor-pointer text-white'
               }`}
             >

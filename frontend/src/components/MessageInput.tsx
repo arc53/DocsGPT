@@ -1620,7 +1620,7 @@ export default function MessageInput({
                 className={`xs:px-3 xs:py-1.5 dark:border-purple-taupe flex items-center rounded-[32px] border px-2 py-1 transition-colors ${
                   recordingState === 'recording'
                     ? 'border-[#B42318] bg-[#FEE4E2] text-[#B42318] dark:bg-[#4A2323]'
-                    : 'border-[#AAAAAA] hover:bg-gray-100 dark:hover:bg-[#2C2E3C]'
+                    : 'border-border hover:bg-gray-100 dark:hover:bg-accent'
                 } ${
                   loading || recordingState === 'transcribing'
                     ? 'cursor-not-allowed opacity-60'

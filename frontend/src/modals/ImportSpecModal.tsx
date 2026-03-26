@@ -215,7 +215,7 @@ export default function ImportSpecModal({
                   {parsedResult.metadata.description}
                 </p>
               )}
-              <p className="mt-2 text-xs text-gray-500">
+              <p className="mt-2 text-xs text-muted-foreground">
                 {t('modals.importSpec.version')}:{' '}
                 {parsedResult.metadata.version}
               </p>

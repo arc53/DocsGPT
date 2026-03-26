@@ -1423,12 +1423,12 @@ function WorkflowBuilderInner() {
                         },
                         {
                           text: ' or drag and drop',
-                          colorClass: 'text-gray-500',
+                          colorClass: 'text-muted-foreground',
                         },
                       ]}
                       className="border-border rounded-lg border-2 border-dashed p-3 text-center transition-colors"
                     />
-                    <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                    <p className="mt-1 text-[11px] text-muted-foreground">
                       Image updates are included the next time you save.
                     </p>
                   </div>
@@ -1608,10 +1608,10 @@ function WorkflowBuilderInner() {
                     <Database size={18} />
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                    <span className="text-sm font-medium text-foreground">
                       Set State
                     </span>
-                    <span className="text-[10px] text-gray-400">
+                    <span className="text-[10px] text-muted-foreground">
                       Modify workflow variables
                     </span>
                   </div>
@@ -1625,10 +1625,10 @@ function WorkflowBuilderInner() {
                     <GitBranch size={18} />
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                    <span className="text-sm font-medium text-foreground">
                       If / Else
                     </span>
-                    <span className="text-[10px] text-gray-400">
+                    <span className="text-[10px] text-muted-foreground">
                       Conditional branching
                     </span>
                   </div>
@@ -2041,7 +2041,7 @@ function WorkflowBuilderInner() {
                                         rows={2}
                                         placeholder="input.foo + 1"
                                       />
-                                      <p className="mb-3 text-[10px] text-gray-400">
+                                      <p className="mb-3 text-[10px] text-muted-foreground">
                                         Use Common Expression Language to create
                                         a custom expression.{' '}
                                         <a
@@ -2376,7 +2376,7 @@ function WorkflowBuilderInner() {
                                             rows={2}
                                             placeholder="Enter condition, e.g. input == 5"
                                           />
-                                          <p className="mt-1 text-[10px] text-gray-400">
+                                          <p className="mt-1 text-[10px] text-muted-foreground">
                                             Use Common Expression Language to
                                             create a custom expression.{' '}
                                             <a

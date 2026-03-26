@@ -1,30 +1,31 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import { formatBytes } from '../utils/stringUtils';
-import { selectToken } from '../preferences/preferenceSlice';
+
+import userService from '../api/services/userService';
+import ArrowLeft from '../assets/arrow-left.svg';
+import CheckmarkIcon from '../assets/checkMark2.svg';
+import EyeView from '../assets/eye-view.svg';
+import FileIcon from '../assets/file.svg';
+import FolderIcon from '../assets/folder.svg';
+import SyncIcon from '../assets/sync.svg';
+import ThreeDots from '../assets/three-dots.svg';
+import { useLoaderState, useOutsideAlerter } from '../hooks';
+import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
+import { selectToken } from '../preferences/preferenceSlice';
+import { formatBytes } from '../utils/stringUtils';
 import Chunks from './Chunks';
 import ContextMenu, { MenuOption } from './ContextMenu';
 import SkeletonLoader from './SkeletonLoader';
-import ConfirmationModal from '../modals/ConfirmationModal';
-import userService from '../api/services/userService';
-import FileIcon from '../assets/file.svg';
-import FolderIcon from '../assets/folder.svg';
-import ArrowLeft from '../assets/arrow-left.svg';
-import ThreeDots from '../assets/three-dots.svg';
-import EyeView from '../assets/eye-view.svg';
-import SyncIcon from '../assets/sync.svg';
-import CheckmarkIcon from '../assets/checkMark2.svg';
-import { useOutsideAlerter, useLoaderState } from '../hooks';
 import {
   Table,
+  TableBody,
+  TableCell,
   TableContainer,
   TableHead,
-  TableBody,
-  TableRow,
   TableHeader,
-  TableCell,
+  TableRow,
 } from './Table';
 
 interface FileNode {
@@ -325,26 +326,26 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
         {/* Left side with path navigation */}
         <div className="flex w-full items-center sm:w-auto">
           <button
-            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm font-medium text-gray-400 dark:border-0 dark:text-gray-500"
+            className="text-muted-foreground mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm font-medium dark:border-0"
             onClick={handleBackNavigation}
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
           </button>
 
           <div className="flex flex-wrap items-center">
-            <span className="font-semibold break-words text-[#7D54D1]">
+            <span className="font-semibold wrap-break-word text-[#7D54D1]">
               {sourceName}
             </span>
             {currentPath.length > 0 && (
               <>
-                <span className="mx-1 flex-shrink-0 text-gray-500">/</span>
+                <span className="text-muted-foreground mx-1 shrink-0">/</span>
                 {currentPath.map((dir, index) => (
                   <React.Fragment key={index}>
-                    <span className="break-words text-gray-700">
+                    <span className="dark:text-foreground wrap-break-word text-gray-700">
                       {dir}
                     </span>
                     {index < currentPath.length - 1 && (
-                      <span className="mx-1 flex-shrink-0 text-gray-500">
+                      <span className="text-muted-foreground mx-1 shrink-0">
                         /
                       </span>
                     )}
@@ -364,7 +365,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
             disabled={isSyncing}
             className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] font-medium whitespace-nowrap transition-colors ${
               isSyncing
-                ? 'cursor-not-allowed bg-gray-300 text-gray-600 dark:bg-gray-600 dark:text-gray-400'
+                ? 'dark:bg-muted dark:text-muted-foreground cursor-not-allowed bg-gray-300 text-gray-600'
                 : 'bg-primary hover:bg-primary/90 text-white'
             }`}
             title={
@@ -402,7 +403,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
                   <img
                     src={FolderIcon}
                     alt={t('settings.sources.parentFolderAlt')}
-                    className="mr-2 h-4 w-4 flex-shrink-0"
+                    className="mr-2 h-4 w-4 shrink-0"
                   />
                   <span className="truncate">..</span>
                 </div>
@@ -449,7 +450,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
                 <img
                   src={FolderIcon}
                   alt={t('settings.sources.folderAlt')}
-                  className="mr-2 h-4 w-4 flex-shrink-0"
+                  className="mr-2 h-4 w-4 shrink-0"
                 />
                 <span className="truncate">{name}</span>
               </div>
@@ -466,7 +467,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
-                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB] dark:hover:bg-muted"
+                  className="dark:hover:bg-muted inline-flex h-[35px] w-6 shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
                   aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
@@ -512,7 +513,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
                 <img
                   src={FileIcon}
                   alt={t('settings.sources.fileAlt')}
-                  className="mr-2 h-4 w-4 flex-shrink-0"
+                  className="mr-2 h-4 w-4 shrink-0"
                 />
                 <span className="truncate">{displayName}</span>
               </div>
@@ -527,7 +528,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
-                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB] dark:hover:bg-muted"
+                  className="dark:hover:bg-muted inline-flex h-[35px] w-6 shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
                   aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
@@ -625,14 +626,14 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
             }
           }}
           placeholder={t('settings.sources.searchFiles')}
-          className={`h-[38px] w-full border border-border px-4 py-2 dark:border-border ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'} bg-transparent focus:outline-none`}
+          className={`border-border dark:border-border h-[38px] w-full border px-4 py-2 ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'} bg-transparent focus:outline-none`}
         />
 
         {searchQuery && (
-          <div className="absolute top-full right-0 left-0 z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-[12px] border border-t-0 border-border bg-card shadow-lg transition-all duration-200 dark:border-border dark:bg-card">
+          <div className="border-border bg-card dark:border-border dark:bg-card absolute top-full right-0 left-0 z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-2xl border border-t-0 shadow-lg transition-all duration-200">
             <div className="max-h-[calc(100vh-200px)] overflow-x-hidden overflow-y-auto overscroll-contain">
               {searchResults.length === 0 ? (
-                <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
+                <div className="text-muted-foreground py-2 text-center text-sm">
                   {t('settings.sources.noResults')}
                 </div>
               ) : (
@@ -641,9 +642,9 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
                     key={index}
                     onClick={() => handleSearchSelect(result)}
                     title={result.path}
-                    className={`flex min-w-0 cursor-pointer items-center px-3 py-2 hover:bg-muted dark:hover:bg-muted ${
+                    className={`hover:bg-muted dark:hover:bg-muted flex min-w-0 cursor-pointer items-center px-3 py-2 ${
                       index !== searchResults.length - 1
-                        ? 'border-b border-border dark:border-border'
+                        ? 'border-border dark:border-border border-b'
                         : ''
                     }`}
                   >
@@ -654,7 +655,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
                           ? t('settings.sources.fileAlt')
                           : t('settings.sources.folderAlt')
                       }
-                      className="mr-2 h-4 w-4 flex-shrink-0"
+                      className="mr-2 h-4 w-4 shrink-0"
                     />
                     <span className="flex-1 truncate text-sm">
                       {result.name}
