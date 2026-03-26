@@ -18,6 +18,20 @@ export interface Attachment {
   token_count?: number;
 }
 
+export interface ResearchStep {
+  query: string;
+  rationale?: string;
+  status: 'pending' | 'researching' | 'complete';
+}
+
+export interface ResearchState {
+  plan?: ResearchStep[];
+  complexity?: string;
+  status?: string;
+  elapsed_seconds?: number;
+  tokens_used?: number;
+}
+
 export interface ConversationState {
   queries: Query[];
   status: Status;
@@ -50,6 +64,7 @@ export interface Query {
   attachments?: { id: string; fileName: string }[];
   structured?: boolean;
   schema?: object;
+  research?: ResearchState;
 }
 
 export interface RetrievalPayload {

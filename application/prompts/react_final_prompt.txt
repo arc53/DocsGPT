@@ -1,3 +1,0 @@
-Query: {query}
-Observations: {observations}
-Now, using the insights from the observations, formulate a well-structured and precise final answer.

@@ -493,6 +493,486 @@ This is test documentation for integration tests.
             return False
 
     # -------------------------------------------------------------------------
+    # Agentic / Research Agent Tests
+    # -------------------------------------------------------------------------
+
+    def _create_agent_with_type(self, agent_type: str) -> Optional[tuple]:
+        """Create a test agent with the given agent_type. Returns (agent_id, api_key) or None."""
+        if not self.is_authenticated:
+            return None
+
+        payload = {
+            "name": f"Chat Test {agent_type.title()} Agent {int(time.time())}",
+            "description": f"Integration test {agent_type} agent",
+            "prompt_id": "default",
+            "chunks": 2,
+            "retriever": "classic",
+            "agent_type": agent_type,
+            "status": "draft",
+        }
+
+        try:
+            response = self.post("/api/create_agent", json=payload, timeout=10)
+            if response.status_code in [200, 201]:
+                result = response.json()
+                agent_id = result.get("id")
+                api_key = result.get("key")
+                if agent_id:
+                    return (agent_id, api_key)
+        except Exception:
+            pass
+
+        return None
+
+    def test_stream_agentic_agent(self) -> bool:
+        """Test /stream endpoint with an agentic agent."""
+        test_name = "Stream endpoint (agentic agent)"
+
+        agent_result = self._create_agent_with_type("agentic")
+        if not agent_result:
+            if not self.require_auth(test_name):
+                return True
+            self.record_result(test_name, True, "Skipped (no agent)")
+            return True
+
+        agent_id, _ = agent_result
+        self.print_header(f"Testing {test_name}")
+
+        payload = {
+            "question": "What is DocsGPT?",
+            "history": "[]",
+            "agent_id": agent_id,
+        }
+
+        try:
+            self.print_info(f"POST /stream with agentic agent_id={agent_id[:8]}...")
+
+            response = requests.post(
+                f"{self.base_url}/stream",
+                json=payload,
+                headers=self.headers,
+                stream=True,
+                timeout=60,
+            )
+
+            self.print_info(f"Status Code: {response.status_code}")
+
+            if response.status_code != 200:
+                self.print_error(f"Expected 200, got {response.status_code}")
+                self.record_result(test_name, False, f"Status {response.status_code}")
+                return False
+
+            events = []
+            full_response = ""
+            for line in response.iter_lines():
+                if line:
+                    line_str = line.decode("utf-8")
+                    if line_str.startswith("data: "):
+                        try:
+                            data = json_module.loads(line_str[6:])
+                            events.append(data)
+                            if data.get("type") in ["stream", "answer"]:
+                                full_response += data.get("message", "") or data.get("answer", "")
+                            elif data.get("type") == "end":
+                                break
+                        except json_module.JSONDecodeError:
+                            pass
+
+            self.print_success(f"Received {len(events)} events")
+            if full_response:
+                self.print_success(f"Answer preview: {full_response[:100]}...")
+            self.record_result(test_name, True, "Success")
+            return True
+
+        except Exception as e:
+            self.print_error(f"Error: {str(e)}")
+            self.record_result(test_name, False, str(e))
+            return False
+
+    def test_answer_agentic_agent(self) -> bool:
+        """Test /api/answer endpoint with an agentic agent."""
+        test_name = "Answer endpoint (agentic agent)"
+
+        agent_result = self._create_agent_with_type("agentic")
+        if not agent_result:
+            if not self.require_auth(test_name):
+                return True
+            self.record_result(test_name, True, "Skipped (no agent)")
+            return True
+
+        agent_id, _ = agent_result
+        self.print_header(f"Testing {test_name}")
+
+        payload = {
+            "question": "What is DocsGPT?",
+            "history": "[]",
+            "agent_id": agent_id,
+        }
+
+        try:
+            self.print_info(f"POST /api/answer with agentic agent_id={agent_id[:8]}...")
+
+            response = self.post("/api/answer", json=payload, timeout=60)
+
+            self.print_info(f"Status Code: {response.status_code}")
+
+            if response.status_code != 200:
+                self.print_error(f"Expected 200, got {response.status_code}")
+                self.record_result(test_name, False, f"Status {response.status_code}")
+                return False
+
+            result = response.json()
+            answer = result.get("answer", "")
+            self.print_success(f"Answer received: {answer[:100]}...")
+            self.record_result(test_name, True, "Success")
+            return True
+
+        except Exception as e:
+            self.print_error(f"Error: {str(e)}")
+            self.record_result(test_name, False, str(e))
+            return False
+
+    def test_stream_research_agent(self) -> bool:
+        """Test /stream endpoint with a research agent.
+
+        Research agents emit additional SSE event types:
+        - research_plan: the decomposed research steps
+        - research_progress: per-step status updates
+        """
+        test_name = "Stream endpoint (research agent)"
+
+        agent_result = self._create_agent_with_type("research")
+        if not agent_result:
+            if not self.require_auth(test_name):
+                return True
+            self.record_result(test_name, True, "Skipped (no agent)")
+            return True
+
+        agent_id, _ = agent_result
+        self.print_header(f"Testing {test_name}")
+
+        payload = {
+            "question": "What is DocsGPT?",
+            "history": "[]",
+            "agent_id": agent_id,
+        }
+
+        try:
+            self.print_info(f"POST /stream with research agent_id={agent_id[:8]}...")
+
+            response = requests.post(
+                f"{self.base_url}/stream",
+                json=payload,
+                headers=self.headers,
+                stream=True,
+                timeout=120,
+            )
+
+            self.print_info(f"Status Code: {response.status_code}")
+
+            if response.status_code != 200:
+                self.print_error(f"Expected 200, got {response.status_code}")
+                self.record_result(test_name, False, f"Status {response.status_code}")
+                return False
+
+            events = []
+            full_response = ""
+            saw_plan = False
+            saw_progress = False
+            for line in response.iter_lines():
+                if line:
+                    line_str = line.decode("utf-8")
+                    if line_str.startswith("data: "):
+                        try:
+                            data = json_module.loads(line_str[6:])
+                            events.append(data)
+                            event_type = data.get("type", "")
+                            if event_type in ["stream", "answer"]:
+                                full_response += data.get("message", "") or data.get("answer", "")
+                            elif event_type == "research_plan":
+                                saw_plan = True
+                                steps = data.get("data", {}).get("steps", [])
+                                self.print_info(f"Research plan: {len(steps)} steps, complexity={data.get('data', {}).get('complexity')}")
+                            elif event_type == "research_progress":
+                                saw_progress = True
+                            elif event_type == "end":
+                                break
+                        except json_module.JSONDecodeError:
+                            pass
+
+            self.print_success(f"Received {len(events)} events")
+            if saw_plan:
+                self.print_success("Received research_plan event")
+            if saw_progress:
+                self.print_success("Received research_progress events")
+            if full_response:
+                self.print_success(f"Report preview: {full_response[:100]}...")
+
+            self.record_result(test_name, True, "Success")
+            return True
+
+        except Exception as e:
+            self.print_error(f"Error: {str(e)}")
+            self.record_result(test_name, False, str(e))
+            return False
+
+    def test_answer_research_agent(self) -> bool:
+        """Test /api/answer endpoint with a research agent."""
+        test_name = "Answer endpoint (research agent)"
+
+        agent_result = self._create_agent_with_type("research")
+        if not agent_result:
+            if not self.require_auth(test_name):
+                return True
+            self.record_result(test_name, True, "Skipped (no agent)")
+            return True
+
+        agent_id, _ = agent_result
+        self.print_header(f"Testing {test_name}")
+
+        payload = {
+            "question": "What is DocsGPT?",
+            "history": "[]",
+            "agent_id": agent_id,
+        }
+
+        try:
+            self.print_info(f"POST /api/answer with research agent_id={agent_id[:8]}...")
+
+            response = self.post("/api/answer", json=payload, timeout=120)
+
+            self.print_info(f"Status Code: {response.status_code}")
+
+            if response.status_code != 200:
+                self.print_error(f"Expected 200, got {response.status_code}")
+                self.record_result(test_name, False, f"Status {response.status_code}")
+                return False
+
+            result = response.json()
+            answer = result.get("answer", "")
+            self.print_success(f"Answer received: {answer[:100]}...")
+            self.record_result(test_name, True, "Success")
+            return True
+
+        except Exception as e:
+            self.print_error(f"Error: {str(e)}")
+            self.record_result(test_name, False, str(e))
+            return False
+
+    # -------------------------------------------------------------------------
+    # Workflow with Agentic Node Tests
+    # -------------------------------------------------------------------------
+
+    def _create_workflow_with_agentic_node(self) -> Optional[str]:
+        """Create a workflow with a single agentic agent node.
+
+        Returns the workflow_id or None on failure.
+        """
+        nodes = [
+            {
+                "id": "start_1",
+                "type": "start",
+                "title": "Start",
+                "data": {},
+            },
+            {
+                "id": "agent_1",
+                "type": "agent",
+                "title": "Agentic Node",
+                "data": {
+                    "agent_type": "agentic",
+                    "system_prompt": "You are a helpful assistant.",
+                    "prompt_template": "",
+                    "stream_to_user": True,
+                    "tools": [],
+                    "sources": [],
+                    "chunks": "2",
+                },
+            },
+            {
+                "id": "end_1",
+                "type": "end",
+                "title": "End",
+                "data": {},
+            },
+        ]
+        edges = [
+            {"id": "edge_1", "source": "start_1", "target": "agent_1"},
+            {"id": "edge_2", "source": "agent_1", "target": "end_1"},
+        ]
+
+        payload = {
+            "name": f"Agentic Workflow Test {int(time.time())}",
+            "nodes": nodes,
+            "edges": edges,
+        }
+
+        try:
+            response = self.post("/api/workflows", json=payload, timeout=15)
+            if response.status_code in [200, 201]:
+                result = response.json()
+                return result.get("id")
+        except Exception:
+            pass
+
+        return None
+
+    def _create_workflow_agent(self, workflow_id: str) -> Optional[tuple]:
+        """Create an agent of type 'workflow' referencing a workflow.
+
+        Returns (agent_id, api_key) or None.
+        """
+        payload = {
+            "name": f"Workflow Agent Test {int(time.time())}",
+            "description": "Integration test workflow agent with agentic node",
+            "prompt_id": "default",
+            "chunks": 2,
+            "retriever": "classic",
+            "agent_type": "workflow",
+            "workflow": workflow_id,
+            "status": "draft",
+        }
+
+        try:
+            response = self.post("/api/create_agent", json=payload, timeout=10)
+            if response.status_code in [200, 201]:
+                result = response.json()
+                agent_id = result.get("id")
+                api_key = result.get("key")
+                if agent_id:
+                    return (agent_id, api_key)
+        except Exception:
+            pass
+
+        return None
+
+    def test_stream_workflow_with_agentic_node(self) -> bool:
+        """Test /stream with a workflow agent that contains an agentic node."""
+        test_name = "Stream endpoint (workflow with agentic node)"
+
+        if not self.require_auth(test_name):
+            return True
+
+        workflow_id = self._create_workflow_with_agentic_node()
+        if not workflow_id:
+            self.print_warning("Could not create workflow")
+            self.record_result(test_name, True, "Skipped (workflow creation failed)")
+            return True
+
+        agent_result = self._create_workflow_agent(workflow_id)
+        if not agent_result:
+            self.print_warning("Could not create workflow agent")
+            self.record_result(test_name, True, "Skipped (agent creation failed)")
+            return True
+
+        agent_id, _ = agent_result
+        self.print_header(f"Testing {test_name}")
+
+        payload = {
+            "question": "What is DocsGPT?",
+            "history": "[]",
+            "agent_id": agent_id,
+        }
+
+        try:
+            self.print_info(f"POST /stream with workflow agent_id={agent_id[:8]}...")
+            self.print_info(f"Workflow ID: {workflow_id}")
+
+            response = requests.post(
+                f"{self.base_url}/stream",
+                json=payload,
+                headers=self.headers,
+                stream=True,
+                timeout=60,
+            )
+
+            self.print_info(f"Status Code: {response.status_code}")
+
+            if response.status_code != 200:
+                self.print_error(f"Expected 200, got {response.status_code}")
+                self.record_result(test_name, False, f"Status {response.status_code}")
+                return False
+
+            events = []
+            full_response = ""
+            for line in response.iter_lines():
+                if line:
+                    line_str = line.decode("utf-8")
+                    if line_str.startswith("data: "):
+                        try:
+                            data = json_module.loads(line_str[6:])
+                            events.append(data)
+                            if data.get("type") in ["stream", "answer"]:
+                                full_response += data.get("message", "") or data.get("answer", "")
+                            elif data.get("type") == "end":
+                                break
+                        except json_module.JSONDecodeError:
+                            pass
+
+            self.print_success(f"Received {len(events)} events")
+            if full_response:
+                self.print_success(f"Answer preview: {full_response[:100]}...")
+
+            self.record_result(test_name, True, "Success")
+            return True
+
+        except Exception as e:
+            self.print_error(f"Error: {str(e)}")
+            self.record_result(test_name, False, str(e))
+            return False
+
+    def test_answer_workflow_with_agentic_node(self) -> bool:
+        """Test /api/answer with a workflow agent that contains an agentic node."""
+        test_name = "Answer endpoint (workflow with agentic node)"
+
+        if not self.require_auth(test_name):
+            return True
+
+        workflow_id = self._create_workflow_with_agentic_node()
+        if not workflow_id:
+            self.print_warning("Could not create workflow")
+            self.record_result(test_name, True, "Skipped (workflow creation failed)")
+            return True
+
+        agent_result = self._create_workflow_agent(workflow_id)
+        if not agent_result:
+            self.print_warning("Could not create workflow agent")
+            self.record_result(test_name, True, "Skipped (agent creation failed)")
+            return True
+
+        agent_id, _ = agent_result
+        self.print_header(f"Testing {test_name}")
+
+        payload = {
+            "question": "What is DocsGPT?",
+            "history": "[]",
+            "agent_id": agent_id,
+        }
+
+        try:
+            self.print_info(f"POST /api/answer with workflow agent_id={agent_id[:8]}...")
+
+            response = self.post("/api/answer", json=payload, timeout=60)
+
+            self.print_info(f"Status Code: {response.status_code}")
+
+            if response.status_code != 200:
+                self.print_error(f"Expected 200, got {response.status_code}")
+                self.record_result(test_name, False, f"Status {response.status_code}")
+                return False
+
+            result = response.json()
+            answer = result.get("answer", "")
+            self.print_success(f"Answer received: {answer[:100]}...")
+            self.record_result(test_name, True, "Success")
+            return True
+
+        except Exception as e:
+            self.print_error(f"Error: {str(e)}")
+            self.record_result(test_name, False, str(e))
+            return False
+
+    # -------------------------------------------------------------------------
     # Validation Tests
     # -------------------------------------------------------------------------
 
@@ -915,6 +1395,27 @@ This is test documentation for integration tests.
 
         self.test_answer_endpoint_with_agent()
         time.sleep(1)
+
+        # Agentic agent tests
+        self.test_stream_agentic_agent()
+        time.sleep(1)
+
+        self.test_answer_agentic_agent()
+        time.sleep(1)
+
+        # Research agent tests
+        self.test_stream_research_agent()
+        time.sleep(2)
+
+        self.test_answer_research_agent()
+        time.sleep(2)
+
+        # Workflow with agentic node tests
+        self.test_stream_workflow_with_agentic_node()
+        time.sleep(2)
+
+        self.test_answer_workflow_with_agentic_node()
+        time.sleep(2)
 
         # API key tests
         self.test_stream_endpoint_with_api_key()

@@ -60,6 +60,7 @@ class ConversationService:
         is_shared_usage: bool = False,
         shared_token: Optional[str] = None,
         attachment_ids: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Save or update a conversation in the database"""
         if decoded_token is None:
@@ -93,6 +94,11 @@ class ConversationService:
                         f"queries.{index}.timestamp": current_time,
                         f"queries.{index}.attachments": attachment_ids,
                         f"queries.{index}.model_id": model_id,
+                        **(
+                            {f"queries.{index}.metadata": metadata}
+                            if metadata
+                            else {}
+                        ),
                     }
                 },
             )
@@ -124,6 +130,7 @@ class ConversationService:
                             "timestamp": current_time,
                             "attachments": attachment_ids,
                             "model_id": model_id,
+                            **({"metadata": metadata} if metadata else {}),
                         }
                     }
                 },
@@ -156,22 +163,24 @@ class ConversationService:
             if not completion or not completion.strip():
                 completion = question[:50] if question else "New Conversation"
 
+            query_doc = {
+                "prompt": question,
+                "response": response,
+                "thought": thought,
+                "sources": sources,
+                "tool_calls": tool_calls,
+                "timestamp": current_time,
+                "attachments": attachment_ids,
+                "model_id": model_id,
+            }
+            if metadata:
+                query_doc["metadata"] = metadata
+
             conversation_data = {
                 "user": user_id,
                 "date": current_time,
                 "name": completion,
-                "queries": [
-                    {
-                        "prompt": question,
-                        "response": response,
-                        "thought": thought,
-                        "sources": sources,
-                        "tool_calls": tool_calls,
-                        "timestamp": current_time,
-                        "attachments": attachment_ids,
-                        "model_id": model_id,
-                    }
-                ],
+                "queries": [query_doc],
             }
 
             if api_key:

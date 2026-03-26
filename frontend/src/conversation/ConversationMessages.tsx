@@ -140,7 +140,7 @@ export default function ConversationMessages({
       ? LAST_BUBBLE_MARGIN
       : DEFAULT_BUBBLE_MARGIN;
 
-    if (query.thought || query.response || query.tool_calls) {
+    if (query.thought || query.response || query.tool_calls || query.research) {
       const isCurrentlyStreaming =
         status === 'loading' && index === queries.length - 1;
       return (
@@ -152,6 +152,7 @@ export default function ConversationMessages({
           thought={query.thought}
           sources={query.sources}
           toolCalls={query.tool_calls}
+          research={query.research}
           onOpenArtifact={onOpenArtifact}
           feedback={query.feedback}
           isStreaming={isCurrentlyStreaming}

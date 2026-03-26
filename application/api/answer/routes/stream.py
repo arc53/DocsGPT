@@ -80,20 +80,13 @@ class StreamResource(Resource, BaseAnswerResource):
         decoded_token = getattr(request, "decoded_token", None)
         processor = StreamProcessor(data, decoded_token)
         try:
-            processor.initialize()
+            agent = processor.build_agent(data["question"])
             if not processor.decoded_token:
                 return Response(
                     self.error_stream_generate("Unauthorized"),
                     status=401,
                     mimetype="text/event-stream",
                 )
-
-            docs_together, docs_list = processor.pre_fetch_docs(data["question"])
-            tools_data = processor.pre_fetch_tools()
-
-            agent = processor.create_agent(
-                docs_together=docs_together, docs=docs_list, tools_data=tools_data
-            )
 
             if error := self.check_usage(processor.agent_config):
                 return error
