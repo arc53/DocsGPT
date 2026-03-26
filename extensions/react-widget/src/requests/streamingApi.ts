@@ -1,5 +1,3 @@
-import { FEEDBACK } from "@/types";
-
 interface HistoryItem {
   prompt: string;
   response?: string;
@@ -30,7 +28,9 @@ export function fetchAnswerStreaming({
   history = [],
   conversationId = null,
   apiHost = '',
-  onEvent = () => { console.log("Event triggered, but no handler provided."); }
+  onEvent = () => {
+    console.log('Event triggered, but no handler provided.');
+  },
 }: FetchAnswerStreamingProps): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const body = {
@@ -38,7 +38,7 @@ export function fetchAnswerStreaming({
       history: JSON.stringify(history),
       conversation_id: conversationId,
       model: 'default',
-      api_key: apiKey
+      api_key: apiKey,
     };
     fetch(apiHost + '/stream', {
       method: 'POST',
@@ -52,7 +52,7 @@ export function fetchAnswerStreaming({
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
-        let counter = 0;
+        let counter = 0; // eslint-disable-line @typescript-eslint/no-unused-vars
         const processStream = ({
           done,
           value,
@@ -95,12 +95,14 @@ export function fetchAnswerStreaming({
   });
 }
 
-
-export  const sendFeedback = (payload: FeedbackPayload, apiHost: string): Promise<Response> => {
+export const sendFeedback = (
+  payload: FeedbackPayload,
+  apiHost: string,
+): Promise<Response> => {
   return fetch(`${apiHost}/api/feedback`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       question: payload.question,
@@ -108,7 +110,7 @@ export  const sendFeedback = (payload: FeedbackPayload, apiHost: string): Promis
       feedback: payload.feedback,
       api_key: payload.apikey,
       conversation_id: payload.conversation_id,
-      question_index: payload.question_index
+      question_index: payload.question_index,
     }),
   });
 };

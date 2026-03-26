@@ -1,0 +1,97 @@
+name: Publish npm libraries
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: >
+          Version bump type (patch | minor | major) or explicit semver (e.g. 1.2.3).
+          Applies to both docsgpt and docsgpt-react.
+        required: true
+        default: patch
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm-release
+    defaults:
+      run:
+        working-directory: extensions/react-widget
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── docsgpt (HTML embedding bundle) ──────────────────────────────────
+      # Uses the `build` script (parcel build src/browser.tsx) and keeps
+      # the `targets` field so Parcel produces browser-optimised bundles.
+
+      - name: Set package name → docsgpt
+        run: jq --arg n "docsgpt" '.name=$n' package.json > _tmp.json && mv _tmp.json package.json
+
+      - name: Bump version (docsgpt)
+        id: version_docsgpt
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          NEW_VER=$(npm version "${VERSION:-patch}" --no-git-tag-version)
+          echo "version=${NEW_VER#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build docsgpt
+        run: npm run build
+
+      - name: Publish docsgpt
+        run: npm publish --verbose
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # ── docsgpt-react (React library bundle) ─────────────────────────────
+      # Uses `build:react` script (parcel build src/index.ts) and strips
+      # the `targets` field so Parcel treats the output as a plain library
+      # without browser-specific target resolution, producing a smaller bundle.
+
+      - name: Reset package.json from source control
+        run: git checkout -- package.json
+
+      - name: Set package name → docsgpt-react
+        run: jq --arg n "docsgpt-react" '.name=$n' package.json > _tmp.json && mv _tmp.json package.json
+
+      - name: Remove targets field (react library build)
+        run: jq 'del(.targets)' package.json > _tmp.json && mv _tmp.json package.json
+
+      - name: Bump version (docsgpt-react) to match docsgpt
+        run: npm version "${{ steps.version_docsgpt.outputs.version }}" --no-git-tag-version
+
+      - name: Clean dist before react build
+        run: rm -rf dist
+
+      - name: Build docsgpt-react
+        run: npm run build:react
+
+      - name: Publish docsgpt-react
+        run: npm publish --verbose
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # ── Commit the bumped version back to the repository ─────────────────
+
+      - name: Reset package.json and write final version
+        run: |
+          git checkout -- package.json
+          jq --arg v "${{ steps.version_docsgpt.outputs.version }}" '.version=$v' \
+            package.json > _tmp.json && mv _tmp.json package.json
+          npm install --package-lock-only
+
+      - name: Commit version bump
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: bump npm libraries to v${{ steps.version_docsgpt.outputs.version }}"
+          git push
