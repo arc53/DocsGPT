@@ -444,6 +444,7 @@ class StreamProcessor:
                     "user_api_key": effective_key,
                     "json_schema": data_key.get("json_schema"),
                     "default_model_id": data_key.get("default_model_id", ""),
+                    "models": data_key.get("models", []),
                 }
             )
 
@@ -816,6 +817,10 @@ class StreamProcessor:
         from application.llm.handlers.handler_creator import LLMHandlerCreator
         from application.agents.tool_executor import ToolExecutor
 
+        # Compute backup models: agent's configured models minus the active one
+        agent_models = self.agent_config.get("models", [])
+        backup_models = [m for m in agent_models if m != self.model_id]
+
         llm = LLMCreator.create_llm(
             provider or settings.LLM_PROVIDER,
             api_key=system_api_key,
@@ -823,6 +828,7 @@ class StreamProcessor:
             decoded_token=self.decoded_token,
             model_id=self.model_id,
             agent_id=self.agent_id,
+            backup_models=backup_models,
         )
         llm_handler = LLMHandlerCreator.create_handler(
             provider if provider else "default"
