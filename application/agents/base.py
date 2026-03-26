@@ -39,6 +39,7 @@ class BaseAgent(ABC):
         llm=None,
         llm_handler=None,
         tool_executor: Optional[ToolExecutor] = None,
+        backup_models: Optional[List[str]] = None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -63,6 +64,7 @@ class BaseAgent(ABC):
                 decoded_token=decoded_token,
                 model_id=model_id,
                 agent_id=agent_id,
+                backup_models=backup_models,
             )
 
         self.retrieved_docs = retrieved_docs or []
