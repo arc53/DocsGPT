@@ -185,7 +185,10 @@ class ToolExecutor:
                     target_dict[param] = value
 
         # Load tool (with caching)
-        tool = self._get_or_load_tool(tool_data, tool_id, action_name)
+        tool = self._get_or_load_tool(
+            tool_data, tool_id, action_name,
+            headers=headers, query_params=query_params,
+        )
 
         resolved_arguments = (
             {"query_params": query_params, "headers": headers, "body": body}
@@ -238,7 +241,10 @@ class ToolExecutor:
 
         return result, call_id
 
-    def _get_or_load_tool(self, tool_data: Dict, tool_id: str, action_name: str):
+    def _get_or_load_tool(
+        self, tool_data: Dict, tool_id: str, action_name: str,
+        headers: Optional[Dict] = None, query_params: Optional[Dict] = None,
+    ):
         """Load a tool, using cache when possible."""
         cache_key = f"{tool_data['name']}:{tool_id}:{self.user or ''}"
         if cache_key in self._loaded_tools:
@@ -251,8 +257,8 @@ class ToolExecutor:
             tool_config = {
                 "url": action_config["url"],
                 "method": action_config["method"],
-                "headers": {},
-                "query_params": {},
+                "headers": headers or {},
+                "query_params": query_params or {},
             }
             if "body_content_type" in action_config:
                 tool_config["body_content_type"] = action_config.get(
