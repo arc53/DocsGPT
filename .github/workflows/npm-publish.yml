@@ -10,6 +10,10 @@ on:
         required: true
         default: patch
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -88,10 +92,23 @@ jobs:
             package.json > _tmp.json && mv _tmp.json package.json
           npm install --package-lock-only
 
-      - name: Commit version bump
+      - name: Commit version bump and create PR
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="chore/bump-npm-v${{ steps.version_docsgpt.outputs.version }}"
+          git checkout -b "$BRANCH"
           git add package.json package-lock.json
           git commit -m "chore: bump npm libraries to v${{ steps.version_docsgpt.outputs.version }}"
-          git push
+          git push origin "$BRANCH"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create PR
+        run: |
+          gh pr create \
+            --title "chore: bump npm libraries to v${{ steps.version_docsgpt.outputs.version }}" \
+            --body "Automated version bump after npm publish." \
+            --base main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
