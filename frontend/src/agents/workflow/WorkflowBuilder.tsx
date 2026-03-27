@@ -701,7 +701,7 @@ function WorkflowBuilderInner() {
           setDefaultAgentModelId(preferredDefaultModel);
         }
 
-        const toolsResponse = await userService.getUserTools(null);
+        const toolsResponse = await userService.getUserTools(token);
         if (toolsResponse.ok) {
           const toolsData = await toolsResponse.json();
           setAvailableTools(toolsData.tools);

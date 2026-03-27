@@ -40,9 +40,12 @@ import {
 } from '@/components/ui/select';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 
+import { useSelector } from 'react-redux';
+
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
+import { selectToken } from '../preferences/preferenceSlice';
 import { WorkflowNode } from './types/workflow';
 import {
   AgentNode,
@@ -77,6 +80,7 @@ interface UserTool {
 
 function WorkflowBuilderInner() {
   const navigate = useNavigate();
+  const token = useSelector(selectToken);
   const { agentId } = useParams<{ agentId?: string }>();
   const [searchParams] = useSearchParams();
   const folderId = searchParams.get('folder_id');
@@ -304,7 +308,7 @@ function WorkflowBuilderInner() {
           setAvailableModels(modelService.transformModels(modelsData.models));
         }
 
-        const toolsResponse = await userService.getUserTools(null);
+        const toolsResponse = await userService.getUserTools(token);
         if (toolsResponse.ok) {
           const toolsData = await toolsResponse.json();
           setAvailableTools(toolsData.tools);
