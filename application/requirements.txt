@@ -35,7 +35,7 @@ joblib==1.5.3
 jsonpatch==1.33
 jsonpointer==3.0.0
 kombu==5.6.1
-langchain==1.2.0
+langchain==1.2.3
 langchain-community==0.4.1
 langchain-core==1.2.5
 langchain-openai==1.1.6
