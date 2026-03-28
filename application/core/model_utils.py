@@ -15,6 +15,7 @@ def get_api_key_for_provider(provider: str) -> Optional[str]:
         "groq": settings.GROQ_API_KEY,
         "huggingface": settings.HUGGINGFACE_API_KEY,
         "azure_openai": settings.API_KEY,
+        "modelslab": settings.MODELSLAB_API_KEY,
         "docsgpt": None,
         "llama.cpp": None,
     }

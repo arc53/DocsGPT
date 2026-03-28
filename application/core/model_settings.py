@@ -19,6 +19,7 @@ class ModelProvider(str, Enum):
     PREMAI = "premai"
     SAGEMAKER = "sagemaker"
     NOVITA = "novita"
+    MODELSLAB = "modelslab"
 
 
 @dataclass
@@ -114,6 +115,10 @@ class ModelRegistry:
             settings.LLM_PROVIDER == "openrouter" and settings.API_KEY
         ):
             self._add_openrouter_models(settings)
+        if settings.MODELSLAB_API_KEY or (
+            settings.LLM_PROVIDER == "modelslab" and settings.API_KEY
+        ):
+            self._add_modelslab_models(settings)
         if settings.HUGGINGFACE_API_KEY or (
             settings.LLM_PROVIDER == "huggingface" and settings.API_KEY
         ):
@@ -243,6 +248,21 @@ class ModelRegistry:
                     self.models[model.id] = model
                     return
         for model in OPENROUTER_MODELS:
+            self.models[model.id] = model
+
+    def _add_modelslab_models(self, settings):
+        from application.core.model_configs import MODELSLAB_MODELS
+
+        if settings.MODELSLAB_API_KEY:
+            for model in MODELSLAB_MODELS:
+                self.models[model.id] = model
+            return
+        if settings.LLM_PROVIDER == "modelslab" and settings.LLM_NAME:
+            for model in MODELSLAB_MODELS:
+                if model.id == settings.LLM_NAME:
+                    self.models[model.id] = model
+                    return
+        for model in MODELSLAB_MODELS:
             self.models[model.id] = model
 
     def _add_docsgpt_models(self, settings):
