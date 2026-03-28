@@ -27,6 +27,8 @@ ANTHROPIC_ATTACHMENTS = IMAGE_ATTACHMENTS
 
 OPENROUTER_ATTACHMENTS = IMAGE_ATTACHMENTS
 
+NOVITA_ATTACHMENTS = IMAGE_ATTACHMENTS
+
 
 OPENAI_MODELS = [
     AvailableModel(
@@ -192,6 +194,46 @@ OPENROUTER_MODELS = [
         ),
     ),
 ]
+
+NOVITA_MODELS = [
+    AvailableModel(
+        id="moonshotai/kimi-k2.5",
+        provider=ModelProvider.NOVITA,
+        display_name="Kimi K2.5",
+        description="MoE model with function calling, structured output, reasoning, and vision",
+        capabilities=ModelCapabilities(
+            supports_tools=True,
+            supports_structured_output=True,
+            supported_attachment_types=NOVITA_ATTACHMENTS,
+            context_window=262144,
+        ),
+    ),
+    AvailableModel(
+        id="zai-org/glm-5",
+        provider=ModelProvider.NOVITA,
+        display_name="GLM-5",
+        description="MoE model with function calling, structured output, and reasoning",
+        capabilities=ModelCapabilities(
+            supports_tools=True,
+            supports_structured_output=True,
+            supported_attachment_types=[],
+            context_window=202800,
+        ),
+    ),
+    AvailableModel(
+        id="minimax/minimax-m2.5",
+        provider=ModelProvider.NOVITA,
+        display_name="MiniMax M2.5",
+        description="MoE model with function calling, structured output, and reasoning",
+        capabilities=ModelCapabilities(
+            supports_tools=True,
+            supports_structured_output=True,
+            supported_attachment_types=[],
+            context_window=204800,
+        ),
+    ),
+]
+
 
 AZURE_OPENAI_MODELS = [
     AvailableModel(
