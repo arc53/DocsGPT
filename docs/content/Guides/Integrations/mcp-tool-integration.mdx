@@ -1,0 +1,66 @@
+---
+title: MCP Tool Integration
+description: Connect external tools to DocsGPT agents using the Model Context Protocol (MCP) standard.
+---
+
+import { Callout } from 'nextra/components'
+import { Steps } from 'nextra/components'
+
+# MCP Tool Integration
+
+The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) integration lets you connect external tool servers to DocsGPT. Your agents can then discover and call tools provided by those servers during conversations — for example, querying a CRM, running code, or accessing a database.
+
+## Setup
+
+<Steps>
+
+### Step 1: Configure Environment Variables (Optional)
+
+Only needed if your MCP servers use OAuth authentication:
+
+```env
+MCP_OAUTH_REDIRECT_URI=https://yourdomain.com/api/mcp_server/callback
+```
+
+If not set, falls back to `API_URL/api/mcp_server/callback`.
+
+### Step 2: Add an MCP Server
+
+Go to **Settings** > **Tools** > **Add Tool** > **MCP Server**. Enter the server URL, select an auth type, and click **Test Connection** to verify, then **Save**.
+
+### Step 3: Enable for Your Agent
+
+In your agent configuration, enable the MCP tools you want the agent to use.
+
+</Steps>
+
+## Authentication Types
+
+| Auth Type | Config Fields |
+|-----------|---------------|
+| **None** | — |
+| **Bearer** | `bearer_token` |
+| **API Key** | `api_key`, `api_key_header` (default: `X-API-Key`) |
+| **Basic** | `username`, `password` |
+| **OAuth** | `oauth_scopes` (optional) |
+
+<Callout type="warning">
+For OAuth in production, `MCP_OAUTH_REDIRECT_URI` must be a publicly accessible URL pointing to your DocsGPT backend.
+</Callout>
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/mcp_server/test` | POST | Test a connection without saving |
+| `/api/mcp_server/save` | POST | Save or update a server configuration |
+| `/api/mcp_server/callback` | GET | OAuth callback handler |
+| `/api/mcp_server/oauth_status/<task_id>` | GET | Poll OAuth flow status |
+| `/api/mcp_server/auth_status` | GET | Batch check auth status for all MCP tools |
+
+## Troubleshooting
+
+- **Connection refused** — Verify the URL and that the server is reachable from your backend.
+- **403 Forbidden** — Check credentials and permissions.
+- **Timed out** — Default is 30s; increase timeout in tool config (max 300s).
+- **OAuth "needs_auth" persists** — Verify `MCP_OAUTH_REDIRECT_URI` is correct and Redis is running.

@@ -29,7 +29,7 @@ export default {
     "title": "OCR",
     "href": "/Guides/ocr"
   },
-  "Integrations": {
+"Integrations": {
     "title": "🔗 Integrations"
   }
 }

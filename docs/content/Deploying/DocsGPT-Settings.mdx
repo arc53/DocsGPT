@@ -214,6 +214,31 @@ If you have configured `AUTH_TYPE=simple_jwt`, the DocsGPT frontend will prompt 
   }}
 />
 
+## S3 Storage Backend
+
+By default DocsGPT stores files locally. Set `STORAGE_TYPE=s3` to use Amazon S3 instead.
+
+| Setting | Description | Default |
+| --- | --- | --- |
+| `STORAGE_TYPE` | `local` or `s3` | `local` |
+| `S3_BUCKET_NAME` | S3 bucket name | `docsgpt-test-bucket` |
+| `SAGEMAKER_ACCESS_KEY` | AWS access key ID | — |
+| `SAGEMAKER_SECRET_KEY` | AWS secret access key | — |
+| `SAGEMAKER_REGION` | AWS region | — |
+| `URL_STRATEGY` | `backend` (proxy through API) or `s3` (direct S3 URLs) | `backend` |
+
+The S3 credentials use `SAGEMAKER_*` variable names because they are shared with the SageMaker integration.
+
+```env
+STORAGE_TYPE=s3
+S3_BUCKET_NAME=your-bucket-name
+SAGEMAKER_ACCESS_KEY=your-aws-access-key-id
+SAGEMAKER_SECRET_KEY=your-aws-secret-access-key
+SAGEMAKER_REGION=us-east-1
+```
+
+Your IAM user needs these permissions on the bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`, `s3:HeadObject`.
+
 ## Exploring More Settings
 
 These are just the basic settings to get you started. The `settings.py` file contains many more advanced options that you can explore to further customize DocsGPT, such as:
