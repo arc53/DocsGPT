@@ -387,31 +387,39 @@ function WorkflowBuilderInner() {
     [],
   );
 
-  const onConnect = useCallback((params: Connection) => {
-    setEdges((eds) => {
-      const exists = eds.some(
-        (e) =>
-          e.source === params.source &&
-          e.sourceHandle === params.sourceHandle &&
-          e.target === params.target &&
-          e.targetHandle === params.targetHandle,
-      );
-      if (exists) return eds;
-
-      const filtered = eds.filter(
-        (e) =>
-          !(
+  const onConnect = useCallback(
+    (params: Connection) => {
+      setEdges((eds) => {
+        const exists = eds.some(
+          (e) =>
             e.source === params.source &&
-            e.sourceHandle === (params.sourceHandle ?? null)
-          ) &&
-          !(
+            e.sourceHandle === params.sourceHandle &&
             e.target === params.target &&
-            e.targetHandle === (params.targetHandle ?? null)
-          ),
-      );
-      return addEdge(params, filtered);
-    });
-  }, []);
+            e.targetHandle === params.targetHandle,
+        );
+        if (exists) return eds;
+
+        const targetNode = nodes.find((n) => n.id === params.target);
+        const isEndNode = targetNode?.type === 'end';
+
+        const filtered = eds.filter(
+          (e) =>
+            !(
+              e.source === params.source &&
+              e.sourceHandle === (params.sourceHandle ?? null)
+            ) &&
+            // End nodes accept multiple incoming edges
+            (isEndNode ||
+              !(
+                e.target === params.target &&
+                e.targetHandle === (params.targetHandle ?? null)
+              )),
+        );
+        return addEdge(params, filtered);
+      });
+    },
+    [nodes],
+  );
 
   const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
     setEdges((eds) => eds.filter((e) => e.id !== edge.id));
