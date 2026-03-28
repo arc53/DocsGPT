@@ -70,12 +70,12 @@ export function MultiSelect({
           role="combobox"
           aria-expanded={open}
           className={cn(
-            'w-full justify-between border-[#E5E5E5] bg-white hover:bg-gray-50 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:hover:bg-[#383838]',
+            'h-auto min-h-[2.5rem] w-full justify-between border-[#E5E5E5] bg-white py-1.5 hover:bg-gray-50 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:hover:bg-[#383838]',
             !selected.length && 'text-gray-500 dark:text-gray-400',
             className,
           )}
         >
-          <div className="flex flex-wrap gap-1">
+          <div className="flex min-w-0 flex-wrap gap-1">
             {selected.length === 0 ? (
               placeholder
             ) : (
@@ -85,9 +85,9 @@ export function MultiSelect({
                   return (
                     <span
                       key={option?.value || label}
-                      className="dark:bg-purple-30/30 bg-violets-are-blue/20 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium text-purple-700 dark:text-purple-300"
+                      className="dark:bg-purple-30/30 bg-violets-are-blue/20 inline-flex max-w-[calc(100%-1rem)] items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium text-purple-700 dark:text-purple-300"
                     >
-                      {label}
+                      <span className="truncate">{label}</span>
                       <span
                         role="button"
                         tabIndex={0}
