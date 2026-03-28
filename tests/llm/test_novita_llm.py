@@ -5,7 +5,7 @@ These tests verify the Novita-specific configuration is applied correctly.
 """
 
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from application.llm.novita import NOVITA_BASE_URL, NovitaLLM
@@ -28,7 +28,11 @@ class FakeChatCompletions:
     class _Choice:
         def __init__(self, content=None, delta=None):
             self.message = FakeChatCompletions._Msg(content=content)
-            self.delta = FakeChatCompletions._Delta(delta=delta)
+            self.delta = FakeChatCompletions._Delta(content=delta)
+
+    class _StreamChunk:
+        def __init__(self, choice):
+            self.choices = [choice]
 
     class _Response:
         def __init__(self, choices=None, lines=None):
@@ -49,8 +53,8 @@ class FakeChatCompletions:
             return FakeChatCompletions._Response(choices=[FakeChatCompletions._Choice(content="novita response")])
         return FakeChatCompletions._Response(
             lines=[
-                FakeChatCompletions._Choice(delta="part1"),
-                FakeChatCompletions._Choice(delta="part2"),
+                FakeChatCompletions._StreamChunk(FakeChatCompletions._Choice(delta="part1")),
+                FakeChatCompletions._StreamChunk(FakeChatCompletions._Choice(delta="part2")),
             ]
         )
 
@@ -73,7 +77,7 @@ def test_novita_llm_uses_novita_base_url():
     """Verify NovitaLLM uses the Novita API endpoint."""
     llm = NovitaLLM(api_key="test-key", user_api_key=None)
     # The client should be configured with Novita's base URL
-    assert llm.client.base_url == NOVITA_BASE_URL
+    assert str(llm.client.base_url) == NOVITA_BASE_URL + "/"
 
 
 @pytest.mark.unit
@@ -117,7 +121,7 @@ def test_novita_llm_custom_base_url():
     """Verify custom base_url can override the default Novita URL."""
     custom_url = "https://custom.novita.endpoint/v1"
     llm = NovitaLLM(api_key="test-key", user_api_key=None, base_url=custom_url)
-    assert llm.client.base_url == custom_url
+    assert str(llm.client.base_url) == custom_url + "/"
 
 
 @pytest.mark.unit
