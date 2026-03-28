@@ -1,163 +1,222 @@
-import React from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-import Arrow2 from '../assets/dropdown-arrow.svg';
-import Edit from '../assets/edit.svg';
-import Trash from '../assets/trash.svg';
-import { DropdownOption, DropdownProps } from './types/Dropdown.types';
+import { ChevronDown, Pencil, Search, Trash2 } from 'lucide-react';
+
+type OptionBase = { id?: string; type?: string };
+type NameIdOption = { name: string; id: string } & OptionBase;
+type LabelValueOption = { label: string; value: string } & OptionBase;
+type ValueDescriptionOption = {
+  value: number;
+  description: string;
+} & OptionBase;
+
+export type DropdownOption =
+  | string
+  | NameIdOption
+  | LabelValueOption
+  | ValueDescriptionOption;
+
+export type { NameIdOption, LabelValueOption, ValueDescriptionOption };
+
+function getOptionText(option: DropdownOption): string {
+  if (typeof option === 'string') return option;
+  if ('name' in option) return option.name;
+  if ('label' in option) return option.label;
+  if ('description' in option)
+    return option.value < 1e9
+      ? `${option.value} (${option.description})`
+      : option.description;
+  return '';
+}
+
+function optionMatches(
+  option: DropdownOption,
+  selected: DropdownOption | null,
+): boolean {
+  if (!selected) return false;
+  if (typeof selected === 'string') return selected === option;
+  if (typeof option === 'string') return false;
+  const a = option as Record<string, unknown>;
+  const b = selected as Record<string, unknown>;
+  if ('name' in a && 'name' in b) return a.name === b.name;
+  if ('label' in a && 'label' in b) return a.label === b.label;
+  if ('value' in a && 'value' in b) return a.value === b.value;
+  return false;
+}
+
+export interface DropdownProps<T extends DropdownOption = DropdownOption> {
+  options: T[];
+  selectedValue: DropdownOption | null;
+  onSelect: (value: T) => void;
+  size?: string;
+  rounded?: 'xl' | '3xl';
+  searchable?: boolean;
+  placeholder?: string;
+  contentSize?: string;
+  showEdit?: boolean;
+  onEdit?: (value: NameIdOption) => void;
+  showDelete?: boolean | ((option: T) => boolean);
+  onDelete?: (id: string) => void;
+}
 
 function Dropdown<T extends DropdownOption>({
   options,
   selectedValue,
   onSelect,
-  size = 'w-32',
-  rounded = 'xl',
-  buttonClassName = 'border-silver bg-white dark:bg-transparent dark:border-dim-gray',
-  optionsClassName = 'border-silver bg-white dark:border-dim-gray dark:bg-dark-charcoal',
-  border = 'border-2',
+  size = 'w-full',
+  rounded = '3xl',
+  searchable = false,
+  placeholder = 'Select...',
+  contentSize = 'text-sm',
   showEdit,
   onEdit,
   showDelete,
   onDelete,
-  placeholder,
-  placeholderClassName = 'text-gray-500 dark:text-gray-400',
-  contentSize = 'text-base',
 }: DropdownProps<T>) {
-  const dropdownRef = React.useRef<HTMLDivElement>(null);
-  const [isOpen, setIsOpen] = React.useState(false);
-  const borderRadius = rounded === 'xl' ? 'rounded-xl' : 'rounded-3xl';
-  const borderTopRadius = rounded === 'xl' ? 'rounded-t-xl' : 'rounded-t-3xl';
+  const ref = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
 
-  const handleClickOutside = (event: MouseEvent) => {
-    if (
-      dropdownRef.current &&
-      !dropdownRef.current.contains(event.target as Node)
-    ) {
-      setIsOpen(false);
-    }
-  };
+  const radius = rounded === '3xl' ? 'rounded-3xl' : 'rounded-xl';
+  const radiusTop = rounded === '3xl' ? 'rounded-t-3xl' : 'rounded-t-xl';
+  const radiusBottom = rounded === '3xl' ? 'rounded-b-3xl' : 'rounded-b-xl';
 
-  React.useEffect(() => {
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery('');
+      }
     };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  useEffect(() => {
+    if (open && searchable && searchRef.current) searchRef.current.focus();
+  }, [open, searchable]);
+
+  const filtered = useMemo(() => {
+    if (!searchable || !query.trim()) return options;
+    const q = query.toLowerCase();
+    return options.filter((o) => getOptionText(o).toLowerCase().includes(q));
+  }, [options, query, searchable]);
+
+  const displayValue = selectedValue ? getOptionText(selectedValue) : null;
+
   return (
-    <div
-      className={[
-        typeof selectedValue === 'string'
-          ? 'relative'
-          : 'relative align-middle',
-        size,
-      ].join(' ')}
-      ref={dropdownRef}
-    >
+    <div className={`relative ${size}`} ref={ref}>
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full cursor-pointer items-center justify-between ${border} ${buttonClassName} px-5 py-3 ${
-          isOpen ? `${borderTopRadius}` : `${borderRadius}`
-        }`}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`border-border bg-card text-foreground flex w-full cursor-pointer items-center justify-between border px-5 py-3 ${open ? radiusTop : radius}`}
       >
-        {typeof selectedValue === 'string' ? (
-          <span className={`dark:text-bright-gray truncate ${contentSize}`}>
-            {selectedValue}
-          </span>
-        ) : (
-          <span
-            className={`truncate ${selectedValue && `dark:text-bright-gray`} ${
-              !selectedValue && ` ${placeholderClassName}`
-            } ${contentSize}`}
-          >
-            {selectedValue && 'label' in selectedValue
-              ? selectedValue.label
-              : selectedValue && 'description' in selectedValue
-                ? `${
-                    selectedValue.value < 1e9
-                      ? selectedValue.value + ` (${selectedValue.description})`
-                      : selectedValue.description
-                  }`
-                : placeholder
-                  ? placeholder
-                  : 'From URL'}
-          </span>
-        )}
-        <img
-          src={Arrow2}
-          alt="arrow"
-          className={`transform ${
-            isOpen ? 'rotate-180' : 'rotate-0'
-          } h-3 w-3 transition-transform`}
+        <span
+          className={`truncate ${contentSize} ${displayValue ? '' : 'text-muted-foreground'}`}
+        >
+          {displayValue ?? placeholder}
+        </span>
+        <ChevronDown
+          className={`text-muted-foreground ml-2 h-4 w-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
-      {isOpen && (
+
+      {open && (
         <div
-          className={`absolute right-0 left-0 z-20 -mt-1 max-h-40 overflow-y-auto rounded-b-xl ${border} ${optionsClassName} shadow-lg`}
+          className={`border-border bg-card absolute inset-x-0 z-20 -mt-px overflow-hidden border border-t-0 shadow-lg ${radiusBottom}`}
         >
-          {options.map((option: any, index) => (
-            <div
-              key={index}
-              className="hover:eerie-black flex cursor-pointer items-center justify-between hover:bg-gray-100 dark:hover:bg-[#545561]"
-            >
-              <span
-                onClick={() => {
-                  onSelect(option);
-                  setIsOpen(false);
-                }}
-                className={`dark:text-light-gray ml-5 flex-1 overflow-hidden py-3 text-ellipsis whitespace-nowrap ${contentSize}`}
-              >
-                {typeof option === 'string'
-                  ? option
-                  : option.name
-                    ? option.name
-                    : option.label
-                      ? option.label
-                      : `${
-                          option.value < 1e9
-                            ? option.value + ` (${option.description})`
-                            : option.description
-                        }`}
-              </span>
-              {showEdit && onEdit && option.type !== 'public' && (
-                <img
-                  src={Edit}
-                  alt="Edit"
-                  className="mr-4 h-4 w-4 cursor-pointer hover:opacity-50"
-                  onClick={() => {
-                    onEdit({
-                      id: option.id,
-                      name: option.name,
-                      type: option.type,
-                    });
-                    setIsOpen(false);
-                  }}
-                />
-              )}
-              {showDelete && onDelete && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete?.(typeof option === 'string' ? option : option.id);
-                  }}
-                  className={`${
-                    typeof showDelete === 'function' && !showDelete(option)
-                      ? 'hidden'
-                      : ''
-                  } mr-2 h-4 w-4 cursor-pointer hover:opacity-50`}
-                >
-                  <img
-                    src={Trash}
-                    alt="Delete"
-                    className={`mr-2 h-4 w-4 cursor-pointer hover:opacity-50 ${
-                      option.type === 'public'
-                        ? 'cursor-not-allowed opacity-50'
-                        : ''
-                    }`}
-                  />
-                </button>
-              )}
+          {searchable && (
+            <div className="border-border flex items-center border-b px-3 py-2">
+              <Search className="text-muted-foreground mr-2 h-4 w-4 shrink-0" />
+              <input
+                ref={searchRef}
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search..."
+                className="text-foreground placeholder:text-muted-foreground w-full bg-transparent text-sm focus:outline-none"
+                onClick={(e) => e.stopPropagation()}
+              />
             </div>
-          ))}
+          )}
+
+          <div className="max-h-48 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <div className="text-muted-foreground px-4 py-3 text-center text-sm">
+                No results found
+              </div>
+            ) : (
+              filtered.map((option, i) => {
+                const active = optionMatches(option, selectedValue);
+                const optObj =
+                  typeof option !== 'string'
+                    ? (option as Record<string, unknown>)
+                    : null;
+
+                return (
+                  <div
+                    key={i}
+                    className={`hover:bg-accent flex cursor-pointer items-center justify-between ${active ? 'bg-accent' : ''}`}
+                  >
+                    <span
+                      onClick={() => {
+                        onSelect(option);
+                        setOpen(false);
+                        setQuery('');
+                      }}
+                      className={`text-foreground flex-1 truncate px-4 py-2.5 ${contentSize}`}
+                    >
+                      {getOptionText(option)}
+                    </span>
+
+                    {showEdit &&
+                      onEdit &&
+                      optObj &&
+                      optObj.type !== 'public' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onEdit({
+                              id: optObj.id as string,
+                              name: optObj.name as string,
+                              type: optObj.type as string,
+                            });
+                            setOpen(false);
+                            setQuery('');
+                          }}
+                          className="hover:bg-accent mr-1 rounded p-1"
+                        >
+                          <Pencil className="text-muted-foreground h-3.5 w-3.5" />
+                        </button>
+                      )}
+
+                    {showDelete && onDelete && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(
+                            typeof option === 'string'
+                              ? option
+                              : ((optObj?.id as string) ?? ''),
+                          );
+                        }}
+                        className={`hover:bg-accent mr-1 rounded p-1 ${
+                          typeof showDelete === 'function' &&
+                          !showDelete(option)
+                            ? 'hidden'
+                            : ''
+                        } ${optObj?.type === 'public' ? 'pointer-events-none opacity-30' : ''}`}
+                      >
+                        <Trash2 className="text-muted-foreground h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
     </div>

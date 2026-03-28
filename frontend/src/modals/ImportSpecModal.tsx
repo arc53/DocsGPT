@@ -166,7 +166,7 @@ export default function ImportSpecModal({
       contentClassName="max-h-[70vh]"
     >
       <div className="flex flex-col gap-4">
-        <h2 className="text-jet dark:text-bright-gray text-xl font-semibold">
+        <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
           {t('modals.importSpec.title')}
         </h2>
 
@@ -178,14 +178,14 @@ export default function ImportSpecModal({
 
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="border-silver dark:border-silver/40 hover:border-purple-30 dark:hover:border-purple-30 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors"
+              className="border-border dark:border-border hover:border-primary dark:hover:border-primary flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors"
             >
               <img
                 src={Upload}
                 alt="Upload"
                 className="mb-3 h-10 w-10 opacity-60 dark:invert"
               />
-              <p className="text-jet dark:text-bright-gray text-sm font-medium">
+              <p className="text-foreground dark:text-foreground text-sm font-medium">
                 {file ? file.name : t('modals.importSpec.dropzoneText')}
               </p>
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -206,8 +206,8 @@ export default function ImportSpecModal({
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            <div className="rounded-xl bg-[#F9F9F9] p-4 dark:bg-[#28292D]">
-              <h3 className="text-jet dark:text-bright-gray font-medium">
+            <div className="bg-muted rounded-xl p-4">
+              <h3 className="text-foreground dark:text-foreground font-medium">
                 {parsedResult.metadata.title}
               </h3>
               {parsedResult.metadata.description && (
@@ -215,7 +215,7 @@ export default function ImportSpecModal({
                   {parsedResult.metadata.description}
                 </p>
               )}
-              <p className="mt-2 text-xs text-gray-500">
+              <p className="text-muted-foreground mt-2 text-xs">
                 {t('modals.importSpec.version')}:{' '}
                 {parsedResult.metadata.version}
               </p>
@@ -227,7 +227,7 @@ export default function ImportSpecModal({
                   type="text"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  className="border-silver dark:border-silver/40 text-jet dark:text-bright-gray w-full rounded-lg border bg-white px-3 py-2 text-sm outline-hidden dark:bg-[#2C2C2C]"
+                  className="border-border dark:border-border text-foreground dark:text-foreground bg-card w-full rounded-lg border px-3 py-2 text-sm outline-hidden"
                   placeholder={
                     parsedResult.metadata.base_url || 'https://api.example.com'
                   }
@@ -236,14 +236,14 @@ export default function ImportSpecModal({
             </div>
 
             <div className="flex items-center justify-between px-1">
-              <p className="text-jet dark:text-bright-gray text-sm font-medium">
+              <p className="text-foreground dark:text-foreground text-sm font-medium">
                 {t('modals.importSpec.actionsFound', {
                   count: parsedResult.actions.length,
                 })}
               </p>
               <button
                 onClick={toggleAll}
-                className="text-purple-30 hover:text-violets-are-blue text-sm"
+                className="text-primary hover:text-primary text-sm"
               >
                 {selectedActions.size === parsedResult.actions.length
                   ? t('modals.importSpec.deselectAll')
@@ -255,13 +255,13 @@ export default function ImportSpecModal({
               {parsedResult.actions.map((action, index) => (
                 <label
                   key={index}
-                  className="border-silver dark:border-silver/40 flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors hover:bg-[#F9F9F9] dark:hover:bg-[#28292D]"
+                  className="border-border dark:border-border hover:bg-muted dark:hover:bg-muted flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors"
                 >
                   <input
                     type="checkbox"
                     checked={selectedActions.has(index)}
                     onChange={() => toggleAction(index)}
-                    className="text-purple-30 focus:ring-purple-30 mt-1 h-4 w-4 rounded border-gray-300"
+                    className="text-primary focus:ring-ring mt-1 h-4 w-4 rounded border-gray-300"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -270,7 +270,7 @@ export default function ImportSpecModal({
                       >
                         {action.method.toUpperCase()}
                       </span>
-                      <span className="text-jet dark:text-bright-gray truncate font-medium">
+                      <span className="text-foreground dark:text-foreground truncate font-medium">
                         {action.name}
                       </span>
                     </div>
@@ -294,7 +294,7 @@ export default function ImportSpecModal({
             <button
               onClick={handleParse}
               disabled={!file || loading}
-              className="bg-purple-30 hover:bg-violets-are-blue flex w-20 items-center justify-center gap-2 rounded-3xl px-5 py-2 text-sm text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
+              className="bg-primary hover:bg-primary/90 flex w-20 items-center justify-center gap-2 rounded-3xl px-5 py-2 text-sm text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading && <Spinner size="small" color="white" />}
               {!loading && t('modals.importSpec.parse')}
@@ -303,14 +303,14 @@ export default function ImportSpecModal({
             <button
               onClick={handleImport}
               disabled={selectedActions.size === 0}
-              className="bg-purple-30 hover:bg-violets-are-blue rounded-3xl px-5 py-2 text-sm text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
+              className="bg-primary hover:bg-primary/90 rounded-3xl px-5 py-2 text-sm text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
             >
               {t('modals.importSpec.import', { count: selectedActions.size })}
             </button>
           )}
           <button
             onClick={handleClose}
-            className="dark:text-light-gray cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
+            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium"
           >
             {t('modals.importSpec.cancel')}
           </button>

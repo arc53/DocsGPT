@@ -150,7 +150,7 @@ function ExecutionDetails({
                   ref={(el) => {
                     if (el && stepRefs) stepRefs.current.set(step.nodeId, el);
                   }}
-                  className="rounded-xl bg-[#F5F5F5] p-3 dark:bg-[#383838]"
+                  className="bg-muted dark:bg-accent rounded-xl p-3"
                 >
                   <div className="flex items-center gap-2 text-sm">
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -181,7 +181,7 @@ function ExecutionDetails({
                   {(hasOutput || step.error || stateVars.length > 0) && (
                     <div className="mt-3 space-y-2 text-sm">
                       {hasOutput && (
-                        <div className="rounded-lg bg-white p-2 dark:bg-[#2A2A2A]">
+                        <div className="bg-muted rounded-lg p-2">
                           <span className="font-medium text-gray-600 dark:text-gray-400">
                             Output:{' '}
                           </span>
@@ -205,7 +205,7 @@ function ExecutionDetails({
                           {stateVars.map(([key, value]) => (
                             <span
                               key={key}
-                              className="inline-flex items-center rounded-lg bg-white px-2 py-1 text-xs dark:bg-[#2A2A2A]"
+                              className="bg-muted inline-flex items-center rounded-lg px-2 py-1 text-xs"
                             >
                               <span className="max-w-[100px] truncate font-medium text-gray-600 dark:text-gray-400">
                                 {key}:
@@ -487,10 +487,10 @@ export default function WorkflowPreview({
     queries.length > 0 ? queries[queries.length - 1].executionSteps || [] : [];
 
   return (
-    <div className="dark:bg-raisin-black flex h-full flex-col bg-white">
-      <div className="border-light-silver dark:bg-raisin-black flex h-[77px] items-center justify-between border-b bg-white px-6 dark:border-[#3A3A3A]">
+    <div className="bg-card flex h-full flex-col">
+      <div className="border-border flex h-[77px] items-center justify-between border-b px-6">
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center rounded-full bg-gray-100 p-3 text-gray-600 dark:bg-[#2C2C2C] dark:text-gray-300">
+          <div className="bg-muted flex items-center justify-center rounded-full p-3 text-gray-600 dark:text-gray-300">
             <Play className="h-4 w-4" />
           </div>
           <div>
@@ -504,7 +504,7 @@ export default function WorkflowPreview({
           </div>
         </div>
         {status === 'loading' && (
-          <span className="text-purple-30 dark:text-violets-are-blue flex items-center gap-1 text-xs">
+          <span className="text-primary dark:text-primary flex items-center gap-1 text-xs">
             <Loader2 className="h-3 w-3 animate-spin" />
             Running
           </span>
@@ -512,7 +512,7 @@ export default function WorkflowPreview({
       </div>
 
       <div className="flex min-h-0 flex-1">
-        <div className="flex w-64 shrink-0 flex-col border-r border-gray-200 dark:border-[#3A3A3A]">
+        <div className="border-border flex w-64 shrink-0 flex-col border-r">
           <div className="flex items-center justify-between px-4 py-3">
             <h3 className="text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
               Workflow
@@ -537,7 +537,7 @@ export default function WorkflowPreview({
           >
             {queries.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center">
-                <div className="mb-2 flex size-14 shrink-0 items-center justify-center rounded-xl bg-gray-100 dark:bg-[#2C2C2C]">
+                <div className="bg-muted mb-2 flex size-14 shrink-0 items-center justify-center rounded-xl">
                   <MessageSquare className="size-6 text-gray-600 dark:text-gray-300" />
                 </div>
                 <p className="text-xl font-semibold text-gray-700 dark:text-gray-200">
@@ -618,7 +618,7 @@ export default function WorkflowPreview({
               </div>
             )}
           </div>
-          <div className="dark:bg-raisin-black absolute right-0 bottom-0 left-0 flex w-full flex-col gap-2 bg-white px-4 pt-2 pb-4">
+          <div className="bg-card absolute right-0 bottom-0 left-0 flex w-full flex-col gap-2 px-4 pt-2 pb-4">
             <MessageInput
               onSubmit={(text) => handleQuestionSubmission(text)}
               loading={status === 'loading'}
