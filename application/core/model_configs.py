@@ -193,6 +193,56 @@ OPENROUTER_MODELS = [
     ),
 ]
 
+MINIMAX_ATTACHMENTS = IMAGE_ATTACHMENTS
+
+MINIMAX_MODELS = [
+    AvailableModel(
+        id="MiniMax-M2.7",
+        provider=ModelProvider.MINIMAX,
+        display_name="MiniMax M2.7",
+        description="Latest flagship model with enhanced reasoning and coding",
+        capabilities=ModelCapabilities(
+            supports_tools=True,
+            supported_attachment_types=MINIMAX_ATTACHMENTS,
+            context_window=204800,
+        ),
+    ),
+    AvailableModel(
+        id="MiniMax-M2.7-highspeed",
+        provider=ModelProvider.MINIMAX,
+        display_name="MiniMax M2.7 Highspeed",
+        description="High-speed version of M2.7 for low-latency scenarios",
+        capabilities=ModelCapabilities(
+            supports_tools=True,
+            supported_attachment_types=MINIMAX_ATTACHMENTS,
+            context_window=204800,
+        ),
+    ),
+    AvailableModel(
+        id="MiniMax-M2.5",
+        provider=ModelProvider.MINIMAX,
+        display_name="MiniMax M2.5",
+        description="MiniMax flagship model with 204K context window",
+        capabilities=ModelCapabilities(
+            supports_tools=True,
+            supported_attachment_types=MINIMAX_ATTACHMENTS,
+            context_window=204800,
+        ),
+    ),
+    AvailableModel(
+        id="MiniMax-M2.5-highspeed",
+        provider=ModelProvider.MINIMAX,
+        display_name="MiniMax M2.5 Highspeed",
+        description="Fast, cost-effective MiniMax model with 204K context window",
+        capabilities=ModelCapabilities(
+            supports_tools=True,
+            supported_attachment_types=MINIMAX_ATTACHMENTS,
+            context_window=204800,
+        ),
+    ),
+]
+
+
 AZURE_OPENAI_MODELS = [
     AvailableModel(
         id="azure-gpt-4",
