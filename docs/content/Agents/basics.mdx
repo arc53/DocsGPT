@@ -44,36 +44,40 @@ The main set of instructions or system [prompt](/Guides/Customising-prompts) tha
 
 ## Understanding Agent Types
 
-DocsGPT allows for different "types" of agents, each with a distinct way of processing information and generating responses. The code for these agent types can be found in the `application/agents/` directory.
+DocsGPT supports several agent types, each with a distinct way of processing information. The code for these can be found in the `application/agents/` directory.
 
-### 1. Classic Agent (`classic_agent.py`)
+### 1. Classic Agent
 
-**How it works:** The Classic Agent follows a traditional Retrieval Augmented Generation (RAG) approach.
-    1.  **Retrieve:** When a query is made, it first searches the selected Source documents for relevant information.
-    2.  **Augment:** This retrieved data is then added to the context, along with the main Prompt and the user's query.
-    3.  **Generate:** The LLM generates a response based on this augmented context. It can also utilize any configured tools if the LLM decides they are necessary.
+The Classic Agent follows a traditional Retrieval Augmented Generation (RAG) approach: it retrieves relevant document chunks, augments the prompt context with them, and generates a response. It can also use configured tools if the LLM decides they are necessary.
 
-**Best for:**
-    * Direct question-answering over a specific set of documents.
-    * Tasks where the primary goal is to extract and synthesize information from the provided sources.
-    * Simpler tool integrations where the decision to use a tool is straightforward.
+**Best for:** Direct question-answering over a specific set of documents and straightforward tool use.
 
-### 2. ReAct Agent (`react_agent.py`)
+### 2. Agentic Agent
 
-**How it works:** The ReAct Agent employs a more sophisticated "Reason and Act" framework. This involves a multi-step process:
-    1.  **Plan (Thought):** Based on the query, its prompt, and available tools/sources, the LLM first generates a plan or a sequence of thoughts on how to approach the problem. You might see this output as a "thought" process during generation.
-    2.  **Act:** The agent then executes actions based on this plan. This might involve querying its sources, using a tool, or performing internal reasoning.
-    3.  **Observe:** It gathers observations from the results of its actions (e.g., data from a tool, snippets from documents).
-    4.  **Repeat (if necessary):** Steps 2 and 3 can be repeated as the agent refines its approach or gathers more information.
-    5.  **Conclude:** Finally, it generates the final answer based on the initial query and all accumulated observations.
+Unlike Classic which pre-fetches documents into the prompt, the Agentic Agent gives the LLM an `internal_search` tool so it can decide **when, what, and whether** to search. This means the LLM controls its own retrieval — it can search multiple times, refine queries, or skip retrieval entirely if the question doesn't need it.
 
-**Best for:**
-    * More complex tasks that require multi-step reasoning or problem-solving.
-    * Scenarios where the agent needs to dynamically decide which tools to use and in what order, based on intermediate results.
-    * Interactive tasks where the agent needs to "think" through a problem.
+**Best for:** Tasks where the agent needs to dynamically decide how to gather information, use multiple tools in sequence, or combine retrieval with external tool calls.
+
+### 3. Research Agent
+
+A multi-phase agent designed for in-depth research tasks:
+1. **Clarification** — Determines if the question needs clarification before proceeding.
+2. **Planning** — Decomposes the question into research steps with adaptive depth based on complexity.
+3. **Research** — Executes each step, calling tools and refining queries as needed.
+4. **Synthesis** — Compiles findings into a final cited report.
+
+Includes budget controls for max steps, timeout, and token limits to keep research bounded.
+
+**Best for:** Complex questions that require multi-step investigation, gathering information from multiple sources, and producing structured reports with citations.
+
+### 4. Workflow Agent
+
+Executes predefined workflows composed of connected nodes (AI Agent, Set State, Condition). See the [Workflow Nodes](/Agents/nodes) page for details on building workflows.
+
+**Best for:** Structured, multi-step processes with branching logic and shared state between steps.
 
 <Callout type="info">
-Developers looking to introduce new agent architectures can explore the `application/agents/` directory. `classic_agent.py` and `react_agent.py` serve as excellent starting points, demonstrating how to inherit from `BaseAgent` and structure agent logic.
+The legacy "ReAct" agent type is still accepted for backwards compatibility but maps to the Classic Agent internally. New agents should use Classic, Agentic, or Research instead.
 </Callout>
 
 ## Navigating and Managing Agents in DocsGPT
