@@ -268,9 +268,10 @@ function Prompt-CloudAPIProviderOptions {
     Write-ColorText "5) HuggingFace Inference API" -ForegroundColor "Yellow"
     Write-ColorText "6) Azure OpenAI" -ForegroundColor "Yellow"
     Write-ColorText "7) Novita" -ForegroundColor "Yellow"
+    Write-ColorText "8) MiniMax" -ForegroundColor "Yellow"
     Write-ColorText "b) Back to Main Menu" -ForegroundColor "Yellow"
     Write-Host ""
-    $script:provider_choice = Read-Host "Choose option (1-7, or b)"
+    $script:provider_choice = Read-Host "Choose option (1-8, or b)"
 }
 
 # Function to prompt for Ollama CPU/GPU options
@@ -982,11 +983,18 @@ function Connect-CloudAPIProvider {
                 Get-APIKey
                 break
             }
+            "8" {  # MiniMax
+                $script:provider_name = "MiniMax"
+                $script:llm_name = "minimax"
+                $script:model_name = "MiniMax-M2.5"
+                Get-APIKey
+                break
+            }
             "b" { Clear-Host; return }
             "B" { Clear-Host; return }
             default {
                 Write-Host ""
-                Write-ColorText "Invalid choice. Please choose 1-7, or b." -ForegroundColor "Red"
+                Write-ColorText "Invalid choice. Please choose 1-8, or b." -ForegroundColor "Red"
                 Start-Sleep -Seconds 1
             }
         }
