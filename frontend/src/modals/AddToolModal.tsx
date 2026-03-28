@@ -131,7 +131,7 @@ export default function AddToolModal({
                         role="button"
                         tabIndex={0}
                         key={index}
-                        className="border-border bg-card flex h-52 w-full cursor-pointer flex-col justify-between rounded-2xl border p-6 hover:bg-accent hover:border-border/80"
+                        className="border-border bg-card hover:bg-accent hover:border-border/80 flex h-52 w-full cursor-pointer flex-col justify-between rounded-2xl border p-6"
                         onClick={() => {
                           setSelectedTool(tool);
                           handleAddTool(tool);

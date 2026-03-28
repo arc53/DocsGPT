@@ -599,7 +599,7 @@ const FileTree: React.FC<FileTreeProps> = ({
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
-                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB] dark:hover:bg-muted"
+                  className="dark:hover:bg-muted inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
                   aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
@@ -656,7 +656,7 @@ const FileTree: React.FC<FileTreeProps> = ({
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
-                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB] dark:hover:bg-muted"
+                  className="dark:hover:bg-muted inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
                   aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
@@ -754,11 +754,11 @@ const FileTree: React.FC<FileTreeProps> = ({
             }
           }}
           placeholder={t('settings.sources.searchFiles')}
-          className={`h-[38px] w-full border border-border px-4 py-2 dark:border-border ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'} bg-transparent focus:outline-none`}
+          className={`border-border dark:border-border h-[38px] w-full border px-4 py-2 ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'} bg-transparent focus:outline-none`}
         />
 
         {searchQuery && (
-          <div className="absolute top-full right-0 left-0 z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-[12px] border border-t-0 border-border bg-card shadow-lg transition-all duration-200 dark:border-border dark:bg-card">
+          <div className="border-border bg-card dark:border-border dark:bg-card absolute top-full right-0 left-0 z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-[12px] border border-t-0 shadow-lg transition-all duration-200">
             <div className="max-h-[calc(100vh-200px)] overflow-x-hidden overflow-y-auto overscroll-contain">
               {searchResults.length === 0 ? (
                 <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -770,9 +770,9 @@ const FileTree: React.FC<FileTreeProps> = ({
                     key={index}
                     onClick={() => handleSearchSelect(result)}
                     title={result.path}
-                    className={`flex min-w-0 cursor-pointer items-center px-3 py-2 hover:bg-muted dark:hover:bg-muted ${
+                    className={`hover:bg-muted dark:hover:bg-muted flex min-w-0 cursor-pointer items-center px-3 py-2 ${
                       index !== searchResults.length - 1
-                        ? 'border-b border-border dark:border-border'
+                        ? 'border-border dark:border-border border-b'
                         : ''
                     }`}
                   >

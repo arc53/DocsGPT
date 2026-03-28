@@ -21,7 +21,7 @@ export default function SharedAgentCard({ agent }: { agent: Agent }) {
           <h2 className="text-foreground text-base font-semibold sm:text-lg">
             {agent.name}
           </h2>
-          <p className="overflow-y-auto text-xs text-wrap break-all text-muted-foreground sm:text-sm">
+          <p className="text-muted-foreground overflow-y-auto text-xs text-wrap break-all sm:text-sm">
             {agent.description}
           </p>
         </div>
@@ -34,7 +34,7 @@ export default function SharedAgentCard({ agent }: { agent: Agent }) {
             </p>
           )}
           {agent.shared_metadata?.shared_at && (
-            <p className="text-xs font-light text-muted-foreground sm:text-sm">
+            <p className="text-muted-foreground text-xs font-light sm:text-sm">
               Shared on{' '}
               {new Date(agent.shared_metadata.shared_at).toLocaleString(
                 'en-US',

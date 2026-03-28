@@ -547,7 +547,7 @@ const Chunks: React.FC<ChunksProps> = ({
             <>
               <div className="mb-3 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
                 <div className="border-border dark:border-border flex h-[38px] w-full flex-1 items-center overflow-hidden rounded-md border">
-                  <div className="flex h-full items-center px-4 font-medium whitespace-nowrap text-gray-700 dark:text-foreground">
+                  <div className="dark:text-foreground flex h-full items-center px-4 font-medium whitespace-nowrap text-gray-700">
                     {totalChunks > 999999
                       ? `${(totalChunks / 1000000).toFixed(2)}M`
                       : totalChunks > 999
@@ -606,7 +606,7 @@ const Chunks: React.FC<ChunksProps> = ({
                       >
                         <div className="w-full">
                           <div className="border-border bg-muted dark:border-border dark:bg-card flex w-full items-center justify-between border-b px-4 py-3">
-                            <div className="text-sm text-[#59636E] dark:text-muted-foreground">
+                            <div className="dark:text-muted-foreground text-sm text-[#59636E]">
                               {chunk.metadata.token_count
                                 ? chunk.metadata.token_count.toLocaleString()
                                 : '-'}{' '}
@@ -641,7 +641,7 @@ const Chunks: React.FC<ChunksProps> = ({
               <div className="w-full">
                 <div className="border-border dark:border-border relative flex w-full flex-col overflow-hidden rounded-[5.86px] border">
                   <div className="border-border bg-muted dark:border-border dark:bg-card flex w-full items-center justify-between border-b px-4 py-3">
-                    <div className="text-sm text-[#59636E] dark:text-muted-foreground">
+                    <div className="dark:text-muted-foreground text-sm text-[#59636E]">
                       {editingChunk.metadata.token_count
                         ? editingChunk.metadata.token_count.toLocaleString()
                         : '-'}{' '}

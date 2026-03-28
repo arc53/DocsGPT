@@ -46,7 +46,7 @@ const TableContainer = React.forwardRef<HTMLDivElement, TableContainerProps>(
       <div className={`relative rounded-[6px] ${className}`}>
         <div
           ref={ref}
-          className={`w-full overflow-x-auto rounded-[6px] bg-transparent ${bordered ? 'border border-border dark:border-border' : ''}`}
+          className={`w-full overflow-x-auto rounded-[6px] bg-transparent ${bordered ? 'border-border dark:border-border border' : ''}`}
           style={{
             maxHeight: height === 'auto' ? undefined : height,
             overflowY: height === 'auto' ? 'hidden' : 'auto',
@@ -75,7 +75,7 @@ const Table: React.FC<TableProps> = ({
 const TableHead: React.FC<TableHeadProps> = ({ children, className = '' }) => {
   return (
     <thead
-      className={`sticky top-0 z-10 bg-gray-100 dark:bg-card ${className} `}
+      className={`dark:bg-card sticky top-0 z-10 bg-gray-100 ${className} `}
     >
       {children}
     </thead>

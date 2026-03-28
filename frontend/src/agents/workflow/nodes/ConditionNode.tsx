@@ -36,7 +36,7 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
 
   return (
     <div
-      className={`relative rounded-2xl border bg-card shadow-md transition-all ${
+      className={`bg-card relative rounded-2xl border shadow-md transition-all ${
         selected
           ? 'border-primary dark:ring-primary scale-105 ring-2 ring-purple-300'
           : 'border-border hover:shadow-lg'
@@ -47,7 +47,7 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
         type="target"
         position={Position.Left}
         isConnectable
-        className="hover:bg-primary/90! top-1/2! -left-1! h-3! w-3! rounded-full! border-2! border-card! bg-gray-400! transition-colors!"
+        className="hover:bg-primary/90! border-card! top-1/2! -left-1! h-3! w-3! rounded-full! border-2! bg-gray-400! transition-colors!"
       />
 
       <div className="flex items-center gap-3 px-3 py-2">
@@ -100,7 +100,7 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
           id={c.sourceHandle}
           isConnectable
           style={{ top: getHandleTop(i, totalOutputs) }}
-          className="hover:bg-primary/90! -right-1! h-3! w-3! rounded-full! border-2! border-white! bg-orange-400! transition-colors dark:border-border!"
+          className="hover:bg-primary/90! dark:border-border! -right-1! h-3! w-3! rounded-full! border-2! border-white! bg-orange-400! transition-colors"
         />
       ))}
       <Handle
@@ -109,7 +109,7 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
         id="else"
         isConnectable
         style={{ top: getHandleTop(cases.length, totalOutputs) }}
-        className="hover:bg-primary/90! -right-1! h-3! w-3! rounded-full! border-2! border-card! bg-gray-400! transition-colors!"
+        className="hover:bg-primary/90! border-card! -right-1! h-3! w-3! rounded-full! border-2! bg-gray-400! transition-colors!"
       />
     </div>
   );

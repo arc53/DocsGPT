@@ -222,7 +222,7 @@ function VariableListWithSearch({
 
   return (
     <div className="flex w-full flex-col overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+      <div className="border-border flex items-center gap-2 border-b px-3 py-2">
         <Search className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
         <input
           type="text"
@@ -252,7 +252,7 @@ function VariableListWithSearch({
                     e.stopPropagation();
                     onSelect(v.templatePath);
                   }}
-                  className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+                  className="hover:bg-accent flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors"
                 >
                   <Braces className="text-primary h-3.5 w-3.5 shrink-0" />
                   <span className="truncate font-medium text-gray-800 dark:text-gray-200">
@@ -412,7 +412,7 @@ export default function PromptTextArea({
       )}
       <div
         ref={wrapperRef}
-        className="border-border focus-within:ring-ring relative rounded-xl border bg-card transition-all focus-within:ring-2"
+        className="border-border focus-within:ring-ring bg-card relative rounded-xl border transition-all focus-within:ring-2"
       >
         <div
           ref={overlayRef}
@@ -472,7 +472,7 @@ export default function PromptTextArea({
             <PopoverContent
               align="end"
               side="top"
-              className="w-60 rounded-xl border border-border bg-card p-0 shadow-lg"
+              className="border-border bg-card w-60 rounded-xl border p-0 shadow-lg"
               onOpenAutoFocus={(e) => e.preventDefault()}
             >
               <VariableListWithSearch
@@ -486,7 +486,7 @@ export default function PromptTextArea({
         {showDropdown && filtered.length > 0 && (
           <div
             ref={dropdownRef}
-            className="absolute z-50 w-64 rounded-xl border border-border bg-card shadow-lg"
+            className="border-border bg-card absolute z-50 w-64 rounded-xl border shadow-lg"
             style={{ top: dropdownPos.top, left: dropdownPos.left }}
           >
             <VariableListWithSearch

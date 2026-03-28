@@ -206,7 +206,7 @@ export default function ImportSpecModal({
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            <div className="rounded-xl bg-muted p-4">
+            <div className="bg-muted rounded-xl p-4">
               <h3 className="text-foreground dark:text-foreground font-medium">
                 {parsedResult.metadata.title}
               </h3>
@@ -215,7 +215,7 @@ export default function ImportSpecModal({
                   {parsedResult.metadata.description}
                 </p>
               )}
-              <p className="mt-2 text-xs text-muted-foreground">
+              <p className="text-muted-foreground mt-2 text-xs">
                 {t('modals.importSpec.version')}:{' '}
                 {parsedResult.metadata.version}
               </p>
@@ -227,7 +227,7 @@ export default function ImportSpecModal({
                   type="text"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  className="border-border dark:border-border text-foreground dark:text-foreground w-full rounded-lg border bg-card px-3 py-2 text-sm outline-hidden"
+                  className="border-border dark:border-border text-foreground dark:text-foreground bg-card w-full rounded-lg border px-3 py-2 text-sm outline-hidden"
                   placeholder={
                     parsedResult.metadata.base_url || 'https://api.example.com'
                   }
@@ -255,7 +255,7 @@ export default function ImportSpecModal({
               {parsedResult.actions.map((action, index) => (
                 <label
                   key={index}
-                  className="border-border dark:border-border flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors hover:bg-muted dark:hover:bg-muted"
+                  className="border-border dark:border-border hover:bg-muted dark:hover:bg-muted flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors"
                 >
                   <input
                     type="checkbox"
@@ -310,7 +310,7 @@ export default function ImportSpecModal({
           )}
           <button
             onClick={handleClose}
-            className="dark:text-foreground cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-accent dark:hover:bg-accent"
+            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium"
           >
             {t('modals.importSpec.cancel')}
           </button>

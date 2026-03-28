@@ -27,8 +27,7 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
   let iconColor = 'text-gray-600 dark:text-gray-400';
 
   if (selected) {
-    borderColor =
-      'border-primary ring-2 ring-primary';
+    borderColor = 'border-primary ring-2 ring-primary';
   }
 
   if (type === 'start') {
@@ -56,7 +55,7 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
           type="target"
           position={Position.Left}
           isConnectable={true}
-          className="hover:bg-primary/90! -left-1! h-3! w-3! rounded-full! border-2! border-card! bg-gray-400! transition-colors!"
+          className="hover:bg-primary/90! border-card! -left-1! h-3! w-3! rounded-full! border-2! bg-gray-400! transition-colors!"
         />
       )}
 
@@ -86,7 +85,7 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
           type="source"
           position={Position.Right}
           isConnectable={true}
-          className="hover:bg-primary/90! -right-1! h-3! w-3! rounded-full! border-2! border-card! bg-gray-400! transition-colors!"
+          className="hover:bg-primary/90! border-card! -right-1! h-3! w-3! rounded-full! border-2! bg-gray-400! transition-colors!"
         />
       )}
     </div>

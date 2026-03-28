@@ -137,7 +137,7 @@ const ConversationBubble = forwardRef<
                 <div
                   key={index}
                   title={file.fileName}
-                  className="dark:text-foreground flex items-center rounded-xl bg-[#EFF3F4] p-2 text-[14px] text-[#5D5D5D] dark:bg-accent"
+                  className="dark:text-foreground dark:bg-accent flex items-center rounded-xl bg-[#EFF3F4] p-2 text-[14px] text-[#5D5D5D]"
                 >
                   <div className="bg-primary mr-2 items-center justify-center rounded-lg p-[5.5px]">
                     <img
@@ -198,7 +198,7 @@ const ConversationBubble = forwardRef<
                     setIsEditClicked(true);
                     setEditInputBox(message ?? '');
                   }}
-                  className={`hover:bg-accent mt-3 flex h-fit shrink-0 cursor-pointer items-center rounded-full p-2 pt-1.5 pl-1.5 dark:hover:bg-accent ${isEditClicked ? 'visible' : 'invisible group-hover:visible'}`}
+                  className={`hover:bg-accent dark:hover:bg-accent mt-3 flex h-fit shrink-0 cursor-pointer items-center rounded-full p-2 pt-1.5 pl-1.5 ${isEditClicked ? 'visible' : 'invisible group-hover:visible'}`}
                 >
                   <img src={Edit} alt="Edit" className="cursor-pointer" />
                 </button>
@@ -227,7 +227,7 @@ const ConversationBubble = forwardRef<
               />
               <div className="flex items-center justify-end gap-2">
                 <button
-                  className="text-primary hover:bg-muted hover:text-foreground dark:hover:bg-accent rounded-full px-4 py-2 text-sm font-semibold transition-colors dark:hover:text-foreground"
+                  className="text-primary hover:bg-muted hover:text-foreground dark:hover:bg-accent dark:hover:text-foreground rounded-full px-4 py-2 text-sm font-semibold transition-colors"
                   onClick={() => setIsEditClicked(false)}
                 >
                   {t('conversation.edit.cancel')}
@@ -322,7 +322,7 @@ const ConversationBubble = forwardRef<
                     {sources?.slice(0, 3)?.map((source, index) => (
                       <div key={index} className="relative">
                         <div
-                          className="bg-muted dark:bg-answer-bubble h-28 cursor-pointer rounded-4xl p-4 hover:bg-muted dark:hover:bg-muted"
+                          className="bg-muted hover:bg-accent dark:bg-answer-bubble dark:hover:bg-muted h-28 cursor-pointer rounded-4xl p-4"
                           onMouseOver={() => setActiveTooltip(index)}
                           onMouseOut={() => setActiveTooltip(null)}
                         >
@@ -379,7 +379,7 @@ const ConversationBubble = forwardRef<
                     ))}
                     {(sources?.length ?? 0) > 3 && (
                       <div
-                        className="bg-muted text-primary dark:bg-answer-bubble flex h-28 cursor-pointer flex-col-reverse rounded-4xl p-4 hover:bg-muted hover:text-primary dark:hover:bg-muted dark:hover:text-primary"
+                        className="bg-muted text-primary hover:bg-accent hover:text-primary dark:bg-answer-bubble dark:hover:bg-muted dark:hover:text-primary flex h-28 cursor-pointer flex-col-reverse rounded-4xl p-4"
                         onClick={() => setIsSidebarOpen(true)}
                       >
                         <p className="ellipsis-text h-22 text-xs">
@@ -458,7 +458,7 @@ const ConversationBubble = forwardRef<
             <div
               className={`fade-in-bubble bg-answer-bubble mr-5 flex max-w-full rounded-[18px] px-6 py-4.5 ${
                 type === 'ERROR'
-                  ? 'text-destructive/80 dark:border-destructive relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal dark:bg-destructive/15 dark:text-white'
+                  ? 'text-destructive/80 dark:border-destructive dark:bg-destructive/15 relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal dark:text-white'
                   : 'flex-col rounded-3xl'
               }`}
             >
@@ -551,14 +551,14 @@ const ConversationBubble = forwardRef<
                               },
                               thead({ children }) {
                                 return (
-                                  <thead className="bg-muted text-xs text-foreground uppercase">
+                                  <thead className="bg-muted text-foreground text-xs uppercase">
                                     {children}
                                   </thead>
                                 );
                               },
                               tr({ children }) {
                                 return (
-                                  <tr className="border-b border-border odd:bg-card even:bg-muted">
+                                  <tr className="border-border odd:bg-card even:bg-muted border-b">
                                     {children}
                                   </tr>
                                 );
@@ -657,7 +657,7 @@ const ConversationBubble = forwardRef<
                         <div className="relative mr-2 flex items-center justify-center">
                           <button
                             type="button"
-                            className="bg-transparent hover:bg-accent flex cursor-pointer items-center justify-center rounded-full p-2"
+                            className="hover:bg-accent flex cursor-pointer items-center justify-center rounded-full bg-transparent p-2"
                             onClick={() => {
                               if (feedback === 'LIKE') {
                                 handleFeedback?.(null);
@@ -670,7 +670,7 @@ const ConversationBubble = forwardRef<
                             }
                           >
                             <Like
-                              className={`${feedback === 'LIKE' ? 'fill-white stroke-primary dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`}
+                              className={`${feedback === 'LIKE' ? 'stroke-primary fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`}
                             ></Like>
                           </button>
                         </div>
@@ -678,7 +678,7 @@ const ConversationBubble = forwardRef<
                         <div className="relative mr-2 flex items-center justify-center">
                           <button
                             type="button"
-                            className="bg-transparent hover:bg-accent flex cursor-pointer items-center justify-center rounded-full p-2"
+                            className="hover:bg-accent flex cursor-pointer items-center justify-center rounded-full bg-transparent p-2"
                             onClick={() => {
                               if (feedback === 'DISLIKE') {
                                 handleFeedback?.(null);
@@ -693,7 +693,7 @@ const ConversationBubble = forwardRef<
                             }
                           >
                             <Dislike
-                              className={`${feedback === 'DISLIKE' ? 'fill-white stroke-destructive dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`}
+                              className={`${feedback === 'DISLIKE' ? 'stroke-destructive fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`}
                             ></Dislike>
                           </button>
                         </div>
@@ -746,7 +746,7 @@ function AllSources(sources: AllSourcesProps) {
           return (
             <div
               key={index}
-              className={`group/card bg-muted relative w-full rounded-4xl p-4 transition-colors hover:bg-muted dark:bg-card dark:hover:bg-muted ${
+              className={`group/card bg-muted hover:bg-accent dark:bg-card dark:hover:bg-muted relative w-full rounded-4xl p-4 transition-colors ${
                 isExternalSource ? 'cursor-pointer' : ''
               }`}
               onClick={() =>
@@ -790,105 +790,105 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
   const [isToolCallsOpen, setIsToolCallsOpen] = useState(false);
 
   return (
-		<div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-        <div className="my-2 flex flex-row items-center justify-center gap-3">
-          <Avatar
-            className="h-[26px] w-[30px] text-xl"
-            avatar={
-              <img
-                src={Sources}
-                alt={'ToolCalls'}
-                className="h-full w-full object-fill"
-              />
-            }
-          />
-          <button
-            className="flex flex-row items-center gap-2"
-            onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}
-          >
-            <p className="text-base font-semibold">Tool Calls</p>
+    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+      <div className="my-2 flex flex-row items-center justify-center gap-3">
+        <Avatar
+          className="h-[26px] w-[30px] text-xl"
+          avatar={
             <img
-              src={ChevronDown}
-              alt="ChevronDown"
-              className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen ? 'rotate-180' : ''}`}
+              src={Sources}
+              alt={'ToolCalls'}
+              className="h-full w-full object-fill"
             />
-          </button>
-        </div>
-        {isToolCallsOpen && (
-          <div className="fade-in mr-5 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
-            <div className="grid grid-cols-1 gap-2">
-              {toolCalls.map((toolCall, index) => (
-                <Accordion
-                  key={`tool-call-${index}`}
-                  title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
-                  className="bg-muted dark:bg-answer-bubble w-full rounded-4xl"
-                  titleClassName="px-6 py-2 text-sm font-semibold"
-                >
-                  <div className="flex flex-col gap-1">
-                    <div className="border-border flex flex-col rounded-2xl border">
-                      <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
-                        <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                          Arguments
-                        </span>{' '}
-                        <CopyButton
-                          textToCopy={JSON.stringify(toolCall.arguments, null, 2)}
-                        />
-                      </p>
+          }
+        />
+        <button
+          className="flex flex-row items-center gap-2"
+          onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}
+        >
+          <p className="text-base font-semibold">Tool Calls</p>
+          <img
+            src={ChevronDown}
+            alt="ChevronDown"
+            className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </div>
+      {isToolCallsOpen && (
+        <div className="fade-in mr-5 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
+          <div className="grid grid-cols-1 gap-2">
+            {toolCalls.map((toolCall, index) => (
+              <Accordion
+                key={`tool-call-${index}`}
+                title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
+                className="bg-muted dark:bg-answer-bubble w-full rounded-4xl"
+                titleClassName="px-6 py-2 text-sm font-semibold"
+              >
+                <div className="flex flex-col gap-1">
+                  <div className="border-border flex flex-col rounded-2xl border">
+                    <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
+                      <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                        Arguments
+                      </span>{' '}
+                      <CopyButton
+                        textToCopy={JSON.stringify(toolCall.arguments, null, 2)}
+                      />
+                    </p>
+                    <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                      <span
+                        className="dark:text-muted-foreground leading-[23px] text-black"
+                        style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                      >
+                        {JSON.stringify(toolCall.arguments, null, 2)}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="border-border flex flex-col rounded-2xl border">
+                    <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
+                      <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                        Response
+                      </span>{' '}
+                      <CopyButton
+                        textToCopy={
+                          toolCall.status === 'error'
+                            ? toolCall.error || 'Unknown error'
+                            : JSON.stringify(toolCall.result, null, 2)
+                        }
+                      />
+                    </p>
+                    {toolCall.status === 'pending' && (
+                      <span className="dark:bg-card flex w-full items-center justify-center rounded-b-2xl p-2">
+                        <Spinner size="small" />
+                      </span>
+                    )}
+                    {toolCall.status === 'completed' && (
                       <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
                         <span
-                          className="leading-[23px] text-black dark:text-muted-foreground"
+                          className="dark:text-muted-foreground leading-[23px] text-black"
                           style={{ fontFamily: 'IBMPlexMono-Medium' }}
                         >
-                          {JSON.stringify(toolCall.arguments, null, 2)}
+                          {JSON.stringify(toolCall.result, null, 2)}
                         </span>
                       </p>
-                    </div>
-                    <div className="border-border flex flex-col rounded-2xl border">
-                      <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
-                        <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                          Response
-                        </span>{' '}
-                        <CopyButton
-                          textToCopy={
-                            toolCall.status === 'error'
-                              ? toolCall.error || 'Unknown error'
-                              : JSON.stringify(toolCall.result, null, 2)
-                          }
-                        />
-                      </p>
-                      {toolCall.status === 'pending' && (
-                        <span className="dark:bg-card flex w-full items-center justify-center rounded-b-2xl p-2">
-                          <Spinner size="small" />
+                    )}
+                    {toolCall.status === 'error' && (
+                      <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                        <span
+                          className="leading-[23px] text-red-500 dark:text-red-400"
+                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                        >
+                          {toolCall.error}
                         </span>
-                      )}
-                      {toolCall.status === 'completed' && (
-                        <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                          <span
-                            className="leading-[23px] text-black dark:text-muted-foreground"
-                            style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                          >
-                            {JSON.stringify(toolCall.result, null, 2)}
-                          </span>
-                        </p>
-                      )}
-                      {toolCall.status === 'error' && (
-                        <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                          <span
-                            className="leading-[23px] text-red-500 dark:text-red-400"
-                            style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                          >
-                            {toolCall.error}
-                          </span>
-                        </p>
-                      )}
-                    </div>
+                      </p>
+                    )}
                   </div>
-                </Accordion>
-              ))}
-            </div>
+                </div>
+              </Accordion>
+            ))}
           </div>
-        )}
-		</div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -998,14 +998,14 @@ function Thought({
                 },
                 thead({ children }) {
                   return (
-                    <thead className="bg-muted text-xs text-foreground uppercase">
+                    <thead className="bg-muted text-foreground text-xs uppercase">
                       {children}
                     </thead>
                   );
                 },
                 tr({ children }) {
                   return (
-                    <tr className="border-b border-border odd:bg-card even:bg-muted">
+                    <tr className="border-border odd:bg-card even:bg-muted border-b">
                       {children}
                     </tr>
                   );

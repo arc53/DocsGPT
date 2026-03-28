@@ -753,7 +753,7 @@ export default function MCPServerModal({
               <button
                 onClick={testConnection}
                 disabled={testing}
-                className="border-border dark:border-border dark:text-foreground w-full rounded-3xl border px-6 py-2 text-sm font-medium transition-all hover:bg-accent disabled:opacity-50 sm:w-auto dark:hover:bg-muted/50"
+                className="border-border dark:border-border dark:text-foreground hover:bg-accent dark:hover:bg-muted/50 w-full rounded-3xl border px-6 py-2 text-sm font-medium transition-all disabled:opacity-50 sm:w-auto"
               >
                 {testing ? (
                   <div className="flex items-center justify-center">
@@ -773,7 +773,7 @@ export default function MCPServerModal({
                     setModalState('INACTIVE');
                     resetForm();
                   }}
-                  className="dark:text-foreground w-full cursor-pointer rounded-3xl px-6 py-2 text-sm font-medium hover:bg-accent sm:w-auto dark:hover:bg-muted/50"
+                  className="dark:text-foreground hover:bg-accent dark:hover:bg-muted/50 w-full cursor-pointer rounded-3xl px-6 py-2 text-sm font-medium sm:w-auto"
                 >
                   {t('settings.tools.mcp.cancel')}
                 </button>

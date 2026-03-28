@@ -120,7 +120,7 @@ function PromptTextarea({
   return (
     <>
       <div
-        className="pointer-events-none absolute inset-0 z-0 overflow-hidden rounded bg-card px-3 py-2"
+        className="bg-card pointer-events-none absolute inset-0 z-0 overflow-hidden rounded px-3 py-2"
         aria-hidden="true"
       >
         <div
@@ -239,7 +239,7 @@ function AddPrompt({
       <p className="mb-1 text-xl font-semibold text-[#2B2B2B] dark:text-white">
         {t('modals.prompts.addPrompt')}
       </p>
-      <p className="mb-6 text-sm text-[#6B6B6B] dark:text-muted-foreground">
+      <p className="dark:text-muted-foreground mb-6 text-sm text-[#6B6B6B]">
         {t('modals.prompts.addDescription')}
       </p>
       <div>
@@ -266,7 +266,7 @@ function AddPrompt({
             htmlFor="new-prompt-content"
             className={`absolute z-20 select-none ${
               newPromptContent ? '-top-2.5 left-3 text-xs' : ''
-            } text-muted-foreground pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden bg-card px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs`}
+            } text-muted-foreground bg-card pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs`}
           >
             {t('modals.prompts.promptText')}
           </label>
@@ -278,7 +278,7 @@ function AddPrompt({
           <span className="font-bold">
             {t('modals.prompts.variablesLabel')}
           </span>
-          <span className="text-xs text-[10px] font-medium text-muted-foreground">
+          <span className="text-muted-foreground text-xs text-[10px] font-medium">
             {t('modals.prompts.variablesDescription')}
           </span>
         </p>
@@ -446,7 +446,7 @@ function EditPrompt({
       <p className="mb-1 text-xl font-semibold text-[#2B2B2B] dark:text-white">
         {t('modals.prompts.editPrompt')}
       </p>
-      <p className="mb-6 text-sm text-[#6B6B6B] dark:text-muted-foreground">
+      <p className="dark:text-muted-foreground mb-6 text-sm text-[#6B6B6B]">
         {t('modals.prompts.editDescription')}
       </p>
       <div>
@@ -473,7 +473,7 @@ function EditPrompt({
             htmlFor="edit-prompt-content"
             className={`absolute z-20 select-none ${
               editPromptContent ? '-top-2.5 left-3 text-xs' : ''
-            } text-muted-foreground pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden bg-card px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs`}
+            } text-muted-foreground bg-card pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs`}
           >
             {t('modals.prompts.promptText')}
           </label>
@@ -485,7 +485,7 @@ function EditPrompt({
           <span className="font-bold">
             {t('modals.prompts.variablesLabel')}
           </span>
-          <span className="text-xs text-[10px] font-medium text-muted-foreground">
+          <span className="text-muted-foreground text-xs text-[10px] font-medium">
             {t('modals.prompts.variablesDescription')}
           </span>
         </p>
@@ -759,7 +759,7 @@ export default function PromptsModal({
           setNewPromptContent('');
         }
       }}
-      className="mx-4 mt-16 w-[95vw] max-w-[650px] rounded-2xl bg-card px-4 py-4 sm:px-6 sm:py-6 md:max-w-[860px] md:px-8 md:py-6 lg:max-w-[980px] dark:bg-card"
+      className="bg-card dark:bg-card mx-4 mt-16 w-[95vw] max-w-[650px] rounded-2xl px-4 py-4 sm:px-6 sm:py-6 md:max-w-[860px] md:px-8 md:py-6 lg:max-w-[980px]"
       contentClassName="!overflow-visible"
     >
       {view}

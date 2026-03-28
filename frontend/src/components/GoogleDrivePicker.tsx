@@ -262,7 +262,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
           />
 
           {isConnected && (
-            <div className="rounded-lg border border-border dark:border-border">
+            <div className="border-border dark:border-border rounded-lg border">
               <div className="p-4">
                 <div className="mb-4 flex items-center justify-between">
                   <h3 className="text-sm font-medium">

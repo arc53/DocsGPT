@@ -128,7 +128,9 @@ export default function DropdownModel() {
             ))
           ) : (
             <div className="border-border/30 flex h-10 w-full items-center border-t">
-              <p className="pl-5 text-sm text-muted-foreground">No models available</p>
+              <p className="text-muted-foreground pl-5 text-sm">
+                No models available
+              </p>
             </div>
           )}
         </div>

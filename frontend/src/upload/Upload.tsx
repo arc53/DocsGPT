@@ -203,7 +203,7 @@ function Upload({
                 {files.map((file) => (
                   <p
                     key={file.name}
-                    className="truncate overflow-hidden text-ellipsis text-muted-foreground"
+                    className="text-muted-foreground truncate overflow-hidden text-ellipsis"
                     title={file.name}
                   >
                     {file.name}
@@ -812,7 +812,7 @@ function Upload({
             className={`relative mx-auto flex h-[91.2px] w-full cursor-pointer flex-col justify-between gap-2 rounded-2xl border border-solid pt-[21.1px] pr-[21px] pb-[15px] pl-[21px] transition-colors duration-300 ease-out ${
               ingestor.type === option.value
                 ? 'border-[#7D54D1] bg-[#7D54D1] text-white'
-                : 'border-border bg-transparent transition-shadow duration-300 hover:bg-accent/30 hover:shadow-[0_0_15px_0_#00000026] dark:border-border/30'
+                : 'border-border hover:bg-accent/30 dark:border-border/30 bg-transparent transition-shadow duration-300 hover:shadow-[0_0_15px_0_#00000026]'
             }`}
             onClick={() =>
               handleIngestorTypeChange(option.value as IngestorType)
@@ -843,7 +843,7 @@ function Upload({
     >
       <div className="flex w-full flex-col gap-6">
         {!ingestor.type && (
-          <p className="font-inter text-left text-[20px] leading-7 font-semibold tracking-[0.15px] text-foreground dark:text-foreground">
+          <p className="font-inter text-foreground dark:text-foreground text-left text-[20px] leading-7 font-semibold tracking-[0.15px]">
             {t('modals.uploadDoc.selectSource')}
           </p>
         )}
@@ -865,7 +865,7 @@ function Upload({
                   <span>{t('modals.uploadDoc.back')}</span>
                 </button>
 
-                <h2 className="font-inter text-[22px] leading-7 font-semibold tracking-[0.15px] text-foreground">
+                <h2 className="font-inter text-foreground text-[22px] leading-7 font-semibold tracking-[0.15px]">
                   {ingestor.type &&
                     t(`modals.uploadDoc.ingestors.${ingestor.type}.heading`)}
                 </h2>
@@ -913,7 +913,7 @@ function Upload({
               disabled={isUploadDisabled()}
               className={`rounded-3xl px-4 py-2 text-[14px] font-medium ${
                 isUploadDisabled()
-                  ? 'cursor-not-allowed bg-gray-300 text-gray-500 dark:bg-muted dark:text-muted-foreground'
+                  ? 'dark:bg-muted dark:text-muted-foreground cursor-not-allowed bg-gray-300 text-gray-500'
                   : 'bg-primary hover:bg-primary/90 cursor-pointer text-white'
               }`}
             >

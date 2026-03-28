@@ -58,7 +58,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   }, [page, agentId]);
   return (
     <div className="mt-8">
-      <p className="mb-5 text-[15px] leading-6 text-muted-foreground">
+      <p className="text-muted-foreground mb-5 text-[15px] leading-6">
         {t('settings.logs.subtitle')}
       </p>
       <div>
@@ -117,9 +117,9 @@ function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
   }, []);
 
   return (
-    <div className="logs-table border-border h-[55vh] w-full overflow-hidden rounded-xl border bg-card dark:bg-black">
+    <div className="logs-table border-border bg-card h-[55vh] w-full overflow-hidden rounded-xl border dark:bg-black">
       <div className="flex h-8 flex-col items-start justify-center bg-black/10 dark:bg-white/5">
-        <p className="px-3 text-xs text-muted-foreground">
+        <p className="text-muted-foreground px-3 text-xs">
           {tableHeader ? tableHeader : t('settings.logs.tableHeader')}
         </p>
       </div>
@@ -168,11 +168,11 @@ function Log({
   const { id, action, timestamp, ...filteredLog } = log;
 
   return (
-    <div className="group dark:hover:bg-accent w-full rounded-xl bg-transparent hover:bg-muted">
+    <div className="group dark:hover:bg-accent hover:bg-muted w-full rounded-xl bg-transparent">
       <div
         onClick={() => onToggle(log.id)}
-        className={`flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 text-foreground ${
-          isOpen ? 'rounded-t-xl bg-[#F1F1F1] dark:bg-background' : ''
+        className={`text-foreground flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 ${
+          isOpen ? 'dark:bg-background rounded-t-xl bg-[#F1F1F1]' : ''
         }`}
       >
         <img
@@ -193,7 +193,7 @@ function Log({
         </span>
       </div>
       {isOpen && (
-        <div className="rounded-b-xl bg-[#F1F1F1] px-4 py-3 dark:bg-background">
+        <div className="dark:bg-background rounded-b-xl bg-[#F1F1F1] px-4 py-3">
           <div className="scrollbar-overlay overflow-y-auto">
             <pre className="px-2 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap text-gray-700 dark:text-gray-400">
               {JSON.stringify(filteredLog, null, 2)}

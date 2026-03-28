@@ -162,7 +162,7 @@ export default function AgentsList() {
       <h1 className="text-foreground mb-0 text-[32px] font-bold lg:text-[40px]">
         {t('agents.title')}
       </h1>
-      <p className="mt-5 text-[15px] leading-6 text-muted-foreground">
+      <p className="text-muted-foreground mt-5 text-[15px] leading-6">
         {t('agents.description')}
       </p>
 
@@ -178,7 +178,7 @@ export default function AgentsList() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('agents.searchPlaceholder')}
-            className="h-11 w-full rounded-full border border-border bg-card py-2 pr-5 pl-11 text-sm text-foreground shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow outline-none placeholder:text-muted-foreground focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-none"
+            className="border-border bg-card text-foreground placeholder:text-muted-foreground h-11 w-full rounded-full border py-2 pr-5 pl-11 text-sm shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow outline-none focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-none"
           />
         </div>
 
@@ -190,7 +190,7 @@ export default function AgentsList() {
               className={`rounded-full px-4 py-2 text-sm transition-colors ${
                 activeFilter === tab.id
                   ? 'bg-border text-foreground dark:bg-accent dark:text-white'
-                  : 'dark:text-gray bg-transparent text-muted-foreground hover:bg-accent/50'
+                  : 'dark:text-gray text-muted-foreground hover:bg-accent/50 bg-transparent'
               }`}
             >
               {t(tab.labelKey)}
@@ -224,7 +224,7 @@ export default function AgentsList() {
       ))}
 
       {showSearchEmptyState && (
-        <div className="mt-12 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+        <div className="text-muted-foreground mt-12 flex flex-col items-center justify-center gap-2">
           <p className="text-lg">{t('agents.noSearchResults')}</p>
           <p className="text-sm">{t('agents.tryDifferentSearch')}</p>
         </div>
@@ -399,7 +399,7 @@ function AgentSection({
 
   if (isFilteredView && isSearchingWithNoResults) {
     return (
-      <div className="mt-12 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+      <div className="text-muted-foreground mt-12 flex flex-col items-center justify-center gap-2">
         <p className="text-lg">{t('agents.noSearchResults')}</p>
         <p className="text-sm">{t('agents.tryDifferentSearch')}</p>
       </div>
@@ -408,7 +408,7 @@ function AgentSection({
 
   if (isFilteredView && hasNoAgentsAtAll) {
     return (
-      <div className="mt-12 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+      <div className="text-muted-foreground mt-12 flex flex-col items-center justify-center gap-3">
         <p>{t(`agents.sections.${config.id}.emptyState`)}</p>
         {config.showNewAgentButton && (
           <button
@@ -456,7 +456,7 @@ function AgentSection({
     <div className="mt-8 flex flex-col gap-4">
       <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2">
-          <h2 className="flex flex-wrap items-center gap-2 text-[18px] font-semibold text-foreground">
+          <h2 className="text-foreground flex flex-wrap items-center gap-2 text-[18px] font-semibold">
             {config.id === 'user' && folderPath.length > 0 ? (
               <>
                 <button
@@ -485,7 +485,7 @@ function AgentSection({
               t(`agents.sections.${config.id}.title`)
             )}
           </h2>
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-muted-foreground text-[13px]">
             {t(`agents.sections.${config.id}.description`)}
           </p>
         </div>
@@ -513,12 +513,12 @@ function AgentSection({
                   }
                 }}
                 placeholder={t('agents.folders.newFolder')}
-                className="w-28 rounded-full border border-border bg-card px-4 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground sm:w-auto"
+                className="border-border bg-card text-foreground placeholder:text-muted-foreground w-28 rounded-full border px-4 py-2 text-sm outline-none sm:w-auto"
                 autoFocus
               />
             ) : (
               <button
-                className="shrink-0 rounded-full border border-border bg-card px-4 py-2 text-sm whitespace-nowrap text-foreground hover:bg-accent"
+                className="border-border bg-card text-foreground hover:bg-accent shrink-0 rounded-full border px-4 py-2 text-sm whitespace-nowrap"
                 onClick={() => {
                   setIsCreatingFolder(true);
                   setTimeout(() => newFolderInputRef.current?.focus(), 0);
@@ -579,7 +579,7 @@ function AgentSection({
                 ))}
               </div>
             ) : hasNoAgentsAtAll && currentLevelFolders.length === 0 ? (
-              <div className="flex h-40 w-full flex-col items-center justify-center gap-3 text-muted-foreground">
+              <div className="text-muted-foreground flex h-40 w-full flex-col items-center justify-center gap-3">
                 <p>
                   {currentFolderId
                     ? t('agents.folders.empty')

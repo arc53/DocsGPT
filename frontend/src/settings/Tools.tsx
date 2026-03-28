@@ -210,12 +210,16 @@ export default function Tools() {
       ) : (
         <div className="mt-8">
           <div className="relative flex flex-col">
-            <p className="mb-5 text-[15px] leading-6 text-muted-foreground">
+            <p className="text-muted-foreground mb-5 text-[15px] leading-6">
               {t('settings.tools.subtitle')}
             </p>
             <div className="my-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="relative w-full max-w-md">
-                <img src={SearchIcon} alt="" className="absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 opacity-40" />
+                <img
+                  src={SearchIcon}
+                  alt=""
+                  className="absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 opacity-40"
+                />
                 <input
                   maxLength={256}
                   placeholder={t('settings.tools.searchPlaceholder')}
@@ -224,7 +228,7 @@ export default function Tools() {
                   id="tool-search-input"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="h-11 w-full rounded-full border border-border bg-card py-2 pr-5 pl-11 text-sm text-foreground shadow-[0_1px_4px_rgba(0,0,0,0.06)] outline-none transition-shadow placeholder:text-muted-foreground focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-none"
+                  className="border-border bg-card text-foreground placeholder:text-muted-foreground h-11 w-full rounded-full border py-2 pr-5 pl-11 text-sm shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow outline-none focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-none"
                 />
               </div>
               <button
@@ -256,115 +260,119 @@ export default function Tools() {
                       {t('settings.tools.noToolsFound')}
                     </p>
                   </div>
-                ) : (() => {
-                  const filtered = userTools.filter((tool) =>
-                    (tool.customName || tool.displayName)
-                      .toLowerCase()
-                      .includes(searchTerm.toLowerCase()),
-                  );
-                  return filtered.length === 0 ? (
-                    <div className="flex w-full flex-col items-center justify-center py-12">
-                      <img
-                        src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                        alt={t('settings.tools.noToolsFound')}
-                        className="mx-auto mb-6 h-32 w-32"
-                      />
-                      <p className="text-center text-lg text-gray-500 dark:text-gray-400">
-                        {t('settings.tools.noToolsFound')}
-                      </p>
-                    </div>
-                  ) : (
-                    filtered.map((tool, index) => (
-                      <div
-                        key={index}
-                        className="relative flex h-52 w-[300px] flex-col justify-between overflow-hidden rounded-2xl bg-muted p-6 hover:bg-accent"
-                      >
-                        <div
-                          ref={menuRefs.current[tool.id]}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveMenuId(
-                              activeMenuId === tool.id ? null : tool.id,
-                            );
-                          }}
-                          className="absolute top-4 right-4 z-10 cursor-pointer"
-                        >
-                          <img
-                            src={ThreeDotsIcon}
-                            alt={t('settings.tools.settingsIconAlt')}
-                            className="h-[19px] w-[19px]"
-                          />
-                          <ContextMenu
-                            isOpen={activeMenuId === tool.id}
-                            setIsOpen={(isOpen) => {
-                              setActiveMenuId(isOpen ? tool.id : null);
-                            }}
-                            options={getMenuOptions(tool)}
-                            anchorRef={menuRefs.current[tool.id]}
-                            position="bottom-right"
-                            offset={{ x: 0, y: 0 }}
-                          />
-                        </div>
-                        <div className="w-full">
-                          <div className="flex w-full items-center gap-2 px-1">
-                            <img
-                              src={`/toolIcons/tool_${tool.name}.svg`}
-                              alt={`${tool.displayName} icon`}
-                              className="h-6 w-6"
-                            />
-                            {tool.name === 'mcp_tool' &&
-                              mcpStatuses[tool.id] && (
-                                <span
-                                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium leading-none ${
-                                    mcpStatuses[tool.id] === 'connected'
-                                      ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                                      : mcpStatuses[tool.id] === 'needs_auth'
-                                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                                        : 'bg-gray-100 text-gray-600 dark:bg-gray-700/40 dark:text-gray-300'
-                                  }`}
-                                >
-                                  {mcpStatuses[tool.id] === 'connected'
-                                    ? t('settings.tools.authStatus.connected')
-                                    : mcpStatuses[tool.id] === 'needs_auth'
-                                      ? t('settings.tools.authStatus.needsAuth')
-                                      : t(
-                                          'settings.tools.authStatus.configured',
-                                        )}
-                                </span>
-                              )}
-                          </div>
-                          <div className="mt-[9px]">
-                            <p
-                              title={tool.customName || tool.displayName}
-                              className="text-foreground dark:text-foreground truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
-                            >
-                              {tool.customName || tool.displayName}
-                            </p>
-                            <p
-                              className="text-muted-foreground mt-1 line-clamp-4 max-h-24 overflow-hidden px-1 text-[12px] leading-relaxed break-all"
-                              title={tool.description}
-                            >
-                              {tool.description}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="absolute right-4 bottom-4">
-                          <ToggleSwitch
-                            checked={tool.status}
-                            onChange={(checked) =>
-                              updateToolStatus(tool.id, checked)
-                            }
-                            size="small"
-                            id={`toolToggle-${index}`}
-                            ariaLabel={t('settings.tools.toggleToolAria', {
-                              toolName: tool.customName || tool.displayName,
-                            })}
-                          />
-                        </div>
+                ) : (
+                  (() => {
+                    const filtered = userTools.filter((tool) =>
+                      (tool.customName || tool.displayName)
+                        .toLowerCase()
+                        .includes(searchTerm.toLowerCase()),
+                    );
+                    return filtered.length === 0 ? (
+                      <div className="flex w-full flex-col items-center justify-center py-12">
+                        <img
+                          src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
+                          alt={t('settings.tools.noToolsFound')}
+                          className="mx-auto mb-6 h-32 w-32"
+                        />
+                        <p className="text-center text-lg text-gray-500 dark:text-gray-400">
+                          {t('settings.tools.noToolsFound')}
+                        </p>
                       </div>
-                    ))
-                  );
-                })()}
+                    ) : (
+                      filtered.map((tool, index) => (
+                        <div
+                          key={index}
+                          className="bg-muted hover:bg-accent relative flex h-52 w-[300px] flex-col justify-between overflow-hidden rounded-2xl p-6"
+                        >
+                          <div
+                            ref={menuRefs.current[tool.id]}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveMenuId(
+                                activeMenuId === tool.id ? null : tool.id,
+                              );
+                            }}
+                            className="absolute top-4 right-4 z-10 cursor-pointer"
+                          >
+                            <img
+                              src={ThreeDotsIcon}
+                              alt={t('settings.tools.settingsIconAlt')}
+                              className="h-[19px] w-[19px]"
+                            />
+                            <ContextMenu
+                              isOpen={activeMenuId === tool.id}
+                              setIsOpen={(isOpen) => {
+                                setActiveMenuId(isOpen ? tool.id : null);
+                              }}
+                              options={getMenuOptions(tool)}
+                              anchorRef={menuRefs.current[tool.id]}
+                              position="bottom-right"
+                              offset={{ x: 0, y: 0 }}
+                            />
+                          </div>
+                          <div className="w-full">
+                            <div className="flex w-full items-center gap-2 px-1">
+                              <img
+                                src={`/toolIcons/tool_${tool.name}.svg`}
+                                alt={`${tool.displayName} icon`}
+                                className="h-6 w-6"
+                              />
+                              {tool.name === 'mcp_tool' &&
+                                mcpStatuses[tool.id] && (
+                                  <span
+                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] leading-none font-medium ${
+                                      mcpStatuses[tool.id] === 'connected'
+                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                                        : mcpStatuses[tool.id] === 'needs_auth'
+                                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                                          : 'bg-gray-100 text-gray-600 dark:bg-gray-700/40 dark:text-gray-300'
+                                    }`}
+                                  >
+                                    {mcpStatuses[tool.id] === 'connected'
+                                      ? t('settings.tools.authStatus.connected')
+                                      : mcpStatuses[tool.id] === 'needs_auth'
+                                        ? t(
+                                            'settings.tools.authStatus.needsAuth',
+                                          )
+                                        : t(
+                                            'settings.tools.authStatus.configured',
+                                          )}
+                                  </span>
+                                )}
+                            </div>
+                            <div className="mt-[9px]">
+                              <p
+                                title={tool.customName || tool.displayName}
+                                className="text-foreground dark:text-foreground truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
+                              >
+                                {tool.customName || tool.displayName}
+                              </p>
+                              <p
+                                className="text-muted-foreground mt-1 line-clamp-4 max-h-24 overflow-hidden px-1 text-[12px] leading-relaxed break-all"
+                                title={tool.description}
+                              >
+                                {tool.description}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="absolute right-4 bottom-4">
+                            <ToggleSwitch
+                              checked={tool.status}
+                              onChange={(checked) =>
+                                updateToolStatus(tool.id, checked)
+                              }
+                              size="small"
+                              id={`toolToggle-${index}`}
+                              ariaLabel={t('settings.tools.toggleToolAria', {
+                                toolName: tool.customName || tool.displayName,
+                              })}
+                            />
+                          </div>
+                        </div>
+                      ))
+                    );
+                  })()
+                )}
               </div>
             )}
           </div>

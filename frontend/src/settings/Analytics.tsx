@@ -175,7 +175,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
   }, [agentId, feedbackFilter]);
   return (
     <div className="mt-8">
-      <p className="mb-5 text-[15px] leading-6 text-muted-foreground">
+      <p className="text-muted-foreground mb-5 text-[15px] leading-6">
         {t('settings.analytics.subtitle')}
       </p>
       {/* Messages Analytics */}

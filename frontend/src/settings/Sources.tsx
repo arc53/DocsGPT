@@ -362,7 +362,7 @@ export default function Sources({
   ) : (
     <div className="mt-8 flex w-full max-w-full flex-col overflow-hidden">
       <div className="relative flex grow flex-col">
-        <p className="mb-5 text-[15px] leading-6 text-muted-foreground">
+        <p className="text-muted-foreground mb-5 text-[15px] leading-6">
           {t('settings.sources.subtitle')}
         </p>
         <div className="mb-6 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
@@ -371,7 +371,11 @@ export default function Sources({
               {t('settings.sources.searchPlaceholder')}
             </label>
             <div className="relative w-full max-w-md">
-              <img src={SearchIcon} alt="" className="absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 opacity-40" />
+              <img
+                src={SearchIcon}
+                alt=""
+                className="absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 opacity-40"
+              />
               <input
                 maxLength={256}
                 placeholder={t('settings.sources.searchPlaceholder')}
@@ -383,7 +387,7 @@ export default function Sources({
                   setSearchTerm(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="h-11 w-full rounded-full border border-border bg-card py-2 pr-5 pl-11 text-sm text-foreground shadow-[0_1px_4px_rgba(0,0,0,0.06)] outline-none transition-shadow placeholder:text-muted-foreground focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-none"
+                className="border-border bg-card text-foreground placeholder:text-muted-foreground h-11 w-full rounded-full border py-2 pr-5 pl-11 text-sm shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow outline-none focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-none"
               />
             </div>
           </div>
@@ -422,7 +426,7 @@ export default function Sources({
                 return (
                   <div key={docId} className="relative">
                     <div
-                      className={`flex h-[130px] w-full flex-col rounded-2xl bg-muted p-3 transition-all duration-200 dark:bg-accent ${
+                      className={`bg-muted dark:bg-accent flex h-[130px] w-full flex-col rounded-2xl p-3 transition-all duration-200 ${
                         activeMenuId === docId || syncMenuState.docId === docId
                           ? 'scale-[1.05]'
                           : 'hover:scale-[1.05]'
@@ -431,7 +435,7 @@ export default function Sources({
                       <div className="w-full flex-1">
                         <div className="flex w-full items-center justify-between gap-2">
                           <h3
-                            className="font-inter dark:text-foreground line-clamp-3 text-[13px] leading-[18px] font-semibold wrap-break-word text-foreground"
+                            className="font-inter dark:text-foreground text-foreground line-clamp-3 text-[13px] leading-[18px] font-semibold wrap-break-word"
                             title={document.name}
                           >
                             {document.name}
@@ -472,7 +476,7 @@ export default function Sources({
                                 e.stopPropagation();
                                 handleMenuClick(e, docId);
                               }}
-                              className="inline-flex h-[35px] w-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB] dark:hover:bg-muted"
+                              className="dark:hover:bg-muted inline-flex h-[35px] w-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB]"
                               aria-label={t('settings.sources.menuAlt')}
                               data-testid={`menu-button-${docId}`}
                             >
@@ -493,17 +497,13 @@ export default function Sources({
                             alt=""
                             className="h-3.5 w-3.5"
                           />
-                          <span className="font-inter text-[12px] leading-[18px] font-medium text-muted-foreground">
+                          <span className="font-inter text-muted-foreground text-[12px] leading-[18px] font-medium">
                             {document.date ? formatDate(document.date) : ''}
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <img
-                            src={DiscIcon}
-                            alt=""
-                            className="h-3.5 w-3.5"
-                          />
-                          <span className="font-inter text-[12px] leading-[18px] font-medium text-muted-foreground">
+                          <img src={DiscIcon} alt="" className="h-3.5 w-3.5" />
+                          <span className="font-inter text-muted-foreground text-[12px] leading-[18px] font-medium">
                             {document.tokens
                               ? formatTokens(+document.tokens)
                               : ''}

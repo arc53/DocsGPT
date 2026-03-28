@@ -110,7 +110,7 @@ function Dropdown<T extends DropdownOption>({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`flex w-full cursor-pointer items-center justify-between border border-border bg-card px-5 py-3 text-foreground ${open ? radiusTop : radius}`}
+        className={`border-border bg-card text-foreground flex w-full cursor-pointer items-center justify-between border px-5 py-3 ${open ? radiusTop : radius}`}
       >
         <span
           className={`truncate ${contentSize} ${displayValue ? '' : 'text-muted-foreground'}`}
@@ -118,24 +118,24 @@ function Dropdown<T extends DropdownOption>({
           {displayValue ?? placeholder}
         </span>
         <ChevronDown
-          className={`ml-2 h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`text-muted-foreground ml-2 h-4 w-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
       {open && (
         <div
-          className={`absolute inset-x-0 z-20 -mt-px overflow-hidden border border-t-0 border-border bg-card shadow-lg ${radiusBottom}`}
+          className={`border-border bg-card absolute inset-x-0 z-20 -mt-px overflow-hidden border border-t-0 shadow-lg ${radiusBottom}`}
         >
           {searchable && (
-            <div className="flex items-center border-b border-border px-3 py-2">
-              <Search className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
+            <div className="border-border flex items-center border-b px-3 py-2">
+              <Search className="text-muted-foreground mr-2 h-4 w-4 shrink-0" />
               <input
                 ref={searchRef}
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search..."
-                className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                className="text-foreground placeholder:text-muted-foreground w-full bg-transparent text-sm focus:outline-none"
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
@@ -143,7 +143,7 @@ function Dropdown<T extends DropdownOption>({
 
           <div className="max-h-48 overflow-y-auto">
             {filtered.length === 0 ? (
-              <div className="px-4 py-3 text-center text-sm text-muted-foreground">
+              <div className="text-muted-foreground px-4 py-3 text-center text-sm">
                 No results found
               </div>
             ) : (
@@ -157,7 +157,7 @@ function Dropdown<T extends DropdownOption>({
                 return (
                   <div
                     key={i}
-                    className={`flex cursor-pointer items-center justify-between hover:bg-accent ${active ? 'bg-accent' : ''}`}
+                    className={`hover:bg-accent flex cursor-pointer items-center justify-between ${active ? 'bg-accent' : ''}`}
                   >
                     <span
                       onClick={() => {
@@ -165,7 +165,7 @@ function Dropdown<T extends DropdownOption>({
                         setOpen(false);
                         setQuery('');
                       }}
-                      className={`flex-1 truncate px-4 py-2.5 text-foreground ${contentSize}`}
+                      className={`text-foreground flex-1 truncate px-4 py-2.5 ${contentSize}`}
                     >
                       {getOptionText(option)}
                     </span>
@@ -185,9 +185,9 @@ function Dropdown<T extends DropdownOption>({
                             setOpen(false);
                             setQuery('');
                           }}
-                          className="mr-1 rounded p-1 hover:bg-accent"
+                          className="hover:bg-accent mr-1 rounded p-1"
                         >
-                          <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                          <Pencil className="text-muted-foreground h-3.5 w-3.5" />
                         </button>
                       )}
 
@@ -202,13 +202,14 @@ function Dropdown<T extends DropdownOption>({
                               : ((optObj?.id as string) ?? ''),
                           );
                         }}
-                        className={`mr-1 rounded p-1 hover:bg-accent ${
-                          typeof showDelete === 'function' && !showDelete(option)
+                        className={`hover:bg-accent mr-1 rounded p-1 ${
+                          typeof showDelete === 'function' &&
+                          !showDelete(option)
                             ? 'hidden'
                             : ''
                         } ${optObj?.type === 'public' ? 'pointer-events-none opacity-30' : ''}`}
                       >
-                        <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                        <Trash2 className="text-muted-foreground h-3.5 w-3.5" />
                       </button>
                     )}
                   </div>

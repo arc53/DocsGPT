@@ -1438,7 +1438,7 @@ export default function MessageInput({
         onChange={handleVoiceFileAttachment}
       />
 
-      <div className="border-border bg-card dark:bg-transparent relative flex w-full flex-col rounded-[23px] border">
+      <div className="border-border bg-card relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
         <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
           {attachments.map((attachment) => {
             return (
@@ -1620,7 +1620,7 @@ export default function MessageInput({
                 className={`xs:px-3 xs:py-1.5 dark:border-purple-taupe flex items-center rounded-[32px] border px-2 py-1 transition-colors ${
                   recordingState === 'recording'
                     ? 'border-[#B42318] bg-[#FEE4E2] text-[#B42318] dark:bg-[#4A2323]'
-                    : 'border-border hover:bg-gray-100 dark:hover:bg-accent'
+                    : 'border-border dark:hover:bg-accent hover:bg-gray-100'
                 } ${
                   loading || recordingState === 'transcribing'
                     ? 'cursor-not-allowed opacity-60'

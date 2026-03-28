@@ -41,7 +41,7 @@ export default function AgentLogs() {
     <div className="p-4 md:p-12">
       <div className="flex items-center gap-3 px-4">
         <button
-          className="rounded-full border border-border p-3 text-sm text-muted-foreground hover:bg-accent"
+          className="border-border text-muted-foreground hover:bg-accent rounded-full border p-3 text-sm"
           onClick={() => navigate('/agents')}
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
@@ -59,7 +59,7 @@ export default function AgentLogs() {
         {agent && (
           <div className="flex flex-col gap-1">
             <p className="text-foreground">{agent.name}</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               {agent.last_used_at
                 ? t('agents.logs.lastUsedAt') +
                   ' ' +

@@ -143,7 +143,7 @@ export default function SharedAgent() {
             alt="No agent found"
             className="mx-auto mb-6 h-32 w-32"
           />
-          <p className="text-center text-lg text-muted-foreground">
+          <p className="text-muted-foreground text-center text-lg">
             {t('agents.shared.notFound')}
           </p>
         </div>

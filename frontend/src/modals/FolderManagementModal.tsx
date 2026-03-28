@@ -59,7 +59,7 @@ export default function FolderNameModal({
           onKeyDown={handleKeyDown}
           placeholder={t('agents.folders.folderName')}
           autoFocus
-          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none dark:text-white"
+          className="border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none dark:text-white"
         />
         <div className="mt-6 flex justify-end gap-2">
           <button
@@ -67,7 +67,7 @@ export default function FolderNameModal({
               setModalState('INACTIVE');
               setName('');
             }}
-            className="dark:text-foreground cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-accent dark:hover:bg-accent"
+            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium"
           >
             {t('cancel')}
           </button>

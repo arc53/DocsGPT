@@ -240,7 +240,7 @@ export default function ConversationMessages({
             scrollConversationToBottom();
           }}
           aria-label={t('Scroll to bottom') || 'Scroll to bottom'}
-          className="border-border fixed right-14 bottom-40 z-10 flex h-7 w-7 items-center justify-center rounded-full border bg-card md:h-9 md:w-9"
+          className="border-border bg-card fixed right-14 bottom-40 z-10 flex h-7 w-7 items-center justify-center rounded-full border md:h-9 md:w-9"
         >
           <img
             src={ArrowDown}

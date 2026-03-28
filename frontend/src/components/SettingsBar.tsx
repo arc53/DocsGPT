@@ -60,7 +60,7 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
       <div className="z-10 md:hidden">
         <button
           onClick={() => scrollTabs(-1)}
-          className="flex h-6 w-6 items-center justify-center rounded-full transition-all hover:bg-muted dark:hover:bg-accent"
+          className="hover:bg-muted dark:hover:bg-accent flex h-6 w-6 items-center justify-center rounded-full transition-all"
           aria-label={t('settings.scrollTabsLeft')}
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3" />
@@ -93,7 +93,7 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
       <div className="z-10 md:hidden">
         <button
           onClick={() => scrollTabs(1)}
-          className="flex h-6 w-6 items-center justify-center rounded-full hover:bg-muted dark:hover:bg-accent"
+          className="hover:bg-muted dark:hover:bg-accent flex h-6 w-6 items-center justify-center rounded-full"
           aria-label={t('settings.scrollTabsRight')}
         >
           <img src={ArrowRight} alt="right-arrow" className="h-3" />

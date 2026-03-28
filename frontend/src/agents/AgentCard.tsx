@@ -251,7 +251,7 @@ export default function AgentCard({
   };
   return (
     <div
-      className={`relative flex h-44 flex-col justify-between rounded-[1.2rem] bg-muted px-4 py-5 hover:bg-accent sm:w-48 sm:px-6 ${agent.status === 'published' && 'cursor-pointer'}`}
+      className={`bg-muted hover:bg-accent relative flex h-44 flex-col justify-between rounded-[1.2rem] px-4 py-5 sm:w-48 sm:px-6 ${agent.status === 'published' && 'cursor-pointer'}`}
       onClick={(e) => {
         e.stopPropagation();
         handleClick();
@@ -283,17 +283,17 @@ export default function AgentCard({
             className="h-7 w-7 rounded-full object-contain"
           />
           {agent.status === 'draft' && (
-            <p className="text-xs text-foreground opacity-50">{`(Draft)`}</p>
+            <p className="text-foreground text-xs opacity-50">{`(Draft)`}</p>
           )}
         </div>
         <div className="mt-2">
           <p
             title={agent.name}
-            className="truncate px-1 text-[13px] leading-relaxed font-semibold text-foreground capitalize"
+            className="text-foreground truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
           >
             {agent.name}
           </p>
-          <p className="dark:text-muted-foreground mt-1 h-20 overflow-auto px-1 text-[12px] leading-relaxed text-muted-foreground">
+          <p className="dark:text-muted-foreground text-muted-foreground mt-1 h-20 overflow-auto px-1 text-[12px] leading-relaxed">
             {agent.description}
           </p>
         </div>

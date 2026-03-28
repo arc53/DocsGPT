@@ -203,7 +203,7 @@ export default function ConversationTile({
             <input
               autoFocus
               type="text"
-              className="h-6 w-full bg-transparent px-1 text-sm leading-6 rounded-2xl font-normal outline-none"
+              className="h-6 w-full rounded-2xl bg-transparent px-1 text-sm leading-6 font-normal outline-none"
               value={conversationName}
               onChange={(e) => setConversationsName(e.target.value)}
               onKeyDown={handleRenameKeyDown}
@@ -215,7 +215,10 @@ export default function ConversationTile({
           )}
         </div>
         {(conversationId === conversation.id || isHovered || isOpen) && (
-          <div className="dark:text-muted-foreground flex text-white" ref={menuRef}>
+          <div
+            className="dark:text-muted-foreground flex text-white"
+            ref={menuRef}
+          >
             {isEdit ? (
               <div className="flex gap-1">
                 <img
@@ -248,7 +251,7 @@ export default function ConversationTile({
                   event.stopPropagation();
                   setOpen(!isOpen);
                 }}
-                className="mr-2 flex h-6 w-6 items-center justify-center rounded-full transition-colors duration-200 hover:bg-accent dark:hover:bg-accent"
+                className="hover:bg-accent dark:hover:bg-accent mr-2 flex h-6 w-6 items-center justify-center rounded-full transition-colors duration-200"
               >
                 <img src={threeDots} width={8} alt="menu" />
               </button>

@@ -88,7 +88,7 @@ export default function DropdownMenu({
       onClick={(e) => e.stopPropagation()}
     >
       <div
-        className={`w-28 transform rounded-md border border-border bg-card shadow-lg transition-all duration-200 ease-in-out ${className}`}
+        className={`border-border bg-card w-28 transform rounded-md border shadow-lg transition-all duration-200 ease-in-out ${className}`}
       >
         <div
           role="menu"
@@ -99,10 +99,8 @@ export default function DropdownMenu({
           {options.map((option, idx) => (
             <div
               id={`option-${idx}`}
-              className={`dark:text-foreground cursor-pointer px-4 py-2 text-xs hover:bg-muted ${
-                selectedOption.value === option.value
-                  ? 'bg-muted'
-                  : 'bg-card'
+              className={`dark:text-foreground hover:bg-muted cursor-pointer px-4 py-2 text-xs ${
+                selectedOption.value === option.value ? 'bg-muted' : 'bg-card'
               }`}
               role="menuitem"
               key={option.value}

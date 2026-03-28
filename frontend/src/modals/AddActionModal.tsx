@@ -80,7 +80,7 @@ export default function AddActionModal({
               setModalState('INACTIVE');
               setActionName('');
             }}
-            className="dark:text-foreground cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-accent dark:hover:bg-accent"
+            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium"
           >
             {t('modals.configTool.closeButton')}
           </button>

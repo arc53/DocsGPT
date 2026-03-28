@@ -70,7 +70,7 @@ export function MultiSelect({
           role="combobox"
           aria-expanded={open}
           className={cn(
-            'w-full justify-between border-border bg-card hover:bg-accent',
+            'border-border bg-card hover:bg-accent w-full justify-between',
             !selected.length && 'text-gray-500 dark:text-gray-400',
             className,
           )}
@@ -124,7 +124,7 @@ export function MultiSelect({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-(--radix-popover-trigger-width) border-border bg-card p-0"
+        className="border-border bg-card w-(--radix-popover-trigger-width) p-0"
         align="start"
       >
         <Command className="bg-transparent">

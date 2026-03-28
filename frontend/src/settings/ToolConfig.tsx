@@ -332,7 +332,7 @@ export default function ToolConfig({
       <div className="mb-4 flex items-center justify-between">
         <div className="text-foreground dark:text-foreground flex items-center gap-3 text-sm">
           <button
-            className="rounded-full border border-border p-3 text-sm text-muted-foreground hover:bg-accent"
+            className="border-border text-muted-foreground hover:bg-accent rounded-full border p-3 text-sm"
             onClick={handleBackClick}
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
@@ -434,13 +434,23 @@ export default function ToolConfig({
             {'actions' in tool && tool.actions && tool.actions.length > 0 ? (
               <>
                 <div className="relative">
-                  <svg className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" d="m21 21-4.35-4.35"/></svg>
+                  <svg
+                    className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    stroke="currentColor"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <path strokeLinecap="round" d="m21 21-4.35-4.35" />
+                  </svg>
                   <input
                     type="text"
                     value={userActionsSearch}
                     onChange={(e) => setUserActionsSearch(e.target.value)}
                     placeholder={t('settings.tools.searchActions')}
-                    className="h-10 w-full rounded-full border border-border bg-transparent pl-10 pr-4 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                    className="border-border text-foreground placeholder:text-muted-foreground h-10 w-full rounded-full border bg-transparent pr-4 pl-10 text-sm outline-none"
                   />
                 </div>
 
@@ -843,13 +853,23 @@ function APIToolConfig({
   return (
     <div className="scrollbar-overlay flex flex-col gap-4">
       <div className="relative">
-        <svg className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" d="m21 21-4.35-4.35"/></svg>
+        <svg
+          className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          strokeWidth={2}
+          stroke="currentColor"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <path strokeLinecap="round" d="m21 21-4.35-4.35" />
+        </svg>
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder={t('settings.tools.searchActions')}
-          className="h-10 w-full rounded-full border border-border bg-transparent pl-10 pr-4 text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          className="border-border text-foreground placeholder:text-muted-foreground h-10 w-full rounded-full border bg-transparent pr-4 pl-10 text-sm outline-none"
         />
       </div>
 
@@ -945,7 +965,7 @@ function APIToolConfig({
                   </div>
                   <div className="mt-4 px-5 py-2">
                     <div className="relative w-full">
-                      <span className="text-muted-foreground absolute -top-2 left-5 z-10 bg-card px-2 text-xs">
+                      <span className="text-muted-foreground bg-card absolute -top-2 left-5 z-10 px-2 text-xs">
                         {t('settings.tools.method')}
                       </span>
                       <Dropdown
@@ -1024,7 +1044,7 @@ function APIToolConfig({
                     action.method === 'OPTIONS') && (
                     <div className="mt-4 px-5 py-2">
                       <div className="relative w-full">
-                        <span className="text-muted-foreground absolute -top-2 left-5 z-10 bg-card px-2 text-xs">
+                        <span className="text-muted-foreground bg-card absolute -top-2 left-5 z-10 px-2 text-xs">
                           {t('settings.tools.bodyContentType')}
                         </span>
                         <Dropdown

@@ -394,7 +394,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </NavLink>
         <div
           id="conversationsMainDiv"
-          className="mb-auto h-[78vh] overflow-x-hidden overflow-y-auto scrollbar-overlay dark:text-white"
+          className="scrollbar-overlay mb-auto h-[78vh] overflow-x-hidden overflow-y-auto dark:text-white"
         >
           {conversations?.loading && !isDeletingConversation && (
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform">
@@ -540,7 +540,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }}
               to="/settings"
               className={({ isActive }) =>
-                `mx-4 my-auto flex h-9 cursor-pointer items-center gap-4 rounded-3xl hover:bg-sidebar-accent ${
+                `hover:bg-sidebar-accent mx-4 my-auto flex h-9 cursor-pointer items-center gap-4 rounded-3xl ${
                   isActive ? 'bg-sidebar-accent' : ''
                 }`
               }
@@ -565,9 +565,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <NavLink
                   target="_blank"
                   to={'https://discord.gg/vN7YFfdMpj'}
-                  className={
-                    'rounded-full hover:bg-sidebar-accent'
-                  }
+                  className={'hover:bg-sidebar-accent rounded-full'}
                 >
                   <img
                     src={Discord}
@@ -580,9 +578,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <NavLink
                   target="_blank"
                   to={'https://x.com/docsgptai'}
-                  className={
-                    'rounded-full hover:bg-sidebar-accent'
-                  }
+                  className={'hover:bg-sidebar-accent rounded-full'}
                 >
                   <img
                     src={Twitter}
@@ -595,9 +591,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <NavLink
                   target="_blank"
                   to={'https://github.com/arc53/docsgpt'}
-                  className={
-                    'rounded-full hover:bg-sidebar-accent'
-                  }
+                  className={'hover:bg-sidebar-accent rounded-full'}
                 >
                   <img
                     src={Github}
@@ -624,7 +618,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               className="w-7 filter dark:invert"
             />
           </button>
-          <div className="text-muted-foreground text-[20px] font-medium">DocsGPT</div>
+          <div className="text-muted-foreground text-[20px] font-medium">
+            DocsGPT
+          </div>
         </div>
       </div>
       <DeleteConvModal

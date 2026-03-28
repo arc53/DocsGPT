@@ -212,7 +212,7 @@ export default function MultiSelectPopup({
             <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-gray-900 dark:border-white"></div>
           </div>
         ) : (
-          <div className="h-full overflow-y-auto scrollbar-overlay">
+          <div className="scrollbar-overlay h-full overflow-y-auto">
             {filteredOptions.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center px-4 py-8 text-center">
                 <img
@@ -233,7 +233,7 @@ export default function MultiSelectPopup({
                   <div
                     key={option.id}
                     onClick={() => handleOptionClick(option.id)}
-                    className="dark:border-border dark:hover:bg-accent flex cursor-pointer items-center justify-between border-b border-[#D9D9D9] p-3 last:border-b-0 hover:bg-accent"
+                    className="dark:border-border dark:hover:bg-accent hover:bg-accent flex cursor-pointer items-center justify-between border-b border-[#D9D9D9] p-3 last:border-b-0"
                     role="option"
                     aria-selected={isSelected}
                   >
@@ -248,7 +248,7 @@ export default function MultiSelectPopup({
                     </div>
                     <div className="shrink-0">
                       <div
-                        className={`flex h-4 w-4 items-center justify-center rounded-xs border-2 border-border bg-card`}
+                        className={`border-border bg-card flex h-4 w-4 items-center justify-center rounded-xs border-2`}
                         aria-hidden="true"
                       >
                         {isSelected && (

@@ -140,19 +140,21 @@ export default function ConfigToolModal({
             />
           </div>
 
-          {hasConfig && <ConfigFields
-            configRequirements={configRequirements}
-            values={configValues}
-            onChange={handleFieldChange}
-            errors={errors}
-          />}
+          {hasConfig && (
+            <ConfigFields
+              configRequirements={configRequirements}
+              values={configValues}
+              onChange={handleFieldChange}
+              errors={errors}
+            />
+          )}
         </div>
 
         <div className="mt-8 flex flex-row-reverse gap-2">
           <button
             onClick={handleAddTool}
             disabled={saving}
-            className="bg-primary hover:bg-primary/90 disabled:opacity-60 rounded-full px-5 py-2 text-sm font-medium text-white transition-colors"
+            className="bg-primary hover:bg-primary/90 rounded-full px-5 py-2 text-sm font-medium text-white transition-colors disabled:opacity-60"
           >
             {saving
               ? t('modals.configTool.addButton') + '…'
@@ -160,7 +162,7 @@ export default function ConfigToolModal({
           </button>
           <button
             onClick={handleClose}
-            className="dark:text-foreground cursor-pointer rounded-full px-5 py-2 text-sm font-medium hover:bg-accent dark:hover:bg-accent"
+            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-full px-5 py-2 text-sm font-medium"
           >
             {t('modals.configTool.closeButton')}
           </button>

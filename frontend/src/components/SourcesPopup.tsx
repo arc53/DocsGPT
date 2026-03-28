@@ -139,7 +139,7 @@ export default function SourcesPopup({
           />
         </div>
 
-        <div className="dark:border-border mx-4 grow overflow-y-auto rounded-md border border-[#D9D9D9] scrollbar-overlay">
+        <div className="dark:border-border scrollbar-overlay mx-4 grow overflow-y-auto rounded-md border border-[#D9D9D9]">
           {options ? (
             <>
               {filteredOptions?.map((option: any, index: number) => {
@@ -154,7 +154,7 @@ export default function SourcesPopup({
                 return (
                   <div
                     key={index}
-                    className="border-opacity-80 dark:border-border flex cursor-pointer items-center border-b border-[#D9D9D9] p-3 transition-colors hover:bg-muted dark:text-[14px]"
+                    className="border-opacity-80 dark:border-border hover:bg-muted flex cursor-pointer items-center border-b border-[#D9D9D9] p-3 transition-colors dark:text-[14px]"
                     onClick={() => {
                       if (isSelected) {
                         const updatedDocs =
@@ -190,7 +190,7 @@ export default function SourcesPopup({
                       {option.name}
                     </span>
                     <div
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-xs border-2 border-[#C6C6C6] p-[0.5px] dark:border-border`}
+                      className={`dark:border-border flex h-4 w-4 shrink-0 items-center justify-center rounded-xs border-2 border-[#C6C6C6] p-[0.5px]`}
                     >
                       {isSelected && (
                         <img
