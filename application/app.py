@@ -19,6 +19,7 @@ from application.api.user.routes import user  # noqa: E402
 from application.api.connector.routes import connector  # noqa: E402
 from application.celery_init import celery  # noqa: E402
 from application.core.settings import settings  # noqa: E402
+from application.core.service_checks import required_service_checks, summarize_checks  # noqa: E402
 from application.stt.upload_limits import (  # noqa: E402
     build_stt_file_size_limit_message,
     should_reject_stt_request,
@@ -84,6 +85,20 @@ def get_config():
         "requires_auth": settings.AUTH_TYPE in ["simple_jwt", "session_jwt"],
     }
     return jsonify(response)
+
+
+@app.route("/api/health")
+def healthcheck():
+    """Liveness: is the backend process up?"""
+    return jsonify({"status": "ok", "service": "backend"})
+
+@app.route("/api/ready")
+def readiness_check():
+    """Readiness: can the backend reach Redis, Mongo, and (if enabled) Qdrant?"""
+    checks = required_service_checks()
+    all_ok, payload = summarize_checks(checks)
+    status_code = 200 if all_ok else 503
+    return jsonify({"status": "ready" if all_ok else "degraded", "checks": payload}), status_code
 
 
 @app.route("/api/generate_token")
