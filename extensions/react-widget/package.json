@@ -81,7 +81,7 @@
     "parcel": "^2.16.4",
     "prettier": "^3.8.1",
     "process": "^0.11.10",
-    "svgo": "^3.3.3",
+    "svgo": "^4.0.1",
     "typescript": "^5.3.3"
   },
   "publishConfig": {
