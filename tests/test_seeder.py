@@ -1,10 +1,8 @@
-import os
-from unittest.mock import MagicMock, Mock, patch, mock_open
+from unittest.mock import MagicMock, patch, mock_open
 
 import mongomock
 import pytest
 from bson import ObjectId
-from bson.dbref import DBRef
 
 from application.seed.seeder import DatabaseSeeder
 
