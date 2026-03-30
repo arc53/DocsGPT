@@ -357,3 +357,158 @@ class TestGetVectorstore:
 
         assert get_vectorstore("") == "indexes"
         assert get_vectorstore(None) == "indexes"
+
+    def test_with_nested_path(self):
+        from application.vectorstore.faiss import get_vectorstore
+
+        assert get_vectorstore("user/source123") == "indexes/user/source123"
+
+
+@pytest.mark.unit
+class TestFaissStoreAddChunk:
+    @patch("application.vectorstore.faiss.StorageCreator")
+    @patch("application.vectorstore.faiss.FAISS")
+    @patch.object(
+        __import__("application.vectorstore.base", fromlist=["BaseVectorStore"]).BaseVectorStore,
+        "_get_embeddings",
+    )
+    @patch("application.vectorstore.faiss.settings")
+    def test_add_chunk_with_metadata(
+        self, mock_settings, mock_get_emb, mock_faiss, mock_storage_creator
+    ):
+        mock_settings.EMBEDDINGS_NAME = "test_model"
+        mock_emb = Mock(dimension=3)
+        mock_get_emb.return_value = mock_emb
+        mock_ds = Mock()
+        mock_ds.index = Mock(d=3)
+        mock_ds.add_documents.return_value = ["new_id"]
+        mock_faiss.from_documents.return_value = mock_ds
+        mock_storage = Mock()
+        mock_storage_creator.get_storage.return_value = mock_storage
+
+        from application.vectorstore.faiss import FaissStore
+
+        store = FaissStore(source_id="t", embeddings_key="k", docs_init=[Mock()])
+        store._save_to_storage = Mock(return_value=True)
+
+        doc_id = store.add_chunk("new text", metadata={"source": "test"})
+
+        assert doc_id == ["new_id"]
+        mock_ds.add_documents.assert_called_once()
+        store._save_to_storage.assert_called_once()
+
+    @patch("application.vectorstore.faiss.StorageCreator")
+    @patch("application.vectorstore.faiss.FAISS")
+    @patch.object(
+        __import__("application.vectorstore.base", fromlist=["BaseVectorStore"]).BaseVectorStore,
+        "_get_embeddings",
+    )
+    @patch("application.vectorstore.faiss.settings")
+    def test_add_chunk_default_metadata(
+        self, mock_settings, mock_get_emb, mock_faiss, mock_storage_creator
+    ):
+        mock_settings.EMBEDDINGS_NAME = "test_model"
+        mock_emb = Mock(dimension=3)
+        mock_get_emb.return_value = mock_emb
+        mock_ds = Mock()
+        mock_ds.index = Mock(d=3)
+        mock_ds.add_documents.return_value = ["new_id"]
+        mock_faiss.from_documents.return_value = mock_ds
+        mock_storage = Mock()
+        mock_storage_creator.get_storage.return_value = mock_storage
+
+        from application.vectorstore.faiss import FaissStore
+
+        store = FaissStore(source_id="t", embeddings_key="k", docs_init=[Mock()])
+        store._save_to_storage = Mock(return_value=True)
+
+        doc_id = store.add_chunk("new text")
+
+        assert doc_id == ["new_id"]
+
+
+@pytest.mark.unit
+class TestFaissStoreSaveLocalNoPath:
+    @patch("application.vectorstore.faiss.StorageCreator")
+    @patch("application.vectorstore.faiss.FAISS")
+    @patch.object(
+        __import__("application.vectorstore.base", fromlist=["BaseVectorStore"]).BaseVectorStore,
+        "_get_embeddings",
+    )
+    @patch("application.vectorstore.faiss.settings")
+    def test_save_local_without_path(
+        self, mock_settings, mock_get_emb, mock_faiss, mock_storage_creator
+    ):
+        mock_settings.EMBEDDINGS_NAME = "test_model"
+        mock_emb = Mock(dimension=3)
+        mock_get_emb.return_value = mock_emb
+        mock_ds = Mock()
+        mock_ds.index = Mock(d=3)
+        mock_faiss.from_documents.return_value = mock_ds
+        mock_storage = Mock()
+        mock_storage_creator.get_storage.return_value = mock_storage
+
+        from application.vectorstore.faiss import FaissStore
+
+        store = FaissStore(source_id="t", embeddings_key="k", docs_init=[Mock()])
+        store._save_to_storage = Mock(return_value=True)
+
+        result = store.save_local()
+
+        # Should NOT call docsearch.save_local with a path
+        mock_ds.save_local.assert_not_called()
+        store._save_to_storage.assert_called_once()
+        assert result is True
+
+
+@pytest.mark.unit
+class TestFaissStoreAssertEmbeddingDimensionsMatch:
+    @patch("application.vectorstore.faiss.StorageCreator")
+    @patch("application.vectorstore.faiss.FAISS")
+    @patch.object(
+        __import__("application.vectorstore.base", fromlist=["BaseVectorStore"]).BaseVectorStore,
+        "_get_embeddings",
+    )
+    @patch("application.vectorstore.faiss.settings")
+    def test_dimension_match_passes(
+        self, mock_settings, mock_get_emb, mock_faiss, mock_storage_creator
+    ):
+        mock_settings.EMBEDDINGS_NAME = (
+            "huggingface_sentence-transformers/all-mpnet-base-v2"
+        )
+        mock_emb = Mock(dimension=768)
+        mock_get_emb.return_value = mock_emb
+        mock_ds = Mock()
+        mock_ds.index = Mock(d=768)  # Matching dimension
+        mock_faiss.from_documents.return_value = mock_ds
+        mock_storage_creator.get_storage.return_value = Mock()
+
+        from application.vectorstore.faiss import FaissStore
+
+        # Should not raise
+        store = FaissStore(source_id="t", embeddings_key="k", docs_init=[Mock()])
+        assert store is not None
+
+    @patch("application.vectorstore.faiss.StorageCreator")
+    @patch("application.vectorstore.faiss.FAISS")
+    @patch.object(
+        __import__("application.vectorstore.base", fromlist=["BaseVectorStore"]).BaseVectorStore,
+        "_get_embeddings",
+    )
+    @patch("application.vectorstore.faiss.settings")
+    def test_non_huggingface_skips_dimension_check(
+        self, mock_settings, mock_get_emb, mock_faiss, mock_storage_creator
+    ):
+        mock_settings.EMBEDDINGS_NAME = "openai_text-embedding-ada-002"
+        mock_emb = Mock(dimension=1536)
+        mock_get_emb.return_value = mock_emb
+        mock_ds = Mock()
+        mock_ds.index = Mock(d=999)  # Mismatched but doesn't matter
+        mock_faiss.from_documents.return_value = mock_ds
+        mock_storage_creator.get_storage.return_value = Mock()
+
+        from application.vectorstore.faiss import FaissStore
+
+        # Should not raise since embedding name is not the huggingface one
+        store = FaissStore(source_id="t", embeddings_key="k", docs_init=[Mock()])
+        assert store is not None

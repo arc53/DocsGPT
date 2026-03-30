@@ -277,3 +277,279 @@ class TestToolExecutorExecute:
 
         # load_tool called only once due to cache
         assert mock_tool_manager.load_tool.call_count == 1
+
+    def test_execute_api_tool(self, mock_tool_manager, monkeypatch):
+        """Cover lines 199-202, 256-267: api_tool execution path."""
+        executor = ToolExecutor(user="test_user")
+
+        monkeypatch.setattr(
+            "application.agents.tool_executor.ToolActionParser",
+            lambda _cls: Mock(
+                parse_args=Mock(return_value=("t1", "get_users", {"body_param": "val"}))
+            ),
+        )
+
+        tools_dict = {
+            "t1": {
+                "name": "api_tool",
+                "config": {
+                    "actions": {
+                        "get_users": {
+                            "name": "get_users",
+                            "description": "Get users",
+                            "url": "https://api.example.com/users",
+                            "method": "GET",
+                            "query_params": {"properties": {}},
+                            "headers": {"properties": {}},
+                            "body": {"properties": {}},
+                            "active": True,
+                        }
+                    }
+                },
+            }
+        }
+
+        call = self._make_call(name="get_users_t1", call_id="c2")
+        gen = executor.execute(tools_dict, call, "MockLLM")
+
+        events = []
+        result = None
+        while True:
+            try:
+                events.append(next(gen))
+            except StopIteration as e:
+                result = e.value
+                break
+
+        assert result is not None
+        statuses = [e["data"]["status"] for e in events]
+        assert "pending" in statuses
+
+    def test_execute_with_prefilled_param_values(self, mock_tool_manager, monkeypatch):
+        """Cover line 179: params not in call_args use default value."""
+        executor = ToolExecutor(user="test_user")
+
+        monkeypatch.setattr(
+            "application.agents.tool_executor.ToolActionParser",
+            lambda _cls: Mock(
+                parse_args=Mock(return_value=("t1", "act", {}))
+            ),
+        )
+
+        tools_dict = {
+            "t1": {
+                "name": "test_tool",
+                "config": {"key": "val"},
+                "actions": [
+                    {
+                        "name": "act",
+                        "description": "Test",
+                        "parameters": {
+                            "properties": {
+                                "hidden_param": {
+                                    "type": "string",
+                                    "value": "default_val",
+                                    "filled_by_llm": False,
+                                }
+                            }
+                        },
+                    }
+                ],
+            }
+        }
+
+        call = self._make_call(name="act_t1")
+        gen = executor.execute(tools_dict, call, "MockLLM")
+
+        while True:
+            try:
+                next(gen)
+            except StopIteration as e:
+                result = e.value
+                break
+
+        assert result[0] == "Tool result"
+
+    def test_execute_tool_with_artifact_id(self, mock_tool_manager, monkeypatch):
+        """Cover lines 217-218: tool with get_artifact_id."""
+        executor = ToolExecutor(user="test_user")
+
+        monkeypatch.setattr(
+            "application.agents.tool_executor.ToolActionParser",
+            lambda _cls: Mock(
+                parse_args=Mock(return_value=("t1", "act", {"q": "v"}))
+            ),
+        )
+
+        mock_tool = mock_tool_manager.load_tool.return_value
+        mock_tool.get_artifact_id = Mock(return_value="artifact-123")
+
+        tools_dict = {
+            "t1": {
+                "name": "test_tool",
+                "config": {"key": "val"},
+                "actions": [
+                    {
+                        "name": "act",
+                        "description": "Test",
+                        "parameters": {"properties": {}},
+                    }
+                ],
+            }
+        }
+
+        call = self._make_call(name="act_t1")
+        gen = executor.execute(tools_dict, call, "MockLLM")
+
+        events = []
+        while True:
+            try:
+                events.append(next(gen))
+            except StopIteration:
+                break
+
+        completed_events = [
+            e for e in events if e["data"].get("status") == "completed"
+        ]
+        assert any(
+            "artifact_id" in e.get("data", {}) for e in completed_events
+        )
+
+    def test_get_or_load_tool_encrypted_credentials(self, monkeypatch):
+        """Cover lines 273-278: encrypted credentials path."""
+        executor = ToolExecutor(user="test_user")
+
+        mock_tm = Mock()
+        mock_tool = Mock()
+        mock_tm.load_tool.return_value = mock_tool
+        monkeypatch.setattr(
+            "application.agents.tool_executor.ToolManager", lambda config: mock_tm
+        )
+        monkeypatch.setattr(
+            "application.agents.tool_executor.decrypt_credentials",
+            lambda creds, user: {"api_key": "decrypted_key"},
+        )
+
+        tool_data = {
+            "name": "custom_tool",
+            "config": {"encrypted_credentials": "encrypted_blob"},
+        }
+
+        result = executor._get_or_load_tool(tool_data, "t1", "act")
+        assert result is mock_tool
+        call_kwargs = mock_tm.load_tool.call_args
+        tool_config = call_kwargs[1]["tool_config"] if "tool_config" in call_kwargs[1] else call_kwargs[0][1]
+        assert "api_key" in tool_config.get("auth_credentials", tool_config)
+
+    def test_get_or_load_tool_mcp_tool(self, monkeypatch):
+        """Cover lines 281-283: mcp_tool path sets query_mode."""
+        executor = ToolExecutor(user="test_user")
+        executor.conversation_id = "conv-123"
+
+        mock_tm = Mock()
+        mock_tool = Mock()
+        mock_tm.load_tool.return_value = mock_tool
+        monkeypatch.setattr(
+            "application.agents.tool_executor.ToolManager", lambda config: mock_tm
+        )
+
+        tool_data = {
+            "name": "mcp_tool",
+            "config": {},
+        }
+
+        result = executor._get_or_load_tool(tool_data, "t1", "act")
+        assert result is mock_tool
+        call_kwargs = mock_tm.load_tool.call_args
+        tool_config = call_kwargs[1].get("tool_config", call_kwargs[0][1] if len(call_kwargs[0]) > 1 else {})
+        assert tool_config.get("query_mode") is True
+        assert tool_config.get("conversation_id") == "conv-123"
+
+
+# ---------------------------------------------------------------------------
+# Coverage — additional uncovered lines: 217-218, 256-267
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestToolExecutorAdditionalCoverage:
+
+    def test_get_artifact_id_exception_handled(self, monkeypatch):
+        """Cover lines 217-218: get_artifact_id raises exception."""
+        from types import SimpleNamespace
+
+        executor = ToolExecutor(user="user1")
+
+        mock_tool = Mock()
+        mock_tool.execute_action.return_value = "result"
+        mock_tool.get_artifact_id.side_effect = RuntimeError("artifact error")
+
+        monkeypatch.setattr(
+            "application.agents.tool_executor.ToolManager",
+            lambda config: Mock(load_tool=Mock(return_value=mock_tool)),
+        )
+
+        tools_dict = {
+            "t1": {
+                "name": "custom_tool",
+                "config": {"key": "val"},
+                "actions": [
+                    {
+                        "name": "action1",
+                        "active": True,
+                        "parameters": {"properties": {}},
+                    }
+                ],
+            }
+        }
+        # Create a fake call object matching what ToolActionParser expects
+        call = SimpleNamespace(
+            id="c1",
+            function=SimpleNamespace(
+                name="action1_t1",
+                arguments="{}",
+            ),
+        )
+        events = list(executor.execute(tools_dict, call, "OpenAILLM"))
+        # Should complete without raising; artifact_id error is logged but not raised
+        assert any(
+            isinstance(e, dict) and e.get("type") == "tool_call"
+            for e in events
+        )
+
+    def test_get_or_load_api_tool_with_body_content_type(self, monkeypatch):
+        """Cover lines 256-267: api_tool with body_content_type."""
+        executor = ToolExecutor(user="user1")
+
+        mock_tm = Mock()
+        mock_tool = Mock()
+        mock_tm.load_tool.return_value = mock_tool
+        monkeypatch.setattr(
+            "application.agents.tool_executor.ToolManager", lambda config: mock_tm
+        )
+
+        tool_data = {
+            "name": "api_tool",
+            "config": {
+                "actions": {
+                    "create": {
+                        "url": "https://api.example.com/items",
+                        "method": "POST",
+                        "body_content_type": "application/json",
+                        "body_encoding_rules": {"encode_as": "json"},
+                    }
+                }
+            },
+        }
+
+        result = executor._get_or_load_tool(
+            tool_data, "t1", "create",
+            headers={"Authorization": "Bearer tok"},
+            query_params={"page": "1"},
+        )
+        assert result is mock_tool
+        # Verify config was built with body_content_type
+        call_args = mock_tm.load_tool.call_args
+        tool_config = call_args[1].get("tool_config", call_args[0][1] if len(call_args[0]) > 1 else {})
+        assert tool_config.get("body_content_type") == "application/json"
+        assert tool_config.get("body_encoding_rules") == {"encode_as": "json"}

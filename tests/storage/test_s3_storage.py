@@ -413,3 +413,100 @@ class TestS3StorageRemoveDirectory:
         result = s3_storage.remove_directory(directory)
 
         assert result is False
+
+    @pytest.mark.unit
+    def test_remove_directory_returns_false_on_delete_errors(
+        self, s3_storage, mock_boto3_client
+    ):
+        """Should return False when delete_objects response contains Errors."""
+        directory = "documents/"
+
+        paginator_mock = MagicMock()
+        mock_boto3_client.get_paginator.return_value = paginator_mock
+        paginator_mock.paginate.return_value = [
+            {"Contents": [{"Key": "documents/file1.txt"}]}
+        ]
+
+        mock_boto3_client.delete_objects.return_value = {
+            "Errors": [{"Key": "documents/file1.txt", "Code": "InternalError"}]
+        }
+
+        result = s3_storage.remove_directory(directory)
+
+        assert result is False
+
+
+class TestS3StorageDirectorySlashHandling:
+    """Test that directories without trailing slashes get them added."""
+
+    @pytest.mark.unit
+    def test_list_files_adds_trailing_slash(self, s3_storage, mock_boto3_client):
+        """Should add trailing slash when listing directory without one."""
+        paginator_mock = MagicMock()
+        mock_boto3_client.get_paginator.return_value = paginator_mock
+        paginator_mock.paginate.return_value = [{}]
+
+        s3_storage.list_files("documents")
+
+        paginator_mock.paginate.assert_called_once_with(
+            Bucket="test-bucket", Prefix="documents/"
+        )
+
+    @pytest.mark.unit
+    def test_list_files_empty_directory_string(self, s3_storage, mock_boto3_client):
+        """Empty string directory should not get a slash added."""
+        paginator_mock = MagicMock()
+        mock_boto3_client.get_paginator.return_value = paginator_mock
+        paginator_mock.paginate.return_value = [{}]
+
+        s3_storage.list_files("")
+
+        paginator_mock.paginate.assert_called_once_with(
+            Bucket="test-bucket", Prefix=""
+        )
+
+    @pytest.mark.unit
+    def test_is_directory_adds_trailing_slash(self, s3_storage, mock_boto3_client):
+        """Should add trailing slash for is_directory check."""
+        mock_boto3_client.list_objects_v2.return_value = {}
+
+        s3_storage.is_directory("docs")
+
+        mock_boto3_client.list_objects_v2.assert_called_once_with(
+            Bucket="test-bucket", Prefix="docs/", MaxKeys=1
+        )
+
+    @pytest.mark.unit
+    def test_remove_directory_adds_trailing_slash(self, s3_storage, mock_boto3_client):
+        """Should add trailing slash for remove_directory."""
+        paginator_mock = MagicMock()
+        mock_boto3_client.get_paginator.return_value = paginator_mock
+        paginator_mock.paginate.return_value = [{}]
+
+        s3_storage.remove_directory("docs")
+
+        paginator_mock.paginate.assert_called_once()
+        call_kwargs = paginator_mock.paginate.call_args[1]
+        assert call_kwargs["Prefix"] == "docs/"
+
+
+class TestS3StorageProcessFileError:
+    """Test error handling in process_file."""
+
+    @pytest.mark.unit
+    def test_process_file_propagates_processor_error(
+        self, s3_storage, mock_boto3_client
+    ):
+        """Should propagate errors from the processor function."""
+        path = "documents/test.txt"
+        mock_boto3_client.head_object.return_value = {}
+
+        with patch("tempfile.NamedTemporaryFile") as mock_temp:
+            mock_file = MagicMock()
+            mock_file.name = "/tmp/test_file"
+            mock_temp.return_value.__enter__.return_value = mock_file
+
+            processor_func = MagicMock(side_effect=RuntimeError("Process failed"))
+
+            with pytest.raises(RuntimeError, match="Process failed"):
+                s3_storage.process_file(path, processor_func)
