@@ -3,7 +3,9 @@ import sys
 import pytest
 
 from application.usage import (
+    _count_prompt_tokens,
     _count_tokens,
+    _serialize_for_token_count,
     gen_token_usage,
     stream_token_usage,
     update_token_usage,
@@ -324,3 +326,264 @@ def test_update_token_usage_skips_when_all_ids_missing(monkeypatch):
     )
 
     assert inserted_docs == []
+
+
+# ── _serialize_for_token_count ──────────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestSerializeForTokenCount:
+
+    def test_string_passthrough(self):
+        assert _serialize_for_token_count("hello") == "hello"
+
+    def test_data_url_returns_empty(self):
+        data_url = "data:image/png;base64,iVBORw0KGgoAAAA..."
+        assert _serialize_for_token_count(data_url) == ""
+
+    def test_none_returns_empty(self):
+        assert _serialize_for_token_count(None) == ""
+
+    def test_list_recursion(self):
+        result = _serialize_for_token_count(["hello", "world"])
+        assert result == ["hello", "world"]
+
+    def test_dict_skips_binary_fields(self):
+        data = {
+            "text": "hello",
+            "data": "binary_stuff",
+            "base64": "encoded_data",
+            "image_data": "img_bytes",
+        }
+        result = _serialize_for_token_count(data)
+        assert "text" in result
+        assert "data" not in result
+        assert "base64" not in result
+        assert "image_data" not in result
+
+    def test_dict_skips_base64_url(self):
+        data = {"url": "data:image/png;base64,abc123"}
+        result = _serialize_for_token_count(data)
+        assert "url" not in result
+
+    def test_dict_keeps_normal_url(self):
+        data = {"url": "https://example.com/image.png"}
+        result = _serialize_for_token_count(data)
+        assert "url" in result
+
+    def test_object_with_model_dump(self):
+        class PydanticLike:
+            def model_dump(self):
+                return {"key": "value"}
+
+        result = _serialize_for_token_count(PydanticLike())
+        assert result == {"key": "value"}
+
+    def test_object_with_to_dict(self):
+        class DictLike:
+            def to_dict(self):
+                return {"key": "value"}
+
+        result = _serialize_for_token_count(DictLike())
+        assert result == {"key": "value"}
+
+    def test_object_with_dict_attr(self):
+        class SimpleObj:
+            def __init__(self):
+                self.name = "test"
+
+        result = _serialize_for_token_count(SimpleObj())
+        assert result == {"name": "test"}
+
+    def test_number_to_string(self):
+        assert _serialize_for_token_count(42) == "42"
+
+    def test_nested_dict_with_list(self):
+        data = {"items": ["a", "b"], "nested": {"key": "val"}}
+        result = _serialize_for_token_count(data)
+        assert result["items"] == ["a", "b"]
+        assert result["nested"] == {"key": "val"}
+
+
+# ── _count_tokens ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestCountTokens:
+
+    def test_none_returns_zero(self):
+        assert _count_tokens(None) == 0
+
+    def test_empty_string_returns_zero(self):
+        assert _count_tokens("") == 0
+
+    def test_data_url_returns_zero(self):
+        data_url = "data:image/png;base64,iVBORw0KGgoAAAA..."
+        assert _count_tokens(data_url) == 0
+
+    def test_dict_counts(self):
+        assert _count_tokens({"key": "some text here"}) > 0
+
+    def test_list_counts(self):
+        assert _count_tokens(["some text", "more text"]) > 0
+
+
+# ── _count_prompt_tokens ────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestCountPromptTokens:
+
+    def test_empty_messages(self):
+        assert _count_prompt_tokens([], tools=None) == 0
+
+    def test_none_messages(self):
+        assert _count_prompt_tokens(None, tools=None) == 0
+
+    def test_dict_messages(self):
+        messages = [{"content": "Hello world"}]
+        tokens = _count_prompt_tokens(messages, tools=None)
+        assert tokens > 0
+
+    def test_non_dict_messages(self):
+        class MessageObj:
+            def __init__(self):
+                self.content = "Hello world"
+
+        messages = [MessageObj()]
+        tokens = _count_prompt_tokens(messages, tools=None)
+        assert tokens > 0
+
+    def test_with_tools(self):
+        messages = [{"content": "Hello"}]
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search",
+                    "parameters": {"type": "object"},
+                },
+            }
+        ]
+        tokens_without = _count_prompt_tokens(messages, tools=None)
+        tokens_with = _count_prompt_tokens(messages, tools=tools)
+        assert tokens_with > tokens_without
+
+    def test_with_usage_attachments(self):
+        messages = [{"content": "Hello"}]
+        attachments = [{"mime_type": "text/plain", "content": "file data"}]
+        tokens_without = _count_prompt_tokens(messages, tools=None)
+        tokens_with = _count_prompt_tokens(
+            messages, tools=None, usage_attachments=attachments
+        )
+        assert tokens_with > tokens_without
+
+    def test_with_response_format(self):
+        messages = [{"content": "Hello"}]
+        tokens_without = _count_prompt_tokens(messages, tools=None)
+        tokens_with = _count_prompt_tokens(
+            messages, tools=None, response_format={"type": "json_object"}
+        )
+        assert tokens_with > tokens_without
+
+    def test_message_with_tool_calls_field(self):
+        messages = [
+            {
+                "content": "Hello",
+                "tool_calls": [
+                    {"id": "call_1", "function": {"name": "test", "arguments": "{}"}}
+                ],
+            }
+        ]
+        tokens = _count_prompt_tokens(messages, tools=None)
+        assert tokens > 0
+
+    def test_message_with_tool_call_id(self):
+        messages = [
+            {
+                "content": "Result of tool",
+                "tool_call_id": "call_1",
+            }
+        ]
+        tokens = _count_prompt_tokens(messages, tools=None)
+        assert tokens > 0
+
+
+# ── update_token_usage edge cases ───────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_update_token_usage_with_user_api_key(monkeypatch):
+    inserted_docs = []
+
+    class FakeCollection:
+        def insert_one(self, doc):
+            inserted_docs.append(doc)
+
+    modules_without_pytest = dict(sys.modules)
+    modules_without_pytest.pop("pytest", None)
+
+    monkeypatch.setattr("application.usage.sys.modules", modules_without_pytest)
+    monkeypatch.setattr("application.usage.usage_collection", FakeCollection())
+
+    update_token_usage(
+        decoded_token=None,
+        user_api_key="api-key-123",
+        token_usage={"prompt_tokens": 10, "generated_tokens": 5},
+        agent_id=None,
+    )
+
+    assert len(inserted_docs) == 1
+    assert inserted_docs[0]["api_key"] == "api-key-123"
+    assert inserted_docs[0]["user_id"] is None
+    assert "agent_id" not in inserted_docs[0]
+
+
+@pytest.mark.unit
+def test_update_token_usage_with_decoded_token(monkeypatch):
+    inserted_docs = []
+
+    class FakeCollection:
+        def insert_one(self, doc):
+            inserted_docs.append(doc)
+
+    modules_without_pytest = dict(sys.modules)
+    modules_without_pytest.pop("pytest", None)
+
+    monkeypatch.setattr("application.usage.sys.modules", modules_without_pytest)
+    monkeypatch.setattr("application.usage.usage_collection", FakeCollection())
+
+    update_token_usage(
+        decoded_token={"sub": "user-abc"},
+        user_api_key=None,
+        token_usage={"prompt_tokens": 20, "generated_tokens": 10},
+        agent_id=None,
+    )
+
+    assert len(inserted_docs) == 1
+    assert inserted_docs[0]["user_id"] == "user-abc"
+
+
+@pytest.mark.unit
+def test_update_token_usage_non_dict_decoded_token(monkeypatch):
+    inserted_docs = []
+
+    class FakeCollection:
+        def insert_one(self, doc):
+            inserted_docs.append(doc)
+
+    modules_without_pytest = dict(sys.modules)
+    modules_without_pytest.pop("pytest", None)
+
+    monkeypatch.setattr("application.usage.sys.modules", modules_without_pytest)
+    monkeypatch.setattr("application.usage.usage_collection", FakeCollection())
+
+    update_token_usage(
+        decoded_token="not-a-dict",
+        user_api_key="key",
+        token_usage={"prompt_tokens": 5, "generated_tokens": 3},
+        agent_id=None,
+    )
+
+    assert len(inserted_docs) == 1
+    assert inserted_docs[0]["user_id"] is None

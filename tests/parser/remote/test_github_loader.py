@@ -116,6 +116,159 @@ class TestGitHubLoaderLoadData:
 
 
 
+class TestGitHubLoaderIsTextFile:
+    def test_known_extension(self):
+        loader = GitHubLoader()
+        assert loader.is_text_file("app.py") is True
+        assert loader.is_text_file("data.json") is True
+
+    def test_unknown_extension_with_text_mime(self):
+        loader = GitHubLoader()
+        assert loader.is_text_file("file.xml") is True
+
+    def test_binary_file(self):
+        loader = GitHubLoader()
+        assert loader.is_text_file("image.png") is False
+
+    @patch("application.parser.remote.github_loader.mimetypes.guess_type")
+    def test_mime_fallback_text(self, mock_mime):
+        mock_mime.return_value = ("text/plain", None)
+        loader = GitHubLoader()
+        assert loader.is_text_file("unknownfile.xyz") is True
+
+
+class TestGitHubLoaderMakeRequest:
+    @patch("application.parser.remote.github_loader.requests.get")
+    def test_success(self, mock_get):
+        loader = GitHubLoader()
+        mock_get.return_value = make_response({"ok": True}, 200)
+        resp = loader._make_request("http://example.com")
+        assert resp.status_code == 200
+
+    @patch("application.parser.remote.github_loader.time.sleep")
+    @patch("application.parser.remote.github_loader.requests.get")
+    def test_rate_limit_retry(self, mock_get, mock_sleep):
+        loader = GitHubLoader()
+        rate_resp = MagicMock()
+        rate_resp.status_code = 403
+        rate_resp.json.return_value = {"message": "API rate limit exceeded"}
+        rate_resp.headers = {
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": "9999999",
+        }
+        ok_resp = make_response({"ok": True}, 200)
+        mock_get.side_effect = [rate_resp, ok_resp]
+
+        resp = loader._make_request("http://example.com", max_retries=2)
+        assert resp.status_code == 200
+        mock_sleep.assert_called_once()
+
+    @patch("application.parser.remote.github_loader.requests.get")
+    def test_rate_limit_exhausted(self, mock_get):
+        loader = GitHubLoader()
+        rate_resp = MagicMock()
+        rate_resp.status_code = 403
+        rate_resp.json.return_value = {"message": "API rate limit exceeded"}
+        rate_resp.headers = {
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": "9999",
+        }
+        mock_get.return_value = rate_resp
+
+        with pytest.raises(Exception, match="rate limit exceeded"):
+            loader._make_request("http://example.com", max_retries=1)
+
+    @patch("application.parser.remote.github_loader.requests.get")
+    def test_403_non_rate_limit(self, mock_get):
+        loader = GitHubLoader()
+        resp = MagicMock()
+        resp.status_code = 403
+        resp.json.return_value = {"message": "Forbidden - need auth"}
+        resp.headers = {"X-RateLimit-Remaining": "50", "X-RateLimit-Reset": "9999"}
+        mock_get.return_value = resp
+
+        with pytest.raises(Exception, match="GitHub API error"):
+            loader._make_request("http://example.com", max_retries=1)
+
+    @patch("application.parser.remote.github_loader.requests.get")
+    def test_other_error_raises(self, mock_get):
+        loader = GitHubLoader()
+        resp = make_response(
+            status_code=500,
+            raise_error=requests.HTTPError("Server Error"),
+        )
+        mock_get.return_value = resp
+
+        with pytest.raises(requests.HTTPError):
+            loader._make_request("http://example.com", max_retries=1)
+
+
+class TestGitHubLoaderFetchRepoFilesErrors:
+    @patch("application.parser.remote.github_loader.requests.get")
+    def test_api_error_message_in_dict(self, mock_get):
+        loader = GitHubLoader()
+        mock_get.return_value = make_response(
+            {"message": "Not Found"}, 200
+        )
+
+        with pytest.raises(Exception, match="GitHub API error"):
+            loader.fetch_repo_files("owner/repo")
+
+    @patch("application.parser.remote.github_loader.requests.get")
+    def test_non_list_response(self, mock_get):
+        loader = GitHubLoader()
+        mock_get.return_value = make_response("not a list", 200)
+
+        with pytest.raises(TypeError, match="Expected list"):
+            loader.fetch_repo_files("owner/repo")
+
+
+class TestGitHubLoaderFetchFileContentEdgeCases:
+    @patch("application.parser.remote.github_loader.requests.get")
+    def test_empty_base64_text_returns_none(self, mock_get):
+        loader = GitHubLoader()
+        b64 = base64.b64encode(b"").decode("utf-8")
+        mock_get.return_value = make_response(
+            {"encoding": "base64", "content": b64}
+        )
+        result = loader.fetch_file_content("owner/repo", "empty.py")
+        assert result is None
+
+    @patch("application.parser.remote.github_loader.requests.get")
+    def test_empty_non_base64_returns_none(self, mock_get):
+        loader = GitHubLoader()
+        mock_get.return_value = make_response(
+            {"encoding": "none", "content": "   "}
+        )
+        result = loader.fetch_file_content("owner/repo", "empty.txt")
+        assert result is None
+
+    @patch("application.parser.remote.github_loader.requests.get")
+    def test_decode_failure_returns_none(self, mock_get):
+        loader = GitHubLoader()
+        mock_get.return_value = make_response(
+            {"encoding": "base64", "content": "invalid!!base64"}
+        )
+        result = loader.fetch_file_content("owner/repo", "broken.py")
+        assert result is None
+
+
+class TestGitHubLoaderLoadDataSkipsNone:
+    def test_skips_binary_files(self, monkeypatch):
+        loader = GitHubLoader()
+        monkeypatch.setattr(
+            loader, "fetch_repo_files", lambda repo, path="": ["a.py", "b.png"]
+        )
+
+        def fake_content(repo, fp):
+            return "code" if fp == "a.py" else None
+
+        monkeypatch.setattr(loader, "fetch_file_content", fake_content)
+        docs = loader.load_data("https://github.com/o/r")
+        assert len(docs) == 1
+        assert docs[0].doc_id == "a.py"
+
+
 class TestGitHubLoaderRobustness:
     @patch("application.parser.remote.github_loader.requests.get")
     def test_fetch_repo_files_non_json_raises(self, mock_get):

@@ -195,3 +195,67 @@ class TestValidateUrlSafe:
         is_valid, url, error = validate_url_safe("http://192.168.1.1")
         assert is_valid is False
         assert "private" in error.lower() or "internal" in error.lower()
+
+    def test_adds_scheme_when_missing(self):
+        with patch("application.core.url_validation.resolve_hostname") as mock_resolve:
+            mock_resolve.return_value = "93.184.216.34"
+            is_valid, url, error = validate_url_safe("example.com")
+            assert is_valid is True
+            assert url == "http://example.com"
+
+
+class TestIsPrivateIPExtended:
+    """Additional edge cases for IP classification."""
+
+    def test_multicast_ip(self):
+        assert is_private_ip("224.0.0.1") is True
+
+    def test_unspecified_ip(self):
+        assert is_private_ip("0.0.0.0") is True
+
+    def test_ipv6_loopback(self):
+        assert is_private_ip("::1") is True
+
+    def test_ipv6_private(self):
+        assert is_private_ip("fc00::1") is True
+
+    def test_ipv6_public(self):
+        assert is_private_ip("2607:f8b0:4004:800::200e") is False
+
+    def test_reserved_ip(self):
+        # 240.0.0.0/4 is reserved (future use), Python's ipaddress marks it as such
+        assert is_private_ip("240.0.0.1") is True
+
+
+class TestValidateUrlExtended:
+    """Additional URL validation tests."""
+
+    def test_blocks_metadata_hostname(self):
+        with pytest.raises(SSRFError):
+            validate_url("http://metadata")
+
+    def test_allows_localhost_with_flag(self):
+        with patch("application.core.url_validation.resolve_hostname") as mock_resolve:
+            mock_resolve.return_value = "192.168.1.1"
+            result = validate_url(
+                "http://internal.local", allow_localhost=True
+            )
+            assert result == "http://internal.local"
+
+    def test_blocks_aws_ecs_metadata_ip(self):
+        with pytest.raises(SSRFError, match="metadata"):
+            validate_url("http://169.254.170.2")
+
+    def test_blocks_aws_ipv6_metadata(self):
+        with pytest.raises(SSRFError, match="metadata"):
+            validate_url("http://[fd00:ec2::254]")
+
+    def test_blocks_hostname_resolving_to_loopback(self):
+        with patch("application.core.url_validation.resolve_hostname") as mock_resolve:
+            mock_resolve.return_value = "127.0.0.1"
+            with pytest.raises(SSRFError):
+                validate_url("http://sneaky.example.com")
+
+    def test_allows_localhost_ip_with_flag(self):
+        result = validate_url("http://10.0.0.1", allow_localhost=True)
+        assert result == "http://10.0.0.1"

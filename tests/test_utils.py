@@ -531,3 +531,134 @@ class TestCleanTextForTts:
     def test_removes_double_colons(self):
         result = clean_text_for_tts("module::function")
         assert "::" not in result
+
+    @pytest.mark.unit
+    def test_removes_non_ascii(self):
+        result = clean_text_for_tts("hello \U0001f600 world")
+        assert "\U0001f600" not in result
+        assert "hello" in result
+        assert "world" in result
+
+    @pytest.mark.unit
+    def test_empty_string(self):
+        result = clean_text_for_tts("")
+        assert result == ""
+
+    @pytest.mark.unit
+    def test_removes_underscore_bold(self):
+        result = clean_text_for_tts("__bold text__")
+        assert "bold text" in result
+        assert "__" not in result
+
+    @pytest.mark.unit
+    def test_removes_underscore_italic(self):
+        result = clean_text_for_tts("_italic text_")
+        assert "italic text" in result
+
+
+class TestLimitChatHistoryEdgeCases:
+
+    @pytest.mark.unit
+    def test_max_token_limit_caps_at_model_limit(self):
+        """When max_token_limit exceeds model limit, model limit is used."""
+        with patch("application.utils.get_token_limit", return_value=100):
+            history = [
+                {"prompt": "q", "response": "a"},
+            ]
+            result = limit_chat_history(history, max_token_limit=999999)
+            assert len(result) <= 1
+
+    @pytest.mark.unit
+    def test_max_token_limit_none_uses_model_limit(self):
+        with patch("application.utils.get_token_limit", return_value=100000):
+            history = [{"prompt": "q", "response": "a"}]
+            result = limit_chat_history(history, max_token_limit=None)
+            assert len(result) == 1
+
+    @pytest.mark.unit
+    def test_messages_without_prompt_response_keys(self):
+        """Messages lacking prompt/response should still be included."""
+        with patch("application.utils.get_token_limit", return_value=100000):
+            history = [{"custom_key": "value"}]
+            result = limit_chat_history(history, max_token_limit=100000)
+            assert len(result) == 1
+
+    @pytest.mark.unit
+    def test_single_message_exceeds_limit(self):
+        """If the most recent message exceeds the limit, it's excluded."""
+        history = [
+            {"prompt": "x" * 50000, "response": "y" * 50000},
+        ]
+        result = limit_chat_history(history, max_token_limit=10)
+        assert len(result) == 0
+
+
+class TestSafeFilenameEdgeCases:
+
+    @pytest.mark.unit
+    def test_filename_with_spaces(self):
+        result = safe_filename("my document.pdf")
+        assert result == "my_document.pdf"
+
+    @pytest.mark.unit
+    def test_filename_with_special_chars(self):
+        result = safe_filename("file@#$.txt")
+        # secure_filename strips special chars
+        assert result.endswith(".txt")
+
+    @pytest.mark.unit
+    def test_chinese_filename_gets_uuid(self):
+        result = safe_filename("\u6587\u4ef6.pdf")
+        # secure_filename strips non-latin, so UUID is generated
+        assert result.endswith(".pdf")
+        assert len(result) > 5
+
+
+class TestGenerateImageUrlEdgeCases:
+
+    @pytest.mark.unit
+    def test_non_string_input(self):
+        result = generate_image_url(123)
+        # Not a string, not starting with http, uses default strategy
+        assert "/api/images/" in result or "s3" in result
+
+    @pytest.mark.unit
+    def test_default_strategy_is_backend(self):
+        with patch("application.utils.settings") as s:
+            # Simulate missing URL_STRATEGY attribute
+            del s.URL_STRATEGY
+            s.API_URL = "http://localhost:7091"
+            result = generate_image_url("img.png")
+            assert "localhost:7091" in result
+
+
+class TestGetHashEdgeCases:
+
+    @pytest.mark.unit
+    def test_empty_string(self):
+        h = get_hash("")
+        assert len(h) == 32
+
+    @pytest.mark.unit
+    def test_unicode_string(self):
+        h = get_hash("\u4f60\u597d\u4e16\u754c")
+        assert len(h) == 32
+
+
+class TestValidateFunctionNameEdgeCases:
+
+    @pytest.mark.unit
+    def test_single_char(self):
+        assert validate_function_name("a") is True
+
+    @pytest.mark.unit
+    def test_only_numbers(self):
+        assert validate_function_name("123") is True
+
+    @pytest.mark.unit
+    def test_with_dots(self):
+        assert validate_function_name("func.name") is False
+
+    @pytest.mark.unit
+    def test_with_slash(self):
+        assert validate_function_name("path/to") is False

@@ -1,4 +1,17 @@
-"""Tests for application/api/answer/services/stream_processor.py — get_prompt and helpers."""
+"""Tests for application/api/answer/services/stream_processor.py — get_prompt and helpers.
+
+Extended coverage for StreamProcessor including:
+  - get_prompt: all presets and DB fallback
+  - StreamProcessor init, _resolve_agent_id, _get_prompt_content
+  - _get_required_tool_actions
+  - _get_attachments_content: valid, invalid, empty
+  - _configure_retriever
+  - _validate_and_set_model
+  - _get_agent_key
+  - _get_data_from_api_key
+  - _configure_source
+  - pre_fetch_docs
+"""
 
 from unittest.mock import MagicMock, patch
 
@@ -119,6 +132,22 @@ class TestStreamProcessorInit:
             sp = StreamProcessor(request_data={}, decoded_token=None)
         assert sp.initial_user_id is None
 
+    @pytest.mark.unit
+    def test_init_default_model_and_config(self):
+        mock_db = MagicMock()
+        with patch("application.api.answer.services.stream_processor.MongoDB") as MockMongo, \
+             patch("application.api.answer.services.stream_processor.settings") as mock_settings:
+            mock_settings.MONGO_DB_NAME = "docsgpt"
+            MockMongo.get_client.return_value = {"docsgpt": mock_db}
+
+            from application.api.answer.services.stream_processor import StreamProcessor
+            sp = StreamProcessor(request_data={}, decoded_token={"sub": "u"})
+        assert sp.model_id is None
+        assert sp.is_shared_usage is False
+        assert sp.shared_token is None
+        assert sp.compressed_summary is None
+        assert sp.compressed_summary_tokens == 0
+
 
 class TestGetAttachmentsContent:
 
@@ -167,6 +196,19 @@ class TestGetAttachmentsContent:
             from application.api.answer.services.stream_processor import StreamProcessor
             sp = StreamProcessor(request_data={}, decoded_token={"sub": "u"})
         result = sp._get_attachments_content(["bad"], "u")
+        assert result == []
+
+    @pytest.mark.unit
+    def test_none_ids_returns_empty(self):
+        mock_db = MagicMock()
+        with patch("application.api.answer.services.stream_processor.MongoDB") as MockMongo, \
+             patch("application.api.answer.services.stream_processor.settings") as mock_settings:
+            mock_settings.MONGO_DB_NAME = "docsgpt"
+            MockMongo.get_client.return_value = {"docsgpt": mock_db}
+
+            from application.api.answer.services.stream_processor import StreamProcessor
+            sp = StreamProcessor(request_data={}, decoded_token={"sub": "u"})
+        result = sp._get_attachments_content(None, "u")
         assert result == []
 
 
@@ -250,6 +292,23 @@ class TestResolveAgentId:
         sp.conversation_service.get_conversation.side_effect = Exception("db error")
         assert sp._resolve_agent_id() is None
 
+    @pytest.mark.unit
+    def test_conversation_without_agent_id(self):
+        mock_db = MagicMock()
+        with patch("application.api.answer.services.stream_processor.MongoDB") as MockMongo, \
+             patch("application.api.answer.services.stream_processor.settings") as mock_settings:
+            mock_settings.MONGO_DB_NAME = "docsgpt"
+            MockMongo.get_client.return_value = {"docsgpt": mock_db}
+
+            from application.api.answer.services.stream_processor import StreamProcessor
+            sp = StreamProcessor(
+                request_data={"conversation_id": "conv1"},
+                decoded_token={"sub": "u"},
+            )
+        sp.conversation_service = MagicMock()
+        sp.conversation_service.get_conversation.return_value = {"name": "test conv"}
+        assert sp._resolve_agent_id() is None
+
 
 class TestGetPromptContent:
 
@@ -299,6 +358,19 @@ class TestGetPromptContent:
         sp.agent_config = {"prompt_id": "bad_id"}
         assert sp._get_prompt_content() is None
 
+    @pytest.mark.unit
+    def test_agent_config_not_dict(self):
+        mock_db = MagicMock()
+        with patch("application.api.answer.services.stream_processor.MongoDB") as MockMongo, \
+             patch("application.api.answer.services.stream_processor.settings") as mock_settings:
+            mock_settings.MONGO_DB_NAME = "docsgpt"
+            MockMongo.get_client.return_value = {"docsgpt": mock_db}
+
+            from application.api.answer.services.stream_processor import StreamProcessor
+            sp = StreamProcessor(request_data={}, decoded_token={"sub": "u"})
+        sp.agent_config = "not_a_dict"
+        assert sp._get_prompt_content() is None
+
 
 class TestGetRequiredToolActions:
 
@@ -329,3 +401,114 @@ class TestGetRequiredToolActions:
         sp._prompt_content = "No template syntax here"
         result = sp._get_required_tool_actions()
         assert result == {}
+
+    @pytest.mark.unit
+    def test_caches_result(self):
+        mock_db = MagicMock()
+        with patch("application.api.answer.services.stream_processor.MongoDB") as MockMongo, \
+             patch("application.api.answer.services.stream_processor.settings") as mock_settings:
+            mock_settings.MONGO_DB_NAME = "docsgpt"
+            MockMongo.get_client.return_value = {"docsgpt": mock_db}
+
+            from application.api.answer.services.stream_processor import StreamProcessor
+            sp = StreamProcessor(request_data={}, decoded_token={"sub": "u"})
+        sp._required_tool_actions = {"tool1": {"action1"}}
+        result = sp._get_required_tool_actions()
+        assert result == {"tool1": {"action1"}}
+
+
+class TestConfigureRetriever:
+
+    @pytest.mark.unit
+    def test_default_values(self):
+        mock_db = MagicMock()
+        with patch("application.api.answer.services.stream_processor.MongoDB") as MockMongo, \
+             patch("application.api.answer.services.stream_processor.settings") as mock_settings:
+            mock_settings.MONGO_DB_NAME = "docsgpt"
+            MockMongo.get_client.return_value = {"docsgpt": mock_db}
+
+            from application.api.answer.services.stream_processor import StreamProcessor
+            sp = StreamProcessor(
+                request_data={"question": "Q"},
+                decoded_token={"sub": "u"},
+            )
+        sp.model_id = "test-model"
+        sp.agent_key = None
+        sp._configure_retriever()
+        assert sp.retriever_config["retriever_name"] == "classic"
+        assert sp.retriever_config["chunks"] == 2
+
+    @pytest.mark.unit
+    def test_isNoneDoc_sets_zero_chunks(self):
+        mock_db = MagicMock()
+        with patch("application.api.answer.services.stream_processor.MongoDB") as MockMongo, \
+             patch("application.api.answer.services.stream_processor.settings") as mock_settings:
+            mock_settings.MONGO_DB_NAME = "docsgpt"
+            MockMongo.get_client.return_value = {"docsgpt": mock_db}
+
+            from application.api.answer.services.stream_processor import StreamProcessor
+            sp = StreamProcessor(
+                request_data={"question": "Q", "isNoneDoc": True},
+                decoded_token={"sub": "u"},
+            )
+        sp.model_id = "test-model"
+        sp.agent_key = None
+        sp._configure_retriever()
+        assert sp.retriever_config["chunks"] == 0
+
+    @pytest.mark.unit
+    def test_custom_retriever_and_chunks(self):
+        mock_db = MagicMock()
+        with patch("application.api.answer.services.stream_processor.MongoDB") as MockMongo, \
+             patch("application.api.answer.services.stream_processor.settings") as mock_settings:
+            mock_settings.MONGO_DB_NAME = "docsgpt"
+            MockMongo.get_client.return_value = {"docsgpt": mock_db}
+
+            from application.api.answer.services.stream_processor import StreamProcessor
+            sp = StreamProcessor(
+                request_data={"question": "Q", "retriever": "hybrid", "chunks": "5"},
+                decoded_token={"sub": "u"},
+            )
+        sp.model_id = "test-model"
+        sp.agent_key = None
+        sp._configure_retriever()
+        assert sp.retriever_config["retriever_name"] == "hybrid"
+        assert sp.retriever_config["chunks"] == 5
+
+
+class TestConfigureSource:
+
+    @pytest.mark.unit
+    def test_active_docs_from_request(self):
+        mock_db = MagicMock()
+        with patch("application.api.answer.services.stream_processor.MongoDB") as MockMongo, \
+             patch("application.api.answer.services.stream_processor.settings") as mock_settings:
+            mock_settings.MONGO_DB_NAME = "docsgpt"
+            MockMongo.get_client.return_value = {"docsgpt": mock_db}
+
+            from application.api.answer.services.stream_processor import StreamProcessor
+            sp = StreamProcessor(
+                request_data={"question": "Q", "active_docs": "source_123"},
+                decoded_token={"sub": "u"},
+            )
+        sp.agent_key = None
+        sp._configure_source()
+        assert sp.source == {"active_docs": "source_123"}
+
+    @pytest.mark.unit
+    def test_no_source_config(self):
+        mock_db = MagicMock()
+        with patch("application.api.answer.services.stream_processor.MongoDB") as MockMongo, \
+             patch("application.api.answer.services.stream_processor.settings") as mock_settings:
+            mock_settings.MONGO_DB_NAME = "docsgpt"
+            MockMongo.get_client.return_value = {"docsgpt": mock_db}
+
+            from application.api.answer.services.stream_processor import StreamProcessor
+            sp = StreamProcessor(
+                request_data={"question": "Q"},
+                decoded_token={"sub": "u"},
+            )
+        sp.agent_key = None
+        sp._configure_source()
+        assert sp.source == {}
+        assert sp.all_sources == []

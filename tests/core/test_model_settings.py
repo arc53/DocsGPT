@@ -337,3 +337,98 @@ class TestModelRegistry:
             reg = ModelRegistry()
             # Should have at least docsgpt-local
             assert reg.default_model_id is not None
+
+    @pytest.mark.unit
+    def test_default_model_from_provider_fallback(self):
+        """When LLM_NAME is not set but LLM_PROVIDER and API_KEY are,
+        default should be first model of that provider."""
+        mock_settings = MagicMock()
+        mock_settings.OPENAI_BASE_URL = None
+        mock_settings.OPENAI_API_KEY = "sk-test"
+        mock_settings.OPENAI_API_BASE = None
+        mock_settings.ANTHROPIC_API_KEY = None
+        mock_settings.GOOGLE_API_KEY = None
+        mock_settings.GROQ_API_KEY = None
+        mock_settings.OPEN_ROUTER_API_KEY = None
+        mock_settings.NOVITA_API_KEY = None
+        mock_settings.HUGGINGFACE_API_KEY = None
+        mock_settings.LLM_PROVIDER = "openai"
+        mock_settings.LLM_NAME = None
+        mock_settings.API_KEY = "sk-test"
+
+        with patch("application.core.settings.settings", mock_settings):
+            reg = ModelRegistry()
+            assert reg.default_model_id is not None
+
+    @pytest.mark.unit
+    def test_add_google_models_no_key_with_provider(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            mock_settings.GOOGLE_API_KEY = None
+            mock_settings.LLM_PROVIDER = "google"
+            mock_settings.LLM_NAME = "nonexistent"
+            reg._add_google_models(mock_settings)
+            assert len(reg.models) > 0
+
+    @pytest.mark.unit
+    def test_add_groq_models_no_key_with_provider(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            mock_settings.GROQ_API_KEY = None
+            mock_settings.LLM_PROVIDER = "groq"
+            mock_settings.LLM_NAME = "nonexistent"
+            reg._add_groq_models(mock_settings)
+            assert len(reg.models) > 0
+
+    @pytest.mark.unit
+    def test_add_openrouter_models_no_key_with_provider(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            mock_settings.OPEN_ROUTER_API_KEY = None
+            mock_settings.LLM_PROVIDER = "openrouter"
+            mock_settings.LLM_NAME = "nonexistent"
+            reg._add_openrouter_models(mock_settings)
+            assert len(reg.models) > 0
+
+    @pytest.mark.unit
+    def test_add_novita_models_no_key_with_provider(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            mock_settings.NOVITA_API_KEY = None
+            mock_settings.LLM_PROVIDER = "novita"
+            mock_settings.LLM_NAME = "nonexistent"
+            reg._add_novita_models(mock_settings)
+            assert len(reg.models) > 0
+
+    @pytest.mark.unit
+    def test_to_dict_disabled_model(self):
+        model = AvailableModel(
+            id="disabled",
+            provider=ModelProvider.OPENAI,
+            display_name="Disabled",
+            enabled=False,
+        )
+        d = model.to_dict()
+        assert d["enabled"] is False
+
+    @pytest.mark.unit
+    def test_to_dict_with_attachment_types(self):
+        caps = ModelCapabilities(
+            supported_attachment_types=["image/png", "application/pdf"],
+        )
+        model = AvailableModel(
+            id="vision",
+            provider=ModelProvider.OPENAI,
+            display_name="Vision",
+            capabilities=caps,
+        )
+        d = model.to_dict()
+        assert d["supported_attachment_types"] == ["image/png", "application/pdf"]
