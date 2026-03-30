@@ -414,3 +414,166 @@ class TestUploadIndex:
         entry = db["sources"].find_one({"_id": ObjectId(doc_id)})
         assert entry["sync_frequency"] == "daily"
         assert entry["remote_data"] == '{"url":"http://example.com"}'
+
+    def test_faiss_upload_with_valid_files(self, internal_app, monkeypatch):
+        """Cover lines 93-104: FAISS upload with both faiss and pkl files."""
+        app, db = internal_app
+        doc_id = str(ObjectId())
+        settings_mock = self._make_settings(vector_store="faiss")
+        monkeypatch.setattr(
+            "application.api.internal.routes.settings", settings_mock
+        )
+        mock_storage = MagicMock()
+        monkeypatch.setattr(
+            "application.api.internal.routes.StorageCreator",
+            MagicMock(get_storage=MagicMock(return_value=mock_storage)),
+        )
+
+        with app.test_client() as client:
+            resp = client.post(
+                "/api/upload_index",
+                data={
+                    "user": "u",
+                    "name": "n",
+                    "tokens": "0",
+                    "retriever": "classic",
+                    "id": doc_id,
+                    "type": "local",
+                    "file_faiss": (io.BytesIO(b"faiss data"), "index.faiss"),
+                    "file_pkl": (io.BytesIO(b"pkl data"), "index.pkl"),
+                },
+                content_type="multipart/form-data",
+            )
+            assert resp.json["status"] == "ok"
+
+        mock_storage.save_file.assert_called()
+        entry = db["sources"].find_one({"_id": ObjectId(doc_id)})
+        assert entry is not None
+
+    def test_faiss_pkl_missing_returns_no_file(self, internal_app, monkeypatch):
+        """Cover lines 93-95: FAISS upload with faiss file but no pkl file."""
+        app, db = internal_app
+        doc_id = str(ObjectId())
+        settings_mock = self._make_settings(vector_store="faiss")
+        monkeypatch.setattr(
+            "application.api.internal.routes.settings", settings_mock
+        )
+        mock_storage = MagicMock()
+        monkeypatch.setattr(
+            "application.api.internal.routes.StorageCreator",
+            MagicMock(get_storage=MagicMock(return_value=mock_storage)),
+        )
+
+        with app.test_client() as client:
+            resp = client.post(
+                "/api/upload_index",
+                data={
+                    "user": "u",
+                    "name": "n",
+                    "tokens": "0",
+                    "retriever": "classic",
+                    "id": doc_id,
+                    "type": "local",
+                    "file_faiss": (io.BytesIO(b"faiss data"), "index.faiss"),
+                },
+                content_type="multipart/form-data",
+            )
+            assert resp.json["status"] == "no file"
+
+    def test_faiss_pkl_empty_name_returns_no_file_name(self, internal_app, monkeypatch):
+        """Cover lines 97-98: FAISS upload with pkl but empty filename."""
+        app, db = internal_app
+        doc_id = str(ObjectId())
+        settings_mock = self._make_settings(vector_store="faiss")
+        monkeypatch.setattr(
+            "application.api.internal.routes.settings", settings_mock
+        )
+        mock_storage = MagicMock()
+        monkeypatch.setattr(
+            "application.api.internal.routes.StorageCreator",
+            MagicMock(get_storage=MagicMock(return_value=mock_storage)),
+        )
+
+        with app.test_client() as client:
+            resp = client.post(
+                "/api/upload_index",
+                data={
+                    "user": "u",
+                    "name": "n",
+                    "tokens": "0",
+                    "retriever": "classic",
+                    "id": doc_id,
+                    "type": "local",
+                    "file_faiss": (io.BytesIO(b"faiss data"), "index.faiss"),
+                    "file_pkl": (io.BytesIO(b""), ""),
+                },
+                content_type="multipart/form-data",
+            )
+            assert resp.json["status"] == "no file name"
+
+    def test_update_existing_with_file_name_map(self, internal_app, monkeypatch):
+        """Cover line 124: update existing entry with file_name_map."""
+        app, db = internal_app
+        doc_id = ObjectId()
+        settings_mock = self._make_settings(vector_store="other")
+        monkeypatch.setattr(
+            "application.api.internal.routes.settings", settings_mock
+        )
+        mock_storage = MagicMock()
+        monkeypatch.setattr(
+            "application.api.internal.routes.StorageCreator",
+            MagicMock(get_storage=MagicMock(return_value=mock_storage)),
+        )
+
+        db["sources"].insert_one({"_id": doc_id, "user": "old_user", "name": "old"})
+
+        fmap = {"hash1": "file1.txt"}
+        with app.test_client() as client:
+            resp = client.post(
+                "/api/upload_index",
+                data={
+                    "user": "u",
+                    "name": "n",
+                    "tokens": "0",
+                    "retriever": "classic",
+                    "id": str(doc_id),
+                    "type": "local",
+                    "file_name_map": json.dumps(fmap),
+                },
+            )
+            assert resp.json["status"] == "ok"
+
+        entry = db["sources"].find_one({"_id": doc_id})
+        assert entry["file_name_map"] == fmap
+
+    def test_invalid_file_name_map_defaults_none(self, internal_app, monkeypatch):
+        """Cover lines 77-79: invalid file_name_map JSON defaults to None."""
+        app, db = internal_app
+        doc_id = str(ObjectId())
+        settings_mock = self._make_settings(vector_store="other")
+        monkeypatch.setattr(
+            "application.api.internal.routes.settings", settings_mock
+        )
+        mock_storage = MagicMock()
+        monkeypatch.setattr(
+            "application.api.internal.routes.StorageCreator",
+            MagicMock(get_storage=MagicMock(return_value=mock_storage)),
+        )
+
+        with app.test_client() as client:
+            resp = client.post(
+                "/api/upload_index",
+                data={
+                    "user": "u",
+                    "name": "n",
+                    "tokens": "0",
+                    "retriever": "classic",
+                    "id": doc_id,
+                    "type": "local",
+                    "file_name_map": "not valid json{{{",
+                },
+            )
+            assert resp.json["status"] == "ok"
+
+        entry = db["sources"].find_one({"_id": ObjectId(doc_id)})
+        assert "file_name_map" not in entry

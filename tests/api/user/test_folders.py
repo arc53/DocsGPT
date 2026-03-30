@@ -507,3 +507,116 @@ class TestBulkMoveAgents:
                 response = BulkMoveAgents().post()
 
         assert response.status_code == 404
+
+
+# =====================================================================
+# Coverage gap tests  (lines 64, 90-91, 100, 125-126, 132, 136)
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestAgentFoldersGaps:
+
+    def test_create_folder_no_auth(self, app):
+        """Cover line 64: post returns 401 when no decoded_token."""
+        from application.api.user.agents.folders import AgentFolders
+
+        with app.test_request_context(
+            "/api/agents/folders/",
+            method="POST",
+            json={"name": "Test"},
+        ):
+            from flask import request
+
+            request.decoded_token = None
+            response = AgentFolders().post()
+        assert response.status_code == 401
+
+    def test_create_folder_exception(self, app):
+        """Cover lines 90-91: exception during insert_one returns 400."""
+        from application.api.user.agents.folders import AgentFolders
+
+        mock_folders = Mock()
+        mock_folders.find_one.return_value = None
+        mock_folders.insert_one.side_effect = Exception("db error")
+
+        with patch(
+            "application.api.user.agents.folders.agent_folders_collection",
+            mock_folders,
+        ):
+            with app.test_request_context(
+                "/api/agents/folders/",
+                method="POST",
+                json={"name": "Test"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = AgentFolders().post()
+        assert response.status_code == 400
+
+    def test_get_folder_no_auth(self, app):
+        """Cover line 100: get specific folder returns 401 when no auth."""
+        from application.api.user.agents.folders import AgentFolder
+
+        with app.test_request_context(
+            "/api/agents/folders/abc",
+            method="GET",
+        ):
+            from flask import request
+
+            request.decoded_token = None
+            response = AgentFolder().get("abc")
+        assert response.status_code == 401
+
+    def test_get_folder_exception(self, app):
+        """Cover lines 125-126: exception during find returns 400."""
+        from application.api.user.agents.folders import AgentFolder
+
+        mock_folders = Mock()
+        mock_folders.find_one.side_effect = Exception("db error")
+
+        with patch(
+            "application.api.user.agents.folders.agent_folders_collection",
+            mock_folders,
+        ):
+            with app.test_request_context(
+                "/api/agents/folders/" + str(ObjectId()),
+                method="GET",
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = AgentFolder().get(str(ObjectId()))
+        assert response.status_code == 400
+
+    def test_update_folder_no_auth(self, app):
+        """Cover line 132: put returns 401 when no decoded_token."""
+        from application.api.user.agents.folders import AgentFolder
+
+        with app.test_request_context(
+            "/api/agents/folders/abc",
+            method="PUT",
+            json={"name": "Updated"},
+        ):
+            from flask import request
+
+            request.decoded_token = None
+            response = AgentFolder().put("abc")
+        assert response.status_code == 401
+
+    def test_update_folder_no_data(self, app):
+        """Cover line 136: put with no data returns 400."""
+        from application.api.user.agents.folders import AgentFolder
+
+        with app.test_request_context(
+            "/api/agents/folders/abc",
+            method="PUT",
+            content_type="application/json",
+            data="null",
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": "user1"}
+            response = AgentFolder().put("abc")
+        assert response.status_code == 400

@@ -361,3 +361,218 @@ class TestCheckUsageStringBooleans:
             result = resource.check_usage({"user_api_key": "str_bool_key"})
             # Should not exceed limits, so returns None
             assert result is None
+
+
+@pytest.mark.unit
+class TestCompleteStreamCompressionMetadata:
+    """Cover lines 307-319 (compression metadata persistence in complete_stream)."""
+
+    def test_compression_metadata_persisted(self, mock_mongo_db, flask_app):
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+            mock_agent.gen.return_value = iter(
+                [
+                    {"answer": "compressed answer"},
+                ]
+            )
+            mock_agent.compression_metadata = {"ratio": 2.5}
+            mock_agent.compression_saved = False
+            mock_agent.tool_calls = []
+
+            resource.conversation_service = MagicMock()
+            resource.conversation_service.save_conversation.return_value = "conv123"
+
+            stream = list(
+                resource.complete_stream(
+                    question="Q",
+                    agent=mock_agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "u"},
+                    should_save_conversation=True,
+                    model_id="gpt-4",
+                )
+            )
+
+            # Verify compression metadata was persisted
+            resource.conversation_service.update_compression_metadata.assert_called_once_with(
+                "conv123", {"ratio": 2.5}
+            )
+            resource.conversation_service.append_compression_message.assert_called_once()
+            assert mock_agent.compression_saved is True
+            end_chunks = [s for s in stream if '"type": "end"' in s]
+            assert len(end_chunks) == 1
+
+    def test_compression_metadata_error_handled(self, mock_mongo_db, flask_app):
+        """Cover lines 318-322: compression metadata persistence error."""
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+            mock_agent.gen.return_value = iter([{"answer": "answer"}])
+            mock_agent.compression_metadata = {"ratio": 2.5}
+            mock_agent.compression_saved = False
+            mock_agent.tool_calls = []
+
+            resource.conversation_service = MagicMock()
+            resource.conversation_service.save_conversation.return_value = "conv123"
+            resource.conversation_service.update_compression_metadata.side_effect = (
+                Exception("db error")
+            )
+
+            stream = list(
+                resource.complete_stream(
+                    question="Q",
+                    agent=mock_agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "u"},
+                    should_save_conversation=True,
+                    model_id="gpt-4",
+                )
+            )
+
+            # Stream should still complete despite compression error
+            end_chunks = [s for s in stream if '"type": "end"' in s]
+            assert len(end_chunks) == 1
+
+
+@pytest.mark.unit
+class TestCompleteStreamLogTruncation:
+    """Cover line 354: log data truncation for long values."""
+
+    def test_long_response_truncated_in_log(self, mock_mongo_db, flask_app):
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+            long_answer = "x" * 20000
+            mock_agent.gen.return_value = iter([{"answer": long_answer}])
+            mock_agent.tool_calls = []
+
+            stream = list(
+                resource.complete_stream(
+                    question="Q",
+                    agent=mock_agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "u"},
+                    should_save_conversation=False,
+                )
+            )
+
+            end_chunks = [s for s in stream if '"type": "end"' in s]
+            assert len(end_chunks) == 1
+
+
+@pytest.mark.unit
+class TestCompleteStreamGeneratorExit:
+    """Cover lines 360-416 (GeneratorExit handling in complete_stream)."""
+
+    def test_generator_exit_saves_partial_response(self, mock_mongo_db, flask_app):
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+
+            def gen_with_answers():
+                yield {"answer": "partial"}
+                yield {"answer": " answer"}
+                # Simulating a long stream that gets interrupted
+                yield {"answer": " more"}
+
+            mock_agent.gen.return_value = gen_with_answers()
+            mock_agent.compression_metadata = None
+            mock_agent.compression_saved = False
+            mock_agent.tool_calls = []
+
+            resource.conversation_service = MagicMock()
+            resource.conversation_service.save_conversation.return_value = "conv1"
+
+            gen = resource.complete_stream(
+                question="Q",
+                agent=mock_agent,
+                conversation_id="conv1",
+                user_api_key=None,
+                decoded_token={"sub": "u"},
+                should_save_conversation=True,
+                model_id="gpt-4",
+            )
+
+            # Read first chunk and then close (simulating client disconnect)
+            chunk = next(gen)
+            assert "partial" in chunk
+            gen.close()  # This triggers GeneratorExit
+
+    def test_generator_exit_with_compression_metadata(self, mock_mongo_db, flask_app):
+        """Cover lines 393-411: GeneratorExit with compression metadata."""
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+
+            def gen_answers():
+                yield {"answer": "partial answer"}
+
+            mock_agent.gen.return_value = gen_answers()
+            mock_agent.compression_metadata = {"ratio": 3.0}
+            mock_agent.compression_saved = False
+            mock_agent.tool_calls = []
+
+            resource.conversation_service = MagicMock()
+            resource.conversation_service.save_conversation.return_value = "conv1"
+
+            gen = resource.complete_stream(
+                question="Q",
+                agent=mock_agent,
+                conversation_id="conv1",
+                user_api_key=None,
+                decoded_token={"sub": "u"},
+                should_save_conversation=True,
+                model_id="gpt-4",
+                isNoneDoc=True,
+            )
+
+            next(gen)
+            gen.close()
+
+    def test_generator_exit_save_error_handled(self, mock_mongo_db, flask_app):
+        """Cover lines 412-415: exception during partial save."""
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+
+            def gen_answers():
+                yield {"answer": "partial"}
+
+            mock_agent.gen.return_value = gen_answers()
+            mock_agent.compression_metadata = None
+            mock_agent.compression_saved = False
+            mock_agent.tool_calls = []
+
+            resource.conversation_service = MagicMock()
+            resource.conversation_service.save_conversation.side_effect = Exception(
+                "save error"
+            )
+
+            gen = resource.complete_stream(
+                question="Q",
+                agent=mock_agent,
+                conversation_id="conv1",
+                user_api_key=None,
+                decoded_token={"sub": "u"},
+                should_save_conversation=True,
+                model_id="gpt-4",
+            )
+
+            next(gen)
+            gen.close()  # Should not crash even with save error

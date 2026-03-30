@@ -2514,3 +2514,1107 @@ class TestRemoveSharedAgent:
                 request.decoded_token = {"sub": "user1"}
                 response = RemoveSharedAgent().delete()
                 assert response.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# Additional coverage tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCreateAgentFormDataEdgeCases:
+    """Cover form-data JSON-parse fallback branches in CreateAgent."""
+
+    def test_form_data_invalid_sources_json_falls_back(self, app):
+        """Lines 474-475: invalid JSON for 'sources' falls back to []."""
+        from application.api.user.agents.routes import CreateAgent
+
+        inserted_id = ObjectId()
+        mock_agents_col = Mock()
+        mock_agents_col.insert_one.return_value = Mock(inserted_id=inserted_id)
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_agents_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                "/api/create_agent",
+                method="POST",
+                content_type="multipart/form-data",
+                data={
+                    "name": "Agent",
+                    "status": "draft",
+                    "agent_type": "classic",
+                    "sources": "not-valid-json",
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = CreateAgent().post()
+                assert response.status_code == 201
+
+    def test_form_data_invalid_json_schema_falls_back(self, app):
+        """Lines 479-480: invalid JSON for 'json_schema' falls back to None."""
+        from application.api.user.agents.routes import CreateAgent
+
+        inserted_id = ObjectId()
+        mock_agents_col = Mock()
+        mock_agents_col.insert_one.return_value = Mock(inserted_id=inserted_id)
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_agents_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                "/api/create_agent",
+                method="POST",
+                content_type="multipart/form-data",
+                data={
+                    "name": "Agent",
+                    "status": "draft",
+                    "agent_type": "classic",
+                    "json_schema": "{bad json",
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = CreateAgent().post()
+                assert response.status_code == 201
+
+    def test_form_data_invalid_models_json_falls_back(self, app):
+        """Lines 484-485: invalid JSON for 'models' falls back to []."""
+        from application.api.user.agents.routes import CreateAgent
+
+        inserted_id = ObjectId()
+        mock_agents_col = Mock()
+        mock_agents_col.insert_one.return_value = Mock(inserted_id=inserted_id)
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_agents_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                "/api/create_agent",
+                method="POST",
+                content_type="multipart/form-data",
+                data={
+                    "name": "Agent",
+                    "status": "draft",
+                    "agent_type": "classic",
+                    "models": "not-json",
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = CreateAgent().post()
+                assert response.status_code == 201
+
+    def test_create_with_unknown_agent_type_defaults_classic(self, app):
+        """Line 511-517: unknown agent_type not in AGENT_TYPE_SCHEMAS."""
+        from application.api.user.agents.routes import CreateAgent
+
+        inserted_id = ObjectId()
+        mock_agents_col = Mock()
+        mock_agents_col.insert_one.return_value = Mock(inserted_id=inserted_id)
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_agents_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                "/api/create_agent",
+                method="POST",
+                json={
+                    "name": "Agent",
+                    "status": "draft",
+                    "agent_type": "totally_unknown",
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = CreateAgent().post()
+                assert response.status_code == 201
+
+
+@pytest.mark.unit
+class TestUpdateAgentFormDataEdgeCases:
+    """Cover form-data parsing and edge cases in UpdateAgent."""
+
+    def _make_existing_agent(self, agent_id=None):
+        return {
+            "_id": agent_id or ObjectId(),
+            "user": "user1",
+            "name": "Existing Agent",
+            "description": "existing desc",
+            "source": "default",
+            "chunks": "5",
+            "retriever": "classic",
+            "prompt_id": "default",
+            "status": "published",
+            "agent_type": "classic",
+            "key": str(uuid.uuid4()),
+        }
+
+    def test_form_data_parses_json_fields(self, app):
+        """Line 699: form.to_dict() branch in UpdateAgent."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_col.update_one.return_value = Mock(matched_count=1, modified_count=1)
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                content_type="multipart/form-data",
+                data={
+                    "name": "Updated",
+                    "tools": '["tool1"]',
+                    "sources": '["default"]',
+                    "models": '["m1"]',
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 200
+
+    def test_form_data_invalid_json_sources_returns_400(self, app):
+        """Lines 712-713: invalid JSON for sources in form data."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                content_type="multipart/form-data",
+                data={"sources": "{bad json"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 400
+                assert "Invalid JSON format" in response.json["message"]
+
+    def test_form_data_invalid_json_models_returns_400(self, app):
+        """Lines 712-713: invalid JSON for models in form data."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                content_type="multipart/form-data",
+                data={"models": "not-json{"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 400
+                assert "Invalid JSON format" in response.json["message"]
+
+    def test_form_data_empty_json_schema_sets_none(self, app):
+        """Line 715-716: empty json_schema string sets None."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_col.update_one.return_value = Mock(matched_count=1, modified_count=1)
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                content_type="multipart/form-data",
+                data={"json_schema": ""},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 200
+
+    def test_find_agent_db_error(self, app):
+        """Line 730: exception when finding agent in DB."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = str(ObjectId())
+        mock_col = Mock()
+        mock_col.find_one.side_effect = Exception("DB connection lost")
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={"name": "Updated"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(agent_id)
+                assert response.status_code == 500
+                assert "Database error" in response.json["message"]
+
+    def test_handle_image_upload_error_forwarded(self, app):
+        """Line 746: image upload error is returned directly."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        error_response = Mock(status_code=400)
+        mock_handle_img = Mock(return_value=(None, error_response))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={"name": "Updated"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                result = UpdateAgent().put(str(agent_id))
+                assert result == error_response
+
+    def test_limited_request_mode_string_true(self, app):
+        """Lines 904-907: limited_request_mode as string 'True'."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_col.update_one.return_value = Mock(matched_count=1, modified_count=1)
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={
+                    "limited_request_mode": "True",
+                    "request_limit": 100,
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 200
+
+    def test_publish_workflow_missing_workflow_id(self, app):
+        """Line 1031: workflow_id is missing when publishing workflow."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = {
+            "_id": agent_id,
+            "user": "user1",
+            "name": "WF Agent",
+            "status": "draft",
+            "agent_type": "workflow",
+            "key": "",
+            "workflow": "",
+        }
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={"status": "published"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 400
+                assert "Workflow" in response.json["message"]
+
+    def test_publish_workflow_invalid_workflow_id_format(self, app):
+        """Line 1032-1033: workflow_id is present but not valid ObjectId."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = {
+            "_id": agent_id,
+            "user": "user1",
+            "name": "WF Agent",
+            "status": "draft",
+            "agent_type": "workflow",
+            "key": "",
+            "workflow": "not-an-objectid",
+        }
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={"status": "published"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 400
+
+    def test_publish_workflow_workflow_not_found(self, app):
+        """Lines 1035-1039: workflow exists but not found in DB."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        wf_id = str(ObjectId())
+        existing = {
+            "_id": agent_id,
+            "user": "user1",
+            "name": "WF Agent",
+            "status": "draft",
+            "agent_type": "workflow",
+            "key": "",
+            "workflow": wf_id,
+        }
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_handle_img = Mock(return_value=("", None))
+        mock_wf_col = Mock()
+        mock_wf_col.find_one.return_value = None
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ), patch(
+            "application.api.user.agents.routes.workflows_collection", mock_wf_col
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={"status": "published"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 400
+                assert "Workflow access" in response.json["message"]
+
+    def test_update_with_image_url_set(self, app):
+        """Line 1000-1001: image_url is truthy, added to update_fields."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_col.update_one.return_value = Mock(matched_count=1, modified_count=1)
+        mock_handle_img = Mock(return_value=("new_img.png", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                content_type="multipart/form-data",
+                data={"name": "Updated"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 200
+
+    def test_publish_generates_key_in_response(self, app):
+        """Line 1134-1136: newly_generated_key is included in response."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        existing["status"] = "draft"
+        existing["key"] = ""
+        existing["source"] = "default"
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_col.update_one.return_value = Mock(matched_count=1, modified_count=1)
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={"status": "published"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 200
+                assert "key" in response.json
+                assert len(response.json["key"]) > 0
+
+
+@pytest.mark.unit
+class TestDeleteAgentWorkflowEdgeCases:
+    """Cover workflow cleanup edge cases in DeleteAgent."""
+
+    def test_delete_workflow_invalid_workflow_id(self, app):
+        """Lines 1179-1181: invalid workflow id skips cleanup."""
+        from application.api.user.agents.routes import DeleteAgent
+
+        agent_id = ObjectId()
+        mock_col = Mock()
+        mock_col.find_one_and_delete.return_value = {
+            "_id": agent_id,
+            "user": "user1",
+            "agent_type": "workflow",
+            "workflow": "not-a-valid-oid",
+        }
+        mock_wf_col = Mock()
+        mock_nodes_col = Mock()
+        mock_edges_col = Mock()
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.workflows_collection", mock_wf_col
+        ), patch(
+            "application.api.user.agents.routes.workflow_nodes_collection",
+            mock_nodes_col,
+        ), patch(
+            "application.api.user.agents.routes.workflow_edges_collection",
+            mock_edges_col,
+        ):
+            with app.test_request_context(f"/api/delete_agent?id={agent_id}"):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = DeleteAgent().delete()
+                assert response.status_code == 200
+                mock_nodes_col.delete_many.assert_not_called()
+                mock_wf_col.delete_one.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Coverage — additional uncovered lines
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCreateAgentEmptyAgentType:
+    """Cover line 517: agent_type defaults to 'classic' when empty."""
+
+    def test_empty_agent_type_defaults_to_classic(self, app):
+        from application.api.user.agents.routes import CreateAgent
+
+        mock_col = Mock()
+        mock_col.insert_one.return_value = Mock(inserted_id=ObjectId())
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                "/api/create_agent",
+                method="POST",
+                json={
+                    "name": "Test",
+                    "status": "draft",
+                    "agent_type": "",
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = CreateAgent().post()
+                assert response.status_code == 201
+
+
+@pytest.mark.unit
+class TestUpdateAgentFormDataPath:
+    """Cover lines 666, 699, 815-816, 859, 887, 948-951, 1073, 1108, 1136."""
+
+    def _make_existing_agent(self, agent_id):
+        return {
+            "_id": agent_id,
+            "user": "user1",
+            "name": "Existing",
+            "status": "draft",
+            "agent_type": "classic",
+            "key": "abcdefghijklmnop",
+            "source": "default",
+        }
+
+    def test_form_data_parsing(self, app):
+        """Cover line 699: form data parsing path."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_col.update_one.return_value = Mock(matched_count=1, modified_count=1)
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                content_type="application/x-www-form-urlencoded",
+                data={"name": "Updated"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 200
+
+    def test_invalid_source_id_in_sources_list(self, app):
+        """Cover lines 815-816: invalid source ID in sources list."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={"sources": ["not-a-valid-oid"]},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 400
+                assert "Invalid source ID" in response.json["message"]
+
+    def test_tools_not_a_list(self, app):
+        """Cover line 859: tools is not a list."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={"tools": "not-a-list"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 400
+                assert "Tools must be a list" in response.json["message"]
+
+    def test_limited_token_mode_string_true(self, app):
+        """Cover line 887: limited_token_mode string 'True' converted."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_col.update_one.return_value = Mock(matched_count=1, modified_count=1)
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={"limited_token_mode": "True", "token_limit": 5000},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 200
+
+    def test_request_limit_without_limited_mode(self, app):
+        """Cover lines 948-951: request_limit without limited_request_mode."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={
+                    "request_limit": 100,
+                    "limited_request_mode": False,
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 400
+                assert "Request limit cannot be set" in response.json["message"]
+
+    def test_folder_id_update(self, app):
+        """Cover lines 950-951: folder_id field update."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_col.update_one.return_value = Mock(matched_count=1, modified_count=1)
+        mock_handle_img = Mock(return_value=("", None))
+        folder_oid = str(ObjectId())
+        mock_folders_col = Mock()
+        mock_folders_col.find_one.return_value = {"_id": ObjectId(folder_oid), "user": "user1"}
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ), patch(
+            "application.api.user.agents.routes.agent_folders_collection", mock_folders_col
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={"folder_id": folder_oid},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 200
+
+    def test_publish_missing_source_returns_400(self, app):
+        """Cover line 1073: published with source_val check."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = {
+            "_id": agent_id,
+            "user": "user1",
+            "name": "Agent",
+            "description": "desc",
+            "prompt_id": "default",
+            "status": "draft",
+            "agent_type": "classic",
+            "key": "abcdefghijklmnop",
+            "retriever": "classic",
+            "chunks": 5,
+        }
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={"status": "published"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 400
+
+    def test_update_not_found_returns_404(self, app):
+        """Cover line 1108: matched_count==0 returns 404."""
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_col.update_one.return_value = Mock(matched_count=0, modified_count=0)
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={"name": "Updated"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 404
+
+
+@pytest.mark.unit
+class TestGetPinnedAgents:
+    """Cover lines 1253, 1262: pinned agents key masking and return."""
+
+    def test_returns_pinned_agents_with_masked_key(self, app):
+        from application.api.user.agents.routes import PinnedAgents
+
+        agent_id = ObjectId()
+        mock_col = Mock()
+        mock_col.find.return_value = [
+            {
+                "_id": agent_id,
+                "name": "Pinned",
+                "description": "desc",
+                "agent_type": "classic",
+                "source": "default",
+                "retriever": "classic",
+                "status": "published",
+                "key": "abcdefghijklmnop",
+                "createdAt": "",
+                "updatedAt": "",
+                "lastUsedAt": "",
+            }
+        ]
+        mock_ensure_user = Mock(
+            return_value={"agent_preferences": {"pinned": [str(agent_id)]}}
+        )
+        mock_resolve_tools = Mock(return_value=[])
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.ensure_user_doc", mock_ensure_user
+        ), patch(
+            "application.api.user.agents.routes.resolve_tool_details", mock_resolve_tools
+        ):
+            with app.test_request_context("/api/pinned_agents"):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = PinnedAgents().get()
+                assert response.status_code == 200
+                data = response.json
+                assert len(data) == 1
+                assert data[0]["key"] == "abcd...mnop"
+
+    def test_returns_empty_for_no_pinned(self, app):
+        from application.api.user.agents.routes import PinnedAgents
+
+        mock_ensure_user = Mock(
+            return_value={"agent_preferences": {"pinned": []}}
+        )
+
+        with patch(
+            "application.api.user.agents.routes.ensure_user_doc", mock_ensure_user
+        ):
+            with app.test_request_context("/api/pinned_agents"):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = PinnedAgents().get()
+                assert response.status_code == 200
+                assert response.json == []
+
+
+@pytest.mark.unit
+class TestGetTemplateAgentsErrorPath:
+    """Cover line 1283: template agents error path."""
+
+    def test_template_agents_error_returns_400(self, app):
+        from application.api.user.agents.routes import GetTemplateAgents
+
+        mock_col = Mock()
+        mock_col.find.side_effect = Exception("DB error")
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ):
+            with app.test_request_context("/api/template_agents"):
+                response = GetTemplateAgents().get()
+                assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Additional coverage for agents/routes.py
+# Lines: 526 (workflow validation error), 666 (models field),
+# 815-816 (invalid source id in list), 887 (limited_token_mode bool),
+# 948-951 (request_limit without mode), 1073 (has_valid_source),
+# 1253 (key masking), 1262 (return pinned agents)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCreateAgentWorkflowError:
+    """Cover lines 525-526: workflow validation returns error."""
+
+    def test_workflow_validation_error_on_create(self, app):
+        from application.api.user.agents.routes import CreateAgent
+
+        mock_col = Mock()
+        mock_col.insert_one.return_value = Mock(inserted_id=ObjectId())
+
+        error_response = Mock()
+        error_response.status_code = 400
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.validate_workflow_access",
+            return_value=(None, error_response),
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload",
+            return_value=("", None),
+        ):
+            with app.test_request_context(
+                "/api/create_agent",
+                method="POST",
+                json={
+                    "name": "Test",
+                    "agent_type": "workflow",
+                    "status": "draft",
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = CreateAgent().post()
+                assert response.status_code == 400
+
+
+@pytest.mark.unit
+class TestUpdateAgentInvalidSourceInList:
+    """Cover lines 815-816: invalid source ID in sources list."""
+
+    def _make_existing_agent(self, agent_id):
+        return {
+            "_id": agent_id,
+            "user": "user1",
+            "name": "Test",
+            "agent_type": "classic",
+            "status": "draft",
+        }
+
+    def test_invalid_source_in_list(self, app):
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={"sources": ["not_valid_source_id!!!"]},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 400
+                assert "Invalid source ID" in response.json["message"]
+
+
+@pytest.mark.unit
+class TestUpdateAgentModelsField:
+    """Cover line 666: models list field in update."""
+
+    def _make_existing_agent(self, agent_id):
+        return {
+            "_id": agent_id,
+            "user": "user1",
+            "name": "Test",
+            "agent_type": "classic",
+            "status": "draft",
+        }
+
+    def test_models_field_update(self, app):
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_col.update_one.return_value = Mock(matched_count=1, modified_count=1)
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={"models": ["model-1", "model-2"]},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 200
+
+
+@pytest.mark.unit
+class TestUpdateAgentHasValidSourceDefault:
+    """Cover line 1073: has_valid_source with source == 'default'."""
+
+    def _make_existing_agent(self, agent_id):
+        return {
+            "_id": agent_id,
+            "user": "user1",
+            "name": "Test",
+            "agent_type": "classic",
+            "status": "published",
+            "description": "desc",
+            "prompt_id": "default",
+            "source": "default",
+            "chunks": 2,
+        }
+
+    def test_has_valid_source_with_default(self, app):
+        from application.api.user.agents.routes import UpdateAgent
+
+        agent_id = ObjectId()
+        existing = self._make_existing_agent(agent_id)
+        mock_col = Mock()
+        mock_col.find_one.return_value = existing
+        mock_col.update_one.return_value = Mock(matched_count=1, modified_count=1)
+        mock_handle_img = Mock(return_value=("", None))
+
+        with patch(
+            "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ):
+            with app.test_request_context(
+                f"/api/update_agent/{agent_id}",
+                method="PUT",
+                json={"name": "UpdatedName"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdateAgent().put(str(agent_id))
+                assert response.status_code == 200

@@ -380,3 +380,44 @@ class TestDoclingSubclasses:
 
         parser = DoclingXMLParser()
         assert parser.export_format == "markdown"
+
+
+# =====================================================================
+# Coverage gap tests  (lines 148-153, 289)
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestDoclingParserGaps:
+    def test_get_ocr_options_import_error_returns_none(self):
+        """Cover lines 148-150: ImportError returns None."""
+        from application.parser.file.docling_parser import DoclingParser
+
+        parser = DoclingParser(ocr_enabled=True, use_rapidocr=True)
+        with patch.dict("sys.modules", {"docling.datamodel.pipeline_options": None}):
+            # Force re-import to trigger ImportError
+            with patch(
+                "builtins.__import__", side_effect=ImportError("no module")
+            ):
+                result = parser._get_ocr_options()
+                assert result is None
+
+    def test_get_ocr_options_generic_error_returns_none(self):
+        """Cover lines 151-153: generic Exception returns None."""
+        from application.parser.file.docling_parser import DoclingParser
+
+        parser = DoclingParser(ocr_enabled=True, use_rapidocr=True)
+        with patch(
+            "builtins.__import__",
+            side_effect=RuntimeError("unexpected"),
+        ):
+            result = parser._get_ocr_options()
+            assert result is None
+
+    def test_csv_parser_init(self):
+        """Cover line 289: DoclingCSVParser.__init__ calls super."""
+        from application.parser.file.docling_parser import DoclingCSVParser
+
+        parser = DoclingCSVParser()
+        assert parser.export_format == "markdown"
+        assert parser.ocr_enabled is True

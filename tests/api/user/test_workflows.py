@@ -404,3 +404,1063 @@ class TestNormalizeAgentNodeJsonSchemas:
         nodes = [{"id": "a1", "type": "agent", "data": {"model": "gpt-4"}}]
         result = normalize_agent_node_json_schemas(nodes)
         assert result[0]["data"] == {"model": "gpt-4"}
+
+    def test_non_dict_node_passes_through(self):
+        from application.api.user.workflows.routes import (
+            normalize_agent_node_json_schemas,
+        )
+
+        nodes = ["not_a_dict", 42]
+        result = normalize_agent_node_json_schemas(nodes)
+        assert result == ["not_a_dict", 42]
+
+    def test_agent_node_with_non_dict_data(self):
+        from application.api.user.workflows.routes import (
+            normalize_agent_node_json_schemas,
+        )
+
+        nodes = [{"id": "a1", "type": "agent", "data": "not_a_dict"}]
+        result = normalize_agent_node_json_schemas(nodes)
+        assert result[0]["data"] == "not_a_dict"
+
+    def test_agent_node_with_no_data_key(self):
+        from application.api.user.workflows.routes import (
+            normalize_agent_node_json_schemas,
+        )
+
+        nodes = [{"id": "a1", "type": "agent"}]
+        result = normalize_agent_node_json_schemas(nodes)
+        assert result[0] == {"id": "a1", "type": "agent"}
+
+    @patch("application.api.user.workflows.routes.normalize_json_schema_payload")
+    def test_agent_node_schema_validation_error_keeps_original(self, mock_normalize):
+        from application.api.user.workflows.routes import (
+            normalize_agent_node_json_schemas,
+        )
+        from application.core.json_schema_utils import JsonSchemaValidationError
+
+        mock_normalize.side_effect = JsonSchemaValidationError("bad")
+        nodes = [
+            {
+                "id": "a1",
+                "type": "agent",
+                "data": {"json_schema": {"invalid": True}},
+            }
+        ]
+        result = normalize_agent_node_json_schemas(nodes)
+        # Original schema is preserved on validation error
+        assert result[0]["data"]["json_schema"] == {"invalid": True}
+
+
+# ---- Additional coverage: validate_workflow_structure condition node edge cases ----
+
+
+@pytest.mark.unit
+class TestValidateWorkflowStructureConditionEdgeCases:
+
+    def test_condition_case_without_branch_handle(self):
+        from application.api.user.workflows.routes import validate_workflow_structure
+
+        nodes = [
+            {"id": "start", "type": "start"},
+            {
+                "id": "cond",
+                "type": "condition",
+                "title": "Check",
+                "data": {
+                    "cases": [
+                        {"expression": "x > 1", "sourceHandle": ""},
+                        {"expression": "x > 2", "sourceHandle": "case2"},
+                    ]
+                },
+            },
+            {"id": "end1", "type": "end"},
+            {"id": "end2", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start", "target": "cond"},
+            {"id": "e2", "source": "cond", "target": "end1", "sourceHandle": "case2"},
+            {"id": "e3", "source": "cond", "target": "end2", "sourceHandle": "else"},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any("without a branch handle" in e for e in errors)
+
+    def test_duplicate_case_handles(self):
+        from application.api.user.workflows.routes import validate_workflow_structure
+
+        nodes = [
+            {"id": "start", "type": "start"},
+            {
+                "id": "cond",
+                "type": "condition",
+                "title": "Check",
+                "data": {
+                    "cases": [
+                        {"expression": "x > 1", "sourceHandle": "case1"},
+                        {"expression": "x > 2", "sourceHandle": "case1"},
+                    ]
+                },
+            },
+            {"id": "end1", "type": "end"},
+            {"id": "end2", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start", "target": "cond"},
+            {"id": "e2", "source": "cond", "target": "end1", "sourceHandle": "case1"},
+            {"id": "e3", "source": "cond", "target": "end2", "sourceHandle": "else"},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any("duplicate case handle" in e for e in errors)
+
+    def test_outgoing_edge_without_source_handle(self):
+        from application.api.user.workflows.routes import validate_workflow_structure
+
+        nodes = [
+            {"id": "start", "type": "start"},
+            {
+                "id": "cond",
+                "type": "condition",
+                "title": "Check",
+                "data": {
+                    "cases": [
+                        {"expression": "x > 1", "sourceHandle": "case1"},
+                    ]
+                },
+            },
+            {"id": "end1", "type": "end"},
+            {"id": "end2", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start", "target": "cond"},
+            {"id": "e2", "source": "cond", "target": "end1", "sourceHandle": "case1"},
+            {"id": "e3", "source": "cond", "target": "end2", "sourceHandle": "else"},
+            {"id": "e4", "source": "cond", "target": "end1", "sourceHandle": ""},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any("without sourceHandle" in e for e in errors)
+
+    def test_unknown_branch_handle(self):
+        from application.api.user.workflows.routes import validate_workflow_structure
+
+        nodes = [
+            {"id": "start", "type": "start"},
+            {
+                "id": "cond",
+                "type": "condition",
+                "title": "Check",
+                "data": {
+                    "cases": [
+                        {"expression": "x > 1", "sourceHandle": "case1"},
+                    ]
+                },
+            },
+            {"id": "end1", "type": "end"},
+            {"id": "end2", "type": "end"},
+            {"id": "end3", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start", "target": "cond"},
+            {"id": "e2", "source": "cond", "target": "end1", "sourceHandle": "case1"},
+            {"id": "e3", "source": "cond", "target": "end2", "sourceHandle": "else"},
+            {
+                "id": "e4",
+                "source": "cond",
+                "target": "end3",
+                "sourceHandle": "unknown_branch",
+            },
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any("unknown branch 'unknown_branch'" in e for e in errors)
+
+    def test_multiple_outgoing_edges_from_same_branch(self):
+        from application.api.user.workflows.routes import validate_workflow_structure
+
+        nodes = [
+            {"id": "start", "type": "start"},
+            {
+                "id": "cond",
+                "type": "condition",
+                "title": "Check",
+                "data": {
+                    "cases": [
+                        {"expression": "x > 1", "sourceHandle": "case1"},
+                    ]
+                },
+            },
+            {"id": "end1", "type": "end"},
+            {"id": "end2", "type": "end"},
+            {"id": "end3", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start", "target": "cond"},
+            {"id": "e2", "source": "cond", "target": "end1", "sourceHandle": "case1"},
+            {"id": "e3", "source": "cond", "target": "end2", "sourceHandle": "case1"},
+            {"id": "e4", "source": "cond", "target": "end3", "sourceHandle": "else"},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any("multiple outgoing edges from branch 'case1'" in e for e in errors)
+
+    def test_case_with_expression_but_no_outgoing_edge(self):
+        from application.api.user.workflows.routes import validate_workflow_structure
+
+        nodes = [
+            {"id": "start", "type": "start"},
+            {
+                "id": "cond",
+                "type": "condition",
+                "title": "Check",
+                "data": {
+                    "cases": [
+                        {"expression": "x > 1", "sourceHandle": "case1"},
+                        {"expression": "x > 2", "sourceHandle": "case2"},
+                    ]
+                },
+            },
+            {"id": "end1", "type": "end"},
+            {"id": "end2", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start", "target": "cond"},
+            {"id": "e2", "source": "cond", "target": "end1", "sourceHandle": "case1"},
+            {"id": "e3", "source": "cond", "target": "end2", "sourceHandle": "else"},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any(
+            "case 'case2' has an expression but no outgoing edge" in e
+            for e in errors
+        )
+
+    def test_case_with_outgoing_edge_but_no_expression(self):
+        from application.api.user.workflows.routes import validate_workflow_structure
+
+        nodes = [
+            {"id": "start", "type": "start"},
+            {
+                "id": "cond",
+                "type": "condition",
+                "title": "Check",
+                "data": {
+                    "cases": [
+                        {"expression": "x > 1", "sourceHandle": "case1"},
+                        {"expression": "", "sourceHandle": "case2"},
+                    ]
+                },
+            },
+            {"id": "end1", "type": "end"},
+            {"id": "end2", "type": "end"},
+            {"id": "end3", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start", "target": "cond"},
+            {"id": "e2", "source": "cond", "target": "end1", "sourceHandle": "case1"},
+            {"id": "e3", "source": "cond", "target": "end2", "sourceHandle": "else"},
+            {"id": "e4", "source": "cond", "target": "end3", "sourceHandle": "case2"},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any(
+            "case 'case2' has an outgoing edge but no expression" in e
+            for e in errors
+        )
+
+    def test_condition_with_cases_not_a_list(self):
+        from application.api.user.workflows.routes import validate_workflow_structure
+
+        nodes = [
+            {"id": "start", "type": "start"},
+            {
+                "id": "cond",
+                "type": "condition",
+                "title": "Check",
+                "data": {"cases": "not_a_list"},
+            },
+            {"id": "end1", "type": "end"},
+            {"id": "end2", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start", "target": "cond"},
+            {"id": "e2", "source": "cond", "target": "end1", "sourceHandle": "case1"},
+            {"id": "e3", "source": "cond", "target": "end2", "sourceHandle": "else"},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any("at least one case with an expression" in e for e in errors)
+
+    def test_condition_node_with_none_data(self):
+        from application.api.user.workflows.routes import validate_workflow_structure
+
+        nodes = [
+            {"id": "start", "type": "start"},
+            {
+                "id": "cond",
+                "type": "condition",
+                "title": "Check",
+                "data": None,
+            },
+            {"id": "end1", "type": "end"},
+            {"id": "end2", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start", "target": "cond"},
+            {"id": "e2", "source": "cond", "target": "end1", "sourceHandle": "case1"},
+            {"id": "e3", "source": "cond", "target": "end2", "sourceHandle": "else"},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any("at least one case with an expression" in e for e in errors)
+
+    def test_branch_unreachable_end(self):
+        from application.api.user.workflows.routes import validate_workflow_structure
+
+        nodes = [
+            {"id": "start", "type": "start"},
+            {
+                "id": "cond",
+                "type": "condition",
+                "title": "Check",
+                "data": {
+                    "cases": [
+                        {"expression": "x > 1", "sourceHandle": "case1"},
+                    ]
+                },
+            },
+            {"id": "dead", "type": "agent"},  # dead end, no connection to end
+            {"id": "end", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start", "target": "cond"},
+            {"id": "e2", "source": "cond", "target": "dead", "sourceHandle": "case1"},
+            {"id": "e3", "source": "cond", "target": "end", "sourceHandle": "else"},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any("must eventually reach an end node" in e for e in errors)
+
+    def test_non_dict_case_in_cases_list(self):
+        from application.api.user.workflows.routes import validate_workflow_structure
+
+        nodes = [
+            {"id": "start", "type": "start"},
+            {
+                "id": "cond",
+                "type": "condition",
+                "title": "Check",
+                "data": {
+                    "cases": [
+                        "not_a_dict",
+                        {"expression": "x > 1", "sourceHandle": "case1"},
+                    ]
+                },
+            },
+            {"id": "end1", "type": "end"},
+            {"id": "end2", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start", "target": "cond"},
+            {"id": "e2", "source": "cond", "target": "end1", "sourceHandle": "case1"},
+            {"id": "e3", "source": "cond", "target": "end2", "sourceHandle": "else"},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        # Should not crash; non-dict cases are skipped
+        assert isinstance(errors, list)
+
+
+# ---- Additional coverage: agent node validation in validate_workflow_structure ----
+
+
+@pytest.mark.unit
+class TestValidateWorkflowStructureAgentNodes:
+
+    def test_agent_node_with_invalid_config_type(self):
+        from application.api.user.workflows.routes import validate_workflow_structure
+
+        nodes = [
+            {"id": "start", "type": "start"},
+            {"id": "agent1", "type": "agent", "title": "A1", "data": "not_dict"},
+            {"id": "end", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start", "target": "agent1"},
+            {"id": "e2", "source": "agent1", "target": "end"},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any("invalid configuration" in e for e in errors)
+
+    @patch("application.api.user.workflows.routes.get_model_capabilities")
+    @patch("application.api.user.workflows.routes.normalize_json_schema_payload")
+    def test_agent_node_model_no_structured_output(
+        self, mock_normalize, mock_capabilities
+    ):
+        from application.api.user.workflows.routes import validate_workflow_structure
+
+        mock_normalize.return_value = {"type": "object"}
+        mock_capabilities.return_value = {"supports_structured_output": False}
+
+        nodes = [
+            {"id": "start", "type": "start"},
+            {
+                "id": "agent1",
+                "type": "agent",
+                "title": "A1",
+                "data": {
+                    "json_schema": {"type": "object"},
+                    "model_id": "model-no-so",
+                },
+            },
+            {"id": "end", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start", "target": "agent1"},
+            {"id": "e2", "source": "agent1", "target": "end"},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any("does not support structured output" in e for e in errors)
+
+    @patch("application.api.user.workflows.routes.normalize_json_schema_payload")
+    def test_agent_node_schema_validation_error(self, mock_normalize):
+        from application.api.user.workflows.routes import validate_workflow_structure
+        from application.core.json_schema_utils import JsonSchemaValidationError
+
+        mock_normalize.side_effect = JsonSchemaValidationError("schema invalid")
+
+        nodes = [
+            {"id": "start", "type": "start"},
+            {
+                "id": "agent1",
+                "type": "agent",
+                "title": "A1",
+                "data": {"json_schema": {"bad": True}},
+            },
+            {"id": "end", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start", "target": "agent1"},
+            {"id": "e2", "source": "agent1", "target": "end"},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any("JSON schema" in e for e in errors)
+
+    def test_edge_references_nonexistent_source(self):
+        from application.api.user.workflows.routes import validate_workflow_structure
+
+        nodes = [
+            {"id": "start", "type": "start"},
+            {"id": "end", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "ghost", "target": "end"},
+            {"id": "e2", "source": "start", "target": "end"},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any("non-existent source: ghost" in e for e in errors)
+
+    def test_multiple_start_nodes(self):
+        from application.api.user.workflows.routes import validate_workflow_structure
+
+        nodes = [
+            {"id": "start1", "type": "start"},
+            {"id": "start2", "type": "start"},
+            {"id": "end", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start1", "target": "end"},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any("exactly one start node" in e for e in errors)
+
+
+# ---- Additional coverage: WorkflowList.post ----
+
+
+@pytest.fixture
+def app():
+    from flask import Flask
+
+    app = Flask(__name__)
+    return app
+
+
+@pytest.mark.unit
+class TestWorkflowListPost:
+
+    def test_create_workflow_success(self, app):
+        from application.api.user.workflows.routes import WorkflowList
+
+        inserted_id = ObjectId()
+        mock_wf_collection = Mock()
+        mock_wf_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
+        mock_nodes_collection = Mock()
+        mock_edges_collection = Mock()
+
+        with patch(
+            "application.api.user.workflows.routes.workflows_collection",
+            mock_wf_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_nodes_collection",
+            mock_nodes_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_edges_collection",
+            mock_edges_collection,
+        ):
+            with app.test_request_context(
+                "/api/workflows",
+                method="POST",
+                json={
+                    "name": "My Workflow",
+                    "nodes": [
+                        {"id": "start", "type": "start"},
+                        {"id": "end", "type": "end"},
+                    ],
+                    "edges": [
+                        {"id": "e1", "source": "start", "target": "end"},
+                    ],
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = WorkflowList().post()
+
+        assert response.status_code == 201
+        assert response.json["id"] == str(inserted_id)
+
+    def test_create_workflow_validation_failure(self, app):
+        from application.api.user.workflows.routes import WorkflowList
+
+        with app.test_request_context(
+            "/api/workflows",
+            method="POST",
+            json={
+                "name": "Bad Workflow",
+                "nodes": [],
+                "edges": [],
+            },
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": "user1"}
+            response = WorkflowList().post()
+
+        assert response.status_code == 400
+        assert response.json["success"] is False
+
+    def test_create_workflow_unauthorized(self, app):
+        from application.api.user.workflows.routes import WorkflowList
+
+        with app.test_request_context(
+            "/api/workflows",
+            method="POST",
+            json={"name": "WF"},
+        ):
+            from flask import request
+
+            request.decoded_token = None
+            response = WorkflowList().post()
+
+        assert response.status_code == 401
+
+    def test_create_workflow_missing_name(self, app):
+        from application.api.user.workflows.routes import WorkflowList
+
+        with app.test_request_context(
+            "/api/workflows",
+            method="POST",
+            json={"description": "No name"},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": "user1"}
+            response = WorkflowList().post()
+
+        assert response.status_code == 400
+
+    def test_create_workflow_db_error(self, app):
+        from application.api.user.workflows.routes import WorkflowList
+
+        mock_wf_collection = Mock()
+        mock_wf_collection.insert_one.side_effect = Exception("DB error")
+
+        with patch(
+            "application.api.user.workflows.routes.workflows_collection",
+            mock_wf_collection,
+        ):
+            with app.test_request_context(
+                "/api/workflows",
+                method="POST",
+                json={
+                    "name": "WF",
+                    "nodes": [
+                        {"id": "start", "type": "start"},
+                        {"id": "end", "type": "end"},
+                    ],
+                    "edges": [
+                        {"id": "e1", "source": "start", "target": "end"},
+                    ],
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = WorkflowList().post()
+
+        assert response.status_code == 400
+
+    def test_create_workflow_node_insert_error_cleans_up(self, app):
+        from application.api.user.workflows.routes import WorkflowList
+
+        inserted_id = ObjectId()
+        mock_wf_collection = Mock()
+        mock_wf_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
+        mock_nodes_collection = Mock()
+        mock_nodes_collection.insert_many.side_effect = Exception("Node insert fail")
+        mock_edges_collection = Mock()
+
+        with patch(
+            "application.api.user.workflows.routes.workflows_collection",
+            mock_wf_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_nodes_collection",
+            mock_nodes_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_edges_collection",
+            mock_edges_collection,
+        ):
+            with app.test_request_context(
+                "/api/workflows",
+                method="POST",
+                json={
+                    "name": "WF",
+                    "nodes": [
+                        {"id": "start", "type": "start"},
+                        {"id": "end", "type": "end"},
+                    ],
+                    "edges": [
+                        {"id": "e1", "source": "start", "target": "end"},
+                    ],
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = WorkflowList().post()
+
+        assert response.status_code == 400
+        # Cleanup should have been called
+        mock_nodes_collection.delete_many.assert_called()
+        mock_edges_collection.delete_many.assert_called()
+        mock_wf_collection.delete_one.assert_called_once()
+
+
+# ---- Additional coverage: WorkflowDetail.get ----
+
+
+@pytest.mark.unit
+class TestWorkflowDetailGet:
+
+    def test_get_workflow_success(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        wf_id = ObjectId()
+        mock_wf_collection = Mock()
+        mock_wf_collection.find_one.return_value = {
+            "_id": wf_id,
+            "name": "WF",
+            "user": "user1",
+            "current_graph_version": 1,
+        }
+        mock_nodes_collection = Mock()
+        mock_nodes_collection.find.return_value = [
+            {"id": "start", "type": "start", "config": {}}
+        ]
+        mock_edges_collection = Mock()
+        mock_edges_collection.find.return_value = []
+
+        with patch(
+            "application.api.user.workflows.routes.workflows_collection",
+            mock_wf_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_nodes_collection",
+            mock_nodes_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_edges_collection",
+            mock_edges_collection,
+        ):
+            with app.test_request_context(f"/api/workflows/{wf_id}"):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = WorkflowDetail().get(str(wf_id))
+
+        assert response.status_code == 200
+        assert response.json["workflow"]["id"] == str(wf_id)
+
+    def test_get_workflow_invalid_id(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        with app.test_request_context("/api/workflows/bad-id"):
+            from flask import request
+
+            request.decoded_token = {"sub": "user1"}
+            response = WorkflowDetail().get("bad-id")
+
+        assert response.status_code == 400
+
+    def test_get_workflow_not_found(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        wf_id = ObjectId()
+        mock_wf_collection = Mock()
+        mock_wf_collection.find_one.return_value = None
+
+        with patch(
+            "application.api.user.workflows.routes.workflows_collection",
+            mock_wf_collection,
+        ):
+            with app.test_request_context(f"/api/workflows/{wf_id}"):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = WorkflowDetail().get(str(wf_id))
+
+        assert response.status_code == 404
+
+    def test_get_workflow_unauthorized(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        wf_id = ObjectId()
+        with app.test_request_context(f"/api/workflows/{wf_id}"):
+            from flask import request
+
+            request.decoded_token = None
+            response = WorkflowDetail().get(str(wf_id))
+
+        assert response.status_code == 401
+
+
+# ---- Additional coverage: WorkflowDetail.put ----
+
+
+@pytest.mark.unit
+class TestWorkflowDetailPut:
+
+    def test_put_workflow_success(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        wf_id = ObjectId()
+        mock_wf_collection = Mock()
+        mock_wf_collection.find_one.return_value = {
+            "_id": wf_id,
+            "name": "Old",
+            "user": "user1",
+            "current_graph_version": 1,
+        }
+        mock_wf_collection.update_one.return_value = Mock()
+        mock_nodes_collection = Mock()
+        mock_edges_collection = Mock()
+
+        with patch(
+            "application.api.user.workflows.routes.workflows_collection",
+            mock_wf_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_nodes_collection",
+            mock_nodes_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_edges_collection",
+            mock_edges_collection,
+        ):
+            with app.test_request_context(
+                f"/api/workflows/{wf_id}",
+                method="PUT",
+                json={
+                    "name": "Updated WF",
+                    "nodes": [
+                        {"id": "start", "type": "start"},
+                        {"id": "end", "type": "end"},
+                    ],
+                    "edges": [
+                        {"id": "e1", "source": "start", "target": "end"},
+                    ],
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = WorkflowDetail().put(str(wf_id))
+
+        assert response.status_code == 200
+
+    def test_put_workflow_validation_failure(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        wf_id = ObjectId()
+        mock_wf_collection = Mock()
+        mock_wf_collection.find_one.return_value = {
+            "_id": wf_id,
+            "name": "WF",
+            "user": "user1",
+            "current_graph_version": 1,
+        }
+
+        with patch(
+            "application.api.user.workflows.routes.workflows_collection",
+            mock_wf_collection,
+        ):
+            with app.test_request_context(
+                f"/api/workflows/{wf_id}",
+                method="PUT",
+                json={
+                    "name": "Updated",
+                    "nodes": [],
+                    "edges": [],
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = WorkflowDetail().put(str(wf_id))
+
+        assert response.status_code == 400
+
+    def test_put_workflow_not_found(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        wf_id = ObjectId()
+        mock_wf_collection = Mock()
+        mock_wf_collection.find_one.return_value = None
+
+        with patch(
+            "application.api.user.workflows.routes.workflows_collection",
+            mock_wf_collection,
+        ):
+            with app.test_request_context(
+                f"/api/workflows/{wf_id}",
+                method="PUT",
+                json={"name": "X", "nodes": [], "edges": []},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = WorkflowDetail().put(str(wf_id))
+
+        assert response.status_code == 404
+
+    def test_put_workflow_node_insert_error_cleans_up(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        wf_id = ObjectId()
+        mock_wf_collection = Mock()
+        mock_wf_collection.find_one.return_value = {
+            "_id": wf_id,
+            "name": "WF",
+            "user": "user1",
+            "current_graph_version": 1,
+        }
+        mock_nodes_collection = Mock()
+        mock_nodes_collection.insert_many.side_effect = Exception("insert fail")
+        mock_edges_collection = Mock()
+
+        with patch(
+            "application.api.user.workflows.routes.workflows_collection",
+            mock_wf_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_nodes_collection",
+            mock_nodes_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_edges_collection",
+            mock_edges_collection,
+        ):
+            with app.test_request_context(
+                f"/api/workflows/{wf_id}",
+                method="PUT",
+                json={
+                    "name": "X",
+                    "nodes": [
+                        {"id": "start", "type": "start"},
+                        {"id": "end", "type": "end"},
+                    ],
+                    "edges": [
+                        {"id": "e1", "source": "start", "target": "end"},
+                    ],
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = WorkflowDetail().put(str(wf_id))
+
+        assert response.status_code == 400
+        # Cleanup for the new version
+        mock_nodes_collection.delete_many.assert_called()
+        mock_edges_collection.delete_many.assert_called()
+
+    def test_put_workflow_update_db_error_cleans_up(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        wf_id = ObjectId()
+        mock_wf_collection = Mock()
+        mock_wf_collection.find_one.return_value = {
+            "_id": wf_id,
+            "name": "WF",
+            "user": "user1",
+            "current_graph_version": 1,
+        }
+        mock_wf_collection.update_one.side_effect = Exception("update fail")
+        mock_nodes_collection = Mock()
+        mock_edges_collection = Mock()
+
+        with patch(
+            "application.api.user.workflows.routes.workflows_collection",
+            mock_wf_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_nodes_collection",
+            mock_nodes_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_edges_collection",
+            mock_edges_collection,
+        ):
+            with app.test_request_context(
+                f"/api/workflows/{wf_id}",
+                method="PUT",
+                json={
+                    "name": "X",
+                    "nodes": [
+                        {"id": "start", "type": "start"},
+                        {"id": "end", "type": "end"},
+                    ],
+                    "edges": [
+                        {"id": "e1", "source": "start", "target": "end"},
+                    ],
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = WorkflowDetail().put(str(wf_id))
+
+        assert response.status_code == 400
+
+
+# ---- Additional coverage: WorkflowDetail.delete ----
+
+
+@pytest.mark.unit
+class TestWorkflowDetailDelete:
+
+    def test_delete_workflow_success(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        wf_id = ObjectId()
+        mock_wf_collection = Mock()
+        mock_wf_collection.find_one.return_value = {
+            "_id": wf_id,
+            "name": "WF",
+            "user": "user1",
+        }
+        mock_nodes_collection = Mock()
+        mock_edges_collection = Mock()
+
+        with patch(
+            "application.api.user.workflows.routes.workflows_collection",
+            mock_wf_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_nodes_collection",
+            mock_nodes_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_edges_collection",
+            mock_edges_collection,
+        ):
+            with app.test_request_context(
+                f"/api/workflows/{wf_id}",
+                method="DELETE",
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = WorkflowDetail().delete(str(wf_id))
+
+        assert response.status_code == 200
+        mock_nodes_collection.delete_many.assert_called_once()
+        mock_edges_collection.delete_many.assert_called_once()
+        mock_wf_collection.delete_one.assert_called_once()
+
+    def test_delete_workflow_not_found(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        wf_id = ObjectId()
+        mock_wf_collection = Mock()
+        mock_wf_collection.find_one.return_value = None
+
+        with patch(
+            "application.api.user.workflows.routes.workflows_collection",
+            mock_wf_collection,
+        ):
+            with app.test_request_context(
+                f"/api/workflows/{wf_id}",
+                method="DELETE",
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = WorkflowDetail().delete(str(wf_id))
+
+        assert response.status_code == 404
+
+    def test_delete_workflow_invalid_id(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        with app.test_request_context(
+            "/api/workflows/bad-id",
+            method="DELETE",
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": "user1"}
+            response = WorkflowDetail().delete("bad-id")
+
+        assert response.status_code == 400
+
+    def test_delete_workflow_unauthorized(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        wf_id = ObjectId()
+        with app.test_request_context(
+            f"/api/workflows/{wf_id}",
+            method="DELETE",
+        ):
+            from flask import request
+
+            request.decoded_token = None
+            response = WorkflowDetail().delete(str(wf_id))
+
+        assert response.status_code == 401
+
+    def test_delete_workflow_db_error(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        wf_id = ObjectId()
+        mock_wf_collection = Mock()
+        mock_wf_collection.find_one.return_value = {
+            "_id": wf_id,
+            "name": "WF",
+            "user": "user1",
+        }
+        mock_nodes_collection = Mock()
+        mock_nodes_collection.delete_many.side_effect = Exception("DB error")
+        mock_edges_collection = Mock()
+
+        with patch(
+            "application.api.user.workflows.routes.workflows_collection",
+            mock_wf_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_nodes_collection",
+            mock_nodes_collection,
+        ), patch(
+            "application.api.user.workflows.routes.workflow_edges_collection",
+            mock_edges_collection,
+        ):
+            with app.test_request_context(
+                f"/api/workflows/{wf_id}",
+                method="DELETE",
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = WorkflowDetail().delete(str(wf_id))
+
+        assert response.status_code == 400

@@ -9,7 +9,7 @@ Additional coverage beyond tests/api/answer/services/test_conversation_service.p
 """
 
 from datetime import datetime, timezone
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 from bson import ObjectId
@@ -416,3 +416,63 @@ class TestGetCompressionMetadata:
         service = ConversationService()
         result = service.get_compression_metadata("invalid-id")
         assert result is None
+
+
+# =====================================================================
+# Coverage gap tests  (lines 233-237, 258, 261)
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestConversationServiceGaps:
+
+    def test_update_compression_metadata_exception_raises(self, mock_mongo_db):
+        """Cover lines 233-237: exception during update raises."""
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        service = ConversationService()
+        service.conversations_collection = MagicMock()
+        service.conversations_collection.update_one.side_effect = Exception("db error")
+
+        with pytest.raises(Exception, match="db error"):
+            service.update_compression_metadata(
+                str(ObjectId()),
+                {
+                    "compressed_summary": "summary",
+                    "query_index": 5,
+                    "compressed_token_count": 100,
+                    "original_token_count": 1000,
+                },
+            )
+
+    def test_append_compression_message_with_summary(self, mock_mongo_db):
+        """Cover lines 258, 261: appends compression message to conversation."""
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        service = ConversationService()
+        service.conversations_collection = MagicMock()
+
+        conv_id = str(ObjectId())
+        metadata = {
+            "compressed_summary": "This is a summary of the conversation.",
+            "timestamp": "2024-01-01T00:00:00",
+            "model_used": "gpt-4",
+        }
+        service.append_compression_message(conv_id, metadata)
+        service.conversations_collection.update_one.assert_called_once()
+
+    def test_append_compression_message_empty_summary_skips(self, mock_mongo_db):
+        """Cover: empty summary does not insert."""
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        service = ConversationService()
+        service.conversations_collection = MagicMock()
+
+        service.append_compression_message(str(ObjectId()), {"compressed_summary": ""})
+        service.conversations_collection.update_one.assert_not_called()

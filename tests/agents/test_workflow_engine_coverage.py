@@ -571,3 +571,263 @@ class TestGetExecutionSummary:
         graph = _make_graph([], [])
         engine = WorkflowEngine(graph, _make_agent())
         assert engine.get_execution_summary() == []
+
+
+class TestAgentNodeExecution:
+    """Cover lines 204, 213-215, 223, 232-233, 283-284, 289, 355, 375."""
+
+    @pytest.mark.unit
+    def test_agent_node_without_prompt_template(self):
+        """Cover line 204/206: agent node without prompt_template uses query."""
+        node = _make_node("n1", NodeType.AGENT, "Agent", config={
+            "config": {
+                "agent_type": "classic",
+                "stream_to_user": False,
+            }
+        })
+        graph = _make_graph([node], [])
+        engine = WorkflowEngine(graph, _make_agent())
+        engine.state = {"query": "test question"}
+
+        mock_agent = MagicMock()
+        mock_agent.gen.return_value = [{"answer": "response"}]
+
+        with patch(
+            "application.agents.workflows.workflow_engine.WorkflowNodeAgentFactory"
+        ) as mock_factory, \
+             patch(
+            "application.core.model_utils.get_provider_from_model_id",
+            return_value="openai",
+        ), \
+             patch(
+            "application.core.model_utils.get_api_key_for_provider",
+            return_value="key",
+        ), \
+             patch(
+            "application.core.model_utils.get_model_capabilities",
+            return_value=None,
+        ):
+            mock_factory.create.return_value = mock_agent
+            list(engine._execute_agent_node(node))
+
+        output_key = f"node_{node.id}_output"
+        assert output_key in engine.state
+
+    @pytest.mark.unit
+    def test_agent_node_with_structured_output(self):
+        """Cover lines 283-284, 289: structured output parsing."""
+        node = _make_node("n1", NodeType.AGENT, "Agent", config={
+            "config": {
+                "agent_type": "classic",
+                "stream_to_user": False,
+                "json_schema": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                },
+            }
+        })
+        graph = _make_graph([node], [])
+        engine = WorkflowEngine(graph, _make_agent())
+        engine.state = {"query": "test"}
+
+        mock_agent = MagicMock()
+        mock_agent.gen.return_value = [
+            {"answer": '{"name": "Alice"}', "structured": True}
+        ]
+
+        with patch(
+            "application.agents.workflows.workflow_engine.WorkflowNodeAgentFactory"
+        ) as mock_factory, \
+             patch(
+            "application.core.model_utils.get_provider_from_model_id",
+            return_value="openai",
+        ), \
+             patch(
+            "application.core.model_utils.get_api_key_for_provider",
+            return_value="key",
+        ), \
+             patch(
+            "application.core.model_utils.get_model_capabilities",
+            return_value={"supports_structured_output": True},
+        ):
+            mock_factory.create.return_value = mock_agent
+            list(engine._execute_agent_node(node))
+
+        output_key = f"node_{node.id}_output"
+        assert engine.state[output_key] == {"name": "Alice"}
+
+    @pytest.mark.unit
+    def test_agent_node_model_no_structured_support_raises(self):
+        """Cover lines 223: model without structured output raises ValueError."""
+        node = _make_node("n1", NodeType.AGENT, "Agent", config={
+            "config": {
+                "agent_type": "classic",
+                "json_schema": {
+                    "type": "object",
+                    "properties": {"x": {"type": "string"}},
+                },
+                "model_id": "test-model",
+            }
+        })
+        graph = _make_graph([node], [])
+        engine = WorkflowEngine(graph, _make_agent())
+        engine.state = {"query": "test"}
+
+        with patch(
+            "application.core.model_utils.get_provider_from_model_id",
+            return_value="openai",
+        ), \
+             patch(
+            "application.core.model_utils.get_api_key_for_provider",
+            return_value="key",
+        ), \
+             patch(
+            "application.core.model_utils.get_model_capabilities",
+            return_value={"supports_structured_output": False},
+        ):
+            with pytest.raises(ValueError, match="does not support structured output"):
+                list(engine._execute_agent_node(node))
+
+    @pytest.mark.unit
+    def test_agent_node_output_variable(self):
+        """Cover line 300: output_variable stores result."""
+        node = _make_node("n1", NodeType.AGENT, "Agent", config={
+            "config": {
+                "agent_type": "classic",
+                "stream_to_user": False,
+                "output_variable": "my_result",
+            }
+        })
+        graph = _make_graph([node], [])
+        engine = WorkflowEngine(graph, _make_agent())
+        engine.state = {"query": "test"}
+
+        mock_agent = MagicMock()
+        mock_agent.gen.return_value = [{"answer": "output text"}]
+
+        with patch(
+            "application.agents.workflows.workflow_engine.WorkflowNodeAgentFactory"
+        ) as mock_factory, \
+             patch(
+            "application.core.model_utils.get_provider_from_model_id",
+            return_value="openai",
+        ), \
+             patch(
+            "application.core.model_utils.get_api_key_for_provider",
+            return_value="key",
+        ), \
+             patch(
+            "application.core.model_utils.get_model_capabilities",
+            return_value=None,
+        ):
+            mock_factory.create.return_value = mock_agent
+            list(engine._execute_agent_node(node))
+
+        assert engine.state["my_result"] == "output text"
+
+    @pytest.mark.unit
+    def test_validate_structured_output_schema_error(self):
+        """Cover line 375/382-383: invalid schema raises ValueError."""
+        graph = _make_graph([], [])
+        engine = WorkflowEngine(graph, _make_agent())
+        import jsonschema as js
+
+        with patch(
+            "application.agents.workflows.workflow_engine.normalize_json_schema_payload",
+            return_value={"type": "invalid_schema_type"},
+        ), \
+             patch(
+            "application.agents.workflows.workflow_engine.jsonschema"
+        ) as mock_js:
+            mock_js.validate.side_effect = js.exceptions.SchemaError("bad schema")
+            mock_js.exceptions = js.exceptions
+            with pytest.raises(ValueError, match="Invalid JSON schema"):
+                engine._validate_structured_output(
+                    {"type": "object"}, {"name": "test"}
+                )
+
+    @pytest.mark.unit
+    def test_parse_structured_output_invalid_json(self):
+        """Cover lines 349-352: invalid JSON returns False."""
+        graph = _make_graph([], [])
+        engine = WorkflowEngine(graph, _make_agent())
+        success, data = engine._parse_structured_output("not json {")
+        assert success is False
+        assert data is None
+
+
+# ---------------------------------------------------------------------------
+# Additional coverage for workflow_engine.py
+# Lines: 96-114 (exception in node execution), 122-130 (branch/max steps)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestWorkflowNodeExecutionException:
+    """Cover lines 96-114: exception during _execute_node yields error events."""
+
+    def test_node_raises_exception_yields_error(self):
+        """Force _execute_node to raise, covering lines 96-114."""
+        nodes = [
+            _make_node("n1", NodeType.START),
+            _make_node("n2", NodeType.AGENT, "Agent"),
+        ]
+        edges = [_make_edge("e1", "n1", "n2")]
+        graph = _make_graph(nodes, edges)
+        engine = WorkflowEngine(graph, _make_agent())
+
+        # Patch _execute_node to raise on agent node
+        original_execute = engine._execute_node
+
+        def patched_execute(node):
+            if node.type == NodeType.AGENT:
+                raise RuntimeError("Agent exploded")
+            yield from original_execute(node)
+
+        engine._execute_node = patched_execute
+        events = list(engine.execute({}, "test query"))
+
+        error_events = [e for e in events if e.get("type") == "error"]
+        assert len(error_events) >= 1
+        failed_steps = [e for e in events if e.get("status") == "failed"]
+        assert len(failed_steps) >= 1
+
+
+@pytest.mark.unit
+class TestWorkflowMaxStepsReached:
+    """Cover lines 127-130: max steps limit warning."""
+
+    def test_max_steps_exactly_reached(self):
+        nodes = [
+            _make_node("n1", NodeType.START),
+            _make_node("n2", NodeType.NOTE, "Note"),
+        ]
+        edges = [_make_edge("e1", "n1", "n2"), _make_edge("e2", "n2", "n2")]
+        graph = _make_graph(nodes, edges)
+        engine = WorkflowEngine(graph, _make_agent())
+        engine.MAX_EXECUTION_STEPS = 3
+        events = list(engine.execute({}, "q"))
+        # The while loop runs 3 times then exits, steps >= MAX
+        assert len(events) >= 3
+
+
+@pytest.mark.unit
+class TestWorkflowBranchEndsNonEndNode:
+    """Cover lines 122-125: branch ends at non-end node without outgoing edges."""
+
+    def test_branch_ends_at_state_node(self):
+        nodes = [
+            _make_node("n1", NodeType.START),
+            _make_node(
+                "n2",
+                NodeType.STATE,
+                "State",
+                config={"config": {"operations": []}},
+            ),
+        ]
+        edges = [_make_edge("e1", "n1", "n2")]  # n2 has no outgoing
+        graph = _make_graph(nodes, edges)
+        engine = WorkflowEngine(graph, _make_agent())
+        events = list(engine.execute({}, "q"))
+        # Should complete without crash, branch ended warning logged
+        assert len(events) > 0

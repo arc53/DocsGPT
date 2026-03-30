@@ -688,3 +688,116 @@ class TestShareConversationPromptable:
         assert response.status_code == 201
         mock_agents.insert_one.assert_called_once()
         mock_shared.insert_one.assert_called_once()
+
+
+# =====================================================================
+# Coverage gap tests  (lines 201-205)
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestShareConversationExceptionGap:
+    def test_share_conversation_exception_returns_400(self):
+        """Cover lines 201-205: exception during sharing returns 400."""
+        from application.api.user.sharing.routes import ShareConversation
+        from unittest.mock import Mock, patch
+
+        app = Flask(__name__)
+
+        mock_conversations = Mock()
+        mock_conversations.find_one.side_effect = Exception("db error")
+
+        with patch(
+            "application.api.user.sharing.routes.conversations_collection",
+            mock_conversations,
+        ):
+            with app.test_request_context(
+                "/api/share",
+                method="POST",
+                json={
+                    "conversation_id": str(ObjectId()),
+                    "source": str(ObjectId()),
+                    "retriever": "classic",
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = ShareConversation().post()
+
+        assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Coverage — additional uncovered lines: 201-205
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestShareConversationErrorPath:
+
+    def test_share_conversation_exception_returns_400(self, app):
+        """Cover lines 201-205: exception during sharing returns 400."""
+        from application.api.user.sharing.routes import ShareConversation
+
+        mock_conversations = Mock()
+        mock_conversations.find_one.side_effect = Exception("DB error")
+
+        with patch(
+            "application.api.user.sharing.routes.conversations_collection",
+            mock_conversations,
+        ):
+            with app.test_request_context(
+                "/api/share",
+                method="POST",
+                json={"conversation_id": str(ObjectId())},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = ShareConversation().post()
+
+        assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Additional coverage for sharing/routes.py
+# Lines: 201-205: exception in try block (different entry point)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestShareConversationInsertException:
+    """Cover lines 201-205: exception during insert_one."""
+
+    def test_insert_one_exception_returns_400(self, app):
+        from application.api.user.sharing.routes import ShareConversation
+
+        mock_conversations = Mock()
+        mock_conversations.find_one.return_value = {
+            "_id": ObjectId(),
+            "user": "user1",
+            "queries": [],
+        }
+        mock_shared = Mock()
+        mock_shared.find_one.return_value = None
+        mock_shared.insert_one.side_effect = Exception("Insert failed")
+
+        with patch(
+            "application.api.user.sharing.routes.conversations_collection",
+            mock_conversations,
+        ), patch(
+            "application.api.user.sharing.routes.shared_conversations_collections",
+            mock_shared,
+        ):
+            with app.test_request_context(
+                "/api/share",
+                method="POST",
+                json={"conversation_id": str(ObjectId())},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = ShareConversation().post()
+
+        assert response.status_code == 400

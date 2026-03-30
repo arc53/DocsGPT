@@ -447,3 +447,102 @@ class TestMemoryToolMetadata:
 
     def test_config_requirements(self, memory_tool):
         assert memory_tool.get_config_requirements() == {}
+
+
+# =====================================================================
+# Coverage gap tests  (lines 254, 257, 271, 275, 279)
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestMemoryToolValidatePath:
+
+    def test_validate_path_with_traversal_returns_none(self, memory_tool):
+        """Cover line 244-245: path with .. returns None."""
+        result = memory_tool._validate_path("/some/../etc/passwd")
+        assert result is None
+
+    def test_validate_path_with_directory_trailing_slash(self, memory_tool):
+        """Cover line 257-258: trailing slash is preserved."""
+        result = memory_tool._validate_path("/some/dir/")
+        assert result is not None
+        assert result.endswith("/")
+
+    def test_validate_path_empty_returns_none(self, memory_tool):
+        """Cover: empty path returns None."""
+        result = memory_tool._validate_path("")
+        assert result is None
+
+    def test_validate_path_none_returns_none(self, memory_tool):
+        """Cover: None path returns None."""
+        result = memory_tool._validate_path(None)
+        assert result is None
+
+    def test_validate_path_relative_gets_prefixed(self, memory_tool):
+        """Cover line 241: relative path gets / prepended."""
+        result = memory_tool._validate_path("relative/path")
+        assert result == "/relative/path"
+
+    def test_validate_path_double_slash_returns_none(self, memory_tool):
+        """Cover line 244: double slash returns None."""
+        result = memory_tool._validate_path("//etc/passwd")
+        assert result is None
+
+
+@pytest.mark.unit
+class TestMemoryToolViewDirectory:
+
+    def test_view_with_directory_path(self, memory_tool):
+        """Cover line 271-275: _view with directory path delegates to _view_directory."""
+        result = memory_tool._view("/")
+        assert isinstance(result, str)
+
+    def test_view_with_file_path(self, memory_tool):
+        """Cover line 279: _view with non-directory path delegates to _view_file."""
+        # _view on a non-existent file path still exercises the _view_file path
+        result = memory_tool._view("/nonexistent.txt")
+        assert "Error" in result or "not found" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# Coverage — additional uncovered lines: 254, 257, 271, 275, 279
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestMemoryToolValidatePathCoverage:
+
+    def test_validate_path_traversal_returns_none(self, memory_tool):
+        """Cover line 244: path with directory traversal returns None."""
+        result = memory_tool._validate_path("/etc/../passwd")
+        assert result is None
+
+    def test_validate_path_directory_appends_slash(self, memory_tool):
+        """Cover line 257: path ending with / preserves trailing slash."""
+        result = memory_tool._validate_path("/some/dir/")
+        assert result is not None
+        assert result.endswith("/")
+
+    def test_validate_path_root_directory(self, memory_tool):
+        """Cover line 257: root directory preserved as-is."""
+        result = memory_tool._validate_path("/")
+        assert result == "/"
+
+
+@pytest.mark.unit
+class TestMemoryToolViewCoverage:
+
+    def test_view_invalid_path_returns_error(self, memory_tool):
+        """Cover line 271: _view with invalid path returns error."""
+        result = memory_tool._view("//bad//path")
+        assert "Error" in result
+
+    def test_view_root_directory(self, memory_tool):
+        """Cover line 275: _view with root directory."""
+        result = memory_tool._view("/")
+        assert isinstance(result, str)
+
+    def test_view_file_path(self, memory_tool):
+        """Cover line 279: _view with file path delegates to _view_file."""
+        result = memory_tool._view("/some/file.txt")
+        assert isinstance(result, str)

@@ -422,3 +422,199 @@ class TestSerializationErrors:
                 {"key": object()},  # object() is not JSON-serializable
                 ContentType.JSON,
             )
+
+
+# =====================================================================
+# Coverage gap tests  (lines 145, 155, 159, 162, 166, 271)
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestSerializeFormValueGaps:
+
+    def test_dict_explode_without_deep_object(self):
+        """Cover line 145: dict with explode=True but style != deepObject."""
+        result = RequestBodySerializer._serialize_form_value(
+            value={"a": "1", "b": "2"},
+            style="form",
+            explode=True,
+            content_type="application/x-www-form-urlencoded",
+            key="data",
+        )
+        assert isinstance(result, list)
+        assert len(result) == 2
+
+    def test_list_explode_true(self):
+        """Cover line 155: list with explode=True."""
+        result = RequestBodySerializer._serialize_form_value(
+            value=["x", "y", "z"],
+            style="form",
+            explode=True,
+            content_type="application/x-www-form-urlencoded",
+            key="items",
+        )
+        assert isinstance(result, list)
+        assert len(result) == 3
+
+    def test_list_explode_false(self):
+        """Cover line 159: list with explode=False."""
+        result = RequestBodySerializer._serialize_form_value(
+            value=["x", "y"],
+            style="form",
+            explode=False,
+            content_type="application/x-www-form-urlencoded",
+            key="items",
+        )
+        assert isinstance(result, str)
+        # comma-joined and percent-encoded
+        assert "x" in result
+        assert "y" in result
+
+    def test_primitive_value(self):
+        """Cover line 162: primitive string value."""
+        result = RequestBodySerializer._serialize_form_value(
+            value="hello world",
+            style="form",
+            explode=False,
+            content_type="application/x-www-form-urlencoded",
+            key="name",
+        )
+        assert isinstance(result, str)
+        assert "hello" in result
+
+    def test_dict_no_explode(self):
+        """Cover line 166 area: dict with explode=False returns comma-joined."""
+        result = RequestBodySerializer._serialize_form_value(
+            value={"k1": "v1", "k2": "v2"},
+            style="form",
+            explode=False,
+            content_type="application/x-www-form-urlencoded",
+            key="data",
+        )
+        assert isinstance(result, str)
+        assert "k1" in result
+
+    def test_octet_stream_string_input(self):
+        """Cover line 271: _serialize_octet_stream with string input."""
+        body, headers = RequestBodySerializer._serialize_octet_stream("hello bytes")
+        assert body == b"hello bytes"
+        assert headers["Content-Type"] == ContentType.OCTET_STREAM.value
+
+    def test_octet_stream_dict_input(self):
+        """Cover: _serialize_octet_stream with dict input (fallback to JSON)."""
+        body, headers = RequestBodySerializer._serialize_octet_stream({"key": "val"})
+        assert isinstance(body, bytes)
+        import json
+
+        parsed = json.loads(body.decode("utf-8"))
+        assert parsed == {"key": "val"}
+
+
+# ---------------------------------------------------------------------------
+# Coverage — additional uncovered lines: 226, 229, 271, 275, 279
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestApiBodySerializerMultipartParts:
+
+    def test_multipart_dict_unknown_content_type(self):
+        """Cover line 226: dict with unknown content type uses str()."""
+        from application.agents.tools.api_body_serializer import (
+            RequestBodySerializer,
+        )
+
+        result = RequestBodySerializer._create_multipart_part(
+            name="field",
+            value={"key": "val"},
+            content_type="text/csv",
+            headers_rule={},
+        )
+        assert "text/csv" in result
+        assert "key" in result
+
+    def test_multipart_string_json_content_type(self):
+        """Cover line 229: string value with application/json content type."""
+        from application.agents.tools.api_body_serializer import (
+            RequestBodySerializer,
+        )
+
+        result = RequestBodySerializer._create_multipart_part(
+            name="data",
+            value='{"a": 1}',
+            content_type="application/json",
+            headers_rule={},
+        )
+        assert "application/json" in result
+        assert '{"a": 1}' in result
+
+    def test_multipart_string_xml_content_type(self):
+        """Cover line 229: string value with application/xml content type."""
+        from application.agents.tools.api_body_serializer import (
+            RequestBodySerializer,
+        )
+
+        result = RequestBodySerializer._create_multipart_part(
+            name="data",
+            value="<root/>",
+            content_type="application/xml",
+            headers_rule={},
+        )
+        assert "application/xml" in result
+        assert "<root/>" in result
+
+    def test_multipart_string_unknown_content_type(self):
+        """Cover line 229: string with unknown content type falls through."""
+        from application.agents.tools.api_body_serializer import (
+            RequestBodySerializer,
+        )
+
+        result = RequestBodySerializer._create_multipart_part(
+            name="data",
+            value="some text",
+            content_type="application/custom",
+            headers_rule={},
+        )
+        assert "application/custom" in result
+        assert "some text" in result
+
+
+@pytest.mark.unit
+class TestApiBodySerializerOctetStreamCoverage:
+
+    def test_octet_stream_bytes_input(self):
+        """Cover line 271: _serialize_octet_stream with bytes input."""
+        from application.agents.tools.api_body_serializer import (
+            ContentType,
+            RequestBodySerializer,
+        )
+
+        body, headers = RequestBodySerializer._serialize_octet_stream(b"raw bytes")
+        assert body == b"raw bytes"
+        assert headers["Content-Type"] == ContentType.OCTET_STREAM.value
+
+    def test_octet_stream_string_input(self):
+        """Cover line 275: _serialize_octet_stream with string input."""
+        from application.agents.tools.api_body_serializer import (
+            ContentType,
+            RequestBodySerializer,
+        )
+
+        body, headers = RequestBodySerializer._serialize_octet_stream("text data")
+        assert body == b"text data"
+        assert headers["Content-Type"] == ContentType.OCTET_STREAM.value
+
+    def test_octet_stream_dict_input(self):
+        """Cover line 279: _serialize_octet_stream with dict input (fallback to JSON)."""
+        import json
+
+        from application.agents.tools.api_body_serializer import (
+            ContentType,
+            RequestBodySerializer,
+        )
+
+        body, headers = RequestBodySerializer._serialize_octet_stream({"k": "v"})
+        assert isinstance(body, bytes)
+        parsed = json.loads(body.decode("utf-8"))
+        assert parsed == {"k": "v"}
+        assert headers["Content-Type"] == ContentType.OCTET_STREAM.value

@@ -185,3 +185,54 @@ class TestBaseParserProperties:
         parser = PDFParser()
         meta = parser.get_file_metadata(Path("test.pdf"))
         assert meta == {}
+
+
+# =====================================================================
+# Coverage gap tests  (lines 33-34, 59, 63)
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestDocsParserGaps:
+    def test_pdf_parser_parse_as_image(self, tmp_path):
+        """Cover lines 33-34: PARSE_PDF_AS_IMAGE sends to external service."""
+        from application.parser.file.docs_parser import PDFParser
+
+        pdf_file = tmp_path / "test.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 fake content")
+
+        with patch(
+            "application.parser.file.docs_parser.settings"
+        ) as mock_settings:
+            mock_settings.PARSE_PDF_AS_IMAGE = True
+            with patch(
+                "application.parser.file.docs_parser.requests.post"
+            ) as mock_post:
+                mock_post.return_value = MagicMock(
+                    json=MagicMock(return_value={"markdown": "# Parsed Content"})
+                )
+                parser = PDFParser()
+                result = parser.parse_file(pdf_file)
+                assert result == "# Parsed Content"
+                mock_post.assert_called_once()
+
+    def test_docx_parser_init_parser(self):
+        """Cover line 59: DocxParser._init_parser returns empty dict."""
+        from application.parser.file.docs_parser import DocxParser
+
+        parser = DocxParser()
+        config = parser._init_parser()
+        assert config == {}
+
+    def test_docx_parser_import_error(self):
+        """Cover line 63: ImportError when docx2txt not installed."""
+        from application.parser.file.docs_parser import DocxParser
+
+        parser = DocxParser()
+        with patch.dict("sys.modules", {"docx2txt": None}):
+            with patch(
+                "builtins.__import__",
+                side_effect=ImportError("No module named 'docx2txt'"),
+            ):
+                with pytest.raises((ImportError, ValueError)):
+                    parser.parse_file(Path("/tmp/fake.docx"))

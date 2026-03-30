@@ -418,3 +418,23 @@ def test_stream_cache_redis_set_error(mock_make_redis):
     result = list(mock_function(None, "model", messages, stream=True, tools=None))
 
     assert result == ["chunk"]
+
+
+# =====================================================================
+# Coverage gap tests  (lines 86-89)
+# =====================================================================
+
+
+@patch("application.cache.get_redis_instance")
+def test_stream_cache_key_generation_failure_yields(mock_make_redis):
+    """Cover lines 86-89: ValueError in gen_cache_key falls through to func."""
+    mock_make_redis.return_value = None
+
+    @stream_cache
+    def mock_function(self, model, messages, stream, tools):
+        yield "fallback_chunk"
+
+    # Pass invalid messages (not dicts) to trigger ValueError in gen_cache_key
+    messages = ["not_a_dict"]
+    result = list(mock_function(None, "model", messages, stream=True, tools=None))
+    assert result == ["fallback_chunk"]

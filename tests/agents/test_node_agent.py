@@ -90,3 +90,51 @@ class TestWorkflowNodeAgentFactory:
                 model_id="gpt-4",
                 api_key="key",
             )
+
+
+# =====================================================================
+# Coverage gap tests  (lines 52-59: _WorkflowNodeMixin.__init__)
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestWorkflowNodeMixinInit:
+
+    def test_mixin_init_sets_allowed_tool_ids(self):
+        """Cover lines 52-59: _WorkflowNodeMixin.__init__ stores tool_ids."""
+        from application.agents.workflows.node_agent import _WorkflowNodeMixin
+
+        class FakeBase:
+            def __init__(self, *args, **kwargs):
+                pass
+
+        class TestMixin(_WorkflowNodeMixin, FakeBase):
+            pass
+
+        obj = TestMixin(
+            endpoint="http://example.com",
+            llm_name="openai",
+            model_id="gpt-4",
+            api_key="key",
+            tool_ids=["tool1", "tool2"],
+        )
+        assert obj._allowed_tool_ids == ["tool1", "tool2"]
+
+    def test_mixin_init_defaults_empty_tool_ids(self):
+        """Cover: _WorkflowNodeMixin defaults to empty list."""
+        from application.agents.workflows.node_agent import _WorkflowNodeMixin
+
+        class FakeBase:
+            def __init__(self, *args, **kwargs):
+                pass
+
+        class TestMixin(_WorkflowNodeMixin, FakeBase):
+            pass
+
+        obj = TestMixin(
+            endpoint="http://example.com",
+            llm_name="openai",
+            model_id="gpt-4",
+            api_key="key",
+        )
+        assert obj._allowed_tool_ids == []

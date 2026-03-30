@@ -1336,3 +1336,388 @@ class TestTaskStatus:
                 response = TaskStatus().get()
 
         assert _status(response) == 400
+
+
+# ---------------------------------------------------------------------------
+# Additional coverage: zip extraction paths and ManageSourceFiles edge cases
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestUploadFileZipExtraction:
+    """Cover zip file extraction (lines 102-136) and error fallback."""
+
+    def test_zip_file_extraction_success(self, app):
+        """Lines 102-127: zip file is extracted and inner files uploaded."""
+        import zipfile
+
+        from application.api.user.sources.upload import UploadFile
+
+        mock_storage = MagicMock()
+        mock_task = SimpleNamespace(id="task-zip")
+
+        # Create a real zip file in memory
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("inner_file.txt", "hello zip content")
+        zip_buffer.seek(0)
+
+        with app.test_request_context(
+            "/api/upload",
+            method="POST",
+            data={
+                "user": "u1",
+                "name": "ZipDoc",
+                "file": (zip_buffer, "archive.zip"),
+            },
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": "u1"}
+
+            with patch(
+                "application.api.user.sources.upload.StorageCreator.get_storage",
+                return_value=mock_storage,
+            ), patch(
+                "application.api.user.sources.upload.ingest"
+            ) as mock_ingest, patch(
+                "application.api.user.sources.upload._enforce_audio_path_size_limit",
+            ):
+                mock_ingest.delay.return_value = mock_task
+                response = UploadFile().post()
+
+        assert _status(response) == 200
+        # Storage should have been called to save extracted files
+        assert mock_storage.save_file.called
+
+    def test_zip_extraction_error_falls_back_to_original(self, app):
+        """Lines 128-136: zip extraction fails, original zip file is saved."""
+        import zipfile
+
+        from application.api.user.sources.upload import UploadFile
+
+        mock_storage = MagicMock()
+        mock_task = SimpleNamespace(id="task-zip-err")
+
+        # Create a real zip file in memory
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("inner.txt", "content")
+        zip_buffer.seek(0)
+
+        def bad_extractall(**kwargs):
+            raise Exception("corrupt zip")
+
+        with app.test_request_context(
+            "/api/upload",
+            method="POST",
+            data={
+                "user": "u1",
+                "name": "BadZip",
+                "file": (zip_buffer, "bad.zip"),
+            },
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": "u1"}
+
+            with patch(
+                "application.api.user.sources.upload.StorageCreator.get_storage",
+                return_value=mock_storage,
+            ), patch(
+                "application.api.user.sources.upload.ingest"
+            ) as mock_ingest, patch(
+                "application.api.user.sources.upload._enforce_audio_path_size_limit",
+            ), patch(
+                "application.api.user.sources.upload.zipfile.ZipFile"
+            ) as mock_zip_cls:
+                mock_zip_instance = MagicMock()
+                mock_zip_instance.__enter__ = MagicMock(return_value=mock_zip_instance)
+                mock_zip_instance.__exit__ = MagicMock(return_value=False)
+                mock_zip_instance.extractall.side_effect = Exception("corrupt zip")
+                mock_zip_cls.return_value = mock_zip_instance
+                mock_ingest.delay.return_value = mock_task
+                response = UploadFile().post()
+
+        assert _status(response) == 200
+        # Fallback: storage should save the original zip
+        assert mock_storage.save_file.called
+
+    def test_upload_returns_413_for_oversized_audio(self, app):
+        """Lines 152-161: AudioFileTooLargeError caught."""
+        from application.api.user.sources.upload import UploadFile
+        from application.stt.upload_limits import AudioFileTooLargeError
+
+        mock_storage = MagicMock()
+
+        with app.test_request_context(
+            "/api/upload",
+            method="POST",
+            data={
+                "user": "u1",
+                "name": "AudioDoc",
+                "file": (io.BytesIO(b"audio data"), "big.wav"),
+            },
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": "u1"}
+
+            with patch(
+                "application.api.user.sources.upload.StorageCreator.get_storage",
+                return_value=mock_storage,
+            ), patch(
+                "application.api.user.sources.upload._enforce_audio_path_size_limit",
+                side_effect=AudioFileTooLargeError("too big"),
+            ):
+                response = UploadFile().post()
+
+        assert _status(response) == 413
+        assert "success" in _json(response) and _json(response)["success"] is False
+
+
+@pytest.mark.unit
+class TestManageSourceFilesAdditional:
+    """Additional edge cases for ManageSourceFiles."""
+
+    def test_remove_with_absolute_directory_path_rejected(self, app):
+        """Lines 513-523: directory_path starting with / is rejected."""
+        from application.api.user.sources.upload import ManageSourceFiles
+
+        source_id = str(ObjectId())
+        mock_collection = Mock()
+        mock_collection.find_one.return_value = {
+            "_id": ObjectId(source_id),
+            "user": "u1",
+            "file_path": "uploads/u1/src",
+        }
+        mock_storage = MagicMock()
+
+        with patch(
+            "application.api.user.sources.upload.sources_collection",
+            mock_collection,
+        ), patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=mock_storage,
+        ):
+            with app.test_request_context(
+                "/api/manage_source_files",
+                method="POST",
+                data={
+                    "source_id": source_id,
+                    "operation": "remove_directory",
+                    "directory_path": "/etc/passwd",
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "u1"}
+                response = ManageSourceFiles().post()
+
+        assert _status(response) == 400
+        assert "Invalid directory" in _json(response)["message"]
+
+    def test_remove_directory_no_keys_to_remove(self, app):
+        """Lines 564-577: remove_directory with file_name_map that has no
+        matching keys (keys_to_remove is empty)."""
+        from application.api.user.sources.upload import ManageSourceFiles
+
+        source_id = str(ObjectId())
+        mock_collection = Mock()
+        mock_collection.find_one.return_value = {
+            "_id": ObjectId(source_id),
+            "user": "u1",
+            "file_path": "uploads/u1/src",
+            "file_name_map": {"unrelated.txt": "File.txt"},
+        }
+        mock_storage = MagicMock()
+        mock_storage.is_directory.return_value = True
+        mock_storage.remove_directory.return_value = True
+        mock_task = SimpleNamespace(id="reingest-x")
+
+        with patch(
+            "application.api.user.sources.upload.sources_collection",
+            mock_collection,
+        ), patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=mock_storage,
+        ), patch(
+            "application.api.user.tasks.reingest_source_task"
+        ) as mock_reingest:
+            mock_reingest.delay.return_value = mock_task
+            with app.test_request_context(
+                "/api/manage_source_files",
+                method="POST",
+                data={
+                    "source_id": source_id,
+                    "operation": "remove_directory",
+                    "directory_path": "no_match_dir",
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "u1"}
+                response = ManageSourceFiles().post()
+
+        assert _status(response) == 200
+        # update_one should NOT be called because no keys matched
+        mock_collection.update_one.assert_not_called()
+
+    def test_general_error_remove_directory_context(self, app):
+        """Line 598-600: error context includes directory_path for
+        remove_directory operation."""
+        from application.api.user.sources.upload import ManageSourceFiles
+
+        source_id = str(ObjectId())
+        mock_collection = Mock()
+        mock_collection.find_one.return_value = {
+            "_id": ObjectId(source_id),
+            "user": "u1",
+            "file_path": "uploads/u1/src",
+        }
+
+        with patch(
+            "application.api.user.sources.upload.sources_collection",
+            mock_collection,
+        ), patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            side_effect=Exception("storage crash"),
+        ):
+            with app.test_request_context(
+                "/api/manage_source_files",
+                method="POST",
+                data={
+                    "source_id": source_id,
+                    "operation": "remove_directory",
+                    "directory_path": "mydir",
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "u1"}
+                response = ManageSourceFiles().post()
+
+        assert _status(response) == 500
+        assert "Operation failed" in _json(response)["message"]
+
+    def test_general_error_add_context(self, app):
+        """Lines 604-606: error context includes parent_dir for add operation."""
+        from application.api.user.sources.upload import ManageSourceFiles
+
+        source_id = str(ObjectId())
+        mock_collection = Mock()
+        mock_collection.find_one.return_value = {
+            "_id": ObjectId(source_id),
+            "user": "u1",
+            "file_path": "uploads/u1/src",
+        }
+
+        with patch(
+            "application.api.user.sources.upload.sources_collection",
+            mock_collection,
+        ), patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            side_effect=Exception("storage crash"),
+        ):
+            with app.test_request_context(
+                "/api/manage_source_files",
+                method="POST",
+                data={
+                    "source_id": source_id,
+                    "operation": "add",
+                    "parent_dir": "sub",
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "u1"}
+                response = ManageSourceFiles().post()
+
+        assert _status(response) == 500
+
+    def test_file_name_map_non_dict_reset(self, app):
+        """Lines 366-367: file_name_map not a dict is reset to {}."""
+        from application.api.user.sources.upload import ManageSourceFiles
+
+        source_id = str(ObjectId())
+        mock_collection = Mock()
+        mock_collection.find_one.return_value = {
+            "_id": ObjectId(source_id),
+            "user": "u1",
+            "file_path": "uploads/u1/src",
+            "file_name_map": [1, 2, 3],  # not a dict
+        }
+        mock_storage = MagicMock()
+        mock_storage.file_exists.return_value = True
+        mock_task = SimpleNamespace(id="reingest-nd")
+
+        with patch(
+            "application.api.user.sources.upload.sources_collection",
+            mock_collection,
+        ), patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=mock_storage,
+        ), patch(
+            "application.api.user.tasks.reingest_source_task"
+        ) as mock_reingest:
+            mock_reingest.delay.return_value = mock_task
+            with app.test_request_context(
+                "/api/manage_source_files",
+                method="POST",
+                data={
+                    "source_id": source_id,
+                    "operation": "remove",
+                    "file_paths": json.dumps(["x.txt"]),
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "u1"}
+                response = ManageSourceFiles().post()
+
+        assert _status(response) == 200
+
+    def test_file_name_map_invalid_json_string_reset(self, app):
+        """Lines 362-365: file_name_map is a string but not valid JSON."""
+        from application.api.user.sources.upload import ManageSourceFiles
+
+        source_id = str(ObjectId())
+        mock_collection = Mock()
+        mock_collection.find_one.return_value = {
+            "_id": ObjectId(source_id),
+            "user": "u1",
+            "file_path": "uploads/u1/src",
+            "file_name_map": "not-valid-json{",
+        }
+        mock_storage = MagicMock()
+        mock_storage.file_exists.return_value = False
+        mock_task = SimpleNamespace(id="reingest-ij")
+
+        with patch(
+            "application.api.user.sources.upload.sources_collection",
+            mock_collection,
+        ), patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=mock_storage,
+        ), patch(
+            "application.api.user.tasks.reingest_source_task"
+        ) as mock_reingest:
+            mock_reingest.delay.return_value = mock_task
+            with app.test_request_context(
+                "/api/manage_source_files",
+                method="POST",
+                data={
+                    "source_id": source_id,
+                    "operation": "remove",
+                    "file_paths": json.dumps(["x.txt"]),
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "u1"}
+                response = ManageSourceFiles().post()
+
+        assert _status(response) == 200
