@@ -1,6 +1,5 @@
+import { Check, ChevronDown, Pencil, Search, Trash2 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-
-import { ChevronDown, Pencil, Search, Trash2 } from 'lucide-react';
 
 type OptionBase = { id?: string; type?: string };
 type NameIdOption = { name: string; id: string } & OptionBase;
@@ -34,8 +33,10 @@ function optionMatches(
   selected: DropdownOption | null,
 ): boolean {
   if (!selected) return false;
-  if (typeof selected === 'string') return selected === option;
-  if (typeof option === 'string') return false;
+  if (typeof selected === 'string' && typeof option === 'string')
+    return selected === option;
+  if (typeof selected === 'string') return getOptionText(option) === selected;
+  if (typeof option === 'string') return getOptionText(selected) === option;
   const a = option as Record<string, unknown>;
   const b = selected as Record<string, unknown>;
   if ('name' in a && 'name' in b) return a.name === b.name;
@@ -127,7 +128,7 @@ function Dropdown<T extends DropdownOption>({
           className={`border-border bg-card absolute inset-x-0 z-20 -mt-px overflow-hidden border border-t-0 shadow-lg ${radiusBottom}`}
         >
           {searchable && (
-            <div className="border-border flex items-center border-b px-3 py-2">
+            <div className="flex items-center px-3 py-2">
               <Search className="text-muted-foreground mr-2 h-4 w-4 shrink-0" />
               <input
                 ref={searchRef}
@@ -141,7 +142,7 @@ function Dropdown<T extends DropdownOption>({
             </div>
           )}
 
-          <div className="max-h-48 overflow-y-auto">
+          <div className="scrollbar-thin border-border max-h-48 overflow-y-auto border-t">
             {filtered.length === 0 ? (
               <div className="text-muted-foreground px-4 py-3 text-center text-sm">
                 No results found
@@ -157,7 +158,7 @@ function Dropdown<T extends DropdownOption>({
                 return (
                   <div
                     key={i}
-                    className={`hover:bg-accent flex cursor-pointer items-center justify-between ${active ? 'bg-accent' : ''}`}
+                    className={`hover:bg-accent flex cursor-pointer items-center justify-between ${active ? 'bg-accent font-medium' : ''}`}
                   >
                     <span
                       onClick={() => {
@@ -169,6 +170,10 @@ function Dropdown<T extends DropdownOption>({
                     >
                       {getOptionText(option)}
                     </span>
+
+                    {active && !showEdit && !showDelete && (
+                      <Check className="text-primary mr-3 h-4 w-4 shrink-0" />
+                    )}
 
                     {showEdit &&
                       onEdit &&
