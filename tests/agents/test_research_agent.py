@@ -729,7 +729,9 @@ class TestResearchAgentToolSetup:
             **agent_base_params,
         )
 
-        with patch(
+        with patch.object(
+            agent.tool_executor, "get_tools", return_value={}
+        ), patch(
             "application.agents.research_agent.add_internal_search_tool"
         ) as mock_add:
             tools = agent._setup_tools()
@@ -741,7 +743,9 @@ class TestResearchAgentToolSetup:
     ):
         agent = ResearchAgent(**agent_base_params)
 
-        with patch(
+        with patch.object(
+            agent.tool_executor, "get_tools", return_value={}
+        ), patch(
             "application.agents.research_agent.add_internal_search_tool"
         ) as mock_add:
             tools = agent._setup_tools()
