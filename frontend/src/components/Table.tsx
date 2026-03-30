@@ -46,7 +46,7 @@ const TableContainer = React.forwardRef<HTMLDivElement, TableContainerProps>(
       <div className={`relative rounded-[6px] ${className}`}>
         <div
           ref={ref}
-          className={`w-full overflow-x-auto rounded-[6px] bg-transparent ${bordered ? 'border border-[#D7D7D7] dark:border-[#6A6A6A]' : ''}`}
+          className={`w-full overflow-x-auto rounded-[6px] bg-transparent ${bordered ? 'border-border dark:border-border border' : ''}`}
           style={{
             maxHeight: height === 'auto' ? undefined : height,
             overflowY: height === 'auto' ? 'hidden' : 'auto',
@@ -75,7 +75,7 @@ const Table: React.FC<TableProps> = ({
 const TableHead: React.FC<TableHeadProps> = ({ children, className = '' }) => {
   return (
     <thead
-      className={`sticky top-0 z-10 bg-gray-100 dark:bg-[#27282D] ${className} `}
+      className={`dark:bg-card sticky top-0 z-10 bg-gray-100 ${className} `}
     >
       {children}
     </thead>
@@ -96,7 +96,7 @@ const TableRow: React.FC<TableRowProps> = ({
   onClick,
 }) => {
   const baseClasses =
-    'border-b border-[#D7D7D7] hover:bg-[#ECEEEF] dark:border-[#6A6A6A] dark:hover:bg-[#27282D]';
+    'border-b border-border hover:bg-muted dark:border-border dark:hover:bg-muted';
   const cursorClass = onClick ? 'cursor-pointer' : '';
 
   return (
@@ -127,7 +127,7 @@ const TableHeader: React.FC<TableCellProps> = ({
     }
   };
 
-  const baseClasses = `px-2 py-3 text-sm font-medium text-gray-700 lg:px-3 dark:text-[#59636E] border-b border-[#D7D7D7] dark:border-[#6A6A6A] relative box-border ${getAlignmentClass()}`;
+  const baseClasses = `px-2 py-3 text-sm font-medium text-gray-700 lg:px-3 dark:text-muted-foreground border-b border-border dark:border-border relative box-border ${getAlignmentClass()}`;
   const widthClasses = minWidth ? minWidth : '';
 
   return (
@@ -158,7 +158,7 @@ const TableCell: React.FC<TableCellProps> = ({
     }
   };
 
-  const baseClasses = `px-2 py-2 text-sm lg:px-3 dark:text-[#E0E0E0] box-border ${getAlignmentClass()}`;
+  const baseClasses = `px-2 py-2 text-sm lg:px-3 box-border ${getAlignmentClass()}`;
   const widthClasses = minWidth ? minWidth : '';
 
   return (

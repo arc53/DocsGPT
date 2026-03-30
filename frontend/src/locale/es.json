@@ -54,6 +54,7 @@
     },
     "sources": {
       "title": "Aquí puedes gestionar todos los archivos fuente que están disponibles para ti y los que has subido.",
+      "subtitle": "Sube y gestiona los documentos y fuentes de conocimiento que impulsan tus respuestas",
       "label": "Fuentes",
       "name": "Nombre de la Fuente",
       "date": "Fecha de Vector",
@@ -118,6 +119,7 @@
     },
     "analytics": {
       "label": "Analítica",
+      "subtitle": "Realiza un seguimiento del volumen de mensajes, uso de tokens y comentarios de usuarios en tu cuenta",
       "filterByChatbot": "Filtrar por chatbot",
       "selectChatbot": "Seleccionar chatbot",
       "filterOptions": {
@@ -137,6 +139,7 @@
     },
     "logs": {
       "label": "Registros",
+      "subtitle": "Visualiza y monitorea las llamadas a la API y los registros de conversaciones",
       "filterByChatbot": "Filtrar por chatbot",
       "selectChatbot": "Seleccionar chatbot",
       "none": "Ninguno",
@@ -144,6 +147,7 @@
     },
     "tools": {
       "label": "Herramientas",
+      "subtitle": "Explora, conecta y configura las herramientas e integraciones que impulsan a tus agentes",
       "searchPlaceholder": "Buscar...",
       "addTool": "Agregar Herramienta",
       "noToolsFound": "No se encontraron herramientas",

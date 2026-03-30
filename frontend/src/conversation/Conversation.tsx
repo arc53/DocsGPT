@@ -263,7 +263,7 @@ export default function Conversation() {
             />
           </div>
 
-          <p className="text-gray-4000 dark:text-sonic-silver hidden w-full self-center bg-transparent py-2 text-center text-xs md:inline">
+          <p className="text-muted-foreground hidden w-full self-center bg-transparent py-2 text-center text-xs md:inline">
             {t('tagline')}
           </p>
         </div>

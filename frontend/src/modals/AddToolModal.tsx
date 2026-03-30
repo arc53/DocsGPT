@@ -116,7 +116,7 @@ export default function AddToolModal({
         >
           <div className="flex h-full flex-col">
             <div>
-              <h2 className="text-jet dark:text-bright-gray px-3 text-xl font-semibold">
+              <h2 className="text-foreground dark:text-foreground px-3 text-xl font-semibold">
                 {t('settings.tools.selectToolSetup')}
               </h2>
               <div className="mt-5 h-[73vh] overflow-auto px-3 py-px">
@@ -131,7 +131,7 @@ export default function AddToolModal({
                         role="button"
                         tabIndex={0}
                         key={index}
-                        className="border-light-gainsboro bg-white-3000 dark:border-arsenic dark:bg-gunmetal flex h-52 w-full cursor-pointer flex-col justify-between rounded-2xl border p-6 hover:border-[#9d9d9d] dark:hover:border-[#717179]"
+                        className="border-border bg-card hover:bg-accent hover:border-border/80 flex h-52 w-full cursor-pointer flex-col justify-between rounded-2xl border p-6"
                         onClick={() => {
                           setSelectedTool(tool);
                           handleAddTool(tool);
@@ -154,11 +154,11 @@ export default function AddToolModal({
                           <div className="mt-[9px]">
                             <p
                               title={tool.displayName}
-                              className="text-raisin-black-light dark:text-bright-gray truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
+                              className="text-foreground dark:text-foreground truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
                             >
                               {tool.displayName}
                             </p>
-                            <p className="text-old-silver dark:text-sonic-silver-light mt-1 h-24 overflow-auto px-1 text-[12px] leading-relaxed">
+                            <p className="text-muted-foreground mt-1 h-24 overflow-auto px-1 text-[12px] leading-relaxed">
                               {tool.description}
                             </p>
                           </div>

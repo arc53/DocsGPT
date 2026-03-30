@@ -32,8 +32,7 @@ export default function WrapperModal({
       )
         return;
       if (document.querySelector('[data-radix-select-content]')) return;
-      if (modalRef.current && !modalRef.current.contains(target))
-        close();
+      if (modalRef.current && !modalRef.current.contains(target)) close();
     };
 
     const handleEscapePress = (event: KeyboardEvent) => {
@@ -61,7 +60,7 @@ export default function WrapperModal({
       />
       <div
         ref={modalRef}
-        className={`relative rounded-2xl bg-white p-8 shadow-[0px_4px_40px_-3px_#0000001A] dark:bg-[#26272E] ${className}`}
+        className={`bg-card dark:bg-card relative rounded-2xl p-8 shadow-[0px_4px_40px_-3px_#0000001A] ${className}`}
       >
         {!isPerformingTask && (
           <button
@@ -72,7 +71,7 @@ export default function WrapperModal({
           </button>
         )}
         <div
-          className={`no-scrollbar overflow-y-auto text-[#18181B] dark:text-[#ECECF1] ${contentClassName}`}
+          className={`no-scrollbar text-foreground dark:text-foreground overflow-y-auto ${contentClassName}`}
         >
           {children}
         </div>

@@ -107,7 +107,7 @@ export default function SourcesPopup({
   const popupContent = (
     <div
       ref={popupRef}
-      className="bg-lotion dark:bg-charleston-green-2 fixed z-50 flex flex-col rounded-xl shadow-[0px_9px_46px_8px_#0000001F,0px_24px_38px_3px_#00000024,0px_11px_15px_-7px_#00000033]"
+      className="bg-background dark:bg-card fixed z-50 flex flex-col rounded-xl shadow-[0px_9px_46px_8px_#0000001F,0px_24px_38px_3px_#00000024,0px_11px_15px_-7px_#00000033]"
       style={{
         top: popupPosition.showAbove ? popupPosition.top : undefined,
         bottom: popupPosition.showAbove
@@ -122,7 +122,7 @@ export default function SourcesPopup({
     >
       <div className="flex h-full flex-col">
         <div className="shrink-0 px-4 py-4 md:px-6">
-          <h2 className="dark:text-bright-gray mb-4 text-lg font-bold text-[#141414] dark:text-[20px]">
+          <h2 className="dark:text-foreground mb-4 text-lg font-bold text-[#141414] dark:text-[20px]">
             {t('conversation.sources.text')}
           </h2>
 
@@ -135,11 +135,11 @@ export default function SourcesPopup({
             placeholder={t('settings.sources.searchPlaceholder')}
             borderVariant="thin"
             className="mb-4"
-            labelBgClassName="bg-lotion dark:bg-charleston-green-2"
+            labelBgClassName="bg-background dark:bg-card"
           />
         </div>
 
-        <div className="dark:border-dim-gray mx-4 grow overflow-y-auto rounded-md border border-[#D9D9D9] scrollbar-overlay">
+        <div className="dark:border-border scrollbar-overlay mx-4 grow overflow-y-auto rounded-md border border-[#D9D9D9]">
           {options ? (
             <>
               {filteredOptions?.map((option: any, index: number) => {
@@ -154,7 +154,7 @@ export default function SourcesPopup({
                 return (
                   <div
                     key={index}
-                    className="border-opacity-80 dark:border-dim-gray flex cursor-pointer items-center border-b border-[#D9D9D9] p-3 transition-colors hover:bg-gray-100 dark:text-[14px] dark:hover:bg-[#2C2E3C]"
+                    className="border-opacity-80 dark:border-border hover:bg-muted flex cursor-pointer items-center border-b border-[#D9D9D9] p-3 transition-colors dark:text-[14px]"
                     onClick={() => {
                       if (isSelected) {
                         const updatedDocs =
@@ -186,11 +186,11 @@ export default function SourcesPopup({
                       height={14}
                       className="mr-3 shrink-0"
                     />
-                    <span className="dark:text-bright-gray mr-3 grow overflow-hidden font-medium text-ellipsis whitespace-nowrap text-[#5D5D5D]">
+                    <span className="dark:text-foreground mr-3 grow overflow-hidden font-medium text-ellipsis whitespace-nowrap text-[#5D5D5D]">
                       {option.name}
                     </span>
                     <div
-                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-xs border-2 border-[#C6C6C6] p-[0.5px] dark:border-[#757783]`}
+                      className={`dark:border-border flex h-4 w-4 shrink-0 items-center justify-center rounded-xs border-2 border-[#C6C6C6] p-[0.5px]`}
                     >
                       {isSelected && (
                         <img
@@ -205,7 +205,7 @@ export default function SourcesPopup({
               })}
             </>
           ) : (
-            <div className="dark:text-bright-gray p-4 text-center text-gray-500 dark:text-[14px]">
+            <div className="dark:text-foreground p-4 text-center text-gray-500 dark:text-[14px]">
               {t('conversation.sources.noSourcesAvailable')}
             </div>
           )}
@@ -214,7 +214,7 @@ export default function SourcesPopup({
         <div className="shrink-0 px-4 py-4 opacity-75 transition-opacity duration-200 hover:opacity-100 md:px-6">
           <a
             href="/settings/sources"
-            className="text-violets-are-blue inline-flex items-center gap-2 text-base font-medium"
+            className="text-primary inline-flex items-center gap-2 text-base font-medium"
             onClick={onClose}
           >
             {t('settings.sources.goToSources')}
@@ -225,7 +225,7 @@ export default function SourcesPopup({
         <div className="flex shrink-0 justify-start px-4 py-3 md:px-6">
           <button
             onClick={handleUploadClick}
-            className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue w-auto rounded-full border px-4 py-2 text-[14px] font-medium transition-colors duration-200 hover:text-white"
+            className="border-primary text-primary hover:bg-primary/90 w-auto rounded-full border px-4 py-2 text-[14px] font-medium transition-colors duration-200 hover:text-white"
           >
             {t('settings.sources.uploadNew')}
           </button>

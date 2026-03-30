@@ -1438,7 +1438,7 @@ export default function MessageInput({
         onChange={handleVoiceFileAttachment}
       />
 
-      <div className="border-dark-gray bg-lotion dark:border-grey relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
+      <div className="border-border bg-card relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
         <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
           {attachments.map((attachment) => {
             return (
@@ -1448,7 +1448,7 @@ export default function MessageInput({
                 onDragStart={(e) => handleDragStart(e, attachment.id)}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDropOn(e, attachment.id)}
-                className={`group dark:text-bright-gray relative flex items-center rounded-xl bg-[#EFF3F4] px-2 py-1 text-[12px] text-[#5D5D5D] sm:px-3 sm:py-1.5 sm:text-[14px] dark:bg-[#393B3D] ${
+                className={`group dark:text-foreground bg-muted text-muted-foreground dark:bg-accent relative flex items-center rounded-xl px-2 py-1 text-[12px] sm:px-3 sm:py-1.5 sm:text-[14px] ${
                   attachment.status !== 'completed'
                     ? 'opacity-70'
                     : 'opacity-100'
@@ -1459,7 +1459,7 @@ export default function MessageInput({
                 }`}
                 title={attachment.fileName}
               >
-                <div className="bg-purple-30 mr-2 flex h-8 w-8 items-center justify-center rounded-md p-1">
+                <div className="bg-primary mr-2 flex h-8 w-8 items-center justify-center rounded-md p-1">
                   {attachment.status === 'completed' && (
                     <img
                       src={DocumentationDark}
@@ -1551,7 +1551,7 @@ export default function MessageInput({
             }
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            className="inputbox-style no-scrollbar bg-lotion dark:text-bright-gray dark:placeholder:text-bright-gray/50 w-full overflow-x-hidden overflow-y-auto rounded-t-[23px] px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3 dark:bg-transparent"
+            className="inputbox-style no-scrollbar dark:text-foreground dark:placeholder:text-muted-foreground/50 w-full overflow-x-hidden overflow-y-auto rounded-t-[23px] bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3"
             onInput={handleInput}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
@@ -1564,7 +1564,7 @@ export default function MessageInput({
             {showSourceButton && (
               <button
                 ref={sourceButtonRef}
-                className="xs:px-3 xs:py-1.5 dark:border-purple-taupe flex max-w-[130px] items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 sm:max-w-[150px] dark:hover:bg-[#2C2E3C]"
+                className="xs:px-3 xs:py-1.5 dark:border-border border-border hover:bg-accent dark:hover:bg-muted flex max-w-[130px] items-center rounded-[32px] border px-2 py-1 transition-colors sm:max-w-[150px]"
                 onClick={() => setIsSourcesPopupOpen(!isSourcesPopupOpen)}
                 title={
                   selectedDocs && selectedDocs.length > 0
@@ -1577,7 +1577,7 @@ export default function MessageInput({
                   alt="Sources"
                   className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4"
                 />
-                <span className="xs:text-[12px] dark:text-bright-gray truncate overflow-hidden text-[10px] font-medium text-[#5D5D5D] sm:text-[14px]">
+                <span className="xs:text-[12px] dark:text-foreground text-muted-foreground truncate overflow-hidden text-[10px] font-medium sm:text-[14px]">
                   {selectedDocs && selectedDocs.length > 0
                     ? selectedDocs.length === 1
                       ? selectedDocs[0].name
@@ -1595,7 +1595,7 @@ export default function MessageInput({
             {showToolButton && (
               <button
                 ref={toolButtonRef}
-                className="xs:px-3 xs:py-1.5 xs:max-w-[150px] dark:border-purple-taupe flex max-w-[130px] items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:hover:bg-[#2C2E3C]"
+                className="xs:px-3 xs:py-1.5 xs:max-w-[150px] dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex max-w-[130px] items-center rounded-[32px] border px-2 py-1 transition-colors"
                 onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
               >
                 <img
@@ -1603,7 +1603,7 @@ export default function MessageInput({
                   alt="Tools"
                   className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4 sm:w-4"
                 />
-                <span className="xs:text-[12px] dark:text-bright-gray truncate overflow-hidden text-[10px] font-medium text-[#5D5D5D] sm:text-[14px]">
+                <span className="xs:text-[12px] dark:text-foreground text-muted-foreground truncate overflow-hidden text-[10px] font-medium sm:text-[14px]">
                   {t('settings.tools.label')}
                 </span>
               </button>
@@ -1620,7 +1620,7 @@ export default function MessageInput({
                 className={`xs:px-3 xs:py-1.5 dark:border-purple-taupe flex items-center rounded-[32px] border px-2 py-1 transition-colors ${
                   recordingState === 'recording'
                     ? 'border-[#B42318] bg-[#FEE4E2] text-[#B42318] dark:bg-[#4A2323]'
-                    : 'border-[#AAAAAA] hover:bg-gray-100 dark:hover:bg-[#2C2E3C]'
+                    : 'border-border dark:hover:bg-accent hover:bg-gray-100'
                 } ${
                   loading || recordingState === 'transcribing'
                     ? 'cursor-not-allowed opacity-60'
@@ -1645,13 +1645,13 @@ export default function MessageInput({
                 </span>
               </button>
             )}
-            <label className="xs:px-3 xs:py-1.5 dark:border-purple-taupe flex cursor-pointer items-center rounded-[32px] border border-[#AAAAAA] px-2 py-1 transition-colors hover:bg-gray-100 dark:hover:bg-[#2C2E3C]">
+            <label className="xs:px-3 xs:py-1.5 dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex cursor-pointer items-center rounded-[32px] border px-2 py-1 transition-colors">
               <img
                 src={ClipIcon}
                 alt="Attach"
                 className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4"
               />
-              <span className="xs:text-[12px] dark:text-bright-gray text-[10px] font-medium text-[#5D5D5D] sm:text-[14px]">
+              <span className="xs:text-[12px] dark:text-foreground text-muted-foreground text-[10px] font-medium sm:text-[14px]">
                 {t('conversation.attachments.attach')}
               </span>
               <input
@@ -1669,7 +1669,7 @@ export default function MessageInput({
             <button
               onClick={handleCancel}
               aria-label={t('cancel')}
-              className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#7F54D6] text-white sm:h-9 sm:w-9`}
+              className={`bg-primary ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white sm:h-9 sm:w-9`}
               disabled={!loading}
             >
               <div className="flex h-3 w-3 items-center justify-center rounded-[3px] bg-white sm:h-3.5 sm:w-3.5" />
@@ -1683,8 +1683,8 @@ export default function MessageInput({
                 !loading &&
                 recordingState !== 'recording' &&
                 recordingState !== 'transcribing'
-                  ? 'bg-purple-30 text-white'
-                  : 'bg-[#EDEDED] text-[#959595] dark:bg-[#37383D] dark:text-[#77787D]'
+                  ? 'bg-primary text-white'
+                  : 'bg-muted text-muted-foreground dark:bg-accent dark:text-muted-foreground'
               }`}
               disabled={
                 !value.trim() ||
@@ -1729,12 +1729,12 @@ export default function MessageInput({
 
       {handleDragActive &&
         createPortal(
-          <div className="dark:bg-gray-alpha/50 pointer-events-none fixed top-0 left-0 z-50 flex size-full flex-col items-center justify-center bg-white/85">
+          <div className="dark:bg-background/85 pointer-events-none fixed top-0 left-0 z-50 flex size-full flex-col items-center justify-center bg-white/85">
             <img className="filter dark:invert" src={DragFileUpload} />
-            <span className="text-outer-space dark:text-silver px-2 text-2xl font-bold">
+            <span className="text-muted-foreground dark:text-muted-foreground px-2 text-2xl font-bold">
               {t('modals.uploadDoc.drag.title')}
             </span>
-            <span className="text-s text-outer-space dark:text-silver w-48 p-2 text-center">
+            <span className="text-s text-muted-foreground dark:text-muted-foreground w-48 p-2 text-center">
               {t('modals.uploadDoc.drag.description')}
             </span>
           </div>,
