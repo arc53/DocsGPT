@@ -4,15 +4,36 @@ import Avatar from '../components/Avatar';
 import { ResearchState } from './conversationModels';
 
 const SmallCheck = () => (
-  <svg className="h-3 w-3 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+  <svg
+    className="h-3 w-3 text-green-500"
+    fill="none"
+    viewBox="0 0 24 24"
+    stroke="currentColor"
+    strokeWidth={3}
+  >
     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
   </svg>
 );
 
 const SmallSpinner = () => (
-  <svg className="h-3 w-3 animate-spin text-purple-500" fill="none" viewBox="0 0 24 24">
-    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+  <svg
+    className="h-3 w-3 animate-spin text-purple-500"
+    fill="none"
+    viewBox="0 0 24 24"
+  >
+    <circle
+      className="opacity-25"
+      cx="12"
+      cy="12"
+      r="10"
+      stroke="currentColor"
+      strokeWidth="4"
+    />
+    <path
+      className="opacity-75"
+      fill="currentColor"
+      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+    />
   </svg>
 );
 
@@ -32,7 +53,9 @@ function StatusText({ status, elapsed }: { status: string; elapsed?: number }) {
     <span className="text-xs text-gray-500 dark:text-gray-400">
       {status === 'complete' ? (
         <>
-          <span className="text-green-600 dark:text-green-400">{labels.complete}</span>
+          <span className="text-green-600 dark:text-green-400">
+            {labels.complete}
+          </span>
           {elapsed_str}
         </>
       ) : (
@@ -62,13 +85,15 @@ export default function ResearchProgress({
 
   if (!plan && !status) return null;
 
-  const completedSteps = plan?.filter((s) => s.status === 'complete').length ?? 0;
+  const completedSteps =
+    plan?.filter((s) => s.status === 'complete').length ?? 0;
   const totalSteps = plan?.length ?? 0;
 
   // Collapsed: single-line summary
-  const summaryText = totalSteps > 0
-    ? `Researched ${completedSteps} topic${completedSteps !== 1 ? 's' : ''}`
-    : 'Research';
+  const summaryText =
+    totalSteps > 0
+      ? `Researched ${completedSteps} topic${completedSteps !== 1 ? 's' : ''}`
+      : 'Research';
 
   return (
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
@@ -93,9 +118,16 @@ export default function ResearchProgress({
           </p>
           <svg
             className={`h-4 w-4 text-gray-500 transition-transform duration-200 dark:text-gray-400 ${isExpanded ? 'rotate-180' : ''}`}
-            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
           >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M19 9l-7 7-7-7"
+            />
           </svg>
         </button>
         {status && <StatusText status={status} elapsed={elapsed_seconds} />}
@@ -126,13 +158,15 @@ export default function ResearchProgress({
                   </div>
                   {/* Step content */}
                   <div className={`pb-3 ${isLast ? '' : ''}`}>
-                    <p className={`text-sm ${
-                      step.status === 'complete'
-                        ? 'text-gray-700 dark:text-gray-300'
-                        : step.status === 'researching'
-                          ? 'font-medium text-purple-700 dark:text-purple-300'
-                          : 'text-gray-500 dark:text-gray-500'
-                    }`}>
+                    <p
+                      className={`text-sm ${
+                        step.status === 'complete'
+                          ? 'text-gray-700 dark:text-gray-300'
+                          : step.status === 'researching'
+                            ? 'font-medium text-purple-700 dark:text-purple-300'
+                            : 'text-gray-500 dark:text-gray-500'
+                      }`}
+                    >
                       {step.query}
                     </p>
                   </div>

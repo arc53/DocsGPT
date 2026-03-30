@@ -427,7 +427,10 @@ export const conversationSlice = createSlice({
             status: 'pending',
           });
         }
-        if (progress.status === 'researching' || progress.status === 'complete') {
+        if (
+          progress.status === 'researching' ||
+          progress.status === 'complete'
+        ) {
           research.plan[stepIndex].status = progress.status;
         }
         if (progress.query) {

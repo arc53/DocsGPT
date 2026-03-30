@@ -332,7 +332,11 @@ const ConversationBubble = forwardRef<
                 <div className="fade-in mr-5 ml-3 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
                   <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                     {sources?.slice(0, 3)?.map((source, index) => (
-                      <div key={index} id={`source-${index}`} className="relative transition-all duration-300">
+                      <div
+                        key={index}
+                        id={`source-${index}`}
+                        className="relative transition-all duration-300"
+                      >
                         <div
                           className="bg-muted hover:bg-accent dark:bg-answer-bubble dark:hover:bg-muted h-28 cursor-pointer rounded-4xl p-4"
                           onMouseOver={() => setActiveTooltip(index)}
@@ -495,11 +499,26 @@ const ConversationBubble = forwardRef<
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        const el = document.getElementById(`source-${sourceIdx}`);
+                                        const el = document.getElementById(
+                                          `source-${sourceIdx}`,
+                                        );
                                         if (el) {
-                                          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                          el.classList.add('ring-2', 'ring-purple-500');
-                                          setTimeout(() => el.classList.remove('ring-2', 'ring-purple-500'), 2000);
+                                          el.scrollIntoView({
+                                            behavior: 'smooth',
+                                            block: 'center',
+                                          });
+                                          el.classList.add(
+                                            'ring-2',
+                                            'ring-purple-500',
+                                          );
+                                          setTimeout(
+                                            () =>
+                                              el.classList.remove(
+                                                'ring-2',
+                                                'ring-purple-500',
+                                              ),
+                                            2000,
+                                          );
                                         }
                                       }}
                                       className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-purple-100 px-1.5 text-xs font-semibold text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
@@ -509,7 +528,15 @@ const ConversationBubble = forwardRef<
                                     </button>
                                   );
                                 }
-                                return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+                                return (
+                                  <a
+                                    href={href}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    {children}
+                                  </a>
+                                );
                               },
                               code(props) {
                                 const {
@@ -691,7 +718,9 @@ const ConversationBubble = forwardRef<
                         <button
                           type="button"
                           onClick={() => {
-                            const blob = new Blob([message], { type: 'text/markdown' });
+                            const blob = new Blob([message], {
+                              type: 'text/markdown',
+                            });
                             const url = URL.createObjectURL(blob);
                             const link = document.createElement('a');
                             link.href = url;
@@ -703,8 +732,17 @@ const ConversationBubble = forwardRef<
                           aria-label="Export as Markdown"
                           title="Export as Markdown"
                         >
-                          <svg className="h-5 w-5 stroke-gray-4000" fill="none" viewBox="0 0 24 24" strokeWidth={1.5}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                          <svg
+                            className="stroke-gray-4000 h-5 w-5"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            strokeWidth={1.5}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
+                            />
                           </svg>
                         </button>
                       </div>
