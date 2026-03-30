@@ -134,6 +134,59 @@ def test_tampered_gcm_ciphertext_returns_empty(monkeypatch):
 
 
 @pytest.mark.unit
+def test_gcm_cross_user_replay_returns_empty(monkeypatch):
+    """GCM ciphertext encrypted for one user must not decrypt under another user."""
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+    monkeypatch.setattr(encryption.os, "urandom", lambda length: b"\x00" * length)
+
+    credentials = {"secret": "value"}
+    encrypted = encryption.encrypt_credentials(credentials, "user-A")
+
+    assert encryption.decrypt_credentials(encrypted, "user-B") == {}
+
+
+@pytest.mark.unit
+def test_legacy_cbc_salt_starting_with_version_byte(monkeypatch):
+    """Legacy CBC blob whose salt starts with 0x01 must still decrypt via fallback."""
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+
+    # Salt intentionally starts with 0x01 — same as _VERSION_GCM
+    salt = b"\x01" + bytes(range(1, 16))
+    iv = bytes(range(16, 32))
+    key = encryption._derive_key("user-123", salt)
+
+    import json
+
+    plaintext = json.dumps({"token": "collision-test"}).encode()
+    padded = encryption._pad_data(plaintext)
+
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    encryptor = cipher.encryptor()
+    ciphertext = encryptor.update(padded) + encryptor.finalize()
+
+    legacy_blob = base64.b64encode(salt + iv + ciphertext).decode()
+
+    result = encryption.decrypt_credentials(legacy_blob, "user-123")
+    assert result == {"token": "collision-test"}
+
+
+@pytest.mark.unit
+def test_corrupt_legacy_cbc_payload_returns_empty(monkeypatch):
+    """Structurally valid but corrupt CBC payload should return {} via unpad error."""
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "test-secret")
+
+    salt = bytes(range(16))
+    iv = bytes(range(16, 32))
+
+    # 16 bytes of garbage — valid block size but invalid padding and JSON
+    corrupt_ciphertext = bytes(range(32, 48))
+
+    corrupt_blob = base64.b64encode(salt + iv + corrupt_ciphertext).decode()
+
+    assert encryption.decrypt_credentials(corrupt_blob, "user-123") == {}
+
+
+@pytest.mark.unit
 def test_pad_and_unpad_are_inverse():
     original = b"secret-data"
 

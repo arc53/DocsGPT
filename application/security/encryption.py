@@ -2,6 +2,7 @@ import base64
 import json
 import os
 
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers import algorithms, Cipher, modes
@@ -37,10 +38,11 @@ def encrypt_credentials(credentials: dict, user_id: str) -> str:
         nonce = os.urandom(12)
         key = _derive_key(user_id, salt)
 
+        aad = user_id.encode()
         json_bytes = json.dumps(credentials).encode()
 
         aesgcm = AESGCM(key)
-        ciphertext_with_tag = aesgcm.encrypt(nonce, json_bytes, None)
+        ciphertext_with_tag = aesgcm.encrypt(nonce, json_bytes, aad)
 
         result = _VERSION_GCM + salt + nonce + ciphertext_with_tag
         return base64.b64encode(result).decode()
@@ -55,10 +57,16 @@ def decrypt_credentials(encrypted_data: str, user_id: str) -> dict:
     try:
         data = base64.b64decode(encrypted_data.encode())
 
+        # Try GCM first (version-prefixed format). If the GCM tag check fails
+        # (InvalidTag), fall back to legacy CBC — this avoids the 1/256 collision
+        # where a legacy salt's first byte happens to be 0x01.
         if data[0:1] == _VERSION_GCM:
-            return _decrypt_gcm(data[1:], user_id)
-        else:
-            return _decrypt_legacy_cbc(data, user_id)
+            try:
+                return _decrypt_gcm(data[1:], user_id)
+            except InvalidTag:
+                pass
+
+        return _decrypt_legacy_cbc(data, user_id)
     except Exception as e:
         print(f"Warning: Failed to decrypt credentials: {e}")
         return {}
@@ -70,9 +78,10 @@ def _decrypt_gcm(data: bytes, user_id: str) -> dict:
     ciphertext_with_tag = data[28:]
 
     key = _derive_key(user_id, salt)
+    aad = user_id.encode()
 
     aesgcm = AESGCM(key)
-    plaintext = aesgcm.decrypt(nonce, ciphertext_with_tag, None)
+    plaintext = aesgcm.decrypt(nonce, ciphertext_with_tag, aad)
 
     return json.loads(plaintext.decode())
 
