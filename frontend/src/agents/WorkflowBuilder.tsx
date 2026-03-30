@@ -40,9 +40,12 @@ import {
 } from '@/components/ui/select';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 
+import { useSelector } from 'react-redux';
+
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
+import { selectToken } from '../preferences/preferenceSlice';
 import { WorkflowNode } from './types/workflow';
 import {
   AgentNode,
@@ -55,7 +58,7 @@ import WorkflowPreview from './workflow/WorkflowPreview';
 
 import type { Model } from '../models/types';
 interface AgentNodeConfig {
-  agent_type: 'classic' | 'react';
+  agent_type: 'classic' | 'agentic' | 'research';
   llm_name?: string;
   model_id?: string;
   system_prompt: string;
@@ -77,6 +80,7 @@ interface UserTool {
 
 function WorkflowBuilderInner() {
   const navigate = useNavigate();
+  const token = useSelector(selectToken);
   const { agentId } = useParams<{ agentId?: string }>();
   const [searchParams] = useSearchParams();
   const folderId = searchParams.get('folder_id');
@@ -304,7 +308,7 @@ function WorkflowBuilderInner() {
           setAvailableModels(modelService.transformModels(modelsData.models));
         }
 
-        const toolsResponse = await userService.getUserTools(null);
+        const toolsResponse = await userService.getUserTools(token);
         if (toolsResponse.ok) {
           const toolsData = await toolsResponse.json();
           setAvailableTools(toolsData.tools);
@@ -881,7 +885,12 @@ function WorkflowBuilderInner() {
                                   <SelectItem value="classic">
                                     Classic
                                   </SelectItem>
-                                  <SelectItem value="react">ReAct</SelectItem>
+                                  <SelectItem value="agentic">
+                                    Agentic
+                                  </SelectItem>
+                                  <SelectItem value="research">
+                                    Research
+                                  </SelectItem>
                                 </SelectContent>
                               </Select>
                             </div>

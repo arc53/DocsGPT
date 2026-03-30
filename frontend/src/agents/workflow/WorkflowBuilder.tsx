@@ -54,7 +54,11 @@ import { FileUpload } from '../../components/FileUpload';
 import AgentDetailsModal from '../../modals/AgentDetailsModal';
 import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
-import { selectToken } from '../../preferences/preferenceSlice';
+import {
+  selectSourceDocs,
+  selectToken,
+} from '../../preferences/preferenceSlice';
+import { getToolDisplayName } from '../../utils/toolUtils';
 import { Agent } from '../types';
 import { ConditionCase, WorkflowNode } from '../types/workflow';
 import MobileBlocker from './components/MobileBlocker';
@@ -74,7 +78,7 @@ import type { Model } from '../../models/types';
 const PRIMARY_ACTION_SPINNER_DELAY_MS = 180;
 
 interface AgentNodeConfig {
-  agent_type: 'classic' | 'react';
+  agent_type: 'classic' | 'agentic' | 'research';
   llm_name?: string;
   model_id?: string;
   system_prompt: string;
@@ -92,6 +96,7 @@ interface UserTool {
   id: string;
   name: string;
   displayName: string;
+  customName?: string;
 }
 
 function validateJsonSchemaConfig(schema: unknown): string | null {
@@ -298,6 +303,7 @@ function createWorkflowPayload(
 function WorkflowBuilderInner() {
   const navigate = useNavigate();
   const token = useSelector(selectToken);
+  const sourceDocs = useSelector(selectSourceDocs);
   const { agentId } = useParams<{ agentId?: string }>();
   const [searchParams] = useSearchParams();
   const folderId = searchParams.get('folder_id');
@@ -339,6 +345,14 @@ function WorkflowBuilderInner() {
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [defaultAgentModelId, setDefaultAgentModelId] = useState('');
   const [availableTools, setAvailableTools] = useState<UserTool[]>([]);
+  const sourceOptions = useMemo(
+    () =>
+      (sourceDocs ?? []).map((doc) => ({
+        value: doc.id ?? 'default',
+        label: doc.name,
+      })),
+    [sourceDocs],
+  );
   const [agentJsonSchemaDrafts, setAgentJsonSchemaDrafts] = useState<
     Record<string, string>
   >({});
@@ -385,31 +399,39 @@ function WorkflowBuilderInner() {
     [],
   );
 
-  const onConnect = useCallback((params: Connection) => {
-    setEdges((eds) => {
-      const exists = eds.some(
-        (e) =>
-          e.source === params.source &&
-          e.sourceHandle === params.sourceHandle &&
-          e.target === params.target &&
-          e.targetHandle === params.targetHandle,
-      );
-      if (exists) return eds;
-
-      const filtered = eds.filter(
-        (e) =>
-          !(
+  const onConnect = useCallback(
+    (params: Connection) => {
+      setEdges((eds) => {
+        const exists = eds.some(
+          (e) =>
             e.source === params.source &&
-            e.sourceHandle === (params.sourceHandle ?? null)
-          ) &&
-          !(
+            e.sourceHandle === params.sourceHandle &&
             e.target === params.target &&
-            e.targetHandle === (params.targetHandle ?? null)
-          ),
-      );
-      return addEdge(params, filtered);
-    });
-  }, []);
+            e.targetHandle === params.targetHandle,
+        );
+        if (exists) return eds;
+
+        const targetNode = nodes.find((n) => n.id === params.target);
+        const isEndNode = targetNode?.type === 'end';
+
+        const filtered = eds.filter(
+          (e) =>
+            !(
+              e.source === params.source &&
+              e.sourceHandle === (params.sourceHandle ?? null)
+            ) &&
+            // End nodes accept multiple incoming edges
+            (isEndNode ||
+              !(
+                e.target === params.target &&
+                e.targetHandle === (params.targetHandle ?? null)
+              )),
+        );
+        return addEdge(params, filtered);
+      });
+    },
+    [nodes],
+  );
 
   const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
     setEdges((eds) => eds.filter((e) => e.id !== edge.id));
@@ -699,7 +721,7 @@ function WorkflowBuilderInner() {
           setDefaultAgentModelId(preferredDefaultModel);
         }
 
-        const toolsResponse = await userService.getUserTools(null);
+        const toolsResponse = await userService.getUserTools(token);
         if (toolsResponse.ok) {
           const toolsData = await toolsResponse.json();
           setAvailableTools(toolsData.tools);
@@ -1269,8 +1291,8 @@ function WorkflowBuilderInner() {
 
   const handlePrimaryAction = useCallback(() => {
     if (isPrimaryActionDisabled) return;
-    void persistWorkflow(!canManageAgent);
-  }, [isPrimaryActionDisabled, persistWorkflow, canManageAgent]);
+    void persistWorkflow(false);
+  }, [isPrimaryActionDisabled, persistWorkflow]);
 
   const agentForDetails = useMemo<Agent>(
     () => ({
@@ -1746,8 +1768,11 @@ function WorkflowBuilderInner() {
                                       <SelectItem value="classic">
                                         Classic
                                       </SelectItem>
-                                      <SelectItem value="react">
-                                        ReAct
+                                      <SelectItem value="agentic">
+                                        Agentic
+                                      </SelectItem>
+                                      <SelectItem value="research">
+                                        Research
                                       </SelectItem>
                                     </SelectContent>
                                   </Select>
@@ -1887,7 +1912,7 @@ function WorkflowBuilderInner() {
                                   <MultiSelect
                                     options={availableTools.map((tool) => ({
                                       value: tool.id,
-                                      label: tool.displayName,
+                                      label: getToolDisplayName(tool),
                                     }))}
                                     selected={
                                       selectedNode.data.config?.tools || []
@@ -1903,6 +1928,28 @@ function WorkflowBuilderInner() {
                                     placeholder="Select tools..."
                                     searchPlaceholder="Search tools..."
                                     emptyText="No tools available"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Sources
+                                  </label>
+                                  <MultiSelect
+                                    options={sourceOptions}
+                                    selected={
+                                      selectedNode.data.config?.sources || []
+                                    }
+                                    onChange={(newSources) =>
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          sources: newSources,
+                                        },
+                                      })
+                                    }
+                                    placeholder="Select sources..."
+                                    searchPlaceholder="Search sources..."
+                                    emptyText="No sources available"
                                   />
                                 </div>
                                 <div>

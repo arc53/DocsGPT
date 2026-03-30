@@ -37,7 +37,8 @@ import {
   selectSelectedDocs,
 } from '../preferences/preferenceSlice';
 import classes from './ConversationBubble.module.css';
-import { FEEDBACK, MESSAGE_TYPE } from './conversationModels';
+import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
+import ResearchProgress from './ResearchProgress';
 import { ToolCallsType } from './types';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
@@ -53,6 +54,7 @@ const ConversationBubble = forwardRef<
     thought?: string;
     sources?: { title: string; text: string; link: string }[];
     toolCalls?: ToolCallsType[];
+    research?: ResearchState;
     retryBtn?: React.ReactElement;
     questionNumber?: number;
     isStreaming?: boolean;
@@ -74,6 +76,7 @@ const ConversationBubble = forwardRef<
     thought,
     sources,
     toolCalls,
+    research,
     retryBtn,
     questionNumber,
     isStreaming,
@@ -261,7 +264,15 @@ const ConversationBubble = forwardRef<
       return inlineProcessedContent;
     };
     const processMarkdownContent = (content: string) => {
-      const processedContent = preprocessLaTeX(content);
+      let processedContent = preprocessLaTeX(content);
+
+      // Convert citation references [N] into markdown links [N](#cite-N)
+      // so ReactMarkdown renders them as <a> tags we can style.
+      // Avoid matching inside code blocks or existing links.
+      processedContent = processedContent.replace(
+        /(?<!\[)\[(\d+)\](?!\()/g,
+        (_, num) => `[${num}](#cite-${num})`,
+      );
 
       const contentSegments: Array<{
         type: 'text' | 'mermaid';
@@ -290,6 +301,7 @@ const ConversationBubble = forwardRef<
 
       return contentSegments;
     };
+
     bubble = (
       <div
         ref={ref}
@@ -320,7 +332,7 @@ const ConversationBubble = forwardRef<
                 <div className="fade-in mr-5 ml-3 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
                   <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
                     {sources?.slice(0, 3)?.map((source, index) => (
-                      <div key={index} className="relative">
+                      <div key={index} id={`source-${index}`} className="relative transition-all duration-300">
                         <div
                           className="bg-muted hover:bg-accent dark:bg-answer-bubble dark:hover:bg-muted h-28 cursor-pointer rounded-4xl p-4"
                           onMouseOver={() => setActiveTooltip(index)}
@@ -393,6 +405,7 @@ const ConversationBubble = forwardRef<
                 </div>
               </div>
             )}
+        {research && <ResearchProgress research={research} />}
         {toolCalls && toolCalls.length > 0 && (
           <ToolCalls toolCalls={toolCalls} />
         )}
@@ -474,6 +487,30 @@ const ConversationBubble = forwardRef<
                             remarkPlugins={[remarkGfm, remarkMath]}
                             rehypePlugins={[rehypeKatex]}
                             components={{
+                              a({ href, children }) {
+                                if (href?.startsWith('#cite-')) {
+                                  const num = href.replace('#cite-', '');
+                                  const sourceIdx = parseInt(num, 10) - 1;
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const el = document.getElementById(`source-${sourceIdx}`);
+                                        if (el) {
+                                          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                          el.classList.add('ring-2', 'ring-purple-500');
+                                          setTimeout(() => el.classList.remove('ring-2', 'ring-purple-500'), 2000);
+                                        }
+                                      }}
+                                      className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-purple-100 px-1.5 text-xs font-semibold text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
+                                      title={`Jump to source ${num}`}
+                                    >
+                                      {num}
+                                    </button>
+                                  );
+                                }
+                                return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+                              },
                               code(props) {
                                 const {
                                   children,
@@ -649,6 +686,29 @@ const ConversationBubble = forwardRef<
                     <div className="relative mr-2 block items-center justify-center">
                       <CopyButton textToCopy={message} />
                     </div>
+                    {research && message && (
+                      <div className="relative mr-2 block items-center justify-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const blob = new Blob([message], { type: 'text/markdown' });
+                            const url = URL.createObjectURL(blob);
+                            const link = document.createElement('a');
+                            link.href = url;
+                            link.download = `research-report.md`;
+                            link.click();
+                            URL.revokeObjectURL(url);
+                          }}
+                          className="bg-white-3000 dark:hover:bg-purple-taupe flex cursor-pointer items-center justify-center rounded-full p-2 hover:bg-[#EEEEEE] dark:bg-transparent"
+                          aria-label="Export as Markdown"
+                          title="Export as Markdown"
+                        >
+                          <svg className="h-5 w-5 stroke-gray-4000" fill="none" viewBox="0 0 24 24" strokeWidth={1.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
                     <div className="relative mr-2 block items-center justify-center">
                       <SpeakButton text={message} />
                     </div>

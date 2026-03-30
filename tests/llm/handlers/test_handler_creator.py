@@ -71,6 +71,7 @@ class TestLLMHandlerCreator:
         expected_handlers = {
             "openai": OpenAILLMHandler,
             "google": GoogleLLMHandler,
+            "novita": OpenAILLMHandler,
             "default": OpenAILLMHandler,
         }
 

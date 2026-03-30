@@ -72,6 +72,11 @@ def home():
         return "Welcome to DocsGPT Backend!"
 
 
+@app.route("/api/health")
+def health():
+    return jsonify({"status": "ok"})
+
+
 @app.route("/api/config")
 def get_config():
     response = {

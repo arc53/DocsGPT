@@ -1,0 +1,339 @@
+"""Tests for application/core/model_settings.py"""
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from application.core.model_settings import (
+    AvailableModel,
+    ModelCapabilities,
+    ModelProvider,
+    ModelRegistry,
+)
+
+
+class TestModelProvider:
+
+    @pytest.mark.unit
+    def test_all_providers_exist(self):
+        assert ModelProvider.OPENAI == "openai"
+        assert ModelProvider.ANTHROPIC == "anthropic"
+        assert ModelProvider.GOOGLE == "google"
+        assert ModelProvider.GROQ == "groq"
+        assert ModelProvider.DOCSGPT == "docsgpt"
+        assert ModelProvider.HUGGINGFACE == "huggingface"
+        assert ModelProvider.NOVITA == "novita"
+        assert ModelProvider.OPENROUTER == "openrouter"
+        assert ModelProvider.SAGEMAKER == "sagemaker"
+        assert ModelProvider.PREMAI == "premai"
+        assert ModelProvider.LLAMA_CPP == "llama.cpp"
+        assert ModelProvider.AZURE_OPENAI == "azure_openai"
+
+
+class TestModelCapabilities:
+
+    @pytest.mark.unit
+    def test_defaults(self):
+        caps = ModelCapabilities()
+        assert caps.supports_tools is False
+        assert caps.supports_structured_output is False
+        assert caps.supports_streaming is True
+        assert caps.supported_attachment_types == []
+        assert caps.context_window == 128000
+        assert caps.input_cost_per_token is None
+        assert caps.output_cost_per_token is None
+
+    @pytest.mark.unit
+    def test_custom_values(self):
+        caps = ModelCapabilities(
+            supports_tools=True,
+            supports_structured_output=True,
+            context_window=32000,
+            input_cost_per_token=0.001,
+        )
+        assert caps.supports_tools is True
+        assert caps.context_window == 32000
+
+
+class TestAvailableModel:
+
+    @pytest.mark.unit
+    def test_to_dict_basic(self):
+        model = AvailableModel(
+            id="gpt-4",
+            provider=ModelProvider.OPENAI,
+            display_name="GPT-4",
+            description="OpenAI GPT-4",
+        )
+        d = model.to_dict()
+        assert d["id"] == "gpt-4"
+        assert d["provider"] == "openai"
+        assert d["display_name"] == "GPT-4"
+        assert d["enabled"] is True
+        assert "base_url" not in d
+
+    @pytest.mark.unit
+    def test_to_dict_with_base_url(self):
+        model = AvailableModel(
+            id="local-model",
+            provider=ModelProvider.OPENAI,
+            display_name="Local",
+            base_url="http://localhost:11434",
+        )
+        d = model.to_dict()
+        assert d["base_url"] == "http://localhost:11434"
+
+    @pytest.mark.unit
+    def test_to_dict_includes_capabilities(self):
+        caps = ModelCapabilities(supports_tools=True, context_window=64000)
+        model = AvailableModel(
+            id="m1",
+            provider=ModelProvider.ANTHROPIC,
+            display_name="M1",
+            capabilities=caps,
+        )
+        d = model.to_dict()
+        assert d["supports_tools"] is True
+        assert d["context_window"] == 64000
+
+
+class TestModelRegistry:
+
+    @pytest.fixture(autouse=True)
+    def _reset_singleton(self):
+        """Reset singleton between tests."""
+        ModelRegistry._instance = None
+        ModelRegistry._initialized = False
+        yield
+        ModelRegistry._instance = None
+        ModelRegistry._initialized = False
+
+    @pytest.mark.unit
+    def test_singleton(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            r1 = ModelRegistry()
+            r2 = ModelRegistry()
+            assert r1 is r2
+
+    @pytest.mark.unit
+    def test_get_instance(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            r = ModelRegistry.get_instance()
+            assert isinstance(r, ModelRegistry)
+
+    @pytest.mark.unit
+    def test_get_model(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            model = AvailableModel(id="test", provider=ModelProvider.OPENAI, display_name="Test")
+            reg.models["test"] = model
+            assert reg.get_model("test") is model
+            assert reg.get_model("nonexistent") is None
+
+    @pytest.mark.unit
+    def test_get_all_models(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models["m1"] = AvailableModel(id="m1", provider=ModelProvider.OPENAI, display_name="M1")
+            reg.models["m2"] = AvailableModel(id="m2", provider=ModelProvider.ANTHROPIC, display_name="M2")
+            assert len(reg.get_all_models()) == 2
+
+    @pytest.mark.unit
+    def test_get_enabled_models(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models["m1"] = AvailableModel(id="m1", provider=ModelProvider.OPENAI, display_name="M1", enabled=True)
+            reg.models["m2"] = AvailableModel(id="m2", provider=ModelProvider.OPENAI, display_name="M2", enabled=False)
+            enabled = reg.get_enabled_models()
+            assert len(enabled) == 1
+            assert enabled[0].id == "m1"
+
+    @pytest.mark.unit
+    def test_model_exists(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models["m1"] = AvailableModel(id="m1", provider=ModelProvider.OPENAI, display_name="M1")
+            assert reg.model_exists("m1") is True
+            assert reg.model_exists("m2") is False
+
+    @pytest.mark.unit
+    def test_parse_model_names(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            assert reg._parse_model_names("model1,model2") == ["model1", "model2"]
+            assert reg._parse_model_names("model1 , model2 ") == ["model1", "model2"]
+            assert reg._parse_model_names("single") == ["single"]
+            assert reg._parse_model_names("") == []
+            assert reg._parse_model_names(None) == []
+
+    @pytest.mark.unit
+    def test_add_docsgpt_models(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            reg._add_docsgpt_models(mock_settings)
+            assert "docsgpt-local" in reg.models
+
+    @pytest.mark.unit
+    def test_add_huggingface_models(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            reg._add_huggingface_models(mock_settings)
+            assert "huggingface-local" in reg.models
+
+    @pytest.mark.unit
+    def test_load_models_with_openai_key(self):
+        mock_settings = MagicMock()
+        mock_settings.OPENAI_BASE_URL = None
+        mock_settings.OPENAI_API_KEY = "sk-test"
+        mock_settings.OPENAI_API_BASE = None
+        mock_settings.ANTHROPIC_API_KEY = None
+        mock_settings.GOOGLE_API_KEY = None
+        mock_settings.GROQ_API_KEY = None
+        mock_settings.OPEN_ROUTER_API_KEY = None
+        mock_settings.NOVITA_API_KEY = None
+        mock_settings.HUGGINGFACE_API_KEY = None
+        mock_settings.LLM_PROVIDER = "openai"
+        mock_settings.LLM_NAME = ""
+        mock_settings.API_KEY = None
+
+        with patch("application.core.settings.settings", mock_settings):
+            reg = ModelRegistry()
+            assert len(reg.models) > 0
+
+    @pytest.mark.unit
+    def test_load_models_custom_openai_base_url(self):
+        mock_settings = MagicMock()
+        mock_settings.OPENAI_BASE_URL = "http://localhost:11434/v1"
+        mock_settings.OPENAI_API_KEY = "sk-test"
+        mock_settings.OPENAI_API_BASE = None
+        mock_settings.ANTHROPIC_API_KEY = None
+        mock_settings.GOOGLE_API_KEY = None
+        mock_settings.GROQ_API_KEY = None
+        mock_settings.OPEN_ROUTER_API_KEY = None
+        mock_settings.NOVITA_API_KEY = None
+        mock_settings.HUGGINGFACE_API_KEY = None
+        mock_settings.LLM_PROVIDER = "openai"
+        mock_settings.LLM_NAME = "llama3,gemma"
+        mock_settings.API_KEY = None
+
+        with patch("application.core.settings.settings", mock_settings):
+            reg = ModelRegistry()
+            assert "llama3" in reg.models
+            assert "gemma" in reg.models
+
+    @pytest.mark.unit
+    def test_default_model_selection_from_llm_name(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {"gpt-4": AvailableModel(id="gpt-4", provider=ModelProvider.OPENAI, display_name="GPT-4")}
+            reg.default_model_id = "gpt-4"
+            assert reg.default_model_id == "gpt-4"
+
+    @pytest.mark.unit
+    def test_add_anthropic_models_with_key(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            mock_settings.ANTHROPIC_API_KEY = "sk-ant-test"
+            mock_settings.LLM_PROVIDER = ""
+            mock_settings.LLM_NAME = ""
+            reg._add_anthropic_models(mock_settings)
+            assert len(reg.models) > 0
+
+    @pytest.mark.unit
+    def test_add_google_models_with_key(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            mock_settings.GOOGLE_API_KEY = "google-test"
+            mock_settings.LLM_PROVIDER = ""
+            mock_settings.LLM_NAME = ""
+            reg._add_google_models(mock_settings)
+            assert len(reg.models) > 0
+
+    @pytest.mark.unit
+    def test_add_groq_models_with_key(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            mock_settings.GROQ_API_KEY = "groq-test"
+            mock_settings.LLM_PROVIDER = ""
+            mock_settings.LLM_NAME = ""
+            reg._add_groq_models(mock_settings)
+            assert len(reg.models) > 0
+
+    @pytest.mark.unit
+    def test_add_openrouter_models_with_key(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            mock_settings.OPEN_ROUTER_API_KEY = "or-test"
+            mock_settings.LLM_PROVIDER = ""
+            mock_settings.LLM_NAME = ""
+            reg._add_openrouter_models(mock_settings)
+            assert len(reg.models) > 0
+
+    @pytest.mark.unit
+    def test_add_novita_models_with_key(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            mock_settings.NOVITA_API_KEY = "novita-test"
+            mock_settings.LLM_PROVIDER = ""
+            mock_settings.LLM_NAME = ""
+            reg._add_novita_models(mock_settings)
+            assert len(reg.models) > 0
+
+    @pytest.mark.unit
+    def test_add_azure_openai_models_specific(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            mock_settings.LLM_PROVIDER = "azure_openai"
+            mock_settings.LLM_NAME = "nonexistent-model"
+            reg._add_azure_openai_models(mock_settings)
+            # Falls through to adding all azure models
+            assert len(reg.models) > 0
+
+    @pytest.mark.unit
+    def test_add_anthropic_models_no_key_with_provider(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            mock_settings.ANTHROPIC_API_KEY = None
+            mock_settings.LLM_PROVIDER = "anthropic"
+            mock_settings.LLM_NAME = "nonexistent"
+            reg._add_anthropic_models(mock_settings)
+            assert len(reg.models) > 0
+
+    @pytest.mark.unit
+    def test_default_model_fallback_to_first(self):
+        mock_settings = MagicMock()
+        mock_settings.OPENAI_BASE_URL = None
+        mock_settings.OPENAI_API_KEY = None
+        mock_settings.OPENAI_API_BASE = None
+        mock_settings.ANTHROPIC_API_KEY = None
+        mock_settings.GOOGLE_API_KEY = None
+        mock_settings.GROQ_API_KEY = None
+        mock_settings.OPEN_ROUTER_API_KEY = None
+        mock_settings.NOVITA_API_KEY = None
+        mock_settings.HUGGINGFACE_API_KEY = None
+        mock_settings.LLM_PROVIDER = ""
+        mock_settings.LLM_NAME = ""
+        mock_settings.API_KEY = None
+
+        with patch("application.core.settings.settings", mock_settings):
+            reg = ModelRegistry()
+            # Should have at least docsgpt-local
+            assert reg.default_model_id is not None

@@ -704,7 +704,7 @@ connect_cloud_api_provider() {
             7) # Novita
                 provider_name="Novita"
                 llm_provider="novita"
-                model_name="deepseek/deepseek-r1"
+                model_name="moonshotai/kimi-k2.5"
                 get_api_key
                 break ;;
             b|B) clear; return 1 ;; # Clear screen and Back to Main Menu

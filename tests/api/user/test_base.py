@@ -150,6 +150,26 @@ class TestResolveToolDetails:
 
         assert result[0]["display_name"] == "test_tool"
 
+    def test_prefers_custom_name_when_present(self, mock_mongo_db):
+        from application.api.user.base import resolve_tool_details
+        from application.core.settings import settings
+
+        user_tools = mock_mongo_db[settings.MONGO_DB_NAME]["user_tools"]
+        tool_id = ObjectId()
+
+        user_tools.insert_one(
+            {
+                "_id": tool_id,
+                "name": "calculator",
+                "displayName": "Calculator Tool",
+                "customName": "Math Wizard",
+            }
+        )
+
+        result = resolve_tool_details([str(tool_id)])
+
+        assert result[0]["display_name"] == "Math Wizard"
+
     def test_empty_tool_ids_list(self, mock_mongo_db):
         from application.api.user.base import resolve_tool_details
 

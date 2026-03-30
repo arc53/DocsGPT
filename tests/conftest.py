@@ -188,7 +188,7 @@ def mock_tool_manager(mock_tool, monkeypatch):
     manager = Mock()
     manager.load_tool = Mock(return_value=mock_tool)
     monkeypatch.setattr(
-        "application.agents.base.ToolManager", Mock(return_value=manager)
+        "application.agents.tool_executor.ToolManager", Mock(return_value=manager)
     )
     return manager
 

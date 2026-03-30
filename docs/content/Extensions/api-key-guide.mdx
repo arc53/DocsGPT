@@ -11,18 +11,18 @@ DocsGPT API keys are essential for developers and users who wish to integrate th
 
 After uploading your document, you can obtain an API key either through the graphical user interface or via an API call:
 
-- **Graphical User Interface:** Navigate to the Settings section of the DocsGPT web app, find the API Keys option, and press 'Create New' to generate your key.
-- **API Call:** Alternatively, you can use the `/api/create_api_key` endpoint to create a new API key. For detailed instructions, visit [DocsGPT API Documentation](https://gptcloud.arc53.com/).
+- **Graphical User Interface:** Navigate to the Settings section of the DocsGPT web app, find the Agents option, and press 'Create New' to generate a new agent (which includes an API key).
+- **API Call:** Alternatively, you can use the `/api/create_agent` endpoint to create a new agent. An API key is automatically generated for each agent. For detailed instructions, visit [DocsGPT API Documentation](https://gptcloud.arc53.com/).
 
 ## Understanding Key Variables
 
-Upon creating your API key, you will encounter several key variables. Each serves a specific purpose:
+Upon creating your agent, you will encounter several key variables. Each serves a specific purpose:
 
-- **Name:** Assign a name to your API key for easy identification.
-- **Source:** Indicates the source document(s) linked to your API key, which DocsGPT will use to generate responses.
-- **ID:** A unique identifier for your API key. You can view this by making a call to `/api/get_api_keys`.
-- **Key:** The API key itself, which will be used in your application to authenticate API requests.
+- **Name:** Assign a name to your agent for easy identification.
+- **Source:** Indicates the source document(s) linked to your agent, which DocsGPT will use to generate responses.
+- **ID:** A unique identifier for your agent. You can view this by making a call to `/api/get_agents`.
+- **Key:** The API key for the agent, which will be used in your application to authenticate API requests.
 
-With your API key ready, you can now integrate DocsGPT into your application, such as the DocsGPT Widget or any other software, via `/api/answer` or `/stream` endpoints. The source document is preset with the API key, allowing you to bypass fields like `selectDocs` and `active_docs` during implementation.
+With your API key ready, you can now integrate DocsGPT into your application, such as the DocsGPT Widget or any other software, via `/api/answer` or `/stream` endpoints. The source document is preset with the agent, allowing you to bypass fields like `selectDocs` and `active_docs` during implementation.
 
 Congratulations on taking the first step towards enhancing your applications with DocsGPT!
