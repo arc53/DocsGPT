@@ -188,6 +188,72 @@ export function handleFetchAnswerSteaming(
   });
 }
 
+export function handleSubmitToolActions(
+  conversationId: string,
+  toolActions: {
+    call_id: string;
+    decision?: 'approved' | 'denied';
+    comment?: string;
+    result?: Record<string, any>;
+  }[],
+  token: string | null,
+  signal: AbortSignal,
+  onEvent: (event: MessageEvent) => void,
+): Promise<Answer> {
+  const payload = {
+    conversation_id: conversationId,
+    tool_actions: toolActions,
+  };
+
+  return new Promise<Answer>((resolve, reject) => {
+    conversationService
+      .answerStream(payload, token, signal)
+      .then((response) => {
+        if (!response.body) throw Error('No response body');
+
+        let buffer = '';
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+
+        const processStream = ({
+          done,
+          value,
+        }: ReadableStreamReadResult<Uint8Array>) => {
+          if (done) return;
+
+          const chunk = decoder.decode(value);
+          buffer += chunk;
+
+          const events = buffer.split('\n\n');
+          buffer = events.pop() ?? '';
+
+          for (const event of events) {
+            if (event.trim().startsWith('data:')) {
+              const dataLine: string = event
+                .split('\n')
+                .map((line: string) => line.replace(/^data:\s?/, ''))
+                .join('');
+
+              const messageEvent = new MessageEvent('message', {
+                data: dataLine.trim(),
+              });
+
+              onEvent(messageEvent);
+            }
+          }
+
+          reader.read().then(processStream).catch(reject);
+        };
+
+        reader.read().then(processStream).catch(reject);
+      })
+      .catch((error) => {
+        console.error('Tool actions submission failed:', error);
+        reject(error);
+      });
+  });
+}
+
 export function handleSearch(
   question: string,
   token: string | null,

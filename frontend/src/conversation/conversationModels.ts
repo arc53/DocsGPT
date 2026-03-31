@@ -1,7 +1,7 @@
 import { ToolCallsType } from './types';
 
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
-export type Status = 'idle' | 'loading' | 'failed';
+export type Status = 'idle' | 'loading' | 'failed' | 'awaiting_tool_actions';
 export type FEEDBACK = 'LIKE' | 'DISLIKE' | null;
 
 export interface Message {

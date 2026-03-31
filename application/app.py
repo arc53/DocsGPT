@@ -17,6 +17,7 @@ from application.api.answer import answer  # noqa: E402
 from application.api.internal.routes import internal  # noqa: E402
 from application.api.user.routes import user  # noqa: E402
 from application.api.connector.routes import connector  # noqa: E402
+from application.api.v1 import v1_bp  # noqa: E402
 from application.celery_init import celery  # noqa: E402
 from application.core.settings import settings  # noqa: E402
 from application.stt.upload_limits import (  # noqa: E402
@@ -36,6 +37,7 @@ app.register_blueprint(user)
 app.register_blueprint(answer)
 app.register_blueprint(internal)
 app.register_blueprint(connector)
+app.register_blueprint(v1_bp)
 app.config.update(
     UPLOAD_FOLDER="inputs",
     CELERY_BROKER_URL=settings.CELERY_BROKER_URL,

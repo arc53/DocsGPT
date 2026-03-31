@@ -10,6 +10,7 @@ import {
 import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
+  handleSubmitToolActions,
 } from './conversationHandlers';
 import {
   Answer,
@@ -138,6 +139,10 @@ export const fetchAnswer = createAsyncThunk<
                   tool_call: data.data as ToolCallsType,
                 }),
               );
+            } else if (data.type === 'tool_calls_pending') {
+              dispatch(
+                conversationSlice.actions.setStatus('awaiting_tool_actions'),
+              );
             } else if (data.type === 'research_plan') {
               dispatch(
                 updateResearchPlan({
@@ -258,6 +263,94 @@ export const fetchAnswer = createAsyncThunk<
     sources: [],
     tool_calls: [],
   };
+});
+
+export const submitToolActions = createAsyncThunk<
+  void,
+  {
+    toolActions: {
+      call_id: string;
+      decision?: 'approved' | 'denied';
+      comment?: string;
+      result?: Record<string, any>;
+    }[];
+  }
+>('submitToolActions', async ({ toolActions }, { dispatch, getState }) => {
+  if (abortController) abortController.abort();
+  abortController = new AbortController();
+  const { signal } = abortController;
+
+  const state = getState() as RootState;
+  const conversationId = state.conversation.conversationId;
+  if (!conversationId) return;
+
+  dispatch(conversationSlice.actions.setStatus('loading'));
+
+  await handleSubmitToolActions(
+    conversationId,
+    toolActions,
+    state.preference.token,
+    signal,
+    (event) => {
+      const data = JSON.parse(event.data);
+      const targetIndex = state.conversation.queries.length - 1;
+
+      if (data.type === 'end') {
+        dispatch(conversationSlice.actions.setStatus('idle'));
+        getConversations(state.preference.token)
+          .then((fetchedConversations) => {
+            dispatch(setConversations(fetchedConversations));
+          })
+          .catch((error) => {
+            console.error('Failed to fetch conversations: ', error);
+          });
+      } else if (data.type === 'id') {
+        // conversation ID already set
+      } else if (data.type === 'thought') {
+        dispatch(
+          updateThought({
+            conversationId,
+            index: targetIndex,
+            query: { thought: data.thought },
+          }),
+        );
+      } else if (data.type === 'source') {
+        dispatch(
+          updateStreamingSource({
+            conversationId,
+            index: targetIndex,
+            query: { sources: data.source ?? [] },
+          }),
+        );
+      } else if (data.type === 'tool_call') {
+        dispatch(
+          updateToolCall({
+            index: targetIndex,
+            tool_call: data.data as ToolCallsType,
+          }),
+        );
+      } else if (data.type === 'tool_calls_pending') {
+        dispatch(conversationSlice.actions.setStatus('awaiting_tool_actions'));
+      } else if (data.type === 'error') {
+        dispatch(conversationSlice.actions.setStatus('failed'));
+        dispatch(
+          conversationSlice.actions.raiseError({
+            conversationId,
+            index: targetIndex,
+            message: data.error,
+          }),
+        );
+      } else if (data.type === 'answer') {
+        dispatch(
+          updateStreamingQuery({
+            conversationId,
+            index: targetIndex,
+            query: { response: data.answer },
+          }),
+        );
+      }
+    },
+  );
 });
 
 export const conversationSlice = createSlice({

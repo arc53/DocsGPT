@@ -22,6 +22,7 @@ import {
   resendQuery,
   selectQueries,
   selectStatus,
+  submitToolActions,
   updateQuery,
 } from './conversationSlice';
 import { selectCompletedAttachments } from '../upload/uploadSlice';
@@ -40,6 +41,17 @@ export default function Conversation() {
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] =
     useState<boolean>(false);
+
+  const handleToolAction = useCallback(
+    (callId: string, decision: 'approved' | 'denied', comment?: string) => {
+      dispatch(
+        submitToolActions({
+          toolActions: [{ call_id: callId, decision, comment }],
+        }),
+      );
+    },
+    [dispatch],
+  );
 
   const lastAutoOpenedArtifactId = useRef<string | null>(null);
   const didInitArtifactAutoOpen = useRef(false);
@@ -233,6 +245,7 @@ export default function Conversation() {
             status={status}
             showHeroOnEmpty={selectedAgent ? false : true}
             onOpenArtifact={handleOpenArtifact}
+            onToolAction={handleToolAction}
             isSplitView={isSplitArtifactOpen}
             headerContent={
               selectedAgent ? (

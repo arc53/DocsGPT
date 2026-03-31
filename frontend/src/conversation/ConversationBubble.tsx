@@ -65,6 +65,11 @@ const ConversationBubble = forwardRef<
     ) => void;
     filesAttached?: { id: string; fileName: string }[];
     onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
+    onToolAction?: (
+      callId: string,
+      decision: 'approved' | 'denied',
+      comment?: string,
+    ) => void;
   }
 >(function ConversationBubble(
   {
@@ -83,6 +88,7 @@ const ConversationBubble = forwardRef<
     handleUpdatedQuestionSubmission,
     filesAttached,
     onOpenArtifact,
+    onToolAction,
   },
   ref,
 ) {
@@ -411,7 +417,7 @@ const ConversationBubble = forwardRef<
             )}
         {research && <ResearchProgress research={research} />}
         {toolCalls && toolCalls.length > 0 && (
-          <ToolCalls toolCalls={toolCalls} />
+          <ToolCalls toolCalls={toolCalls} onToolAction={onToolAction} />
         )}
         {!message && primaryArtifactCall?.artifact_id && onOpenArtifact && (
           <div className="my-2 ml-2 flex justify-start">
@@ -884,8 +890,23 @@ function AllSources(sources: AllSourcesProps) {
 }
 export default ConversationBubble;
 
-function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
+function ToolCalls({
+  toolCalls,
+  onToolAction,
+}: {
+  toolCalls: ToolCallsType[];
+  onToolAction?: (
+    callId: string,
+    decision: 'approved' | 'denied',
+    comment?: string,
+  ) => void;
+}) {
   const [isToolCallsOpen, setIsToolCallsOpen] = useState(false);
+  const [denyComments, setDenyComments] = useState<Record<string, string>>({});
+
+  const hasAwaitingApproval = toolCalls.some(
+    (tc) => tc.status === 'awaiting_approval',
+  );
 
   return (
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
@@ -904,15 +925,22 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
           className="flex flex-row items-center gap-2"
           onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}
         >
-          <p className="text-base font-semibold">Tool Calls</p>
+          <p className="text-base font-semibold">
+            Tool Calls
+            {hasAwaitingApproval && (
+              <span className="ml-2 text-xs font-normal text-yellow-600 dark:text-yellow-400">
+                (approval needed)
+              </span>
+            )}
+          </p>
           <img
             src={ChevronDown}
             alt="ChevronDown"
-            className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen ? 'rotate-180' : ''}`}
+            className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen || hasAwaitingApproval ? 'rotate-180' : ''}`}
           />
         </button>
       </div>
-      {isToolCallsOpen && (
+      {(isToolCallsOpen || hasAwaitingApproval) && (
         <div className="fade-in mr-5 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
           <div className="grid grid-cols-1 gap-2">
             {toolCalls.map((toolCall, index) => (
@@ -921,6 +949,7 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                 title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
                 className="bg-muted dark:bg-answer-bubble w-full rounded-4xl"
                 titleClassName="px-6 py-2 text-sm font-semibold"
+                open={toolCall.status === 'awaiting_approval'}
               >
                 <div className="flex flex-col gap-1">
                   <div className="border-border flex flex-col rounded-2xl border">
@@ -976,6 +1005,57 @@ function ToolCalls({ toolCalls }: { toolCalls: ToolCallsType[] }) {
                           style={{ fontFamily: 'IBMPlexMono-Medium' }}
                         >
                           {toolCall.error}
+                        </span>
+                      </p>
+                    )}
+                    {toolCall.status === 'awaiting_approval' && (
+                      <div className="dark:bg-card flex flex-col gap-2 rounded-b-2xl p-3">
+                        <p className="text-sm text-yellow-600 dark:text-yellow-400">
+                          This tool requires your approval before executing.
+                        </p>
+                        <input
+                          type="text"
+                          placeholder="Optional comment (for deny)..."
+                          className="border-border bg-background w-full rounded-lg border px-3 py-1.5 text-sm"
+                          value={denyComments[toolCall.call_id] || ''}
+                          onChange={(e) =>
+                            setDenyComments((prev) => ({
+                              ...prev,
+                              [toolCall.call_id]: e.target.value,
+                            }))
+                          }
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            className="rounded-lg bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700"
+                            onClick={() =>
+                              onToolAction?.(toolCall.call_id, 'approved')
+                            }
+                          >
+                            Approve
+                          </button>
+                          <button
+                            className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+                            onClick={() =>
+                              onToolAction?.(
+                                toolCall.call_id,
+                                'denied',
+                                denyComments[toolCall.call_id],
+                              )
+                            }
+                          >
+                            Deny
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {toolCall.status === 'denied' && (
+                      <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                        <span
+                          className="leading-[23px] text-orange-500 dark:text-orange-400"
+                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                        >
+                          Denied by user
                         </span>
                       </p>
                     )}
