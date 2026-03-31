@@ -315,6 +315,9 @@ class BaseAnswerResource:
                                 "json_schema": getattr(agent, "json_schema", None),
                                 "retriever_config": getattr(agent, "retriever_config", None),
                             },
+                            client_tools=getattr(
+                                agent.tool_executor, "client_tools", None
+                            ),
                         )
                     except Exception as e:
                         logger.error(

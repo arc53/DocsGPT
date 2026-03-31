@@ -31,12 +31,21 @@ class ToolExecutor:
         self.tool_calls: List[Dict] = []
         self._loaded_tools: Dict[str, object] = {}
         self.conversation_id: Optional[str] = None
+        self.client_tools: Optional[List[Dict]] = None
 
     def get_tools(self) -> Dict[str, Dict]:
-        """Load tool configs from DB based on user context."""
+        """Load tool configs from DB based on user context.
+
+        If *client_tools* have been set on this executor, they are
+        automatically merged into the returned dict.
+        """
         if self.user_api_key:
-            return self._get_tools_by_api_key(self.user_api_key)
-        return self._get_user_tools(self.user or "local")
+            tools = self._get_tools_by_api_key(self.user_api_key)
+        else:
+            tools = self._get_user_tools(self.user or "local")
+        if self.client_tools:
+            self.merge_client_tools(tools, self.client_tools)
+        return tools
 
     def _get_tools_by_api_key(self, api_key: str) -> Dict[str, Dict]:
         mongo = MongoDB.get_client()
@@ -65,29 +74,85 @@ class ToolExecutor:
         user_tools = list(user_tools)
         return {str(i): tool for i, tool in enumerate(user_tools)}
 
+    def merge_client_tools(
+        self, tools_dict: Dict, client_tools: List[Dict]
+    ) -> Dict:
+        """Merge client-provided tool definitions into tools_dict.
+
+        Client tools use the standard function-calling format::
+
+            [{"type": "function", "function": {"name": "get_weather",
+              "description": "...", "parameters": {...}}}]
+
+        They are stored in *tools_dict* with ``client_side: True`` so that
+        :meth:`check_pause` returns a pause signal instead of trying to
+        execute them server-side.
+
+        Args:
+            tools_dict: The mutable server tools dict (will be modified in place).
+            client_tools: List of tool definitions in OpenAI function-calling format.
+
+        Returns:
+            The updated *tools_dict* (same reference, for convenience).
+        """
+        for i, ct in enumerate(client_tools):
+            func = ct.get("function", ct)  # tolerate bare {"name":..} too
+            name = func.get("name", f"clienttool{i}")
+            # Tool IDs must NOT contain underscores — ToolActionParser splits
+            # on "_" and takes the last segment as the ID.
+            tool_id = f"ct{i}"
+
+            tools_dict[tool_id] = {
+                "name": name,
+                "client_side": True,
+                "actions": [
+                    {
+                        "name": name,
+                        "description": func.get("description", ""),
+                        "active": True,
+                        "parameters": func.get("parameters", {}),
+                    }
+                ],
+            }
+        return tools_dict
+
     def prepare_tools_for_llm(self, tools_dict: Dict) -> List[Dict]:
         """Convert tool configs to LLM function schemas."""
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": f"{action['name']}_{tool_id}",
-                    "description": action["description"],
-                    "parameters": self._build_tool_parameters(action),
-                },
-            }
-            for tool_id, tool in tools_dict.items()
-            if (
-                (tool["name"] == "api_tool" and "actions" in tool.get("config", {}))
-                or (tool["name"] != "api_tool" and "actions" in tool)
-            )
-            for action in (
+        result = []
+        for tool_id, tool in tools_dict.items():
+            is_api = tool["name"] == "api_tool"
+            is_client = tool.get("client_side", False)
+
+            if is_api and "actions" not in tool.get("config", {}):
+                continue
+            if not is_api and "actions" not in tool:
+                continue
+
+            actions = (
                 tool["config"]["actions"].values()
-                if tool["name"] == "api_tool"
+                if is_api
                 else tool["actions"]
             )
-            if action.get("active", True)
-        ]
+
+            for action in actions:
+                if not action.get("active", True):
+                    continue
+
+                # Client-side tools already have parameters in OpenAI format
+                if is_client:
+                    params = action.get("parameters", {})
+                else:
+                    params = self._build_tool_parameters(action)
+
+                result.append({
+                    "type": "function",
+                    "function": {
+                        "name": f"{action['name']}_{tool_id}",
+                        "description": action.get("description", ""),
+                        "parameters": params,
+                    },
+                })
+        return result
 
     def _build_tool_parameters(self, action: Dict) -> Dict:
         params = {"type": "object", "properties": {}, "required": []}

@@ -709,16 +709,15 @@ class TestHandleToolCalls:
         except StopIteration as e:
             messages, _pending = e.value
 
+        # Standard format: thought_signature is on tool_calls items
         assistant_msgs = [
             m for m in messages
-            if m.get("role") == "assistant"
-            and isinstance(m.get("content"), list)
+            if m.get("role") == "assistant" and m.get("tool_calls")
         ]
         assert any(
-            "thought_signature" in item
+            tc.get("thought_signature") == "sig"
             for m in assistant_msgs
-            for item in m["content"]
-            if isinstance(item, dict)
+            for tc in m["tool_calls"]
         )
 
 

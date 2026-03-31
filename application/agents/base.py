@@ -148,22 +148,26 @@ class BaseAgent(ABC):
                     "comment": "No response provided",
                 }
 
-            # Build the assistant tool-call message
+            # Build the assistant tool-call message in standard format
             args = pending["arguments"]
-            function_call_content: Dict[str, Any] = {
-                "function_call": {
+            args_str = (
+                json.dumps(args) if isinstance(args, dict) else (args or "{}")
+            )
+            tc_obj: Dict[str, Any] = {
+                "id": call_id,
+                "type": "function",
+                "function": {
                     "name": pending["name"],
-                    "args": args,
-                    "call_id": call_id,
-                }
+                    "arguments": args_str,
+                },
             }
             if pending.get("thought_signature"):
-                function_call_content["thought_signature"] = pending[
-                    "thought_signature"
-                ]
-            messages.append(
-                {"role": "assistant", "content": [function_call_content]}
-            )
+                tc_obj["thought_signature"] = pending["thought_signature"]
+            messages.append({
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [tc_obj],
+            })
 
             if action.get("decision") == "approved":
                 # Execute the tool server-side
@@ -403,28 +407,35 @@ class BaseAgent(ABC):
             if "tool_calls" in i:
                 for tool_call in i["tool_calls"]:
                     call_id = tool_call.get("call_id") or str(uuid.uuid4())
-
-                    function_call_dict = {
-                        "function_call": {
-                            "name": tool_call.get("action_name"),
-                            "args": tool_call.get("arguments"),
-                            "call_id": call_id,
-                        }
-                    }
-                    function_response_dict = {
-                        "function_response": {
-                            "name": tool_call.get("action_name"),
-                            "response": {"result": tool_call.get("result")},
-                            "call_id": call_id,
-                        }
-                    }
-
-                    messages.append(
-                        {"role": "assistant", "content": [function_call_dict]}
+                    args = tool_call.get("arguments")
+                    args_str = (
+                        json.dumps(args)
+                        if isinstance(args, dict)
+                        else (args or "{}")
                     )
-                    messages.append(
-                        {"role": "tool", "content": [function_response_dict]}
+                    messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_call.get("action_name", ""),
+                                "arguments": args_str,
+                            },
+                        }],
+                    })
+                    result = tool_call.get("result")
+                    result_str = (
+                        json.dumps(result)
+                        if not isinstance(result, str)
+                        else (result or "")
                     )
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": result_str,
+                    })
         messages.append({"role": "user", "content": query})
         return messages
 

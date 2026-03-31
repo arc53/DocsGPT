@@ -834,6 +834,12 @@ class StreamProcessor:
             decoded_token=self.decoded_token,
         )
         tool_executor.conversation_id = conversation_id
+        # Restore client tools so they stay available for subsequent LLM calls
+        saved_client_tools = state.get("client_tools")
+        if saved_client_tools:
+            tool_executor.client_tools = saved_client_tools
+            # Re-merge into tools_dict (they may have been stripped during serialization)
+            tool_executor.merge_client_tools(tools_dict, saved_client_tools)
 
         agent_type = agent_config.get("agent_type", "ClassicAgent")
         # Map class names back to agent creator keys
@@ -950,6 +956,10 @@ class StreamProcessor:
             decoded_token=self.decoded_token,
         )
         tool_executor.conversation_id = self.conversation_id
+        # Pass client-side tools (Phase 2) so they get merged in get_tools()
+        client_tools = self.data.get("client_tools")
+        if client_tools:
+            tool_executor.client_tools = client_tools
 
         # Base agent kwargs
         agent_kwargs = {

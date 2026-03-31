@@ -79,9 +79,10 @@ class TestBuildFromCompressedContext:
         # system + user + assistant + tool_call_assistant + tool_response = 5
         assert len(messages) == 5
         assert messages[3]["role"] == "assistant"
-        assert "function_call" in messages[3]["content"][0]
+        assert messages[3].get("tool_calls") is not None
+        assert messages[3]["tool_calls"][0]["function"]["name"] == "search"
         assert messages[4]["role"] == "tool"
-        assert "function_response" in messages[4]["content"][0]
+        assert messages[4].get("tool_call_id") == "call-1"
 
     def test_tool_calls_not_included_by_default(self):
         queries = [
@@ -127,8 +128,8 @@ class TestBuildFromCompressedContext:
             recent_queries=queries,
             include_tool_calls=True,
         )
-        tool_msg = messages[3]["content"][0]
-        call_id = tool_msg["function_call"]["call_id"]
+        assistant_msg = messages[3]
+        call_id = assistant_msg["tool_calls"][0]["id"]
         assert call_id is not None
         assert len(call_id) > 0
 

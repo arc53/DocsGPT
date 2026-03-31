@@ -128,9 +128,9 @@ class TestOpenAILLMHandler:
         assert result.finish_reason == ""
 
     def test_create_tool_message(self):
-        """Test creating tool message."""
+        """Test creating tool message in standard format."""
         handler = OpenAILLMHandler()
-        
+
         tool_call = ToolCall(
             id="call_123",
             name="get_weather",
@@ -138,36 +138,26 @@ class TestOpenAILLMHandler:
             index=0
         )
         result = {"temperature": "72F", "condition": "sunny"}
-        
+
         message = handler.create_tool_message(tool_call, result)
-        
-        expected = {
-            "role": "tool",
-            "content": [
-                {
-                    "function_response": {
-                        "name": "get_weather",
-                        "response": {"result": result},
-                        "call_id": "call_123",
-                    }
-                }
-            ],
-        }
-        
-        assert message == expected
+
+        assert message["role"] == "tool"
+        assert message["tool_call_id"] == "call_123"
+        import json
+        assert json.loads(message["content"]) == result
 
     def test_create_tool_message_string_result(self):
         """Test creating tool message with string result."""
         handler = OpenAILLMHandler()
-        
+
         tool_call = ToolCall(id="call_456", name="get_time", arguments={})
         result = "2023-12-01 10:30:00"
-        
+
         message = handler.create_tool_message(tool_call, result)
-        
+
         assert message["role"] == "tool"
-        assert message["content"][0]["function_response"]["response"]["result"] == result
-        assert message["content"][0]["function_response"]["call_id"] == "call_456"
+        assert message["tool_call_id"] == "call_456"
+        assert message["content"] == result
 
     def test_iterate_stream(self):
         """Test stream iteration."""

@@ -593,16 +593,22 @@ class ResearchAgent(BaseAgent):
                     )
                     result = result_str
 
-            function_call_content = {
-                "function_call": {
-                    "name": call.name,
-                    "args": call.arguments,
-                    "call_id": call_id,
-                }
-            }
-            messages.append(
-                {"role": "assistant", "content": [function_call_content]}
+            import json as _json
+
+            args_str = (
+                _json.dumps(call.arguments)
+                if isinstance(call.arguments, dict)
+                else call.arguments
             )
+            messages.append({
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{
+                    "id": call_id,
+                    "type": "function",
+                    "function": {"name": call.name, "arguments": args_str},
+                }],
+            })
             tool_message = self.llm_handler.create_tool_message(call, result)
             messages.append(tool_message)
 

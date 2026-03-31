@@ -1,3 +1,4 @@
+import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
@@ -315,10 +316,34 @@ class LLMHandler(ABC):
                 current_prompt = self._extract_text_from_content(content)
 
             elif role in {"assistant", "model"}:
-                # If this assistant turn contains tool calls, collect them; otherwise commit a response.
+                # Standard format: tool_calls array on assistant message
+                msg_tool_calls = message.get("tool_calls")
+                if msg_tool_calls:
+                    for tc in msg_tool_calls:
+                        call_id = tc.get("id") or str(uuid.uuid4())
+                        func = tc.get("function", {})
+                        args = func.get("arguments")
+                        if isinstance(args, str):
+                            try:
+                                args = json.loads(args)
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                        current_tool_calls[call_id] = {
+                            "tool_name": "unknown_tool",
+                            "action_name": func.get("name"),
+                            "arguments": args,
+                            "result": None,
+                            "status": "called",
+                            "call_id": call_id,
+                        }
+                    continue
+
+                # Legacy format: function_call/function_response in content list
                 if isinstance(content, list):
+                    has_fc = False
                     for item in content:
                         if "function_call" in item:
+                            has_fc = True
                             fc = item["function_call"]
                             call_id = fc.get("call_id") or str(uuid.uuid4())
                             current_tool_calls[call_id] = {
@@ -329,37 +354,30 @@ class LLMHandler(ABC):
                                 "status": "called",
                                 "call_id": call_id,
                             }
-                        elif "function_response" in item:
-                            fr = item["function_response"]
-                            call_id = fr.get("call_id") or str(uuid.uuid4())
-                            current_tool_calls[call_id] = {
-                                "tool_name": "unknown_tool",
-                                "action_name": fr.get("name"),
-                                "arguments": None,
-                                "result": fr.get("response", {}).get("result"),
-                                "status": "completed",
-                                "call_id": call_id,
-                            }
-                    # No direct assistant text here; continue to next message
-                    continue
+                    if has_fc:
+                        continue
 
                 response_text = self._extract_text_from_content(content)
                 _commit_query(response_text)
 
             elif role == "tool":
-                # Attach tool outputs to the latest pending tool call if possible
+                # Standard format: tool_call_id on tool message
+                call_id = message.get("tool_call_id")
                 tool_text = self._extract_text_from_content(content)
-                # Attempt to parse function_response style
-                call_id = None
-                if isinstance(content, list):
-                    for item in content:
-                        if "function_response" in item and item["function_response"].get("call_id"):
-                            call_id = item["function_response"]["call_id"]
-                            break
+
                 if call_id and call_id in current_tool_calls:
                     current_tool_calls[call_id]["result"] = tool_text
                     current_tool_calls[call_id]["status"] = "completed"
-                elif queries:
+                # Legacy: function_response in content list
+                elif isinstance(content, list):
+                    for item in content:
+                        if "function_response" in item:
+                            legacy_id = item["function_response"].get("call_id")
+                            if legacy_id and legacy_id in current_tool_calls:
+                                current_tool_calls[legacy_id]["result"] = tool_text
+                                current_tool_calls[legacy_id]["status"] = "completed"
+                                break
+                elif call_id is None and queries:
                     queries[-1].setdefault("tool_calls", []).append(
                         {
                             "tool_name": "unknown_tool",
@@ -805,24 +823,29 @@ class LLMHandler(ABC):
                         tool_response, call_id = e.value
                         break
 
-                function_call_content = {
-                    "function_call": {
-                        "name": call.name,
-                        "args": call.arguments,
-                        "call_id": call_id,
-                    }
-                }
-                # Include thought_signature for Google Gemini 3 models
-                # It should be at the same level as function_call, not inside it
-                if call.thought_signature:
-                    function_call_content["thought_signature"] = call.thought_signature
-                updated_messages.append(
-                    {
-                        "role": "assistant",
-                        "content": [function_call_content],
-                    }
+                # Standard internal format: assistant message with tool_calls array
+                args_str = (
+                    json.dumps(call.arguments)
+                    if isinstance(call.arguments, dict)
+                    else call.arguments
                 )
+                tool_call_obj = {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": call.name,
+                        "arguments": args_str,
+                    },
+                }
+                # Preserve thought_signature for Google Gemini 3 models
+                if call.thought_signature:
+                    tool_call_obj["thought_signature"] = call.thought_signature
 
+                updated_messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [tool_call_obj],
+                })
 
                 updated_messages.append(self.create_tool_message(call, tool_response))
             except Exception as e:
