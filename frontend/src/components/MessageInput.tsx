@@ -320,13 +320,6 @@ export default function MessageInput({
     };
   }, [browserOS]);
 
-<<<<<<< HEAD
-  useEffect(() => {
-    return () => {
-      stopAudioProcessing();
-      resetLiveTranscriptionState();
-    };
-=======
 
   const handleImageSelection = useCallback(async (file: File) => {
     if (!IMAGE_MIME_TYPES.includes(file.type)) return false;
@@ -349,7 +342,6 @@ export default function MessageInput({
     setSelectedImagePreview(null);
     setSelectedImageName(null);
     setSelectedImageMimeType(null);
->>>>>>> 221f437c (feat: add multimodal image support to chat input)
   }, []);
 
   const uploadFiles = useCallback(
@@ -775,9 +767,6 @@ export default function MessageInput({
       setHandleDragActive(false);
     },
     maxSize: 25000000,
-<<<<<<< HEAD
-    accept: FILE_UPLOAD_ACCEPT,
-=======
     accept: {
       'application/pdf': ['.pdf'],
       'text/plain': ['.txt'],
@@ -800,7 +789,6 @@ export default function MessageInput({
       'image/jpg': ['.jpg'],
       'image/webp': ['.webp'],
     },
->>>>>>> 221f437c (feat: add multimodal image support to chat input)
   });
 
   useEffect(() => {
@@ -1283,15 +1271,6 @@ export default function MessageInput({
   };
 
   const handleSubmit = () => {
-<<<<<<< HEAD
-    if (
-      value.trim() &&
-      !loading &&
-      recordingState !== 'recording' &&
-      recordingState !== 'transcribing'
-    ) {
-      onSubmit(value);
-=======
     const trimmedValue = value.trim();
     if ((trimmedValue || selectedImageBase64) && !loading) {
       // FIXED: Safely passing ONLY text and imageBase64 (aligned with our parent updates)
@@ -1299,7 +1278,6 @@ export default function MessageInput({
         text: trimmedValue,
         imageBase64: selectedImageBase64 ?? undefined,
       });
->>>>>>> 221f437c (feat: add multimodal image support to chat input)
       setValue('');
       clearSelectedImage();
       // Refocus input after submission if autoFocus is enabled
@@ -1460,11 +1438,6 @@ export default function MessageInput({
           })}
         </div>
 
-<<<<<<< HEAD
-        {voiceError && (
-          <div className="px-2 pb-1 text-xs text-[#B42318] sm:px-3">
-            {voiceError}
-=======
         {selectedImagePreview && (
           <div className="px-2 pt-2 sm:px-3">
             <div className="relative inline-flex items-center rounded-lg border border-[#D5D5D5] bg-white p-1 dark:border-[#4A4A4A] dark:bg-[#2C2E3C]">
@@ -1482,7 +1455,6 @@ export default function MessageInput({
                 ×
               </button>
             </div>
->>>>>>> 221f437c (feat: add multimodal image support to chat input)
           </div>
         )}
 
@@ -1629,27 +1601,11 @@ export default function MessageInput({
               onClick={handleSubmit}
               aria-label={t('send')}
               className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ease-in-out sm:h-9 sm:w-9 ${
-<<<<<<< HEAD
-                value.trim() &&
-                !loading &&
-                recordingState !== 'recording' &&
-                recordingState !== 'transcribing'
-                  ? 'bg-purple-30 text-white'
-                  : 'bg-[#EDEDED] text-[#959595] dark:bg-[#37383D] dark:text-[#77787D]'
-              }`}
-              disabled={
-                !value.trim() ||
-                loading ||
-                recordingState === 'recording' ||
-                recordingState === 'transcribing'
-              }
-=======
                 (value.trim() || selectedImageBase64) && !loading
                   ? 'bg-purple-30 text-white'
                   : 'bg-[#EDEDED] text-[#959595] dark:bg-[#37383D] dark:text-[#77787D]'
               }`}
               disabled={(!value.trim() && !selectedImageBase64) || loading}
->>>>>>> 221f437c (feat: add multimodal image support to chat input)
             >
               <SendArrowIcon
                 className="mx-auto my-auto block h-3.5 w-3.5 sm:h-4 sm:w-4"

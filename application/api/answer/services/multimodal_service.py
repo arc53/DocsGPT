@@ -95,22 +95,21 @@ def run_multimodal_completion(
     openai_key = settings.OPENAI_API_KEY or settings.API_KEY
     
     # Default to a robust vision-capable model if none provided
-    actual_model = model_id or settings.LLM_NAME or "gemini-1.5-flash"
+    actual_model = model_id or settings.LLM_NAME or "gemini-3-flash-preview"
 
     try:
         if provider == "google":
             from langchain_google_genai import ChatGoogleGenerativeAI
             
-            # Validation to ensure a Gemini model is used with the Google provider
             if "gemini" not in actual_model.lower():
-                actual_model = "gemini-1.5-flash"
+                actual_model = "gemini-3-flash-preview"
                 
             logger.info(f"Routing multimodal request to Google Gemini ({actual_model})")
+
             llm = ChatGoogleGenerativeAI(
                 model=actual_model,
                 google_api_key=google_key,
-                temperature=0,
-                client_options={"api_version": "v1"}  
+                temperature=0
             )
         else:
             from langchain_openai import ChatOpenAI
