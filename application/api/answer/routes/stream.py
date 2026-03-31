@@ -79,7 +79,39 @@ class StreamResource(Resource, BaseAnswerResource):
             return error
         decoded_token = getattr(request, "decoded_token", None)
         processor = StreamProcessor(data, decoded_token)
+
         try:
+            # ---- Continuation mode ----
+            if data.get("tool_actions"):
+                (
+                    agent,
+                    messages,
+                    tools_dict,
+                    pending_tool_calls,
+                    tool_actions,
+                ) = processor.resume_from_tool_actions(
+                    data["tool_actions"], data["conversation_id"]
+                )
+                return Response(
+                    self.complete_stream(
+                        question="",
+                        agent=agent,
+                        conversation_id=processor.conversation_id,
+                        user_api_key=processor.agent_config.get("user_api_key"),
+                        decoded_token=processor.decoded_token,
+                        agent_id=processor.agent_id,
+                        model_id=processor.model_id,
+                        _continuation={
+                            "messages": messages,
+                            "tools_dict": tools_dict,
+                            "pending_tool_calls": pending_tool_calls,
+                            "tool_actions": tool_actions,
+                        },
+                    ),
+                    mimetype="text/event-stream",
+                )
+
+            # ---- Normal mode ----
             agent = processor.build_agent(data["question"])
             if not processor.decoded_token:
                 return Response(

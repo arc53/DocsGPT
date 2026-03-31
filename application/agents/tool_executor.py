@@ -104,6 +104,60 @@ class ToolExecutor:
                             params["required"].append(k)
         return params
 
+    def check_pause(
+        self, tools_dict: Dict, call, llm_class_name: str
+    ) -> Optional[Dict]:
+        """Check if a tool call requires pausing for approval or client execution.
+
+        Returns a dict describing the pending action if pause is needed, None otherwise.
+        """
+        parser = ToolActionParser(llm_class_name)
+        tool_id, action_name, call_args = parser.parse_args(call)
+        call_id = getattr(call, "id", None) or str(uuid.uuid4())
+
+        if tool_id is None or action_name is None or tool_id not in tools_dict:
+            return None  # Will be handled as error by execute()
+
+        tool_data = tools_dict[tool_id]
+
+        # Phase 2: client-side tools
+        if tool_data.get("client_side"):
+            return {
+                "call_id": call_id,
+                "name": getattr(call, "name", f"{action_name}_{tool_id}"),
+                "tool_name": tool_data.get("name", "unknown"),
+                "tool_id": tool_id,
+                "action_name": action_name,
+                "arguments": call_args if isinstance(call_args, dict) else {},
+                "pause_type": "requires_client_execution",
+                "thought_signature": getattr(call, "thought_signature", None),
+            }
+
+        # Phase 3: approval required
+        if tool_data["name"] == "api_tool":
+            action_data = tool_data.get("config", {}).get("actions", {}).get(
+                action_name, {}
+            )
+        else:
+            action_data = next(
+                (a for a in tool_data.get("actions", []) if a["name"] == action_name),
+                {},
+            )
+
+        if action_data.get("require_approval"):
+            return {
+                "call_id": call_id,
+                "name": getattr(call, "name", f"{action_name}_{tool_id}"),
+                "tool_name": tool_data.get("name", "unknown"),
+                "tool_id": tool_id,
+                "action_name": action_name,
+                "arguments": call_args if isinstance(call_args, dict) else {},
+                "pause_type": "awaiting_approval",
+                "thought_signature": getattr(call, "thought_signature", None),
+            }
+
+        return None
+
     def execute(self, tools_dict: Dict, call, llm_class_name: str):
         """Execute a tool call. Yields status events, returns (result, call_id)."""
         parser = ToolActionParser(llm_class_name)

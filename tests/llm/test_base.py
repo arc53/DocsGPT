@@ -478,6 +478,8 @@ class TestHandleToolCallsErrors:
         handler = ConcreteHandler()
         agent = MagicMock()
         agent._check_context_limit = MagicMock(return_value=False)
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = MagicMock(return_value=None)
         agent._execute_tool_action = MagicMock(
             side_effect=RuntimeError("tool failed")
         )
@@ -506,6 +508,8 @@ class TestHandleToolCallsErrors:
         handler = ConcreteHandler()
         agent = MagicMock()
         agent._check_context_limit = MagicMock(return_value=False)
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = MagicMock(return_value=None)
         agent._execute_tool_action = MagicMock(
             side_effect=RuntimeError("tool failed")
         )
@@ -1169,6 +1173,8 @@ class TestHandleToolCallsErrorsAdditional:
         handler = ConcreteHandler()
         agent = MagicMock()
         agent._check_context_limit = MagicMock(return_value=False)
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = MagicMock(return_value=None)
         agent._execute_tool_action = MagicMock(
             side_effect=RuntimeError("broken tool")
         )
@@ -1188,7 +1194,7 @@ class TestHandleToolCallsErrorsAdditional:
             while True:
                 events.append(next(gen))
         except StopIteration as e:
-            final_messages = e.value
+            final_messages, _pending = e.value
 
         # Verify the error message was appended
         error_msgs = [
@@ -1211,6 +1217,10 @@ class TestHandleToolCallsErrorsAdditional:
         """Cover line 660: messages.copy() at start of handle_tool_calls."""
         handler = ConcreteHandler()
         agent = MagicMock(spec=[])  # No _check_context_limit attribute
+        agent.llm = MagicMock()
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor = MagicMock()
+        agent.tool_executor.check_pause = MagicMock(return_value=None)
         agent._execute_tool_action = MagicMock(
             side_effect=ValueError("bad args")
         )

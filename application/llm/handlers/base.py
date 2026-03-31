@@ -648,6 +648,13 @@ class LLMHandler(ABC):
         """
         Execute tool calls and update conversation history.
 
+        When a tool requires approval or client-side execution, it is
+        collected as a pending action instead of being executed.  The
+        generator returns ``(updated_messages, pending_actions)`` where
+        *pending_actions* is ``None`` when every tool was executed
+        normally, or a list of dicts describing actions the client must
+        resolve before the LLM loop can continue.
+
         Args:
             agent: The agent instance
             tool_calls: List of tool calls to execute
@@ -655,9 +662,11 @@ class LLMHandler(ABC):
             messages: Current conversation history
 
         Returns:
-            Updated messages list
+            Tuple of (updated_messages, pending_actions).
+            pending_actions is None if all tools executed, otherwise a list.
         """
         updated_messages = messages.copy()
+        pending_actions: List[Dict] = []
 
         for i, call in enumerate(tool_calls):
             # Check context limit before executing tool call
@@ -763,6 +772,29 @@ class LLMHandler(ABC):
                     # Set flag on agent
                     agent.context_limit_reached = True
                     break
+
+            # ---- Pause check: approval / client-side execution ----
+            llm_class = agent.llm.__class__.__name__
+            pause_info = agent.tool_executor.check_pause(
+                tools_dict, call, llm_class
+            )
+            if pause_info:
+                # Yield pause event so the client knows this tool is waiting
+                yield {
+                    "type": "tool_call",
+                    "data": {
+                        "tool_name": pause_info["tool_name"],
+                        "call_id": pause_info["call_id"],
+                        "action_name": f"{pause_info['action_name']}_{pause_info['tool_id']}",
+                        "arguments": pause_info["arguments"],
+                        "status": pause_info["pause_type"],
+                    },
+                }
+                pending_actions.append(pause_info)
+                # Do NOT add messages for pending tools here.
+                # They will be added on resume to keep call/result pairs together.
+                continue
+
             try:
                 self.tool_calls.append(call)
                 tool_executor_gen = agent._execute_tool_action(tools_dict, call)
@@ -772,7 +804,7 @@ class LLMHandler(ABC):
                     except StopIteration as e:
                         tool_response, call_id = e.value
                         break
-                    
+
                 function_call_content = {
                     "function_call": {
                         "name": call.name,
@@ -823,7 +855,7 @@ class LLMHandler(ABC):
                         "status": "error",
                     },
                 }
-        return updated_messages
+        return updated_messages, pending_actions if pending_actions else None
 
     def handle_non_streaming(
         self, agent, response: Any, tools_dict: Dict, messages: List[Dict]
@@ -851,8 +883,22 @@ class LLMHandler(ABC):
                 try:
                     yield next(tool_handler_gen)
                 except StopIteration as e:
-                    messages = e.value
+                    messages, pending_actions = e.value
                     break
+
+            # If tools need approval or client execution, pause the loop
+            if pending_actions:
+                agent._pending_continuation = {
+                    "messages": messages,
+                    "pending_tool_calls": pending_actions,
+                    "tools_dict": tools_dict,
+                }
+                yield {
+                    "type": "tool_calls_pending",
+                    "data": {"pending_tool_calls": pending_actions},
+                }
+                return ""
+
             response = agent.llm.gen(
                 model=agent.model_id, messages=messages, tools=agent.tools
             )
@@ -913,9 +959,22 @@ class LLMHandler(ABC):
                     try:
                         yield next(tool_handler_gen)
                     except StopIteration as e:
-                        messages = e.value
+                        messages, pending_actions = e.value
                         break
                 tool_calls = {}
+
+                # If tools need approval or client execution, pause the loop
+                if pending_actions:
+                    agent._pending_continuation = {
+                        "messages": messages,
+                        "pending_tool_calls": pending_actions,
+                        "tools_dict": tools_dict,
+                    }
+                    yield {
+                        "type": "tool_calls_pending",
+                        "data": {"pending_tool_calls": pending_actions},
+                    }
+                    return
 
                 # Check if context limit was reached during tool execution
                 if hasattr(agent, 'context_limit_reached') and agent.context_limit_reached:
