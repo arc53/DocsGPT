@@ -53,7 +53,7 @@ orjson==3.11.7
 packaging==26.0
 pandas==3.0.2
 openpyxl==3.1.5
-pathable==0.4.4
+pathable==0.5.0
 pdf2image>=1.17.0
 pillow
 portalocker>=2.7.0,<3.0.0
