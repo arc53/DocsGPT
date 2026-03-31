@@ -197,7 +197,7 @@ export default function ConversationMessages({
     if (status === 'loading' && isLastMessage) {
       return (
         <div
-          className={`fade-in-bubble flex flex-wrap self-start ${bubbleMargin} group dark:text-bright-gray flex-col`}
+          className={`fade-in-bubble flex flex-wrap self-start ${bubbleMargin} group dark:text-foreground flex-col`}
         >
           <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
             <div className="my-2 flex flex-row items-center justify-center gap-3">

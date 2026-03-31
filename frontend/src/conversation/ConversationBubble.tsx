@@ -140,7 +140,7 @@ const ConversationBubble = forwardRef<
                 <div
                   key={index}
                   title={file.fileName}
-                  className="dark:text-foreground dark:bg-accent flex items-center rounded-xl bg-[#EFF3F4] p-2 text-[14px] text-[#5D5D5D]"
+                  className="dark:text-foreground dark:bg-accent text-muted-foreground bg-muted flex items-center rounded-xl p-2 text-[14px]"
                 >
                   <div className="bg-primary mr-2 items-center justify-center rounded-lg p-[5.5px]">
                     <img
@@ -606,7 +606,7 @@ const ConversationBubble = forwardRef<
                               },
                               table({ children }) {
                                 return (
-                                  <div className="border-silver/40 dark:border-border relative overflow-x-auto rounded-lg border">
+                                  <div className="border-border relative overflow-x-auto rounded-lg border">
                                     <table className="dark:text-foreground w-full text-left text-gray-700">
                                       {children}
                                     </table>
@@ -728,12 +728,12 @@ const ConversationBubble = forwardRef<
                             link.click();
                             URL.revokeObjectURL(url);
                           }}
-                          className="bg-white-3000 dark:hover:bg-purple-taupe flex cursor-pointer items-center justify-center rounded-full p-2 hover:bg-[#EEEEEE] dark:bg-transparent"
+                          className="bg-card dark:hover:bg-accent hover:bg-muted flex cursor-pointer items-center justify-center rounded-full p-2 dark:bg-transparent"
                           aria-label="Export as Markdown"
                           title="Export as Markdown"
                         >
                           <svg
-                            className="stroke-gray-4000 h-5 w-5"
+                            className="stroke-muted-foreground h-5 w-5"
                             fill="none"
                             viewBox="0 0 24 24"
                             strokeWidth={1.5}
@@ -1087,7 +1087,7 @@ function Thought({
                 },
                 table({ children }) {
                   return (
-                    <div className="border-silver/40 dark:border-border relative overflow-x-auto rounded-lg border">
+                    <div className="border-border relative overflow-x-auto rounded-lg border">
                       <table className="dark:text-foreground w-full text-left text-gray-700">
                         {children}
                       </table>

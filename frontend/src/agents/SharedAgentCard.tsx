@@ -61,7 +61,7 @@ export default function SharedAgentCard({ agent }: { agent: Agent }) {
             {agent.tool_details.map((tool, index) => (
               <span
                 key={index}
-                className="bg-bright-gray text-foreground dark:bg-card flex items-center gap-1 rounded-full px-3 py-1 text-xs font-light"
+                className="bg-accent text-foreground dark:bg-card flex items-center gap-1 rounded-full px-3 py-1 text-xs font-light"
               >
                 <img
                   src={`/toolIcons/tool_${tool.name}.svg`}

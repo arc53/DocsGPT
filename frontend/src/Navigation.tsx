@@ -388,7 +388,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             alt="Create new chat"
             className="opacity-80 group-hover:opacity-100"
           />
-          <p className="text-muted-foreground dark:text-foreground dark:group-hover:text-bright-gray text-sm group-hover:text-neutral-600">
+          <p className="text-muted-foreground dark:text-foreground dark:group-hover:text-foreground text-sm group-hover:text-neutral-600">
             {t('newChat')}
           </p>
         </NavLink>

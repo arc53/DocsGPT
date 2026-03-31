@@ -1355,7 +1355,7 @@ function WorkflowBuilderInner() {
   return (
     <>
       <MobileBlocker />
-      <div className="bg-background dark:bg-outer-space fixed inset-0 z-50 hidden h-screen w-full flex-col md:flex">
+      <div className="bg-background fixed inset-0 z-50 hidden h-screen w-full flex-col md:flex">
         <div className="border-border bg-card dark:bg-background flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-4">
             <button

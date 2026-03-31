@@ -186,7 +186,7 @@ export default function SourcesPopup({
                       height={14}
                       className="mr-3 shrink-0"
                     />
-                    <span className="dark:text-foreground mr-3 grow overflow-hidden font-medium text-ellipsis whitespace-nowrap text-[#5D5D5D]">
+                    <span className="dark:text-foreground text-muted-foreground mr-3 grow overflow-hidden font-medium text-ellipsis whitespace-nowrap">
                       {option.name}
                     </span>
                     <div

@@ -1313,7 +1313,7 @@ function AgentPreviewArea() {
   const { t } = useTranslation();
   const selectedAgent = useSelector(selectSelectedAgent);
   return (
-    <div className="bg-card dark:border-border w-full rounded-[30px] border border-[#F6F6F6] max-[1179px]:h-[600px] min-[1180px]:h-full">
+    <div className="bg-card border-border w-full rounded-[30px] border max-[1179px]:h-[600px] min-[1180px]:h-full">
       {selectedAgent?.status === 'published' ? (
         <div className="flex h-full w-full flex-col overflow-hidden rounded-[30px]">
           <AgentPreview />

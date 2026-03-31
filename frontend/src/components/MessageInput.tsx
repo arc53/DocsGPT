@@ -1617,7 +1617,7 @@ export default function MessageInput({
                 aria-label={voiceButtonLabel}
                 title={voiceButtonLabel}
                 disabled={loading || recordingState === 'transcribing'}
-                className={`xs:px-3 xs:py-1.5 dark:border-purple-taupe flex items-center rounded-[32px] border px-2 py-1 transition-colors ${
+                className={`xs:px-3 xs:py-1.5 dark:border-border flex items-center rounded-[32px] border px-2 py-1 transition-colors ${
                   recordingState === 'recording'
                     ? 'border-[#B42318] bg-[#FEE4E2] text-[#B42318] dark:bg-[#4A2323]'
                     : 'border-border dark:hover:bg-accent hover:bg-gray-100'
@@ -1635,10 +1635,10 @@ export default function MessageInput({
                   <Mic className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4" />
                 )}
                 <span
-                  className={`xs:text-[12px] dark:text-bright-gray text-[10px] font-medium sm:text-[14px] ${
+                  className={`xs:text-[12px] dark:text-foreground text-[10px] font-medium sm:text-[14px] ${
                     recordingState === 'recording'
                       ? 'text-[#B42318]'
-                      : 'text-[#5D5D5D]'
+                      : 'text-muted-foreground'
                   }`}
                 >
                   {voiceButtonText}
