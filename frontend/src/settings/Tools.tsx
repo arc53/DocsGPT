@@ -10,7 +10,6 @@ import NoFilesIcon from '../assets/no-files.svg';
 import SearchIcon from '../assets/search.svg';
 import ThreeDotsIcon from '../assets/three-dots.svg';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
-import Input from '../components/Input';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToggleSwitch from '../components/ToggleSwitch';
 import { useDarkTheme, useLoaderState } from '../hooks';

@@ -137,7 +137,7 @@ function Dropdown<T extends DropdownOption>({
         <div
           className={`border-border bg-card absolute inset-x-0 z-20 overflow-hidden border shadow-lg ${
             dropUp
-              ? `-mt-px bottom-full border-b-0 ${radiusTop}`
+              ? `bottom-full -mt-px border-b-0 ${radiusTop}`
               : `-mt-px border-t-0 ${radiusBottom}`
           }`}
         >
