@@ -10,7 +10,9 @@ interface SkeletonLoaderProps {
     | 'chatbot'
     | 'dropdown'
     | 'chunkCards'
-    | 'sourceCards';
+    | 'sourceCards'
+    | 'toolCards'
+    | 'addToolCards';
 }
 
 const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
@@ -237,6 +239,55 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     </>
   );
 
+  const renderAddToolCards = () => (
+    <>
+      {Array.from({ length: count }).map((_, idx) => (
+        <div
+          key={`add-tool-skel-${idx}`}
+          className="border-light-gainsboro dark:border-arsenic flex h-52 w-full animate-pulse flex-col justify-between rounded-2xl border p-6"
+        >
+          <div className="w-full">
+            <div className="flex w-full items-center justify-between px-1">
+              <div className="h-6 w-6 rounded bg-gray-300 dark:bg-gray-600"></div>
+            </div>
+            <div className="mt-[9px] space-y-2 px-1">
+              <div className="h-4 w-2/3 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="h-3 w-full rounded bg-gray-200 dark:bg-gray-700"></div>
+              <div className="h-3 w-5/6 rounded bg-gray-200 dark:bg-gray-700"></div>
+              <div className="h-3 w-3/4 rounded bg-gray-200 dark:bg-gray-700"></div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+
+  const renderToolCards = () => (
+    <>
+      {Array.from({ length: count }).map((_, idx) => (
+        <div
+          key={`tool-skel-${idx}`}
+          className="flex h-52 w-[300px] animate-pulse flex-col justify-between rounded-2xl bg-[#F5F5F5] p-6 dark:bg-[#383838]"
+        >
+          <div className="w-full">
+            <div className="flex items-center gap-2 px-1">
+              <div className="h-6 w-6 rounded bg-gray-300 dark:bg-gray-600"></div>
+            </div>
+            <div className="mt-[9px] space-y-2 px-1">
+              <div className="h-4 w-2/3 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="h-3 w-full rounded bg-gray-200 dark:bg-gray-700"></div>
+              <div className="h-3 w-5/6 rounded bg-gray-200 dark:bg-gray-700"></div>
+              <div className="h-3 w-3/4 rounded bg-gray-200 dark:bg-gray-700"></div>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <div className="h-5 w-9 rounded-full bg-gray-300 dark:bg-gray-600"></div>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+
   const componentMap = {
     fileTable: renderTable,
     chatbot: renderChatbot,
@@ -246,6 +297,8 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     analysis: renderAnalysis,
     chunkCards: renderChunkCards,
     sourceCards: renderSourceCards,
+    toolCards: renderToolCards,
+    addToolCards: renderAddToolCards,
   };
 
   const render = componentMap[component] || componentMap.default;

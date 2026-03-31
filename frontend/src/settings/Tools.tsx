@@ -10,9 +10,10 @@ import NoFilesIcon from '../assets/no-files.svg';
 import SearchIcon from '../assets/search.svg';
 import ThreeDotsIcon from '../assets/three-dots.svg';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
-import Spinner from '../components/Spinner';
+import Input from '../components/Input';
+import SkeletonLoader from '../components/SkeletonLoader';
 import ToggleSwitch from '../components/ToggleSwitch';
-import { useDarkTheme } from '../hooks';
+import { useDarkTheme, useLoaderState } from '../hooks';
 import AddToolModal from '../modals/AddToolModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import MCPServerModal from '../modals/MCPServerModal';
@@ -33,7 +34,7 @@ export default function Tools() {
   const [selectedTool, setSelectedTool] = React.useState<
     UserToolType | APIToolType | null
   >(null);
-  const [loading, setLoading] = React.useState(false);
+  const [loading, setLoading] = useLoaderState(false);
   const [activeMenuId, setActiveMenuId] = React.useState<string | null>(null);
   const menuRefs = React.useRef<{
     [key: string]: React.RefObject<HTMLDivElement | null>;
@@ -242,10 +243,8 @@ export default function Tools() {
             </div>
             <div className="border-border dark:border-border mt-5 mb-8 border-b" />
             {loading ? (
-              <div className="grid grid-cols-2 gap-6 lg:grid-cols-3">
-                <div className="col-span-2 mt-24 flex h-32 items-center justify-center lg:col-span-3">
-                  <Spinner />
-                </div>
+              <div className="flex flex-wrap justify-center gap-4 sm:justify-start">
+                <SkeletonLoader component="toolCards" count={6} />
               </div>
             ) : (
               <div className="flex flex-wrap justify-center gap-4 sm:justify-start">
