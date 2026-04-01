@@ -36,16 +36,21 @@ def _extract_bearer_token() -> Optional[str]:
     return None
 
 
-def _get_model_name(api_key: str) -> str:
-    """Look up agent name for display as model name."""
+def _lookup_agent(api_key: str) -> Optional[Dict]:
+    """Look up the agent document for this API key."""
     try:
         mongo = MongoDB.get_client()
         db = mongo[settings.MONGO_DB_NAME]
-        agent = db["agents"].find_one({"key": api_key})
-        if agent:
-            return agent.get("name", api_key)
+        return db["agents"].find_one({"key": api_key})
     except Exception:
-        pass
+        logger.warning("Failed to look up agent for API key", exc_info=True)
+        return None
+
+
+def _get_model_name(agent: Optional[Dict], api_key: str) -> str:
+    """Return agent name for display as model name."""
+    if agent:
+        return agent.get("name", api_key)
     return api_key
 
 
@@ -72,7 +77,8 @@ def chat_completions():
         )
 
     is_stream = data.get("stream", False)
-    model_name = _get_model_name(api_key)
+    agent_doc = _lookup_agent(api_key)
+    model_name = _get_model_name(agent_doc, api_key)
 
     try:
         internal_data = translate_request(data, api_key)
@@ -83,8 +89,10 @@ def chat_completions():
             400,
         )
 
-    # Use the api_key as decoded token for agent auth
-    decoded_token = {"sub": "api_key_user"}
+    # Link decoded_token to the agent's owner so continuation state,
+    # logs, and tool execution use the correct user identity.
+    agent_user = agent_doc.get("user") if agent_doc else None
+    decoded_token = {"sub": agent_user or "api_key_user"}
 
     try:
         processor = StreamProcessor(internal_data, decoded_token)
@@ -232,26 +240,21 @@ def _non_stream_response(
 
     result = helper.process_response_stream(stream)
 
-    if len(result) == 7:
-        conversation_id, answer, sources, tool_calls, thought, error, extra = result
-    else:
-        conversation_id, answer, sources, tool_calls, thought, error = result
-        extra = None
-
-    if error:
+    if result["error"]:
         return make_response(
-            jsonify({"error": {"message": error, "type": "server_error"}}),
+            jsonify({"error": {"message": result["error"], "type": "server_error"}}),
             500,
         )
 
+    extra = result.get("extra")
     pending = extra.get("pending_tool_calls") if isinstance(extra, dict) else None
 
     response = translate_response(
-        conversation_id=conversation_id,
-        answer=answer or "",
-        sources=sources,
-        tool_calls=tool_calls,
-        thought=thought or "",
+        conversation_id=result["conversation_id"],
+        answer=result["answer"] or "",
+        sources=result["sources"],
+        tool_calls=result["tool_calls"],
+        thought=result["thought"] or "",
         model_name=model_name,
         pending_tool_calls=pending,
     )

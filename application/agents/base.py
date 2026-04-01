@@ -138,17 +138,12 @@ class BaseAgent(ABC):
 
         actions_by_id = {a["call_id"]: a for a in tool_actions}
 
+        # Build a single assistant message containing all tool calls so
+        # the message history matches the format LLM providers expect
+        # (one assistant message with N tool_calls, followed by N tool results).
+        tc_objects: List[Dict[str, Any]] = []
         for pending in pending_tool_calls:
             call_id = pending["call_id"]
-            action = actions_by_id.get(call_id)
-            if not action:
-                action = {
-                    "call_id": call_id,
-                    "decision": "denied",
-                    "comment": "No response provided",
-                }
-
-            # Build the assistant tool-call message in standard format
             args = pending["arguments"]
             args_str = (
                 json.dumps(args) if isinstance(args, dict) else (args or "{}")
@@ -163,11 +158,25 @@ class BaseAgent(ABC):
             }
             if pending.get("thought_signature"):
                 tc_obj["thought_signature"] = pending["thought_signature"]
-            messages.append({
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [tc_obj],
-            })
+            tc_objects.append(tc_obj)
+
+        messages.append({
+            "role": "assistant",
+            "content": None,
+            "tool_calls": tc_objects,
+        })
+
+        # Now process each pending call and append tool result messages
+        for pending in pending_tool_calls:
+            call_id = pending["call_id"]
+            args = pending["arguments"]
+            action = actions_by_id.get(call_id)
+            if not action:
+                action = {
+                    "call_id": call_id,
+                    "decision": "denied",
+                    "comment": "No response provided",
+                }
 
             if action.get("decision") == "approved":
                 # Execute the tool server-side

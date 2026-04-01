@@ -126,33 +126,18 @@ class AnswerResource(Resource, BaseAnswerResource):
 
             stream_result = self.process_response_stream(stream)
 
-            if len(stream_result) == 7:
-                (
-                    conversation_id,
-                    response,
-                    sources,
-                    tool_calls,
-                    thought,
-                    error,
-                    extra_info,
-                ) = stream_result
-            else:
-                conversation_id, response, sources, tool_calls, thought, error = (
-                    stream_result
-                )
-                extra_info = None
-
-            if error:
-                return make_response({"error": error}, 400)
+            if stream_result["error"]:
+                return make_response({"error": stream_result["error"]}, 400)
 
             result = {
-                "conversation_id": conversation_id,
-                "answer": response,
-                "sources": sources,
-                "tool_calls": tool_calls,
-                "thought": thought,
+                "conversation_id": stream_result["conversation_id"],
+                "answer": stream_result["answer"],
+                "sources": stream_result["sources"],
+                "tool_calls": stream_result["tool_calls"],
+                "thought": stream_result["thought"],
             }
 
+            extra_info = stream_result.get("extra")
             if extra_info:
                 result.update(extra_info)
         except Exception as e:

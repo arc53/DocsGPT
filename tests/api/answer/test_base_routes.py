@@ -295,10 +295,8 @@ class TestProcessResponseStreamExtended:
                 f'data: {json.dumps({"type": "end"})}\n\n',
             ]
             result = resource.process_response_stream(iter(stream))
-            assert result[1] == "{}"
-            # Structured output adds extra tuple element
-            assert len(result) == 7
-            assert result[6]["structured"] is True
+            assert result["answer"] == "{}"
+            assert result.get("extra", {}).get("structured") is True
 
     def test_handles_tool_calls_event(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
@@ -312,7 +310,7 @@ class TestProcessResponseStreamExtended:
                 f'data: {json.dumps({"type": "end"})}\n\n',
             ]
             result = resource.process_response_stream(iter(stream))
-            assert result[3] == [{"name": "t1"}]
+            assert result["tool_calls"] == [{"name": "t1"}]
 
     def test_incomplete_stream(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
@@ -323,7 +321,7 @@ class TestProcessResponseStreamExtended:
                 f'data: {json.dumps({"type": "answer", "answer": "partial"})}\n\n',
             ]
             result = resource.process_response_stream(iter(stream))
-            assert result[4] == "Stream ended unexpectedly"
+            assert result["error"] == "Stream ended unexpectedly"
 
     def test_handles_thought_event(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
@@ -335,7 +333,7 @@ class TestProcessResponseStreamExtended:
                 f'data: {json.dumps({"type": "end"})}\n\n',
             ]
             result = resource.process_response_stream(iter(stream))
-            assert result[4] == "thinking..."
+            assert result["thought"] == "thinking..."
 
 
 @pytest.mark.unit

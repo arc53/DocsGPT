@@ -540,8 +540,13 @@ class BaseAnswerResource:
             yield f"data: {data}\n\n"
             return
 
-    def process_response_stream(self, stream):
-        """Process the stream response for non-streaming endpoint"""
+    def process_response_stream(self, stream) -> Dict[str, Any]:
+        """Process the stream response for non-streaming endpoint.
+
+        Returns:
+            Dict with keys: conversation_id, answer, sources, tool_calls,
+            thought, error, and optional extra.
+        """
         conversation_id = ""
         response_full = ""
         source_log_docs = []
@@ -577,7 +582,14 @@ class BaseAnswerResource:
                     thought = event["thought"]
                 elif event["type"] == "error":
                     logger.error(f"Error from stream: {event['error']}")
-                    return None, None, None, None, event["error"], None
+                    return {
+                        "conversation_id": None,
+                        "answer": None,
+                        "sources": None,
+                        "tool_calls": None,
+                        "thought": None,
+                        "error": event["error"],
+                    }
                 elif event["type"] == "end":
                     stream_ended = True
             except (json.JSONDecodeError, KeyError) as e:
@@ -585,30 +597,30 @@ class BaseAnswerResource:
                 continue
         if not stream_ended:
             logger.error("Stream ended unexpectedly without an 'end' event.")
-            return None, None, None, None, "Stream ended unexpectedly", None
+            return {
+                "conversation_id": None,
+                "answer": None,
+                "sources": None,
+                "tool_calls": None,
+                "thought": None,
+                "error": "Stream ended unexpectedly",
+            }
+
+        result: Dict[str, Any] = {
+            "conversation_id": conversation_id,
+            "answer": response_full,
+            "sources": source_log_docs,
+            "tool_calls": tool_calls,
+            "thought": thought,
+            "error": None,
+        }
 
         if pending_tool_calls is not None:
-            return (
-                conversation_id,
-                response_full,
-                source_log_docs,
-                tool_calls,
-                thought,
-                None,
-                {"pending_tool_calls": pending_tool_calls},
-            )
-
-        result = (
-            conversation_id,
-            response_full,
-            source_log_docs,
-            tool_calls,
-            thought,
-            None,
-        )
+            result["extra"] = {"pending_tool_calls": pending_tool_calls}
 
         if is_structured:
-            result = result + ({"structured": True, "schema": schema_info},)
+            result["extra"] = {"structured": True, "schema": schema_info}
+
         return result
 
     def error_stream_generate(self, err_response):

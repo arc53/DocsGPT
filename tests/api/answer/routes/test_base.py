@@ -481,10 +481,10 @@ class TestProcessResponseStream:
 
             result = resource.process_response_stream(iter(stream))
 
-            assert result[0] == conv_id
-            assert result[1] == "Hello world"
-            assert result[2] == [{"title": "doc1"}]
-            assert result[5] is None
+            assert result["conversation_id"] == conv_id
+            assert result["answer"] == "Hello world"
+            assert result["sources"] == [{"title": "doc1"}]
+            assert result["error"] is None
 
     def test_handles_stream_error(self, mock_mongo_db, flask_app):
         import json
@@ -500,10 +500,8 @@ class TestProcessResponseStream:
 
             result = resource.process_response_stream(iter(stream))
 
-            assert len(result) == 6
-            assert result[0] is None
-            assert result[4] == "Test error"
-            assert result[5] is None
+            assert result["conversation_id"] is None
+            assert result["error"] == "Test error"
 
     def test_handles_malformed_stream_data(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource

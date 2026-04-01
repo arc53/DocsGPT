@@ -411,15 +411,23 @@ function translateV1ChunkToInternalEvents(
 
   if (delta.tool_calls) {
     for (const tc of delta.tool_calls) {
+      let parsedArgs: Record<string, any> = {};
+      if (tc.function?.arguments) {
+        try {
+          parsedArgs = JSON.parse(tc.function.arguments);
+        } catch {
+          // Arguments may arrive as fragments during streaming;
+          // keep the raw string so downstream can accumulate it.
+          parsedArgs = { _raw: tc.function.arguments };
+        }
+      }
       events.push({
         type: 'tool_call',
         data: {
           call_id: tc.id,
           action_name: tc.function?.name || '',
           tool_name: tc.function?.name || '',
-          arguments: tc.function?.arguments
-            ? JSON.parse(tc.function.arguments)
-            : {},
+          arguments: parsedArgs,
           status: 'requires_client_execution',
         },
       });
