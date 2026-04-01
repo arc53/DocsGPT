@@ -152,7 +152,7 @@ def chat_completions():
             extra={"error": str(e)},
         )
         return make_response(
-            jsonify({"error": {"message": str(e), "type": "invalid_request"}}),
+            jsonify({"error": {"message": "Failed to process request", "type": "invalid_request"}}),
             400,
         )
     except Exception as e:
