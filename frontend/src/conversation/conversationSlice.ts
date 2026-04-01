@@ -11,6 +11,7 @@ import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
   handleSubmitToolActions,
+  handleV1ChatCompletionStreaming,
 } from './conversationHandlers';
 import {
   Answer,
@@ -28,6 +29,7 @@ const initialState: ConversationState = {
 };
 
 const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
+const USE_V1_API = import.meta.env.VITE_USE_V1_API === 'true';
 
 let abortController: AbortController | null = null;
 export function handleAbort() {
@@ -61,7 +63,102 @@ export const fetchAnswer = createAsyncThunk<
     state.preference.selectedModel?.id;
 
   if (state.preference) {
-    if (API_STREAMING) {
+    const agentKey = state.preference.selectedAgent?.key;
+    if (USE_V1_API && agentKey) {
+      // Build history from prior queries for v1 format
+      const v1History = state.conversation.queries
+        .filter((q) => q.response)
+        .map((q) => ({ prompt: q.prompt, response: q.response || '' }));
+
+      await handleV1ChatCompletionStreaming(
+        question,
+        signal,
+        agentKey,
+        v1History,
+        (event) => {
+          const data = JSON.parse(event.data);
+          const targetIndex = indx ?? state.conversation.queries.length - 1;
+
+          if (currentConversationId === state.conversation.conversationId) {
+            if (data.type === 'end') {
+              dispatch(conversationSlice.actions.setStatus('idle'));
+              getConversations(state.preference.token)
+                .then((fetchedConversations) => {
+                  dispatch(setConversations(fetchedConversations));
+                })
+                .catch((error) => {
+                  console.error('Failed to fetch conversations: ', error);
+                });
+              if (!isSourceUpdated) {
+                dispatch(
+                  updateStreamingSource({
+                    conversationId: currentConversationId,
+                    index: targetIndex,
+                    query: { sources: [] },
+                  }),
+                );
+              }
+            } else if (data.type === 'id') {
+              const currentState = getState() as RootState;
+              if (currentState.conversation.conversationId === null) {
+                dispatch(
+                  updateConversationId({
+                    query: { conversationId: data.id },
+                  }),
+                );
+              }
+            } else if (data.type === 'thought') {
+              dispatch(
+                updateThought({
+                  conversationId: currentConversationId,
+                  index: targetIndex,
+                  query: { thought: data.thought },
+                }),
+              );
+            } else if (data.type === 'source') {
+              isSourceUpdated = true;
+              dispatch(
+                updateStreamingSource({
+                  conversationId: currentConversationId,
+                  index: targetIndex,
+                  query: { sources: data.source ?? [] },
+                }),
+              );
+            } else if (data.type === 'tool_call') {
+              dispatch(
+                updateToolCall({
+                  index: targetIndex,
+                  tool_call: data.data as ToolCallsType,
+                }),
+              );
+            } else if (data.type === 'tool_calls_pending') {
+              dispatch(
+                conversationSlice.actions.setStatus('awaiting_tool_actions'),
+              );
+            } else if (data.type === 'error') {
+              dispatch(conversationSlice.actions.setStatus('failed'));
+              dispatch(
+                conversationSlice.actions.raiseError({
+                  conversationId: currentConversationId,
+                  index: targetIndex,
+                  message: data.error,
+                }),
+              );
+            } else {
+              dispatch(
+                updateStreamingQuery({
+                  conversationId: currentConversationId,
+                  index: targetIndex,
+                  query: { response: data.answer },
+                }),
+              );
+            }
+          }
+        },
+        undefined,
+        attachmentIds.length > 0 ? attachmentIds : undefined,
+      );
+    } else if (API_STREAMING) {
       await handleFetchAnswerSteaming(
         question,
         signal,

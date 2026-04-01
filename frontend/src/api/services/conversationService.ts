@@ -54,6 +54,18 @@ const conversationService = {
     apiClient.get(endpoints.CONVERSATION.DELETE_ALL, token, {}),
   update: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.CONVERSATION.UPDATE, data, token, {}),
+  chatCompletions: (
+    data: any,
+    agentApiKey: string,
+    signal: AbortSignal,
+  ): Promise<any> =>
+    apiClient.post(
+      endpoints.V1.CHAT_COMPLETIONS,
+      data,
+      null,
+      { Authorization: `Bearer ${agentApiKey}` },
+      signal,
+    ),
 };
 
 export default conversationService;
