@@ -890,6 +890,97 @@ function AllSources(sources: AllSourcesProps) {
 }
 export default ConversationBubble;
 
+function ToolCallApprovalBar({
+  toolCall,
+  onToolAction,
+}: {
+  toolCall: ToolCallsType;
+  onToolAction?: (
+    callId: string,
+    decision: 'approved' | 'denied',
+    comment?: string,
+  ) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [comment, setComment] = useState('');
+  const actionLabel = toolCall.action_name.substring(
+    0,
+    toolCall.action_name.lastIndexOf('_'),
+  );
+  const argPreview = JSON.stringify(toolCall.arguments);
+  const truncated =
+    argPreview.length > 60 ? argPreview.slice(0, 57) + '...' : argPreview;
+
+  return (
+    <div className="border-border bg-muted dark:bg-card mb-2 w-full overflow-hidden rounded-2xl border">
+      <div className="flex items-center gap-3 px-4 py-2.5">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="text-sm font-semibold whitespace-nowrap">
+            {toolCall.tool_name}
+          </span>
+          <span className="text-muted-foreground text-xs">{actionLabel}</span>
+          <span
+            className="text-muted-foreground hidden min-w-0 truncate font-mono text-xs md:block"
+            title={argPreview}
+          >
+            {truncated}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            className="bg-primary hover:bg-primary/90 rounded-full px-4 py-1 text-xs font-medium text-white"
+            onClick={() => onToolAction?.(toolCall.call_id, 'approved')}
+          >
+            Approve
+          </button>
+          <button
+            className="hover:bg-accent text-muted-foreground rounded-full border px-4 py-1 text-xs font-medium"
+            onClick={() => {
+              if (expanded && comment) {
+                onToolAction?.(toolCall.call_id, 'denied', comment);
+              } else if (expanded) {
+                onToolAction?.(toolCall.call_id, 'denied');
+              } else {
+                setExpanded(true);
+              }
+            }}
+          >
+            Deny
+          </button>
+          <button
+            className="text-muted-foreground hover:text-foreground flex h-6 w-6 items-center justify-center rounded-full transition-colors"
+            onClick={() => setExpanded(!expanded)}
+            title="Details"
+          >
+            <img
+              src={ChevronDown}
+              alt="expand"
+              className={`h-3.5 w-3.5 transition-transform duration-200 dark:invert ${expanded ? 'rotate-180' : ''}`}
+            />
+          </button>
+        </div>
+      </div>
+      {expanded && (
+        <div className="border-border border-t px-4 py-3">
+          <p className="text-muted-foreground mb-1 text-xs font-medium">
+            Arguments
+          </p>
+          <pre className="bg-background dark:bg-background/50 mb-2 max-h-40 overflow-auto rounded-lg p-2 font-mono text-xs">
+            {JSON.stringify(toolCall.arguments, null, 2)}
+          </pre>
+          <input
+            type="text"
+            placeholder="Optional reason for denying..."
+            className="border-border bg-background w-full rounded-lg border px-3 py-1.5 text-sm"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolCalls({
   toolCalls,
   onToolAction,
@@ -902,169 +993,144 @@ function ToolCalls({
   ) => void;
 }) {
   const [isToolCallsOpen, setIsToolCallsOpen] = useState(false);
-  const [denyComments, setDenyComments] = useState<Record<string, string>>({});
 
-  const hasAwaitingApproval = toolCalls.some(
+  const awaitingCalls = toolCalls.filter(
     (tc) => tc.status === 'awaiting_approval',
+  );
+  const resolvedCalls = toolCalls.filter(
+    (tc) => tc.status !== 'awaiting_approval',
   );
 
   return (
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-      <div className="my-2 flex flex-row items-center justify-center gap-3">
-        <Avatar
-          className="h-[26px] w-[30px] text-xl"
-          avatar={
-            <img
-              src={Sources}
-              alt={'ToolCalls'}
-              className="h-full w-full object-fill"
+      {/* Approval bars — always visible, compact inline */}
+      {awaitingCalls.length > 0 && (
+        <div className="fade-in mt-4 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
+          {awaitingCalls.map((tc) => (
+            <ToolCallApprovalBar
+              key={`approval-${tc.call_id}`}
+              toolCall={tc}
+              onToolAction={onToolAction}
             />
-          }
-        />
-        <button
-          className="flex flex-row items-center gap-2"
-          onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}
-        >
-          <p className="text-base font-semibold">
-            Tool Calls
-            {hasAwaitingApproval && (
-              <span className="ml-2 text-xs font-normal text-yellow-600 dark:text-yellow-400">
-                (approval needed)
-              </span>
-            )}
-          </p>
-          <img
-            src={ChevronDown}
-            alt="ChevronDown"
-            className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen || hasAwaitingApproval ? 'rotate-180' : ''}`}
-          />
-        </button>
-      </div>
-      {(isToolCallsOpen || hasAwaitingApproval) && (
-        <div className="fade-in mr-5 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
-          <div className="grid grid-cols-1 gap-2">
-            {toolCalls.map((toolCall, index) => (
-              <Accordion
-                key={`tool-call-${index}`}
-                title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
-                className="bg-muted dark:bg-answer-bubble w-full rounded-4xl"
-                titleClassName="px-6 py-2 text-sm font-semibold"
-                open={toolCall.status === 'awaiting_approval'}
-              >
-                <div className="flex flex-col gap-1">
-                  <div className="border-border flex flex-col rounded-2xl border">
-                    <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
-                      <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                        Arguments
-                      </span>{' '}
-                      <CopyButton
-                        textToCopy={JSON.stringify(toolCall.arguments, null, 2)}
-                      />
-                    </p>
-                    <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                      <span
-                        className="dark:text-muted-foreground leading-[23px] text-black"
-                        style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                      >
-                        {JSON.stringify(toolCall.arguments, null, 2)}
-                      </span>
-                    </p>
-                  </div>
-                  <div className="border-border flex flex-col rounded-2xl border">
-                    <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
-                      <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                        Response
-                      </span>{' '}
-                      <CopyButton
-                        textToCopy={
-                          toolCall.status === 'error'
-                            ? toolCall.error || 'Unknown error'
-                            : JSON.stringify(toolCall.result, null, 2)
-                        }
-                      />
-                    </p>
-                    {toolCall.status === 'pending' && (
-                      <span className="dark:bg-card flex w-full items-center justify-center rounded-b-2xl p-2">
-                        <Spinner size="small" />
-                      </span>
-                    )}
-                    {toolCall.status === 'completed' && (
-                      <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                        <span
-                          className="dark:text-muted-foreground leading-[23px] text-black"
-                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                        >
-                          {JSON.stringify(toolCall.result, null, 2)}
-                        </span>
-                      </p>
-                    )}
-                    {toolCall.status === 'error' && (
-                      <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                        <span
-                          className="leading-[23px] text-red-500 dark:text-red-400"
-                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                        >
-                          {toolCall.error}
-                        </span>
-                      </p>
-                    )}
-                    {toolCall.status === 'awaiting_approval' && (
-                      <div className="dark:bg-card flex flex-col gap-2 rounded-b-2xl p-3">
-                        <p className="text-sm text-yellow-600 dark:text-yellow-400">
-                          This tool requires your approval before executing.
-                        </p>
-                        <input
-                          type="text"
-                          placeholder="Optional comment (for deny)..."
-                          className="border-border bg-background w-full rounded-lg border px-3 py-1.5 text-sm"
-                          value={denyComments[toolCall.call_id] || ''}
-                          onChange={(e) =>
-                            setDenyComments((prev) => ({
-                              ...prev,
-                              [toolCall.call_id]: e.target.value,
-                            }))
-                          }
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            className="rounded-lg bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700"
-                            onClick={() =>
-                              onToolAction?.(toolCall.call_id, 'approved')
-                            }
-                          >
-                            Approve
-                          </button>
-                          <button
-                            className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-red-700"
-                            onClick={() =>
-                              onToolAction?.(
-                                toolCall.call_id,
-                                'denied',
-                                denyComments[toolCall.call_id],
-                              )
-                            }
-                          >
-                            Deny
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    {toolCall.status === 'denied' && (
-                      <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                        <span
-                          className="leading-[23px] text-orange-500 dark:text-orange-400"
-                          style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                        >
-                          Denied by user
-                        </span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </Accordion>
-            ))}
-          </div>
+          ))}
         </div>
+      )}
+
+      {/* Regular tool calls accordion */}
+      {resolvedCalls.length > 0 && (
+        <>
+          <div className="my-2 flex flex-row items-center justify-center gap-3">
+            <Avatar
+              className="h-[26px] w-[30px] text-xl"
+              avatar={
+                <img
+                  src={Sources}
+                  alt={'ToolCalls'}
+                  className="h-full w-full object-fill"
+                />
+              }
+            />
+            <button
+              className="flex flex-row items-center gap-2"
+              onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}
+            >
+              <p className="text-base font-semibold">Tool Calls</p>
+              <img
+                src={ChevronDown}
+                alt="ChevronDown"
+                className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+          </div>
+          {isToolCallsOpen && (
+            <div className="fade-in mr-5 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
+              <div className="grid grid-cols-1 gap-2">
+                {resolvedCalls.map((toolCall, index) => (
+                  <Accordion
+                    key={`tool-call-${index}`}
+                    title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
+                    className="bg-muted dark:bg-answer-bubble w-full rounded-4xl"
+                    titleClassName="px-6 py-2 text-sm font-semibold"
+                  >
+                    <div className="flex flex-col gap-1">
+                      <div className="border-border flex flex-col rounded-2xl border">
+                        <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
+                          <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                            Arguments
+                          </span>{' '}
+                          <CopyButton
+                            textToCopy={JSON.stringify(
+                              toolCall.arguments,
+                              null,
+                              2,
+                            )}
+                          />
+                        </p>
+                        <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                          <span
+                            className="dark:text-muted-foreground leading-[23px] text-black"
+                            style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                          >
+                            {JSON.stringify(toolCall.arguments, null, 2)}
+                          </span>
+                        </p>
+                      </div>
+                      <div className="border-border flex flex-col rounded-2xl border">
+                        <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
+                          <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                            Response
+                          </span>{' '}
+                          <CopyButton
+                            textToCopy={
+                              toolCall.status === 'error'
+                                ? toolCall.error || 'Unknown error'
+                                : JSON.stringify(toolCall.result, null, 2)
+                            }
+                          />
+                        </p>
+                        {toolCall.status === 'pending' && (
+                          <span className="dark:bg-card flex w-full items-center justify-center rounded-b-2xl p-2">
+                            <Spinner size="small" />
+                          </span>
+                        )}
+                        {toolCall.status === 'completed' && (
+                          <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                            <span
+                              className="dark:text-muted-foreground leading-[23px] text-black"
+                              style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                            >
+                              {JSON.stringify(toolCall.result, null, 2)}
+                            </span>
+                          </p>
+                        )}
+                        {toolCall.status === 'error' && (
+                          <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                            <span
+                              className="text-destructive leading-[23px]"
+                              style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                            >
+                              {toolCall.error}
+                            </span>
+                          </p>
+                        )}
+                        {toolCall.status === 'denied' && (
+                          <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                            <span
+                              className="text-muted-foreground leading-[23px]"
+                              style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                            >
+                              Denied by user
+                            </span>
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </Accordion>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

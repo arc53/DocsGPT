@@ -90,7 +90,7 @@ class ToolExecutor:
 
         Args:
             tools_dict: The mutable server tools dict (will be modified in place).
-            client_tools: List of tool definitions in OpenAI function-calling format.
+            client_tools: List of tool definitions in function-calling format.
 
         Returns:
             The updated *tools_dict* (same reference, for convenience).
@@ -138,7 +138,7 @@ class ToolExecutor:
                 if not action.get("active", True):
                     continue
 
-                # Client-side tools already have parameters in OpenAI format
+                # Client-side tools already have parameters in standard format
                 if is_client:
                     params = action.get("parameters", {})
                 else:
@@ -185,7 +185,7 @@ class ToolExecutor:
 
         tool_data = tools_dict[tool_id]
 
-        # Phase 2: client-side tools
+        # Client-side tools
         if tool_data.get("client_side"):
             return {
                 "call_id": call_id,
@@ -198,7 +198,7 @@ class ToolExecutor:
                 "thought_signature": getattr(call, "thought_signature", None),
             }
 
-        # Phase 3: approval required
+        # Approval required
         if tool_data["name"] == "api_tool":
             action_data = tool_data.get("config", {}).get("actions", {}).get(
                 action_name, {}

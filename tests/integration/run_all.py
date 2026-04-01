@@ -50,6 +50,7 @@ from tests.integration.test_analytics import AnalyticsTests
 from tests.integration.test_connectors import ConnectorTests
 from tests.integration.test_mcp import MCPTests
 from tests.integration.test_misc import MiscTests
+from tests.integration.test_v1_api import V1ApiTests
 
 
 # Module registry
@@ -64,6 +65,7 @@ MODULES = {
     "connectors": ConnectorTests,
     "mcp": MCPTests,
     "misc": MiscTests,
+    "v1_api": V1ApiTests,
 }
 
 

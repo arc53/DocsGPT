@@ -294,36 +294,80 @@ class BaseAnswerResource:
             # ---- Paused: save continuation state and end stream early ----
             if paused:
                 continuation = getattr(agent, "_pending_continuation", None)
-                if continuation and conversation_id:
-                    try:
-                        cont_service = ContinuationService()
-                        cont_service.save_state(
-                            conversation_id=str(conversation_id),
-                            user=decoded_token.get("sub", "local"),
-                            messages=continuation["messages"],
-                            pending_tool_calls=continuation["pending_tool_calls"],
-                            tools_dict=continuation["tools_dict"],
-                            tool_schemas=getattr(agent, "tools", []),
-                            agent_config={
-                                "model_id": model_id or self.default_model_id,
-                                "llm_name": getattr(agent, "llm_name", settings.LLM_PROVIDER),
-                                "api_key": getattr(agent, "api_key", None),
-                                "user_api_key": user_api_key,
-                                "agent_id": agent_id,
-                                "agent_type": agent.__class__.__name__,
-                                "prompt": getattr(agent, "prompt", ""),
-                                "json_schema": getattr(agent, "json_schema", None),
-                                "retriever_config": getattr(agent, "retriever_config", None),
-                            },
-                            client_tools=getattr(
-                                agent.tool_executor, "client_tools", None
-                            ),
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Failed to save continuation state: {str(e)}",
-                            exc_info=True,
-                        )
+                if continuation:
+                    # Ensure we have a conversation_id — create a partial
+                    # conversation if this is the first turn.
+                    if not conversation_id and should_save_conversation:
+                        try:
+                            provider = (
+                                get_provider_from_model_id(model_id)
+                                if model_id
+                                else settings.LLM_PROVIDER
+                            )
+                            sys_api_key = get_api_key_for_provider(
+                                provider or settings.LLM_PROVIDER
+                            )
+                            llm = LLMCreator.create_llm(
+                                provider or settings.LLM_PROVIDER,
+                                api_key=sys_api_key,
+                                user_api_key=user_api_key,
+                                decoded_token=decoded_token,
+                                model_id=model_id,
+                                agent_id=agent_id,
+                            )
+                            conversation_id = (
+                                self.conversation_service.save_conversation(
+                                    None,
+                                    question,
+                                    response_full,
+                                    thought,
+                                    source_log_docs,
+                                    tool_calls,
+                                    llm,
+                                    model_id or self.default_model_id,
+                                    decoded_token,
+                                    api_key=user_api_key,
+                                    agent_id=agent_id,
+                                    is_shared_usage=is_shared_usage,
+                                    shared_token=shared_token,
+                                )
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to create conversation for continuation: {e}",
+                                exc_info=True,
+                            )
+
+                    if conversation_id:
+                        try:
+                            cont_service = ContinuationService()
+                            cont_service.save_state(
+                                conversation_id=str(conversation_id),
+                                user=decoded_token.get("sub", "local"),
+                                messages=continuation["messages"],
+                                pending_tool_calls=continuation["pending_tool_calls"],
+                                tools_dict=continuation["tools_dict"],
+                                tool_schemas=getattr(agent, "tools", []),
+                                agent_config={
+                                    "model_id": model_id or self.default_model_id,
+                                    "llm_name": getattr(agent, "llm_name", settings.LLM_PROVIDER),
+                                    "api_key": getattr(agent, "api_key", None),
+                                    "user_api_key": user_api_key,
+                                    "agent_id": agent_id,
+                                    "agent_type": agent.__class__.__name__,
+                                    "prompt": getattr(agent, "prompt", ""),
+                                    "json_schema": getattr(agent, "json_schema", None),
+                                    "retriever_config": getattr(agent, "retriever_config", None),
+                                },
+                                client_tools=getattr(
+                                    agent.tool_executor, "client_tools", None
+                                ),
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to save continuation state: {str(e)}",
+                                exc_info=True,
+                            )
 
                 id_data = {"type": "id", "id": str(conversation_id)}
                 data = json.dumps(id_data)

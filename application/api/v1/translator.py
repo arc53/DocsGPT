@@ -145,7 +145,7 @@ def translate_request(
         "save_conversation": True,
     }
 
-    # Client tools (Phase 2)
+    # Client tools
     if data.get("tools"):
         result["client_tools"] = data["tools"]
 

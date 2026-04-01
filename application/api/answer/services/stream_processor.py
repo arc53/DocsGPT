@@ -956,7 +956,7 @@ class StreamProcessor:
             decoded_token=self.decoded_token,
         )
         tool_executor.conversation_id = self.conversation_id
-        # Pass client-side tools (Phase 2) so they get merged in get_tools()
+        # Pass client-side tools so they get merged in get_tools()
         client_tools = self.data.get("client_tools")
         if client_tools:
             tool_executor.client_tools = client_tools

@@ -75,7 +75,7 @@ class ContinuationService:
             tools_dict: Serializable tools configuration dict.
             tool_schemas: LLM-formatted tool schemas (agent.tools).
             agent_config: Config needed to recreate the agent on resume.
-            client_tools: Client-provided tool schemas (Phase 2).
+            client_tools: Client-provided tool schemas for client-side execution.
 
         Returns:
             The string ID of the saved state document.
