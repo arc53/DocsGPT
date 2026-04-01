@@ -1,7 +1,5 @@
 import logging
 
-from tavily import TavilyClient
-
 from application.agents.tools.base import Tool
 
 logger = logging.getLogger(__name__)
@@ -16,7 +14,11 @@ class TavilySearchTool(Tool):
 
     def __init__(self, config):
         self.config = config
-        self.client = TavilyClient(api_key=config.get("token", ""))
+
+    def _get_tavily_client(self):
+        from tavily import TavilyClient
+
+        return TavilyClient(api_key=self.config.get("token", ""))
 
     def execute_action(self, action_name, **kwargs):
         actions = {
@@ -35,7 +37,6 @@ class TavilySearchTool(Tool):
         search_depth="advanced",
         topic="general",
         max_results=10,
-        search_lang="en",
         time_range=None,
     ):
         """
@@ -54,7 +55,8 @@ class TavilySearchTool(Tool):
             if time_range:
                 params["time_range"] = time_range
 
-            response = self.client.search(**params)
+            client = self._get_tavily_client()
+            response = client.search(**params)
 
             return {
                 "status_code": 200,
@@ -81,7 +83,8 @@ class TavilySearchTool(Tool):
         logger.debug("Performing Tavily image search for: %s", query)
 
         try:
-            response = self.client.search(
+            client = self._get_tavily_client()
+            response = client.search(
                 query=query,
                 search_depth=search_depth,
                 topic=topic,
@@ -115,7 +118,7 @@ class TavilySearchTool(Tool):
                         },
                         "search_depth": {
                             "type": "string",
-                            "description": "Search depth: 'basic' or 'advanced' (default: advanced)",
+                            "description": "Search depth: 'ultra-fast', 'fast', 'basic', or 'advanced' (default: advanced). 'basic' uses 1 credit; 'advanced' uses 2 credits.",
                         },
                         "time_range": {
                             "type": "string",
