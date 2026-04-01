@@ -11,6 +11,7 @@ rapidocr>=1.4.0
 onnxruntime>=1.19.0
 docx2txt==0.9
 ddgs>=8.0.0
+tavily-python>=0.5.0
 ebooklib==0.20
 elevenlabs==2.40.0
 Flask==3.1.3
