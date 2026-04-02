@@ -22,6 +22,7 @@ from application.core.model_utils import (
 )
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
+from application.retriever.rag_prompt_docs import build_numbered_docs_together
 from application.retriever.retriever_creator import RetrieverCreator
 from application.utils import (
     calculate_doc_token_budget,
@@ -541,15 +542,7 @@ class StreamProcessor:
                 return None, None
             self.retrieved_docs = docs
 
-            docs_with_filenames = []
-            for doc in docs:
-                filename = doc.get("filename") or doc.get("title") or doc.get("source")
-                if filename:
-                    chunk_header = str(filename)
-                    docs_with_filenames.append(f"{chunk_header}\n{doc['text']}")
-                else:
-                    docs_with_filenames.append(doc["text"])
-            docs_together = "\n\n".join(docs_with_filenames)
+            docs_together = build_numbered_docs_together(docs)
 
             logger.info(f"Pre-fetch docs_together size: {len(docs_together)} chars")
 

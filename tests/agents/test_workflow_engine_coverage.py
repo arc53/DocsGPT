@@ -504,7 +504,8 @@ class TestGetSourceTemplateData:
         agent.retrieved_docs = [{"text": "content only"}]
         engine = WorkflowEngine(graph, agent)
         docs, together = engine._get_source_template_data()
-        assert together == "content only"
+        assert together is not None
+        assert "content only" in together
 
     @pytest.mark.unit
     def test_skips_non_dict_docs(self):
@@ -513,7 +514,8 @@ class TestGetSourceTemplateData:
         agent.retrieved_docs = ["not a dict", {"text": "ok"}]
         engine = WorkflowEngine(graph, agent)
         docs, together = engine._get_source_template_data()
-        assert together == "ok"
+        assert together is not None
+        assert "ok" in together
 
     @pytest.mark.unit
     def test_skips_non_string_text(self):

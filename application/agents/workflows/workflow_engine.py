@@ -20,6 +20,7 @@ from application.core.json_schema_utils import (
     normalize_json_schema_payload,
 )
 from application.error import sanitize_api_error
+from application.retriever.rag_prompt_docs import build_numbered_docs_together
 from application.templates.namespaces import NamespaceManager
 from application.templates.template_engine import TemplateEngine, TemplateRenderError
 
@@ -438,21 +439,8 @@ class WorkflowEngine:
         if not isinstance(docs, list) or len(docs) == 0:
             return None, None
 
-        docs_together_parts: List[str] = []
-        for doc in docs:
-            if not isinstance(doc, dict):
-                continue
-            text = doc.get("text")
-            if not isinstance(text, str):
-                continue
-
-            filename = doc.get("filename") or doc.get("title") or doc.get("source")
-            if isinstance(filename, str) and filename.strip():
-                docs_together_parts.append(f"{filename}\n{text}")
-            else:
-                docs_together_parts.append(text)
-
-        docs_together = "\n\n".join(docs_together_parts) if docs_together_parts else None
+        dict_docs = [d for d in docs if isinstance(d, dict)]
+        docs_together = build_numbered_docs_together(dict_docs)
         return docs, docs_together
 
     def get_execution_summary(self) -> List[NodeExecutionLog]:
