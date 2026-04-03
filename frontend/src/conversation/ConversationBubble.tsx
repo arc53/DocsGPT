@@ -928,13 +928,23 @@ function ToolCallApprovalBar({
         </div>
         <div className="flex items-center gap-2">
           <button
-            className="bg-primary hover:bg-primary/90 rounded-full px-4 py-1 text-xs font-medium text-white"
-            onClick={() => onToolAction?.(toolCall.call_id, 'approved')}
+            className={`rounded-full px-4 py-1 text-xs font-medium transition-colors ${
+              comment
+                ? 'bg-muted text-muted-foreground cursor-default opacity-50'
+                : 'bg-primary hover:bg-primary/90 text-white'
+            }`}
+            onClick={() => {
+              if (!comment) onToolAction?.(toolCall.call_id, 'approved');
+            }}
           >
             Approve
           </button>
           <button
-            className="hover:bg-accent text-muted-foreground rounded-full border px-4 py-1 text-xs font-medium"
+            className={`rounded-full border px-4 py-1 text-xs font-medium transition-colors ${
+              comment
+                ? 'border-destructive bg-destructive/10 text-destructive font-semibold'
+                : 'hover:bg-accent text-muted-foreground'
+            }`}
             onClick={() => {
               if (expanded && comment) {
                 onToolAction?.(toolCall.call_id, 'denied', comment);
@@ -974,6 +984,11 @@ function ToolCallApprovalBar({
             className="border-border bg-background w-full rounded-lg border px-3 py-1.5 text-sm"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && comment) {
+                onToolAction?.(toolCall.call_id, 'denied', comment);
+              }
+            }}
           />
         </div>
       )}
