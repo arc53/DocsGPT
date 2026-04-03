@@ -1,6 +1,7 @@
 import logging
 import uuid
-from typing import Dict, List, Optional
+from collections import Counter
+from typing import Dict, List, Optional, Tuple
 
 from bson.objectid import ObjectId
 
@@ -31,12 +32,23 @@ class ToolExecutor:
         self.tool_calls: List[Dict] = []
         self._loaded_tools: Dict[str, object] = {}
         self.conversation_id: Optional[str] = None
+        self.client_tools: Optional[List[Dict]] = None
+        self._name_to_tool: Dict[str, Tuple[str, str]] = {}
+        self._tool_to_name: Dict[Tuple[str, str], str] = {}
 
     def get_tools(self) -> Dict[str, Dict]:
-        """Load tool configs from DB based on user context."""
+        """Load tool configs from DB based on user context.
+
+        If *client_tools* have been set on this executor, they are
+        automatically merged into the returned dict.
+        """
         if self.user_api_key:
-            return self._get_tools_by_api_key(self.user_api_key)
-        return self._get_user_tools(self.user or "local")
+            tools = self._get_tools_by_api_key(self.user_api_key)
+        else:
+            tools = self._get_user_tools(self.user or "local")
+        if self.client_tools:
+            self.merge_client_tools(tools, self.client_tools)
+        return tools
 
     def _get_tools_by_api_key(self, api_key: str) -> Dict[str, Dict]:
         mongo = MongoDB.get_client()
@@ -65,29 +77,123 @@ class ToolExecutor:
         user_tools = list(user_tools)
         return {str(i): tool for i, tool in enumerate(user_tools)}
 
-    def prepare_tools_for_llm(self, tools_dict: Dict) -> List[Dict]:
-        """Convert tool configs to LLM function schemas."""
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": f"{action['name']}_{tool_id}",
-                    "description": action["description"],
-                    "parameters": self._build_tool_parameters(action),
-                },
+    def merge_client_tools(
+        self, tools_dict: Dict, client_tools: List[Dict]
+    ) -> Dict:
+        """Merge client-provided tool definitions into tools_dict.
+
+        Client tools use the standard function-calling format::
+
+            [{"type": "function", "function": {"name": "get_weather",
+              "description": "...", "parameters": {...}}}]
+
+        They are stored in *tools_dict* with ``client_side: True`` so that
+        :meth:`check_pause` returns a pause signal instead of trying to
+        execute them server-side.
+
+        Args:
+            tools_dict: The mutable server tools dict (will be modified in place).
+            client_tools: List of tool definitions in function-calling format.
+
+        Returns:
+            The updated *tools_dict* (same reference, for convenience).
+        """
+        for i, ct in enumerate(client_tools):
+            func = ct.get("function", ct)  # tolerate bare {"name":..} too
+            name = func.get("name", f"clienttool{i}")
+            tool_id = f"ct{i}"
+
+            tools_dict[tool_id] = {
+                "name": name,
+                "client_side": True,
+                "actions": [
+                    {
+                        "name": name,
+                        "description": func.get("description", ""),
+                        "active": True,
+                        "parameters": func.get("parameters", {}),
+                    }
+                ],
             }
-            for tool_id, tool in tools_dict.items()
-            if (
-                (tool["name"] == "api_tool" and "actions" in tool.get("config", {}))
-                or (tool["name"] != "api_tool" and "actions" in tool)
-            )
-            for action in (
+        return tools_dict
+
+    def prepare_tools_for_llm(self, tools_dict: Dict) -> List[Dict]:
+        """Convert tool configs to LLM function schemas.
+
+        Action names are kept clean for the LLM:
+        - Unique action names appear as-is (e.g. ``get_weather``).
+        - Duplicate action names get numbered suffixes (e.g. ``search_1``,
+          ``search_2``).
+
+        A reverse mapping is stored in ``_name_to_tool`` so that tool calls
+        can be routed back to the correct ``(tool_id, action_name)`` without
+        brittle string splitting.
+        """
+        # Pass 1: collect entries and count action name occurrences
+        entries: List[Tuple[str, str, Dict, bool]] = []  # (tool_id, action_name, action, is_client)
+        name_counts: Counter = Counter()
+
+        for tool_id, tool in tools_dict.items():
+            is_api = tool["name"] == "api_tool"
+            is_client = tool.get("client_side", False)
+
+            if is_api and "actions" not in tool.get("config", {}):
+                continue
+            if not is_api and "actions" not in tool:
+                continue
+
+            actions = (
                 tool["config"]["actions"].values()
-                if tool["name"] == "api_tool"
+                if is_api
                 else tool["actions"]
             )
-            if action.get("active", True)
-        ]
+
+            for action in actions:
+                if not action.get("active", True):
+                    continue
+                entries.append((tool_id, action["name"], action, is_client))
+                name_counts[action["name"]] += 1
+
+        # Pass 2: assign LLM-visible names and build mappings
+        self._name_to_tool = {}
+        self._tool_to_name = {}
+        collision_counters: Dict[str, int] = {}
+        all_llm_names: set = set()
+
+        result = []
+        for tool_id, action_name, action, is_client in entries:
+            if name_counts[action_name] == 1:
+                llm_name = action_name
+            else:
+                counter = collision_counters.get(action_name, 1)
+                candidate = f"{action_name}_{counter}"
+                # Skip if candidate collides with a unique action name
+                while candidate in all_llm_names or (
+                    candidate in name_counts and name_counts[candidate] == 1
+                ):
+                    counter += 1
+                    candidate = f"{action_name}_{counter}"
+                collision_counters[action_name] = counter + 1
+                llm_name = candidate
+
+            all_llm_names.add(llm_name)
+            self._name_to_tool[llm_name] = (tool_id, action_name)
+            self._tool_to_name[(tool_id, action_name)] = llm_name
+
+            if is_client:
+                params = action.get("parameters", {})
+            else:
+                params = self._build_tool_parameters(action)
+
+            result.append({
+                "type": "function",
+                "function": {
+                    "name": llm_name,
+                    "description": action.get("description", ""),
+                    "parameters": params,
+                },
+            })
+        return result
 
     def _build_tool_parameters(self, action: Dict) -> Dict:
         params = {"type": "object", "properties": {}, "required": []}
@@ -104,23 +210,81 @@ class ToolExecutor:
                             params["required"].append(k)
         return params
 
+    def check_pause(
+        self, tools_dict: Dict, call, llm_class_name: str
+    ) -> Optional[Dict]:
+        """Check if a tool call requires pausing for approval or client execution.
+
+        Returns a dict describing the pending action if pause is needed, None otherwise.
+        """
+        parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
+        tool_id, action_name, call_args = parser.parse_args(call)
+        call_id = getattr(call, "id", None) or str(uuid.uuid4())
+        llm_name = getattr(call, "name", "")
+
+        if tool_id is None or action_name is None or tool_id not in tools_dict:
+            return None  # Will be handled as error by execute()
+
+        tool_data = tools_dict[tool_id]
+
+        # Client-side tools
+        if tool_data.get("client_side"):
+            return {
+                "call_id": call_id,
+                "name": llm_name,
+                "tool_name": tool_data.get("name", "unknown"),
+                "tool_id": tool_id,
+                "action_name": action_name,
+                "llm_name": llm_name,
+                "arguments": call_args if isinstance(call_args, dict) else {},
+                "pause_type": "requires_client_execution",
+                "thought_signature": getattr(call, "thought_signature", None),
+            }
+
+        # Approval required
+        if tool_data["name"] == "api_tool":
+            action_data = tool_data.get("config", {}).get("actions", {}).get(
+                action_name, {}
+            )
+        else:
+            action_data = next(
+                (a for a in tool_data.get("actions", []) if a["name"] == action_name),
+                {},
+            )
+
+        if action_data.get("require_approval"):
+            return {
+                "call_id": call_id,
+                "name": llm_name,
+                "tool_name": tool_data.get("name", "unknown"),
+                "tool_id": tool_id,
+                "action_name": action_name,
+                "llm_name": llm_name,
+                "arguments": call_args if isinstance(call_args, dict) else {},
+                "pause_type": "awaiting_approval",
+                "thought_signature": getattr(call, "thought_signature", None),
+            }
+
+        return None
+
     def execute(self, tools_dict: Dict, call, llm_class_name: str):
         """Execute a tool call. Yields status events, returns (result, call_id)."""
-        parser = ToolActionParser(llm_class_name)
+        parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
         tool_id, action_name, call_args = parser.parse_args(call)
+        llm_name = getattr(call, "name", "unknown")
 
         call_id = getattr(call, "id", None) or str(uuid.uuid4())
 
         if tool_id is None or action_name is None:
-            error_message = f"Error: Failed to parse LLM tool call. Tool name: {getattr(call, 'name', 'unknown')}"
+            error_message = f"Error: Failed to parse LLM tool call. Tool name: {llm_name}"
             logger.error(error_message)
 
             tool_call_data = {
                 "tool_name": "unknown",
                 "call_id": call_id,
-                "action_name": getattr(call, "name", "unknown"),
+                "action_name": llm_name,
                 "arguments": call_args or {},
-                "result": f"Failed to parse tool call. Invalid tool name format: {getattr(call, 'name', 'unknown')}",
+                "result": f"Failed to parse tool call. Invalid tool name format: {llm_name}",
             }
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
@@ -133,7 +297,7 @@ class ToolExecutor:
             tool_call_data = {
                 "tool_name": "unknown",
                 "call_id": call_id,
-                "action_name": f"{action_name}_{tool_id}",
+                "action_name": llm_name,
                 "arguments": call_args,
                 "result": f"Tool with ID {tool_id} not found. Available tools: {list(tools_dict.keys())}",
             }
@@ -144,7 +308,7 @@ class ToolExecutor:
         tool_call_data = {
             "tool_name": tools_dict[tool_id]["name"],
             "call_id": call_id,
-            "action_name": f"{action_name}_{tool_id}",
+            "action_name": llm_name,
             "arguments": call_args,
         }
         yield {"type": "tool_call", "data": {**tool_call_data, "status": "pending"}}

@@ -36,6 +36,8 @@ class ThinkTool(Tool):
     The reasoning content is captured in tool_call data for transparency.
     """
 
+    internal = True
+
     def __init__(self, config=None):
         pass
 

@@ -6,6 +6,7 @@ from typing import Any, Dict, Generator, List, Optional
 from flask import jsonify, make_response, Response
 from flask_restx import Namespace
 
+from application.api.answer.services.continuation_service import ContinuationService
 from application.api.answer.services.conversation_service import ConversationService
 from application.core.model_utils import (
     get_api_key_for_provider,
@@ -39,7 +40,16 @@ class BaseAnswerResource:
     def validate_request(
         self, data: Dict[str, Any], require_conversation_id: bool = False
     ) -> Optional[Response]:
-        """Common request validation"""
+        """Common request validation.
+
+        Continuation requests (``tool_actions`` present) require
+        ``conversation_id`` but not ``question``.
+        """
+        if data.get("tool_actions"):
+            # Continuation mode — question is not required
+            if missing := check_required_fields(data, ["conversation_id"]):
+                return missing
+            return None
         required_fields = ["question"]
         if require_conversation_id:
             required_fields.append("conversation_id")
@@ -177,6 +187,7 @@ class BaseAnswerResource:
         is_shared_usage: bool = False,
         shared_token: Optional[str] = None,
         model_id: Optional[str] = None,
+        _continuation: Optional[Dict] = None,
     ) -> Generator[str, None, None]:
         """
         Generator function that streams the complete conversation response.
@@ -207,8 +218,19 @@ class BaseAnswerResource:
             schema_info = None
             structured_chunks = []
             query_metadata = {}
+            paused = False
 
-            for line in agent.gen(query=question):
+            if _continuation:
+                gen_iter = agent.gen_continuation(
+                    messages=_continuation["messages"],
+                    tools_dict=_continuation["tools_dict"],
+                    pending_tool_calls=_continuation["pending_tool_calls"],
+                    tool_actions=_continuation["tool_actions"],
+                )
+            else:
+                gen_iter = agent.gen(query=question)
+
+            for line in gen_iter:
                 if "metadata" in line:
                     query_metadata.update(line["metadata"])
                 elif "answer" in line:
@@ -244,15 +266,21 @@ class BaseAnswerResource:
                     data = json.dumps({"type": "thought", "thought": line["thought"]})
                     yield f"data: {data}\n\n"
                 elif "type" in line:
-                    if line.get("type") == "error":
+                    if line.get("type") == "tool_calls_pending":
+                        # Save continuation state and end the stream
+                        paused = True
+                        data = json.dumps(line)
+                        yield f"data: {data}\n\n"
+                    elif line.get("type") == "error":
                         sanitized_error = {
                             "type": "error",
                             "error": sanitize_api_error(line.get("error", "An error occurred"))
                         }
                         data = json.dumps(sanitized_error)
+                        yield f"data: {data}\n\n"
                     else:
                         data = json.dumps(line)
-                    yield f"data: {data}\n\n"
+                        yield f"data: {data}\n\n"
             if is_structured and structured_chunks:
                 structured_data = {
                     "type": "structured_answer",
@@ -262,6 +290,93 @@ class BaseAnswerResource:
                 }
                 data = json.dumps(structured_data)
                 yield f"data: {data}\n\n"
+
+            # ---- Paused: save continuation state and end stream early ----
+            if paused:
+                continuation = getattr(agent, "_pending_continuation", None)
+                if continuation:
+                    # Ensure we have a conversation_id — create a partial
+                    # conversation if this is the first turn.
+                    if not conversation_id and should_save_conversation:
+                        try:
+                            provider = (
+                                get_provider_from_model_id(model_id)
+                                if model_id
+                                else settings.LLM_PROVIDER
+                            )
+                            sys_api_key = get_api_key_for_provider(
+                                provider or settings.LLM_PROVIDER
+                            )
+                            llm = LLMCreator.create_llm(
+                                provider or settings.LLM_PROVIDER,
+                                api_key=sys_api_key,
+                                user_api_key=user_api_key,
+                                decoded_token=decoded_token,
+                                model_id=model_id,
+                                agent_id=agent_id,
+                            )
+                            conversation_id = (
+                                self.conversation_service.save_conversation(
+                                    None,
+                                    question,
+                                    response_full,
+                                    thought,
+                                    source_log_docs,
+                                    tool_calls,
+                                    llm,
+                                    model_id or self.default_model_id,
+                                    decoded_token,
+                                    api_key=user_api_key,
+                                    agent_id=agent_id,
+                                    is_shared_usage=is_shared_usage,
+                                    shared_token=shared_token,
+                                )
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to create conversation for continuation: {e}",
+                                exc_info=True,
+                            )
+
+                    if conversation_id:
+                        try:
+                            cont_service = ContinuationService()
+                            cont_service.save_state(
+                                conversation_id=str(conversation_id),
+                                user=decoded_token.get("sub", "local"),
+                                messages=continuation["messages"],
+                                pending_tool_calls=continuation["pending_tool_calls"],
+                                tools_dict=continuation["tools_dict"],
+                                tool_schemas=getattr(agent, "tools", []),
+                                agent_config={
+                                    "model_id": model_id or self.default_model_id,
+                                    "llm_name": getattr(agent, "llm_name", settings.LLM_PROVIDER),
+                                    "api_key": getattr(agent, "api_key", None),
+                                    "user_api_key": user_api_key,
+                                    "agent_id": agent_id,
+                                    "agent_type": agent.__class__.__name__,
+                                    "prompt": getattr(agent, "prompt", ""),
+                                    "json_schema": getattr(agent, "json_schema", None),
+                                    "retriever_config": getattr(agent, "retriever_config", None),
+                                },
+                                client_tools=getattr(
+                                    agent.tool_executor, "client_tools", None
+                                ),
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to save continuation state: {str(e)}",
+                                exc_info=True,
+                            )
+
+                id_data = {"type": "id", "id": str(conversation_id)}
+                data = json.dumps(id_data)
+                yield f"data: {data}\n\n"
+
+                data = json.dumps({"type": "end"})
+                yield f"data: {data}\n\n"
+                return
+
             if isNoneDoc:
                 for doc in source_log_docs:
                     doc["source"] = "None"
@@ -425,8 +540,13 @@ class BaseAnswerResource:
             yield f"data: {data}\n\n"
             return
 
-    def process_response_stream(self, stream):
-        """Process the stream response for non-streaming endpoint"""
+    def process_response_stream(self, stream) -> Dict[str, Any]:
+        """Process the stream response for non-streaming endpoint.
+
+        Returns:
+            Dict with keys: conversation_id, answer, sources, tool_calls,
+            thought, error, and optional extra.
+        """
         conversation_id = ""
         response_full = ""
         source_log_docs = []
@@ -435,6 +555,7 @@ class BaseAnswerResource:
         stream_ended = False
         is_structured = False
         schema_info = None
+        pending_tool_calls = None
 
         for line in stream:
             try:
@@ -453,11 +574,22 @@ class BaseAnswerResource:
                     source_log_docs = event["source"]
                 elif event["type"] == "tool_calls":
                     tool_calls = event["tool_calls"]
+                elif event["type"] == "tool_calls_pending":
+                    pending_tool_calls = event.get("data", {}).get(
+                        "pending_tool_calls", []
+                    )
                 elif event["type"] == "thought":
                     thought = event["thought"]
                 elif event["type"] == "error":
                     logger.error(f"Error from stream: {event['error']}")
-                    return None, None, None, None, event["error"], None
+                    return {
+                        "conversation_id": None,
+                        "answer": None,
+                        "sources": None,
+                        "tool_calls": None,
+                        "thought": None,
+                        "error": event["error"],
+                    }
                 elif event["type"] == "end":
                     stream_ended = True
             except (json.JSONDecodeError, KeyError) as e:
@@ -465,18 +597,30 @@ class BaseAnswerResource:
                 continue
         if not stream_ended:
             logger.error("Stream ended unexpectedly without an 'end' event.")
-            return None, None, None, None, "Stream ended unexpectedly", None
-        result = (
-            conversation_id,
-            response_full,
-            source_log_docs,
-            tool_calls,
-            thought,
-            None,
-        )
+            return {
+                "conversation_id": None,
+                "answer": None,
+                "sources": None,
+                "tool_calls": None,
+                "thought": None,
+                "error": "Stream ended unexpectedly",
+            }
+
+        result: Dict[str, Any] = {
+            "conversation_id": conversation_id,
+            "answer": response_full,
+            "sources": source_log_docs,
+            "tool_calls": tool_calls,
+            "thought": thought,
+            "error": None,
+        }
+
+        if pending_tool_calls is not None:
+            result["extra"] = {"pending_tool_calls": pending_tool_calls}
 
         if is_structured:
-            result = result + ({"structured": True, "schema": schema_info},)
+            result["extra"] = {"structured": True, "schema": schema_info}
+
         return result
 
     def error_stream_generate(self, err_response):

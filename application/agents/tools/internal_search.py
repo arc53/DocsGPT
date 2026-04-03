@@ -20,6 +20,8 @@ class InternalSearchTool(Tool):
     - list_files action: browse the file/folder structure
     """
 
+    internal = True
+
     def __init__(self, config: Dict):
         self.config = config
         self.retrieved_docs: List[Dict] = []

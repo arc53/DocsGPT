@@ -38,6 +38,11 @@ type ConversationMessagesProps = {
   showHeroOnEmpty?: boolean;
   headerContent?: ReactNode;
   onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
+  onToolAction?: (
+    callId: string,
+    decision: 'approved' | 'denied',
+    comment?: string,
+  ) => void;
   isSplitView?: boolean;
 };
 
@@ -50,6 +55,7 @@ export default function ConversationMessages({
   showHeroOnEmpty = true,
   headerContent,
   onOpenArtifact,
+  onToolAction,
   isSplitView = false,
 }: ConversationMessagesProps) {
   const [isDarkTheme] = useDarkTheme();
@@ -154,6 +160,7 @@ export default function ConversationMessages({
           toolCalls={query.tool_calls}
           research={query.research}
           onOpenArtifact={onOpenArtifact}
+          onToolAction={onToolAction}
           feedback={query.feedback}
           isStreaming={isCurrentlyStreaming}
           handleFeedback={

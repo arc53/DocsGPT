@@ -67,18 +67,18 @@ class GoogleLLMHandler(LLMHandler):
             )
 
     def create_tool_message(self, tool_call: ToolCall, result: Any) -> Dict:
-        """Create Google-style tool message."""
+        """Create a tool result message in the standard internal format."""
+        import json as _json
 
+        content = (
+            _json.dumps(result)
+            if not isinstance(result, str)
+            else result
+        )
         return {
-            "role": "model",
-            "content": [
-                {
-                    "function_response": {
-                        "name": tool_call.name,
-                        "response": {"result": result},
-                    }
-                }
-            ],
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": content,
         }
 
     def _iterate_stream(self, response: Any) -> Generator:

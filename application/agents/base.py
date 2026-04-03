@@ -1,7 +1,8 @@
+import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
-from typing import Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 from application.agents.tool_executor import ToolExecutor
 from application.core.json_schema_utils import (
@@ -9,6 +10,7 @@ from application.core.json_schema_utils import (
     normalize_json_schema_payload,
 )
 from application.core.settings import settings
+from application.llm.handlers.base import ToolCall
 from application.llm.handlers.handler_creator import LLMHandlerCreator
 from application.llm.llm_creator import LLMCreator
 from application.logging import build_stack_data, log_activity, LogContext
@@ -112,6 +114,153 @@ class BaseAgent(ABC):
         self, query: str, log_context: LogContext
     ) -> Generator[Dict, None, None]:
         pass
+
+    def gen_continuation(
+        self,
+        messages: List[Dict],
+        tools_dict: Dict,
+        pending_tool_calls: List[Dict],
+        tool_actions: List[Dict],
+    ) -> Generator[Dict, None, None]:
+        """Resume generation after tool actions are resolved.
+
+        Processes the client-provided *tool_actions* (approvals, denials,
+        or client-side results), appends the resulting messages, then
+        hands back to the LLM to continue the conversation.
+
+        Args:
+            messages: The saved messages array from the pause point.
+            tools_dict: The saved tools dictionary.
+            pending_tool_calls: The pending tool call descriptors from the pause.
+            tool_actions: Client-provided actions resolving the pending calls.
+        """
+        self._prepare_tools(tools_dict)
+
+        actions_by_id = {a["call_id"]: a for a in tool_actions}
+
+        # Build a single assistant message containing all tool calls so
+        # the message history matches the format LLM providers expect
+        # (one assistant message with N tool_calls, followed by N tool results).
+        tc_objects: List[Dict[str, Any]] = []
+        for pending in pending_tool_calls:
+            call_id = pending["call_id"]
+            args = pending["arguments"]
+            args_str = (
+                json.dumps(args) if isinstance(args, dict) else (args or "{}")
+            )
+            tc_obj: Dict[str, Any] = {
+                "id": call_id,
+                "type": "function",
+                "function": {
+                    "name": pending["name"],
+                    "arguments": args_str,
+                },
+            }
+            if pending.get("thought_signature"):
+                tc_obj["thought_signature"] = pending["thought_signature"]
+            tc_objects.append(tc_obj)
+
+        messages.append({
+            "role": "assistant",
+            "content": None,
+            "tool_calls": tc_objects,
+        })
+
+        # Now process each pending call and append tool result messages
+        for pending in pending_tool_calls:
+            call_id = pending["call_id"]
+            args = pending["arguments"]
+            action = actions_by_id.get(call_id)
+            if not action:
+                action = {
+                    "call_id": call_id,
+                    "decision": "denied",
+                    "comment": "No response provided",
+                }
+
+            if action.get("decision") == "approved":
+                # Execute the tool server-side
+                tc = ToolCall(
+                    id=call_id,
+                    name=pending["name"],
+                    arguments=(
+                        json.dumps(args) if isinstance(args, dict) else args
+                    ),
+                )
+                tool_gen = self._execute_tool_action(tools_dict, tc)
+                tool_response = None
+                while True:
+                    try:
+                        event = next(tool_gen)
+                        yield event
+                    except StopIteration as e:
+                        tool_response, _ = e.value
+                        break
+                messages.append(
+                    self.llm_handler.create_tool_message(tc, tool_response)
+                )
+
+            elif action.get("decision") == "denied":
+                comment = action.get("comment", "")
+                denial = (
+                    f"Tool execution denied by user. Reason: {comment}"
+                    if comment
+                    else "Tool execution denied by user."
+                )
+                tc = ToolCall(
+                    id=call_id, name=pending["name"], arguments=args
+                )
+                messages.append(
+                    self.llm_handler.create_tool_message(tc, denial)
+                )
+                yield {
+                    "type": "tool_call",
+                    "data": {
+                        "tool_name": pending.get("tool_name", "unknown"),
+                        "call_id": call_id,
+                        "action_name": pending.get("llm_name", pending["name"]),
+                        "arguments": args,
+                        "status": "denied",
+                    },
+                }
+
+            elif "result" in action:
+                result = action["result"]
+                result_str = (
+                    json.dumps(result)
+                    if not isinstance(result, str)
+                    else result
+                )
+                tc = ToolCall(
+                    id=call_id, name=pending["name"], arguments=args
+                )
+                messages.append(
+                    self.llm_handler.create_tool_message(tc, result_str)
+                )
+                yield {
+                    "type": "tool_call",
+                    "data": {
+                        "tool_name": pending.get("tool_name", "unknown"),
+                        "call_id": call_id,
+                        "action_name": pending.get("llm_name", pending["name"]),
+                        "arguments": args,
+                        "result": (
+                            result_str[:50] + "..."
+                            if len(result_str) > 50
+                            else result_str
+                        ),
+                        "status": "completed",
+                    },
+                }
+
+        # Resume the LLM loop with the updated messages
+        llm_response = self._llm_gen(messages)
+        yield from self._handle_response(
+            llm_response, tools_dict, messages, None
+        )
+
+        yield {"sources": self.retrieved_docs}
+        yield {"tool_calls": self._get_truncated_tool_calls()}
 
     # ---- Tool delegation (thin wrappers around ToolExecutor) ----
 
@@ -267,28 +416,35 @@ class BaseAgent(ABC):
             if "tool_calls" in i:
                 for tool_call in i["tool_calls"]:
                     call_id = tool_call.get("call_id") or str(uuid.uuid4())
-
-                    function_call_dict = {
-                        "function_call": {
-                            "name": tool_call.get("action_name"),
-                            "args": tool_call.get("arguments"),
-                            "call_id": call_id,
-                        }
-                    }
-                    function_response_dict = {
-                        "function_response": {
-                            "name": tool_call.get("action_name"),
-                            "response": {"result": tool_call.get("result")},
-                            "call_id": call_id,
-                        }
-                    }
-
-                    messages.append(
-                        {"role": "assistant", "content": [function_call_dict]}
+                    args = tool_call.get("arguments")
+                    args_str = (
+                        json.dumps(args)
+                        if isinstance(args, dict)
+                        else (args or "{}")
                     )
-                    messages.append(
-                        {"role": "tool", "content": [function_response_dict]}
+                    messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_call.get("action_name", ""),
+                                "arguments": args_str,
+                            },
+                        }],
+                    })
+                    result = tool_call.get("result")
+                    result_str = (
+                        json.dumps(result)
+                        if not isinstance(result, str)
+                        else (result or "")
                     )
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": result_str,
+                    })
         messages.append({"role": "user", "content": query})
         return messages
 

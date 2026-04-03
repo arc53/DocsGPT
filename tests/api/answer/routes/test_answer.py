@@ -73,7 +73,7 @@ class TestAnswerResourcePost:
                 ),
             ), patch(
                 "application.api.answer.routes.answer.AnswerResource.process_response_stream",
-                return_value=(conv_id, "Hello", [], [], "", None),
+                return_value={"conversation_id": conv_id, "answer": "Hello", "sources": [], "tool_calls": [], "thought": "", "error": None},
             ):
                 resp = answer_client.post(
                     "/api/answer",
@@ -129,7 +129,7 @@ class TestAnswerResourcePost:
             return_value=iter([]),
         ), patch(
             "application.api.answer.routes.answer.AnswerResource.process_response_stream",
-            return_value=(None, None, None, None, None, "Stream error"),
+            return_value={"conversation_id": None, "answer": None, "sources": None, "tool_calls": None, "thought": None, "error": "Stream error"},
         ):
             resp = answer_client.post(
                 "/api/answer",
@@ -173,15 +173,7 @@ class TestAnswerResourcePost:
             return_value=iter([]),
         ), patch(
             "application.api.answer.routes.answer.AnswerResource.process_response_stream",
-            return_value=(
-                conv_id,
-                '{"key": "val"}',
-                [],
-                [],
-                "",
-                None,
-                {"structured": True, "schema": {"type": "object"}},
-            ),
+            return_value={"conversation_id": conv_id, "answer": '{"key": "val"}', "sources": [], "tool_calls": [], "thought": "", "error": None, "extra": {"structured": True, "schema": {"type": "object"}}},
         ):
             resp = answer_client.post(
                 "/api/answer",
@@ -208,14 +200,7 @@ class TestAnswerResourcePost:
             return_value=iter([]),
         ), patch(
             "application.api.answer.routes.answer.AnswerResource.process_response_stream",
-            return_value=(
-                conv_id,
-                "answer text",
-                [{"title": "src"}],
-                [{"tool": "t"}],
-                "thinking...",
-                None,
-            ),
+            return_value={"conversation_id": conv_id, "answer": "answer text", "sources": [{"title": "src"}], "tool_calls": [{"tool": "t"}], "thought": "thinking...", "error": None},
         ):
             resp = answer_client.post(
                 "/api/answer",

@@ -771,6 +771,121 @@ class StreamProcessor:
             logger.warning(f"Failed to fetch memory tool data: {str(e)}")
             return None
 
+    def resume_from_tool_actions(
+        self,
+        tool_actions: list,
+        conversation_id: str,
+    ):
+        """Resume a paused agent from saved continuation state.
+
+        Loads the pending state from MongoDB, recreates the agent with
+        the saved configuration, and returns an agent ready to call
+        ``gen_continuation()``.
+
+        Args:
+            tool_actions: Client-provided actions (approvals / results).
+            conversation_id: The conversation being resumed.
+
+        Returns:
+            Tuple of (agent, messages, tools_dict, pending_tool_calls, tool_actions).
+        """
+        from application.api.answer.services.continuation_service import (
+            ContinuationService,
+        )
+        from application.agents.agent_creator import AgentCreator
+        from application.agents.tool_executor import ToolExecutor
+        from application.llm.handlers.handler_creator import LLMHandlerCreator
+        from application.llm.llm_creator import LLMCreator
+
+        cont_service = ContinuationService()
+        state = cont_service.load_state(conversation_id, self.initial_user_id)
+        if not state:
+            raise ValueError("No pending tool state found for this conversation")
+
+        messages = state["messages"]
+        pending_tool_calls = state["pending_tool_calls"]
+        tools_dict = state["tools_dict"]
+        tool_schemas = state.get("tool_schemas", [])
+        agent_config = state["agent_config"]
+
+        model_id = agent_config.get("model_id")
+        llm_name = agent_config.get("llm_name", settings.LLM_PROVIDER)
+        api_key = agent_config.get("api_key")
+        user_api_key = agent_config.get("user_api_key")
+        agent_id = agent_config.get("agent_id")
+        prompt = agent_config.get("prompt", "")
+        json_schema = agent_config.get("json_schema")
+        retriever_config = agent_config.get("retriever_config")
+
+        # Recreate dependencies
+        system_api_key = api_key or get_api_key_for_provider(llm_name)
+        llm = LLMCreator.create_llm(
+            llm_name,
+            api_key=system_api_key,
+            user_api_key=user_api_key,
+            decoded_token=self.decoded_token,
+            model_id=model_id,
+            agent_id=agent_id,
+        )
+        llm_handler = LLMHandlerCreator.create_handler(llm_name or "default")
+        tool_executor = ToolExecutor(
+            user_api_key=user_api_key,
+            user=self.initial_user_id,
+            decoded_token=self.decoded_token,
+        )
+        tool_executor.conversation_id = conversation_id
+        # Restore client tools so they stay available for subsequent LLM calls
+        saved_client_tools = state.get("client_tools")
+        if saved_client_tools:
+            tool_executor.client_tools = saved_client_tools
+            # Re-merge into tools_dict (they may have been stripped during serialization)
+            tool_executor.merge_client_tools(tools_dict, saved_client_tools)
+
+        agent_type = agent_config.get("agent_type", "ClassicAgent")
+        # Map class names back to agent creator keys
+        type_map = {
+            "ClassicAgent": "classic",
+            "AgenticAgent": "agentic",
+            "ResearchAgent": "research",
+            "WorkflowAgent": "workflow",
+        }
+        agent_key = type_map.get(agent_type, "classic")
+
+        agent_kwargs = {
+            "endpoint": "stream",
+            "llm_name": llm_name,
+            "model_id": model_id,
+            "api_key": system_api_key,
+            "agent_id": agent_id,
+            "user_api_key": user_api_key,
+            "prompt": prompt,
+            "chat_history": [],
+            "decoded_token": self.decoded_token,
+            "json_schema": json_schema,
+            "llm": llm,
+            "llm_handler": llm_handler,
+            "tool_executor": tool_executor,
+        }
+
+        if agent_key in ("agentic", "research") and retriever_config:
+            agent_kwargs["retriever_config"] = retriever_config
+
+        agent = AgentCreator.create_agent(agent_key, **agent_kwargs)
+        agent.conversation_id = conversation_id
+        agent.initial_user_id = self.initial_user_id
+        agent.tools = tool_schemas
+
+        # Store config for the route layer
+        self.model_id = model_id
+        self.agent_id = agent_id
+        self.agent_config["user_api_key"] = user_api_key
+        self.conversation_id = conversation_id
+
+        # Delete state so it can't be replayed
+        cont_service.delete_state(conversation_id, self.initial_user_id)
+
+        return agent, messages, tools_dict, pending_tool_calls, tool_actions
+
     def create_agent(
         self,
         docs_together: Optional[str] = None,
@@ -841,6 +956,10 @@ class StreamProcessor:
             decoded_token=self.decoded_token,
         )
         tool_executor.conversation_id = self.conversation_id
+        # Pass client-side tools so they get merged in get_tools()
+        client_tools = self.data.get("client_tools")
+        if client_tools:
+            tool_executor.client_tools = client_tools
 
         # Base agent kwargs
         agent_kwargs = {

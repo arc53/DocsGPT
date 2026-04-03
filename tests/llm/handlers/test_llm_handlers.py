@@ -621,6 +621,7 @@ class TestHandleToolCalls:
         agent._check_context_limit = Mock(return_value=False)
         agent.context_limit_reached = False
         agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = Mock(return_value=None)
 
         def fake_execute(tools_dict, call):
             yield {"type": "tool_call", "data": {"status": "pending"}}
@@ -641,7 +642,7 @@ class TestHandleToolCalls:
             while True:
                 events.append(next(gen))
         except StopIteration as e:
-            messages = e.value
+            messages, _pending = e.value
 
         assert any(e.get("type") == "tool_call" for e in events)
         assert len(messages) >= 2  # function_call + tool_message
@@ -675,6 +676,9 @@ class TestHandleToolCalls:
         agent = Mock()
         agent._check_context_limit = Mock(return_value=False)
         agent.context_limit_reached = False
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = Mock(return_value=None)
+        agent.tool_executor._name_to_tool = {}
         agent._execute_tool_action = Mock(side_effect=RuntimeError("exec error"))
 
         call = ToolCall(id="c1", name="action_1", arguments="{}")
@@ -704,18 +708,17 @@ class TestHandleToolCalls:
             while True:
                 next(gen)
         except StopIteration as e:
-            messages = e.value
+            messages, _pending = e.value
 
+        # Standard format: thought_signature is on tool_calls items
         assistant_msgs = [
             m for m in messages
-            if m.get("role") == "assistant"
-            and isinstance(m.get("content"), list)
+            if m.get("role") == "assistant" and m.get("tool_calls")
         ]
         assert any(
-            "thought_signature" in item
+            tc.get("thought_signature") == "sig"
             for m in assistant_msgs
-            for item in m["content"]
-            if isinstance(item, dict)
+            for tc in m["tool_calls"]
         )
 
 
@@ -751,6 +754,7 @@ class TestHandleNonStreaming:
         agent._check_context_limit = Mock(return_value=False)
         agent.context_limit_reached = False
         agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = Mock(return_value=None)
 
         # First response requires tool call, second is final
         call_count = {"n": 0}
@@ -856,6 +860,7 @@ class TestHandleStreaming:
         agent._check_context_limit = Mock(return_value=False)
         agent.context_limit_reached = False
         agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = Mock(return_value=None)
 
         # First chunk has partial tool call, second completes it
         chunk1 = LLMResponse(
@@ -907,6 +912,7 @@ class TestHandleStreaming:
         agent.context_limit_reached = True
         agent._check_context_limit = Mock(return_value=True)
         agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = Mock(return_value=None)
 
         # Chunk finishes with tool_calls
         chunk = LLMResponse(
@@ -929,7 +935,7 @@ class TestHandleStreaming:
             def fake_handle_tool_calls(agent, calls, tools_dict, messages):
                 agent.context_limit_reached = True
                 yield {"type": "tool_call", "data": {"status": "skipped"}}
-                return messages
+                return messages, None
 
             handler.handle_tool_calls = fake_handle_tool_calls
 
@@ -1501,6 +1507,7 @@ class TestHandleToolCallsCompressionSuccess:
         agent._check_context_limit = Mock(side_effect=check_limit)
         agent.context_limit_reached = False
         agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = Mock(return_value=None)
 
         def fake_execute(tools_dict, call):
             yield {"type": "tool_call", "data": {"status": "pending"}}
@@ -1538,6 +1545,7 @@ class TestHandleToolCallsCompressionSuccess:
         agent = Mock()
         agent.context_limit_reached = False
         agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = Mock(return_value=None)
 
         exec_count = {"n": 0}
 

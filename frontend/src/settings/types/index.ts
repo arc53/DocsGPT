@@ -69,6 +69,7 @@ export type UserToolType = {
       type: string;
     };
     active: boolean;
+    require_approval?: boolean;
   }[];
 };
 
@@ -81,6 +82,7 @@ export type APIActionType = {
   headers: ParameterGroupType;
   body: ParameterGroupType;
   active: boolean;
+  require_approval?: boolean;
   body_content_type?:
     | 'application/json'
     | 'application/x-www-form-urlencoded'

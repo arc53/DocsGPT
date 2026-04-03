@@ -478,11 +478,14 @@ class TestHandleToolCallsErrors:
         handler = ConcreteHandler()
         agent = MagicMock()
         agent._check_context_limit = MagicMock(return_value=False)
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = MagicMock(return_value=None)
+        agent.tool_executor._name_to_tool = {"search": ("1", "search")}
         agent._execute_tool_action = MagicMock(
             side_effect=RuntimeError("tool failed")
         )
 
-        tool_call = ToolCall(id="tc1", name="search_1", arguments={"q": "test"})
+        tool_call = ToolCall(id="tc1", name="search", arguments={"q": "test"})
         tools_dict = {"1": {"name": "search_tool"}}
         messages = [{"role": "user", "content": "hi"}]
 
@@ -506,6 +509,9 @@ class TestHandleToolCallsErrors:
         handler = ConcreteHandler()
         agent = MagicMock()
         agent._check_context_limit = MagicMock(return_value=False)
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = MagicMock(return_value=None)
+        agent.tool_executor._name_to_tool = {}
         agent._execute_tool_action = MagicMock(
             side_effect=RuntimeError("tool failed")
         )
@@ -1169,12 +1175,15 @@ class TestHandleToolCallsErrorsAdditional:
         handler = ConcreteHandler()
         agent = MagicMock()
         agent._check_context_limit = MagicMock(return_value=False)
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = MagicMock(return_value=None)
+        agent.tool_executor._name_to_tool = {"do_thing": ("42", "do_thing")}
         agent._execute_tool_action = MagicMock(
             side_effect=RuntimeError("broken tool")
         )
 
         tool_call = ToolCall(
-            id="tc1", name="do_thing_42", arguments={"x": 1}
+            id="tc1", name="do_thing", arguments={"x": 1}
         )
         tools_dict = {"42": {"name": "my_tool"}}
         messages = [{"role": "user", "content": "go"}]
@@ -1188,7 +1197,7 @@ class TestHandleToolCallsErrorsAdditional:
             while True:
                 events.append(next(gen))
         except StopIteration as e:
-            final_messages = e.value
+            final_messages, _pending = e.value
 
         # Verify the error message was appended
         error_msgs = [
@@ -1205,12 +1214,17 @@ class TestHandleToolCallsErrorsAdditional:
         ]
         assert len(error_events) == 1
         assert error_events[0]["data"]["tool_name"] == "my_tool"
-        assert error_events[0]["data"]["action_name"] == "do_thing_42"
+        assert error_events[0]["data"]["action_name"] == "do_thing"
 
     def test_tool_error_with_no_context_check(self):
         """Cover line 660: messages.copy() at start of handle_tool_calls."""
         handler = ConcreteHandler()
         agent = MagicMock(spec=[])  # No _check_context_limit attribute
+        agent.llm = MagicMock()
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor = MagicMock()
+        agent.tool_executor.check_pause = MagicMock(return_value=None)
+        agent.tool_executor._name_to_tool = {}
         agent._execute_tool_action = MagicMock(
             side_effect=ValueError("bad args")
         )

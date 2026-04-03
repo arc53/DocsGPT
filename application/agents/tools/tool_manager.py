@@ -19,7 +19,7 @@ class ToolManager:
                 continue
             module = importlib.import_module(f"application.agents.tools.{name}")
             for member_name, obj in inspect.getmembers(module, inspect.isclass):
-                if issubclass(obj, Tool) and obj is not Tool:
+                if issubclass(obj, Tool) and obj is not Tool and not obj.internal:
                     tool_config = self.config.get(name, {})
                     self.tools[name] = obj(tool_config)
 

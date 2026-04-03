@@ -487,9 +487,33 @@ export default function ToolConfig({
                           )}
                         </div>
                         <div
-                          className="flex items-center gap-2"
+                          className="flex items-center gap-3"
                           onClick={(e) => e.stopPropagation()}
                         >
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {t('settings.tools.requireApproval', 'Approval')}
+                            </span>
+                            <ToggleSwitch
+                              checked={action.require_approval ?? false}
+                              onChange={(checked) => {
+                                setTool({
+                                  ...tool,
+                                  actions: tool.actions.map((act, index) => {
+                                    if (index === originalIndex) {
+                                      return {
+                                        ...act,
+                                        require_approval: checked,
+                                      };
+                                    }
+                                    return act;
+                                  }),
+                                });
+                              }}
+                              size="small"
+                              id={`approvalToggle-${originalIndex}`}
+                            />
+                          </div>
                           <ToggleSwitch
                             checked={action.active}
                             onChange={(checked) => {
@@ -926,6 +950,35 @@ function APIToolConfig({
                       className="h-4 w-4 opacity-40 transition-opacity hover:opacity-100"
                     />
                   </button>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {t('settings.tools.requireApproval', 'Approval')}
+                    </span>
+                    <ToggleSwitch
+                      checked={action.require_approval ?? false}
+                      onChange={() => {
+                        setApiTool((prevApiTool) => {
+                          const updatedActions = {
+                            ...prevApiTool.config.actions,
+                          };
+                          updatedActions[actionName] = {
+                            ...updatedActions[actionName],
+                            require_approval:
+                              !updatedActions[actionName].require_approval,
+                          };
+                          return {
+                            ...prevApiTool,
+                            config: {
+                              ...prevApiTool.config,
+                              actions: updatedActions,
+                            },
+                          };
+                        });
+                      }}
+                      size="small"
+                      id={`approvalToggle-${actionIndex}`}
+                    />
+                  </div>
                   <ToggleSwitch
                     checked={action.active}
                     onChange={() => handleActionToggle(actionName)}
