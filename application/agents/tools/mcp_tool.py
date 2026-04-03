@@ -108,8 +108,9 @@ class MCPTool(Tool):
         auth_key = ""
         if self.auth_type == "oauth":
             scopes_str = ",".join(self.oauth_scopes) if self.oauth_scopes else "none"
+            oauth_identity = self.user_id or self.oauth_task_id or "anonymous"
             auth_key = (
-                f"oauth:{self.oauth_client_name}:{scopes_str}:{self.redirect_uri}"
+                f"oauth:{oauth_identity}:{self.oauth_client_name}:{scopes_str}:{self.redirect_uri}"
             )
         elif self.auth_type in ["bearer"]:
             token = self.auth_credentials.get(
