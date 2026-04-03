@@ -123,18 +123,39 @@ class TestMCPServerConfig(Resource):
             result = mcp_tool.test_connection()
 
             if result.get("requires_oauth"):
-                return make_response(jsonify(result), 200)
+                safe_result = {
+                    k: v
+                    for k, v in result.items()
+                    if k in ("success", "requires_oauth", "auth_url")
+                }
+                return make_response(jsonify(safe_result), 200)
 
-            if not result.get("success") and "message" in result:
+            if not result.get("success"):
                 current_app.logger.error(
                     f"MCP connection test failed: {result.get('message')}"
                 )
-                result["message"] = "Connection test failed"
+                return make_response(
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": "Connection test failed",
+                            "tools_count": 0,
+                        }
+                    ),
+                    200,
+                )
 
-            return make_response(jsonify(result), 200)
+            safe_result = {
+                "success": True,
+                "message": result.get("message", "Connection successful"),
+                "tools_count": result.get("tools_count", 0),
+                "tools": result.get("tools", []),
+            }
+            return make_response(jsonify(safe_result), 200)
         except ValueError as e:
+            current_app.logger.warning(f"Invalid MCP server test request: {e}")
             return make_response(
-                jsonify({"success": False, "error": str(e)}),
+                jsonify({"success": False, "error": "Invalid MCP server configuration"}),
                 400,
             )
         except Exception as e:
@@ -305,8 +326,9 @@ class MCPServerSave(Resource):
                 }
             return make_response(jsonify(response_data), 200)
         except ValueError as e:
+            current_app.logger.warning(f"Invalid MCP server save request: {e}")
             return make_response(
-                jsonify({"success": False, "error": str(e)}),
+                jsonify({"success": False, "error": "Invalid MCP server configuration"}),
                 400,
             )
         except Exception as e:

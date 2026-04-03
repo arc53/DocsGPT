@@ -244,9 +244,9 @@ class CreateTool(Resource):
                 if server_url:
                     try:
                         validate_url(server_url)
-                    except SSRFError as exc:
+                    except SSRFError:
                         return make_response(
-                            jsonify({"success": False, "message": f"Invalid server URL: {exc}"}),
+                            jsonify({"success": False, "message": "Invalid server URL"}),
                             400,
                         )
             tool_instance = tool_manager.tools.get(data["name"])
@@ -439,9 +439,9 @@ class UpdateToolConfig(Resource):
                 if server_url:
                     try:
                         validate_url(server_url)
-                    except SSRFError as exc:
+                    except SSRFError:
                         return make_response(
-                            jsonify({"success": False, "message": f"Invalid server URL: {exc}"}),
+                            jsonify({"success": False, "message": "Invalid server URL"}),
                             400,
                         )
             tool_instance = tool_manager.tools.get(tool_name)
