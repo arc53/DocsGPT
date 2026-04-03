@@ -8,7 +8,13 @@ Currently, we support security patches by committing changes and bumping the ver
 
 ## Reporting a Vulnerability
 
-Found a vulnerability? Please email us:
+Preferred method: use GitHub's private vulnerability reporting flow:
+https://github.com/arc53/DocsGPT/security
+
+Then click **Report a vulnerability**.
+
+
+Alternatively:
 
 security@arc53.com
 
