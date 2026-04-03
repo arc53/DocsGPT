@@ -1,6 +1,7 @@
 import logging
 import uuid
-from typing import Dict, List, Optional
+from collections import Counter
+from typing import Dict, List, Optional, Tuple
 
 from bson.objectid import ObjectId
 
@@ -32,6 +33,8 @@ class ToolExecutor:
         self._loaded_tools: Dict[str, object] = {}
         self.conversation_id: Optional[str] = None
         self.client_tools: Optional[List[Dict]] = None
+        self._name_to_tool: Dict[str, Tuple[str, str]] = {}
+        self._tool_to_name: Dict[Tuple[str, str], str] = {}
 
     def get_tools(self) -> Dict[str, Dict]:
         """Load tool configs from DB based on user context.
@@ -98,8 +101,6 @@ class ToolExecutor:
         for i, ct in enumerate(client_tools):
             func = ct.get("function", ct)  # tolerate bare {"name":..} too
             name = func.get("name", f"clienttool{i}")
-            # Tool IDs must NOT contain underscores — ToolActionParser splits
-            # on "_" and takes the last segment as the ID.
             tool_id = f"ct{i}"
 
             tools_dict[tool_id] = {
@@ -117,8 +118,21 @@ class ToolExecutor:
         return tools_dict
 
     def prepare_tools_for_llm(self, tools_dict: Dict) -> List[Dict]:
-        """Convert tool configs to LLM function schemas."""
-        result = []
+        """Convert tool configs to LLM function schemas.
+
+        Action names are kept clean for the LLM:
+        - Unique action names appear as-is (e.g. ``get_weather``).
+        - Duplicate action names get numbered suffixes (e.g. ``search_1``,
+          ``search_2``).
+
+        A reverse mapping is stored in ``_name_to_tool`` so that tool calls
+        can be routed back to the correct ``(tool_id, action_name)`` without
+        brittle string splitting.
+        """
+        # Pass 1: collect entries and count action name occurrences
+        entries: List[Tuple[str, str, Dict, bool]] = []  # (tool_id, action_name, action, is_client)
+        name_counts: Counter = Counter()
+
         for tool_id, tool in tools_dict.items():
             is_api = tool["name"] == "api_tool"
             is_client = tool.get("client_side", False)
@@ -137,21 +151,48 @@ class ToolExecutor:
             for action in actions:
                 if not action.get("active", True):
                     continue
+                entries.append((tool_id, action["name"], action, is_client))
+                name_counts[action["name"]] += 1
 
-                # Client-side tools already have parameters in standard format
-                if is_client:
-                    params = action.get("parameters", {})
-                else:
-                    params = self._build_tool_parameters(action)
+        # Pass 2: assign LLM-visible names and build mappings
+        self._name_to_tool = {}
+        self._tool_to_name = {}
+        collision_counters: Dict[str, int] = {}
+        all_llm_names: set = set()
 
-                result.append({
-                    "type": "function",
-                    "function": {
-                        "name": f"{action['name']}_{tool_id}",
-                        "description": action.get("description", ""),
-                        "parameters": params,
-                    },
-                })
+        result = []
+        for tool_id, action_name, action, is_client in entries:
+            if name_counts[action_name] == 1:
+                llm_name = action_name
+            else:
+                counter = collision_counters.get(action_name, 1)
+                candidate = f"{action_name}_{counter}"
+                # Skip if candidate collides with a unique action name
+                while candidate in all_llm_names or (
+                    candidate in name_counts and name_counts[candidate] == 1
+                ):
+                    counter += 1
+                    candidate = f"{action_name}_{counter}"
+                collision_counters[action_name] = counter + 1
+                llm_name = candidate
+
+            all_llm_names.add(llm_name)
+            self._name_to_tool[llm_name] = (tool_id, action_name)
+            self._tool_to_name[(tool_id, action_name)] = llm_name
+
+            if is_client:
+                params = action.get("parameters", {})
+            else:
+                params = self._build_tool_parameters(action)
+
+            result.append({
+                "type": "function",
+                "function": {
+                    "name": llm_name,
+                    "description": action.get("description", ""),
+                    "parameters": params,
+                },
+            })
         return result
 
     def _build_tool_parameters(self, action: Dict) -> Dict:
@@ -176,9 +217,10 @@ class ToolExecutor:
 
         Returns a dict describing the pending action if pause is needed, None otherwise.
         """
-        parser = ToolActionParser(llm_class_name)
+        parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
         tool_id, action_name, call_args = parser.parse_args(call)
         call_id = getattr(call, "id", None) or str(uuid.uuid4())
+        llm_name = getattr(call, "name", "")
 
         if tool_id is None or action_name is None or tool_id not in tools_dict:
             return None  # Will be handled as error by execute()
@@ -189,10 +231,11 @@ class ToolExecutor:
         if tool_data.get("client_side"):
             return {
                 "call_id": call_id,
-                "name": getattr(call, "name", f"{action_name}_{tool_id}"),
+                "name": llm_name,
                 "tool_name": tool_data.get("name", "unknown"),
                 "tool_id": tool_id,
                 "action_name": action_name,
+                "llm_name": llm_name,
                 "arguments": call_args if isinstance(call_args, dict) else {},
                 "pause_type": "requires_client_execution",
                 "thought_signature": getattr(call, "thought_signature", None),
@@ -212,10 +255,11 @@ class ToolExecutor:
         if action_data.get("require_approval"):
             return {
                 "call_id": call_id,
-                "name": getattr(call, "name", f"{action_name}_{tool_id}"),
+                "name": llm_name,
                 "tool_name": tool_data.get("name", "unknown"),
                 "tool_id": tool_id,
                 "action_name": action_name,
+                "llm_name": llm_name,
                 "arguments": call_args if isinstance(call_args, dict) else {},
                 "pause_type": "awaiting_approval",
                 "thought_signature": getattr(call, "thought_signature", None),
@@ -225,21 +269,22 @@ class ToolExecutor:
 
     def execute(self, tools_dict: Dict, call, llm_class_name: str):
         """Execute a tool call. Yields status events, returns (result, call_id)."""
-        parser = ToolActionParser(llm_class_name)
+        parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
         tool_id, action_name, call_args = parser.parse_args(call)
+        llm_name = getattr(call, "name", "unknown")
 
         call_id = getattr(call, "id", None) or str(uuid.uuid4())
 
         if tool_id is None or action_name is None:
-            error_message = f"Error: Failed to parse LLM tool call. Tool name: {getattr(call, 'name', 'unknown')}"
+            error_message = f"Error: Failed to parse LLM tool call. Tool name: {llm_name}"
             logger.error(error_message)
 
             tool_call_data = {
                 "tool_name": "unknown",
                 "call_id": call_id,
-                "action_name": getattr(call, "name", "unknown"),
+                "action_name": llm_name,
                 "arguments": call_args or {},
-                "result": f"Failed to parse tool call. Invalid tool name format: {getattr(call, 'name', 'unknown')}",
+                "result": f"Failed to parse tool call. Invalid tool name format: {llm_name}",
             }
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
@@ -252,7 +297,7 @@ class ToolExecutor:
             tool_call_data = {
                 "tool_name": "unknown",
                 "call_id": call_id,
-                "action_name": f"{action_name}_{tool_id}",
+                "action_name": llm_name,
                 "arguments": call_args,
                 "result": f"Tool with ID {tool_id} not found. Available tools: {list(tools_dict.keys())}",
             }
@@ -263,7 +308,7 @@ class ToolExecutor:
         tool_call_data = {
             "tool_name": tools_dict[tool_id]["name"],
             "call_id": call_id,
-            "action_name": f"{action_name}_{tool_id}",
+            "action_name": llm_name,
             "arguments": call_args,
         }
         yield {"type": "tool_call", "data": {**tool_call_data, "status": "pending"}}

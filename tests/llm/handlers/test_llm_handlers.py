@@ -678,6 +678,7 @@ class TestHandleToolCalls:
         agent.context_limit_reached = False
         agent.llm.__class__.__name__ = "MockLLM"
         agent.tool_executor.check_pause = Mock(return_value=None)
+        agent.tool_executor._name_to_tool = {}
         agent._execute_tool_action = Mock(side_effect=RuntimeError("exec error"))
 
         call = ToolCall(id="c1", name="action_1", arguments="{}")

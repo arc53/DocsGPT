@@ -218,7 +218,7 @@ class BaseAgent(ABC):
                     "data": {
                         "tool_name": pending.get("tool_name", "unknown"),
                         "call_id": call_id,
-                        "action_name": f"{pending['action_name']}_{pending['tool_id']}",
+                        "action_name": pending.get("llm_name", pending["name"]),
                         "arguments": args,
                         "status": "denied",
                     },
@@ -242,7 +242,7 @@ class BaseAgent(ABC):
                     "data": {
                         "tool_name": pending.get("tool_name", "unknown"),
                         "call_id": call_id,
-                        "action_name": f"{pending['action_name']}_{pending['tool_id']}",
+                        "action_name": pending.get("llm_name", pending["name"]),
                         "arguments": args,
                         "result": (
                             result_str[:50] + "..."

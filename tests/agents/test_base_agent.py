@@ -341,7 +341,7 @@ class TestBaseAgentTools:
 
         assert len(agent.tools) == 1
         assert agent.tools[0]["type"] == "function"
-        assert agent.tools[0]["function"]["name"] == "get_data_1"
+        assert agent.tools[0]["function"]["name"] == "get_data"
 
     def test_prepare_tools_with_regular_tool(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
@@ -365,7 +365,7 @@ class TestBaseAgentTools:
         agent._prepare_tools(tools_dict)
 
         assert len(agent.tools) == 1
-        assert agent.tools[0]["function"]["name"] == "action1_1"
+        assert agent.tools[0]["function"]["name"] == "action1"
 
     def test_prepare_tools_filters_inactive_actions(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
@@ -395,7 +395,7 @@ class TestBaseAgentTools:
         agent._prepare_tools(tools_dict)
 
         assert len(agent.tools) == 1
-        assert agent.tools[0]["function"]["name"] == "active_action_1"
+        assert agent.tools[0]["function"]["name"] == "active_action"
 
 
 @pytest.mark.unit

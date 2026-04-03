@@ -80,7 +80,7 @@ class TestToolExecutorPrepare:
         result = executor.prepare_tools_for_llm(tools_dict)
         assert len(result) == 1
         assert result[0]["type"] == "function"
-        assert result[0]["function"]["name"] == "do_thing_t1"
+        assert result[0]["function"]["name"] == "do_thing"
         assert "query" in result[0]["function"]["parameters"]["properties"]
 
     def test_prepare_tools_skips_inactive_actions(self):
@@ -97,7 +97,96 @@ class TestToolExecutorPrepare:
 
         result = executor.prepare_tools_for_llm(tools_dict)
         assert len(result) == 1
-        assert result[0]["function"]["name"] == "active_one_t1"
+        assert result[0]["function"]["name"] == "active_one"
+
+    def test_prepare_tools_builds_name_mapping(self):
+        executor = ToolExecutor()
+        tools_dict = {
+            "t1": {
+                "name": "test_tool",
+                "actions": [
+                    {"name": "do_thing", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            }
+        }
+        executor.prepare_tools_for_llm(tools_dict)
+        assert executor._name_to_tool["do_thing"] == ("t1", "do_thing")
+        assert executor._tool_to_name[("t1", "do_thing")] == "do_thing"
+
+    def test_prepare_tools_duplicate_names_get_numbered_suffixes(self):
+        executor = ToolExecutor()
+        tools_dict = {
+            "t1": {
+                "name": "tool_a",
+                "actions": [
+                    {"name": "search", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+            "t2": {
+                "name": "tool_b",
+                "actions": [
+                    {"name": "search", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+        }
+        result = executor.prepare_tools_for_llm(tools_dict)
+        names = [r["function"]["name"] for r in result]
+        assert "search_1" in names
+        assert "search_2" in names
+        assert executor._name_to_tool["search_1"][1] == "search"
+        assert executor._name_to_tool["search_2"][1] == "search"
+
+    def test_prepare_tools_unique_name_no_suffix(self):
+        executor = ToolExecutor()
+        tools_dict = {
+            "t1": {
+                "name": "tool_a",
+                "actions": [
+                    {"name": "get_weather", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+            "t2": {
+                "name": "tool_b",
+                "actions": [
+                    {"name": "send_email", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+        }
+        result = executor.prepare_tools_for_llm(tools_dict)
+        names = [r["function"]["name"] for r in result]
+        assert "get_weather" in names
+        assert "send_email" in names
+
+    def test_prepare_tools_suffix_skips_collision_with_unique_name(self):
+        """If action 'foo_1' exists as unique and 'foo' is duplicated, skip '_1'."""
+        executor = ToolExecutor()
+        tools_dict = {
+            "t1": {
+                "name": "tool_a",
+                "actions": [
+                    {"name": "foo", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+            "t2": {
+                "name": "tool_b",
+                "actions": [
+                    {"name": "foo", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+            "t3": {
+                "name": "tool_c",
+                "actions": [
+                    {"name": "foo_1", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+        }
+        result = executor.prepare_tools_for_llm(tools_dict)
+        names = [r["function"]["name"] for r in result]
+        # foo_1 is taken by the unique action, so duplicates skip to _2 and _3
+        assert "foo_1" in names  # The unique action
+        assert "foo_2" in names
+        assert "foo_3" in names
+        assert executor._name_to_tool["foo_1"] == ("t3", "foo_1")
 
     def test_build_tool_parameters_filters_non_llm_fields(self):
         executor = ToolExecutor()
@@ -139,16 +228,9 @@ class TestCheckPause:
         call.thought_signature = None
         return call
 
-    def test_client_side_tool_returns_suffixed_name(self, monkeypatch):
-        """check_pause returns the LLM-facing suffixed name for internal routing."""
+    def test_client_side_tool_returns_llm_name(self):
+        """check_pause returns the clean LLM-facing name and llm_name field."""
         executor = ToolExecutor()
-
-        monkeypatch.setattr(
-            "application.agents.tool_executor.ToolActionParser",
-            lambda _cls: Mock(
-                parse_args=Mock(return_value=("ct0", "write_file", {"path": "test.md"}))
-            ),
-        )
 
         tools_dict = {
             "ct0": {
@@ -160,26 +242,21 @@ class TestCheckPause:
             }
         }
 
-        call = self._make_call(name="write_file_ct0")
-        result = executor.check_pause(tools_dict, call, "MockLLM")
+        # Prepare tools so the mapping is built
+        executor.prepare_tools_for_llm(tools_dict)
+
+        call = self._make_call(name="write_file")
+        result = executor.check_pause(tools_dict, call, "OpenAILLM")
 
         assert result is not None
-        # name keeps the suffix for LLM message reconstruction during continuation
-        assert result["name"] == "write_file_ct0"
-        # action_name is the clean parsed name
+        assert result["name"] == "write_file"
+        assert result["llm_name"] == "write_file"
         assert result["action_name"] == "write_file"
         assert result["tool_id"] == "ct0"
 
-    def test_approval_required_returns_suffixed_name(self, monkeypatch):
-        """check_pause for approval-required tools also returns suffixed name."""
+    def test_approval_required_returns_llm_name(self):
+        """check_pause for approval-required tools returns clean LLM name."""
         executor = ToolExecutor()
-
-        monkeypatch.setattr(
-            "application.agents.tool_executor.ToolActionParser",
-            lambda _cls: Mock(
-                parse_args=Mock(return_value=("t1", "delete_all", {}))
-            ),
-        )
 
         tools_dict = {
             "t1": {
@@ -191,11 +268,14 @@ class TestCheckPause:
             }
         }
 
-        call = self._make_call(name="delete_all_t1")
-        result = executor.check_pause(tools_dict, call, "MockLLM")
+        executor.prepare_tools_for_llm(tools_dict)
+
+        call = self._make_call(name="delete_all")
+        result = executor.check_pause(tools_dict, call, "OpenAILLM")
 
         assert result is not None
-        assert result["name"] == "delete_all_t1"
+        assert result["name"] == "delete_all"
+        assert result["llm_name"] == "delete_all"
         assert result["action_name"] == "delete_all"
 
 
@@ -214,7 +294,7 @@ class TestToolExecutorExecute:
 
         monkeypatch.setattr(
             "application.agents.tool_executor.ToolActionParser",
-            lambda _cls: Mock(parse_args=Mock(return_value=(None, None, {}))),
+            lambda _cls, **kw: Mock(parse_args=Mock(return_value=(None, None, {}))),
         )
 
         call = self._make_call(name="bad")
@@ -238,7 +318,7 @@ class TestToolExecutorExecute:
 
         monkeypatch.setattr(
             "application.agents.tool_executor.ToolActionParser",
-            lambda _cls: Mock(parse_args=Mock(return_value=("missing_id", "action", {}))),
+            lambda _cls, **kw: Mock(parse_args=Mock(return_value=("missing_id", "action", {}))),
         )
 
         call = self._make_call()
@@ -261,7 +341,7 @@ class TestToolExecutorExecute:
 
         monkeypatch.setattr(
             "application.agents.tool_executor.ToolActionParser",
-            lambda _cls: Mock(parse_args=Mock(return_value=("t1", "test_action", {"param1": "val"}))),
+            lambda _cls, **kw: Mock(parse_args=Mock(return_value=("t1", "test_action", {"param1": "val"}))),
         )
 
         tools_dict = {
@@ -315,7 +395,7 @@ class TestToolExecutorExecute:
 
         monkeypatch.setattr(
             "application.agents.tool_executor.ToolActionParser",
-            lambda _cls: Mock(parse_args=Mock(return_value=("t1", "test_action", {}))),
+            lambda _cls, **kw: Mock(parse_args=Mock(return_value=("t1", "test_action", {}))),
         )
 
         tools_dict = {
@@ -355,7 +435,7 @@ class TestToolExecutorExecute:
 
         monkeypatch.setattr(
             "application.agents.tool_executor.ToolActionParser",
-            lambda _cls: Mock(
+            lambda _cls, **kw: Mock(
                 parse_args=Mock(return_value=("t1", "get_users", {"body_param": "val"}))
             ),
         )
@@ -402,7 +482,7 @@ class TestToolExecutorExecute:
 
         monkeypatch.setattr(
             "application.agents.tool_executor.ToolActionParser",
-            lambda _cls: Mock(
+            lambda _cls, **kw: Mock(
                 parse_args=Mock(return_value=("t1", "act", {}))
             ),
         )
@@ -447,7 +527,7 @@ class TestToolExecutorExecute:
 
         monkeypatch.setattr(
             "application.agents.tool_executor.ToolActionParser",
-            lambda _cls: Mock(
+            lambda _cls, **kw: Mock(
                 parse_args=Mock(return_value=("t1", "act", {"q": "v"}))
             ),
         )

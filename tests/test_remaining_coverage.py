@@ -1238,7 +1238,8 @@ class TestEmbeddingPipelineAddDocWithRetry:
         # NUL characters should be removed
         assert "\x00" not in doc.page_content
 
-    def test_add_text_to_store_with_retry_failure(self):
+    @patch("time.sleep", return_value=None)
+    def test_add_text_to_store_with_retry_failure(self, _mock_sleep):
         from application.parser.embedding_pipeline import add_text_to_store_with_retry
 
         mock_store = MagicMock()

@@ -9,7 +9,7 @@ import json
 import pytest
 
 from application.api.v1.translator import (
-    _strip_tool_suffix,
+    _get_client_tool_name,
     convert_history,
     extract_tool_results,
     is_continuation,
@@ -297,13 +297,13 @@ class TestTranslateResponse:
         )
         assert resp["docsgpt"]["tool_calls"] == tool_calls
 
-    def test_pending_tool_calls_strips_ct_suffix(self):
-        """Internal _ct\\d+ suffixes must be stripped from tool names in responses."""
+    def test_pending_tool_calls_uses_tool_name(self):
+        """Client tool responses use the original tool_name, not the LLM-visible action_name."""
         pending = [
             {
                 "call_id": "c1",
-                "name": "get_weather_ct0",
-                "action_name": "get_weather_ct0",
+                "tool_name": "get_weather",
+                "action_name": "get_weather",
                 "arguments": {"city": "SF"},
             }
         ]
@@ -319,13 +319,13 @@ class TestTranslateResponse:
         tc = resp["choices"][0]["message"]["tool_calls"][0]
         assert tc["function"]["name"] == "get_weather"
 
-    def test_pending_tool_calls_non_ct_suffix_preserved(self):
-        """Non-client tool suffixes (e.g. _t1) should not be stripped."""
+    def test_pending_tool_calls_tool_name_takes_precedence(self):
+        """When tool_name differs from action_name, tool_name is used."""
         pending = [
             {
                 "call_id": "c1",
-                "name": "search_t1",
-                "action_name": "search_t1",
+                "tool_name": "search",
+                "action_name": "search_1",
                 "arguments": {"q": "test"},
             }
         ]
@@ -339,8 +339,7 @@ class TestTranslateResponse:
             pending_tool_calls=pending,
         )
         tc = resp["choices"][0]["message"]["tool_calls"][0]
-        # _t1 is NOT a client-tool suffix (_ct\d+), so it stays
-        assert tc["function"]["name"] == "search_t1"
+        assert tc["function"]["name"] == "search"
 
     def test_pending_tool_calls(self):
         pending = [
@@ -445,14 +444,15 @@ class TestTranslateStreamEvent:
         assert tc["id"] == "c1"
         assert tc["function"]["name"] == "get_weather"
 
-    def test_tool_call_client_execution_strips_ct_suffix(self):
-        """Internal _ct suffixes must be stripped from streaming tool call names."""
+    def test_tool_call_client_execution_uses_tool_name(self):
+        """Streaming tool calls use tool_name (original name) for client responses."""
         chunks = translate_stream_event(
             {
                 "type": "tool_call",
                 "data": {
                     "call_id": "c1",
-                    "action_name": "create_ct0",
+                    "tool_name": "create",
+                    "action_name": "create",
                     "arguments": {"title": "test"},
                     "status": "requires_client_execution",
                 },
@@ -557,27 +557,21 @@ class TestTranslateStreamEvent:
 
 
 # ---------------------------------------------------------------------------
-# _strip_tool_suffix
+# _get_client_tool_name
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-class TestStripToolSuffix:
+class TestGetClientToolName:
 
-    def test_strips_ct0(self):
-        assert _strip_tool_suffix("create_ct0") == "create"
+    def test_uses_tool_name_when_present(self):
+        assert _get_client_tool_name({"tool_name": "create", "action_name": "create_1"}) == "create"
 
-    def test_strips_ct_multi_digit(self):
-        assert _strip_tool_suffix("write_file_ct12") == "write_file"
+    def test_falls_back_to_action_name(self):
+        assert _get_client_tool_name({"action_name": "get_weather"}) == "get_weather"
 
-    def test_preserves_non_ct_suffix(self):
-        assert _strip_tool_suffix("search_t1") == "search_t1"
+    def test_falls_back_to_name(self):
+        assert _get_client_tool_name({"name": "search"}) == "search"
 
-    def test_preserves_plain_name(self):
-        assert _strip_tool_suffix("get_weather") == "get_weather"
-
-    def test_preserves_empty(self):
-        assert _strip_tool_suffix("") == ""
-
-    def test_ct_in_middle_not_stripped(self):
-        assert _strip_tool_suffix("ct0_action") == "ct0_action"
+    def test_returns_empty_when_no_fields(self):
+        assert _get_client_tool_name({}) == ""

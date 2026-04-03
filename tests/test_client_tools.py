@@ -142,7 +142,7 @@ class TestPrepareClientToolsForLlm:
 
         assert len(schemas) == 1
         assert schemas[0]["type"] == "function"
-        assert schemas[0]["function"]["name"] == "get_weather_ct0"
+        assert schemas[0]["function"]["name"] == "get_weather"
         assert schemas[0]["function"]["description"] == "Get weather"
         # Parameters passed through directly (not filtered by _build_tool_parameters)
         assert "city" in schemas[0]["function"]["parameters"]["properties"]
@@ -187,8 +187,8 @@ class TestPrepareClientToolsForLlm:
 
         assert len(schemas) == 2
         names = {s["function"]["name"] for s in schemas}
-        assert "do_thing_t1" in names
-        assert "local_fn_ct0" in names
+        assert "do_thing" in names
+        assert "local_fn" in names
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +251,8 @@ class TestCheckPauseClientTools:
                 ],
             }
         }
-        call = self._make_call(name="get_weather_ct0")
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(name="get_weather")
         result = executor.check_pause(tools_dict, call, "OpenAILLM")
 
         assert result is not None
@@ -269,7 +270,8 @@ class TestCheckPauseClientTools:
                 ],
             }
         }
-        call = self._make_call(name="search_0")
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(name="search")
         result = executor.check_pause(tools_dict, call, "OpenAILLM")
 
         assert result is None
@@ -315,19 +317,21 @@ class TestHandlerClientToolPause:
         # check_pause returns pause info for client tool
         agent.tool_executor.check_pause = Mock(return_value={
             "call_id": "c1",
-            "name": "get_weather_ct0",
+            "name": "get_weather",
             "tool_name": "get_weather",
             "tool_id": "ct0",
             "action_name": "get_weather",
+            "llm_name": "get_weather",
             "arguments": {"city": "SF"},
             "pause_type": "requires_client_execution",
             "thought_signature": None,
         })
+        agent.tool_executor._name_to_tool = {"get_weather": ("ct0", "get_weather")}
 
         # Simulate streaming: one chunk with tool_calls finish_reason
         chunk = LLMResponse(
             content="",
-            tool_calls=[ToolCall(id="c1", name="get_weather_ct0", arguments='{"city": "SF"}', index=0)],
+            tool_calls=[ToolCall(id="c1", name="get_weather", arguments='{"city": "SF"}', index=0)],
             finish_reason="tool_calls",
             raw_response={},
         )
@@ -371,10 +375,11 @@ class TestHandlerClientToolPause:
             if call_count["n"] == 2:  # Second tool is client-side
                 return {
                     "call_id": "c2",
-                    "name": "get_weather_ct0",
+                    "name": "get_weather",
                     "tool_name": "get_weather",
                     "tool_id": "ct0",
                     "action_name": "get_weather",
+                    "llm_name": "get_weather",
                     "arguments": {},
                     "pause_type": "requires_client_execution",
                     "thought_signature": None,
@@ -382,6 +387,10 @@ class TestHandlerClientToolPause:
             return None
 
         agent.tool_executor.check_pause = Mock(side_effect=check_pause_fn)
+        agent.tool_executor._name_to_tool = {
+            "search": ("0", "search"),
+            "get_weather": ("ct0", "get_weather"),
+        }
 
         def fake_execute(tools_dict, call):
             yield {"type": "tool_call", "data": {"status": "pending"}}
@@ -390,8 +399,8 @@ class TestHandlerClientToolPause:
         agent._execute_tool_action = Mock(side_effect=fake_execute)
 
         calls = [
-            ToolCall(id="c1", name="search_0", arguments="{}"),
-            ToolCall(id="c2", name="get_weather_ct0", arguments="{}"),
+            ToolCall(id="c1", name="search", arguments="{}"),
+            ToolCall(id="c2", name="get_weather", arguments="{}"),
         ]
 
         gen = handler.handle_tool_calls(

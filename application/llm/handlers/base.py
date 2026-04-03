@@ -803,7 +803,7 @@ class LLMHandler(ABC):
                     "data": {
                         "tool_name": pause_info["tool_name"],
                         "call_id": pause_info["call_id"],
-                        "action_name": f"{pause_info['action_name']}_{pause_info['tool_id']}",
+                        "action_name": pause_info.get("llm_name", pause_info["name"]),
                         "arguments": pause_info["arguments"],
                         "status": pause_info["pause_type"],
                     },
@@ -857,16 +857,15 @@ class LLMHandler(ABC):
                 error_message = self.create_tool_message(error_call, error_response)
                 updated_messages.append(error_message)
 
-                call_parts = call.name.split("_")
-                if len(call_parts) >= 2:
-                    tool_id = call_parts[-1]  # Last part is tool ID (e.g., "1")
-                    action_name = "_".join(call_parts[:-1])
-                    tool_name = tools_dict.get(tool_id, {}).get("name", "unknown_tool")
-                    full_action_name = f"{action_name}_{tool_id}"
+                mapping = agent.tool_executor._name_to_tool
+                if call.name in mapping:
+                    resolved_tool_id, _ = mapping[call.name]
+                    tool_name = tools_dict.get(resolved_tool_id, {}).get(
+                        "name", "unknown_tool"
+                    )
                 else:
                     tool_name = "unknown_tool"
-                    action_name = call.name
-                    full_action_name = call.name
+                full_action_name = call.name
                 yield {
                     "type": "tool_call",
                     "data": {
