@@ -28,6 +28,7 @@ class TestModelProvider:
         assert ModelProvider.PREMAI == "premai"
         assert ModelProvider.LLAMA_CPP == "llama.cpp"
         assert ModelProvider.AZURE_OPENAI == "azure_openai"
+        assert ModelProvider.QIANFAN == "qianfan"
 
 
 class TestModelCapabilities:
@@ -195,6 +196,7 @@ class TestModelRegistry:
         mock_settings.GROQ_API_KEY = None
         mock_settings.OPEN_ROUTER_API_KEY = None
         mock_settings.NOVITA_API_KEY = None
+        mock_settings.QIANFAN_API_KEY = None
         mock_settings.HUGGINGFACE_API_KEY = None
         mock_settings.LLM_PROVIDER = "openai"
         mock_settings.LLM_NAME = ""
@@ -215,6 +217,7 @@ class TestModelRegistry:
         mock_settings.GROQ_API_KEY = None
         mock_settings.OPEN_ROUTER_API_KEY = None
         mock_settings.NOVITA_API_KEY = None
+        mock_settings.QIANFAN_API_KEY = None
         mock_settings.HUGGINGFACE_API_KEY = None
         mock_settings.LLM_PROVIDER = "openai"
         mock_settings.LLM_NAME = "llama3,gemma"
@@ -294,6 +297,18 @@ class TestModelRegistry:
             assert len(reg.models) > 0
 
     @pytest.mark.unit
+    def test_add_qianfan_models_with_key(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            mock_settings.QIANFAN_API_KEY = "qianfan-test"
+            mock_settings.LLM_PROVIDER = ""
+            mock_settings.LLM_NAME = ""
+            reg._add_qianfan_models(mock_settings)
+            assert len(reg.models) > 0
+
+    @pytest.mark.unit
     def test_add_azure_openai_models_specific(self):
         with patch.object(ModelRegistry, "_load_models"):
             reg = ModelRegistry()
@@ -328,6 +343,7 @@ class TestModelRegistry:
         mock_settings.GROQ_API_KEY = None
         mock_settings.OPEN_ROUTER_API_KEY = None
         mock_settings.NOVITA_API_KEY = None
+        mock_settings.QIANFAN_API_KEY = None
         mock_settings.HUGGINGFACE_API_KEY = None
         mock_settings.LLM_PROVIDER = ""
         mock_settings.LLM_NAME = ""
@@ -351,6 +367,7 @@ class TestModelRegistry:
         mock_settings.GROQ_API_KEY = None
         mock_settings.OPEN_ROUTER_API_KEY = None
         mock_settings.NOVITA_API_KEY = None
+        mock_settings.QIANFAN_API_KEY = None
         mock_settings.HUGGINGFACE_API_KEY = None
         mock_settings.LLM_PROVIDER = "openai"
         mock_settings.LLM_NAME = None
@@ -406,6 +423,18 @@ class TestModelRegistry:
             mock_settings.LLM_PROVIDER = "novita"
             mock_settings.LLM_NAME = "nonexistent"
             reg._add_novita_models(mock_settings)
+            assert len(reg.models) > 0
+
+    @pytest.mark.unit
+    def test_add_qianfan_models_no_key_with_provider(self):
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            mock_settings.QIANFAN_API_KEY = None
+            mock_settings.LLM_PROVIDER = "qianfan"
+            mock_settings.LLM_NAME = "nonexistent"
+            reg._add_qianfan_models(mock_settings)
             assert len(reg.models) > 0
 
     @pytest.mark.unit
@@ -544,6 +573,24 @@ class TestModelRegistry:
             assert len(reg.models) >= 1
 
     @pytest.mark.unit
+    def test_add_qianfan_no_key_matching_name(self):
+        """Cover qianfan fallback with matching name."""
+        from application.core.model_configs import QIANFAN_MODELS
+
+        with patch.object(ModelRegistry, "_load_models"):
+            reg = ModelRegistry()
+            reg.models = {}
+            mock_settings = MagicMock()
+            mock_settings.QIANFAN_API_KEY = None
+            mock_settings.LLM_PROVIDER = "qianfan"
+            if QIANFAN_MODELS:
+                mock_settings.LLM_NAME = QIANFAN_MODELS[0].id
+            else:
+                mock_settings.LLM_NAME = "nonexistent"
+            reg._add_qianfan_models(mock_settings)
+            assert len(reg.models) >= 1
+
+    @pytest.mark.unit
     def test_load_models_default_from_llm_name_exact_match(self):
         """Cover line 136/147: exact LLM_NAME match for default model."""
         mock_settings = MagicMock()
@@ -555,6 +602,7 @@ class TestModelRegistry:
         mock_settings.GROQ_API_KEY = None
         mock_settings.OPEN_ROUTER_API_KEY = None
         mock_settings.NOVITA_API_KEY = None
+        mock_settings.QIANFAN_API_KEY = None
         mock_settings.HUGGINGFACE_API_KEY = None
         mock_settings.LLM_PROVIDER = "openai"
         mock_settings.API_KEY = None

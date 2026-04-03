@@ -35,6 +35,7 @@ def get_gpt_model() -> str:
         "anthropic": "claude-2",
         "groq": "llama3-8b-8192",
         "novita": "deepseek/deepseek-r1",
+        "qianfan": "ernie-5.0",
     }
     return settings.LLM_NAME or model_map.get(settings.LLM_PROVIDER, "")
 

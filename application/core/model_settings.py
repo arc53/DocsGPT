@@ -19,6 +19,7 @@ class ModelProvider(str, Enum):
     PREMAI = "premai"
     SAGEMAKER = "sagemaker"
     NOVITA = "novita"
+    QIANFAN = "qianfan"
 
 
 @dataclass
@@ -118,6 +119,10 @@ class ModelRegistry:
             settings.LLM_PROVIDER == "novita" and settings.API_KEY
         ):
             self._add_novita_models(settings)
+        if settings.QIANFAN_API_KEY or (
+            settings.LLM_PROVIDER == "qianfan" and settings.API_KEY
+        ):
+            self._add_qianfan_models(settings)
         if settings.HUGGINGFACE_API_KEY or (
             settings.LLM_PROVIDER == "huggingface" and settings.API_KEY
         ):
@@ -262,6 +267,21 @@ class ModelRegistry:
                     self.models[model.id] = model
                     return
         for model in NOVITA_MODELS:
+            self.models[model.id] = model
+
+    def _add_qianfan_models(self, settings):
+        from application.core.model_configs import QIANFAN_MODELS
+
+        if settings.QIANFAN_API_KEY:
+            for model in QIANFAN_MODELS:
+                self.models[model.id] = model
+            return
+        if settings.LLM_PROVIDER == "qianfan" and settings.LLM_NAME:
+            for model in QIANFAN_MODELS:
+                if model.id == settings.LLM_NAME:
+                    self.models[model.id] = model
+                    return
+        for model in QIANFAN_MODELS:
             self.models[model.id] = model
 
     def _add_docsgpt_models(self, settings):

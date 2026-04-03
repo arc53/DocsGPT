@@ -62,6 +62,13 @@ class TestGetGptModel:
             s.LLM_PROVIDER = "unknown"
             assert get_gpt_model() == ""
 
+    @pytest.mark.unit
+    def test_qianfan_provider_default_model(self):
+        with patch("application.utils.settings") as s:
+            s.LLM_NAME = ""
+            s.LLM_PROVIDER = "qianfan"
+            assert get_gpt_model() == "ernie-5.0"
+
 
 class TestSafeFilename:
 
