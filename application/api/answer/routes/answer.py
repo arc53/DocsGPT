@@ -144,7 +144,6 @@ class AnswerResource(Resource, BaseAnswerResource):
             )
             stream_result = self.process_response_stream(stream)
 
-            if len(stream_result) == 7:
             # ---- Continuation mode ----
             if data.get("tool_actions"):
                 (
