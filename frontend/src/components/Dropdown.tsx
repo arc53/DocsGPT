@@ -78,6 +78,7 @@ function Dropdown<T extends DropdownOption>({
   const searchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [dropUp, setDropUp] = useState(false);
 
   const radius = rounded === '3xl' ? 'rounded-3xl' : 'rounded-xl';
   const radiusTop = rounded === '3xl' ? 'rounded-t-3xl' : 'rounded-t-xl';
@@ -90,13 +91,22 @@ function Dropdown<T extends DropdownOption>({
         setQuery('');
       }
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('mousedown', handler, true);
+    return () => document.removeEventListener('mousedown', handler, true);
   }, []);
 
   useEffect(() => {
     if (open && searchable && searchRef.current) searchRef.current.focus();
   }, [open, searchable]);
+
+  const handleToggle = () => {
+    if (!open && ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      setDropUp(spaceBelow < 220);
+    }
+    setOpen((v) => !v);
+  };
 
   const filtered = useMemo(() => {
     if (!searchable || !query.trim()) return options;
@@ -110,8 +120,8 @@ function Dropdown<T extends DropdownOption>({
     <div className={`relative ${size}`} ref={ref}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={`border-border bg-card text-foreground flex w-full cursor-pointer items-center justify-between border px-5 py-3 ${open ? radiusTop : radius}`}
+        onClick={handleToggle}
+        className={`border-border bg-card text-foreground flex w-full cursor-pointer items-center justify-between border px-5 py-3 ${open ? (dropUp ? radiusBottom : radiusTop) : radius}`}
       >
         <span
           className={`truncate ${contentSize} ${displayValue ? '' : 'text-muted-foreground'}`}
@@ -125,7 +135,11 @@ function Dropdown<T extends DropdownOption>({
 
       {open && (
         <div
-          className={`border-border bg-card absolute inset-x-0 z-20 -mt-px overflow-hidden border border-t-0 shadow-lg ${radiusBottom}`}
+          className={`border-border bg-card absolute inset-x-0 z-20 overflow-hidden border shadow-lg ${
+            dropUp
+              ? `bottom-full -mt-px border-b-0 ${radiusTop}`
+              : `-mt-px border-t-0 ${radiusBottom}`
+          }`}
         >
           {searchable && (
             <div className="flex items-center px-3 py-2">
