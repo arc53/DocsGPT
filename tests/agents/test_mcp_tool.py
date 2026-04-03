@@ -28,6 +28,7 @@ def _patch_mcp_globals(monkeypatch):
     monkeypatch.setattr(mcp_mod, "mongo", mock_mongo)
     monkeypatch.setattr(mcp_mod, "db", mock_db)
     monkeypatch.setattr(mcp_mod, "_mcp_clients_cache", {})
+    monkeypatch.setattr(mcp_mod, "validate_url", lambda url: url)
 
 
 @pytest.fixture

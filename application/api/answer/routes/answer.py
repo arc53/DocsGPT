@@ -85,6 +85,10 @@ class AnswerResource(Resource, BaseAnswerResource):
                 ) = processor.resume_from_tool_actions(
                     data["tool_actions"], data["conversation_id"]
                 )
+                if not processor.decoded_token:
+                    return make_response({"error": "Unauthorized"}, 401)
+                if error := self.check_usage(processor.agent_config):
+                    return error
                 stream = self.complete_stream(
                     question="",
                     agent=agent,

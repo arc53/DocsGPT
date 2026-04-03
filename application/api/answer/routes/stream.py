@@ -92,6 +92,14 @@ class StreamResource(Resource, BaseAnswerResource):
                 ) = processor.resume_from_tool_actions(
                     data["tool_actions"], data["conversation_id"]
                 )
+                if not processor.decoded_token:
+                    return Response(
+                        self.error_stream_generate("Unauthorized"),
+                        status=401,
+                        mimetype="text/event-stream",
+                    )
+                if error := self.check_usage(processor.agent_config):
+                    return error
                 return Response(
                     self.complete_stream(
                         question="",
