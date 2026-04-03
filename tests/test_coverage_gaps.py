@@ -2105,13 +2105,16 @@ class TestInternalRoutes:
         app.register_blueprint(internal)
         return app
 
+    _TEST_KEY = "test-key"
+    _AUTH_HEADERS = {"X-Internal-Key": "test-key"}
+
     def test_upload_index_no_user(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.internal.routes.settings"
             ) as ms:
-                ms.INTERNAL_KEY = None
-                resp = client.post("/api/upload_index")
+                ms.INTERNAL_KEY = self._TEST_KEY
+                resp = client.post("/api/upload_index", headers=self._AUTH_HEADERS)
         assert resp.get_json()["status"] == "no user"
 
     def test_upload_index_no_name(self, app):
@@ -2119,9 +2122,18 @@ class TestInternalRoutes:
             with patch(
                 "application.api.internal.routes.settings"
             ) as ms:
+                ms.INTERNAL_KEY = self._TEST_KEY
+                resp = client.post("/api/upload_index", data={"user": "u1"}, headers=self._AUTH_HEADERS)
+        assert resp.get_json()["status"] == "no name"
+
+    def test_upload_index_rejected_without_internal_key(self, app):
+        with app.test_client() as client:
+            with patch(
+                "application.api.internal.routes.settings"
+            ) as ms:
                 ms.INTERNAL_KEY = None
                 resp = client.post("/api/upload_index", data={"user": "u1"})
-        assert resp.get_json()["status"] == "no name"
+        assert resp.status_code == 401
 
 
 # ---------------------------------------------------------------------------

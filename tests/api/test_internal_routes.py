@@ -48,7 +48,7 @@ def internal_app(monkeypatch, mock_mongo_db):
 @pytest.mark.unit
 class TestVerifyInternalKey:
 
-    def test_no_internal_key_configured_allows_access(
+    def test_no_internal_key_configured_rejects_access(
         self, internal_app, monkeypatch
     ):
         app, db = internal_app
@@ -63,9 +63,8 @@ class TestVerifyInternalKey:
             ),
         )
         with app.test_client() as client:
-            # download will fail for missing file but should not be 401
             resp = client.get("/api/download?user=u&name=n&file=f")
-            assert resp.status_code != 401
+            assert resp.status_code == 401
 
     def test_missing_key_returns_401(self, internal_app, monkeypatch):
         app, db = internal_app
@@ -131,9 +130,12 @@ class TestVerifyInternalKey:
 @pytest.mark.unit
 class TestUploadIndex:
 
+    _TEST_INTERNAL_KEY = "test-internal-key"
+    _AUTH_HEADERS = {"X-Internal-Key": "test-internal-key"}
+
     def _make_settings(self, vector_store="faiss"):
         return MagicMock(
-            INTERNAL_KEY=None,
+            INTERNAL_KEY=self._TEST_INTERNAL_KEY,
             UPLOAD_FOLDER="uploads",
             VECTOR_STORE=vector_store,
             EMBEDDINGS_NAME="test_embeddings",
@@ -146,7 +148,7 @@ class TestUploadIndex:
             "application.api.internal.routes.settings", self._make_settings()
         )
         with app.test_client() as client:
-            resp = client.post("/api/upload_index", data={})
+            resp = client.post("/api/upload_index", data={}, headers=self._AUTH_HEADERS)
             assert resp.json["status"] == "no user"
 
     def test_missing_name_returns_no_name(self, internal_app, monkeypatch):
@@ -155,7 +157,7 @@ class TestUploadIndex:
             "application.api.internal.routes.settings", self._make_settings()
         )
         with app.test_client() as client:
-            resp = client.post("/api/upload_index", data={"user": "testuser"})
+            resp = client.post("/api/upload_index", data={"user": "testuser"}, headers=self._AUTH_HEADERS)
             assert resp.json["status"] == "no name"
 
     def test_creates_new_source_entry(self, internal_app, monkeypatch):
@@ -182,6 +184,7 @@ class TestUploadIndex:
                     "id": doc_id,
                     "type": "local",
                 },
+                headers=self._AUTH_HEADERS,
             )
             assert resp.json["status"] == "ok"
 
@@ -219,6 +222,7 @@ class TestUploadIndex:
                     "id": str(doc_id),
                     "type": "remote",
                 },
+                headers=self._AUTH_HEADERS,
             )
             assert resp.json["status"] == "ok"
 
@@ -252,6 +256,7 @@ class TestUploadIndex:
                     "type": "local",
                     "directory_structure": json.dumps(dir_struct),
                 },
+                headers=self._AUTH_HEADERS,
             )
             assert resp.json["status"] == "ok"
 
@@ -285,6 +290,7 @@ class TestUploadIndex:
                     "type": "local",
                     "directory_structure": "not valid json",
                 },
+                headers=self._AUTH_HEADERS,
             )
             assert resp.json["status"] == "ok"
 
@@ -317,6 +323,7 @@ class TestUploadIndex:
                     "type": "local",
                     "file_name_map": json.dumps(fmap),
                 },
+                headers=self._AUTH_HEADERS,
             )
             assert resp.json["status"] == "ok"
 
@@ -349,6 +356,7 @@ class TestUploadIndex:
                     "id": doc_id,
                     "type": "local",
                 },
+                headers=self._AUTH_HEADERS,
             )
             assert resp.json["status"] == "no file"
 
@@ -379,6 +387,7 @@ class TestUploadIndex:
                     "type": "local",
                     "file_faiss": (io.BytesIO(b""), ""),
                 },
+                headers=self._AUTH_HEADERS,
             )
             assert resp.json["status"] == "no file name"
 
@@ -408,6 +417,7 @@ class TestUploadIndex:
                     "remote_data": '{"url":"http://example.com"}',
                     "sync_frequency": "daily",
                 },
+                headers=self._AUTH_HEADERS,
             )
             assert resp.json["status"] == "ok"
 
@@ -443,6 +453,7 @@ class TestUploadIndex:
                     "file_pkl": (io.BytesIO(b"pkl data"), "index.pkl"),
                 },
                 content_type="multipart/form-data",
+                headers=self._AUTH_HEADERS,
             )
             assert resp.json["status"] == "ok"
 
@@ -477,6 +488,7 @@ class TestUploadIndex:
                     "file_faiss": (io.BytesIO(b"faiss data"), "index.faiss"),
                 },
                 content_type="multipart/form-data",
+                headers=self._AUTH_HEADERS,
             )
             assert resp.json["status"] == "no file"
 
@@ -508,8 +520,26 @@ class TestUploadIndex:
                     "file_pkl": (io.BytesIO(b""), ""),
                 },
                 content_type="multipart/form-data",
+                headers=self._AUTH_HEADERS,
             )
             assert resp.json["status"] == "no file name"
+
+    def test_no_internal_key_rejects_upload(self, internal_app, monkeypatch):
+        """Verify that upload_index is rejected when INTERNAL_KEY is not set."""
+        app, db = internal_app
+        monkeypatch.setattr(
+            "application.api.internal.routes.settings",
+            MagicMock(
+                INTERNAL_KEY=None,
+                UPLOAD_FOLDER="uploads",
+                VECTOR_STORE="faiss",
+                EMBEDDINGS_NAME="test",
+                MONGO_DB_NAME="docsgpt",
+            ),
+        )
+        with app.test_client() as client:
+            resp = client.post("/api/upload_index", data={"user": "attacker"})
+            assert resp.status_code == 401
 
     def test_update_existing_with_file_name_map(self, internal_app, monkeypatch):
         """Cover line 124: update existing entry with file_name_map."""
@@ -540,6 +570,7 @@ class TestUploadIndex:
                     "type": "local",
                     "file_name_map": json.dumps(fmap),
                 },
+                headers=self._AUTH_HEADERS,
             )
             assert resp.json["status"] == "ok"
 
@@ -572,6 +603,7 @@ class TestUploadIndex:
                     "type": "local",
                     "file_name_map": "not valid json{{{",
                 },
+                headers=self._AUTH_HEADERS,
             )
             assert resp.json["status"] == "ok"
 
