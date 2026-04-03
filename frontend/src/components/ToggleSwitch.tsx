@@ -52,7 +52,7 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
     >
       {label && (
         <span
-          className={`text-eerie-black dark:text-white ${
+          className={`text-foreground dark:text-white ${
             labelPosition === 'left' ? 'mr-3' : 'ml-3'
           }`}
         >

@@ -15,11 +15,7 @@ class ClassicAgent(BaseAgent):
     ) -> Generator[Dict, None, None]:
         """Core generator function for ClassicAgent execution flow"""
 
-        tools_dict = (
-            self._get_user_tools(self.user)
-            if not self.user_api_key
-            else self._get_tools(self.user_api_key)
-        )
+        tools_dict = self.tool_executor.get_tools()
         self._prepare_tools(tools_dict)
 
         messages = self._build_messages(self.prompt, query)

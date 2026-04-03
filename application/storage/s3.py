@@ -2,6 +2,7 @@
 
 import io
 import os
+import posixpath
 from typing import BinaryIO, Callable, List
 
 import boto3
@@ -13,6 +14,20 @@ from botocore.exceptions import ClientError
 
 class S3Storage(BaseStorage):
     """AWS S3 storage implementation."""
+
+    @staticmethod
+    def _validate_path(path: str) -> str:
+        """Validate and normalize an S3 key to prevent path traversal.
+
+        Raises:
+            ValueError: If the path contains traversal sequences or is absolute.
+        """
+        if "\x00" in path:
+            raise ValueError(f"Null byte in path: {path}")
+        normalized = posixpath.normpath(path)
+        if normalized.startswith("/") or normalized.startswith(".."):
+            raise ValueError(f"Path traversal detected: {path}")
+        return normalized
 
     def __init__(self, bucket_name=None):
         """
@@ -46,6 +61,7 @@ class S3Storage(BaseStorage):
         **kwargs,
     ) -> dict:
         """Save a file to S3 storage."""
+        path = self._validate_path(path)
         self.s3.upload_fileobj(
             file_data, self.bucket_name, path, ExtraArgs={"StorageClass": storage_class}
         )
@@ -61,6 +77,7 @@ class S3Storage(BaseStorage):
 
     def get_file(self, path: str) -> BinaryIO:
         """Get a file from S3 storage."""
+        path = self._validate_path(path)
         if not self.file_exists(path):
             raise FileNotFoundError(f"File not found: {path}")
         file_obj = io.BytesIO()
@@ -70,6 +87,7 @@ class S3Storage(BaseStorage):
 
     def delete_file(self, path: str) -> bool:
         """Delete a file from S3 storage."""
+        path = self._validate_path(path)
         try:
             self.s3.delete_object(Bucket=self.bucket_name, Key=path)
             return True
@@ -78,6 +96,7 @@ class S3Storage(BaseStorage):
 
     def file_exists(self, path: str) -> bool:
         """Check if a file exists in S3 storage."""
+        path = self._validate_path(path)
         try:
             self.s3.head_object(Bucket=self.bucket_name, Key=path)
             return True
@@ -115,6 +134,7 @@ class S3Storage(BaseStorage):
         import logging
         import tempfile
 
+        path = self._validate_path(path)
         if not self.file_exists(path):
             raise FileNotFoundError(f"File not found in S3: {path}")
         with tempfile.NamedTemporaryFile(

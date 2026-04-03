@@ -29,7 +29,7 @@
 
 <div align="center">
   <br>
-<img src="https://d3dg1063dc54p9.cloudfront.net/videos/demov7.gif" alt="video-example-of-docs-gpt" width="800" height="450">
+<img src="https://d3dg1063dc54p9.cloudfront.net/videos/demo-26.gif" alt="video-example-of-docs-gpt" width="800" height="480">
 </div>
 <h3 align="left">
   <strong>Key Features:</strong>

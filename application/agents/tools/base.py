@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 
 
 class Tool(ABC):
+    internal: bool = False
+
     @abstractmethod
     def execute_action(self, action_name: str, **kwargs):
         pass

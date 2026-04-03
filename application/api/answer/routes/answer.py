@@ -145,33 +145,76 @@ class AnswerResource(Resource, BaseAnswerResource):
             stream_result = self.process_response_stream(stream)
 
             if len(stream_result) == 7:
+            # ---- Continuation mode ----
+            if data.get("tool_actions"):
                 (
-                    conversation_id,
-                    response,
-                    sources,
-                    tool_calls,
-                    thought,
-                    error,
-                    structured_info,
-                ) = stream_result
-            else:
-                conversation_id, response, sources, tool_calls, thought, error = (
-                    stream_result
+                    agent,
+                    messages,
+                    tools_dict,
+                    pending_tool_calls,
+                    tool_actions,
+                ) = processor.resume_from_tool_actions(
+                    data["tool_actions"], data["conversation_id"]
                 )
-                structured_info = None
+                if not processor.decoded_token:
+                    return make_response({"error": "Unauthorized"}, 401)
+                if error := self.check_usage(processor.agent_config):
+                    return error
+                stream = self.complete_stream(
+                    question="",
+                    agent=agent,
+                    conversation_id=processor.conversation_id,
+                    user_api_key=processor.agent_config.get("user_api_key"),
+                    decoded_token=processor.decoded_token,
+                    agent_id=processor.agent_id,
+                    model_id=processor.model_id,
+                    _continuation={
+                        "messages": messages,
+                        "tools_dict": tools_dict,
+                        "pending_tool_calls": pending_tool_calls,
+                        "tool_actions": tool_actions,
+                    },
+                )
+            else:
+                # ---- Normal mode ----
+                agent = processor.build_agent(data.get("question", ""))
+                if not processor.decoded_token:
+                    return make_response({"error": "Unauthorized"}, 401)
 
-            if error:
-                return make_response({"error": error}, 400)
+                if error := self.check_usage(processor.agent_config):
+                    return error
+
+                stream = self.complete_stream(
+                    question=data["question"],
+                    agent=agent,
+                    conversation_id=processor.conversation_id,
+                    user_api_key=processor.agent_config.get("user_api_key"),
+                    decoded_token=processor.decoded_token,
+                    isNoneDoc=data.get("isNoneDoc"),
+                    index=None,
+                    should_save_conversation=data.get("save_conversation", True),
+                    agent_id=processor.agent_id,
+                    is_shared_usage=processor.is_shared_usage,
+                    shared_token=processor.shared_token,
+                    model_id=processor.model_id,
+                )
+
+            stream_result = self.process_response_stream(stream)
+
+            if stream_result["error"]:
+                return make_response({"error": stream_result["error"]}, 400)
+
             result = {
-                "conversation_id": conversation_id,
-                "answer": response,
-                "sources": sources,
-                "tool_calls": tool_calls,
-                "thought": thought,
+                "conversation_id": stream_result["conversation_id"],
+                "answer": stream_result["answer"],
+                "sources": stream_result["sources"],
+                "tool_calls": stream_result["tool_calls"],
+                "thought": stream_result["thought"],
             }
 
-            if structured_info:
-                result.update(structured_info)
+            extra_info = stream_result.get("extra")
+            if extra_info:
+                result.update(extra_info)
         except Exception as e:
             logger.error(
                 f"/api/answer - error: {str(e)} - traceback: {traceback.format_exc()}",

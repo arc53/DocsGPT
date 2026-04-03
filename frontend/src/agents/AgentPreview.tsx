@@ -146,7 +146,7 @@ export default function AgentPreview() {
             autoFocus={false}
           />
         </div>
-        <p className="text-gray-4000 dark:text-sonic-silver w-full bg-transparent text-center text-xs md:inline">
+        <p className="text-muted-foreground w-full bg-transparent text-center text-xs md:inline">
           {t('agents.preview.testMessage')}
         </p>
       </div>

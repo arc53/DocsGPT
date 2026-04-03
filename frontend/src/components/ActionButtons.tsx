@@ -53,7 +53,7 @@ export default function ActionButtons({
           <button
             title={t('actionButtons.openNewChat')}
             onClick={newChat}
-            className="hover:bg-bright-gray flex items-center gap-1 rounded-full p-2 lg:hidden dark:hover:bg-[#28292E]"
+            className="hover:bg-accent dark:hover:bg-accent flex items-center gap-1 rounded-full p-2 lg:hidden"
           >
             <img
               className="filter dark:invert"
@@ -70,7 +70,7 @@ export default function ActionButtons({
             <button
               title={t('actionButtons.share')}
               onClick={() => setShareModalState(true)}
-              className="hover:bg-bright-gray rounded-full p-2 dark:hover:bg-[#28292E]"
+              className="hover:bg-accent dark:hover:bg-accent rounded-full p-2"
             >
               <img
                 className="filter dark:invert"

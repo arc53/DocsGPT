@@ -3,8 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import SearchableDropdown from '../components/SearchableDropdown';
-import { DropdownProps } from '../components/types/Dropdown.types';
+import Dropdown, { DropdownProps } from '../components/Dropdown';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, PromptProps } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -23,7 +22,7 @@ export default function Prompts({
   onSelectPrompt,
   setPrompts,
   title,
-  titleClassName = 'dark:text-bright-gray font-medium',
+  titleClassName = 'dark:text-foreground font-medium',
   dropdownProps = {},
   showAddButton = true,
 }: ExtendedPromptProps) {
@@ -186,8 +185,9 @@ export default function Prompts({
           <p className={titleClassName}>
             {title ? title : t('settings.general.prompt')}
           </p>
-          <div className="flex flex-row flex-wrap items-baseline justify-start gap-6">
-            <SearchableDropdown
+          <div className="flex flex-row flex-wrap items-end justify-start gap-6">
+            <Dropdown
+              searchable
               options={prompts.map((prompt: any) =>
                 typeof prompt === 'string'
                   ? { name: prompt, id: prompt, type: '' }
@@ -218,7 +218,7 @@ export default function Prompts({
             />
             {showAddButton && (
               <button
-                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue h-10 w-20 rounded-3xl border border-solid text-sm transition-colors hover:text-white"
+                className="border-primary text-primary hover:bg-primary/90 w-20 rounded-3xl border border-solid py-3 text-sm transition-colors hover:text-white"
                 onClick={() => {
                   setModalType('ADD');
                   setModalState('ACTIVE');

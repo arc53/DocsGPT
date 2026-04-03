@@ -77,6 +77,10 @@ const endpoints = {
     WORKFLOWS: '/api/workflows',
     WORKFLOW: (id: string) => `/api/workflows/${id}`,
   },
+  V1: {
+    CHAT_COMPLETIONS: '/v1/chat/completions',
+    MODELS: '/v1/models',
+  },
   CONVERSATION: {
     ANSWER: '/api/answer',
     ANSWER_STREAMING: '/stream',

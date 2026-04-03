@@ -156,7 +156,7 @@ export default function SharedAgent() {
             alt="No agent found"
             className="mx-auto mb-6 h-32 w-32"
           />
-          <p className="dark:text-gray-4000 text-center text-lg text-[#71717A]">
+          <p className="text-muted-foreground text-center text-lg">
             {t('agents.shared.notFound')}
           </p>
         </div>
@@ -170,7 +170,7 @@ export default function SharedAgent() {
           alt="agent-logo"
           className="h-6 w-6 rounded-full object-contain"
         />
-        <h2 className="text-eerie-black text-lg font-semibold dark:text-[#E0E0E0]">
+        <h2 className="text-foreground text-lg font-semibold">
           {sharedAgent.name}
         </h2>
       </div>
@@ -201,7 +201,7 @@ export default function SharedAgent() {
               autoFocus={false}
             />
           </div>
-          <p className="text-gray-4000 dark:text-sonic-silver hidden w-screen self-center bg-transparent py-2 text-center text-xs md:inline md:w-full">
+          <p className="text-muted-foreground hidden w-screen self-center bg-transparent py-2 text-center text-xs md:inline md:w-full">
             {t('tagline')}
           </p>
         </div>

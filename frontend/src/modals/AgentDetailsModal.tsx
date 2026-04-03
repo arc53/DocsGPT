@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import ExternalLinkIcon from '../assets/external-link.svg';
+
 import { Agent } from '../agents/types';
 import userService from '../api/services/userService';
+import ExternalLinkIcon from '../assets/external-link.svg';
 import CopyButton from '../components/CopyButton';
 import Spinner from '../components/Spinner';
 import { ActiveState } from '../models/misc';
@@ -81,25 +82,25 @@ export default function AgentDetailsModal({
   if (modalState !== 'ACTIVE') return null;
   return (
     <WrapperModal
-      className="sm:w-[512px]"
+      className="sm:w-lg"
       close={() => {
         setModalState('INACTIVE');
       }}
     >
       <div>
-        <h2 className="text-jet dark:text-bright-gray text-xl font-semibold">
+        <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
           {t('modals.agentDetails.title')}
         </h2>
         <div className="mt-8 flex flex-col gap-6">
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
-              <h2 className="text-jet dark:text-bright-gray text-base font-semibold">
+              <h2 className="text-foreground dark:text-foreground text-base font-semibold">
                 {t('modals.agentDetails.publicLink')}
               </h2>
             </div>
             {sharedToken ? (
               <div className="flex flex-col gap-2">
-                <p className="font-roboto inline text-[14px] leading-normal font-medium break-all text-gray-700 dark:text-[#ECECF1]">
+                <p className="font-roboto dark:text-foreground inline text-[14px] leading-normal font-medium break-all text-gray-700">
                   <a
                     href={`${baseURL}/shared/agent/${sharedToken}`}
                     target="_blank"
@@ -115,7 +116,7 @@ export default function AgentDetailsModal({
                 </p>
                 <a
                   href="https://docs.docsgpt.cloud/Agents/basics#core-components-of-an-agent"
-                  className="text-purple-30 flex w-fit items-center gap-1 hover:underline"
+                  className="text-primary flex w-fit items-center gap-1 hover:underline"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -131,7 +132,7 @@ export default function AgentDetailsModal({
               </div>
             ) : (
               <button
-                className="border-purple-30 text-purple-30 hover:bg-purple-30 flex w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
+                className="border-primary text-primary hover:bg-primary/90 flex w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
                 onClick={handleGeneratePublicLink}
               >
                 {loadingStates.publicLink ? (
@@ -143,13 +144,13 @@ export default function AgentDetailsModal({
             )}
           </div>
           <div className="flex flex-col gap-3">
-            <h2 className="text-jet dark:text-bright-gray text-base font-semibold">
+            <h2 className="text-foreground dark:text-foreground text-base font-semibold">
               {t('modals.agentDetails.apiKey')}
             </h2>
             {apiKey ? (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
-                  <div className="font-roboto text-[14px] leading-normal font-medium break-all text-gray-700 dark:text-[#ECECF1]">
+                  <div className="font-roboto dark:text-foreground text-[14px] leading-normal font-medium break-all text-gray-700">
                     {apiKey}
                     {!apiKey.includes('...') && (
                       <CopyButton
@@ -162,7 +163,7 @@ export default function AgentDetailsModal({
                   {!apiKey.includes('...') && (
                     <a
                       href={`https://widget.docsgpt.cloud/?api-key=${apiKey}`}
-                      className="group border-purple-30 text-purple-30 hover:bg-purple-30 ml-8 flex w-[101px] items-center justify-center gap-1 rounded-[62px] border py-1.5 text-sm font-medium transition-colors hover:text-white"
+                      className="group border-primary text-primary hover:bg-primary/90 ml-8 flex w-[101px] items-center justify-center gap-1 rounded-[62px] border py-1.5 text-sm font-medium transition-colors hover:text-white"
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -177,20 +178,20 @@ export default function AgentDetailsModal({
                 </div>
               </div>
             ) : (
-              <button className="border-purple-30 text-purple-30 hover:bg-purple-30 w-28 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white">
+              <button className="border-primary text-primary hover:bg-primary/90 w-28 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white">
                 {t('modals.agentDetails.generate')}
               </button>
             )}
           </div>
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
-              <h2 className="text-jet dark:text-bright-gray text-base font-semibold">
+              <h2 className="text-foreground dark:text-foreground text-base font-semibold">
                 {t('modals.agentDetails.webhookUrl')}
               </h2>
             </div>
             {webhookUrl ? (
               <div className="flex flex-col gap-2">
-                <p className="font-roboto text-[14px] leading-normal font-medium break-all text-gray-700 dark:text-[#ECECF1]">
+                <p className="font-roboto dark:text-foreground text-[14px] leading-normal font-medium break-all text-gray-700">
                   <a href={webhookUrl} target="_blank" rel="noreferrer">
                     {webhookUrl}
                   </a>
@@ -202,7 +203,7 @@ export default function AgentDetailsModal({
                 </p>
                 <a
                   href="https://docs.docsgpt.cloud/Agents/basics#core-components-of-an-agent"
-                  className="text-purple-30 flex w-fit items-center gap-1 hover:underline"
+                  className="text-primary flex w-fit items-center gap-1 hover:underline"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -218,7 +219,7 @@ export default function AgentDetailsModal({
               </div>
             ) : (
               <button
-                className="border-purple-30 text-purple-30 hover:bg-purple-30 flex w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
+                className="border-primary text-primary hover:bg-primary/90 flex w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
                 onClick={handleGenerateWebhook}
               >
                 {loadingStates.webhook ? (

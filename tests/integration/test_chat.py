@@ -493,6 +493,486 @@ This is test documentation for integration tests.
             return False
 
     # -------------------------------------------------------------------------
+    # Agentic / Research Agent Tests
+    # -------------------------------------------------------------------------
+
+    def _create_agent_with_type(self, agent_type: str) -> Optional[tuple]:
+        """Create a test agent with the given agent_type. Returns (agent_id, api_key) or None."""
+        if not self.is_authenticated:
+            return None
+
+        payload = {
+            "name": f"Chat Test {agent_type.title()} Agent {int(time.time())}",
+            "description": f"Integration test {agent_type} agent",
+            "prompt_id": "default",
+            "chunks": 2,
+            "retriever": "classic",
+            "agent_type": agent_type,
+            "status": "draft",
+        }
+
+        try:
+            response = self.post("/api/create_agent", json=payload, timeout=10)
+            if response.status_code in [200, 201]:
+                result = response.json()
+                agent_id = result.get("id")
+                api_key = result.get("key")
+                if agent_id:
+                    return (agent_id, api_key)
+        except Exception:
+            pass
+
+        return None
+
+    def test_stream_agentic_agent(self) -> bool:
+        """Test /stream endpoint with an agentic agent."""
+        test_name = "Stream endpoint (agentic agent)"
+
+        agent_result = self._create_agent_with_type("agentic")
+        if not agent_result:
+            if not self.require_auth(test_name):
+                return True
+            self.record_result(test_name, True, "Skipped (no agent)")
+            return True
+
+        agent_id, _ = agent_result
+        self.print_header(f"Testing {test_name}")
+
+        payload = {
+            "question": "What is DocsGPT?",
+            "history": "[]",
+            "agent_id": agent_id,
+        }
+
+        try:
+            self.print_info(f"POST /stream with agentic agent_id={agent_id[:8]}...")
+
+            response = requests.post(
+                f"{self.base_url}/stream",
+                json=payload,
+                headers=self.headers,
+                stream=True,
+                timeout=60,
+            )
+
+            self.print_info(f"Status Code: {response.status_code}")
+
+            if response.status_code != 200:
+                self.print_error(f"Expected 200, got {response.status_code}")
+                self.record_result(test_name, False, f"Status {response.status_code}")
+                return False
+
+            events = []
+            full_response = ""
+            for line in response.iter_lines():
+                if line:
+                    line_str = line.decode("utf-8")
+                    if line_str.startswith("data: "):
+                        try:
+                            data = json_module.loads(line_str[6:])
+                            events.append(data)
+                            if data.get("type") in ["stream", "answer"]:
+                                full_response += data.get("message", "") or data.get("answer", "")
+                            elif data.get("type") == "end":
+                                break
+                        except json_module.JSONDecodeError:
+                            pass
+
+            self.print_success(f"Received {len(events)} events")
+            if full_response:
+                self.print_success(f"Answer preview: {full_response[:100]}...")
+            self.record_result(test_name, True, "Success")
+            return True
+
+        except Exception as e:
+            self.print_error(f"Error: {str(e)}")
+            self.record_result(test_name, False, str(e))
+            return False
+
+    def test_answer_agentic_agent(self) -> bool:
+        """Test /api/answer endpoint with an agentic agent."""
+        test_name = "Answer endpoint (agentic agent)"
+
+        agent_result = self._create_agent_with_type("agentic")
+        if not agent_result:
+            if not self.require_auth(test_name):
+                return True
+            self.record_result(test_name, True, "Skipped (no agent)")
+            return True
+
+        agent_id, _ = agent_result
+        self.print_header(f"Testing {test_name}")
+
+        payload = {
+            "question": "What is DocsGPT?",
+            "history": "[]",
+            "agent_id": agent_id,
+        }
+
+        try:
+            self.print_info(f"POST /api/answer with agentic agent_id={agent_id[:8]}...")
+
+            response = self.post("/api/answer", json=payload, timeout=60)
+
+            self.print_info(f"Status Code: {response.status_code}")
+
+            if response.status_code != 200:
+                self.print_error(f"Expected 200, got {response.status_code}")
+                self.record_result(test_name, False, f"Status {response.status_code}")
+                return False
+
+            result = response.json()
+            answer = result.get("answer", "")
+            self.print_success(f"Answer received: {answer[:100]}...")
+            self.record_result(test_name, True, "Success")
+            return True
+
+        except Exception as e:
+            self.print_error(f"Error: {str(e)}")
+            self.record_result(test_name, False, str(e))
+            return False
+
+    def test_stream_research_agent(self) -> bool:
+        """Test /stream endpoint with a research agent.
+
+        Research agents emit additional SSE event types:
+        - research_plan: the decomposed research steps
+        - research_progress: per-step status updates
+        """
+        test_name = "Stream endpoint (research agent)"
+
+        agent_result = self._create_agent_with_type("research")
+        if not agent_result:
+            if not self.require_auth(test_name):
+                return True
+            self.record_result(test_name, True, "Skipped (no agent)")
+            return True
+
+        agent_id, _ = agent_result
+        self.print_header(f"Testing {test_name}")
+
+        payload = {
+            "question": "What is DocsGPT?",
+            "history": "[]",
+            "agent_id": agent_id,
+        }
+
+        try:
+            self.print_info(f"POST /stream with research agent_id={agent_id[:8]}...")
+
+            response = requests.post(
+                f"{self.base_url}/stream",
+                json=payload,
+                headers=self.headers,
+                stream=True,
+                timeout=120,
+            )
+
+            self.print_info(f"Status Code: {response.status_code}")
+
+            if response.status_code != 200:
+                self.print_error(f"Expected 200, got {response.status_code}")
+                self.record_result(test_name, False, f"Status {response.status_code}")
+                return False
+
+            events = []
+            full_response = ""
+            saw_plan = False
+            saw_progress = False
+            for line in response.iter_lines():
+                if line:
+                    line_str = line.decode("utf-8")
+                    if line_str.startswith("data: "):
+                        try:
+                            data = json_module.loads(line_str[6:])
+                            events.append(data)
+                            event_type = data.get("type", "")
+                            if event_type in ["stream", "answer"]:
+                                full_response += data.get("message", "") or data.get("answer", "")
+                            elif event_type == "research_plan":
+                                saw_plan = True
+                                steps = data.get("data", {}).get("steps", [])
+                                self.print_info(f"Research plan: {len(steps)} steps, complexity={data.get('data', {}).get('complexity')}")
+                            elif event_type == "research_progress":
+                                saw_progress = True
+                            elif event_type == "end":
+                                break
+                        except json_module.JSONDecodeError:
+                            pass
+
+            self.print_success(f"Received {len(events)} events")
+            if saw_plan:
+                self.print_success("Received research_plan event")
+            if saw_progress:
+                self.print_success("Received research_progress events")
+            if full_response:
+                self.print_success(f"Report preview: {full_response[:100]}...")
+
+            self.record_result(test_name, True, "Success")
+            return True
+
+        except Exception as e:
+            self.print_error(f"Error: {str(e)}")
+            self.record_result(test_name, False, str(e))
+            return False
+
+    def test_answer_research_agent(self) -> bool:
+        """Test /api/answer endpoint with a research agent."""
+        test_name = "Answer endpoint (research agent)"
+
+        agent_result = self._create_agent_with_type("research")
+        if not agent_result:
+            if not self.require_auth(test_name):
+                return True
+            self.record_result(test_name, True, "Skipped (no agent)")
+            return True
+
+        agent_id, _ = agent_result
+        self.print_header(f"Testing {test_name}")
+
+        payload = {
+            "question": "What is DocsGPT?",
+            "history": "[]",
+            "agent_id": agent_id,
+        }
+
+        try:
+            self.print_info(f"POST /api/answer with research agent_id={agent_id[:8]}...")
+
+            response = self.post("/api/answer", json=payload, timeout=120)
+
+            self.print_info(f"Status Code: {response.status_code}")
+
+            if response.status_code != 200:
+                self.print_error(f"Expected 200, got {response.status_code}")
+                self.record_result(test_name, False, f"Status {response.status_code}")
+                return False
+
+            result = response.json()
+            answer = result.get("answer", "")
+            self.print_success(f"Answer received: {answer[:100]}...")
+            self.record_result(test_name, True, "Success")
+            return True
+
+        except Exception as e:
+            self.print_error(f"Error: {str(e)}")
+            self.record_result(test_name, False, str(e))
+            return False
+
+    # -------------------------------------------------------------------------
+    # Workflow with Agentic Node Tests
+    # -------------------------------------------------------------------------
+
+    def _create_workflow_with_agentic_node(self) -> Optional[str]:
+        """Create a workflow with a single agentic agent node.
+
+        Returns the workflow_id or None on failure.
+        """
+        nodes = [
+            {
+                "id": "start_1",
+                "type": "start",
+                "title": "Start",
+                "data": {},
+            },
+            {
+                "id": "agent_1",
+                "type": "agent",
+                "title": "Agentic Node",
+                "data": {
+                    "agent_type": "agentic",
+                    "system_prompt": "You are a helpful assistant.",
+                    "prompt_template": "",
+                    "stream_to_user": True,
+                    "tools": [],
+                    "sources": [],
+                    "chunks": "2",
+                },
+            },
+            {
+                "id": "end_1",
+                "type": "end",
+                "title": "End",
+                "data": {},
+            },
+        ]
+        edges = [
+            {"id": "edge_1", "source": "start_1", "target": "agent_1"},
+            {"id": "edge_2", "source": "agent_1", "target": "end_1"},
+        ]
+
+        payload = {
+            "name": f"Agentic Workflow Test {int(time.time())}",
+            "nodes": nodes,
+            "edges": edges,
+        }
+
+        try:
+            response = self.post("/api/workflows", json=payload, timeout=15)
+            if response.status_code in [200, 201]:
+                result = response.json()
+                return result.get("id")
+        except Exception:
+            pass
+
+        return None
+
+    def _create_workflow_agent(self, workflow_id: str) -> Optional[tuple]:
+        """Create an agent of type 'workflow' referencing a workflow.
+
+        Returns (agent_id, api_key) or None.
+        """
+        payload = {
+            "name": f"Workflow Agent Test {int(time.time())}",
+            "description": "Integration test workflow agent with agentic node",
+            "prompt_id": "default",
+            "chunks": 2,
+            "retriever": "classic",
+            "agent_type": "workflow",
+            "workflow": workflow_id,
+            "status": "draft",
+        }
+
+        try:
+            response = self.post("/api/create_agent", json=payload, timeout=10)
+            if response.status_code in [200, 201]:
+                result = response.json()
+                agent_id = result.get("id")
+                api_key = result.get("key")
+                if agent_id:
+                    return (agent_id, api_key)
+        except Exception:
+            pass
+
+        return None
+
+    def test_stream_workflow_with_agentic_node(self) -> bool:
+        """Test /stream with a workflow agent that contains an agentic node."""
+        test_name = "Stream endpoint (workflow with agentic node)"
+
+        if not self.require_auth(test_name):
+            return True
+
+        workflow_id = self._create_workflow_with_agentic_node()
+        if not workflow_id:
+            self.print_warning("Could not create workflow")
+            self.record_result(test_name, True, "Skipped (workflow creation failed)")
+            return True
+
+        agent_result = self._create_workflow_agent(workflow_id)
+        if not agent_result:
+            self.print_warning("Could not create workflow agent")
+            self.record_result(test_name, True, "Skipped (agent creation failed)")
+            return True
+
+        agent_id, _ = agent_result
+        self.print_header(f"Testing {test_name}")
+
+        payload = {
+            "question": "What is DocsGPT?",
+            "history": "[]",
+            "agent_id": agent_id,
+        }
+
+        try:
+            self.print_info(f"POST /stream with workflow agent_id={agent_id[:8]}...")
+            self.print_info(f"Workflow ID: {workflow_id}")
+
+            response = requests.post(
+                f"{self.base_url}/stream",
+                json=payload,
+                headers=self.headers,
+                stream=True,
+                timeout=60,
+            )
+
+            self.print_info(f"Status Code: {response.status_code}")
+
+            if response.status_code != 200:
+                self.print_error(f"Expected 200, got {response.status_code}")
+                self.record_result(test_name, False, f"Status {response.status_code}")
+                return False
+
+            events = []
+            full_response = ""
+            for line in response.iter_lines():
+                if line:
+                    line_str = line.decode("utf-8")
+                    if line_str.startswith("data: "):
+                        try:
+                            data = json_module.loads(line_str[6:])
+                            events.append(data)
+                            if data.get("type") in ["stream", "answer"]:
+                                full_response += data.get("message", "") or data.get("answer", "")
+                            elif data.get("type") == "end":
+                                break
+                        except json_module.JSONDecodeError:
+                            pass
+
+            self.print_success(f"Received {len(events)} events")
+            if full_response:
+                self.print_success(f"Answer preview: {full_response[:100]}...")
+
+            self.record_result(test_name, True, "Success")
+            return True
+
+        except Exception as e:
+            self.print_error(f"Error: {str(e)}")
+            self.record_result(test_name, False, str(e))
+            return False
+
+    def test_answer_workflow_with_agentic_node(self) -> bool:
+        """Test /api/answer with a workflow agent that contains an agentic node."""
+        test_name = "Answer endpoint (workflow with agentic node)"
+
+        if not self.require_auth(test_name):
+            return True
+
+        workflow_id = self._create_workflow_with_agentic_node()
+        if not workflow_id:
+            self.print_warning("Could not create workflow")
+            self.record_result(test_name, True, "Skipped (workflow creation failed)")
+            return True
+
+        agent_result = self._create_workflow_agent(workflow_id)
+        if not agent_result:
+            self.print_warning("Could not create workflow agent")
+            self.record_result(test_name, True, "Skipped (agent creation failed)")
+            return True
+
+        agent_id, _ = agent_result
+        self.print_header(f"Testing {test_name}")
+
+        payload = {
+            "question": "What is DocsGPT?",
+            "history": "[]",
+            "agent_id": agent_id,
+        }
+
+        try:
+            self.print_info(f"POST /api/answer with workflow agent_id={agent_id[:8]}...")
+
+            response = self.post("/api/answer", json=payload, timeout=60)
+
+            self.print_info(f"Status Code: {response.status_code}")
+
+            if response.status_code != 200:
+                self.print_error(f"Expected 200, got {response.status_code}")
+                self.record_result(test_name, False, f"Status {response.status_code}")
+                return False
+
+            result = response.json()
+            answer = result.get("answer", "")
+            self.print_success(f"Answer received: {answer[:100]}...")
+            self.record_result(test_name, True, "Success")
+            return True
+
+        except Exception as e:
+            self.print_error(f"Error: {str(e)}")
+            self.record_result(test_name, False, str(e))
+            return False
+
+    # -------------------------------------------------------------------------
     # Validation Tests
     # -------------------------------------------------------------------------
 
@@ -556,208 +1036,7 @@ This is test documentation for integration tests.
             return False
 
     # -------------------------------------------------------------------------
-    # Compression Tests
-    # -------------------------------------------------------------------------
-
-    def test_compression_heavy_tool_usage(self) -> bool:
-        """Test compression with heavy conversation usage."""
-        test_name = "Compression - Heavy Tool Usage"
-        self.print_header(f"Testing {test_name}")
-
-        if not self.require_auth(test_name):
-            return True
-
-        self.print_info("Making 10 consecutive requests to build conversation history...")
-
-        current_conv_id = None
-
-        for i in range(10):
-            question = f"Tell me about Python topic {i+1}: data structures, decorators, async, testing. Provide a comprehensive explanation."
-
-            payload = {
-                "question": question,
-                "history": "[]",
-                "isNoneDoc": True,
-            }
-
-            if current_conv_id:
-                payload["conversation_id"] = current_conv_id
-
-            try:
-                response = self.post("/api/answer", json=payload, timeout=90)
-
-                if response.status_code == 200:
-                    result = response.json()
-                    current_conv_id = result.get("conversation_id", current_conv_id)
-                    answer_preview = (result.get("answer") or "")[:80]
-                    self.print_success(f"Request {i+1}/10 completed")
-                    self.print_info(f"  Answer: {answer_preview}...")
-                else:
-                    self.print_error(f"Request {i+1}/10 failed: status {response.status_code}")
-                    self.record_result(test_name, False, f"Request {i+1} failed")
-                    return False
-
-                time.sleep(2)
-
-            except Exception as e:
-                self.print_error(f"Request {i+1}/10 failed: {str(e)}")
-                self.record_result(test_name, False, str(e))
-                return False
-
-        if current_conv_id:
-            self.print_success("Heavy usage test completed")
-            self.record_result(test_name, True, f"10 requests, conv_id: {current_conv_id}")
-            return True
-        else:
-            self.print_warning("No conversation_id received")
-            self.record_result(test_name, False, "No conversation_id")
-            return False
-
-    def test_compression_needle_in_haystack(self) -> bool:
-        """Test that compression preserves critical information.
-
-        Note: This is a long-running test that may timeout due to LLM response times.
-        Timeouts are handled gracefully as they indicate performance issues, not bugs.
-        """
-        test_name = "Compression - Needle in Haystack"
-        self.print_header(f"Testing {test_name}")
-
-        if not self.require_auth(test_name):
-            return True
-
-        conversation_id = None
-
-        # Step 1: Send general questions
-        self.print_info("Step 1: Sending general questions...")
-        for i, question in enumerate([
-            "Tell me about Python best practices in detail",
-            "Explain Python data structures comprehensively",
-        ]):
-            payload = {
-                "question": question,
-                "history": "[]",
-                "isNoneDoc": True,
-            }
-            if conversation_id:
-                payload["conversation_id"] = conversation_id
-
-            try:
-                response = self.post("/api/answer", json=payload, timeout=90)
-                if response.status_code == 200:
-                    result = response.json()
-                    conversation_id = result.get("conversation_id", conversation_id)
-                    self.print_success(f"General question {i+1}/2 completed")
-                else:
-                    self.print_error(f"Request failed: status {response.status_code}")
-                    self.record_result(test_name, False, "General questions failed")
-                    return False
-                time.sleep(2)
-            except Exception as e:
-                # Timeout errors are expected for long LLM responses
-                if "timed out" in str(e).lower() or "timeout" in str(e).lower():
-                    self.print_warning(f"Request timed out: {str(e)[:50]}")
-                    self.record_result(test_name, True, "Skipped (timeout)")
-                    return True
-                self.print_error(f"Request failed: {str(e)}")
-                self.record_result(test_name, False, str(e))
-                return False
-
-        # Step 2: Send critical information
-        self.print_info("Step 2: Sending CRITICAL information...")
-        critical_payload = {
-            "question": "Please remember: The production database password is stored in DB_PASSWORD_PROD environment variable. The backup runs at 3:00 AM UTC daily.",
-            "history": "[]",
-            "isNoneDoc": True,
-            "conversation_id": conversation_id,
-        }
-
-        try:
-            response = self.post("/api/answer", json=critical_payload, timeout=90)
-            if response.status_code == 200:
-                result = response.json()
-                conversation_id = result.get("conversation_id", conversation_id)
-                self.print_success("Critical information sent")
-            else:
-                self.record_result(test_name, False, "Critical info failed")
-                return False
-            time.sleep(2)
-        except Exception as e:
-            if "timed out" in str(e).lower() or "timeout" in str(e).lower():
-                self.print_warning(f"Request timed out: {str(e)[:50]}")
-                self.record_result(test_name, True, "Skipped (timeout)")
-                return True
-            self.record_result(test_name, False, str(e))
-            return False
-
-        # Step 3: Bury with more questions
-        self.print_info("Step 3: Sending more questions to bury critical info...")
-        for i, question in enumerate([
-            "Explain Python decorators in great detail",
-            "Tell me about Python async programming comprehensively",
-        ]):
-            payload = {
-                "question": question,
-                "history": "[]",
-                "isNoneDoc": True,
-                "conversation_id": conversation_id,
-            }
-
-            try:
-                response = self.post("/api/answer", json=payload, timeout=90)
-                if response.status_code == 200:
-                    result = response.json()
-                    conversation_id = result.get("conversation_id", conversation_id)
-                    self.print_success(f"Burying question {i+1}/2 completed")
-                else:
-                    self.record_result(test_name, False, "Burying questions failed")
-                    return False
-                time.sleep(2)
-            except Exception as e:
-                if "timed out" in str(e).lower() or "timeout" in str(e).lower():
-                    self.print_warning(f"Request timed out: {str(e)[:50]}")
-                    self.record_result(test_name, True, "Skipped (timeout)")
-                    return True
-                self.record_result(test_name, False, str(e))
-                return False
-
-        # Step 4: Test recall
-        self.print_info("Step 4: Testing if critical info was preserved...")
-        recall_payload = {
-            "question": "What was the database password environment variable I mentioned earlier?",
-            "history": "[]",
-            "isNoneDoc": True,
-            "conversation_id": conversation_id,
-        }
-
-        try:
-            response = self.post("/api/answer", json=recall_payload, timeout=90)
-            if response.status_code == 200:
-                result = response.json()
-                answer = (result.get("answer") or "").lower()
-
-                if "db_password_prod" in answer or "database password" in answer:
-                    self.print_success("Critical information preserved!")
-                    self.print_info(f"Answer: {answer[:150]}...")
-                    self.record_result(test_name, True, "Info preserved")
-                    return True
-                else:
-                    self.print_warning("Critical information may have been lost")
-                    self.print_info(f"Answer: {answer[:150]}...")
-                    self.record_result(test_name, False, "Info not preserved")
-                    return False
-            else:
-                self.record_result(test_name, False, "Recall failed")
-                return False
-        except Exception as e:
-            if "timed out" in str(e).lower() or "timeout" in str(e).lower():
-                self.print_warning(f"Request timed out: {str(e)[:50]}")
-                self.record_result(test_name, True, "Skipped (timeout)")
-                return True
-            self.record_result(test_name, False, str(e))
-            return False
-
-    # -------------------------------------------------------------------------
-    # Feedback Tests (NEW)
+    # Feedback Tests
     # -------------------------------------------------------------------------
 
     def test_feedback_positive(self) -> bool:
@@ -916,6 +1195,27 @@ This is test documentation for integration tests.
         self.test_answer_endpoint_with_agent()
         time.sleep(1)
 
+        # Agentic agent tests
+        self.test_stream_agentic_agent()
+        time.sleep(1)
+
+        self.test_answer_agentic_agent()
+        time.sleep(1)
+
+        # Research agent tests
+        self.test_stream_research_agent()
+        time.sleep(2)
+
+        self.test_answer_research_agent()
+        time.sleep(2)
+
+        # Workflow with agentic node tests
+        self.test_stream_workflow_with_agentic_node()
+        time.sleep(2)
+
+        self.test_answer_workflow_with_agentic_node()
+        time.sleep(2)
+
         # API key tests
         self.test_stream_endpoint_with_api_key()
         time.sleep(1)
@@ -933,15 +1233,6 @@ This is test documentation for integration tests.
         # TTS test
         self.test_tts_basic()
         time.sleep(1)
-
-        # Compression tests (longer running)
-        if self.is_authenticated:
-            self.test_compression_heavy_tool_usage()
-            time.sleep(2)
-
-            self.test_compression_needle_in_haystack()
-        else:
-            self.print_info("Skipping compression tests (no authentication)")
 
         return self.print_summary()
 

@@ -16,22 +16,61 @@ class BaseLLM(ABC):
         agent_id=None,
         model_id=None,
         base_url=None,
+        backup_models=None,
     ):
         self.decoded_token = decoded_token
         self.agent_id = str(agent_id) if agent_id else None
         self.model_id = model_id
         self.base_url = base_url
         self.token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
+        self._backup_models = backup_models or []
         self._fallback_llm = None
-        self._fallback_sequence_index = 0
 
     @property
     def fallback_llm(self):
-        """Lazy-loaded fallback LLM from FALLBACK_* settings."""
-        if self._fallback_llm is None and settings.FALLBACK_LLM_PROVIDER:
-            try:
-                from application.llm.llm_creator import LLMCreator
+        """Lazy-loaded fallback LLM: tries per-agent backup models first,
+        then the global FALLBACK_* settings."""
+        if self._fallback_llm is not None:
+            return self._fallback_llm
 
+        from application.llm.llm_creator import LLMCreator
+        from application.core.model_utils import (
+            get_provider_from_model_id,
+            get_api_key_for_provider,
+        )
+
+        # Try per-agent backup models first
+        for backup_model_id in self._backup_models:
+            try:
+                provider = get_provider_from_model_id(backup_model_id)
+                if not provider:
+                    logger.warning(
+                        f"Could not resolve provider for backup model: {backup_model_id}"
+                    )
+                    continue
+                api_key = get_api_key_for_provider(provider)
+                self._fallback_llm = LLMCreator.create_llm(
+                    provider,
+                    api_key=api_key,
+                    user_api_key=getattr(self, "user_api_key", None),
+                    decoded_token=self.decoded_token,
+                    model_id=backup_model_id,
+                    agent_id=self.agent_id,
+                )
+                logger.info(
+                    f"Fallback LLM initialized from agent backup model: "
+                    f"{provider}/{backup_model_id}"
+                )
+                return self._fallback_llm
+            except Exception as e:
+                logger.warning(
+                    f"Failed to initialize backup model {backup_model_id}: {str(e)}"
+                )
+                continue
+
+        # Fall back to global FALLBACK_* settings
+        if settings.FALLBACK_LLM_PROVIDER:
+            try:
                 self._fallback_llm = LLMCreator.create_llm(
                     settings.FALLBACK_LLM_PROVIDER,
                     api_key=settings.FALLBACK_LLM_API_KEY or settings.API_KEY,
@@ -41,12 +80,14 @@ class BaseLLM(ABC):
                     agent_id=self.agent_id,
                 )
                 logger.info(
-                    f"Fallback LLM initialized: {settings.FALLBACK_LLM_PROVIDER}/{settings.FALLBACK_LLM_NAME}"
+                    f"Fallback LLM initialized from global settings: "
+                    f"{settings.FALLBACK_LLM_PROVIDER}/{settings.FALLBACK_LLM_NAME}"
                 )
             except Exception as e:
                 logger.error(
                     f"Failed to initialize fallback LLM: {str(e)}", exc_info=True
                 )
+
         return self._fallback_llm
 
     @staticmethod
@@ -74,20 +115,60 @@ class BaseLLM(ABC):
                 method = decorator(method)
             return method(self, *args, **kwargs)
 
+        is_stream = "stream" in method_name
+
+        if is_stream:
+            return self._stream_with_fallback(
+                decorated_method, method_name, *args, **kwargs
+            )
+
         try:
             return decorated_method()
         except Exception as e:
             if not self.fallback_llm:
                 logger.error(f"Primary LLM failed and no fallback configured: {str(e)}")
                 raise
+            fallback = self.fallback_llm
             logger.warning(
-                f"Primary LLM failed. Falling back to {settings.FALLBACK_LLM_PROVIDER}/{settings.FALLBACK_LLM_NAME}. Error: {str(e)}"
+                f"Primary LLM failed. Falling back to "
+                f"{fallback.model_id}. Error: {str(e)}"
             )
 
             fallback_method = getattr(
-                self.fallback_llm, method_name.replace("_raw_", "")
+                fallback, method_name.replace("_raw_", "")
             )
-            return fallback_method(*args, **kwargs)
+            fallback_kwargs = {**kwargs, "model": fallback.model_id}
+            return fallback_method(*args, **fallback_kwargs)
+
+    def _stream_with_fallback(
+        self, decorated_method, method_name, *args, **kwargs
+    ):
+        """
+        Wrapper generator that catches mid-stream errors and falls back.
+
+        Unlike non-streaming calls where exceptions are raised immediately,
+        streaming generators raise exceptions during iteration. This wrapper
+        ensures that if the primary LLM fails at any point during streaming
+        (creation or mid-stream), we fall back to the backup model.
+        """
+        try:
+            yield from decorated_method()
+        except Exception as e:
+            if not self.fallback_llm:
+                logger.error(
+                    f"Primary LLM failed and no fallback configured: {str(e)}"
+                )
+                raise
+            fallback = self.fallback_llm
+            logger.warning(
+                f"Primary LLM failed mid-stream. Falling back to "
+                f"{fallback.model_id}. Error: {str(e)}"
+            )
+            fallback_method = getattr(
+                fallback, method_name.replace("_raw_", "")
+            )
+            fallback_kwargs = {**kwargs, "model": fallback.model_id}
+            yield from fallback_method(*args, **fallback_kwargs)
 
     def gen(self, model, messages, stream=False, tools=None, *args, **kwargs):
         decorators = [gen_token_usage, gen_cache]

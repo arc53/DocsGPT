@@ -24,6 +24,7 @@ from application.api.user.tasks import mcp_oauth_status_task, mcp_oauth_task
 from application.cache import get_redis_instance
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
+from application.core.url_validation import SSRFError, validate_url
 from application.security.encryption import decrypt_credentials
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,8 @@ class MCPTool(Tool):
         """
         self.config = config
         self.user_id = user_id
-        self.server_url = config.get("server_url", "")
+        raw_url = config.get("server_url", "")
+        self.server_url = self._validate_server_url(raw_url) if raw_url else ""
         self.transport_type = config.get("transport_type", "auto")
         self.auth_type = config.get("auth_type", "none")
         self.timeout = config.get("timeout", 30)
@@ -87,6 +89,18 @@ class MCPTool(Tool):
         if self.server_url and self.auth_type != "oauth":
             self._setup_client()
 
+    @staticmethod
+    def _validate_server_url(server_url: str) -> str:
+        """Validate server_url to prevent SSRF to internal networks.
+
+        Raises:
+            ValueError: If the URL points to a private/internal address.
+        """
+        try:
+            return validate_url(server_url)
+        except SSRFError as exc:
+            raise ValueError(f"Invalid MCP server URL: {exc}") from exc
+
     def _resolve_redirect_uri(self, configured_redirect_uri: Optional[str]) -> str:
         if configured_redirect_uri:
             return configured_redirect_uri.rstrip("/")
@@ -108,8 +122,9 @@ class MCPTool(Tool):
         auth_key = ""
         if self.auth_type == "oauth":
             scopes_str = ",".join(self.oauth_scopes) if self.oauth_scopes else "none"
+            oauth_identity = self.user_id or self.oauth_task_id or "anonymous"
             auth_key = (
-                f"oauth:{self.oauth_client_name}:{scopes_str}:{self.redirect_uri}"
+                f"oauth:{oauth_identity}:{self.oauth_client_name}:{scopes_str}:{self.redirect_uri}"
             )
         elif self.auth_type in ["bearer"]:
             token = self.auth_credentials.get(

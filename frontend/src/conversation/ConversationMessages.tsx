@@ -9,6 +9,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import ArrowDown from '../assets/arrow-down.svg';
+import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import RetryIcon from '../components/RetryIcon';
 import Hero from '../Hero';
 import { useDarkTheme } from '../hooks';
@@ -39,6 +40,11 @@ type ConversationMessagesProps = {
   showHeroOnEmpty?: boolean;
   headerContent?: ReactNode;
   onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
+  onToolAction?: (
+    callId: string,
+    decision: 'approved' | 'denied',
+    comment?: string,
+  ) => void;
   isSplitView?: boolean;
 };
 
@@ -51,6 +57,7 @@ export default function ConversationMessages({
   showHeroOnEmpty = true,
   headerContent,
   onOpenArtifact,
+  onToolAction,
   isSplitView = false,
 }: ConversationMessagesProps) {
   const [isDarkTheme] = useDarkTheme();
@@ -141,7 +148,7 @@ export default function ConversationMessages({
       ? LAST_BUBBLE_MARGIN
       : DEFAULT_BUBBLE_MARGIN;
 
-    if (query.thought || query.response || query.tool_calls) {
+    if (query.thought || query.response || query.tool_calls || query.research) {
       const isCurrentlyStreaming =
         status === 'loading' && index === queries.length - 1;
       return (
@@ -153,7 +160,9 @@ export default function ConversationMessages({
           thought={query.thought}
           sources={query.sources}
           toolCalls={query.tool_calls}
+          research={query.research}
           onOpenArtifact={onOpenArtifact}
+          onToolAction={onToolAction}
           feedback={query.feedback}
           isStreaming={isCurrentlyStreaming}
           handleFeedback={
@@ -168,7 +177,7 @@ export default function ConversationMessages({
     if (query.error) {
       const retryButton = (
         <button
-          className="dark:text-bright-gray flex items-center justify-center gap-3 self-center rounded-full px-5 py-3 text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed"
+          className="dark:text-foreground flex items-center justify-center gap-3 self-center rounded-full px-5 py-3 text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed"
           disabled={status === 'loading'}
           onClick={() => {
             const questionToRetry = queries[index].prompt;
@@ -194,6 +203,37 @@ export default function ConversationMessages({
         />
       );
     }
+
+    if (status === 'loading' && isLastMessage) {
+      return (
+        <div
+          className={`fade-in-bubble flex flex-wrap self-start ${bubbleMargin} group dark:text-foreground flex-col`}
+        >
+          <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+            <div className="my-2 flex flex-row items-center justify-center gap-3">
+              <div className="flex h-[34px] w-[34px] items-center justify-center overflow-hidden rounded-full">
+                <img
+                  src={DocsGPT3}
+                  alt={t('conversation.answer')}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <p className="text-base font-semibold">
+                {t('conversation.answer')}
+              </p>
+            </div>
+            <div className="bg-gray-1000 dark:bg-gun-metal mr-5 flex rounded-3xl px-6 py-5">
+              <div className="thinking-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return null;
   };
 
@@ -211,7 +251,7 @@ export default function ConversationMessages({
             scrollConversationToBottom();
           }}
           aria-label={t('Scroll to bottom') || 'Scroll to bottom'}
-          className="border-gray-alpha bg-opacity-50 dark:bg-gunmetal md:bg-opacity-100 fixed right-14 bottom-40 z-10 flex h-7 w-7 items-center justify-center rounded-full border-[0.5px] bg-gray-100 md:h-9 md:w-9"
+          className="border-border bg-card fixed right-14 bottom-40 z-10 flex h-7 w-7 items-center justify-center rounded-full border md:h-9 md:w-9"
         >
           <img
             src={ArrowDown}

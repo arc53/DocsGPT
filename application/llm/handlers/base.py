@@ -1,3 +1,4 @@
+import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
@@ -315,10 +316,34 @@ class LLMHandler(ABC):
                 current_prompt = self._extract_text_from_content(content)
 
             elif role in {"assistant", "model"}:
-                # If this assistant turn contains tool calls, collect them; otherwise commit a response.
+                # Standard format: tool_calls array on assistant message
+                msg_tool_calls = message.get("tool_calls")
+                if msg_tool_calls:
+                    for tc in msg_tool_calls:
+                        call_id = tc.get("id") or str(uuid.uuid4())
+                        func = tc.get("function", {})
+                        args = func.get("arguments")
+                        if isinstance(args, str):
+                            try:
+                                args = json.loads(args)
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                        current_tool_calls[call_id] = {
+                            "tool_name": "unknown_tool",
+                            "action_name": func.get("name"),
+                            "arguments": args,
+                            "result": None,
+                            "status": "called",
+                            "call_id": call_id,
+                        }
+                    continue
+
+                # Legacy format: function_call/function_response in content list
                 if isinstance(content, list):
+                    has_fc = False
                     for item in content:
                         if "function_call" in item:
+                            has_fc = True
                             fc = item["function_call"]
                             call_id = fc.get("call_id") or str(uuid.uuid4())
                             current_tool_calls[call_id] = {
@@ -329,37 +354,30 @@ class LLMHandler(ABC):
                                 "status": "called",
                                 "call_id": call_id,
                             }
-                        elif "function_response" in item:
-                            fr = item["function_response"]
-                            call_id = fr.get("call_id") or str(uuid.uuid4())
-                            current_tool_calls[call_id] = {
-                                "tool_name": "unknown_tool",
-                                "action_name": fr.get("name"),
-                                "arguments": None,
-                                "result": fr.get("response", {}).get("result"),
-                                "status": "completed",
-                                "call_id": call_id,
-                            }
-                    # No direct assistant text here; continue to next message
-                    continue
+                    if has_fc:
+                        continue
 
                 response_text = self._extract_text_from_content(content)
                 _commit_query(response_text)
 
             elif role == "tool":
-                # Attach tool outputs to the latest pending tool call if possible
+                # Standard format: tool_call_id on tool message
+                call_id = message.get("tool_call_id")
                 tool_text = self._extract_text_from_content(content)
-                # Attempt to parse function_response style
-                call_id = None
-                if isinstance(content, list):
-                    for item in content:
-                        if "function_response" in item and item["function_response"].get("call_id"):
-                            call_id = item["function_response"]["call_id"]
-                            break
+
                 if call_id and call_id in current_tool_calls:
                     current_tool_calls[call_id]["result"] = tool_text
                     current_tool_calls[call_id]["status"] = "completed"
-                elif queries:
+                # Legacy: function_response in content list
+                elif isinstance(content, list):
+                    for item in content:
+                        if "function_response" in item:
+                            legacy_id = item["function_response"].get("call_id")
+                            if legacy_id and legacy_id in current_tool_calls:
+                                current_tool_calls[legacy_id]["result"] = tool_text
+                                current_tool_calls[legacy_id]["status"] = "completed"
+                                break
+                elif call_id is None and queries:
                     queries[-1].setdefault("tool_calls", []).append(
                         {
                             "tool_name": "unknown_tool",
@@ -648,6 +666,13 @@ class LLMHandler(ABC):
         """
         Execute tool calls and update conversation history.
 
+        When a tool requires approval or client-side execution, it is
+        collected as a pending action instead of being executed.  The
+        generator returns ``(updated_messages, pending_actions)`` where
+        *pending_actions* is ``None`` when every tool was executed
+        normally, or a list of dicts describing actions the client must
+        resolve before the LLM loop can continue.
+
         Args:
             agent: The agent instance
             tool_calls: List of tool calls to execute
@@ -655,9 +680,11 @@ class LLMHandler(ABC):
             messages: Current conversation history
 
         Returns:
-            Updated messages list
+            Tuple of (updated_messages, pending_actions).
+            pending_actions is None if all tools executed, otherwise a list.
         """
         updated_messages = messages.copy()
+        pending_actions: List[Dict] = []
 
         for i, call in enumerate(tool_calls):
             # Check context limit before executing tool call
@@ -763,6 +790,29 @@ class LLMHandler(ABC):
                     # Set flag on agent
                     agent.context_limit_reached = True
                     break
+
+            # ---- Pause check: approval / client-side execution ----
+            llm_class = agent.llm.__class__.__name__
+            pause_info = agent.tool_executor.check_pause(
+                tools_dict, call, llm_class
+            )
+            if pause_info:
+                # Yield pause event so the client knows this tool is waiting
+                yield {
+                    "type": "tool_call",
+                    "data": {
+                        "tool_name": pause_info["tool_name"],
+                        "call_id": pause_info["call_id"],
+                        "action_name": pause_info.get("llm_name", pause_info["name"]),
+                        "arguments": pause_info["arguments"],
+                        "status": pause_info["pause_type"],
+                    },
+                }
+                pending_actions.append(pause_info)
+                # Do NOT add messages for pending tools here.
+                # They will be added on resume to keep call/result pairs together.
+                continue
+
             try:
                 self.tool_calls.append(call)
                 tool_executor_gen = agent._execute_tool_action(tools_dict, call)
@@ -772,25 +822,30 @@ class LLMHandler(ABC):
                     except StopIteration as e:
                         tool_response, call_id = e.value
                         break
-                    
-                function_call_content = {
-                    "function_call": {
-                        "name": call.name,
-                        "args": call.arguments,
-                        "call_id": call_id,
-                    }
-                }
-                # Include thought_signature for Google Gemini 3 models
-                # It should be at the same level as function_call, not inside it
-                if call.thought_signature:
-                    function_call_content["thought_signature"] = call.thought_signature
-                updated_messages.append(
-                    {
-                        "role": "assistant",
-                        "content": [function_call_content],
-                    }
-                )
 
+                # Standard internal format: assistant message with tool_calls array
+                args_str = (
+                    json.dumps(call.arguments)
+                    if isinstance(call.arguments, dict)
+                    else call.arguments
+                )
+                tool_call_obj = {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": call.name,
+                        "arguments": args_str,
+                    },
+                }
+                # Preserve thought_signature for Google Gemini 3 models
+                if call.thought_signature:
+                    tool_call_obj["thought_signature"] = call.thought_signature
+
+                updated_messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [tool_call_obj],
+                })
 
                 updated_messages.append(self.create_tool_message(call, tool_response))
             except Exception as e:
@@ -802,16 +857,15 @@ class LLMHandler(ABC):
                 error_message = self.create_tool_message(error_call, error_response)
                 updated_messages.append(error_message)
 
-                call_parts = call.name.split("_")
-                if len(call_parts) >= 2:
-                    tool_id = call_parts[-1]  # Last part is tool ID (e.g., "1")
-                    action_name = "_".join(call_parts[:-1])
-                    tool_name = tools_dict.get(tool_id, {}).get("name", "unknown_tool")
-                    full_action_name = f"{action_name}_{tool_id}"
+                mapping = agent.tool_executor._name_to_tool
+                if call.name in mapping:
+                    resolved_tool_id, _ = mapping[call.name]
+                    tool_name = tools_dict.get(resolved_tool_id, {}).get(
+                        "name", "unknown_tool"
+                    )
                 else:
                     tool_name = "unknown_tool"
-                    action_name = call.name
-                    full_action_name = call.name
+                full_action_name = call.name
                 yield {
                     "type": "tool_call",
                     "data": {
@@ -823,7 +877,7 @@ class LLMHandler(ABC):
                         "status": "error",
                     },
                 }
-        return updated_messages
+        return updated_messages, pending_actions if pending_actions else None
 
     def handle_non_streaming(
         self, agent, response: Any, tools_dict: Dict, messages: List[Dict]
@@ -851,8 +905,22 @@ class LLMHandler(ABC):
                 try:
                     yield next(tool_handler_gen)
                 except StopIteration as e:
-                    messages = e.value
+                    messages, pending_actions = e.value
                     break
+
+            # If tools need approval or client execution, pause the loop
+            if pending_actions:
+                agent._pending_continuation = {
+                    "messages": messages,
+                    "pending_tool_calls": pending_actions,
+                    "tools_dict": tools_dict,
+                }
+                yield {
+                    "type": "tool_calls_pending",
+                    "data": {"pending_tool_calls": pending_actions},
+                }
+                return ""
+
             response = agent.llm.gen(
                 model=agent.model_id, messages=messages, tools=agent.tools
             )
@@ -913,9 +981,22 @@ class LLMHandler(ABC):
                     try:
                         yield next(tool_handler_gen)
                     except StopIteration as e:
-                        messages = e.value
+                        messages, pending_actions = e.value
                         break
                 tool_calls = {}
+
+                # If tools need approval or client execution, pause the loop
+                if pending_actions:
+                    agent._pending_continuation = {
+                        "messages": messages,
+                        "pending_tool_calls": pending_actions,
+                        "tools_dict": tools_dict,
+                    }
+                    yield {
+                        "type": "tool_calls_pending",
+                        "data": {"pending_tool_calls": pending_actions},
+                    }
+                    return
 
                 # Check if context limit was reached during tool execution
                 if hasattr(agent, 'context_limit_reached') and agent.context_limit_reached:

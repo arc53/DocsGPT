@@ -1,7 +1,7 @@
 import { ToolCallsType } from './types';
 
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
-export type Status = 'idle' | 'loading' | 'failed';
+export type Status = 'idle' | 'loading' | 'failed' | 'awaiting_tool_actions';
 export type FEEDBACK = 'LIKE' | 'DISLIKE' | null;
 
 export interface Message {
@@ -16,6 +16,20 @@ export interface Attachment {
   progress: number;
   taskId?: string;
   token_count?: number;
+}
+
+export interface ResearchStep {
+  query: string;
+  rationale?: string;
+  status: 'pending' | 'researching' | 'complete';
+}
+
+export interface ResearchState {
+  plan?: ResearchStep[];
+  complexity?: string;
+  status?: string;
+  elapsed_seconds?: number;
+  tokens_used?: number;
 }
 
 export interface ConversationState {
@@ -51,6 +65,7 @@ export interface Query {
   imageBase64?: string;
   structured?: boolean;
   schema?: object;
+  research?: ResearchState;
 }
 
 export interface RetrievalPayload {

@@ -68,9 +68,7 @@ export default function ConfigFields({
             <div key={key} className="flex flex-col gap-1.5">
               <Label htmlFor={key}>
                 {spec.label || key}
-                {spec.required && (
-                  <span className="text-red-500">*</span>
-                )}
+                {spec.required && <span className="text-red-500">*</span>}
               </Label>
               <Select
                 value={value || spec.default || ''}
@@ -82,7 +80,8 @@ export default function ConfigFields({
                   size="lg"
                   className={cn(
                     'w-full rounded-xl',
-                    hasError && 'border-destructive aria-invalid:ring-destructive/20',
+                    hasError &&
+                      'border-destructive aria-invalid:ring-destructive/20',
                   )}
                 >
                   <SelectValue placeholder={spec.label || key} />
@@ -90,13 +89,14 @@ export default function ConfigFields({
                 <SelectContent>
                   {spec.enum.map((v) => (
                     <SelectItem key={v} value={v}>
-                      {v.charAt(0).toUpperCase() + v.slice(1).replace(/_/g, ' ')}
+                      {v.charAt(0).toUpperCase() +
+                        v.slice(1).replace(/_/g, ' ')}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               {hasError && (
-                <p className="text-xs text-destructive">{errors[key]}</p>
+                <p className="text-destructive text-xs">{errors[key]}</p>
               )}
             </div>
           );
@@ -106,9 +106,7 @@ export default function ConfigFields({
           <div key={key} className="flex flex-col gap-1.5">
             <Label htmlFor={key}>
               {spec.label || key}
-              {spec.required && (
-                <span className="text-red-500">*</span>
-              )}
+              {spec.required && <span className="text-red-500">*</span>}
             </Label>
             <Input
               id={key}
@@ -134,12 +132,14 @@ export default function ConfigFields({
               }}
               placeholder={placeholder || spec.description || ''}
               min={spec.type === 'number' ? 1 : undefined}
-              max={spec.type === 'number' && key === 'timeout' ? 300 : undefined}
+              max={
+                spec.type === 'number' && key === 'timeout' ? 300 : undefined
+              }
               aria-invalid={hasError || undefined}
               className={cn('rounded-xl', hasError && 'border-destructive')}
             />
             {hasError && (
-              <p className="text-xs text-destructive">{errors[key]}</p>
+              <p className="text-destructive text-xs">{errors[key]}</p>
             )}
           </div>
         );

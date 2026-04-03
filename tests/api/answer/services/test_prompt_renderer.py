@@ -61,6 +61,18 @@ class TestTemplateEngine:
         with pytest.raises(TemplateRenderError, match="Template syntax error"):
             engine.render("Hello {{ name", {"name": "World"})
 
+    def test_render_blocks_unsafe_attribute_access(self):
+        from application.templates.template_engine import (
+            TemplateEngine,
+            TemplateRenderError,
+        )
+
+        engine = TemplateEngine()
+        payload = "{{ cycler.__init__.__globals__.os.popen('id').read() }}"
+
+        with pytest.raises(TemplateRenderError, match="Template security violation"):
+            engine.render(payload, {})
+
     def test_validate_template_valid(self):
         from application.templates.template_engine import TemplateEngine
 

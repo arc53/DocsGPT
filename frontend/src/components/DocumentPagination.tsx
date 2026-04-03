@@ -61,12 +61,12 @@ const Pagination: React.FC<PaginationProps> = ({
         <div className="relative">
           <button
             onClick={toggleDropdown}
-            className="dark:bg-dark-charcoal dark:text-light-gray rounded border px-3 py-1 hover:bg-gray-200 dark:hover:bg-neutral-700"
+            className="dark:bg-card dark:text-foreground hover:bg-accent dark:hover:bg-accent rounded border px-3 py-1"
           >
             {rowsPerPage}
           </button>
           <div
-            className={`ring-opacity-5 dark:bg-dark-charcoal absolute right-0 z-50 mt-1 w-28 transform bg-white shadow-lg ring-1 ring-black transition-all duration-200 ease-in-out ${
+            className={`ring-opacity-5 dark:bg-card bg-card absolute right-0 z-50 mt-1 w-28 transform shadow-lg ring-1 ring-black transition-all duration-200 ease-in-out ${
               isDropdownOpen
                 ? 'block scale-100 opacity-100'
                 : 'hidden scale-95 opacity-0'
@@ -76,10 +76,10 @@ const Pagination: React.FC<PaginationProps> = ({
               <div
                 key={option}
                 onClick={() => handleSelectRowsPerPage(option)}
-                className={`cursor-pointer px-4 py-2 text-xs hover:bg-gray-100 dark:hover:bg-neutral-700 ${
+                className={`hover:bg-accent dark:hover:bg-accent cursor-pointer px-4 py-2 text-xs ${
                   rowsPerPage === option
-                    ? 'dark:text-light-gray bg-gray-100 dark:bg-neutral-700'
-                    : 'dark:bg-dark-charcoal dark:text-light-gray bg-white'
+                    ? 'dark:text-foreground bg-gray-100 dark:bg-neutral-700'
+                    : 'bg-card dark:text-foreground'
                 }`}
               >
                 {option}

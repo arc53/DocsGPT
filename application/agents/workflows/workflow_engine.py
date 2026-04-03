@@ -7,6 +7,7 @@ from application.agents.workflows.cel_evaluator import CelEvaluationError, evalu
 from application.agents.workflows.node_agent import WorkflowNodeAgentFactory
 from application.agents.workflows.schemas import (
     AgentNodeConfig,
+    AgentType,
     ConditionNodeConfig,
     ExecutionStatus,
     NodeExecutionLog,
@@ -223,18 +224,32 @@ class WorkflowEngine:
                     f'Model "{node_model_id}" does not support structured output for node "{node.title}"'
                 )
 
-        node_agent = WorkflowNodeAgentFactory.create(
-            agent_type=node_config.agent_type,
-            endpoint=self.agent.endpoint,
-            llm_name=node_llm_name,
-            model_id=node_model_id,
-            api_key=node_api_key,
-            tool_ids=node_config.tools,
-            prompt=node_config.system_prompt,
-            chat_history=self.agent.chat_history,
-            decoded_token=self.agent.decoded_token,
-            json_schema=node_json_schema,
-        )
+        factory_kwargs = {
+            "agent_type": node_config.agent_type,
+            "endpoint": self.agent.endpoint,
+            "llm_name": node_llm_name,
+            "model_id": node_model_id,
+            "api_key": node_api_key,
+            "tool_ids": node_config.tools,
+            "prompt": node_config.system_prompt,
+            "chat_history": self.agent.chat_history,
+            "decoded_token": self.agent.decoded_token,
+            "json_schema": node_json_schema,
+        }
+
+        # Agentic/research agents need retriever_config for on-demand search
+        if node_config.agent_type in (AgentType.AGENTIC, AgentType.RESEARCH):
+            factory_kwargs["retriever_config"] = {
+                "source": {"active_docs": node_config.sources} if node_config.sources else {},
+                "retriever_name": node_config.retriever or "classic",
+                "chunks": int(node_config.chunks) if node_config.chunks else 2,
+                "model_id": node_model_id,
+                "llm_name": node_llm_name,
+                "api_key": node_api_key,
+                "decoded_token": self.agent.decoded_token,
+            }
+
+        node_agent = WorkflowNodeAgentFactory.create(**factory_kwargs)
 
         full_response_parts: List[str] = []
         structured_response_parts: List[str] = []

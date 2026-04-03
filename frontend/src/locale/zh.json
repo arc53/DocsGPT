@@ -54,6 +54,7 @@
     },
     "sources": {
       "title": "在这里您可以管理所有可用的源文件以及您上传的文件。",
+      "subtitle": "上传并管理您的回答所依赖的文档和知识来源",
       "label": "来源",
       "name": "来源名称",
       "date": "向量日期",
@@ -118,6 +119,7 @@
     },
     "analytics": {
       "label": "分析",
+      "subtitle": "跟踪您账户的消息量、令牌使用情况和用户反馈",
       "filterByChatbot": "按聊天机器人筛选",
       "selectChatbot": "选择聊天机器人",
       "filterOptions": {
@@ -137,6 +139,7 @@
     },
     "logs": {
       "label": "日志",
+      "subtitle": "查看和监控 API 调用及会话日志",
       "filterByChatbot": "按聊天机器人筛选",
       "selectChatbot": "选择聊天机器人",
       "none": "无",
@@ -144,6 +147,7 @@
     },
     "tools": {
       "label": "工具",
+      "subtitle": "浏览、连接并配置驱动您的智能体的工具和集成",
       "searchPlaceholder": "搜索工具...",
       "addTool": "添加工具",
       "noToolsFound": "未找到工具",

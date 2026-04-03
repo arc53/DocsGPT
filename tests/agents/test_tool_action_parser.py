@@ -202,3 +202,69 @@ class TestToolActionParser:
         assert action_name == "create_record"
         assert call_args["data"]["name"] == "John"
         assert call_args["data"]["age"] == 30
+
+
+@pytest.mark.unit
+class TestToolActionParserWithMapping:
+    """Tests for the mapping-based lookup path."""
+
+    def test_openai_mapping_resolves_clean_name(self):
+        mapping = {"get_weather": ("ct0", "get_weather")}
+        parser = ToolActionParser("OpenAILLM", name_mapping=mapping)
+
+        call = Mock()
+        call.name = "get_weather"
+        call.arguments = '{"city": "SF"}'
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+        assert tool_id == "ct0"
+        assert action_name == "get_weather"
+        assert call_args == {"city": "SF"}
+
+    def test_openai_mapping_resolves_numbered_suffix(self):
+        mapping = {"search_1": ("t1", "search"), "search_2": ("t2", "search")}
+        parser = ToolActionParser("OpenAILLM", name_mapping=mapping)
+
+        call = Mock()
+        call.name = "search_1"
+        call.arguments = '{"q": "test"}'
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+        assert tool_id == "t1"
+        assert action_name == "search"
+
+    def test_google_mapping_resolves(self):
+        mapping = {"get_weather": ("ct0", "get_weather")}
+        parser = ToolActionParser("GoogleLLM", name_mapping=mapping)
+
+        call = Mock()
+        call.name = "get_weather"
+        call.arguments = {"city": "SF"}
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+        assert tool_id == "ct0"
+        assert action_name == "get_weather"
+
+    def test_fallback_to_split_when_not_in_mapping(self):
+        mapping = {"get_weather": ("ct0", "get_weather")}
+        parser = ToolActionParser("OpenAILLM", name_mapping=mapping)
+
+        call = Mock()
+        call.name = "unknown_action_99"
+        call.arguments = "{}"
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+        # Falls back to legacy split
+        assert tool_id == "99"
+        assert action_name == "unknown_action"
+
+    def test_no_mapping_uses_legacy_split(self):
+        parser = ToolActionParser("OpenAILLM", name_mapping=None)
+
+        call = Mock()
+        call.name = "action_123"
+        call.arguments = '{"k": "v"}'
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+        assert tool_id == "123"
+        assert action_name == "action"

@@ -38,6 +38,7 @@ class LLMCreator:
         decoded_token,
         model_id=None,
         agent_id=None,
+        backup_models=None,
         *args,
         **kwargs,
     ):
@@ -59,6 +60,7 @@ class LLMCreator:
             model_id=model_id,
             agent_id=agent_id,
             base_url=base_url,
+            backup_models=backup_models,
             *args,
             **kwargs,
         )

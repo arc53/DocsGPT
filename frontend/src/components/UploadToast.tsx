@@ -1,11 +1,11 @@
 import { useState } from 'react';
-
-import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import { selectUploadTasks, dismissUploadTask } from '../upload/uploadSlice';
-import ChevronDown from '../assets/chevron-down.svg';
+import { useDispatch, useSelector } from 'react-redux';
+
 import CheckCircleFilled from '../assets/check-circle-filled.svg';
+import ChevronDown from '../assets/chevron-down.svg';
 import WarnIcon from '../assets/warn.svg';
+import { dismissUploadTask, selectUploadTasks } from '../upload/uploadSlice';
 
 const PROGRESS_RADIUS = 10;
 const PROGRESS_CIRCUMFERENCE = 2 * Math.PI * PROGRESS_RADIUS;
@@ -65,23 +65,17 @@ export default function UploadToast() {
           return (
             <div
               key={task.id}
-              className={`w-[271px] overflow-hidden rounded-2xl border border-[#00000021] shadow-[0px_24px_48px_0px_#00000029] transition-all duration-300 ${
-                task.status === 'completed'
-                  ? 'bg-[#FBFBFB] dark:bg-[#26272E]'
-                  : task.status === 'failed'
-                    ? 'bg-[#FBFBFB] dark:bg-[#26272E]'
-                    : 'bg-[#FBFBFB] dark:bg-[#26272E]'
-              }`}
+              className={`border-border bg-card w-[271px] overflow-hidden rounded-2xl border shadow-[0px_24px_48px_0px_#00000029] transition-all duration-300`}
             >
               <div className="flex flex-col">
                 <div
                   className={`flex items-center justify-between px-4 py-3 ${
                     task.status !== 'failed'
-                      ? 'bg-[#FBF2FE] dark:bg-transparent'
-                      : ''
+                      ? 'bg-accent/50 dark:bg-muted'
+                      : 'bg-destructive/10 dark:bg-destructive/10'
                   }`}
                 >
-                  <h3 className="font-inter text-[14px] leading-[16.5px] font-medium text-black dark:text-[#DCDCDC]">
+                  <h3 className="font-inter dark:text-foreground text-[14px] leading-[16.5px] font-medium text-black">
                     {getStatusHeading(task.status)}
                   </h3>
                   <div className="flex items-center gap-1">
@@ -147,7 +141,7 @@ export default function UploadToast() {
                   >
                     <div className="flex items-center justify-between px-5 py-3">
                       <p
-                        className="font-inter max-w-[200px] truncate text-[13px] leading-[16.5px] font-normal text-black dark:text-[#B7BAB8]"
+                        className="font-inter dark:text-muted-foreground max-w-[200px] truncate text-[13px] leading-[16.5px] font-normal text-black"
                         title={task.fileName}
                       >
                         {task.fileName}
@@ -159,7 +153,7 @@ export default function UploadToast() {
                             width="24"
                             height="24"
                             viewBox="0 0 24 24"
-                            className="h-6 w-6 flex-shrink-0 text-[#7D54D1]"
+                            className="h-6 w-6 shrink-0 text-[#7D54D1]"
                             role="progressbar"
                             aria-valuemin={0}
                             aria-valuemax={100}
@@ -172,7 +166,7 @@ export default function UploadToast() {
                             )}
                           >
                             <circle
-                              className="text-gray-300 dark:text-gray-700"
+                              className="text-muted dark:text-muted-foreground/30"
                               stroke="currentColor"
                               strokeWidth="2"
                               cx="12"
@@ -200,7 +194,7 @@ export default function UploadToast() {
                           <img
                             src={CheckCircleFilled}
                             alt=""
-                            className="h-6 w-6 flex-shrink-0"
+                            className="h-6 w-6 shrink-0"
                             aria-hidden="true"
                           />
                         )}
@@ -209,7 +203,7 @@ export default function UploadToast() {
                           <img
                             src={WarnIcon}
                             alt=""
-                            className="h-6 w-6 flex-shrink-0"
+                            className="h-6 w-6 shrink-0"
                             aria-hidden="true"
                           />
                         )}

@@ -114,6 +114,10 @@ class ModelRegistry:
             settings.LLM_PROVIDER == "openrouter" and settings.API_KEY
         ):
             self._add_openrouter_models(settings)
+        if settings.NOVITA_API_KEY or (
+            settings.LLM_PROVIDER == "novita" and settings.API_KEY
+        ):
+            self._add_novita_models(settings)
         if settings.HUGGINGFACE_API_KEY or (
             settings.LLM_PROVIDER == "huggingface" and settings.API_KEY
         ):
@@ -243,6 +247,21 @@ class ModelRegistry:
                     self.models[model.id] = model
                     return
         for model in OPENROUTER_MODELS:
+            self.models[model.id] = model
+
+    def _add_novita_models(self, settings):
+        from application.core.model_configs import NOVITA_MODELS
+
+        if settings.NOVITA_API_KEY:
+            for model in NOVITA_MODELS:
+                self.models[model.id] = model
+            return
+        if settings.LLM_PROVIDER == "novita" and settings.LLM_NAME:
+            for model in NOVITA_MODELS:
+                if model.id == settings.LLM_NAME:
+                    self.models[model.id] = model
+                    return
+        for model in NOVITA_MODELS:
             self.models[model.id] = model
 
     def _add_docsgpt_models(self, settings):

@@ -1,5 +1,6 @@
 """Message reconstruction utilities for compression."""
 
+import json
 import logging
 import uuid
 from typing import Dict, List, Optional
@@ -49,28 +50,35 @@ class MessageBuilder:
             if include_tool_calls and "tool_calls" in query:
                 for tool_call in query["tool_calls"]:
                     call_id = tool_call.get("call_id") or str(uuid.uuid4())
-
-                    function_call_dict = {
-                        "function_call": {
-                            "name": tool_call.get("action_name"),
-                            "args": tool_call.get("arguments"),
-                            "call_id": call_id,
-                        }
-                    }
-                    function_response_dict = {
-                        "function_response": {
-                            "name": tool_call.get("action_name"),
-                            "response": {"result": tool_call.get("result")},
-                            "call_id": call_id,
-                        }
-                    }
-
-                    messages.append(
-                        {"role": "assistant", "content": [function_call_dict]}
+                    args = tool_call.get("arguments")
+                    args_str = (
+                        json.dumps(args)
+                        if isinstance(args, dict)
+                        else (args or "{}")
                     )
-                    messages.append(
-                        {"role": "tool", "content": [function_response_dict]}
+                    messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_call.get("action_name", ""),
+                                "arguments": args_str,
+                            },
+                        }],
+                    })
+                    result = tool_call.get("result")
+                    result_str = (
+                        json.dumps(result)
+                        if not isinstance(result, str)
+                        else (result or "")
                     )
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": result_str,
+                    })
 
         # If no recent queries (everything was compressed), add a continuation user message
         if len(recent_queries) == 0 and compressed_summary:
@@ -180,28 +188,35 @@ class MessageBuilder:
             if include_tool_calls and "tool_calls" in query:
                 for tool_call in query["tool_calls"]:
                     call_id = tool_call.get("call_id") or str(uuid.uuid4())
-
-                    function_call_dict = {
-                        "function_call": {
-                            "name": tool_call.get("action_name"),
-                            "args": tool_call.get("arguments"),
-                            "call_id": call_id,
-                        }
-                    }
-                    function_response_dict = {
-                        "function_response": {
-                            "name": tool_call.get("action_name"),
-                            "response": {"result": tool_call.get("result")},
-                            "call_id": call_id,
-                        }
-                    }
-
-                    rebuilt_messages.append(
-                        {"role": "assistant", "content": [function_call_dict]}
+                    args = tool_call.get("arguments")
+                    args_str = (
+                        json.dumps(args)
+                        if isinstance(args, dict)
+                        else (args or "{}")
                     )
-                    rebuilt_messages.append(
-                        {"role": "tool", "content": [function_response_dict]}
+                    rebuilt_messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_call.get("action_name", ""),
+                                "arguments": args_str,
+                            },
+                        }],
+                    })
+                    result = tool_call.get("result")
+                    result_str = (
+                        json.dumps(result)
+                        if not isinstance(result, str)
+                        else (result or "")
                     )
+                    rebuilt_messages.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": result_str,
+                    })
 
         # If no recent queries (everything was compressed), add a continuation user message
         if len(recent_queries) == 0 and compressed_summary:

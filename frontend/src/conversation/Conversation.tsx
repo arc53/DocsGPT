@@ -22,6 +22,7 @@ import {
   resendQuery,
   selectQueries,
   selectStatus,
+  submitToolActions,
   updateQuery,
 } from './conversationSlice';
 import { selectCompletedAttachments } from '../upload/uploadSlice';
@@ -40,6 +41,17 @@ export default function Conversation() {
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] =
     useState<boolean>(false);
+
+  const handleToolAction = useCallback(
+    (callId: string, decision: 'approved' | 'denied', comment?: string) => {
+      dispatch(
+        submitToolActions({
+          toolActions: [{ call_id: callId, decision, comment }],
+        }),
+      );
+    },
+    [dispatch],
+  );
 
   const lastAutoOpenedArtifactId = useRef<string | null>(null);
   const didInitArtifactAutoOpen = useRef(false);
@@ -248,6 +260,7 @@ export default function Conversation() {
             status={status}
             showHeroOnEmpty={selectedAgent ? false : true}
             onOpenArtifact={handleOpenArtifact}
+            onToolAction={handleToolAction}
             isSplitView={isSplitArtifactOpen}
             headerContent={
               selectedAgent ? (
@@ -278,7 +291,7 @@ export default function Conversation() {
             />
           </div>
 
-          <p className="text-gray-4000 dark:text-sonic-silver hidden w-full self-center bg-transparent py-2 text-center text-xs md:inline">
+          <p className="text-muted-foreground hidden w-full self-center bg-transparent py-2 text-center text-xs md:inline">
             {t('tagline')}
           </p>
         </div>

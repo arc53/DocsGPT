@@ -10,8 +10,16 @@ import {
 import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
+  handleSubmitToolActions,
+  handleV1ChatCompletionStreaming,
 } from './conversationHandlers';
-import { Answer, ConversationState, Query, Status } from './conversationModels';
+import {
+  Answer,
+  ConversationState,
+  Query,
+  ResearchStep,
+  Status,
+} from './conversationModels';
 import { ToolCallsType } from './types';
 
 const initialState: ConversationState = {
@@ -21,6 +29,7 @@ const initialState: ConversationState = {
 };
 
 const API_STREAMING = import.meta.env.VITE_API_STREAMING === 'true';
+const USE_V1_API = import.meta.env.VITE_USE_V1_API === 'true';
 
 let abortController: AbortController | null = null;
 export function handleAbort() {
@@ -58,7 +67,102 @@ export const fetchAnswer = createAsyncThunk<
     state.preference.selectedModel?.id;
 
   if (state.preference) {
-    if (API_STREAMING) {
+    const agentKey = state.preference.selectedAgent?.key;
+    if (USE_V1_API && agentKey) {
+      // Build history from prior queries for v1 format
+      const v1History = state.conversation.queries
+        .filter((q) => q.response)
+        .map((q) => ({ prompt: q.prompt, response: q.response || '' }));
+
+      await handleV1ChatCompletionStreaming(
+        question,
+        signal,
+        agentKey,
+        v1History,
+        (event) => {
+          const data = JSON.parse(event.data);
+          const targetIndex = indx ?? state.conversation.queries.length - 1;
+
+          if (currentConversationId === state.conversation.conversationId) {
+            if (data.type === 'end') {
+              dispatch(conversationSlice.actions.setStatus('idle'));
+              getConversations(state.preference.token)
+                .then((fetchedConversations) => {
+                  dispatch(setConversations(fetchedConversations));
+                })
+                .catch((error) => {
+                  console.error('Failed to fetch conversations: ', error);
+                });
+              if (!isSourceUpdated) {
+                dispatch(
+                  updateStreamingSource({
+                    conversationId: currentConversationId,
+                    index: targetIndex,
+                    query: { sources: [] },
+                  }),
+                );
+              }
+            } else if (data.type === 'id') {
+              const currentState = getState() as RootState;
+              if (currentState.conversation.conversationId === null) {
+                dispatch(
+                  updateConversationId({
+                    query: { conversationId: data.id },
+                  }),
+                );
+              }
+            } else if (data.type === 'thought') {
+              dispatch(
+                updateThought({
+                  conversationId: currentConversationId,
+                  index: targetIndex,
+                  query: { thought: data.thought },
+                }),
+              );
+            } else if (data.type === 'source') {
+              isSourceUpdated = true;
+              dispatch(
+                updateStreamingSource({
+                  conversationId: currentConversationId,
+                  index: targetIndex,
+                  query: { sources: data.source ?? [] },
+                }),
+              );
+            } else if (data.type === 'tool_call') {
+              dispatch(
+                updateToolCall({
+                  index: targetIndex,
+                  tool_call: data.data as ToolCallsType,
+                }),
+              );
+            } else if (data.type === 'tool_calls_pending') {
+              dispatch(
+                conversationSlice.actions.setStatus('awaiting_tool_actions'),
+              );
+            } else if (data.type === 'error') {
+              dispatch(conversationSlice.actions.setStatus('failed'));
+              dispatch(
+                conversationSlice.actions.raiseError({
+                  conversationId: currentConversationId,
+                  index: targetIndex,
+                  message: data.error,
+                }),
+              );
+            } else {
+              dispatch(
+                updateStreamingQuery({
+                  conversationId: currentConversationId,
+                  index: targetIndex,
+                  query: { response: data.answer },
+                }),
+              );
+            }
+          }
+        },
+        undefined,
+        attachmentIds.length > 0 ? attachmentIds : undefined,
+      );
+    } else if (API_STREAMING) {
       await handleFetchAnswerSteaming(
         question,
         signal,
@@ -74,6 +178,16 @@ export const fetchAnswer = createAsyncThunk<
           if (currentConversationId === state.conversation.conversationId) {
             if (data.type === 'end') {
               dispatch(conversationSlice.actions.setStatus('idle'));
+              // Only update research status if this query has research data
+              const currentState = getState() as RootState;
+              if (currentState.conversation.queries[targetIndex]?.research) {
+                dispatch(
+                  updateResearchProgress({
+                    index: targetIndex,
+                    progress: { status: 'complete' },
+                  }),
+                );
+              }
               getConversations(state.preference.token)
                 .then((fetchedConversations) => {
                   dispatch(setConversations(fetchedConversations));
@@ -122,6 +236,25 @@ export const fetchAnswer = createAsyncThunk<
                 updateToolCall({
                   index: targetIndex,
                   tool_call: data.data as ToolCallsType,
+                }),
+              );
+            } else if (data.type === 'tool_calls_pending') {
+              dispatch(
+                conversationSlice.actions.setStatus('awaiting_tool_actions'),
+              );
+            } else if (data.type === 'research_plan') {
+              dispatch(
+                updateResearchPlan({
+                  index: targetIndex,
+                  plan: data.data.steps,
+                  complexity: data.data.complexity,
+                }),
+              );
+            } else if (data.type === 'research_progress') {
+              dispatch(
+                updateResearchProgress({
+                  index: targetIndex,
+                  progress: data.data,
                 }),
               );
             } else if (data.type === 'error') {
@@ -231,6 +364,94 @@ export const fetchAnswer = createAsyncThunk<
   };
 });
 
+export const submitToolActions = createAsyncThunk<
+  void,
+  {
+    toolActions: {
+      call_id: string;
+      decision?: 'approved' | 'denied';
+      comment?: string;
+      result?: Record<string, any>;
+    }[];
+  }
+>('submitToolActions', async ({ toolActions }, { dispatch, getState }) => {
+  if (abortController) abortController.abort();
+  abortController = new AbortController();
+  const { signal } = abortController;
+
+  const state = getState() as RootState;
+  const conversationId = state.conversation.conversationId;
+  if (!conversationId) return;
+
+  dispatch(conversationSlice.actions.setStatus('loading'));
+
+  await handleSubmitToolActions(
+    conversationId,
+    toolActions,
+    state.preference.token,
+    signal,
+    (event) => {
+      const data = JSON.parse(event.data);
+      const targetIndex = state.conversation.queries.length - 1;
+
+      if (data.type === 'end') {
+        dispatch(conversationSlice.actions.setStatus('idle'));
+        getConversations(state.preference.token)
+          .then((fetchedConversations) => {
+            dispatch(setConversations(fetchedConversations));
+          })
+          .catch((error) => {
+            console.error('Failed to fetch conversations: ', error);
+          });
+      } else if (data.type === 'id') {
+        // conversation ID already set
+      } else if (data.type === 'thought') {
+        dispatch(
+          updateThought({
+            conversationId,
+            index: targetIndex,
+            query: { thought: data.thought },
+          }),
+        );
+      } else if (data.type === 'source') {
+        dispatch(
+          updateStreamingSource({
+            conversationId,
+            index: targetIndex,
+            query: { sources: data.source ?? [] },
+          }),
+        );
+      } else if (data.type === 'tool_call') {
+        dispatch(
+          updateToolCall({
+            index: targetIndex,
+            tool_call: data.data as ToolCallsType,
+          }),
+        );
+      } else if (data.type === 'tool_calls_pending') {
+        dispatch(conversationSlice.actions.setStatus('awaiting_tool_actions'));
+      } else if (data.type === 'error') {
+        dispatch(conversationSlice.actions.setStatus('failed'));
+        dispatch(
+          conversationSlice.actions.raiseError({
+            conversationId,
+            index: targetIndex,
+            message: data.error,
+          }),
+        );
+      } else if (data.type === 'answer') {
+        dispatch(
+          updateStreamingQuery({
+            conversationId,
+            index: targetIndex,
+            query: { response: data.answer },
+          }),
+        );
+      }
+    },
+  );
+});
+
 export const conversationSlice = createSlice({
   name: 'conversation',
   initialState,
@@ -258,6 +479,7 @@ export const conversationSlice = createSlice({
       delete state.queries[index].structured;
       delete state.queries[index].schema;
       delete state.queries[index].feedback;
+      delete state.queries[index].research;
     },
     updateStreamingQuery(
       state,
@@ -339,6 +561,80 @@ export const conversationSlice = createSlice({
         };
       } else state.queries[index].tool_calls.push(tool_call);
     },
+    updateResearchPlan(
+      state,
+      action: PayloadAction<{
+        index: number;
+        plan: ResearchStep[];
+        complexity?: string;
+      }>,
+    ) {
+      const { index, plan, complexity } = action.payload;
+      if (!state.queries[index].research) {
+        state.queries[index].research = {};
+      }
+      state.queries[index].research!.plan = plan.map((step) => ({
+        ...step,
+        status: 'pending',
+      }));
+      if (complexity) {
+        state.queries[index].research!.complexity = complexity;
+      }
+    },
+    updateResearchProgress(
+      state,
+      action: PayloadAction<{
+        index: number;
+        progress: {
+          status?: string;
+          step?: number;
+          total?: number;
+          query?: string;
+          elapsed_seconds?: number;
+          tokens_used?: number;
+        };
+      }>,
+    ) {
+      const { index, progress } = action.payload;
+      if (!state.queries[index].research) {
+        state.queries[index].research = {};
+      }
+      const research = state.queries[index].research!;
+      if (progress.elapsed_seconds !== undefined) {
+        research.elapsed_seconds = progress.elapsed_seconds;
+      }
+      if (progress.tokens_used !== undefined) {
+        research.tokens_used = progress.tokens_used;
+      }
+      // Update individual step status when step number is present
+      if (progress.step !== undefined) {
+        if (!research.plan) {
+          research.plan = [];
+        }
+        const stepIndex = progress.step - 1;
+        // Dynamically add step if it doesn't exist yet
+        while (research.plan.length <= stepIndex) {
+          research.plan.push({
+            query: progress.query || `Step ${research.plan.length + 1}`,
+            status: 'pending',
+          });
+        }
+        if (
+          progress.status === 'researching' ||
+          progress.status === 'complete'
+        ) {
+          research.plan[stepIndex].status = progress.status;
+        }
+        if (progress.query) {
+          research.plan[stepIndex].query = progress.query;
+        }
+        // Keep top-level status as "researching" while steps are running
+        research.status = 'researching';
+      } else if (progress.status) {
+        // Top-level status updates (planning, synthesizing)
+        research.status = progress.status;
+      }
+    },
     updateQuery(
       state,
       action: PayloadAction<{ index: number; query: Partial<Query> }>,
@@ -407,6 +703,8 @@ export const {
   updateThought,
   updateStreamingSource,
   updateToolCall,
+  updateResearchPlan,
+  updateResearchProgress,
   setConversation,
   setStatus,
   raiseError,

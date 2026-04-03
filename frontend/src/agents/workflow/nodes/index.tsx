@@ -77,7 +77,7 @@ export const AgentNode = memo(function AgentNode({
         )}
         {config.model_id && (
           <div
-            className="text-purple-30 dark:text-violets-are-blue truncate text-xs"
+            className="text-primary dark:text-primary truncate text-xs"
             title={config.model_id}
           >
             {config.model_id}

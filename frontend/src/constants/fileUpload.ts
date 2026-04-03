@@ -55,6 +55,14 @@ export const FILE_UPLOAD_ACCEPT_ATTR = [
   '.webm',
 ].join(',');
 
+export const AUDIO_FILE_ACCEPT_ATTR = [
+  '.wav',
+  '.mp3',
+  '.m4a',
+  '.ogg',
+  '.webm',
+].join(',');
+
 export const SOURCE_FILE_TREE_ACCEPT_ATTR = [
   '.rst',
   '.md',

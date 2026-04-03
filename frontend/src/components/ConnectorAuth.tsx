@@ -136,7 +136,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
           </svg>
 
           <span
-            className="text-sm text-[#E60000] dark:text-[#E37064]"
+            className="text-sm text-[#E60000] dark:text-red-400"
             style={{
               fontFamily: 'Inter',
               lineHeight: '100%',
