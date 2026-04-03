@@ -3,8 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import Spinner from '../components/Spinner';
-import { useOutsideAlerter } from '../hooks';
+import SkeletonLoader from '../components/SkeletonLoader';
+import { useLoaderState, useOutsideAlerter } from '../hooks';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import ConfigToolModal from './ConfigToolModal';
@@ -37,7 +37,7 @@ export default function AddToolModal({
     React.useState<ActiveState>('INACTIVE');
   const [mcpModalState, setMcpModalState] =
     React.useState<ActiveState>('INACTIVE');
-  const [loading, setLoading] = React.useState(false);
+  const [loading, setLoading] = useLoaderState(false);
 
   useOutsideAlerter(modalRef, () => {
     if (modalState === 'ACTIVE') {
@@ -121,8 +121,8 @@ export default function AddToolModal({
               </h2>
               <div className="mt-5 h-[73vh] overflow-auto px-3 py-px">
                 {loading ? (
-                  <div className="flex h-full items-center justify-center">
-                    <Spinner />
+                  <div className="grid auto-rows-fr grid-cols-1 gap-4 pb-2 sm:grid-cols-2 lg:grid-cols-3">
+                    <SkeletonLoader component="addToolCards" count={6} />
                   </div>
                 ) : (
                   <div className="grid auto-rows-fr grid-cols-1 gap-4 pb-2 sm:grid-cols-2 lg:grid-cols-3">
