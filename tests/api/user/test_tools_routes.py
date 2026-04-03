@@ -395,6 +395,9 @@ class TestAvailableTools:
             "application.api.user.tools.routes.tool_manager", mock_manager
         ):
             with app.test_request_context("/api/available_tools"):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
                 response = AvailableTools().get()
 
         assert response.status_code == 200
@@ -419,6 +422,9 @@ class TestAvailableTools:
             "application.api.user.tools.routes.tool_manager", mock_manager
         ):
             with app.test_request_context("/api/available_tools"):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
                 response = AvailableTools().get()
 
         assert response.status_code == 400
@@ -438,6 +444,9 @@ class TestAvailableTools:
             "application.api.user.tools.routes.tool_manager", mock_manager
         ):
             with app.test_request_context("/api/available_tools"):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
                 response = AvailableTools().get()
 
         assert response.status_code == 200

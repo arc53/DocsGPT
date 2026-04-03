@@ -130,6 +130,8 @@ tools_ns = Namespace("tools", description="Tool management operations", path="/a
 class AvailableTools(Resource):
     @api.doc(description="Get available tools for a user")
     def get(self):
+        if not request.decoded_token:
+            return make_response(jsonify({"success": False}), 401)
         try:
             tools_metadata = []
             for tool_name, tool_instance in tool_manager.tools.items():
