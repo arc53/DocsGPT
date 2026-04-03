@@ -12,7 +12,7 @@ onnxruntime>=1.19.0
 docx2txt==0.9
 ddgs>=8.0.0
 ebooklib==0.20
-elevenlabs==2.40.0
+elevenlabs==2.41.0
 Flask==3.1.3
 faiss-cpu==1.13.2
 fastmcp==3.2.0
