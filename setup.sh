@@ -396,8 +396,18 @@ configure_tts() {
     esac
 }
 
+# Generate INTERNAL_KEY for worker-to-backend auth if not already present
+ensure_internal_key() {
+    if ! grep -q "^INTERNAL_KEY=" "$ENV_FILE" 2>/dev/null; then
+        local internal_key
+        internal_key=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
+        echo "INTERNAL_KEY=$internal_key" >> "$ENV_FILE"
+    fi
+}
+
 # Main advanced settings menu
 prompt_advanced_settings() {
+    ensure_internal_key
     echo
     read -p "$(echo -e "${DEFAULT_FG}Would you like to configure advanced settings? (y/N): ${NC}")" configure_advanced
     if [[ ! "$configure_advanced" =~ ^[yY]$ ]]; then
