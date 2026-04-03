@@ -14,6 +14,7 @@ from application.api.user.tools.routes import transform_actions
 from application.cache import get_redis_instance
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
+from application.core.url_validation import SSRFError, validate_url
 from application.security.encryption import decrypt_credentials, encrypt_credentials
 from application.utils import check_required_fields
 
@@ -63,6 +64,21 @@ def _extract_auth_credentials(config):
     return auth_credentials
 
 
+def _validate_mcp_server_url(config: dict) -> None:
+    """Validate the server_url in an MCP config to prevent SSRF.
+
+    Raises:
+        ValueError: If the URL is missing or points to a blocked address.
+    """
+    server_url = (config.get("server_url") or "").strip()
+    if not server_url:
+        raise ValueError("server_url is required")
+    try:
+        validate_url(server_url)
+    except SSRFError as exc:
+        raise ValueError(f"Invalid server URL: {exc}") from exc
+
+
 @tools_mcp_ns.route("/mcp_server/test")
 class TestMCPServerConfig(Resource):
     @api.expect(
@@ -97,6 +113,8 @@ class TestMCPServerConfig(Resource):
                     400,
                 )
 
+            _validate_mcp_server_url(config)
+
             auth_credentials = _extract_auth_credentials(config)
             test_config = config.copy()
             test_config["auth_credentials"] = auth_credentials
@@ -114,6 +132,11 @@ class TestMCPServerConfig(Resource):
                 result["message"] = "Connection test failed"
 
             return make_response(jsonify(result), 200)
+        except ValueError as e:
+            return make_response(
+                jsonify({"success": False, "error": str(e)}),
+                400,
+            )
         except Exception as e:
             current_app.logger.error(f"Error testing MCP server: {e}", exc_info=True)
             return make_response(
@@ -164,6 +187,8 @@ class MCPServerSave(Resource):
                     jsonify({"success": False, "error": "Unsupported transport_type"}),
                     400,
                 )
+
+            _validate_mcp_server_url(config)
 
             auth_credentials = _extract_auth_credentials(config)
             auth_type = config.get("auth_type", "none")
@@ -279,6 +304,11 @@ class MCPServerSave(Resource):
                     "tools_count": len(transformed_actions),
                 }
             return make_response(jsonify(response_data), 200)
+        except ValueError as e:
+            return make_response(
+                jsonify({"success": False, "error": str(e)}),
+                400,
+            )
         except Exception as e:
             current_app.logger.error(f"Error saving MCP server: {e}", exc_info=True)
             return make_response(

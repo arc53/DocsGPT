@@ -33,6 +33,8 @@ def _patch_mcp_globals(monkeypatch):
     monkeypatch.setattr(mcp_mod, "mongo", mock_mongo)
     monkeypatch.setattr(mcp_mod, "db", mock_db)
     monkeypatch.setattr(mcp_mod, "_mcp_clients_cache", {})
+    # Bypass DNS-resolving URL validation for tests using fake hostnames.
+    monkeypatch.setattr(mcp_mod, "validate_url", lambda u, **kw: u)
 
 
 @pytest.fixture
@@ -135,6 +137,47 @@ class TestMCPToolInit:
             "headers": {"X-Custom": "val"},
         })
         assert tool.custom_headers == {"X-Custom": "val"}
+
+    def test_rejects_metadata_ip(self, monkeypatch):
+        from application.agents.tools.mcp_tool import MCPTool
+        from application.core.url_validation import validate_url as real_validate_url
+        import application.agents.tools.mcp_tool as mcp_mod
+
+        monkeypatch.setattr(mcp_mod, "validate_url", real_validate_url)
+        with pytest.raises(ValueError, match="Invalid MCP server URL"):
+            MCPTool(config={"server_url": "http://169.254.169.254/latest/meta-data", "auth_type": "none"})
+
+    def test_rejects_localhost(self, monkeypatch):
+        from application.agents.tools.mcp_tool import MCPTool
+        from application.core.url_validation import validate_url as real_validate_url
+        import application.agents.tools.mcp_tool as mcp_mod
+
+        monkeypatch.setattr(mcp_mod, "validate_url", real_validate_url)
+        with pytest.raises(ValueError, match="Invalid MCP server URL"):
+            MCPTool(config={"server_url": "http://localhost:8080/mcp", "auth_type": "none"})
+
+    def test_rejects_private_ip(self, monkeypatch):
+        from application.agents.tools.mcp_tool import MCPTool
+        from application.core.url_validation import validate_url as real_validate_url
+        import application.agents.tools.mcp_tool as mcp_mod
+
+        monkeypatch.setattr(mcp_mod, "validate_url", real_validate_url)
+        with pytest.raises(ValueError, match="Invalid MCP server URL"):
+            MCPTool(config={"server_url": "http://10.0.0.1/mcp", "auth_type": "none"})
+
+    def test_accepts_public_url(self):
+        tool = _make_tool({
+            "server_url": "https://mcp.example.com/api",
+            "auth_type": "none",
+        })
+        assert tool.server_url == "https://mcp.example.com/api"
+
+    def test_empty_server_url_allowed(self):
+        from application.agents.tools.mcp_tool import MCPTool
+
+        with patch.object(MCPTool, "_setup_client"):
+            tool = MCPTool(config={"server_url": "", "auth_type": "none"})
+            assert tool.server_url == ""
 
 
 # =====================================================================
