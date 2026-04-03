@@ -612,6 +612,10 @@ class LiveSpeechToTextFinish(Resource):
 class ServeImage(Resource):
     @api.doc(description="Serve an image from storage")
     def get(self, image_path):
+        if ".." in image_path or image_path.startswith("/") or "\x00" in image_path:
+            return make_response(
+                jsonify({"success": False, "message": "Invalid image path"}), 400
+            )
         try:
             from application.api.user.base import storage
 
@@ -628,6 +632,10 @@ class ServeImage(Resource):
         except FileNotFoundError:
             return make_response(
                 jsonify({"success": False, "message": "Image not found"}), 404
+            )
+        except ValueError:
+            return make_response(
+                jsonify({"success": False, "message": "Invalid image path"}), 400
             )
         except Exception as e:
             current_app.logger.error(f"Error serving image: {e}")

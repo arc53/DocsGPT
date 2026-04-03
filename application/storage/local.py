@@ -21,10 +21,19 @@ class LocalStorage(BaseStorage):
         )
 
     def _get_full_path(self, path: str) -> str:
-        """Get absolute path by combining base_dir and path."""
+        """Get absolute path by combining base_dir and path.
+
+        Raises:
+            ValueError: If the resolved path escapes base_dir (path traversal).
+        """
         if os.path.isabs(path):
-            return path
-        return os.path.join(self.base_dir, path)
+            resolved = os.path.realpath(path)
+        else:
+            resolved = os.path.realpath(os.path.join(self.base_dir, path))
+        base = os.path.realpath(self.base_dir)
+        if not resolved.startswith(base + os.sep) and resolved != base:
+            raise ValueError(f"Path traversal detected: {path}")
+        return resolved
 
     def save_file(self, file_data: BinaryIO, path: str, **kwargs) -> dict:
         """Save a file to local storage."""
