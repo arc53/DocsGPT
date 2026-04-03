@@ -491,9 +491,9 @@ class CreateAgent(Resource):
                 data["json_schema"] = normalize_json_schema_payload(
                     data.get("json_schema")
                 )
-            except JsonSchemaValidationError as exc:
+            except JsonSchemaValidationError:
                 return make_response(
-                    jsonify({"success": False, "message": f"JSON schema {exc}"}),
+                    jsonify({"success": False, "message": "Invalid JSON schema"}),
                     400,
                 )
         if data.get("status") not in ["draft", "published"]:
@@ -872,9 +872,9 @@ class UpdateAgent(Resource):
                         update_fields[field] = normalize_json_schema_payload(
                             json_schema
                         )
-                    except JsonSchemaValidationError as exc:
+                    except JsonSchemaValidationError:
                         return make_response(
-                            jsonify({"success": False, "message": f"JSON schema {exc}"}),
+                            jsonify({"success": False, "message": "Invalid JSON schema"}),
                             400,
                         )
                 else:
