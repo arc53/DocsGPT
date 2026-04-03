@@ -9,6 +9,7 @@ import json
 import pytest
 
 from application.api.v1.translator import (
+    _strip_tool_suffix,
     convert_history,
     extract_tool_results,
     is_continuation,
@@ -187,6 +188,39 @@ class TestTranslateRequest:
         assert len(result["tool_actions"]) == 1
         assert result["tool_actions"][0]["call_id"] == "c1"
 
+    def test_continuation_with_top_level_conversation_id(self):
+        """Standard clients send conversation_id at request level, not in messages."""
+        data = {
+            "conversation_id": "conv-top-level",
+            "messages": [
+                {"role": "user", "content": "Do stuff"},
+                {
+                    "role": "assistant",
+                    "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "act", "arguments": "{}"}}],
+                },
+                {"role": "tool", "tool_call_id": "c1", "content": "done"},
+            ],
+        }
+        result = translate_request(data, "key")
+        assert result["conversation_id"] == "conv-top-level"
+
+    def test_continuation_in_message_conversation_id_takes_precedence(self):
+        """When both in-message and top-level conversation_id exist, in-message wins."""
+        data = {
+            "conversation_id": "conv-top-level",
+            "messages": [
+                {"role": "user", "content": "Do stuff"},
+                {
+                    "role": "assistant",
+                    "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "act", "arguments": "{}"}}],
+                    "docsgpt": {"conversation_id": "conv-in-message"},
+                },
+                {"role": "tool", "tool_call_id": "c1", "content": "done"},
+            ],
+        }
+        result = translate_request(data, "key")
+        assert result["conversation_id"] == "conv-in-message"
+
     def test_client_tools_passed_through(self):
         data = {
             "messages": [{"role": "user", "content": "Hi"}],
@@ -262,6 +296,51 @@ class TestTranslateResponse:
             model_name="agent",
         )
         assert resp["docsgpt"]["tool_calls"] == tool_calls
+
+    def test_pending_tool_calls_strips_ct_suffix(self):
+        """Internal _ct\\d+ suffixes must be stripped from tool names in responses."""
+        pending = [
+            {
+                "call_id": "c1",
+                "name": "get_weather_ct0",
+                "action_name": "get_weather_ct0",
+                "arguments": {"city": "SF"},
+            }
+        ]
+        resp = translate_response(
+            conversation_id="c1",
+            answer="",
+            sources=[],
+            tool_calls=[],
+            thought="",
+            model_name="agent",
+            pending_tool_calls=pending,
+        )
+        tc = resp["choices"][0]["message"]["tool_calls"][0]
+        assert tc["function"]["name"] == "get_weather"
+
+    def test_pending_tool_calls_non_ct_suffix_preserved(self):
+        """Non-client tool suffixes (e.g. _t1) should not be stripped."""
+        pending = [
+            {
+                "call_id": "c1",
+                "name": "search_t1",
+                "action_name": "search_t1",
+                "arguments": {"q": "test"},
+            }
+        ]
+        resp = translate_response(
+            conversation_id="c1",
+            answer="",
+            sources=[],
+            tool_calls=[],
+            thought="",
+            model_name="agent",
+            pending_tool_calls=pending,
+        )
+        tc = resp["choices"][0]["message"]["tool_calls"][0]
+        # _t1 is NOT a client-tool suffix (_ct\d+), so it stays
+        assert tc["function"]["name"] == "search_t1"
 
     def test_pending_tool_calls(self):
         pending = [
@@ -366,6 +445,24 @@ class TestTranslateStreamEvent:
         assert tc["id"] == "c1"
         assert tc["function"]["name"] == "get_weather"
 
+    def test_tool_call_client_execution_strips_ct_suffix(self):
+        """Internal _ct suffixes must be stripped from streaming tool call names."""
+        chunks = translate_stream_event(
+            {
+                "type": "tool_call",
+                "data": {
+                    "call_id": "c1",
+                    "action_name": "create_ct0",
+                    "arguments": {"title": "test"},
+                    "status": "requires_client_execution",
+                },
+            },
+            "chatcmpl-1", "agent",
+        )
+        parsed = json.loads(chunks[0].replace("data: ", "").strip())
+        tc = parsed["choices"][0]["delta"]["tool_calls"][0]
+        assert tc["function"]["name"] == "create"
+
     def test_tool_call_completed(self):
         chunks = translate_stream_event(
             {
@@ -457,3 +554,30 @@ class TestTranslateStreamEvent:
         assert "choices" not in parsed
         # docsgpt key is present
         assert "docsgpt" in parsed
+
+
+# ---------------------------------------------------------------------------
+# _strip_tool_suffix
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestStripToolSuffix:
+
+    def test_strips_ct0(self):
+        assert _strip_tool_suffix("create_ct0") == "create"
+
+    def test_strips_ct_multi_digit(self):
+        assert _strip_tool_suffix("write_file_ct12") == "write_file"
+
+    def test_preserves_non_ct_suffix(self):
+        assert _strip_tool_suffix("search_t1") == "search_t1"
+
+    def test_preserves_plain_name(self):
+        assert _strip_tool_suffix("get_weather") == "get_weather"
+
+    def test_preserves_empty(self):
+        assert _strip_tool_suffix("") == ""
+
+    def test_ct_in_middle_not_stripped(self):
+        assert _strip_tool_suffix("ct0_action") == "ct0_action"

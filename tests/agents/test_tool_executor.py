@@ -129,6 +129,77 @@ class TestToolExecutorPrepare:
 
 
 @pytest.mark.unit
+class TestCheckPause:
+
+    def _make_call(self, name="action_toolid", call_id="c1", arguments="{}"):
+        call = Mock()
+        call.name = name
+        call.id = call_id
+        call.arguments = arguments
+        call.thought_signature = None
+        return call
+
+    def test_client_side_tool_returns_suffixed_name(self, monkeypatch):
+        """check_pause returns the LLM-facing suffixed name for internal routing."""
+        executor = ToolExecutor()
+
+        monkeypatch.setattr(
+            "application.agents.tool_executor.ToolActionParser",
+            lambda _cls: Mock(
+                parse_args=Mock(return_value=("ct0", "write_file", {"path": "test.md"}))
+            ),
+        )
+
+        tools_dict = {
+            "ct0": {
+                "name": "write_file",
+                "client_side": True,
+                "actions": [
+                    {"name": "write_file", "description": "Write a file", "active": True, "parameters": {}},
+                ],
+            }
+        }
+
+        call = self._make_call(name="write_file_ct0")
+        result = executor.check_pause(tools_dict, call, "MockLLM")
+
+        assert result is not None
+        # name keeps the suffix for LLM message reconstruction during continuation
+        assert result["name"] == "write_file_ct0"
+        # action_name is the clean parsed name
+        assert result["action_name"] == "write_file"
+        assert result["tool_id"] == "ct0"
+
+    def test_approval_required_returns_suffixed_name(self, monkeypatch):
+        """check_pause for approval-required tools also returns suffixed name."""
+        executor = ToolExecutor()
+
+        monkeypatch.setattr(
+            "application.agents.tool_executor.ToolActionParser",
+            lambda _cls: Mock(
+                parse_args=Mock(return_value=("t1", "delete_all", {}))
+            ),
+        )
+
+        tools_dict = {
+            "t1": {
+                "name": "dangerous_tool",
+                "actions": [
+                    {"name": "delete_all", "description": "Deletes everything", "active": True,
+                     "require_approval": True, "parameters": {}},
+                ],
+            }
+        }
+
+        call = self._make_call(name="delete_all_t1")
+        result = executor.check_pause(tools_dict, call, "MockLLM")
+
+        assert result is not None
+        assert result["name"] == "delete_all_t1"
+        assert result["action_name"] == "delete_all"
+
+
+@pytest.mark.unit
 class TestToolExecutorExecute:
 
     def _make_call(self, name="action_toolid", call_id="c1", arguments="{}"):

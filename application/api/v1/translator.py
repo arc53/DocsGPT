@@ -7,8 +7,21 @@ This module handles:
 """
 
 import json
+import re
 import time
 from typing import Any, Dict, List, Optional
+
+# Pattern matching internal tool-id suffixes (e.g. _ct0, _ct12)
+_TOOL_SUFFIX_RE = re.compile(r"_ct\d+$")
+
+
+def _strip_tool_suffix(name: str) -> str:
+    """Remove internal tool-id suffix from a tool name for client responses.
+
+    Internally tools are named ``action_ct0`` so the LLM can route calls.
+    Standard OpenAI clients expect the original registered name back.
+    """
+    return _TOOL_SUFFIX_RE.sub("", name)
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +132,8 @@ def translate_request(
     if is_continuation(messages):
         tool_actions = extract_tool_results(messages)
         conversation_id = extract_conversation_id(messages)
+        if not conversation_id:
+            conversation_id = data.get("conversation_id")
         result = {
             "conversation_id": conversation_id,
             "tool_actions": tool_actions,
@@ -199,7 +214,9 @@ def translate_response(
                 "id": tc.get("call_id", ""),
                 "type": "function",
                 "function": {
-                    "name": tc.get("name", tc.get("action_name", "")),
+                    "name": _strip_tool_suffix(
+                        tc.get("action_name", tc.get("name", ""))
+                    ),
                     "arguments": (
                         json.dumps(tc["arguments"])
                         if isinstance(tc.get("arguments"), dict)
@@ -341,7 +358,9 @@ def translate_stream_event(
                         "id": tc_data.get("call_id", ""),
                         "type": "function",
                         "function": {
-                            "name": tc_data.get("action_name", ""),
+                            "name": _strip_tool_suffix(
+                                tc_data.get("action_name", "")
+                            ),
                             "arguments": args_str,
                         },
                     }],
