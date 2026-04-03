@@ -293,8 +293,9 @@ def list_models():
         for ag in user_agents:
             created = ag.get("createdAt")
             created_ts = int(created.timestamp()) if created else int(time.time())
+            model_id = str(ag.get("_id") or ag.get("id") or "")
             models.append({
-                "id": str(ag.get("key", "")),
+                "id": model_id,
                 "object": "model",
                 "created": created_ts,
                 "owned_by": "docsgpt",
