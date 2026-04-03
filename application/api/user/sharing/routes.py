@@ -57,7 +57,7 @@ class ShareConversation(Resource):
 
         try:
             conversation = conversations_collection.find_one(
-                {"_id": ObjectId(conversation_id)}
+                {"_id": ObjectId(conversation_id), "user": user}
             )
             if conversation is None:
                 return make_response(
