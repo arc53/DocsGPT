@@ -11,11 +11,33 @@ from application.storage.storage_creator import StorageCreator
 
 
 def get_vectorstore(path: str) -> str:
-    if path:
-        vectorstore = f"indexes/{path}"
-    else:
-        vectorstore = "indexes"
-    return vectorstore
+    """Build a safe local path for a FAISS index.
+
+    Args:
+        path: Source identifier provided by the caller.
+
+    Returns:
+        The validated vectorstore path rooted under ``indexes``.
+
+    Raises:
+        ValueError: If ``path`` escapes the ``indexes`` directory.
+    """
+    base_dir = "indexes"
+    if not path:
+        return base_dir
+
+    normalized = str(path).strip()
+    if "\\" in normalized:
+        raise ValueError("Invalid source_id path")
+
+    candidate = os.path.normpath(os.path.join(base_dir, normalized))
+    base_abs = os.path.abspath(base_dir)
+    candidate_abs = os.path.abspath(candidate)
+
+    if not candidate_abs.startswith(base_abs + os.sep) and candidate_abs != base_abs:
+        raise ValueError("Invalid source_id path")
+
+    return candidate
 
 
 class FaissStore(BaseVectorStore):

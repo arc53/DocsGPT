@@ -363,6 +363,28 @@ class TestGetVectorstore:
 
         assert get_vectorstore("user/source123") == "indexes/user/source123"
 
+    @pytest.mark.parametrize(
+        "malicious_path",
+        [
+            "../outside",
+            "../../etc/passwd",
+            "nested/../../../outside",
+            "/tmp/evil",
+            "..\\outside",
+            "valid/../../escape",
+        ],
+    )
+    def test_rejects_path_traversal(self, malicious_path):
+        from application.vectorstore.faiss import get_vectorstore
+
+        with pytest.raises(ValueError, match="Invalid source_id path"):
+            get_vectorstore(malicious_path)
+
+    def test_allows_mongodb_style_ids(self):
+        from application.vectorstore.faiss import get_vectorstore
+
+        assert get_vectorstore("65e8f6a8a7a96b1bdad4154f") == "indexes/65e8f6a8a7a96b1bdad4154f"
+
 
 @pytest.mark.unit
 class TestFaissStoreAddChunk:
