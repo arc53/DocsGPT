@@ -14,6 +14,13 @@ def app():
     return app
 
 
+@pytest.fixture(autouse=True)
+def _bypass_url_validation():
+    """Bypass SSRF URL validation so tests using localhost URLs can proceed."""
+    with patch("application.api.user.tools.mcp.validate_url"):
+        yield
+
+
 # ---------------------------------------------------------------------------
 # Helper: _sanitize_mcp_transport
 # ---------------------------------------------------------------------------
