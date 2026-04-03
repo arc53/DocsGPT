@@ -1,0 +1,11 @@
+provider: qianfan
+defaults:
+  supports_tools: false
+  supports_structured_output: false
+  supports_streaming: true
+  context_window: 128000
+
+models:
+  - id: ernie-5.0
+    display_name: ERNIE 5.0
+    description: Baidu Qianfan flagship text chat model

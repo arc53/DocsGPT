@@ -8,6 +8,7 @@ class LLMHandlerCreator:
         "openai": OpenAILLMHandler,
         "google": GoogleLLMHandler,
         "novita": OpenAILLMHandler,  # Novita uses OpenAI-compatible API
+        "qianfan": OpenAILLMHandler,  # Qianfan uses an OpenAI-compatible chat API
         "default": OpenAILLMHandler,
     }
 

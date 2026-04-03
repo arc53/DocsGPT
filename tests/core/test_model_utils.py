@@ -120,6 +120,16 @@ class TestGetApiKeyForProvider:
             assert get_api_key_for_provider("novita") == "sk-novita"
 
     @pytest.mark.unit
+    def test_qianfan_key(self):
+        with patch("application.core.settings.settings") as mock_settings:
+            mock_settings.QIANFAN_API_KEY = "sk-qianfan"
+            mock_settings.API_KEY = "sk-fallback"
+
+            from application.core.model_utils import get_api_key_for_provider
+
+            assert get_api_key_for_provider("qianfan") == "sk-qianfan"
+
+    @pytest.mark.unit
     def test_huggingface_key(self):
         with patch("application.core.settings.settings") as mock_settings:
             mock_settings.HUGGINGFACE_API_KEY = "hf-key"

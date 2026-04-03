@@ -38,6 +38,7 @@ class TestModelProvider:
         assert ModelProvider.PREMAI == "premai"
         assert ModelProvider.LLAMA_CPP == "llama.cpp"
         assert ModelProvider.AZURE_OPENAI == "azure_openai"
+        assert ModelProvider.QIANFAN == "qianfan"
 
 
 class TestModelCapabilities:
