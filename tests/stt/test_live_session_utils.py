@@ -192,7 +192,10 @@ def test_commit_count_no_common_prefix():
 
 def test_commit_count_partial_prefix():
     """Tests that a stable prefix across hypotheses results in committed words."""
-    result = _calculate_commit_count("hello world test", "hello world again", is_silence=False)
+    # Must be longer than LIVE_STT_MUTABLE_TAIL_WORDS (8 words) to commit anything when not silent
+    prev = "one two three four five six seven eight nine ten"
+    curr = "one two three four five six seven eight nine ten eleven"
+    result = _calculate_commit_count(prev, curr, is_silence=False)
     assert result >= 1
 
 
