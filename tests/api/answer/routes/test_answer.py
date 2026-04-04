@@ -13,7 +13,7 @@ def mock_stream_processor():
     with patch(
         "application.api.answer.routes.answer.StreamProcessor"
     ) as MockProcessor:
-        processor = MagicMock()
+         processor = MagicMock()
         processor.decoded_token = {"sub": "test_user"}
         processor.conversation_id = str(ObjectId())
         processor.agent_config = {}
@@ -22,8 +22,9 @@ def mock_stream_processor():
         processor.shared_token = None
         processor.model_id = "gpt-4"
         processor.build_agent.return_value = MagicMock()
-        processor.pre_fetch_docs.return_value = ("docs content", [])
-        processor.pre_fetch_tools.return_value = None
+        processor.pre_fetch_docs.return_value = ("docs_together_content", [])  
+        processor.pre_fetch_tools.return_value = {} 
+        processor.create_agent.return_value = MagicMock() 
         MockProcessor.return_value = processor
         yield processor
 
