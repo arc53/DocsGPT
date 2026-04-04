@@ -556,7 +556,7 @@ class StreamProcessor:
             return docs_together, docs
         except Exception as e:
             logger.error(f"Failed to pre-fetch docs: {str(e)}", exc_info=True)
-            return "", []
+            return None, None
 
     def pre_fetch_tools(self) -> Optional[Dict[str, Any]]:
         """Pre-fetch tool data for template rendering before agent creation"""
