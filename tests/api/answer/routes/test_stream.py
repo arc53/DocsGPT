@@ -22,6 +22,7 @@ def mock_stream_processor():
         processor.shared_token = None
         processor.model_id = "gpt-4"
         processor.build_agent.return_value = MagicMock()
+        processor.pre_fetch_docs.return_value = ("", [])
         MockProcessor.return_value = processor
         yield processor
 
