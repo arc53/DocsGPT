@@ -1,6 +1,7 @@
 """File attachments and media routes."""
 
 import os
+import posixpath
 import tempfile
 from pathlib import Path
 
@@ -612,15 +613,46 @@ class LiveSpeechToTextFinish(Resource):
 class ServeImage(Resource):
     @api.doc(description="Serve an image from storage")
     def get(self, image_path):
-        if ".." in image_path or image_path.startswith("/") or "\x00" in image_path:
+        # --- authentication ------------------------------------------------
+        auth_user = _resolve_authenticated_user()
+        if hasattr(auth_user, "status_code"):
+            return auth_user
+        if not auth_user:
+            return make_response(
+                jsonify({"success": False, "message": "Authentication required"}),
+                401,
+            )
+
+        # --- path validation -----------------------------------------------
+        if "\x00" in image_path:
             return make_response(
                 jsonify({"success": False, "message": "Invalid image path"}), 400
             )
+
+        normalized = posixpath.normpath(image_path)
+        if (
+            normalized.startswith("..")
+            or normalized.startswith("/")
+            or ".." in normalized.split("/")
+        ):
+            return make_response(
+                jsonify({"success": False, "message": "Invalid image path"}), 400
+            )
+
+        # --- authorization: user may only access own files -----------------
+        # Storage paths follow the pattern <UPLOAD_FOLDER>/<user>/…
+        upload_prefix = settings.UPLOAD_FOLDER.strip("/")
+        expected_prefix = f"{upload_prefix}/{auth_user}/"
+        if not normalized.startswith(expected_prefix):
+            return make_response(
+                jsonify({"success": False, "message": "Forbidden"}), 403
+            )
+
         try:
             from application.api.user.base import storage
 
-            file_obj = storage.get_file(image_path)
-            extension = image_path.split(".")[-1].lower()
+            file_obj = storage.get_file(normalized)
+            extension = normalized.split(".")[-1].lower()
             content_type = f"image/{extension}"
             if extension == "jpg":
                 content_type = "image/jpeg"
