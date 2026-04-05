@@ -6,7 +6,7 @@ import dotenv
 from flask import Flask, jsonify, redirect, request
 from jose import jwt
 
-from application.auth import handle_auth
+from application.auth import generate_token_claims, handle_auth
 
 from application.core.logging_config import setup_logging
 
@@ -62,6 +62,7 @@ if settings.AUTH_TYPE in ("simple_jwt", "session_jwt") and not settings.JWT_SECR
 SIMPLE_JWT_TOKEN = None
 if settings.AUTH_TYPE == "simple_jwt":
     payload = {"sub": "local"}
+    payload.update(generate_token_claims())
     SIMPLE_JWT_TOKEN = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm="HS256")
     print(f"Generated Simple JWT Token: {SIMPLE_JWT_TOKEN}")
 
@@ -92,8 +93,10 @@ def get_config():
 def generate_token():
     if settings.AUTH_TYPE == "session_jwt":
         new_user_id = str(uuid.uuid4())
+        payload = {"sub": new_user_id}
+        payload.update(generate_token_claims())
         token = jwt.encode(
-            {"sub": new_user_id}, settings.JWT_SECRET_KEY, algorithm="HS256"
+            payload, settings.JWT_SECRET_KEY, algorithm="HS256"
         )
         return jsonify({"token": token})
     return jsonify({"error": "Token generation not allowed in current auth mode"}), 400
