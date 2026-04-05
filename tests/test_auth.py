@@ -46,7 +46,6 @@ class TestHandleAuth:
             "valid_token",
             "secret",
             algorithms=["HS256"],
-            options={"verify_exp": False},
         )
 
     def test_returns_error_on_invalid_jwt(self):
