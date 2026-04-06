@@ -1,10 +1,24 @@
 import logging
+import re
 
 import psycopg2
 
 from application.agents.tools.base import Tool
 
 logger = logging.getLogger(__name__)
+
+# SQL statements that are safe for read-only execution.
+_ALLOWED_STATEMENT_PREFIXES = ("select", "explain", "with")
+
+# Pattern to strip leading SQL block comments (/* ... */) and whitespace.
+_LEADING_COMMENT_RE = re.compile(r"^(\s*/\*.*?\*/\s*)*", re.DOTALL | re.IGNORECASE)
+
+# Keywords that must NOT appear anywhere in the query body (case-insensitive).
+# This catches writable CTEs like ``WITH ... INSERT ... RETURNING``.
+_FORBIDDEN_KEYWORDS_RE = re.compile(
+    r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|COPY|EXECUTE)\b",
+    re.IGNORECASE,
+)
 
 
 class PostgresTool(Tool):
@@ -27,31 +41,63 @@ class PostgresTool(Tool):
             raise ValueError(f"Unknown action: {action_name}")
         return actions[action_name](**kwargs)
 
+    @staticmethod
+    def _validate_sql_query(sql_query: str) -> str | None:
+        """Return an error message if *sql_query* is not a safe read-only query, else ``None``."""
+        # Strip leading block comments so they cannot hide the real statement.
+        cleaned = _LEADING_COMMENT_RE.sub("", sql_query).strip()
+
+        # Reject empty queries.
+        if not cleaned:
+            return "Empty SQL query."
+
+        # Reject stacked statements (multiple queries separated by ';').
+        # Allow a single trailing semicolon but nothing after it.
+        stripped_semi = cleaned.rstrip(";").strip()
+        if ";" in stripped_semi:
+            return "Multiple SQL statements are not allowed."
+
+        # Only allow read-only statement types.
+        first_word = cleaned.split()[0].lower() if cleaned.split() else ""
+        if first_word not in _ALLOWED_STATEMENT_PREFIXES:
+            return f"Only SELECT queries are allowed. Got: {first_word.upper()}"
+
+        # Even inside CTEs, forbid mutating keywords.
+        if _FORBIDDEN_KEYWORDS_RE.search(cleaned):
+            return "Query contains forbidden SQL keyword."
+
+        return None
+
     def _execute_sql(self, sql_query):
         """
-        Executes an SQL query against the PostgreSQL database using a connection string.
+        Executes a **read-only** SQL query against the PostgreSQL database.
+
+        Only SELECT (and EXPLAIN / WITH … SELECT) queries are permitted.
+        Mutating statements are rejected before any database connection is made.
         """
+        validation_error = self._validate_sql_query(sql_query)
+        if validation_error:
+            logger.warning("PostgreSQL query blocked: %s — query: %s", validation_error, sql_query[:200])
+            return {
+                "status_code": 403,
+                "message": "Query not allowed.",
+                "error": validation_error,
+            }
+
         conn = None
         try:
             conn = psycopg2.connect(self.connection_string)
             cur = conn.cursor()
             cur.execute(sql_query)
-            conn.commit()
 
-            if sql_query.strip().lower().startswith("select"):
-                column_names = (
-                    [desc[0] for desc in cur.description] if cur.description else []
-                )
-                results = []
-                rows = cur.fetchall()
-                for row in rows:
-                    results.append(dict(zip(column_names, row)))
-                response_data = {"data": results, "column_names": column_names}
-            else:
-                row_count = cur.rowcount
-                response_data = {
-                    "message": f"Query executed successfully, {row_count} rows affected."
-                }
+            column_names = (
+                [desc[0] for desc in cur.description] if cur.description else []
+            )
+            results = []
+            rows = cur.fetchall()
+            for row in rows:
+                results.append(dict(zip(column_names, row)))
+            response_data = {"data": results, "column_names": column_names}
 
             cur.close()
             return {
@@ -136,13 +182,13 @@ class PostgresTool(Tool):
         return [
             {
                 "name": "postgres_execute_sql",
-                "description": "Execute an SQL query against the PostgreSQL database and return the results. Use this tool to interact with the database, e.g., retrieve specific data or perform updates. Only SELECT queries will return data, other queries will return execution status.",
+                "description": "Execute a read-only SQL query against the PostgreSQL database and return the results. Only SELECT queries are allowed; mutating statements (INSERT, UPDATE, DELETE, DROP, etc.) are rejected.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "sql_query": {
                             "type": "string",
-                            "description": "The SQL query to execute.",
+                            "description": "The SQL SELECT query to execute.",
                         },
                     },
                     "required": ["sql_query"],

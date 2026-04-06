@@ -37,23 +37,15 @@ class TestPostgresExecuteAction:
         assert result["response_data"]["data"][0] == {"id": 1, "name": "Alice"}
         mock_conn.close.assert_called_once()
 
-    @patch("application.agents.tools.postgres.psycopg2.connect")
-    def test_insert_query(self, mock_connect, tool):
-        mock_conn = MagicMock()
-        mock_cur = MagicMock()
-        mock_cur.rowcount = 1
-        mock_conn.cursor.return_value = mock_cur
-        mock_connect.return_value = mock_conn
-
+    def test_insert_query_rejected(self, tool):
+        """INSERT queries are now blocked by read-only validation."""
         result = tool.execute_action(
             "postgres_execute_sql",
             sql_query="INSERT INTO users (name) VALUES ('Alice')",
         )
 
-        assert result["status_code"] == 200
-        assert "1 rows affected" in result["response_data"]["message"]
-        mock_conn.commit.assert_called_once()
-        mock_conn.close.assert_called_once()
+        assert result["status_code"] == 403
+        assert "not allowed" in result["message"].lower() or "not allowed" in result.get("error", "").lower()
 
     @patch("application.agents.tools.postgres.psycopg2.connect")
     def test_db_error(self, mock_connect, tool):
@@ -100,19 +92,13 @@ class TestPostgresExecuteAction:
         assert result["status_code"] == 500
         assert "Database error" in result["error"]
 
-    @patch("application.agents.tools.postgres.psycopg2.connect")
-    def test_connection_closed_on_error(self, mock_connect, tool):
-        import psycopg2
+    def test_non_select_rejected_without_connection(self, tool):
+        """Non-SELECT queries should be rejected before any DB connection is made."""
+        result = tool.execute_action(
+            "postgres_execute_sql", sql_query="DROP TABLE users"
+        )
 
-        mock_conn = MagicMock()
-        mock_cur = MagicMock()
-        mock_cur.execute.side_effect = psycopg2.Error("syntax error")
-        mock_conn.cursor.return_value = mock_cur
-        mock_connect.return_value = mock_conn
-
-        tool.execute_action("postgres_execute_sql", sql_query="BAD SQL")
-
-        mock_conn.close.assert_called_once()
+        assert result["status_code"] == 403
 
     @patch("application.agents.tools.postgres.psycopg2.connect")
     def test_select_with_no_description(self, mock_connect, tool):
