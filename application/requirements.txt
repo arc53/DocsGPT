@@ -33,7 +33,7 @@ jsonpointer==3.0.0
 kombu==5.6.2
 langchain==1.2.3
 langchain-community==0.4.1
-langchain-core==1.2.23
+langchain-core==1.2.26
 langchain-openai==1.1.12
 langchain-text-splitters==1.1.1
 langsmith==0.7.23
