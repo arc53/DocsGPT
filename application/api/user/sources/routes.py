@@ -161,6 +161,9 @@ class DeleteByIds(Resource):
         params={"path": "Comma-separated list of IDs"},
     )
     def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
         ids = request.args.get("path")
         if not ids:
             return make_response(
