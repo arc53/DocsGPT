@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import ReactFlow, {
@@ -301,6 +302,7 @@ function createWorkflowPayload(
 }
 
 function WorkflowBuilderInner() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
   const sourceDocs = useSelector(selectSourceDocs);
@@ -1466,10 +1468,10 @@ function WorkflowBuilderInner() {
                     <div className="flex items-center justify-between">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                          Allow prompt override
+                          {t('agents.form.advanced.systemPromptOverride')}
                         </label>
                         <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                          Let v1 API callers replace the system prompt
+                          {t('agents.form.advanced.systemPromptOverrideDescription')}
                         </p>
                       </div>
                       <button

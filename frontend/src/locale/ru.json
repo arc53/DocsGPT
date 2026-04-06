@@ -642,8 +642,8 @@
         "tokenLimitingDescription": "Ограничить ежедневное общее количество токенов, которые может использовать этот агент",
         "requestLimiting": "Лимит запросов",
         "requestLimitingDescription": "Ограничить ежедневное общее количество запросов, которые можно сделать к этому агенту",
-        "systemPromptOverride": "Allow prompt override",
-        "systemPromptOverrideDescription": "Let v1 API callers replace this agent's system prompt"
+        "systemPromptOverride": "Разрешить замену промпта",
+        "systemPromptOverrideDescription": "Разрешить вызовам API v1 заменять системный промпт этого агента"
       },
       "preview": {
         "publishedPreview": "Опубликованные агенты можно просмотреть здесь"
