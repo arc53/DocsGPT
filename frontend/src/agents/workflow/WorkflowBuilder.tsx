@@ -18,6 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import ReactFlow, {
@@ -301,6 +302,7 @@ function createWorkflowPayload(
 }
 
 function WorkflowBuilderInner() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
   const sourceDocs = useSelector(selectSourceDocs);
@@ -1142,6 +1144,10 @@ function WorkflowBuilderInner() {
               workflowDescription || `Workflow agent: ${workflowName}`,
             );
             agentFormData.append('status', 'published');
+            agentFormData.append(
+              'allow_system_prompt_override',
+              currentAgent.allow_system_prompt_override ? 'True' : 'False',
+            );
             if (imageFile) {
               agentFormData.append('image', imageFile);
             }
@@ -1203,6 +1209,10 @@ function WorkflowBuilderInner() {
         agentFormData.append('agent_type', 'workflow');
         agentFormData.append('status', 'published');
         agentFormData.append('workflow', savedWorkflowId || '');
+        agentFormData.append(
+          'allow_system_prompt_override',
+          currentAgent.allow_system_prompt_override ? 'True' : 'False',
+        );
         if (imageFile) {
           agentFormData.append('image', imageFile);
         }
@@ -1453,6 +1463,40 @@ function WorkflowBuilderInner() {
                     <p className="text-muted-foreground mt-1 text-[11px]">
                       Image updates are included the next time you save.
                     </p>
+                  </div>
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                          {t('agents.form.advanced.systemPromptOverride')}
+                        </label>
+                        <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                          {t('agents.form.advanced.systemPromptOverrideDescription')}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() =>
+                          setCurrentAgent((prev) => ({
+                            ...prev,
+                            allow_system_prompt_override:
+                              !prev.allow_system_prompt_override,
+                          }))
+                        }
+                        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+                          currentAgent.allow_system_prompt_override
+                            ? 'bg-primary'
+                            : 'bg-gray-300 dark:bg-gray-600'
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
+                            currentAgent.allow_system_prompt_override
+                              ? ''
+                              : '-translate-x-5'
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
                   <button
                     onClick={handleWorkflowSettingsDone}

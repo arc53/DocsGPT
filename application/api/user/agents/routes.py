@@ -73,6 +73,7 @@ AGENT_TYPE_SCHEMAS = {
             "token_limit",
             "limited_request_mode",
             "request_limit",
+            "allow_system_prompt_override",
             "createdAt",
             "updatedAt",
             "lastUsedAt",
@@ -96,6 +97,7 @@ AGENT_TYPE_SCHEMAS = {
             "token_limit",
             "limited_request_mode",
             "request_limit",
+            "allow_system_prompt_override",
             "createdAt",
             "updatedAt",
             "lastUsedAt",
@@ -220,6 +222,12 @@ def build_agent_document(
         base_doc["request_limit"] = int(
             data.get("request_limit", settings.DEFAULT_AGENT_LIMITS["request_limit"])
         )
+    if "allow_system_prompt_override" in allowed_fields:
+        base_doc["allow_system_prompt_override"] = (
+            data.get("allow_system_prompt_override") == "True"
+            if isinstance(data.get("allow_system_prompt_override"), str)
+            else bool(data.get("allow_system_prompt_override", False))
+        )
     return {k: v for k, v in base_doc.items() if k in allowed_fields}
 
 
@@ -292,6 +300,9 @@ class GetAgent(Resource):
                 "default_model_id": agent.get("default_model_id", ""),
                 "folder_id": agent.get("folder_id"),
                 "workflow": agent.get("workflow"),
+                "allow_system_prompt_override": agent.get(
+                    "allow_system_prompt_override", False
+                ),
             }
             return make_response(jsonify(data), 200)
         except Exception as e:
@@ -373,6 +384,9 @@ class GetAgents(Resource):
                     "default_model_id": agent.get("default_model_id", ""),
                     "folder_id": agent.get("folder_id"),
                     "workflow": agent.get("workflow"),
+                    "allow_system_prompt_override": agent.get(
+                        "allow_system_prompt_override", False
+                    ),
                 }
                 for agent in agents
                 if "source" in agent
@@ -449,6 +463,10 @@ class CreateAgent(Resource):
             ),
             "folder_id": fields.String(
                 required=False, description="Folder ID to organize the agent"
+            ),
+            "allow_system_prompt_override": fields.Boolean(
+                required=False,
+                description="Allow API callers to override the system prompt via the v1 endpoint",
             ),
         },
     )
@@ -674,6 +692,10 @@ class UpdateAgent(Resource):
             "folder_id": fields.String(
                 required=False, description="Folder ID to organize the agent"
             ),
+            "allow_system_prompt_override": fields.Boolean(
+                required=False,
+                description="Allow API callers to override the system prompt via the v1 endpoint",
+            ),
         },
     )
 
@@ -765,6 +787,7 @@ class UpdateAgent(Resource):
             "default_model_id",
             "folder_id",
             "workflow",
+            "allow_system_prompt_override",
         ]
 
         for field in allowed_fields:
@@ -983,6 +1006,13 @@ class UpdateAgent(Resource):
                 if workflow_error:
                     return workflow_error
                 update_fields[field] = workflow_id
+            elif field == "allow_system_prompt_override":
+                raw_value = data.get("allow_system_prompt_override", False)
+                update_fields[field] = (
+                    raw_value == "True"
+                    if isinstance(raw_value, str)
+                    else bool(raw_value)
+                )
             else:
                 value = data[field]
                 if field in ["name", "description", "prompt_id", "agent_type"]:

@@ -641,7 +641,9 @@
         "tokenLimiting": "令牌限制",
         "tokenLimitingDescription": "限制此代理每天可使用的总令牌数",
         "requestLimiting": "请求限制",
-        "requestLimitingDescription": "限制每天可向此代理发出的总请求数"
+        "requestLimitingDescription": "限制每天可向此代理发出的总请求数",
+        "systemPromptOverride": "允许覆盖提示词",
+        "systemPromptOverrideDescription": "允许 v1 API 调用者替换此代理的系统提示词"
       },
       "preview": {
         "publishedPreview": "已发布的代理可以在此处预览"

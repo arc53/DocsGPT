@@ -73,6 +73,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     token_limit: undefined,
     limited_request_mode: false,
     request_limit: undefined,
+    allow_system_prompt_override: false,
     models: [],
     default_model_id: '',
   });
@@ -241,6 +242,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       formData.append('request_limit', '0');
     }
 
+    formData.append(
+      'allow_system_prompt_override',
+      agent.allow_system_prompt_override ? 'True' : 'False',
+    );
+
     if (imageFile) formData.append('image', imageFile);
 
     if (agent.tools && agent.tools.length > 0)
@@ -360,6 +366,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       formData.append('limited_request_mode', 'False');
       formData.append('request_limit', '0');
     }
+
+    formData.append(
+      'allow_system_prompt_override',
+      agent.allow_system_prompt_override ? 'True' : 'False',
+    );
 
     if (agent.models && agent.models.length > 0) {
       formData.append('models', JSON.stringify(agent.models));
@@ -1265,6 +1276,43 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         : ''
                     }`}
                   />
+                </div>
+
+                <div className="mt-6">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <h2 className="text-sm font-medium">
+                        {t('agents.form.advanced.systemPromptOverride')}
+                      </h2>
+                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                        {t(
+                          'agents.form.advanced.systemPromptOverrideDescription',
+                        )}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() =>
+                        setAgent({
+                          ...agent,
+                          allow_system_prompt_override:
+                            !agent.allow_system_prompt_override,
+                        })
+                      }
+                      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+                        agent.allow_system_prompt_override
+                          ? 'bg-primary'
+                          : 'bg-gray-300 dark:bg-gray-600'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
+                          agent.allow_system_prompt_override
+                            ? ''
+                            : '-translate-x-5'
+                        }`}
+                      />
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

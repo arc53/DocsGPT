@@ -641,7 +641,9 @@
         "tokenLimiting": "トークン制限",
         "tokenLimitingDescription": "このエージェントが使用できる1日の合計トークン数を制限します",
         "requestLimiting": "リクエスト制限",
-        "requestLimitingDescription": "このエージェントに対して行える1日の合計リクエスト数を制限します"
+        "requestLimitingDescription": "このエージェントに対して行える1日の合計リクエスト数を制限します",
+        "systemPromptOverride": "プロンプトの上書きを許可",
+        "systemPromptOverrideDescription": "v1 API呼び出し元がこのエージェントのシステムプロンプトを置き換えることを許可します"
       },
       "preview": {
         "publishedPreview": "公開されたエージェントはここでプレビューできます"

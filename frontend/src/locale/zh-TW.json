@@ -641,7 +641,9 @@
         "tokenLimiting": "權杖限制",
         "tokenLimitingDescription": "限制此代理每天可使用的總權杖數",
         "requestLimiting": "請求限制",
-        "requestLimitingDescription": "限制每天可向此代理發出的總請求數"
+        "requestLimitingDescription": "限制每天可向此代理發出的總請求數",
+        "systemPromptOverride": "允許覆蓋提示詞",
+        "systemPromptOverrideDescription": "允許 v1 API 呼叫者替換此代理的系統提示詞"
       },
       "preview": {
         "publishedPreview": "已發佈的代理可以在此處預覽"
