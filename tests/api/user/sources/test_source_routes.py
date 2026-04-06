@@ -368,10 +368,22 @@ class TestPaginatedSources:
 @pytest.mark.unit
 class TestDeleteByIds:
 
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.sources.routes import DeleteByIds
+
+        with app.test_request_context("/api/delete_by_ids"):
+            from flask import request
+            request.decoded_token = None
+            response = DeleteByIds().get()
+
+        assert _status(response) == 401
+
     def test_returns_400_when_path_missing(self, app):
         from application.api.user.sources.routes import DeleteByIds
 
         with app.test_request_context("/api/delete_by_ids"):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
             response = DeleteByIds().get()
 
         assert _status(response) == 400
@@ -388,6 +400,8 @@ class TestDeleteByIds:
             mock_collection,
         ):
             with app.test_request_context("/api/delete_by_ids?path=id1,id2"):
+                from flask import request
+                request.decoded_token = {"sub": "u1"}
                 response = DeleteByIds().get()
 
         assert _status(response) == 200
@@ -405,6 +419,8 @@ class TestDeleteByIds:
             mock_collection,
         ):
             with app.test_request_context("/api/delete_by_ids?path=id1"):
+                from flask import request
+                request.decoded_token = {"sub": "u1"}
                 response = DeleteByIds().get()
 
         assert _status(response) == 400
@@ -420,6 +436,8 @@ class TestDeleteByIds:
             mock_collection,
         ):
             with app.test_request_context("/api/delete_by_ids?path=id1"):
+                from flask import request
+                request.decoded_token = {"sub": "u1"}
                 response = DeleteByIds().get()
 
         assert _status(response) == 400
