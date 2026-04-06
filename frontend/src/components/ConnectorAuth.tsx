@@ -40,6 +40,12 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
   };
 
   const handleAuthMessage = (event: MessageEvent) => {
+    // Validate the origin of the message to prevent session token theft
+    const apiHost = import.meta.env.VITE_API_HOST;
+    if (apiHost && event.origin !== new URL(apiHost).origin) {
+      return;
+    }
+
     const successGeneric = event.data?.type === 'connector_auth_success';
     const successProvider = event.data?.type === `${provider}_auth_success`;
     const errorProvider = event.data?.type === `${provider}_auth_error`;

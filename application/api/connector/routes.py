@@ -490,6 +490,7 @@ class ConnectorCallbackStatus(Resource):
             js_session_token = safe_js_string(session_token)
             js_user_email = safe_js_string(user_email)
             js_provider_type = safe_js_string(provider_raw)
+            js_target_origin = safe_js_string(settings.FRONTEND_URL or '*')
 
             html_content = f"""
             <!DOCTYPE html>
@@ -511,11 +512,12 @@ class ConnectorCallbackStatus(Resource):
                         const providerType = {js_provider_type};
 
                         if (status === "success" && window.opener) {{
+                            const targetOrigin = {js_target_origin};
                             window.opener.postMessage({{
                                 type: providerType + '_auth_success',
                                 session_token: sessionToken,
                                 user_email: userEmail
-                            }}, '*');
+                            }}, targetOrigin);
 
                             setTimeout(() => window.close(), 3000);
                         }} else if (status === "cancelled" || status === "error") {{

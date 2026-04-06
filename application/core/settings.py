@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"
 
     API_URL: str = "http://localhost:7091"  # backend url for celery worker
+    FRONTEND_URL: Optional[str] = "http://localhost:5173"  # frontend origin for postMessage targetOrigin
     MCP_OAUTH_REDIRECT_URI: Optional[str] = None  # public callback URL for MCP OAuth
     INTERNAL_KEY: Optional[str] = None  # internal api key for worker-to-backend auth
 
