@@ -619,7 +619,9 @@
         "tokenLimiting": "Token-Limitierung",
         "tokenLimitingDescription": "Begrenze die täglich von diesem Agenten verwendbaren Tokens",
         "requestLimiting": "Anfrage-Limitierung",
-        "requestLimitingDescription": "Begrenze die täglich an diesen Agenten gestellten Anfragen"
+        "requestLimitingDescription": "Begrenze die täglich an diesen Agenten gestellten Anfragen",
+        "systemPromptOverride": "Allow prompt override",
+        "systemPromptOverrideDescription": "Let v1 API callers replace this agent's system prompt"
       },
       "preview": {
         "publishedPreview": "Veröffentlichte Agenten können hier in der Vorschau angezeigt werden"

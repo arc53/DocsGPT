@@ -566,14 +566,13 @@ class TestConfigureSource:
                 decoded_token={"sub": "u"},
             )
         sp.agent_key = None
-        agent_data = {
+        sp._agent_data = {
             "sources": [
                 {"id": "src1", "retriever": "classic"},
                 {"id": "src2", "retriever": "hybrid"},
             ],
             "source": None,
         }
-        sp._get_data_from_api_key = MagicMock(return_value=agent_data)
         sp._configure_source()
         assert sp.source == {"active_docs": ["src1", "src2"]}
         assert len(sp.all_sources) == 2
@@ -593,12 +592,11 @@ class TestConfigureSource:
                 decoded_token={"sub": "u"},
             )
         sp.agent_key = None
-        agent_data = {
+        sp._agent_data = {
             "sources": [],
             "source": "single_src",
             "retriever": "classic",
         }
-        sp._get_data_from_api_key = MagicMock(return_value=agent_data)
         sp._configure_source()
         assert sp.source == {"active_docs": "single_src"}
         assert len(sp.all_sources) == 1
@@ -618,8 +616,7 @@ class TestConfigureSource:
                 decoded_token={"sub": "u"},
             )
         sp.agent_key = None
-        agent_data = {"sources": [], "source": None}
-        sp._get_data_from_api_key = MagicMock(return_value=agent_data)
+        sp._agent_data = {"sources": [], "source": None}
         sp._configure_source()
         assert sp.source == {}
         assert sp.all_sources == []
@@ -639,11 +636,10 @@ class TestConfigureSource:
                 decoded_token={"sub": "u"},
             )
         sp.agent_key = "agent_key_123"
-        agent_data = {
+        sp._agent_data = {
             "sources": [{"id": "s1", "retriever": "classic"}],
             "source": None,
         }
-        sp._get_data_from_api_key = MagicMock(return_value=agent_data)
         sp._configure_source()
         assert sp.source == {"active_docs": ["s1"]}
 
@@ -662,11 +658,10 @@ class TestConfigureSource:
                 decoded_token={"sub": "u"},
             )
         sp.agent_key = None
-        agent_data = {
+        sp._agent_data = {
             "sources": [{"id": None}, {"retriever": "classic"}],
             "source": None,
         }
-        sp._get_data_from_api_key = MagicMock(return_value=agent_data)
         sp._configure_source()
         assert sp.source == {}
 
@@ -1189,6 +1184,8 @@ class TestConfigureAgent:
             "chunks": "5",
         })
         sp._configure_agent()
+        sp.model_id = "test-model"
+        sp._configure_retriever()
         assert sp.agent_config["workflow"] == "wf_123"
         assert sp.agent_config["workflow_owner"] == "user1"
         assert sp.retriever_config["retriever_name"] == "hybrid"
@@ -1211,6 +1208,8 @@ class TestConfigureAgent:
             "chunks": "not_a_number",
         })
         sp._configure_agent()
+        sp.model_id = "test-model"
+        sp._configure_retriever()
         assert sp.retriever_config["chunks"] == 2
 
 
@@ -1763,8 +1762,8 @@ class TestConfigureAgentAdditionalPaths:
         assert sp.decoded_token == {"sub": "owner_user"}
 
     @pytest.mark.unit
-    def test_configure_agent_with_source_in_data_key(self):
-        """Cover line 463-464: data_key has 'source' set."""
+    def test_configure_source_picks_up_cached_agent_data(self):
+        """After _configure_agent caches _agent_data, _configure_source uses it."""
         sp = self._make_sp()
         sp._resolve_agent_id = MagicMock(return_value="agent_id_1")
         sp._get_agent_key = MagicMock(return_value=("agent_key", False, None))
@@ -1780,6 +1779,7 @@ class TestConfigureAgentAdditionalPaths:
             "source": "my_source",
         })
         sp._configure_agent()
+        sp._configure_source()
         assert sp.source == {"active_docs": "my_source"}
 
     @pytest.mark.unit
@@ -2067,7 +2067,7 @@ class TestPreFetchDocsFullPaths:
             "chunks": 2,
             "doc_token_limit": 50000,
         }
-        sp.source = {}
+        sp.source = {"active_docs": ["src1"]}
         sp.model_id = "test-model"
         sp.agent_id = None
         return sp

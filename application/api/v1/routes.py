@@ -138,10 +138,18 @@ def chat_completions():
         if usage_error:
             return usage_error
 
+        should_save_conversation = bool(internal_data.get("save_conversation", False))
+
         if is_stream:
             return Response(
                 _stream_response(
-                    helper, question, agent, processor, model_name, continuation
+                    helper,
+                    question,
+                    agent,
+                    processor,
+                    model_name,
+                    continuation,
+                    should_save_conversation,
                 ),
                 mimetype="text/event-stream",
                 headers={
@@ -151,7 +159,13 @@ def chat_completions():
             )
         else:
             return _non_stream_response(
-                helper, question, agent, processor, model_name, continuation
+                helper,
+                question,
+                agent,
+                processor,
+                model_name,
+                continuation,
+                should_save_conversation,
             )
 
     except ValueError as e:
@@ -181,6 +195,7 @@ def _stream_response(
     processor: StreamProcessor,
     model_name: str,
     continuation: Optional[Dict],
+    should_save_conversation: bool,
 ) -> Generator[str, None, None]:
     """Generate translated SSE chunks for streaming response."""
     completion_id = f"chatcmpl-{int(time.time())}"
@@ -193,6 +208,7 @@ def _stream_response(
         decoded_token=processor.decoded_token,
         agent_id=processor.agent_id,
         model_id=processor.model_id,
+        should_save_conversation=should_save_conversation,
         _continuation=continuation,
     )
 
@@ -225,6 +241,7 @@ def _non_stream_response(
     processor: StreamProcessor,
     model_name: str,
     continuation: Optional[Dict],
+    should_save_conversation: bool,
 ) -> Response:
     """Collect full response and return as single JSON."""
     stream = helper.complete_stream(
@@ -235,6 +252,7 @@ def _non_stream_response(
         decoded_token=processor.decoded_token,
         agent_id=processor.agent_id,
         model_id=processor.model_id,
+        should_save_conversation=should_save_conversation,
         _continuation=continuation,
     )
 

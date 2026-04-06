@@ -11,6 +11,7 @@ import pytest
 from application.api.v1.translator import (
     _get_client_tool_name,
     convert_history,
+    extract_system_prompt,
     extract_tool_results,
     is_continuation,
     translate_request,
@@ -149,6 +150,48 @@ class TestConvertHistory:
 
 
 # ---------------------------------------------------------------------------
+# extract_system_prompt
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestExtractSystemPrompt:
+
+    def test_extracts_first_system_message(self):
+        messages = [
+            {"role": "system", "content": "You are a pirate"},
+            {"role": "user", "content": "Hello"},
+        ]
+        assert extract_system_prompt(messages) == "You are a pirate"
+
+    def test_returns_none_when_no_system_message(self):
+        messages = [{"role": "user", "content": "Hello"}]
+        assert extract_system_prompt(messages) is None
+
+    def test_returns_first_of_multiple_system_messages(self):
+        messages = [
+            {"role": "system", "content": "First"},
+            {"role": "system", "content": "Second"},
+            {"role": "user", "content": "Hello"},
+        ]
+        assert extract_system_prompt(messages) == "First"
+
+    def test_empty_content_returns_empty_string(self):
+        messages = [
+            {"role": "system", "content": ""},
+            {"role": "user", "content": "Hello"},
+        ]
+        assert extract_system_prompt(messages) == ""
+
+    def test_missing_content_returns_empty_string(self):
+        messages = [
+            {"role": "system"},
+            {"role": "user", "content": "Hello"},
+        ]
+        assert extract_system_prompt(messages) == ""
+
+
+# ---------------------------------------------------------------------------
 # translate_request
 # ---------------------------------------------------------------------------
 
@@ -167,10 +210,24 @@ class TestTranslateRequest:
         result = translate_request(data, "test-key")
         assert result["question"] == "What's 2+2?"
         assert result["api_key"] == "test-key"
-        assert result["save_conversation"] is True
+        # Conversations are not persisted by default on the v1 endpoint.
+        assert result["save_conversation"] is False
         history = json.loads(result["history"])
         assert len(history) == 1
         assert history[0]["prompt"] == "Hello"
+
+    def test_save_conversation_opt_in_via_docsgpt_extension(self):
+        data = {
+            "messages": [{"role": "user", "content": "Hi"}],
+            "docsgpt": {"save_conversation": True},
+        }
+        result = translate_request(data, "key")
+        assert result["save_conversation"] is True
+
+    def test_save_conversation_default_false(self):
+        data = {"messages": [{"role": "user", "content": "Hi"}]}
+        result = translate_request(data, "key")
+        assert result["save_conversation"] is False
 
     def test_continuation_request(self):
         data = {
@@ -236,6 +293,23 @@ class TestTranslateRequest:
         }
         result = translate_request(data, "key")
         assert result["attachments"] == ["att1", "att2"]
+
+    def test_system_prompt_override_included_when_present(self):
+        data = {
+            "messages": [
+                {"role": "system", "content": "Custom prompt"},
+                {"role": "user", "content": "Hello"},
+            ],
+        }
+        result = translate_request(data, "key")
+        assert result["system_prompt_override"] == "Custom prompt"
+
+    def test_system_prompt_override_absent_when_no_system_message(self):
+        data = {
+            "messages": [{"role": "user", "content": "Hello"}],
+        }
+        result = translate_request(data, "key")
+        assert "system_prompt_override" not in result
 
 
 # ---------------------------------------------------------------------------
