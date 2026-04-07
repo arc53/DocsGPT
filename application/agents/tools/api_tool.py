@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from typing import Any, Dict, Optional
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import requests
 
@@ -91,8 +91,14 @@ class APITool(Tool):
                 for match in re.finditer(r"\{([^}]+)\}", request_url):
                     param_name = match.group(1)
                     if param_name in query_params:
+                        # URL-encode path parameter values to prevent path
+                        # traversal and query/fragment injection via
+                        # LLM-controlled inputs.
+                        safe_value = quote(
+                            str(query_params[param_name]), safe=""
+                        )
                         request_url = request_url.replace(
-                            f"{{{param_name}}}", str(query_params[param_name])
+                            f"{{{param_name}}}", safe_value
                         )
                         path_params_used.add(param_name)
             remaining_params = {
@@ -141,9 +147,16 @@ class APITool(Tool):
                 f"API Call: {method} {request_url} | Content-Type: {request_headers.get('Content-Type', 'N/A')}"
             )
 
+            # Disable automatic redirect following on all requests to prevent
+            # SSRF via open-redirect chains (CWE-918).  The initial URL is
+            # validated above, but a 3xx redirect could point to an internal
+            # address that would bypass the check.
             if method.upper() == "GET":
                 response = requests.get(
-                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
+                    request_url,
+                    headers=request_headers,
+                    timeout=DEFAULT_TIMEOUT,
+                    allow_redirects=False,
                 )
             elif method.upper() == "POST":
                 response = requests.post(
@@ -151,6 +164,7 @@ class APITool(Tool):
                     data=serialized_body,
                     headers=request_headers,
                     timeout=DEFAULT_TIMEOUT,
+                    allow_redirects=False,
                 )
             elif method.upper() == "PUT":
                 response = requests.put(
@@ -158,10 +172,14 @@ class APITool(Tool):
                     data=serialized_body,
                     headers=request_headers,
                     timeout=DEFAULT_TIMEOUT,
+                    allow_redirects=False,
                 )
             elif method.upper() == "DELETE":
                 response = requests.delete(
-                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
+                    request_url,
+                    headers=request_headers,
+                    timeout=DEFAULT_TIMEOUT,
+                    allow_redirects=False,
                 )
             elif method.upper() == "PATCH":
                 response = requests.patch(
@@ -169,14 +187,21 @@ class APITool(Tool):
                     data=serialized_body,
                     headers=request_headers,
                     timeout=DEFAULT_TIMEOUT,
+                    allow_redirects=False,
                 )
             elif method.upper() == "HEAD":
                 response = requests.head(
-                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
+                    request_url,
+                    headers=request_headers,
+                    timeout=DEFAULT_TIMEOUT,
+                    allow_redirects=False,
                 )
             elif method.upper() == "OPTIONS":
                 response = requests.options(
-                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
+                    request_url,
+                    headers=request_headers,
+                    timeout=DEFAULT_TIMEOUT,
+                    allow_redirects=False,
                 )
             else:
                 return {
