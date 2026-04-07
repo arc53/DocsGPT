@@ -1,5 +1,6 @@
 import requests
 from application.agents.tools.base import Tool
+from application.core.url_validation import validate_url
 
 class NtfyTool(Tool):
     """
@@ -55,7 +56,9 @@ class NtfyTool(Tool):
 
         Raises:
             ValueError: If priority is not an integer between 1 and 5.
+            SSRFError: If server_url points to an internal or disallowed host.
         """
+        validate_url(server_url)
         url = f"{server_url.rstrip('/')}/{topic}"
         headers = {}
         if title:
