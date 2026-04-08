@@ -7,6 +7,7 @@ from application.llm.groq import GroqLLM
 from application.llm.llama_cpp import LlamaCpp
 from application.llm.novita import NovitaLLM
 from application.llm.openai import AzureOpenAILLM, OpenAILLM
+from application.llm.qianfan import QianfanLLM
 from application.llm.premai import PremAILLM
 from application.llm.sagemaker import SagemakerAPILLM
 from application.llm.open_router import OpenRouterLLM
@@ -26,6 +27,7 @@ class LLMCreator:
         "groq": GroqLLM,
         "google": GoogleLLM,
         "novita": NovitaLLM,
+        "qianfan": QianfanLLM,
         "openrouter": OpenRouterLLM,
     }
 

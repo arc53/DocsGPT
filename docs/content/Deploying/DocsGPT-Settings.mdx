@@ -45,6 +45,7 @@ Here are some of the most fundamental settings you'll likely want to configure:
     - `google`: Use Google's Vertex AI or Gemini models.
     - `anthropic`: Use Anthropic's Claude models.
     - `groq`: Use Groq's models.
+    - `qianfan`: Use Baidu Qianfan models.
     - `huggingface`: Use HuggingFace Inference API.
     - `azure_openai`: Use Azure OpenAI Service.
     - `openai` (when using local inference engines like Ollama, Llama.cpp, TGI, etc.): This signals DocsGPT to use an OpenAI-compatible API format, even if the actual LLM is running locally.
@@ -54,7 +55,25 @@ Here are some of the most fundamental settings you'll likely want to configure:
   - **Examples:**
     - For `LLM_PROVIDER=openai`: `gpt-4o`
     - For `LLM_PROVIDER=google`: `gemini-2.0-flash`
+    - For `LLM_PROVIDER=qianfan`: `ernie-5.0`
     - For local models (e.g., Ollama): `llama3.2:1b` (or any model name available in your setup).
+
+### Example for Cloud API Provider (Baidu Qianfan)
+
+To use Baidu Qianfan's `ernie-5.0` model, configure your `.env` file like this:
+
+```env
+LLM_PROVIDER=qianfan
+QIANFAN_API_KEY=YOUR_QIANFAN_API_KEY
+LLM_NAME=ernie-5.0
+```
+
+You can also reuse the generic `API_KEY` variable with `LLM_PROVIDER=qianfan`, but `QIANFAN_API_KEY` is clearer when you configure multiple providers in the same deployment.
+
+The first Qianfan integration is intentionally conservative:
+
+- Text chat is supported.
+- Attachments, tool calling, and structured output are left disabled until they are verified end-to-end against the Qianfan API.
 
 - **`EMBEDDINGS_NAME`**: This setting defines which embedding model DocsGPT will use to generate vector embeddings for your documents. Embeddings are numerical representations of text that allow DocsGPT to understand the semantic meaning of your documents for efficient search and retrieval.
 

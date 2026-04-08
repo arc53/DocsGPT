@@ -28,6 +28,7 @@ ANTHROPIC_ATTACHMENTS = IMAGE_ATTACHMENTS
 OPENROUTER_ATTACHMENTS = IMAGE_ATTACHMENTS
 
 NOVITA_ATTACHMENTS = IMAGE_ATTACHMENTS
+QIANFAN_ATTACHMENTS = []
 
 
 OPENAI_MODELS = [
@@ -230,6 +231,21 @@ NOVITA_MODELS = [
             supports_structured_output=True,
             supported_attachment_types=[],
             context_window=204800,
+        ),
+    ),
+]
+
+QIANFAN_MODELS = [
+    AvailableModel(
+        id="ernie-5.0",
+        provider=ModelProvider.QIANFAN,
+        display_name="ERNIE 5.0",
+        description="Baidu Qianfan flagship text chat model",
+        capabilities=ModelCapabilities(
+            supports_tools=False,
+            supports_structured_output=False,
+            supported_attachment_types=QIANFAN_ATTACHMENTS,
+            context_window=128000,
         ),
     ),
 ]
