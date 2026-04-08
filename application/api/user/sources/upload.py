@@ -83,19 +83,38 @@ class UploadFile(Resource):
             storage = StorageCreator.get_storage()
 
             for file in files:
-                original_filename = os.path.basename(file.filename)
-                safe_file = safe_filename(original_filename)
-                if original_filename:
-                    file_name_map[safe_file] = original_filename
+                # Handle potential folder uploads (from webkitdirectory or recursive drag-drop)
+                # file.filename may contain a relative path like 'folder/subfolder/file.txt'
+                original_filename = file.filename
+                if not original_filename:
+                    continue
+
+                # Ensure path uses forward slashes and clean it
+                relative_path = original_filename.replace("\\", "/").strip("/")
+                if ".." in relative_path or relative_path.startswith("/"):
+                    # Basic security check to prevent path traversal
+                    continue
+
+                # Split and make each part of the path safe
+                path_parts = relative_path.split("/")
+                safe_parts = [safe_filename(part) for part in path_parts if part]
+                if not safe_parts:
+                    continue
+
+                safe_relative_path = "/".join(safe_parts)
+                safe_file_basename = safe_parts[-1]
+
+                # Map the safe path to original name for display purposes
+                file_name_map[safe_relative_path] = original_filename
 
                 with tempfile.TemporaryDirectory() as temp_dir:
-                    temp_file_path = os.path.join(temp_dir, safe_file)
+                    temp_file_path = os.path.join(temp_dir, safe_file_basename)
                     file.save(temp_file_path)
-                    _enforce_audio_path_size_limit(temp_file_path, safe_file)
+                    _enforce_audio_path_size_limit(temp_file_path, safe_file_basename)
 
                     # Only extract actual .zip files, not Office formats (.docx, .xlsx, .pptx)
                     # which are technically zip archives but should be processed as-is
-                    is_office_format = safe_file.lower().endswith(
+                    is_office_format = safe_file_basename.lower().endswith(
                         (".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub")
                     )
                     if zipfile.is_zipfile(temp_file_path) and not is_office_format:
@@ -104,18 +123,25 @@ class UploadFile(Resource):
                                 zip_ref.extractall(path=temp_dir)
 
                                 # Walk through extracted files and upload them
-
-                                for root, _, files in os.walk(temp_dir):
-                                    for extracted_file in files:
+                                for root, _, extracted_files in os.walk(temp_dir):
+                                    for extracted_file in extracted_files:
                                         if (
                                             os.path.join(root, extracted_file)
                                             == temp_file_path
                                         ):
                                             continue
-                                        rel_path = os.path.relpath(
+                                        ext_rel_path = os.path.relpath(
                                             os.path.join(root, extracted_file), temp_dir
                                         )
-                                        storage_path = f"{base_path}/{rel_path}"
+                                        # When extracting a zip, we might want to put it in its own folder or root
+                                        # The previous logic put it under base_path/rel_path
+                                        # If the zip itself was in a subfolder, we should probably prepend that
+                                        zip_prefix = "/".join(safe_parts[:-1])
+                                        if zip_prefix:
+                                            storage_path = f"{base_path}/{zip_prefix}/{ext_rel_path}"
+                                        else:
+                                            storage_path = f"{base_path}/{ext_rel_path}"
+                                        
                                         _enforce_audio_path_size_limit(
                                             os.path.join(root, extracted_file),
                                             extracted_file,
@@ -130,16 +156,14 @@ class UploadFile(Resource):
                                 f"Error extracting zip: {e}", exc_info=True
                             )
                             # If zip extraction fails, save the original zip file
-
-                            file_path = f"{base_path}/{safe_file}"
+                            storage_path = f"{base_path}/{safe_relative_path}"
                             with open(temp_file_path, "rb") as f:
-                                storage.save_file(f, file_path)
+                                storage.save_file(f, storage_path)
                     else:
-                        # For non-zip files, save directly
-
-                        file_path = f"{base_path}/{safe_file}"
+                        # For non-zip files, save directly preserving directory structure
+                        storage_path = f"{base_path}/{safe_relative_path}"
                         with open(temp_file_path, "rb") as f:
-                            storage.save_file(f, file_path)
+                            storage.save_file(f, storage_path)
             task = ingest.delay(
                 settings.UPLOAD_FOLDER,
                 list(SUPPORTED_SOURCE_EXTENSIONS),

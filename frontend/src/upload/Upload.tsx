@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
@@ -32,7 +32,7 @@ import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
 
 import { FilePicker } from '../components/FilePicker';
 import GoogleDrivePicker from '../components/GoogleDrivePicker';
-import { FILE_UPLOAD_ACCEPT } from '../constants/fileUpload';
+import { FILE_UPLOAD_ACCEPT, FILE_UPLOAD_ACCEPT_ATTR } from '../constants/fileUpload';
 
 import ChevronRight from '../assets/chevron-right.svg';
 
@@ -61,6 +61,86 @@ function Upload({
   // File picker state
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+
+  const isSupportedFile = (file: File) => {
+    const extension = '.' + file.name.split('.').pop()?.toLowerCase();
+    return (
+      FILE_UPLOAD_ACCEPT_ATTR.split(',').includes(extension) ||
+      file.name.toLowerCase().endsWith('.zip')
+    );
+  };
+
+  const traverseDirectory = useCallback(
+    async (entry: any, path = ''): Promise<File[]> => {
+      const filesList: File[] = [];
+      if (entry.isFile) {
+        const file = await new Promise<File>((resolve) => entry.file(resolve));
+        const relativePath = path ? `${path}/${file.name}` : file.name;
+        // We use Object.defineProperty to set webkitRelativePath as it's often read-only
+        try {
+          Object.defineProperty(file, 'webkitRelativePath', {
+            value: relativePath,
+            writable: true,
+            configurable: true,
+          });
+        } catch (e) {
+          // Fallback if defineProperty fails
+          (file as any).relativePath = relativePath;
+        }
+        filesList.push(file);
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        const entries = await new Promise<any[]>((resolve) => {
+          const allEntries: any[] = [];
+          const read = () => {
+            reader.readEntries((results: any[]) => {
+              if (results.length) {
+                allEntries.push(...results);
+                read();
+              } else {
+                resolve(allEntries);
+              }
+            });
+          };
+          read();
+        });
+        for (const subEntry of entries) {
+          const subFiles = await traverseDirectory(
+            subEntry,
+            path ? `${path}/${entry.name}` : entry.name,
+          );
+          filesList.push(...subFiles);
+        }
+      }
+      return filesList;
+    },
+    [],
+  );
+
+  const handleFolderButtonClick = () => {
+    if (folderInputRef.current) {
+      folderInputRef.current.click();
+    }
+  };
+
+  const onFolderSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const selectedFilesList = (Array.from(e.target.files) as File[]).filter(
+        isSupportedFile,
+      );
+      setfiles(selectedFilesList);
+      if (!nameTouched && selectedFilesList.length > 0) {
+        // Find the root folder name from webkitRelativePath
+        const firstPath = selectedFilesList[0].webkitRelativePath;
+        const rootFolder = firstPath.split('/')[0];
+        setIngestor((prev: IngestorConfig) => ({
+          ...prev,
+          name: rootFolder || prev.name,
+        }));
+      }
+    }
+  };
 
   const renderFormFields = () => {
     if (!ingestor.type) return null;
@@ -110,7 +190,7 @@ function Upload({
             value={String(
               ingestor.config[field.name as keyof typeof ingestor.config],
             )}
-            onChange={(e) =>
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
               handleIngestorChange(
                 field.name as keyof IngestorConfig['config'],
                 e.target.value,
@@ -193,6 +273,22 @@ function Upload({
               <span className="text-primary dark:text-muted-foreground inline-block rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
                 <input type="button" {...getInputProps()} />
                 {t('modals.uploadDoc.choose')}
+              </span>
+              <span
+                className="text-purple-30 dark:text-silver ml-2 inline-block rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium hover:cursor-pointer"
+                onClick={handleFolderButtonClick}
+              >
+                <input
+                  type="file"
+                  ref={folderInputRef}
+                  className="hidden"
+                  onChange={onFolderSelect}
+                  {...({
+                    webkitdirectory: 'true',
+                    directory: 'true',
+                  } as any)}
+                />
+                {t('modals.uploadDoc.chooseFolder')}
               </span>
             </div>
             <div className="mt-4 max-w-full">
@@ -424,25 +520,44 @@ function Upload({
   );
 
   const onDrop = useCallback(
-    (acceptedFiles: File[]) => {
-      setfiles(acceptedFiles);
-      const pickedName = acceptedFiles[0]?.name;
+    async (acceptedFiles: File[], fileRejections: any[], event: any) => {
+      let finalFiles = acceptedFiles;
+
+      // Handle directory drops via webkitGetAsEntry if available
+      if (event.dataTransfer && event.dataTransfer.items) {
+        const items = event.dataTransfer.items;
+        const traversePromises = [];
+        for (let i = 0; i < items.length; i++) {
+          const entry = items[i].webkitGetAsEntry();
+          if (entry) {
+            traversePromises.push(traverseDirectory(entry));
+          }
+        }
+        if (traversePromises.length > 0) {
+          const results = await Promise.all(traversePromises);
+          finalFiles = results.flat();
+        }
+      }
+
+      setfiles(finalFiles);
+      const pickedName =
+        finalFiles[0]?.webkitRelativePath?.split('/')[0] || finalFiles[0]?.name;
       if (!nameTouched && pickedName) {
-        setIngestor((prev) => ({ ...prev, name: pickedName }));
+        setIngestor((prev: IngestorConfig) => ({ ...prev, name: pickedName }));
       }
 
       // If we're in local_file mode, update the ingestor config
       if (ingestor.type === 'local_file') {
-        setIngestor((prevState) => ({
+        setIngestor((prevState: IngestorConfig) => ({
           ...prevState,
           config: {
             ...prevState.config,
-            files: acceptedFiles,
+            files: finalFiles,
           },
         }));
       }
     },
-    [ingestor.type, nameTouched],
+    [ingestor.type, nameTouched, traverseDirectory],
   );
 
   const doNothing = () => undefined;
@@ -450,7 +565,9 @@ function Upload({
   const uploadFile = (clientTaskId: string) => {
     const formData = new FormData();
     files.forEach((file) => {
-      formData.append('file', file);
+      const relativePath =
+        file.webkitRelativePath || (file as any).relativePath || file.name;
+      formData.append('file', file, relativePath);
     });
 
     formData.append('name', ingestor.name);
@@ -874,9 +991,9 @@ function Upload({
                   type="text"
                   colorVariant="silver"
                   value={ingestor.name}
-                  onChange={(e) => {
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     setNameTouched(true);
-                    setIngestor((prevState) => ({
+                    setIngestor((prevState: IngestorConfig) => ({
                       ...prevState,
                       name: e.target.value,
                     }));
