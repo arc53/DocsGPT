@@ -45,7 +45,13 @@ export interface Answer {
   conversationId: string | null;
   title: string | null;
   thought: string;
-  sources: { title: string; text: string; source: string }[];
+  sources: {
+    title: string;
+    text: string;
+    source: string;
+    page?: number;
+    filename?: string;
+  }[];
   tool_calls: ToolCallsType[];
   structured?: boolean;
   schema?: object;
@@ -58,7 +64,14 @@ export interface Query {
   conversationId?: string | null;
   title?: string | null;
   thought?: string;
-  sources?: { title: string; text: string; link: string }[];
+  sources?: {
+    title: string;
+    text: string;
+    link?: string;
+    source?: string;
+    page?: number;
+    filename?: string;
+  }[];
   tool_calls?: ToolCallsType[];
   error?: string;
   attachments?: { id: string; fileName: string }[];

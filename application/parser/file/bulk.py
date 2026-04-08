@@ -271,9 +271,18 @@ class SimpleDirectoryReader(BaseReader):
                 base_metadata.update(custom_metadata)
 
             if isinstance(data, List):
-                # Extend data_list with each item in the data list
-                data_list.extend([str(d) for d in data])
-                metadata_list.extend([base_metadata for _ in data])
+                per_segment = None
+                if suffix_lower in self.file_extractor:
+                    seg_parser = self.file_extractor[suffix_lower]
+                    per_segment = seg_parser.get_per_segment_extra_info()
+                for i, segment in enumerate(data):
+                    seg_meta = {**base_metadata}
+                    if isinstance(per_segment, list) and i < len(per_segment):
+                        extra = per_segment[i]
+                        if isinstance(extra, dict):
+                            seg_meta.update(extra)
+                    data_list.append(str(segment))
+                    metadata_list.append(seg_meta)
             else:
                 data_list.append(str(data))
                 metadata_list.append(base_metadata)

@@ -41,3 +41,10 @@ class BaseParser:
         """Return parser-specific metadata for the most recently parsed file."""
         _ = file
         return {}
+
+    def get_per_segment_extra_info(self):
+        """When parse_file returns a list of segments, return aligned extra_info dicts.
+
+        Each dict is merged into that segment's document metadata during ingestion.
+        """
+        return None

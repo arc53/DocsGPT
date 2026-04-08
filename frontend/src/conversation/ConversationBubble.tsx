@@ -52,7 +52,14 @@ const ConversationBubble = forwardRef<
     feedback?: FEEDBACK;
     handleFeedback?: (feedback: FEEDBACK) => void;
     thought?: string;
-    sources?: { title: string; text: string; link: string }[];
+    sources?: {
+      title: string;
+      text: string;
+      link?: string;
+      source?: string;
+      page?: number;
+      filename?: string;
+    }[];
     toolCalls?: ToolCallsType[];
     research?: ResearchState;
     retryBtn?: React.ReactElement;
@@ -341,6 +348,7 @@ const ConversationBubble = forwardRef<
                       <div
                         key={index}
                         id={`source-${index}`}
+                        data-cite-index={index + 1}
                         className="relative transition-all duration-300"
                       >
                         <div
@@ -372,18 +380,25 @@ const ConversationBubble = forwardRef<
                               alt="Document"
                               className="h-[17px] w-[17px] object-fill"
                             />
-                            <p
-                              className="mt-0.5 truncate text-xs"
-                              title={
-                                source.link && source.link !== 'local'
+                            <div className="mt-0.5 min-w-0">
+                              <p
+                                className="truncate text-xs"
+                                title={
+                                  source.link && source.link !== 'local'
+                                    ? source.link
+                                    : source.title
+                                }
+                              >
+                                {source.link && source.link !== 'local'
                                   ? source.link
-                                  : source.title
-                              }
-                            >
-                              {source.link && source.link !== 'local'
-                                ? source.link
-                                : source.title}
-                            </p>
+                                  : source.title}
+                              </p>
+                              {source.page != null && (
+                                <p className="text-muted-foreground truncate text-[10px] font-medium">
+                                  p. {source.page}
+                                </p>
+                              )}
+                            </div>
                           </div>
                         </div>
                         {activeTooltip === index && (
@@ -826,7 +841,13 @@ const ConversationBubble = forwardRef<
 });
 
 type AllSourcesProps = {
-  sources: { title: string; text: string; link?: string }[];
+  sources: {
+    title: string;
+    text: string;
+    link?: string;
+    page?: number;
+    filename?: string;
+  }[];
 };
 
 function AllSources(sources: AllSourcesProps) {
@@ -866,6 +887,7 @@ function AllSources(sources: AllSourcesProps) {
                 }`}
               >
                 {`${index + 1}. ${source.title}`}
+                {source.page != null ? ` · p. ${source.page}` : ''}
                 {isExternalSource && (
                   <img
                     src={Link}
