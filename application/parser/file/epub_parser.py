@@ -19,25 +19,10 @@ class EpubParser(BaseParser):
     def parse_file(self, file: Path, errors: str = "ignore") -> str:
         """Parse file."""
         try:
-            import ebooklib
-            from ebooklib import epub
+            from fast_ebook import epub
         except ImportError:
-            raise ValueError("`EbookLib` is required to read Epub files.")
-        try:
-            import html2text
-        except ImportError:
-            raise ValueError("`html2text` is required to parse Epub files.")
+            raise ValueError("`fast-ebook` is required to read Epub files.")
 
-        text_list = []
-        book = epub.read_epub(file, options={"ignore_ncx": True})
-
-        # Iterate through all chapters.
-        for item in book.get_items():
-            # Chapters are typically located in epub documents items.
-            if item.get_type() == ebooklib.ITEM_DOCUMENT:
-                text_list.append(
-                    html2text.html2text(item.get_content().decode("utf-8"))
-                )
-
-        text = "\n".join(text_list)
+        book = epub.read_epub(file)
+        text = book.to_markdown()
         return text
