@@ -62,6 +62,7 @@ export interface Query {
   tool_calls?: ToolCallsType[];
   error?: string;
   attachments?: { id: string; fileName: string }[];
+  imageBase64?: string;
   structured?: boolean;
   schema?: object;
   research?: ResearchState;
@@ -80,4 +81,6 @@ export interface RetrievalPayload {
   attachments?: string[];
   save_conversation?: boolean;
   model_id?: string;
+  image_base64?: string;
+  image_mime_type?: string;
 }
