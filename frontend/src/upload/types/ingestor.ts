@@ -6,8 +6,10 @@ import RedditIcon from '../../assets/reddit.svg';
 import DriveIcon from '../../assets/drive.svg';
 import S3Icon from '../../assets/s3.svg';
 import SharePoint from '../../assets/sharepoint.svg';
+import ConfluenceIcon from '../../assets/confluence.svg';
 
 export type IngestorType =
+  | 'confluence'
   | 'crawler'
   | 'github'
   | 'reddit'
@@ -38,7 +40,8 @@ export type FieldType =
   | 'local_file_picker'
   | 'remote_file_picker'
   | 'google_drive_picker'
-  | 'share_point_picker';
+  | 'share_point_picker'
+  | 'confluence_picker';
 
 export interface FormField {
   name: string;
@@ -214,6 +217,24 @@ export const IngestorFormSchemas: IngestorSchema[] = [
       },
     ],
   },
+  {
+    key: 'confluence',
+    label: 'Confluence',
+    icon: ConfluenceIcon,
+    heading: 'Upload from Confluence',
+    validate: () => {
+      const confluenceClientId = import.meta.env.VITE_CONFLUENCE_CLIENT_ID;
+      return !!confluenceClientId;
+    },
+    fields: [
+      {
+        name: 'files',
+        label: 'Select Pages from Confluence',
+        type: 'confluence_picker',
+        required: true,
+      },
+    ],
+  },
 ];
 
 export const IngestorDefaultConfigs: Record<
@@ -259,6 +280,13 @@ export const IngestorDefaultConfigs: Record<
       file_ids: '',
       folder_ids: '',
       recursive: true,
+    },
+  },
+  confluence: {
+    name: '',
+    config: {
+      file_ids: '',
+      folder_ids: '',
     },
   },
 };

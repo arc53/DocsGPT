@@ -341,6 +341,10 @@
         "share_point": {
           "label": "SharePoint",
           "heading": "Upload from SharePoint"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "Upload from Confluence"
         }
       },
       "connectors": {

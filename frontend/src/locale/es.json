@@ -329,6 +329,10 @@
         "share_point": {
           "label": "SharePoint",
           "heading": "Subir desde SharePoint"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "Subir desde Confluence"
         }
       },
       "connectors": {
