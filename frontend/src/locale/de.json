@@ -325,6 +325,14 @@
         "s3": {
           "label": "Amazon S3",
           "heading": "Inhalt von Amazon S3 hinzufügen"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "Von SharePoint hochladen"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "Von Confluence hochladen"
         }
       },
       "connectors": {

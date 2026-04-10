@@ -329,6 +329,10 @@
         "share_point": {
           "label": "SharePoint",
           "heading": "Загрузить из SharePoint"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "Загрузить из Confluence"
         }
       },
       "connectors": {

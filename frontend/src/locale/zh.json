@@ -329,6 +329,10 @@
         "share_point": {
           "label": "SharePoint",
           "heading": "从SharePoint上传"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "从Confluence上传"
         }
       },
       "connectors": {

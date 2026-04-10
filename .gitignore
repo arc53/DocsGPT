@@ -181,5 +181,6 @@ application/vectors/
 
 node_modules/
 .vscode/settings.json
+.vscode/sftp.json
 /models/
 model/
