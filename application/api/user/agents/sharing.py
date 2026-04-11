@@ -18,6 +18,8 @@ from application.api.user.base import (
     user_tools_collection,
     users_collection,
 )
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.users import UsersRepository
 from application.utils import generate_image_url
 
 agents_sharing_ns = Namespace(
@@ -105,6 +107,9 @@ class SharedAgent(Resource):
                         {"user_id": user_id},
                         {"$addToSet": {"agent_preferences.shared_with_me": agent_id}},
                     )
+                    dual_write(UsersRepository,
+                        lambda repo, uid=user_id, aid=agent_id: repo.add_shared(uid, aid)
+                    )
             return make_response(jsonify(data), 200)
         except Exception as err:
             current_app.logger.error(f"Error retrieving shared agent: {err}")
@@ -138,6 +143,9 @@ class SharedAgents(Resource):
                 users_collection.update_one(
                     {"user_id": user_id},
                     {"$pullAll": {"agent_preferences.shared_with_me": stale_ids}},
+                )
+                dual_write(UsersRepository,
+                    lambda repo, uid=user_id, ids=stale_ids: repo.remove_shared_bulk(uid, ids)
                 )
             pinned_ids = set(user_doc.get("agent_preferences", {}).get("pinned", []))
 

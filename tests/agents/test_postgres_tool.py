@@ -18,7 +18,7 @@ class TestPostgresExecuteAction:
         with pytest.raises(ValueError, match="Unknown action"):
             tool.execute_action("invalid")
 
-    @patch("application.agents.tools.postgres.psycopg2.connect")
+    @patch("application.agents.tools.postgres.psycopg.connect")
     def test_select_query(self, mock_connect, tool):
         mock_conn = MagicMock()
         mock_cur = MagicMock()
@@ -37,7 +37,7 @@ class TestPostgresExecuteAction:
         assert result["response_data"]["data"][0] == {"id": 1, "name": "Alice"}
         mock_conn.close.assert_called_once()
 
-    @patch("application.agents.tools.postgres.psycopg2.connect")
+    @patch("application.agents.tools.postgres.psycopg.connect")
     def test_insert_query(self, mock_connect, tool):
         mock_conn = MagicMock()
         mock_cur = MagicMock()
@@ -55,11 +55,11 @@ class TestPostgresExecuteAction:
         mock_conn.commit.assert_called_once()
         mock_conn.close.assert_called_once()
 
-    @patch("application.agents.tools.postgres.psycopg2.connect")
+    @patch("application.agents.tools.postgres.psycopg.connect")
     def test_db_error(self, mock_connect, tool):
-        import psycopg2
+        import psycopg
 
-        mock_connect.side_effect = psycopg2.Error("connection refused")
+        mock_connect.side_effect = psycopg.Error("connection refused")
 
         result = tool.execute_action(
             "postgres_execute_sql", sql_query="SELECT 1"
@@ -68,7 +68,7 @@ class TestPostgresExecuteAction:
         assert result["status_code"] == 500
         assert "Database error" in result["error"]
 
-    @patch("application.agents.tools.postgres.psycopg2.connect")
+    @patch("application.agents.tools.postgres.psycopg.connect")
     def test_get_schema(self, mock_connect, tool):
         mock_conn = MagicMock()
         mock_cur = MagicMock()
@@ -89,24 +89,24 @@ class TestPostgresExecuteAction:
         assert result["schema"]["users"][0]["column_name"] == "id"
         mock_conn.close.assert_called_once()
 
-    @patch("application.agents.tools.postgres.psycopg2.connect")
+    @patch("application.agents.tools.postgres.psycopg.connect")
     def test_get_schema_db_error(self, mock_connect, tool):
-        import psycopg2
+        import psycopg
 
-        mock_connect.side_effect = psycopg2.Error("auth failed")
+        mock_connect.side_effect = psycopg.Error("auth failed")
 
         result = tool.execute_action("postgres_get_schema", db_name="testdb")
 
         assert result["status_code"] == 500
         assert "Database error" in result["error"]
 
-    @patch("application.agents.tools.postgres.psycopg2.connect")
+    @patch("application.agents.tools.postgres.psycopg.connect")
     def test_connection_closed_on_error(self, mock_connect, tool):
-        import psycopg2
+        import psycopg
 
         mock_conn = MagicMock()
         mock_cur = MagicMock()
-        mock_cur.execute.side_effect = psycopg2.Error("syntax error")
+        mock_cur.execute.side_effect = psycopg.Error("syntax error")
         mock_conn.cursor.return_value = mock_cur
         mock_connect.return_value = mock_conn
 
@@ -114,7 +114,7 @@ class TestPostgresExecuteAction:
 
         mock_conn.close.assert_called_once()
 
-    @patch("application.agents.tools.postgres.psycopg2.connect")
+    @patch("application.agents.tools.postgres.psycopg.connect")
     def test_select_with_no_description(self, mock_connect, tool):
         mock_conn = MagicMock()
         mock_cur = MagicMock()

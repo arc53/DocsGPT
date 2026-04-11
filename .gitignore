@@ -108,6 +108,8 @@ celerybeat.pid
 # Environments
 .env
 .venv
+# Machine-specific Claude Code guidance (see CLAUDE.md preamble)
+CLAUDE.md
 env/
 venv/
 ENV/

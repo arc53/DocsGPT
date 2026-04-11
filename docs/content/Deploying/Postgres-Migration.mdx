@@ -1,0 +1,114 @@
+---
+title: PostgreSQL for User Data
+description: Set up PostgreSQL as the user-data store for DocsGPT and migrate from MongoDB at your own pace.
+---
+
+import { Callout } from 'nextra/components'
+
+# PostgreSQL for User Data
+
+DocsGPT is progressively moving user data (conversations, agents, prompts,
+preferences, etc.) from MongoDB to PostgreSQL, one collection at a time.
+Each collection is guarded by a feature flag so you can opt in and roll
+back instantly. MongoDB stays the source of truth until you cut over
+reads; vector stores (`VECTOR_STORE=pgvector`, `faiss`, `qdrant`, `mongodb`, …)
+are unaffected.
+
+<Callout type="info" emoji="ℹ️">
+  Which collections are available today is in the [Status](#status)
+  table below. That table is the only part of this page that changes
+  release to release.
+</Callout>
+
+## Setup
+
+1. **Run Postgres 13+.** Native install, Docker, or managed (Neon, RDS,
+   Supabase, Cloud SQL…) — all work. You'll need the `pgcrypto` and
+   `citext` extensions, both standard contrib modules available
+   everywhere.
+
+2. **Create a database and role** (skip if your managed provider gave
+   you these):
+
+   ```sql
+   CREATE ROLE docsgpt LOGIN PASSWORD 'docsgpt';
+   CREATE DATABASE docsgpt OWNER docsgpt;
+   ```
+
+3. **Set `POSTGRES_URI` in `.env`.** Any standard Postgres URI works —
+   DocsGPT normalizes it internally.
+
+   ```bash
+   POSTGRES_URI=postgresql://docsgpt:docsgpt@localhost:5432/docsgpt
+   # Append ?sslmode=require for managed providers that enforce SSL.
+   ```
+
+4. **Apply the schema** (idempotent — safe to re-run):
+
+   ```bash
+   python scripts/db/init_postgres.py
+   ```
+
+## Migrating data
+
+Two global flags, no per-collection knobs — every collection marked ✅
+in the [Status](#status) table is handled automatically.
+
+1. **Enable dual-write.** Writes go to both Mongo and Postgres; Mongo
+   remains source of truth. Set the flag in `.env` and restart:
+
+   ```bash
+   USE_POSTGRES=true
+   ```
+
+2. **Backfill existing data.** Idempotent — re-run any time to re-sync
+   drifted rows. Without arguments, backfills every registered table;
+   pass `--tables` to limit.
+
+   ```bash
+   python scripts/db/backfill.py --dry-run           # preview everything
+   python scripts/db/backfill.py                      # real run, everything
+   python scripts/db/backfill.py --tables users      # only specific tables
+   ```
+
+3. **Cut over reads** once you trust the Postgres state:
+
+   ```bash
+   READ_POSTGRES=true
+   ```
+
+   Rollback is instant: unset `READ_POSTGRES` and restart. Dual-write
+   keeps Postgres up to date so you can flip back and forth.
+
+<Callout type="warning" emoji="⚠️">
+  Don't decommission MongoDB until every collection you use is fully
+  cut over. During the migration window, Mongo is still required.
+</Callout>
+
+## Status
+
+_Last updated: 2026-04-10_
+
+| Collection | Status |
+|---|---|
+| `users` | ✅ Phase 1 |
+| `prompts`, `user_tools`, `feedback`, `stack_logs`, `user_logs`, `token_usage` | ⏳ Phase 1 |
+| `agents`, `sources`, `attachments`, `memories`, `todos`, `notes`, `connector_sessions`, `agent_folders` | ⏳ Phase 2 |
+| `conversations`, `pending_tool_state`, `workflows` | ⏳ Phase 3 |
+
+Schemas for **every** row above already exist after `init_postgres.py`
+runs. What's landing progressively is the application-level dual-write
+wiring and the backfill logic for each collection. Once a collection
+is ✅, enabling `USE_POSTGRES=true` and running `python scripts/db/backfill.py`
+picks it up automatically — no per-collection config change.
+
+## Troubleshooting
+
+- **`relation "..." does not exist`** — run `python scripts/db/init_postgres.py`.
+- **`FATAL: role "docsgpt" does not exist`** — run the `CREATE ROLE` /
+  `CREATE DATABASE` statements from step 2 as a Postgres superuser.
+- **SSL errors on a managed provider** — append `?sslmode=require` to
+  `POSTGRES_URI`.
+- **Dual-write warnings in the logs** — expected to be non-fatal. Mongo
+  is source of truth, so the user-facing request succeeds. Re-run the
+  backfill to re-sync whichever rows drifted.
