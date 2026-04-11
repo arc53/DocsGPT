@@ -1,6 +1,6 @@
 import logging
 
-import psycopg2
+import psycopg
 
 from application.agents.tools.base import Tool
 
@@ -33,7 +33,7 @@ class PostgresTool(Tool):
         """
         conn = None
         try:
-            conn = psycopg2.connect(self.connection_string)
+            conn = psycopg.connect(self.connection_string)
             cur = conn.cursor()
             cur.execute(sql_query)
             conn.commit()
@@ -60,7 +60,7 @@ class PostgresTool(Tool):
                 "response_data": response_data,
             }
 
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             error_message = f"Database error: {e}"
             logger.error("PostgreSQL execute_sql error: %s", e)
             return {
@@ -78,7 +78,7 @@ class PostgresTool(Tool):
         """
         conn = None
         try:
-            conn = psycopg2.connect(self.connection_string)
+            conn = psycopg.connect(self.connection_string)
             cur = conn.cursor()
 
             cur.execute(
@@ -120,7 +120,7 @@ class PostgresTool(Tool):
                 "schema": schema_data,
             }
 
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             error_message = f"Database error: {e}"
             logger.error("PostgreSQL get_schema error: %s", e)
             return {
