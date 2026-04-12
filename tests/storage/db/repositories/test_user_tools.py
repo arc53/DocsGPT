@@ -88,11 +88,13 @@ class TestDelete:
     def test_deletes_tool(self, pg_conn):
         repo = _repo(pg_conn)
         created = repo.create("user-1", "t")
-        assert repo.delete(created["id"], "user-1") is True
+        deleted = repo.delete(created["id"], "user-1")
+        assert deleted is True
         assert repo.get(created["id"]) is None
 
     def test_delete_wrong_user_returns_false(self, pg_conn):
         repo = _repo(pg_conn)
         created = repo.create("user-1", "t")
-        assert repo.delete(created["id"], "user-other") is False
+        deleted = repo.delete(created["id"], "user-other")
+        assert deleted is False
         assert repo.get(created["id"]) is not None

@@ -78,18 +78,33 @@ class UserToolsRepository:
         filtered = {k: v for k, v in fields.items() if k in allowed}
         if not filtered:
             return
-        set_clauses = []
-        params: dict = {"id": tool_id, "user_id": user_id}
-        for col, val in filtered.items():
-            if col == "config":
-                set_clauses.append(f"{col} = CAST(:val_{col} AS jsonb)")
-                params[f"val_{col}"] = json.dumps(val) if isinstance(val, dict) else val
-            else:
-                set_clauses.append(f"{col} = :val_{col}")
-                params[f"val_{col}"] = val
-        set_clauses.append("updated_at = now()")
-        sql = f"UPDATE user_tools SET {', '.join(set_clauses)} WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
-        self._conn.execute(text(sql), params)
+        params: dict = {
+            "id": tool_id,
+            "user_id": user_id,
+            "name": filtered.get("name"),
+            "custom_name": filtered.get("custom_name"),
+            "display_name": filtered.get("display_name"),
+            "config": (
+                json.dumps(filtered["config"])
+                if "config" in filtered and isinstance(filtered["config"], dict)
+                else filtered.get("config")
+            ),
+        }
+        self._conn.execute(
+            text(
+                """
+                UPDATE user_tools
+                SET
+                    name = COALESCE(:name, name),
+                    custom_name = COALESCE(:custom_name, custom_name),
+                    display_name = COALESCE(:display_name, display_name),
+                    config = COALESCE(CAST(:config AS jsonb), config),
+                    updated_at = now()
+                WHERE id = CAST(:id AS uuid) AND user_id = :user_id
+                """
+            ),
+            params,
+        )
 
     def delete(self, tool_id: str, user_id: str) -> bool:
         result = self._conn.execute(

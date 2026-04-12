@@ -24,37 +24,24 @@ _engine: Optional[Engine] = None
 
 
 def _resolve_uri() -> str:
-    """Pick the Postgres URI, falling back to the pgvector connection string.
+    """Return the Postgres URI for user-data tables.
 
-    If ``POSTGRES_URI`` is set explicitly, use it. Otherwise, if the app
-    is already using pgvector with a Postgres-backed vector store
-    (``PGVECTOR_CONNECTION_STRING``), reuse that same cluster for
-    user-data tables — they can share a database. The pgvector URI is
-    normalized from its libpq form to the SQLAlchemy psycopg3 dialect.
+    Raises:
+        RuntimeError: If ``settings.POSTGRES_URI`` is unset. Callers that
+            reach this path without a configured URI have a setup bug — the
+            error message points them at the right setting.
     """
-    if settings.POSTGRES_URI:
-        return settings.POSTGRES_URI
-
-    if settings.PGVECTOR_CONNECTION_STRING:
-        from application.core.db_uri import normalize_postgres_uri
-
-        uri = normalize_postgres_uri(settings.PGVECTOR_CONNECTION_STRING)
-        if uri:
-            return uri
-
-    raise RuntimeError(
-        "POSTGRES_URI is not configured and no PGVECTOR_CONNECTION_STRING "
-        "to fall back to. Set POSTGRES_URI in your .env to a URI such as "
-        "'postgresql+psycopg://user:pass@host:5432/docsgpt'."
-    )
+    if not settings.POSTGRES_URI:
+        raise RuntimeError(
+            "POSTGRES_URI is not configured. Set it in your .env to a "
+            "psycopg3 URI such as "
+            "'postgresql+psycopg://user:pass@host:5432/docsgpt'."
+        )
+    return settings.POSTGRES_URI
 
 
 def get_engine() -> Engine:
     """Return the process-wide SQLAlchemy Engine, creating it if needed.
-
-    Falls back to ``PGVECTOR_CONNECTION_STRING`` when ``POSTGRES_URI``
-    is not set, so operators using pgvector on the same cluster don't
-    need a second env var.
 
     Returns:
         A SQLAlchemy ``Engine`` configured with a pooled connection to
