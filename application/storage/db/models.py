@@ -15,6 +15,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     MetaData,
+    UniqueConstraint,
     Table,
     Text,
     func,
@@ -190,6 +191,7 @@ memories_table = Table(
     Column("path", Text, nullable=False),
     Column("content", Text, nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint("user_id", "tool_id", "path", name="memories_user_tool_path_uidx"),
 )
 
 todos_table = Table(
@@ -214,6 +216,7 @@ notes_table = Table(
     Column("content", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint("user_id", "tool_id", name="notes_user_tool_uidx"),
 )
 
 connector_sessions_table = Table(
@@ -225,4 +228,5 @@ connector_sessions_table = Table(
     Column("session_data", JSONB, nullable=False),
     Column("expires_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint("user_id", "provider", name="connector_sessions_user_provider_uidx"),
 )

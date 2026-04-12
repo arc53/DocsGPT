@@ -48,26 +48,18 @@ class TestCreate:
 class TestGet:
     def test_get_existing(self, pg_conn):
         repo = _repo(pg_conn)
-        created = repo.create("u", "a", "draft")
-        fetched = repo.get(created["id"])
+        created = repo.create("user-1", "a", "draft")
+        fetched = repo.get(created["id"], "user-1")
         assert fetched["id"] == created["id"]
 
     def test_get_nonexistent_returns_none(self, pg_conn):
         repo = _repo(pg_conn)
-        assert repo.get("00000000-0000-0000-0000-000000000000") is None
+        assert repo.get("00000000-0000-0000-0000-000000000000", "user-1") is None
 
-
-class TestGetForUser:
-    def test_get_for_correct_user(self, pg_conn):
+    def test_get_wrong_user_returns_none(self, pg_conn):
         repo = _repo(pg_conn)
         created = repo.create("user-1", "a", "draft")
-        fetched = repo.get_for_user(created["id"], "user-1")
-        assert fetched["id"] == created["id"]
-
-    def test_get_for_wrong_user_returns_none(self, pg_conn):
-        repo = _repo(pg_conn)
-        created = repo.create("user-1", "a", "draft")
-        assert repo.get_for_user(created["id"], "user-other") is None
+        assert repo.get(created["id"], "user-other") is None
 
 
 class TestFindByKey:
@@ -99,7 +91,7 @@ class TestUpdate:
         created = repo.create("user-1", "old", "draft")
         updated = repo.update(created["id"], "user-1", {"name": "new"})
         assert updated is True
-        fetched = repo.get(created["id"])
+        fetched = repo.get(created["id"], "user-1")
         assert fetched["name"] == "new"
 
     def test_update_wrong_user_returns_false(self, pg_conn):
@@ -107,7 +99,7 @@ class TestUpdate:
         created = repo.create("user-1", "old", "draft")
         updated = repo.update(created["id"], "user-other", {"name": "new"})
         assert updated is False
-        fetched = repo.get(created["id"])
+        fetched = repo.get(created["id"], "user-1")
         assert fetched["name"] == "old"
 
     def test_update_disallowed_field_returns_false(self, pg_conn):
@@ -123,14 +115,14 @@ class TestDelete:
         created = repo.create("user-1", "a", "draft")
         deleted = repo.delete(created["id"], "user-1")
         assert deleted is True
-        assert repo.get(created["id"]) is None
+        assert repo.get(created["id"], "user-1") is None
 
     def test_delete_wrong_user_returns_false(self, pg_conn):
         repo = _repo(pg_conn)
         created = repo.create("user-1", "a", "draft")
         deleted = repo.delete(created["id"], "user-other")
         assert deleted is False
-        assert repo.get(created["id"]) is not None
+        assert repo.get(created["id"], "user-1") is not None
 
 
 class TestSetFolder:
@@ -142,7 +134,7 @@ class TestSetFolder:
         repo = _repo(pg_conn)
         agent = repo.create("user-1", "a", "draft")
         repo.set_folder(agent["id"], "user-1", folder["id"])
-        fetched = repo.get(agent["id"])
+        fetched = repo.get(agent["id"], "user-1")
         assert str(fetched["folder_id"]) == str(folder["id"])
 
     def test_clear_folder(self, pg_conn):
@@ -153,7 +145,7 @@ class TestSetFolder:
         repo = _repo(pg_conn)
         agent = repo.create("user-1", "a", "draft", folder_id=folder["id"])
         repo.set_folder(agent["id"], "user-1", None)
-        fetched = repo.get(agent["id"])
+        fetched = repo.get(agent["id"], "user-1")
         assert fetched["folder_id"] is None
 
 
@@ -167,5 +159,5 @@ class TestClearFolderForAll:
         a1 = repo.create("user-1", "a1", "draft", folder_id=folder["id"])
         a2 = repo.create("user-1", "a2", "draft", folder_id=folder["id"])
         repo.clear_folder_for_all(folder["id"], "user-1")
-        assert repo.get(a1["id"])["folder_id"] is None
-        assert repo.get(a2["id"])["folder_id"] is None
+        assert repo.get(a1["id"], "user-1")["folder_id"] is None
+        assert repo.get(a2["id"], "user-1")["folder_id"] is None

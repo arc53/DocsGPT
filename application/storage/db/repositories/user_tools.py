@@ -53,10 +53,10 @@ class UserToolsRepository:
         )
         return row_to_dict(result.fetchone())
 
-    def get(self, tool_id: str) -> Optional[dict]:
+    def get(self, tool_id: str, user_id: str) -> Optional[dict]:
         result = self._conn.execute(
-            text("SELECT * FROM user_tools WHERE id = CAST(:id AS uuid)"),
-            {"id": tool_id},
+            text("SELECT * FROM user_tools WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
+            {"id": tool_id, "user_id": user_id},
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None

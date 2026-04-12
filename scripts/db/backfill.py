@@ -703,6 +703,8 @@ def _backfill_notes(
         """
         INSERT INTO notes (user_id, tool_id, title, content)
         VALUES (:user_id, CAST(:tool_id AS uuid), :title, :content)
+        ON CONFLICT (user_id, tool_id) DO UPDATE
+            SET content = EXCLUDED.content, title = EXCLUDED.title
         """
     )
     cursor = mongo_db["notes"].find({}, no_cursor_timeout=True).batch_size(batch_size)
@@ -743,7 +745,8 @@ def _backfill_connector_sessions(
         """
         INSERT INTO connector_sessions (user_id, provider, session_data)
         VALUES (:user_id, :provider, CAST(:session_data AS jsonb))
-        ON CONFLICT DO NOTHING
+        ON CONFLICT (user_id, provider) DO UPDATE
+            SET session_data = EXCLUDED.session_data
         """
     )
     cursor = mongo_db["connector_sessions"].find({}, no_cursor_timeout=True).batch_size(batch_size)

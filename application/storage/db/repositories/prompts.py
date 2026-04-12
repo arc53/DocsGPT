@@ -40,17 +40,24 @@ class PromptsRepository:
         )
         return row_to_dict(result.fetchone())
 
-    def get(self, prompt_id: str, user_id: Optional[str] = None) -> Optional[dict]:
-        if user_id is not None:
-            result = self._conn.execute(
-                text("SELECT * FROM prompts WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
-                {"id": prompt_id, "user_id": user_id},
-            )
-        else:
-            result = self._conn.execute(
-                text("SELECT * FROM prompts WHERE id = CAST(:id AS uuid)"),
-                {"id": prompt_id},
-            )
+    def get(self, prompt_id: str, user_id: str) -> Optional[dict]:
+        result = self._conn.execute(
+            text("SELECT * FROM prompts WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
+            {"id": prompt_id, "user_id": user_id},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def get_for_rendering(self, prompt_id: str) -> Optional[dict]:
+        """Fetch prompt content by ID without user scoping.
+
+        Used only by stream_processor to render a prompt whose owner is
+        not known at call time. Do NOT use in user-facing routes.
+        """
+        result = self._conn.execute(
+            text("SELECT * FROM prompts WHERE id = CAST(:id AS uuid)"),
+            {"id": prompt_id},
+        )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 

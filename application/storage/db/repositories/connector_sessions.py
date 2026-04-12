@@ -27,7 +27,8 @@ class ConnectorSessionsRepository:
                 """
                 INSERT INTO connector_sessions (user_id, provider, session_data)
                 VALUES (:user_id, :provider, CAST(:session_data AS jsonb))
-                ON CONFLICT DO NOTHING
+                ON CONFLICT (user_id, provider)
+                DO UPDATE SET session_data = EXCLUDED.session_data
                 RETURNING *
                 """
             ),
@@ -37,18 +38,7 @@ class ConnectorSessionsRepository:
                 "session_data": json.dumps(session_data),
             },
         )
-        row = result.fetchone()
-        if row is not None:
-            return row_to_dict(row)
-        # Conflict — update existing row.
-        self._conn.execute(
-            text(
-                "UPDATE connector_sessions SET session_data = CAST(:session_data AS jsonb) "
-                "WHERE user_id = :user_id AND provider = :provider"
-            ),
-            {"user_id": user_id, "provider": provider, "session_data": json.dumps(session_data)},
-        )
-        return self.get_by_user_provider(user_id, provider) or {}
+        return row_to_dict(result.fetchone())
 
     def get_by_user_provider(self, user_id: str, provider: str) -> Optional[dict]:
         result = self._conn.execute(

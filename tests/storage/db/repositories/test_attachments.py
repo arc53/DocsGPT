@@ -42,12 +42,17 @@ class TestGet:
     def test_get_existing(self, pg_conn):
         repo = _repo(pg_conn)
         created = repo.create("u", "f", "/p")
-        fetched = repo.get(created["id"])
+        fetched = repo.get(created["id"], "u")
         assert fetched["id"] == created["id"]
 
     def test_get_nonexistent_returns_none(self, pg_conn):
         repo = _repo(pg_conn)
-        assert repo.get("00000000-0000-0000-0000-000000000000") is None
+        assert repo.get("00000000-0000-0000-0000-000000000000", "u") is None
+
+    def test_get_wrong_user_returns_none(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("u", "f", "/p")
+        assert repo.get(created["id"], "other") is None
 
 
 class TestListForUser:

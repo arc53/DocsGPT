@@ -25,24 +25,14 @@ class NotesRepository:
                 """
                 INSERT INTO notes (user_id, tool_id, title, content)
                 VALUES (:user_id, CAST(:tool_id AS uuid), :title, :content)
-                ON CONFLICT DO NOTHING
+                ON CONFLICT (user_id, tool_id)
+                DO UPDATE SET content = EXCLUDED.content, title = EXCLUDED.title, updated_at = now()
                 RETURNING *
                 """
             ),
             {"user_id": user_id, "tool_id": tool_id, "title": title, "content": content},
         )
-        row = result.fetchone()
-        if row is not None:
-            return row_to_dict(row)
-        # Row already existed — update instead.
-        self._conn.execute(
-            text(
-                "UPDATE notes SET content = :content, updated_at = now() "
-                "WHERE user_id = :user_id AND tool_id = CAST(:tool_id AS uuid)"
-            ),
-            {"user_id": user_id, "tool_id": tool_id, "content": content},
-        )
-        return self.get_for_user_tool(user_id, tool_id) or {}
+        return row_to_dict(result.fetchone())
 
     def get_for_user_tool(self, user_id: str, tool_id: str) -> Optional[dict]:
         result = self._conn.execute(
@@ -54,10 +44,10 @@ class NotesRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
-    def get(self, note_id: str) -> Optional[dict]:
+    def get(self, note_id: str, user_id: str) -> Optional[dict]:
         result = self._conn.execute(
-            text("SELECT * FROM notes WHERE id = CAST(:id AS uuid)"),
-            {"id": note_id},
+            text("SELECT * FROM notes WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
+            {"id": note_id, "user_id": user_id},
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None

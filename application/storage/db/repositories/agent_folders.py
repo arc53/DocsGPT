@@ -13,16 +13,16 @@ class AgentFoldersRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
 
-    def create(self, user_id: str, name: str, *, parent_id: Optional[str] = None) -> dict:
+    def create(self, user_id: str, name: str, *, description: Optional[str] = None) -> dict:
         result = self._conn.execute(
             text(
                 """
                 INSERT INTO agent_folders (user_id, name, description)
-                VALUES (:user_id, :name, :parent_id)
+                VALUES (:user_id, :name, :description)
                 RETURNING *
                 """
             ),
-            {"user_id": user_id, "name": name, "parent_id": parent_id},
+            {"user_id": user_id, "name": name, "description": description},
         )
         return row_to_dict(result.fetchone())
 
@@ -46,13 +46,38 @@ class AgentFoldersRepository:
         filtered = {k: v for k, v in fields.items() if k in allowed}
         if not filtered:
             return False
-        set_clauses = [f"{col} = :val_{col}" for col in filtered]
-        set_clauses.append("updated_at = now()")
         params: dict = {"id": folder_id, "user_id": user_id}
-        for col, val in filtered.items():
-            params[f"val_{col}"] = val
-        sql = f"UPDATE agent_folders SET {', '.join(set_clauses)} WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
-        result = self._conn.execute(text(sql), params)
+        if "name" in filtered and "description" in filtered:
+            params["name"] = filtered["name"]
+            params["description"] = filtered["description"]
+            result = self._conn.execute(
+                text(
+                    "UPDATE agent_folders "
+                    "SET name = :name, description = :description, updated_at = now() "
+                    "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+                ),
+                params,
+            )
+        elif "name" in filtered:
+            params["name"] = filtered["name"]
+            result = self._conn.execute(
+                text(
+                    "UPDATE agent_folders "
+                    "SET name = :name, updated_at = now() "
+                    "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+                ),
+                params,
+            )
+        else:
+            params["description"] = filtered["description"]
+            result = self._conn.execute(
+                text(
+                    "UPDATE agent_folders "
+                    "SET description = :description, updated_at = now() "
+                    "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+                ),
+                params,
+            )
         return result.rowcount > 0
 
     def delete(self, folder_id: str, user_id: str) -> bool:

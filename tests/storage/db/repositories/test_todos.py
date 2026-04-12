@@ -51,12 +51,18 @@ class TestGet:
         repo = _repo(pg_conn)
         tool_id = _make_tool(pg_conn)
         created = repo.create("u", tool_id, "t")
-        fetched = repo.get(created["id"])
+        fetched = repo.get(created["id"], "u")
         assert fetched["id"] == created["id"]
 
     def test_get_nonexistent_returns_none(self, pg_conn):
         repo = _repo(pg_conn)
-        assert repo.get("00000000-0000-0000-0000-000000000000") is None
+        assert repo.get("00000000-0000-0000-0000-000000000000", "u") is None
+
+    def test_get_wrong_user_returns_none(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        created = repo.create("u", tool_id, "t")
+        assert repo.get(created["id"], "other") is None
 
 
 class TestListForUserTool:
@@ -83,14 +89,23 @@ class TestUpdateTitle:
         repo = _repo(pg_conn)
         tool_id = _make_tool(pg_conn)
         created = repo.create("u", tool_id, "old")
-        updated = repo.update_title(created["id"], "new")
+        updated = repo.update_title(created["id"], "u", "new")
         assert updated is True
-        fetched = repo.get(created["id"])
+        fetched = repo.get(created["id"], "u")
         assert fetched["title"] == "new"
 
     def test_update_nonexistent_returns_false(self, pg_conn):
         repo = _repo(pg_conn)
-        assert repo.update_title("00000000-0000-0000-0000-000000000000", "x") is False
+        assert repo.update_title("00000000-0000-0000-0000-000000000000", "u", "x") is False
+
+    def test_update_wrong_user_returns_false(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        created = repo.create("u", tool_id, "old")
+        updated = repo.update_title(created["id"], "other", "new")
+        assert updated is False
+        fetched = repo.get(created["id"], "u")
+        assert fetched["title"] == "old"
 
 
 class TestSetCompleted:
@@ -98,17 +113,26 @@ class TestSetCompleted:
         repo = _repo(pg_conn)
         tool_id = _make_tool(pg_conn)
         created = repo.create("u", tool_id, "t")
-        repo.set_completed(created["id"], True)
-        fetched = repo.get(created["id"])
+        repo.set_completed(created["id"], "u", True)
+        fetched = repo.get(created["id"], "u")
         assert fetched["completed"] is True
 
     def test_unmarks_completed(self, pg_conn):
         repo = _repo(pg_conn)
         tool_id = _make_tool(pg_conn)
         created = repo.create("u", tool_id, "t")
-        repo.set_completed(created["id"], True)
-        repo.set_completed(created["id"], False)
-        fetched = repo.get(created["id"])
+        repo.set_completed(created["id"], "u", True)
+        repo.set_completed(created["id"], "u", False)
+        fetched = repo.get(created["id"], "u")
+        assert fetched["completed"] is False
+
+    def test_set_completed_wrong_user_returns_false(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        created = repo.create("u", tool_id, "t")
+        result = repo.set_completed(created["id"], "other", True)
+        assert result is False
+        fetched = repo.get(created["id"], "u")
         assert fetched["completed"] is False
 
 
@@ -117,10 +141,18 @@ class TestDelete:
         repo = _repo(pg_conn)
         tool_id = _make_tool(pg_conn)
         created = repo.create("u", tool_id, "t")
-        deleted = repo.delete(created["id"])
+        deleted = repo.delete(created["id"], "u")
         assert deleted is True
-        assert repo.get(created["id"]) is None
+        assert repo.get(created["id"], "u") is None
 
     def test_delete_nonexistent_returns_false(self, pg_conn):
         repo = _repo(pg_conn)
-        assert repo.delete("00000000-0000-0000-0000-000000000000") is False
+        assert repo.delete("00000000-0000-0000-0000-000000000000", "u") is False
+
+    def test_delete_wrong_user_returns_false(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        created = repo.create("u", tool_id, "t")
+        deleted = repo.delete(created["id"], "other")
+        assert deleted is False
+        assert repo.get(created["id"], "u") is not None

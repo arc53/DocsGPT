@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from typing import Optional
 
-from sqlalchemy import Connection, text
+from sqlalchemy import Connection, func, text
 
 from application.storage.db.base_repository import row_to_dict
+from application.storage.db.models import sources_table
 
 
 class SourcesRepository:
@@ -33,15 +34,7 @@ class SourcesRepository:
         )
         return row_to_dict(result.fetchone())
 
-    def get(self, source_id: str) -> Optional[dict]:
-        result = self._conn.execute(
-            text("SELECT * FROM sources WHERE id = CAST(:id AS uuid)"),
-            {"id": source_id},
-        )
-        row = result.fetchone()
-        return row_to_dict(row) if row is not None else None
-
-    def get_for_user(self, source_id: str, user_id: str) -> Optional[dict]:
+    def get(self, source_id: str, user_id: str) -> Optional[dict]:
         result = self._conn.execute(
             text("SELECT * FROM sources WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
             {"id": source_id, "user_id": user_id},
@@ -56,27 +49,32 @@ class SourcesRepository:
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
-    def update(self, source_id: str, fields: dict) -> None:
+    def update(self, source_id: str, user_id: str, fields: dict) -> None:
         allowed = {"name", "type", "metadata"}
         filtered = {k: v for k, v in fields.items() if k in allowed}
         if not filtered:
             return
-        set_clauses = []
-        params: dict = {"id": source_id}
+
+        values: dict = {}
         for col, val in filtered.items():
             if col == "metadata":
-                set_clauses.append(f"{col} = CAST(:val_{col} AS jsonb)")
-                params[f"val_{col}"] = json.dumps(val) if isinstance(val, dict) else val
+                values[col] = json.dumps(val) if isinstance(val, dict) else val
             else:
-                set_clauses.append(f"{col} = :val_{col}")
-                params[f"val_{col}"] = val
-        set_clauses.append("updated_at = now()")
-        sql = f"UPDATE sources SET {', '.join(set_clauses)} WHERE id = CAST(:id AS uuid)"
-        self._conn.execute(text(sql), params)
+                values[col] = val
+        values["updated_at"] = func.now()
 
-    def delete(self, source_id: str) -> bool:
+        t = sources_table
+        stmt = (
+            t.update()
+            .where(t.c.id == source_id)
+            .where(t.c.user_id == user_id)
+            .values(**values)
+        )
+        self._conn.execute(stmt)
+
+    def delete(self, source_id: str, user_id: str) -> bool:
         result = self._conn.execute(
-            text("DELETE FROM sources WHERE id = CAST(:id AS uuid)"),
-            {"id": source_id},
+            text("DELETE FROM sources WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
+            {"id": source_id, "user_id": user_id},
         )
         return result.rowcount > 0

@@ -15,9 +15,11 @@ from __future__ import annotations
 import json
 from typing import Optional
 
-from sqlalchemy import Connection, text
+from sqlalchemy import Connection, func, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from application.storage.db.base_repository import row_to_dict
+from application.storage.db.models import agents_table
 
 
 class AgentsRepository:
@@ -25,56 +27,36 @@ class AgentsRepository:
         self._conn = conn
 
     def create(self, user_id: str, name: str, status: str, **kwargs) -> dict:
-        cols = ["user_id", "name", "status"]
-        vals = [":user_id", ":name", ":status"]
-        params: dict = {"user_id": user_id, "name": name, "status": status}
+        values: dict = {"user_id": user_id, "name": name, "status": status}
 
-        _TEXT_COLS = {"description", "agent_type", "key", "retriever",
-                      "default_model_id", "incoming_webhook_token"}
-        _UUID_COLS = {"source_id", "prompt_id", "folder_id"}
-        _INT_COLS = {"chunks", "token_limit", "request_limit"}
-        _BOOL_COLS = {"limited_token_mode", "limited_request_mode", "shared"}
-        _JSONB_COLS = {"tools", "json_schema", "models"}
+        _ALLOWED = {
+            "description", "agent_type", "key", "retriever",
+            "default_model_id", "incoming_webhook_token",
+            "source_id", "prompt_id", "folder_id",
+            "chunks", "token_limit", "request_limit",
+            "limited_token_mode", "limited_request_mode", "shared",
+            "tools", "json_schema", "models",
+        }
 
-        for col in _TEXT_COLS:
-            if col in kwargs and kwargs[col] is not None:
-                cols.append(col)
-                vals.append(f":{col}")
-                params[col] = kwargs[col]
-        for col in _UUID_COLS:
-            if col in kwargs and kwargs[col] is not None:
-                cols.append(col)
-                vals.append(f"CAST(:{col} AS uuid)")
-                params[col] = str(kwargs[col])
-        for col in _INT_COLS:
-            if col in kwargs and kwargs[col] is not None:
-                cols.append(col)
-                vals.append(f":{col}")
-                params[col] = int(kwargs[col])
-        for col in _BOOL_COLS:
-            if col in kwargs:
-                cols.append(col)
-                vals.append(f":{col}")
-                params[col] = bool(kwargs[col])
-        for col in _JSONB_COLS:
-            if col in kwargs and kwargs[col] is not None:
-                cols.append(col)
-                vals.append(f"CAST(:{col} AS jsonb)")
-                params[col] = json.dumps(kwargs[col])
+        for col, val in kwargs.items():
+            if col not in _ALLOWED or val is None:
+                continue
+            if col in ("tools", "json_schema", "models"):
+                values[col] = json.dumps(val)
+            elif col in ("chunks", "token_limit", "request_limit"):
+                values[col] = int(val)
+            elif col in ("limited_token_mode", "limited_request_mode", "shared"):
+                values[col] = bool(val)
+            elif col in ("source_id", "prompt_id", "folder_id"):
+                values[col] = str(val)
+            else:
+                values[col] = val
 
-        sql = f"INSERT INTO agents ({', '.join(cols)}) VALUES ({', '.join(vals)}) RETURNING *"
-        result = self._conn.execute(text(sql), params)
+        stmt = pg_insert(agents_table).values(**values).returning(agents_table)
+        result = self._conn.execute(stmt)
         return row_to_dict(result.fetchone())
 
-    def get(self, agent_id: str) -> Optional[dict]:
-        result = self._conn.execute(
-            text("SELECT * FROM agents WHERE id = CAST(:id AS uuid)"),
-            {"id": agent_id},
-        )
-        row = result.fetchone()
-        return row_to_dict(row) if row is not None else None
-
-    def get_for_user(self, agent_id: str, user_id: str) -> Optional[dict]:
+    def get(self, agent_id: str, user_id: str) -> Optional[dict]:
         result = self._conn.execute(
             text("SELECT * FROM agents WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
             {"id": agent_id, "user_id": user_id},
@@ -123,21 +105,24 @@ class AgentsRepository:
         if not filtered:
             return False
 
-        set_clauses = []
-        params: dict = {"id": agent_id, "user_id": user_id}
+        values: dict = {}
         for col, val in filtered.items():
             if col in ("tools", "json_schema", "models"):
-                set_clauses.append(f"{col} = CAST(:val_{col} AS jsonb)")
-                params[f"val_{col}"] = json.dumps(val) if not isinstance(val, str) else val
+                values[col] = json.dumps(val) if not isinstance(val, str) else val
             elif col in ("source_id", "prompt_id", "folder_id"):
-                set_clauses.append(f"{col} = CAST(:val_{col} AS uuid)")
-                params[f"val_{col}"] = str(val) if val else None
+                values[col] = str(val) if val else None
             else:
-                set_clauses.append(f"{col} = :val_{col}")
-                params[f"val_{col}"] = val
-        set_clauses.append("updated_at = now()")
-        sql = f"UPDATE agents SET {', '.join(set_clauses)} WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
-        result = self._conn.execute(text(sql), params)
+                values[col] = val
+        values["updated_at"] = func.now()
+
+        t = agents_table
+        stmt = (
+            t.update()
+            .where(t.c.id == agent_id)
+            .where(t.c.user_id == user_id)
+            .values(**values)
+        )
+        result = self._conn.execute(stmt)
         return result.rowcount > 0
 
     def delete(self, agent_id: str, user_id: str) -> bool:

@@ -33,10 +33,12 @@ class AttachmentsRepository:
         )
         return row_to_dict(result.fetchone())
 
-    def get(self, attachment_id: str) -> Optional[dict]:
+    def get(self, attachment_id: str, user_id: str) -> Optional[dict]:
         result = self._conn.execute(
-            text("SELECT * FROM attachments WHERE id = CAST(:id AS uuid)"),
-            {"id": attachment_id},
+            text(
+                "SELECT * FROM attachments WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+            ),
+            {"id": attachment_id, "user_id": user_id},
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None

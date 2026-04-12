@@ -70,12 +70,18 @@ class TestGetById:
         repo = _repo(pg_conn)
         tool_id = _make_tool(pg_conn)
         created = repo.upsert("u", tool_id, "t", "c")
-        fetched = repo.get(created["id"])
+        fetched = repo.get(created["id"], "u")
         assert fetched["id"] == created["id"]
 
     def test_get_nonexistent_returns_none(self, pg_conn):
         repo = _repo(pg_conn)
-        assert repo.get("00000000-0000-0000-0000-000000000000") is None
+        assert repo.get("00000000-0000-0000-0000-000000000000", "u") is None
+
+    def test_get_wrong_user_returns_none(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        created = repo.upsert("u", tool_id, "t", "c")
+        assert repo.get(created["id"], "other") is None
 
 
 class TestDelete:
