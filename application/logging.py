@@ -157,5 +157,21 @@ def _log_to_mongodb(
         user_logs_collection.insert_one(log_entry)
         logging.debug(f"Logged activity to MongoDB: {activity_id}")
 
+        from application.storage.db.dual_write import dual_write
+        from application.storage.db.repositories.stack_logs import StackLogsRepository
+
+        dual_write(
+            StackLogsRepository,
+            lambda repo, e=log_entry: repo.insert(
+                activity_id=e["id"],
+                endpoint=e.get("endpoint"),
+                level=e.get("level"),
+                user_id=e.get("user"),
+                api_key=e.get("api_key"),
+                query=e.get("query"),
+                stacks=e.get("stacks"),
+            ),
+        )
+
     except Exception as e:
         logging.error(f"Failed to log to MongoDB: {e}", exc_info=True)

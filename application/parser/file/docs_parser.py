@@ -24,7 +24,7 @@ class PDFParser(BaseParser):
             # alternatively you can use local vision capable LLM
             with open(file, "rb") as file_loaded:
                 files = {'file': file_loaded}
-                response = requests.post(doc2md_service, files=files)
+                response = requests.post(doc2md_service, files=files, timeout=100)
                 data = response.json()["markdown"]
             return data
 

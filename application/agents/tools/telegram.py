@@ -31,14 +31,14 @@ class TelegramTool(Tool):
         logger.debug("Sending Telegram message to chat_id=%s", chat_id)
         url = f"https://api.telegram.org/bot{self.token}/sendMessage"
         payload = {"chat_id": chat_id, "text": text}
-        response = requests.post(url, data=payload)
+        response = requests.post(url, data=payload, timeout=100)
         return {"status_code": response.status_code, "message": "Message sent"}
 
     def _send_image(self, image_url, chat_id):
         logger.debug("Sending Telegram image to chat_id=%s", chat_id)
         url = f"https://api.telegram.org/bot{self.token}/sendPhoto"
         payload = {"chat_id": chat_id, "photo": image_url}
-        response = requests.post(url, data=payload)
+        response = requests.post(url, data=payload, timeout=100)
         return {"status_code": response.status_code, "message": "Image sent"}
 
     def get_actions_metadata(self):

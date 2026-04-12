@@ -205,7 +205,7 @@ class SharePointLoader(BaseConnectorLoader):
         try:
             url = self._get_item_url(file_id)
             params = {'$select': 'id,name,file,createdDateTime,lastModifiedDateTime,size'}
-            response = requests.get(url, headers=self._get_headers(), params=params)
+            response = requests.get(url, headers=self._get_headers(), params=params, timeout=100)
             response.raise_for_status()
 
             file_metadata = response.json()
@@ -236,9 +236,9 @@ class SharePointLoader(BaseConnectorLoader):
                     search_url = f"{self.GRAPH_API_BASE}/drives/{drive_id}/root/search(q='{encoded_query}')"
                 else:
                     search_url = f"{self.GRAPH_API_BASE}/me/drive/search(q='{encoded_query}')"
-                response = requests.get(search_url, headers=self._get_headers(), params=params)
+                response = requests.get(search_url, headers=self._get_headers(), params=params, timeout=100)
             else:
-                response = requests.get(url, headers=self._get_headers(), params=params)
+                response = requests.get(url, headers=self._get_headers(), params=params, timeout=100)
 
             response.raise_for_status()
 
@@ -307,7 +307,8 @@ class SharePointLoader(BaseConnectorLoader):
             response = requests.get(
                 f"{self.GRAPH_API_BASE}/me/drive",
                 headers=self._get_headers(),
-                params={'$select': 'webUrl'}
+                params={'$select': 'webUrl'},
+                timeout=100,
             )
             response.raise_for_status()
             return response.json().get('webUrl')
@@ -352,7 +353,7 @@ class SharePointLoader(BaseConnectorLoader):
 
             headers = self._get_headers()
             headers["Content-Type"] = "application/json"
-            response = requests.post(url, headers=headers, json=body)
+            response = requests.post(url, headers=headers, json=body, timeout=100)
             response.raise_for_status()
             results = response.json()
 
@@ -472,7 +473,7 @@ class SharePointLoader(BaseConnectorLoader):
 
         try:
             url = f"{self._get_item_url(file_id)}/content"
-            response = requests.get(url, headers=self._get_headers())
+            response = requests.get(url, headers=self._get_headers(), timeout=100)
             response.raise_for_status()
 
             try:
@@ -491,7 +492,7 @@ class SharePointLoader(BaseConnectorLoader):
         try:
             url = self._get_item_url(file_id)
             params = {'$select': 'id,name,file'}
-            response = requests.get(url, headers=self._get_headers(), params=params)
+            response = requests.get(url, headers=self._get_headers(), params=params, timeout=100)
             response.raise_for_status()
 
             metadata = response.json()
@@ -507,7 +508,7 @@ class SharePointLoader(BaseConnectorLoader):
             full_path = os.path.join(local_dir, file_name)
 
             download_url = f"{self._get_item_url(file_id)}/content"
-            download_response = requests.get(download_url, headers=self._get_headers())
+            download_response = requests.get(download_url, headers=self._get_headers(), timeout=100)
             download_response.raise_for_status()
 
             with open(full_path, 'wb') as f:
@@ -527,7 +528,7 @@ class SharePointLoader(BaseConnectorLoader):
             params = {'$top': 1000}
 
             while url:
-                response = requests.get(url, headers=self._get_headers(), params=params)
+                response = requests.get(url, headers=self._get_headers(), params=params, timeout=100)
                 response.raise_for_status()
 
                 results = response.json()
@@ -609,7 +610,7 @@ class SharePointLoader(BaseConnectorLoader):
                     try:
                         url = self._get_item_url(folder_id)
                         params = {'$select': 'id,name'}
-                        response = requests.get(url, headers=self._get_headers(), params=params)
+                        response = requests.get(url, headers=self._get_headers(), params=params, timeout=100)
                         response.raise_for_status()
 
                         folder_metadata = response.json()
