@@ -24,6 +24,7 @@ from application.api.user.base import (
     workflows_collection,
 )
 from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.users import UsersRepository
 from application.core.json_schema_utils import (
     JsonSchemaValidationError,
@@ -623,6 +624,17 @@ class CreateAgent(Resource):
                     new_agent["retriever"] = "classic"
             resp = agents_collection.insert_one(new_agent)
             new_id = str(resp.inserted_id)
+            dual_write(
+                AgentsRepository,
+                lambda repo, u=user, a=new_agent: repo.create(
+                    u, a.get("name", ""), a.get("status", "draft"),
+                    key=a.get("key"), description=a.get("description"),
+                    retriever=a.get("retriever"), chunks=a.get("chunks"),
+                    tools=a.get("tools"), models=a.get("models"),
+                    shared=a.get("shared", False),
+                    incoming_webhook_token=a.get("incoming_webhook_token"),
+                ),
+            )
         except Exception as err:
             current_app.logger.error(f"Error creating agent: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -1184,6 +1196,10 @@ class DeleteAgent(Resource):
         try:
             deleted_agent = agents_collection.find_one_and_delete(
                 {"_id": ObjectId(agent_id), "user": user}
+            )
+            dual_write(
+                AgentsRepository,
+                lambda repo, aid=agent_id, u=user: repo.delete(aid, u),
             )
             if not deleted_agent:
                 return make_response(

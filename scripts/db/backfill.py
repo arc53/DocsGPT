@@ -9,8 +9,8 @@ two-step change in this file:
 2. Add a single entry to :data:`BACKFILLERS`.
 
 There are intentionally no per-collection CLI flags or environment
-variables — ``USE_POSTGRES`` in ``.env`` is the only knob operators
-need during the migration window. This script discovers what's available from
+variables — ``USE_POSTGRES`` / ``READ_POSTGRES`` in ``.env`` are the
+only knobs operators need. This script discovers what's available from
 the :data:`BACKFILLERS` registry and runs whichever tables were asked for.
 
 Usage::
@@ -119,13 +119,8 @@ def _backfill_users(
 
 
 def _backfill_prompts(
-    *,
-    conn: Connection,
-    mongo_db: Any,
-    batch_size: int,
-    dry_run: bool,
+    *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
-    """Sync the ``prompts`` table from Mongo ``prompts`` collection."""
     upsert_sql = text(
         """
         INSERT INTO prompts (user_id, name, content)
@@ -133,18 +128,9 @@ def _backfill_prompts(
         ON CONFLICT DO NOTHING
         """
     )
-
-    cursor = (
-        mongo_db["prompts"]
-        .find({}, no_cursor_timeout=True)
-        .batch_size(batch_size)
-    )
-
-    seen = 0
-    written = 0
-    skipped = 0
+    cursor = mongo_db["prompts"].find({}, no_cursor_timeout=True).batch_size(batch_size)
+    seen = written = skipped = 0
     batch: list[dict] = []
-
     try:
         for doc in cursor:
             seen += 1
@@ -162,25 +148,18 @@ def _backfill_prompts(
                     conn.execute(upsert_sql, batch)
                 written += len(batch)
                 batch.clear()
-
         if batch:
             if not dry_run:
                 conn.execute(upsert_sql, batch)
             written += len(batch)
     finally:
         cursor.close()
-
     return {"seen": seen, "written": written, "skipped_no_user": skipped}
 
 
 def _backfill_user_tools(
-    *,
-    conn: Connection,
-    mongo_db: Any,
-    batch_size: int,
-    dry_run: bool,
+    *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
-    """Sync the ``user_tools`` table from Mongo ``user_tools`` collection."""
     insert_sql = text(
         """
         INSERT INTO user_tools (user_id, name, custom_name, display_name, config)
@@ -188,18 +167,9 @@ def _backfill_user_tools(
         ON CONFLICT DO NOTHING
         """
     )
-
-    cursor = (
-        mongo_db["user_tools"]
-        .find({}, no_cursor_timeout=True)
-        .batch_size(batch_size)
-    )
-
-    seen = 0
-    written = 0
-    skipped = 0
+    cursor = mongo_db["user_tools"].find({}, no_cursor_timeout=True).batch_size(batch_size)
+    seen = written = skipped = 0
     batch: list[dict] = []
-
     try:
         for doc in cursor:
             seen += 1
@@ -219,29 +189,18 @@ def _backfill_user_tools(
                     conn.execute(insert_sql, batch)
                 written += len(batch)
                 batch.clear()
-
         if batch:
             if not dry_run:
                 conn.execute(insert_sql, batch)
             written += len(batch)
     finally:
         cursor.close()
-
     return {"seen": seen, "written": written, "skipped_no_user": skipped}
 
 
 def _backfill_feedback(
-    *,
-    conn: Connection,
-    mongo_db: Any,
-    batch_size: int,
-    dry_run: bool,
+    *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
-    """Sync the ``feedback`` table from Mongo ``feedback`` collection.
-
-    feedback.conversation_id is stored as a string UUID. Rows whose
-    conversation_id cannot be cast to UUID are skipped.
-    """
     insert_sql = text(
         """
         INSERT INTO feedback (conversation_id, user_id, question_index, feedback_text, timestamp)
@@ -249,18 +208,9 @@ def _backfill_feedback(
         ON CONFLICT DO NOTHING
         """
     )
-
-    cursor = (
-        mongo_db["feedback"]
-        .find({}, no_cursor_timeout=True)
-        .batch_size(batch_size)
-    )
-
-    seen = 0
-    written = 0
-    skipped = 0
+    cursor = mongo_db["feedback"].find({}, no_cursor_timeout=True).batch_size(batch_size)
+    seen = written = skipped = 0
     batch: list[dict] = []
-
     try:
         for doc in cursor:
             seen += 1
@@ -281,43 +231,27 @@ def _backfill_feedback(
                     conn.execute(insert_sql, batch)
                 written += len(batch)
                 batch.clear()
-
         if batch:
             if not dry_run:
                 conn.execute(insert_sql, batch)
             written += len(batch)
     finally:
         cursor.close()
-
     return {"seen": seen, "written": written, "skipped": skipped}
 
 
 def _backfill_stack_logs(
-    *,
-    conn: Connection,
-    mongo_db: Any,
-    batch_size: int,
-    dry_run: bool,
+    *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
-    """Sync the ``stack_logs`` table from Mongo ``stack_logs`` collection."""
     insert_sql = text(
         """
         INSERT INTO stack_logs (activity_id, endpoint, level, user_id, api_key, query, stacks, timestamp)
         VALUES (:activity_id, :endpoint, :level, :user_id, :api_key, :query, CAST(:stacks AS jsonb), :timestamp)
         """
     )
-
-    cursor = (
-        mongo_db["stack_logs"]
-        .find({}, no_cursor_timeout=True)
-        .batch_size(batch_size)
-    )
-
-    seen = 0
-    written = 0
-    skipped = 0
+    cursor = mongo_db["stack_logs"].find({}, no_cursor_timeout=True).batch_size(batch_size)
+    seen = written = skipped = 0
     batch: list[dict] = []
-
     try:
         for doc in cursor:
             seen += 1
@@ -340,48 +274,31 @@ def _backfill_stack_logs(
                     conn.execute(insert_sql, batch)
                 written += len(batch)
                 batch.clear()
-
         if batch:
             if not dry_run:
                 conn.execute(insert_sql, batch)
             written += len(batch)
     finally:
         cursor.close()
-
     return {"seen": seen, "written": written, "skipped_no_id": skipped}
 
 
 def _backfill_user_logs(
-    *,
-    conn: Connection,
-    mongo_db: Any,
-    batch_size: int,
-    dry_run: bool,
+    *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
-    """Sync the ``user_logs`` table from Mongo ``user_logs`` collection."""
     insert_sql = text(
         """
         INSERT INTO user_logs (user_id, endpoint, data, timestamp)
         VALUES (:user_id, :endpoint, CAST(:data AS jsonb), :timestamp)
         """
     )
-
-    cursor = (
-        mongo_db["user_logs"]
-        .find({}, no_cursor_timeout=True)
-        .batch_size(batch_size)
-    )
-
-    seen = 0
-    written = 0
+    cursor = mongo_db["user_logs"].find({}, no_cursor_timeout=True).batch_size(batch_size)
+    seen = written = 0
     batch: list[dict] = []
-
     try:
         for doc in cursor:
             seen += 1
-            # Build a JSONB payload from the full doc (minus Mongo internals).
             data_payload = {k: v for k, v in doc.items() if k != "_id"}
-            # Stringify ObjectId values inside the payload.
             for k, v in data_payload.items():
                 if hasattr(v, "__str__") and type(v).__name__ == "ObjectId":
                     data_payload[k] = str(v)
@@ -396,25 +313,18 @@ def _backfill_user_logs(
                     conn.execute(insert_sql, batch)
                 written += len(batch)
                 batch.clear()
-
         if batch:
             if not dry_run:
                 conn.execute(insert_sql, batch)
             written += len(batch)
     finally:
         cursor.close()
-
     return {"seen": seen, "written": written}
 
 
 def _backfill_token_usage(
-    *,
-    conn: Connection,
-    mongo_db: Any,
-    batch_size: int,
-    dry_run: bool,
+    *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
-    """Sync the ``token_usage`` table from Mongo ``token_usage`` collection."""
     insert_sql = text(
         """
         INSERT INTO token_usage (user_id, api_key, agent_id, prompt_tokens, generated_tokens, timestamp)
@@ -425,23 +335,13 @@ def _backfill_token_usage(
         )
         """
     )
-
-    cursor = (
-        mongo_db["token_usage"]
-        .find({}, no_cursor_timeout=True)
-        .batch_size(batch_size)
-    )
-
-    seen = 0
-    written = 0
+    cursor = mongo_db["token_usage"].find({}, no_cursor_timeout=True).batch_size(batch_size)
+    seen = written = 0
     batch: list[dict] = []
-
     try:
         for doc in cursor:
             seen += 1
             agent_id = doc.get("agent_id")
-            # agent_id may be an ObjectId string or None — only pass if
-            # it looks like a valid UUID (from dual-write) or skip it.
             agent_id_str = None
             if agent_id:
                 s = str(agent_id)
@@ -460,15 +360,424 @@ def _backfill_token_usage(
                     conn.execute(insert_sql, batch)
                 written += len(batch)
                 batch.clear()
-
         if batch:
             if not dry_run:
                 conn.execute(insert_sql, batch)
             written += len(batch)
     finally:
         cursor.close()
-
     return {"seen": seen, "written": written}
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 backfillers
+# ---------------------------------------------------------------------------
+
+
+def _backfill_agent_folders(
+    *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
+) -> dict:
+    upsert_sql = text(
+        """
+        INSERT INTO agent_folders (user_id, name, description)
+        VALUES (:user_id, :name, :description)
+        ON CONFLICT DO NOTHING
+        """
+    )
+    cursor = mongo_db["agent_folders"].find({}, no_cursor_timeout=True).batch_size(batch_size)
+    seen = written = skipped = 0
+    batch: list[dict] = []
+    try:
+        for doc in cursor:
+            seen += 1
+            user_id = doc.get("user")
+            if not user_id:
+                skipped += 1
+                continue
+            batch.append({
+                "user_id": user_id,
+                "name": doc.get("name", ""),
+                "description": doc.get("description"),
+            })
+            if len(batch) >= batch_size:
+                if not dry_run:
+                    conn.execute(upsert_sql, batch)
+                written += len(batch)
+                batch.clear()
+        if batch:
+            if not dry_run:
+                conn.execute(upsert_sql, batch)
+            written += len(batch)
+    finally:
+        cursor.close()
+    return {"seen": seen, "written": written, "skipped": skipped}
+
+
+def _backfill_sources(
+    *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
+) -> dict:
+    insert_sql = text(
+        """
+        INSERT INTO sources (user_id, name, type, metadata)
+        VALUES (:user_id, :name, :type, CAST(:metadata AS jsonb))
+        ON CONFLICT DO NOTHING
+        """
+    )
+    cursor = mongo_db["sources"].find({}, no_cursor_timeout=True).batch_size(batch_size)
+    seen = written = 0
+    batch: list[dict] = []
+    try:
+        for doc in cursor:
+            seen += 1
+            # user may be absent for system sources
+            raw_meta = doc.get("metadata") or {}
+            # Strip non-serializable values from metadata
+            clean_meta = {}
+            for k, v in raw_meta.items():
+                if hasattr(v, "__str__") and type(v).__name__ == "ObjectId":
+                    clean_meta[k] = str(v)
+                else:
+                    clean_meta[k] = v
+            batch.append({
+                "user_id": doc.get("user"),
+                "name": doc.get("name", ""),
+                "type": doc.get("type"),
+                "metadata": json.dumps(clean_meta, default=str),
+            })
+            if len(batch) >= batch_size:
+                if not dry_run:
+                    conn.execute(insert_sql, batch)
+                written += len(batch)
+                batch.clear()
+        if batch:
+            if not dry_run:
+                conn.execute(insert_sql, batch)
+            written += len(batch)
+    finally:
+        cursor.close()
+    return {"seen": seen, "written": written}
+
+
+def _backfill_agents(
+    *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
+) -> dict:
+    insert_sql = text(
+        """
+        INSERT INTO agents (
+            user_id, name, status, key, description, agent_type,
+            chunks, retriever, default_model_id,
+            tools, json_schema, models,
+            limited_token_mode, token_limit, limited_request_mode, request_limit,
+            shared, incoming_webhook_token
+        ) VALUES (
+            :user_id, :name, :status, :key, :description, :agent_type,
+            :chunks, :retriever, :default_model_id,
+            CAST(:tools AS jsonb), CAST(:json_schema AS jsonb), CAST(:models AS jsonb),
+            :limited_token_mode, :token_limit, :limited_request_mode, :request_limit,
+            :shared, :incoming_webhook_token
+        )
+        ON CONFLICT DO NOTHING
+        """
+    )
+    cursor = mongo_db["agents"].find({}, no_cursor_timeout=True).batch_size(batch_size)
+    seen = written = skipped = 0
+    batch: list[dict] = []
+    try:
+        for doc in cursor:
+            seen += 1
+            user_id = doc.get("user")
+            if not user_id:
+                skipped += 1
+                continue
+            batch.append({
+                "user_id": user_id,
+                "name": doc.get("name", ""),
+                "status": doc.get("status", "draft"),
+                "key": doc.get("key"),
+                "description": doc.get("description"),
+                "agent_type": doc.get("agent_type"),
+                "chunks": doc.get("chunks"),
+                "retriever": doc.get("retriever"),
+                "default_model_id": doc.get("default_model_id"),
+                "tools": json.dumps(doc.get("tools") or []),
+                "json_schema": json.dumps(doc.get("json_schema")) if doc.get("json_schema") else None,
+                "models": json.dumps(doc.get("models")) if doc.get("models") else None,
+                "limited_token_mode": bool(doc.get("limited_token_mode", False)),
+                "token_limit": doc.get("token_limit"),
+                "limited_request_mode": bool(doc.get("limited_request_mode", False)),
+                "request_limit": doc.get("request_limit"),
+                "shared": bool(doc.get("shared", False)),
+                "incoming_webhook_token": doc.get("incoming_webhook_token"),
+            })
+            if len(batch) >= batch_size:
+                if not dry_run:
+                    conn.execute(insert_sql, batch)
+                written += len(batch)
+                batch.clear()
+        if batch:
+            if not dry_run:
+                conn.execute(insert_sql, batch)
+            written += len(batch)
+    finally:
+        cursor.close()
+    return {"seen": seen, "written": written, "skipped": skipped}
+
+
+def _backfill_attachments(
+    *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
+) -> dict:
+    insert_sql = text(
+        """
+        INSERT INTO attachments (user_id, filename, upload_path, mime_type, size)
+        VALUES (:user_id, :filename, :upload_path, :mime_type, :size)
+        """
+    )
+    cursor = mongo_db["attachments"].find({}, no_cursor_timeout=True).batch_size(batch_size)
+    seen = written = skipped = 0
+    batch: list[dict] = []
+    try:
+        for doc in cursor:
+            seen += 1
+            user_id = doc.get("user")
+            if not user_id:
+                skipped += 1
+                continue
+            batch.append({
+                "user_id": user_id,
+                "filename": doc.get("filename", ""),
+                "upload_path": doc.get("upload_path", ""),
+                "mime_type": doc.get("mime_type"),
+                "size": doc.get("size"),
+            })
+            if len(batch) >= batch_size:
+                if not dry_run:
+                    conn.execute(insert_sql, batch)
+                written += len(batch)
+                batch.clear()
+        if batch:
+            if not dry_run:
+                conn.execute(insert_sql, batch)
+            written += len(batch)
+    finally:
+        cursor.close()
+    return {"seen": seen, "written": written, "skipped": skipped}
+
+
+def _build_tool_id_map(conn: Connection, mongo_db: Any) -> dict[str, str]:
+    """Build a mapping from Mongo user_tools ObjectId → Postgres user_tools UUID.
+
+    The Mongo ``_id`` (ObjectId) for each user_tools doc has no equivalent in
+    Postgres. We match rows by ``(user_id, name)`` — which is the natural key
+    for a tool — and return ``{str(mongo_oid): str(pg_uuid)}``.
+
+    This is called once before memories/todos/notes backfill so those
+    collections can resolve their ``tool_id`` foreign keys.
+    """
+    # Build the Postgres side: (user_id, name) → UUID
+    pg_rows = conn.execute(
+        text("SELECT id, user_id, name FROM user_tools")
+    ).fetchall()
+    pg_lookup: dict[tuple[str, str], str] = {}
+    for row in pg_rows:
+        m = row._mapping
+        pg_lookup[(m["user_id"], m["name"])] = str(m["id"])
+
+    # Walk the Mongo side and match
+    mapping: dict[str, str] = {}
+    for doc in mongo_db["user_tools"].find({}, {"_id": 1, "user": 1, "name": 1}):
+        user_id = doc.get("user")
+        name = doc.get("name")
+        if not user_id or not name:
+            continue
+        pg_uuid = pg_lookup.get((user_id, name))
+        if pg_uuid:
+            mapping[str(doc["_id"])] = pg_uuid
+
+    return mapping
+
+
+def _resolve_tool_id(tool_id_raw: Any, tool_id_map: dict[str, str]) -> str | None:
+    """Convert a Mongo tool_id (ObjectId or string) to a Postgres UUID string.
+
+    Returns the mapped UUID, or None if the tool_id can't be resolved.
+    """
+    if not tool_id_raw:
+        return None
+    s = str(tool_id_raw)
+    # Already a UUID (36 chars with dashes) — pass through
+    if len(s) == 36 and "-" in s:
+        return s
+    # Mongo ObjectId (24 hex chars) — look up in map
+    return tool_id_map.get(s)
+
+
+def _backfill_memories(
+    *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
+) -> dict:
+    tool_id_map = _build_tool_id_map(conn, mongo_db)
+    insert_sql = text(
+        """
+        INSERT INTO memories (user_id, tool_id, path, content)
+        VALUES (:user_id, CAST(:tool_id AS uuid), :path, :content)
+        ON CONFLICT DO NOTHING
+        """
+    )
+    cursor = mongo_db["memories"].find({}, no_cursor_timeout=True).batch_size(batch_size)
+    seen = written = skipped = 0
+    batch: list[dict] = []
+    try:
+        for doc in cursor:
+            seen += 1
+            user_id = doc.get("user_id")
+            pg_tool_id = _resolve_tool_id(doc.get("tool_id"), tool_id_map)
+            if not user_id or not pg_tool_id:
+                skipped += 1
+                continue
+            batch.append({
+                "user_id": user_id,
+                "tool_id": pg_tool_id,
+                "path": doc.get("path", "/"),
+                "content": doc.get("content", ""),
+            })
+            if len(batch) >= batch_size:
+                if not dry_run:
+                    conn.execute(insert_sql, batch)
+                written += len(batch)
+                batch.clear()
+        if batch:
+            if not dry_run:
+                conn.execute(insert_sql, batch)
+            written += len(batch)
+    finally:
+        cursor.close()
+    return {"seen": seen, "written": written, "skipped": skipped}
+
+
+def _backfill_todos(
+    *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
+) -> dict:
+    tool_id_map = _build_tool_id_map(conn, mongo_db)
+    insert_sql = text(
+        """
+        INSERT INTO todos (user_id, tool_id, title, completed)
+        VALUES (:user_id, CAST(:tool_id AS uuid), :title, :completed)
+        """
+    )
+    cursor = mongo_db["todos"].find({}, no_cursor_timeout=True).batch_size(batch_size)
+    seen = written = skipped = 0
+    batch: list[dict] = []
+    try:
+        for doc in cursor:
+            seen += 1
+            user_id = doc.get("user_id")
+            pg_tool_id = _resolve_tool_id(doc.get("tool_id"), tool_id_map)
+            if not user_id or not pg_tool_id:
+                skipped += 1
+                continue
+            status = doc.get("status", "open")
+            batch.append({
+                "user_id": user_id,
+                "tool_id": pg_tool_id,
+                "title": doc.get("title", ""),
+                "completed": status == "completed",
+            })
+            if len(batch) >= batch_size:
+                if not dry_run:
+                    conn.execute(insert_sql, batch)
+                written += len(batch)
+                batch.clear()
+        if batch:
+            if not dry_run:
+                conn.execute(insert_sql, batch)
+            written += len(batch)
+    finally:
+        cursor.close()
+    return {"seen": seen, "written": written, "skipped": skipped}
+
+
+def _backfill_notes(
+    *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
+) -> dict:
+    tool_id_map = _build_tool_id_map(conn, mongo_db)
+    insert_sql = text(
+        """
+        INSERT INTO notes (user_id, tool_id, title, content)
+        VALUES (:user_id, CAST(:tool_id AS uuid), :title, :content)
+        ON CONFLICT (user_id, tool_id) DO UPDATE
+            SET content = EXCLUDED.content, title = EXCLUDED.title
+        """
+    )
+    cursor = mongo_db["notes"].find({}, no_cursor_timeout=True).batch_size(batch_size)
+    seen = written = skipped = 0
+    batch: list[dict] = []
+    try:
+        for doc in cursor:
+            seen += 1
+            user_id = doc.get("user_id")
+            pg_tool_id = _resolve_tool_id(doc.get("tool_id"), tool_id_map)
+            if not user_id or not pg_tool_id:
+                skipped += 1
+                continue
+            batch.append({
+                "user_id": user_id,
+                "tool_id": pg_tool_id,
+                "title": doc.get("title", "note"),
+                "content": doc.get("note") or doc.get("content", ""),
+            })
+            if len(batch) >= batch_size:
+                if not dry_run:
+                    conn.execute(insert_sql, batch)
+                written += len(batch)
+                batch.clear()
+        if batch:
+            if not dry_run:
+                conn.execute(insert_sql, batch)
+            written += len(batch)
+    finally:
+        cursor.close()
+    return {"seen": seen, "written": written, "skipped": skipped}
+
+
+def _backfill_connector_sessions(
+    *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
+) -> dict:
+    insert_sql = text(
+        """
+        INSERT INTO connector_sessions (user_id, provider, session_data)
+        VALUES (:user_id, :provider, CAST(:session_data AS jsonb))
+        ON CONFLICT (user_id, provider) DO UPDATE
+            SET session_data = EXCLUDED.session_data
+        """
+    )
+    cursor = mongo_db["connector_sessions"].find({}, no_cursor_timeout=True).batch_size(batch_size)
+    seen = written = skipped = 0
+    batch: list[dict] = []
+    try:
+        for doc in cursor:
+            seen += 1
+            user_id = doc.get("user_id") or doc.get("user")
+            provider = doc.get("provider")
+            if not user_id or not provider:
+                skipped += 1
+                continue
+            session_data = {k: v for k, v in doc.items() if k not in ("_id", "user_id", "user", "provider")}
+            batch.append({
+                "user_id": user_id,
+                "provider": provider,
+                "session_data": json.dumps(session_data, default=str),
+            })
+            if len(batch) >= batch_size:
+                if not dry_run:
+                    conn.execute(insert_sql, batch)
+                written += len(batch)
+                batch.clear()
+        if batch:
+            if not dry_run:
+                conn.execute(insert_sql, batch)
+            written += len(batch)
+    finally:
+        cursor.close()
+    return {"seen": seen, "written": written, "skipped": skipped}
 
 
 # ---------------------------------------------------------------------------
@@ -483,6 +792,7 @@ BackfillFn = Callable[..., dict]
 # with FK dependencies after the tables they reference so a full-run
 # backfill doesn't hit FK errors.
 BACKFILLERS: dict[str, BackfillFn] = {
+    # Phase 1
     "users": _backfill_users,
     "prompts": _backfill_prompts,
     "user_tools": _backfill_user_tools,
@@ -490,6 +800,15 @@ BACKFILLERS: dict[str, BackfillFn] = {
     "stack_logs": _backfill_stack_logs,
     "user_logs": _backfill_user_logs,
     "token_usage": _backfill_token_usage,
+    # Phase 2 (order: FK targets first)
+    "agent_folders": _backfill_agent_folders,
+    "sources": _backfill_sources,
+    "attachments": _backfill_attachments,
+    "agents": _backfill_agents,
+    "memories": _backfill_memories,
+    "todos": _backfill_todos,
+    "notes": _backfill_notes,
+    "connector_sessions": _backfill_connector_sessions,
 }
 
 
