@@ -27,13 +27,20 @@ class PGVectorStore(BaseVectorStore):
         self._metadata_column = metadata_column
         self._embedding = self._get_embeddings(settings.EMBEDDINGS_NAME, embeddings_key)
         
-        # Use provided connection string or fall back to settings
+        # Use provided connection string or fall back to settings.
+        # If PGVECTOR_CONNECTION_STRING is not set but POSTGRES_URI is,
+        # reuse the same cluster — normalize from SQLAlchemy dialect to libpq form.
         self._connection_string = connection_string or getattr(settings, 'PGVECTOR_CONNECTION_STRING', None)
-        
+
+        if not self._connection_string and getattr(settings, 'POSTGRES_URI', None):
+            from application.core.db_uri import normalize_pgvector_connection_string
+            self._connection_string = normalize_pgvector_connection_string(settings.POSTGRES_URI)
+
         if not self._connection_string:
             raise ValueError(
                 "PostgreSQL connection string is required. "
-                "Set PGVECTOR_CONNECTION_STRING in settings or pass connection_string parameter."
+                "Set PGVECTOR_CONNECTION_STRING or POSTGRES_URI in settings, "
+                "or pass connection_string parameter."
             )
 
         try:

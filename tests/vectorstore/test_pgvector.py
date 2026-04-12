@@ -70,6 +70,7 @@ class TestPGVectorStoreInit:
             mock_get_emb.return_value = Mock(dimension=768)
             mock_settings.EMBEDDINGS_NAME = "test_model"
             mock_settings.PGVECTOR_CONNECTION_STRING = None
+            mock_settings.POSTGRES_URI = None
 
             from application.vectorstore.pgvector import PGVectorStore
 

@@ -23,13 +23,25 @@ from application.core.settings import settings
 _engine: Optional[Engine] = None
 
 
-def get_engine() -> Engine:
-    """Return the process-wide SQLAlchemy Engine, creating it if needed.
+def _resolve_uri() -> str:
+    """Return the Postgres URI for user-data tables.
 
     Raises:
         RuntimeError: If ``settings.POSTGRES_URI`` is unset. Callers that
             reach this path without a configured URI have a setup bug — the
             error message points them at the right setting.
+    """
+    if not settings.POSTGRES_URI:
+        raise RuntimeError(
+            "POSTGRES_URI is not configured. Set it in your .env to a "
+            "psycopg3 URI such as "
+            "'postgresql+psycopg://user:pass@host:5432/docsgpt'."
+        )
+    return settings.POSTGRES_URI
+
+
+def get_engine() -> Engine:
+    """Return the process-wide SQLAlchemy Engine, creating it if needed.
 
     Returns:
         A SQLAlchemy ``Engine`` configured with a pooled connection to
@@ -37,14 +49,8 @@ def get_engine() -> Engine:
     """
     global _engine
     if _engine is None:
-        if not settings.POSTGRES_URI:
-            raise RuntimeError(
-                "POSTGRES_URI is not configured. Set it in your .env to a "
-                "psycopg3 URI such as "
-                "'postgresql+psycopg://user:pass@host:5432/docsgpt'."
-            )
         _engine = create_engine(
-            settings.POSTGRES_URI,
+            _resolve_uri(),
             pool_size=10,
             max_overflow=20,
             pool_pre_ping=True,     # survive PgBouncer / idle-disconnect recycles

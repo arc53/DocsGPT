@@ -71,7 +71,7 @@ class NtfyTool(Tool):
         if self.token:
             headers["Authorization"] = f"Basic {self.token}"
         data = message.encode("utf-8")
-        response = requests.post(url, headers=headers, data=data)
+        response = requests.post(url, headers=headers, data=data, timeout=100)
         return {"status_code": response.status_code, "message": "Message sent"}
 
     def get_actions_metadata(self):

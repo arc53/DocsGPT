@@ -9,8 +9,8 @@ two-step change in this file:
 2. Add a single entry to :data:`BACKFILLERS`.
 
 There are intentionally no per-collection CLI flags or environment
-variables — ``USE_POSTGRES`` / ``READ_POSTGRES`` in ``.env`` are the
-only knobs operators need. This script discovers what's available from
+variables — ``USE_POSTGRES`` in ``.env`` is the only knob operators
+need during the migration window. This script discovers what's available from
 the :data:`BACKFILLERS` registry and runs whichever tables were asked for.
 
 Usage::
@@ -118,6 +118,359 @@ def _backfill_users(
     return {"seen": seen, "written": written, "skipped_no_user_id": skipped}
 
 
+def _backfill_prompts(
+    *,
+    conn: Connection,
+    mongo_db: Any,
+    batch_size: int,
+    dry_run: bool,
+) -> dict:
+    """Sync the ``prompts`` table from Mongo ``prompts`` collection."""
+    upsert_sql = text(
+        """
+        INSERT INTO prompts (user_id, name, content)
+        VALUES (:user_id, :name, :content)
+        ON CONFLICT DO NOTHING
+        """
+    )
+
+    cursor = (
+        mongo_db["prompts"]
+        .find({}, no_cursor_timeout=True)
+        .batch_size(batch_size)
+    )
+
+    seen = 0
+    written = 0
+    skipped = 0
+    batch: list[dict] = []
+
+    try:
+        for doc in cursor:
+            seen += 1
+            user_id = doc.get("user")
+            if not user_id:
+                skipped += 1
+                continue
+            batch.append({
+                "user_id": user_id,
+                "name": doc.get("name", ""),
+                "content": doc.get("content", ""),
+            })
+            if len(batch) >= batch_size:
+                if not dry_run:
+                    conn.execute(upsert_sql, batch)
+                written += len(batch)
+                batch.clear()
+
+        if batch:
+            if not dry_run:
+                conn.execute(upsert_sql, batch)
+            written += len(batch)
+    finally:
+        cursor.close()
+
+    return {"seen": seen, "written": written, "skipped_no_user": skipped}
+
+
+def _backfill_user_tools(
+    *,
+    conn: Connection,
+    mongo_db: Any,
+    batch_size: int,
+    dry_run: bool,
+) -> dict:
+    """Sync the ``user_tools`` table from Mongo ``user_tools`` collection."""
+    insert_sql = text(
+        """
+        INSERT INTO user_tools (user_id, name, custom_name, display_name, config)
+        VALUES (:user_id, :name, :custom_name, :display_name, CAST(:config AS jsonb))
+        ON CONFLICT DO NOTHING
+        """
+    )
+
+    cursor = (
+        mongo_db["user_tools"]
+        .find({}, no_cursor_timeout=True)
+        .batch_size(batch_size)
+    )
+
+    seen = 0
+    written = 0
+    skipped = 0
+    batch: list[dict] = []
+
+    try:
+        for doc in cursor:
+            seen += 1
+            user_id = doc.get("user")
+            if not user_id:
+                skipped += 1
+                continue
+            batch.append({
+                "user_id": user_id,
+                "name": doc.get("name", ""),
+                "custom_name": doc.get("customName"),
+                "display_name": doc.get("displayName"),
+                "config": json.dumps(doc.get("config") or {}),
+            })
+            if len(batch) >= batch_size:
+                if not dry_run:
+                    conn.execute(insert_sql, batch)
+                written += len(batch)
+                batch.clear()
+
+        if batch:
+            if not dry_run:
+                conn.execute(insert_sql, batch)
+            written += len(batch)
+    finally:
+        cursor.close()
+
+    return {"seen": seen, "written": written, "skipped_no_user": skipped}
+
+
+def _backfill_feedback(
+    *,
+    conn: Connection,
+    mongo_db: Any,
+    batch_size: int,
+    dry_run: bool,
+) -> dict:
+    """Sync the ``feedback`` table from Mongo ``feedback`` collection.
+
+    feedback.conversation_id is stored as a string UUID. Rows whose
+    conversation_id cannot be cast to UUID are skipped.
+    """
+    insert_sql = text(
+        """
+        INSERT INTO feedback (conversation_id, user_id, question_index, feedback_text, timestamp)
+        VALUES (CAST(:conversation_id AS uuid), :user_id, :question_index, :feedback_text, :timestamp)
+        ON CONFLICT DO NOTHING
+        """
+    )
+
+    cursor = (
+        mongo_db["feedback"]
+        .find({}, no_cursor_timeout=True)
+        .batch_size(batch_size)
+    )
+
+    seen = 0
+    written = 0
+    skipped = 0
+    batch: list[dict] = []
+
+    try:
+        for doc in cursor:
+            seen += 1
+            user_id = doc.get("user")
+            conv_id = doc.get("conversation_id")
+            if not user_id or not conv_id:
+                skipped += 1
+                continue
+            batch.append({
+                "conversation_id": str(conv_id),
+                "user_id": user_id,
+                "question_index": doc.get("question_index", 0),
+                "feedback_text": doc.get("feedback_text"),
+                "timestamp": doc.get("timestamp"),
+            })
+            if len(batch) >= batch_size:
+                if not dry_run:
+                    conn.execute(insert_sql, batch)
+                written += len(batch)
+                batch.clear()
+
+        if batch:
+            if not dry_run:
+                conn.execute(insert_sql, batch)
+            written += len(batch)
+    finally:
+        cursor.close()
+
+    return {"seen": seen, "written": written, "skipped": skipped}
+
+
+def _backfill_stack_logs(
+    *,
+    conn: Connection,
+    mongo_db: Any,
+    batch_size: int,
+    dry_run: bool,
+) -> dict:
+    """Sync the ``stack_logs`` table from Mongo ``stack_logs`` collection."""
+    insert_sql = text(
+        """
+        INSERT INTO stack_logs (activity_id, endpoint, level, user_id, api_key, query, stacks, timestamp)
+        VALUES (:activity_id, :endpoint, :level, :user_id, :api_key, :query, CAST(:stacks AS jsonb), :timestamp)
+        """
+    )
+
+    cursor = (
+        mongo_db["stack_logs"]
+        .find({}, no_cursor_timeout=True)
+        .batch_size(batch_size)
+    )
+
+    seen = 0
+    written = 0
+    skipped = 0
+    batch: list[dict] = []
+
+    try:
+        for doc in cursor:
+            seen += 1
+            activity_id = doc.get("id")
+            if not activity_id:
+                skipped += 1
+                continue
+            batch.append({
+                "activity_id": str(activity_id),
+                "endpoint": doc.get("endpoint"),
+                "level": doc.get("level"),
+                "user_id": doc.get("user"),
+                "api_key": doc.get("api_key"),
+                "query": doc.get("query"),
+                "stacks": json.dumps(doc.get("stacks") or []),
+                "timestamp": doc.get("timestamp"),
+            })
+            if len(batch) >= batch_size:
+                if not dry_run:
+                    conn.execute(insert_sql, batch)
+                written += len(batch)
+                batch.clear()
+
+        if batch:
+            if not dry_run:
+                conn.execute(insert_sql, batch)
+            written += len(batch)
+    finally:
+        cursor.close()
+
+    return {"seen": seen, "written": written, "skipped_no_id": skipped}
+
+
+def _backfill_user_logs(
+    *,
+    conn: Connection,
+    mongo_db: Any,
+    batch_size: int,
+    dry_run: bool,
+) -> dict:
+    """Sync the ``user_logs`` table from Mongo ``user_logs`` collection."""
+    insert_sql = text(
+        """
+        INSERT INTO user_logs (user_id, endpoint, data, timestamp)
+        VALUES (:user_id, :endpoint, CAST(:data AS jsonb), :timestamp)
+        """
+    )
+
+    cursor = (
+        mongo_db["user_logs"]
+        .find({}, no_cursor_timeout=True)
+        .batch_size(batch_size)
+    )
+
+    seen = 0
+    written = 0
+    batch: list[dict] = []
+
+    try:
+        for doc in cursor:
+            seen += 1
+            # Build a JSONB payload from the full doc (minus Mongo internals).
+            data_payload = {k: v for k, v in doc.items() if k != "_id"}
+            # Stringify ObjectId values inside the payload.
+            for k, v in data_payload.items():
+                if hasattr(v, "__str__") and type(v).__name__ == "ObjectId":
+                    data_payload[k] = str(v)
+            batch.append({
+                "user_id": doc.get("user"),
+                "endpoint": doc.get("action") or doc.get("endpoint"),
+                "data": json.dumps(data_payload, default=str),
+                "timestamp": doc.get("timestamp"),
+            })
+            if len(batch) >= batch_size:
+                if not dry_run:
+                    conn.execute(insert_sql, batch)
+                written += len(batch)
+                batch.clear()
+
+        if batch:
+            if not dry_run:
+                conn.execute(insert_sql, batch)
+            written += len(batch)
+    finally:
+        cursor.close()
+
+    return {"seen": seen, "written": written}
+
+
+def _backfill_token_usage(
+    *,
+    conn: Connection,
+    mongo_db: Any,
+    batch_size: int,
+    dry_run: bool,
+) -> dict:
+    """Sync the ``token_usage`` table from Mongo ``token_usage`` collection."""
+    insert_sql = text(
+        """
+        INSERT INTO token_usage (user_id, api_key, agent_id, prompt_tokens, generated_tokens, timestamp)
+        VALUES (
+            :user_id, :api_key,
+            CAST(:agent_id AS uuid),
+            :prompt_tokens, :generated_tokens, :timestamp
+        )
+        """
+    )
+
+    cursor = (
+        mongo_db["token_usage"]
+        .find({}, no_cursor_timeout=True)
+        .batch_size(batch_size)
+    )
+
+    seen = 0
+    written = 0
+    batch: list[dict] = []
+
+    try:
+        for doc in cursor:
+            seen += 1
+            agent_id = doc.get("agent_id")
+            # agent_id may be an ObjectId string or None — only pass if
+            # it looks like a valid UUID (from dual-write) or skip it.
+            agent_id_str = None
+            if agent_id:
+                s = str(agent_id)
+                if len(s) == 36 and "-" in s:
+                    agent_id_str = s
+            batch.append({
+                "user_id": doc.get("user_id"),
+                "api_key": doc.get("api_key"),
+                "agent_id": agent_id_str,
+                "prompt_tokens": doc.get("prompt_tokens", 0),
+                "generated_tokens": doc.get("generated_tokens", 0),
+                "timestamp": doc.get("timestamp"),
+            })
+            if len(batch) >= batch_size:
+                if not dry_run:
+                    conn.execute(insert_sql, batch)
+                written += len(batch)
+                batch.clear()
+
+        if batch:
+            if not dry_run:
+                conn.execute(insert_sql, batch)
+            written += len(batch)
+    finally:
+        cursor.close()
+
+    return {"seen": seen, "written": written}
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -131,6 +484,12 @@ BackfillFn = Callable[..., dict]
 # backfill doesn't hit FK errors.
 BACKFILLERS: dict[str, BackfillFn] = {
     "users": _backfill_users,
+    "prompts": _backfill_prompts,
+    "user_tools": _backfill_user_tools,
+    "feedback": _backfill_feedback,
+    "stack_logs": _backfill_stack_logs,
+    "user_logs": _backfill_user_logs,
+    "token_usage": _backfill_token_usage,
 }
 
 

@@ -247,7 +247,7 @@ def extract_zip_recursive(zip_path, extract_to, current_depth=0, max_depth=5):
 
 def download_file(url, params, dest_path):
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=100)
         response.raise_for_status()
         with open(dest_path, "wb") as f:
             f.write(response.content)
@@ -284,12 +284,14 @@ def upload_index(full_path, file_data):
                 files=files,
                 data=file_data,
                 headers=headers,
+                timeout=100,
             )
         else:
             response = requests.post(
                 urljoin(settings.API_URL, "/api/upload_index"),
                 data=file_data,
                 headers=headers,
+                timeout=100,
             )
         response.raise_for_status()
     except (requests.RequestException, FileNotFoundError) as e:

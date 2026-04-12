@@ -31,6 +31,7 @@ class TestGitHubLoaderFetchFileContent:
         mock_get.assert_called_once_with(
             "https://api.github.com/repos/owner/repo/contents/README.md",
             headers=loader.headers,
+            timeout=100,
         )
 
     @patch("application.parser.remote.github_loader.requests.get")
@@ -66,7 +67,7 @@ class TestGitHubLoaderFetchRepoFiles:
     def test_recurses_directories(self, mock_get):
         loader = GitHubLoader()
 
-        def side_effect(url, headers=None):
+        def side_effect(url, headers=None, timeout=None):
             if url.endswith("/contents/"):
                 return make_response([
                     {"type": "file", "path": "README.md"},
