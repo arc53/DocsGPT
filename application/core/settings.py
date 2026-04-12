@@ -28,9 +28,7 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
     MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
     MONGO_DB_NAME: str = "docsgpt"
-    # User-data Postgres DB. Falls back to PGVECTOR_CONNECTION_STRING when
-    # unset, so operators sharing a single Postgres cluster for both vectors
-    # and app data don't need a second env var.
+    # User-data Postgres DB.
     POSTGRES_URI: Optional[str] = None
 
     # MongoDB→Postgres migration: dual-write to Postgres (Mongo stays source of truth)
