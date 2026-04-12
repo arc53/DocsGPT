@@ -28,24 +28,11 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
     MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
     MONGO_DB_NAME: str = "docsgpt"
-    # User-data Postgres DB (see migration-postgres.md). Optional during the
-    # MongoDB→Postgres migration; becomes required once the migration is
-    # complete. Write the URI in whichever form you prefer — all of
-    #   postgres://user:pass@host:port/db
-    #   postgresql://user:pass@host:port/db
-    #   postgresql+psycopg://user:pass@host:port/db
-    # are accepted and normalized internally to the psycopg3 dialect.
+    # User-data Postgres DB Optional during the MongoDB→Postgres migration; becomes required once the migration is
+    # complete.
     POSTGRES_URI: Optional[str] = None
 
-    # MongoDB→Postgres migration — two global switches, no per-collection
-    # knobs. Everything that has a Postgres repository implementation is
-    # dual-written when USE_POSTGRES is on; new collections join the set
-    # automatically as they're implemented. Flip READ_POSTGRES once you
-    # trust the Postgres state to cut reads over.
-    #
-    # Default False everywhere so behaviour is unchanged until an operator
-    # explicitly opts in. READ_POSTGRES without USE_POSTGRES is nonsensical
-    # during the migration window; call sites enforce the pairing.
+    # MongoDB→Postgres migration switches
     USE_POSTGRES: bool = False
     READ_POSTGRES: bool = False
     LLM_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
