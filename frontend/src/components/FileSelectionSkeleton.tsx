@@ -1,5 +1,5 @@
 const FilesSectionSkeleton = () => (
-  <div className="rounded-lg border border-[#EEE6FF78] dark:border-[#6A6A6A]">
+  <div className="border-border dark:border-border rounded-lg border">
     <div className="p-4">
       <div className="mb-4 flex items-center justify-between">
         <div className="h-5 w-24 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>

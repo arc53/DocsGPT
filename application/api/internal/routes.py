@@ -26,12 +26,20 @@ internal = Blueprint("internal", __name__)
 
 @internal.before_request
 def verify_internal_key():
-    """Verify INTERNAL_KEY for all internal endpoint requests."""
-    if settings.INTERNAL_KEY:
-        internal_key = request.headers.get("X-Internal-Key")
-        if not internal_key or internal_key != settings.INTERNAL_KEY:
-            logger.warning(f"Unauthorized internal API access attempt from {request.remote_addr}")
-            return jsonify({"error": "Unauthorized", "message": "Invalid or missing internal key"}), 401
+    """Verify INTERNAL_KEY for all internal endpoint requests.
+
+    Deny by default: if INTERNAL_KEY is not configured, reject all requests.
+    """
+    if not settings.INTERNAL_KEY:
+        logger.warning(
+            f"Internal API request rejected from {request.remote_addr}: "
+            "INTERNAL_KEY is not configured"
+        )
+        return jsonify({"error": "Unauthorized", "message": "Internal API is not configured"}), 401
+    internal_key = request.headers.get("X-Internal-Key")
+    if not internal_key or internal_key != settings.INTERNAL_KEY:
+        logger.warning(f"Unauthorized internal API access attempt from {request.remote_addr}")
+        return jsonify({"error": "Unauthorized", "message": "Invalid or missing internal key"}), 401
 
 
 @internal.route("/api/download", methods=["get"])

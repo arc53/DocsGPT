@@ -176,9 +176,7 @@ export default function SpeakButton({ text }: { text: string }) {
     <button
       type="button"
       className={`flex cursor-pointer items-center justify-center rounded-full p-2 ${
-        isSpeaking || isLoading
-          ? 'dark:bg-purple-taupe bg-[#EEEEEE]'
-          : 'bg-white-3000 dark:hover:bg-purple-taupe hover:bg-[#EEEEEE] dark:bg-transparent'
+        isSpeaking || isLoading ? 'bg-accent' : 'hover:bg-accent bg-transparent'
       }`}
       onClick={handleSpeakClick}
       aria-label={

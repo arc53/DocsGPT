@@ -55,8 +55,7 @@ export default function General() {
     changeLanguage(selectedLanguage?.value);
   }, [selectedLanguage, changeLanguage]);
   return (
-    <div className="mt-12 flex flex-col gap-4">
-      {' '}
+    <div className="mt-8 flex flex-col gap-6">
       <div className="flex flex-col gap-4">
         <Prompts
           prompts={prompts}
@@ -65,11 +64,11 @@ export default function General() {
             dispatch(setPrompt({ name: name, id: id, type: type }))
           }
           setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
-          dropdownProps={{ size: 'w-56', rounded: '3xl', border: 'border' }}
+          dropdownProps={{ size: 'w-56', rounded: '3xl' }}
         />
       </div>
       <div className="flex flex-col gap-4">
-        <label className="text-jet dark:text-bright-gray text-base font-medium">
+        <label className="text-foreground dark:text-foreground text-base font-medium">
           {t('settings.general.chunks')}
         </label>
         <Dropdown
@@ -78,12 +77,10 @@ export default function General() {
           onSelect={(value: string) => dispatch(setChunks(value))}
           size="w-56"
           rounded="3xl"
-          border="border"
         />
       </div>
       <div className="flex flex-col gap-4">
-        {' '}
-        <label className="text-jet dark:text-bright-gray text-base font-medium">
+        <label className="text-foreground dark:text-foreground text-base font-medium">
           {t('settings.general.selectTheme')}
         </label>
         <Dropdown
@@ -97,11 +94,10 @@ export default function General() {
           }}
           size="w-56"
           rounded="3xl"
-          border="border"
         />
       </div>
       <div className="flex flex-col gap-4">
-        <label className="text-jet dark:text-bright-gray text-base font-medium">
+        <label className="text-foreground dark:text-foreground text-base font-medium">
           {t('settings.general.selectLanguage')}
         </label>
         <Dropdown
@@ -115,14 +111,13 @@ export default function General() {
           }}
           size="w-56"
           rounded="3xl"
-          border="border"
         />
       </div>
-      <hr className="border-silver dark:border-silver/40 my-4 w-[calc(min(665px,100%))] border-t" />
+      <hr className="border-border dark:border-border my-4 w-[calc(min(665px,100%))] border-t" />
       <div className="flex flex-col gap-2">
         <button
           title={t('settings.general.deleteAllLabel')}
-          className="border-rosso-corsa text-rosso-corsa hover:bg-rosso-corsa flex w-fit cursor-pointer items-center justify-between rounded-3xl border border-solid bg-transparent px-5 py-3 text-sm font-medium tracking-[0.015em] transition-colors hover:font-bold hover:tracking-normal hover:text-white"
+          className="border-destructive text-destructive hover:bg-destructive flex w-fit cursor-pointer items-center justify-between rounded-3xl border border-solid bg-transparent px-5 py-3 text-sm font-medium tracking-[0.015em] transition-colors hover:font-bold hover:tracking-normal hover:text-white"
           onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
         >
           {t('settings.general.deleteAllBtn')}

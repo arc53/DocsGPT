@@ -22,6 +22,7 @@ import {
   resendQuery,
   selectQueries,
   selectStatus,
+  submitToolActions,
   updateQuery,
 } from './conversationSlice';
 import { selectCompletedAttachments } from '../upload/uploadSlice';
@@ -40,6 +41,17 @@ export default function Conversation() {
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] =
     useState<boolean>(false);
+
+  const handleToolAction = useCallback(
+    (callId: string, decision: 'approved' | 'denied', comment?: string) => {
+      dispatch(
+        submitToolActions({
+          toolActions: [{ call_id: callId, decision, comment }],
+        }),
+      );
+    },
+    [dispatch],
+  );
 
   const lastAutoOpenedArtifactId = useRef<string | null>(null);
   const didInitArtifactAutoOpen = useRef(false);
@@ -89,7 +101,7 @@ export default function Conversation() {
         .map((a) => ({ id: a.id as string, fileName: a.fileName }));
 
       if (index !== undefined) {
-        if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
+        dispatch(resendQuery({ index, prompt: trimmedQuestion }));
         handleFetchAnswer({ question: trimmedQuestion, index });
       } else {
         if (!isRetry)
@@ -224,7 +236,7 @@ export default function Conversation() {
           isSplitArtifactOpen ? 'w-[60%] px-6' : 'w-full'
         }`}
       >
-        <div className="min-h-0 flex-1">
+        <div className="relative min-h-0 flex-1 ">
           <ConversationMessages
             handleQuestion={handleQuestion}
             handleQuestionSubmission={handleQuestionSubmission}
@@ -233,6 +245,7 @@ export default function Conversation() {
             status={status}
             showHeroOnEmpty={selectedAgent ? false : true}
             onOpenArtifact={handleOpenArtifact}
+            onToolAction={handleToolAction}
             isSplitView={isSplitArtifactOpen}
             headerContent={
               selectedAgent ? (
@@ -242,6 +255,7 @@ export default function Conversation() {
               ) : undefined
             }
           />
+          <div className="from-background pointer-events-none absolute right-1.5 bottom-0 left-0 h-6 rounded-t-2xl bg-linear-to-t to-transparent" />
         </div>
 
         <div
@@ -263,7 +277,7 @@ export default function Conversation() {
             />
           </div>
 
-          <p className="text-gray-4000 dark:text-sonic-silver hidden w-full self-center bg-transparent py-2 text-center text-xs md:inline">
+          <p className="text-muted-foreground hidden w-full self-center bg-transparent py-2 text-center text-xs md:inline">
             {t('tagline')}
           </p>
         </div>

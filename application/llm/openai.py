@@ -91,19 +91,59 @@ class OpenAILLM(BaseLLM):
 
             if role == "model":
                 role = "assistant"
+
+            # Standard format: assistant message with tool_calls (passthrough)
+            tool_calls = message.get("tool_calls")
+            if tool_calls and role == "assistant":
+                cleaned_tcs = []
+                for tc in tool_calls:
+                    func = tc.get("function", {})
+                    args = func.get("arguments", "{}")
+                    if isinstance(args, dict):
+                        args = json.dumps(self._remove_null_values(args))
+                    elif isinstance(args, str):
+                        try:
+                            parsed = json.loads(args)
+                            args = json.dumps(self._remove_null_values(parsed))
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    cleaned_tcs.append({
+                        "id": tc.get("id", ""),
+                        "type": "function",
+                        "function": {"name": func.get("name", ""), "arguments": args},
+                    })
+                cleaned_messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": cleaned_tcs,
+                })
+                continue
+
+            # Standard format: tool message with tool_call_id (passthrough)
+            tool_call_id = message.get("tool_call_id")
+            if role == "tool" and tool_call_id is not None:
+                cleaned_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": content if isinstance(content, str) else json.dumps(content),
+                })
+                continue
+
             if role and content is not None:
                 if isinstance(content, str):
                     cleaned_messages.append({"role": role, "content": content})
                 elif isinstance(content, list):
-                    # Collect all content parts into a single message
                     content_parts = []
-
                     for item in content:
+                        # Legacy format support: function_call / function_response
                         if "function_call" in item:
-                            # Function calls need their own message
-                            cleaned_args = self._remove_null_values(
-                                item["function_call"]["args"]
-                            )
+                            args = item["function_call"]["args"]
+                            if isinstance(args, str):
+                                try:
+                                    args = json.loads(args)
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+                            cleaned_args = self._remove_null_values(args)
                             tool_call = {
                                 "id": item["function_call"]["call_id"],
                                 "type": "function",
@@ -112,28 +152,20 @@ class OpenAILLM(BaseLLM):
                                     "arguments": json.dumps(cleaned_args),
                                 },
                             }
-                            cleaned_messages.append(
-                                {
-                                    "role": "assistant",
-                                    "content": None,
-                                    "tool_calls": [tool_call],
-                                }
-                            )
+                            cleaned_messages.append({
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [tool_call],
+                            })
                         elif "function_response" in item:
-                            # Function responses need their own message
-                            cleaned_messages.append(
-                                {
-                                    "role": "tool",
-                                    "tool_call_id": item["function_response"][
-                                        "call_id"
-                                    ],
-                                    "content": json.dumps(
-                                        item["function_response"]["response"]["result"]
-                                    ),
-                                }
-                            )
+                            cleaned_messages.append({
+                                "role": "tool",
+                                "tool_call_id": item["function_response"]["call_id"],
+                                "content": json.dumps(
+                                    item["function_response"]["response"]["result"]
+                                ),
+                            })
                         elif isinstance(item, dict):
-                            # Collect content parts (text, images, files) into a single message
                             if "type" in item and item["type"] == "text" and "text" in item:
                                 content_parts.append(item)
                             elif "type" in item and item["type"] == "file" and "file" in item:
@@ -141,10 +173,7 @@ class OpenAILLM(BaseLLM):
                             elif "type" in item and item["type"] == "image_url" and "image_url" in item:
                                 content_parts.append(item)
                             elif "text" in item and "type" not in item:
-                                # Legacy format: {"text": "..."} without type
                                 content_parts.append({"type": "text", "text": item["text"]})
-
-                    # Add the collected content parts as a single message
                     if content_parts:
                         cleaned_messages.append({"role": role, "content": content_parts})
                 else:

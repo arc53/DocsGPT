@@ -1,0 +1,67 @@
+---
+title: Confluence Connector
+description: Connect your Confluence Cloud workspace as an external knowledge base to upload and process pages directly.
+---
+
+import { Callout } from 'nextra/components'
+import { Steps } from 'nextra/components'
+
+# Confluence Connector
+
+Connect your Confluence Cloud workspace to upload and process pages directly as an external knowledge base. Supports page content and attachments (PDFs, Office files, text files, images, and more). Authentication is handled via Atlassian OAuth 2.0 with automatic token refresh.
+
+## Setup
+
+<Steps>
+
+### Step 1: Create an OAuth 2.0 App in Atlassian
+
+1. Go to [developer.atlassian.com/console/myapps](https://developer.atlassian.com/console/myapps/) and click **Create** > **OAuth 2.0 integration**
+2. Under **Authorization**, add a callback URL:
+   - Local: `http://localhost:7091/api/connectors/callback?provider=confluence`
+   - Production: `https://yourdomain.com/api/connectors/callback?provider=confluence`
+
+### Step 2: Configure Permissions
+
+In your app settings, go to **Permissions** and add the **Confluence API**. Enable these scopes:
+- `read:page:confluence`
+- `read:space:confluence`
+- `read:attachment:confluence`
+
+### Step 3: Get Your Credentials
+
+Go to **Settings** in your app to find the **Client ID** and **Secret**. Copy both.
+
+### Step 4: Configure Environment Variables
+
+Add to your backend `.env` file:
+
+```env
+CONFLUENCE_CLIENT_ID=your-atlassian-client-id
+CONFLUENCE_CLIENT_SECRET=your-atlassian-client-secret
+```
+
+Add to your frontend `.env` file:
+
+```env
+VITE_CONFLUENCE_CLIENT_ID=your-atlassian-client-id
+```
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `CONFLUENCE_CLIENT_ID` | Client ID from your Atlassian OAuth app | Yes |
+| `CONFLUENCE_CLIENT_SECRET` | Client secret from your Atlassian OAuth app | Yes |
+| `VITE_CONFLUENCE_CLIENT_ID` | Same Client ID, used by the frontend to show the Confluence option | Yes |
+
+### Step 5: Restart and Use
+
+Restart your application, then go to the upload section in DocsGPT and select **Confluence** as the source. You'll be redirected to Atlassian to sign in, then can browse spaces and select pages to process.
+
+</Steps>
+
+## Troubleshooting
+
+- **Option not appearing** — Verify `VITE_CONFLUENCE_CLIENT_ID` is set in the frontend `.env`, then restart.
+- **Authentication failed** — Check that the callback URL matches exactly, including `?provider=confluence`.
+- **No accessible sites** — Ensure the authenticating user has access to at least one Confluence Cloud site.
+- **Permission denied** — Verify that the Confluence API scopes are enabled in your Atlassian app settings.

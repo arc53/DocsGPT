@@ -27,37 +27,42 @@ class PGVectorStore(BaseVectorStore):
         self._metadata_column = metadata_column
         self._embedding = self._get_embeddings(settings.EMBEDDINGS_NAME, embeddings_key)
         
-        # Use provided connection string or fall back to settings
+        # Use provided connection string or fall back to settings.
+        # If PGVECTOR_CONNECTION_STRING is not set but POSTGRES_URI is,
+        # reuse the same cluster — normalize from SQLAlchemy dialect to libpq form.
         self._connection_string = connection_string or getattr(settings, 'PGVECTOR_CONNECTION_STRING', None)
-        
+
+        if not self._connection_string and getattr(settings, 'POSTGRES_URI', None):
+            from application.core.db_uri import normalize_pgvector_connection_string
+            self._connection_string = normalize_pgvector_connection_string(settings.POSTGRES_URI)
+
         if not self._connection_string:
             raise ValueError(
                 "PostgreSQL connection string is required. "
-                "Set PGVECTOR_CONNECTION_STRING in settings or pass connection_string parameter."
+                "Set PGVECTOR_CONNECTION_STRING or POSTGRES_URI in settings, "
+                "or pass connection_string parameter."
             )
 
         try:
-            import psycopg2
-            from psycopg2.extras import Json
-            import pgvector.psycopg2
+            import psycopg
+            from pgvector.psycopg import register_vector
         except ImportError:
             raise ImportError(
                 "Could not import required packages. "
-                "Please install with `pip install psycopg2-binary pgvector`."
+                "Please install with `pip install 'psycopg[binary,pool]' pgvector`."
             )
 
-        self._psycopg2 = psycopg2
-        self._Json = Json
-        self._pgvector = pgvector.psycopg2
+        self._psycopg = psycopg
+        self._register_vector = register_vector
         self._connection = None
         self._ensure_table_exists()
 
     def _get_connection(self):
         """Get or create database connection"""
         if self._connection is None or self._connection.closed:
-            self._connection = self._psycopg2.connect(self._connection_string)
+            self._connection = self._psycopg.connect(self._connection_string)
             # Register pgvector types
-            self._pgvector.register_vector(self._connection)
+            self._register_vector(self._connection)
         return self._connection
 
     def _ensure_table_exists(self):
@@ -170,7 +175,7 @@ class PGVectorStore(BaseVectorStore):
             for text, embedding, metadata in zip(texts, embeddings, metadatas):
                 cursor.execute(
                     insert_query,
-                    (text, embedding, self._Json(metadata), self._source_id)
+                    (text, embedding, metadata, self._source_id)
                 )
                 inserted_id = cursor.fetchone()[0]
                 inserted_ids.append(str(inserted_id))
@@ -261,7 +266,7 @@ class PGVectorStore(BaseVectorStore):
             
             cursor.execute(
                 insert_query,
-                (text, embeddings[0], self._Json(final_metadata), self._source_id)
+                (text, embeddings[0], final_metadata, self._source_id)
             )
             inserted_id = cursor.fetchone()[0]
             conn.commit()

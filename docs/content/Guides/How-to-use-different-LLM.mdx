@@ -35,8 +35,34 @@ Choose the LLM of your choice.
 For open source version please edit `LLM_PROVIDER`, `LLM_NAME` and others in the .env file. Refer to [⚙️ App Configuration](/Deploying/DocsGPT-Settings) for more information.
 ### Step 2
 Visit [☁️ Cloud Providers](/Models/cloud-providers) for the updated list of online models. Make sure you have the right API_KEY and correct LLM_PROVIDER.
-For self-hosted please visit [🖥️ Local Inference](/Models/local-inference). 
+For self-hosted please visit [🖥️ Local Inference](/Models/local-inference).
 </Steps>
 
+## Fallback LLM
+
+DocsGPT can automatically switch to a fallback LLM when the primary model fails, including mid-stream. This works with both streaming and non-streaming requests.
+
+**Fallback order:**
+1. Per-agent backup models (other models configured on the same agent)
+2. Global fallback (`FALLBACK_LLM_*` env vars below)
+3. Error returned if all fail
+
+| Setting | Description | Default |
+| --- | --- | --- |
+| `FALLBACK_LLM_PROVIDER` | Provider name (e.g., `openai`, `anthropic`, `google`) | — |
+| `FALLBACK_LLM_NAME` | Model name (e.g., `gpt-4o`, `claude-sonnet-4-20250514`) | — |
+| `FALLBACK_LLM_API_KEY` | API key for the fallback provider | Falls back to `API_KEY` |
+
+All three (`FALLBACK_LLM_PROVIDER`, `FALLBACK_LLM_NAME`, and an API key) must resolve for the global fallback to activate.
+
+```env
+FALLBACK_LLM_PROVIDER=anthropic
+FALLBACK_LLM_NAME=claude-sonnet-4-20250514
+FALLBACK_LLM_API_KEY=sk-ant-your-anthropic-key
+```
+
+<Callout type="info">
+For maximum resilience, use a fallback provider from a different cloud than your primary. Each agent can also have multiple models configured — the other models are tried first before the global fallback.
+</Callout>
 
 

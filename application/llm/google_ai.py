@@ -167,6 +167,8 @@ class GoogleLLM(BaseLLM):
                 return "\n".join(parts)
             return ""
 
+        import json as _json
+
         for message in messages:
             role = message.get("role")
             content = message.get("content")
@@ -180,9 +182,66 @@ class GoogleLLM(BaseLLM):
 
             if role == "assistant":
                 role = "model"
-            elif role == "tool":
-                role = "model"
+
             parts = []
+
+            # Standard format: assistant message with tool_calls array
+            msg_tool_calls = message.get("tool_calls")
+            if msg_tool_calls and role == "model":
+                for tc in msg_tool_calls:
+                    func = tc.get("function", {})
+                    args = func.get("arguments", "{}")
+                    if isinstance(args, str):
+                        try:
+                            args = _json.loads(args)
+                        except (_json.JSONDecodeError, TypeError):
+                            args = {}
+                    cleaned_args = self._remove_null_values(args)
+                    thought_sig = tc.get("thought_signature")
+                    if thought_sig:
+                        parts.append(
+                            types.Part(
+                                functionCall=types.FunctionCall(
+                                    name=func.get("name", ""),
+                                    args=cleaned_args,
+                                ),
+                                thoughtSignature=thought_sig,
+                            )
+                        )
+                    else:
+                        parts.append(
+                            types.Part.from_function_call(
+                                name=func.get("name", ""),
+                                args=cleaned_args,
+                            )
+                        )
+                if parts:
+                    cleaned_messages.append(types.Content(role=role, parts=parts))
+                continue
+
+            # Standard format: tool message with tool_call_id
+            tool_call_id = message.get("tool_call_id")
+            if role == "tool" and tool_call_id is not None:
+                result_content = content
+                if isinstance(result_content, str):
+                    try:
+                        result_content = _json.loads(result_content)
+                    except (_json.JSONDecodeError, TypeError):
+                        pass
+                # Google expects function_response name — extract from tool_call_id context
+                # We use a placeholder name since Google API doesn't require exact match
+                parts.append(
+                    types.Part.from_function_response(
+                        name="tool_result",
+                        response={"result": result_content},
+                    )
+                )
+                cleaned_messages.append(types.Content(role="model", parts=parts))
+                continue
+
+            if role == "tool":
+                role = "model"
+
             if role and content is not None:
                 if isinstance(content, str):
                     parts = [types.Part.from_text(text=content)]
@@ -191,15 +250,11 @@ class GoogleLLM(BaseLLM):
                         if "text" in item:
                             parts.append(types.Part.from_text(text=item["text"]))
                         elif "function_call" in item:
-                            # Remove null values from args to avoid API errors
-
+                            # Legacy format support
                             cleaned_args = self._remove_null_values(
                                 item["function_call"]["args"]
                             )
-                            # Create function call part with thought_signature if present
-                            # For Gemini 3 models, we need to include thought_signature
                             if "thought_signature" in item:
-                                # Use Part constructor with functionCall and thoughtSignature
                                 parts.append(
                                     types.Part(
                                         functionCall=types.FunctionCall(
@@ -210,7 +265,6 @@ class GoogleLLM(BaseLLM):
                                     )
                                 )
                             else:
-                                # Use helper method when no thought_signature
                                 parts.append(
                                     types.Part.from_function_call(
                                         name=item["function_call"]["name"],

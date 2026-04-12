@@ -19,6 +19,10 @@ export default {
     "title": "☁️ Hosting DocsGPT",
     "href": "/Deploying/Hosting-the-app"
   },
+  "Postgres-Migration": {
+    "title": "🐘 PostgreSQL for User Data",
+    "href": "/Deploying/Postgres-Migration"
+  },
   "Amazon-Lightsail": {
     "title": "Hosting DocsGPT on Amazon Lightsail",
     "href": "/Deploying/Amazon-Lightsail",

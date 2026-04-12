@@ -186,7 +186,7 @@ function HighlightedOverlay({ text }: { text: string }) {
     <>
       {parts.map((part, i) =>
         /^\{\{[^}]*\}\}$/.test(part) ? (
-          <span key={i} className="text-violets-are-blue font-medium">
+          <span key={i} className="text-primary font-medium">
             {part}
           </span>
         ) : (
@@ -222,7 +222,7 @@ function VariableListWithSearch({
 
   return (
     <div className="flex w-full flex-col overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-[#E5E5E5] px-3 py-2 dark:border-[#3A3A3A]">
+      <div className="border-border flex items-center gap-2 border-b px-3 py-2">
         <Search className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
         <input
           type="text"
@@ -252,9 +252,9 @@ function VariableListWithSearch({
                     e.stopPropagation();
                     onSelect(v.templatePath);
                   }}
-                  className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-gray-50 dark:hover:bg-[#383838]"
+                  className="hover:bg-accent flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors"
                 >
-                  <Braces className="text-violets-are-blue h-3.5 w-3.5 shrink-0" />
+                  <Braces className="text-primary h-3.5 w-3.5 shrink-0" />
                   <span className="truncate font-medium text-gray-800 dark:text-gray-200">
                     {v.label}
                   </span>
@@ -412,7 +412,7 @@ export default function PromptTextArea({
       )}
       <div
         ref={wrapperRef}
-        className="border-light-silver focus-within:ring-purple-30 relative rounded-xl border bg-white transition-all focus-within:ring-2 dark:border-[#3A3A3A] dark:bg-[#2C2C2C]"
+        className="border-border focus-within:ring-ring bg-card relative rounded-xl border transition-all focus-within:ring-2"
       >
         <div
           ref={overlayRef}
@@ -463,7 +463,7 @@ export default function PromptTextArea({
             <PopoverTrigger asChild>
               <button
                 type="button"
-                className="text-violets-are-blue hover:bg-violets-are-blue/10 flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors"
+                className="text-primary hover:bg-primary/10 flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors"
               >
                 <Plus className="h-3 w-3" />
                 Add context
@@ -472,7 +472,7 @@ export default function PromptTextArea({
             <PopoverContent
               align="end"
               side="top"
-              className="w-60 rounded-xl border border-[#E5E5E5] bg-white p-0 shadow-lg dark:border-[#3A3A3A] dark:bg-[#2C2C2C]"
+              className="border-border bg-card w-60 rounded-xl border p-0 shadow-lg"
               onOpenAutoFocus={(e) => e.preventDefault()}
             >
               <VariableListWithSearch
@@ -486,7 +486,7 @@ export default function PromptTextArea({
         {showDropdown && filtered.length > 0 && (
           <div
             ref={dropdownRef}
-            className="absolute z-50 w-64 rounded-xl border border-[#E5E5E5] bg-white shadow-lg dark:border-[#3A3A3A] dark:bg-[#2C2C2C]"
+            className="border-border bg-card absolute z-50 w-64 rounded-xl border shadow-lg"
             style={{ top: dropdownPos.top, left: dropdownPos.left }}
           >
             <VariableListWithSearch

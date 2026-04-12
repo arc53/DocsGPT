@@ -18,7 +18,7 @@ agents:
   - name: "Researcher"
     description: "A specialized research agent that performs deep dives into subjects."
     image: "https://d3dg1063dc54p9.cloudfront.net/imgs/agents/agent-researcher.svg"
-    agent_type: "react"
+    agent_type: "classic"
     prompt:
       name: "Researcher-Agent"
       content: |

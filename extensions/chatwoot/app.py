@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import os
 import pprint
 
@@ -10,6 +12,7 @@ docsgpt_url = os.getenv("docsgpt_url")
 chatwoot_url = os.getenv("chatwoot_url")
 docsgpt_key = os.getenv("docsgpt_key")
 chatwoot_token = os.getenv("chatwoot_token")
+chatwoot_webhook_secret = os.getenv("chatwoot_webhook_secret", "")
 # account_id = os.getenv("account_id")
 # assignee_id = os.getenv("assignee_id")
 label_stop = "human-requested"
@@ -45,12 +48,35 @@ def send_to_chatwoot(account, conversation, message):
     return r.json()
 
 
+def is_valid_chatwoot_signature(raw_body: bytes, signature_header: str | None) -> bool:
+    """Validate Chatwoot webhook signature using shared secret."""
+    if not chatwoot_webhook_secret or not signature_header:
+        return False
+
+    expected = hmac.new(
+        chatwoot_webhook_secret.encode("utf-8"), raw_body, hashlib.sha256
+    ).hexdigest()
+
+    provided = signature_header.strip()
+    if provided.startswith("sha256="):
+        provided = provided.split("=", maxsplit=1)[1]
+
+    return hmac.compare_digest(provided, expected)
+
+
 app = Flask(__name__)
 
 
 @app.route('/docsgpt', methods=['POST'])
 def docsgpt():
-    data = request.get_json()
+    raw_body = request.get_data()
+    signature = request.headers.get("X-Chatwoot-Signature")
+    if not is_valid_chatwoot_signature(raw_body, signature):
+        return "Unauthorized", 401
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return "Invalid payload", 400
     pp = pprint.PrettyPrinter(indent=4)
     pp.pprint(data)
     try:

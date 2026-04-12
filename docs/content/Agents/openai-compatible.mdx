@@ -1,0 +1,93 @@
+---
+title: OpenAI-Compatible API
+description: Connect any OpenAI-compatible client to DocsGPT Agents via /v1/chat/completions.
+---
+
+import { Callout, Tabs } from 'nextra/components';
+
+# OpenAI-Compatible API
+
+DocsGPT exposes `/v1/chat/completions` following the standard chat completions protocol. Point any compatible client — **opencode**, **Aider**, **LibreChat** or the OpenAI SDKs — at your DocsGPT Agent by changing only the base URL and API key.
+
+## Quick Start
+
+<Tabs items={['Python', 'cURL']}>
+  <Tabs.Tab>
+    ```python
+    from openai import OpenAI
+
+    client = OpenAI(
+        base_url="http://localhost:7091/v1",   # or https://gptcloud.arc53.com/v1
+        api_key="your_agent_api_key",
+    )
+
+    response = client.chat.completions.create(
+        model="docsgpt-agent",
+        messages=[{"role": "user", "content": "Summarize our refund policy"}],
+    )
+    print(response.choices[0].message.content)
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```bash
+    curl -X POST http://localhost:7091/v1/chat/completions \
+      -H "Authorization: Bearer your_agent_api_key" \
+      -H "Content-Type: application/json" \
+      -d '{"model":"docsgpt-agent","messages":[{"role":"user","content":"Summarize our refund policy"}]}'
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+The `model` field is accepted but ignored — the agent bound to your API key determines the model. The agent's prompt, sources, tools, and default model are loaded automatically.
+
+## Base URL & Auth
+
+| Environment | Base URL |
+| --- | --- |
+| Local | `http://localhost:7091/v1` |
+| Cloud | `https://gptcloud.arc53.com/v1` |
+
+Authenticate with `Authorization: Bearer <agent_api_key>`.
+
+## Endpoints
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `POST` | `/v1/chat/completions` | Chat request (streaming or non-streaming) |
+| `GET` | `/v1/models` | List agents available to your key |
+
+## Streaming
+
+Set `"stream": true`. You'll receive SSE chunks with `choices[0].delta.content`. DocsGPT-specific events (sources, tool calls) arrive as extra frames with a `docsgpt` key — standard clients ignore them.
+
+```python
+stream = client.chat.completions.create(
+    model="docsgpt-agent",
+    stream=True,
+    messages=[{"role": "user", "content": "Explain vector search"}],
+)
+for chunk in stream:
+    print(chunk.choices[0].delta.content or "", end="", flush=True)
+```
+
+## System Prompt Override
+
+System messages are **dropped by default** — the agent's configured prompt is used. To allow callers to override it, enable **Allow prompt override** in the agent's Advanced settings.
+
+<Callout type="warning">
+When an override is active, the agent's prompt template is replaced wholesale — template variables like `{summaries}` are not substituted.
+</Callout>
+
+## Conversation Persistence
+
+Conversations are **not persisted by default** (stateless, like most OpenAI clients expect). Opt in per request:
+
+```json
+{ "docsgpt": { "save_conversation": true } }
+```
+
+The response will include `docsgpt.conversation_id`.
+
+## When to Use Native Endpoints Instead
+
+Use [`/api/answer` or `/stream`](/Agents/api) if you need server-side attachments, `passthrough` template variables, explicit `conversation_id` reuse, or persistence by default.

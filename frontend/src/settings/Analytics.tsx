@@ -174,12 +174,15 @@ export default function Analytics({ agentId }: AnalyticsProps) {
     fetchFeedbackData(id, filter?.value);
   }, [agentId, feedbackFilter]);
   return (
-    <div className="mt-12">
+    <div className="mt-8">
+      <p className="text-muted-foreground mb-5 text-[15px] leading-6">
+        {t('settings.analytics.subtitle')}
+      </p>
       {/* Messages Analytics */}
-      <div className="mt-8 flex w-full flex-col gap-3 [@media(min-width:1080px)]:flex-row">
-        <div className="border-silver dark:border-silver/40 h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
+      <div className="mt-4 flex w-full flex-col gap-3 [@media(min-width:1080px)]:flex-row">
+        <div className="border-border dark:border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
           <div className="flex flex-row items-center justify-start gap-3">
-            <p className="text-jet dark:text-bright-gray font-bold">
+            <p className="text-foreground dark:text-foreground font-bold">
               {t('settings.analytics.messages')}
             </p>
             <Dropdown
@@ -191,7 +194,6 @@ export default function Analytics({ agentId }: AnalyticsProps) {
               }}
               selectedValue={messagesFilter ?? null}
               rounded="3xl"
-              border="border"
               contentSize="text-sm"
             />
           </div>
@@ -225,9 +227,9 @@ export default function Analytics({ agentId }: AnalyticsProps) {
         </div>
 
         {/* Token Usage Analytics */}
-        <div className="border-silver dark:border-silver/40 h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
+        <div className="border-border dark:border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
           <div className="flex flex-row items-center justify-start gap-3">
-            <p className="text-jet dark:text-bright-gray font-bold">
+            <p className="text-foreground dark:text-foreground font-bold">
               {t('settings.analytics.tokenUsage')}
             </p>
             <Dropdown
@@ -239,7 +241,6 @@ export default function Analytics({ agentId }: AnalyticsProps) {
               }}
               selectedValue={tokenUsageFilter ?? null}
               rounded="3xl"
-              border="border"
               contentSize="text-sm"
             />
           </div>
@@ -275,9 +276,9 @@ export default function Analytics({ agentId }: AnalyticsProps) {
 
       {/* Feedback Analytics */}
       <div className="mt-8 flex w-full flex-col gap-3">
-        <div className="border-silver dark:border-silver/40 h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5">
+        <div className="border-border dark:border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5">
           <div className="flex flex-row items-center justify-start gap-3">
-            <p className="text-jet dark:text-bright-gray font-bold">
+            <p className="text-foreground dark:text-foreground font-bold">
               {t('settings.analytics.userFeedback')}
             </p>
             <Dropdown
@@ -289,7 +290,6 @@ export default function Analytics({ agentId }: AnalyticsProps) {
               }}
               selectedValue={feedbackFilter ?? null}
               rounded="3xl"
-              border="border"
               contentSize="text-sm"
             />
           </div>

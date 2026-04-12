@@ -36,6 +36,7 @@ export type Agent = {
   default_model_id?: string;
   folder_id?: string;
   workflow?: string;
+  allow_system_prompt_override?: boolean;
 };
 
 export type AgentFolder = {

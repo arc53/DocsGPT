@@ -54,8 +54,8 @@ flowchart LR
 *   **Technology:** Supports multiple LLM APIs and local engines.
 *   **Responsibility:** This layer provides an abstraction for interacting with Large Language Models (LLMs).
 *   **Key Features:**
-    *   Supports LLMs from OpenAI, Google, Anthropic, Groq, HuggingFace Inference API, Azure OpenAI, also compatable with local models like Ollama, LLaMa.cpp, Text Generation Inference (TGI), SGLang, vLLM, Aphrodite, FriendliAI, and LMDeploy.
-    *   Manages API key handling and request formatting and Tool fromatting.
+    *   Supports LLMs from OpenAI, Google, Anthropic, Groq, HuggingFace Inference API, Azure OpenAI, also compatible with local models like Ollama, LLaMa.cpp, Text Generation Inference (TGI), SGLang, vLLM, Aphrodite, FriendliAI, and LMDeploy.
+    *   Manages API key handling and request formatting and Tool formatting.
     *   Offers caching mechanisms to improve response times and reduce API usage.
     *   Handles streaming responses for a more interactive user experience.
 
@@ -64,7 +64,7 @@ flowchart LR
 *   **Technology:** Supports multiple vector databases.
 *   **Responsibility:** Vector Stores are used to store and retrieve vector embeddings of document chunks. This enables semantic search and retrieval of relevant document snippets in response to user queries.
 *   **Key Features:**
-    *   Supports vector databases including FAISS, Elasticsearch, Qdrant, Milvus, and LanceDB.
+    *   Supports vector databases including FAISS, Elasticsearch, Qdrant, Milvus, MongoDB Atlas Vector Search, and pgvector.
     *   Provides storage and indexing of high-dimensional vector embeddings.
     *   Enables editing and updating of vector indexes including specific chunks.
 
@@ -120,7 +120,7 @@ sequenceDiagram
 
 ## Deployment Architecture
 
-DocsGPT is designed to be deployed using Docker and Kubernetes, here is a qucik overview of a simple k8s deployment.
+DocsGPT is designed to be deployed using Docker and Kubernetes, here is a quick overview of a simple k8s deployment.
 
 ```mermaid
 graph LR

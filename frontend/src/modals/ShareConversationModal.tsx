@@ -98,14 +98,14 @@ export const ShareConversationModal = ({
   return (
     <WrapperModal close={close} contentClassName="!overflow-visible">
       <div className="flex w-[600px] max-w-[80vw] flex-col gap-2">
-        <h2 className="text-eerie-black dark:text-chinese-white text-xl font-medium">
+        <h2 className="text-foreground dark:text-foreground text-xl font-medium">
           {t('modals.shareConv.label')}
         </h2>
-        <p className="text-eerie-black dark:text-silver/60 text-sm leading-relaxed">
+        <p className="text-foreground dark:text-muted-foreground/60 text-sm leading-relaxed">
           {t('modals.shareConv.note')}
         </p>
         <div className="flex items-center justify-between">
-          <span className="text-eerie-black text-lg dark:text-white">
+          <span className="text-foreground text-lg dark:text-white">
             {t('modals.shareConv.option')}
           </span>
           <ToggleSwitch
@@ -129,19 +129,19 @@ export const ShareConversationModal = ({
           </div>
         )}
         <div className="flex items-baseline justify-between gap-2">
-          <span className="no-scrollbar border-silver text-eerie-black dark:border-silver/40 w-full overflow-x-auto rounded-full border-2 px-4 py-3 whitespace-nowrap dark:text-white">
+          <span className="no-scrollbar border-border text-foreground dark:border-border w-full overflow-x-auto rounded-full border-2 px-4 py-3 whitespace-nowrap dark:text-white">
             {`${domain}/share/${identifier ?? '....'}`}
           </span>
           {status === 'fetched' ? (
             <button
-              className="bg-purple-30 hover:bg-violets-are-blue my-1 h-10 w-28 rounded-full p-2 text-sm text-white"
+              className="bg-primary hover:bg-primary/90 my-1 h-10 w-28 rounded-full p-2 text-sm text-white"
               onClick={() => handleCopyKey(`${domain}/share/${identifier}`)}
             >
               {isCopied ? t('modals.saveKey.copied') : t('modals.saveKey.copy')}
             </button>
           ) : (
             <button
-              className="bg-purple-30 hover:bg-violets-are-blue my-1 flex h-10 w-28 items-center justify-evenly rounded-full p-2 text-center text-sm font-normal text-white"
+              className="bg-primary hover:bg-primary/90 my-1 flex h-10 w-28 items-center justify-evenly rounded-full p-2 text-center text-sm font-normal text-white"
               onClick={() => {
                 shareCoversationPublicly(allowPrompt);
               }}

@@ -79,21 +79,54 @@ class StreamResource(Resource, BaseAnswerResource):
             return error
         decoded_token = getattr(request, "decoded_token", None)
         processor = StreamProcessor(data, decoded_token)
+
         try:
-            processor.initialize()
+            # ---- Continuation mode ----
+            if data.get("tool_actions"):
+                (
+                    agent,
+                    messages,
+                    tools_dict,
+                    pending_tool_calls,
+                    tool_actions,
+                ) = processor.resume_from_tool_actions(
+                    data["tool_actions"], data["conversation_id"]
+                )
+                if not processor.decoded_token:
+                    return Response(
+                        self.error_stream_generate("Unauthorized"),
+                        status=401,
+                        mimetype="text/event-stream",
+                    )
+                if error := self.check_usage(processor.agent_config):
+                    return error
+                return Response(
+                    self.complete_stream(
+                        question="",
+                        agent=agent,
+                        conversation_id=processor.conversation_id,
+                        user_api_key=processor.agent_config.get("user_api_key"),
+                        decoded_token=processor.decoded_token,
+                        agent_id=processor.agent_id,
+                        model_id=processor.model_id,
+                        _continuation={
+                            "messages": messages,
+                            "tools_dict": tools_dict,
+                            "pending_tool_calls": pending_tool_calls,
+                            "tool_actions": tool_actions,
+                        },
+                    ),
+                    mimetype="text/event-stream",
+                )
+
+            # ---- Normal mode ----
+            agent = processor.build_agent(data["question"])
             if not processor.decoded_token:
                 return Response(
                     self.error_stream_generate("Unauthorized"),
                     status=401,
                     mimetype="text/event-stream",
                 )
-
-            docs_together, docs_list = processor.pre_fetch_docs(data["question"])
-            tools_data = processor.pre_fetch_tools()
-
-            agent = processor.create_agent(
-                docs_together=docs_together, docs=docs_list, tools_data=tools_data
-            )
 
             if error := self.check_usage(processor.agent_config):
                 return error

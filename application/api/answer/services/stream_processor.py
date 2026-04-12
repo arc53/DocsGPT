@@ -38,12 +38,22 @@ def get_prompt(prompt_id: str, prompts_collection=None) -> str:
     current_dir = Path(__file__).resolve().parents[3]
     prompts_dir = current_dir / "prompts"
 
-    preset_mapping = {
+    # Maps for classic agent types
+    CLASSIC_PRESETS = {
         "default": "chat_combine_default.txt",
         "creative": "chat_combine_creative.txt",
         "strict": "chat_combine_strict.txt",
         "reduce": "chat_reduce_prompt.txt",
     }
+
+    # Agentic counterparts — same styles, but with search tool instructions
+    AGENTIC_PRESETS = {
+        "default": "agentic/default.txt",
+        "creative": "agentic/creative.txt",
+        "strict": "agentic/strict.txt",
+    }
+
+    preset_mapping = {**CLASSIC_PRESETS, **{f"agentic_{k}": v for k, v in AGENTIC_PRESETS.items()}}
 
     if prompt_id in preset_mapping:
         file_path = os.path.join(prompts_dir, preset_mapping[prompt_id])
@@ -91,6 +101,7 @@ class StreamProcessor:
         self.is_shared_usage = False
         self.shared_token = None
         self.agent_id = self.data.get("agent_id")
+        self.agent_key = None
         self.model_id: Optional[str] = None
         self.conversation_service = ConversationService()
         self.compression_orchestrator = CompressionOrchestrator(
@@ -101,6 +112,7 @@ class StreamProcessor:
         self._required_tool_actions: Optional[Dict[str, Set[Optional[str]]]] = None
         self.compressed_summary: Optional[str] = None
         self.compressed_summary_tokens: int = 0
+        self._agent_data: Optional[Dict[str, Any]] = None
 
     def initialize(self):
         """Initialize all required components for processing"""
@@ -110,6 +122,29 @@ class StreamProcessor:
         self._configure_retriever()
         self._load_conversation_history()
         self._process_attachments()
+
+    def build_agent(self, question: str):
+        """One call to go from request data to a ready-to-run agent.
+
+        Combines initialize(), pre_fetch_docs(), pre_fetch_tools(), and
+        create_agent() into a single convenience method.
+        """
+        self.initialize()
+
+        agent_type = self.agent_config.get("agent_type", "classic")
+
+        # Agentic/research agents skip pre-fetch — the LLM searches on-demand via tools
+        if agent_type in ("agentic", "research"):
+            tools_data = self.pre_fetch_tools()
+            return self.create_agent(tools_data=tools_data)
+
+        docs_together, docs_list = self.pre_fetch_docs(question)
+        tools_data = self.pre_fetch_tools()
+        return self.create_agent(
+            docs_together=docs_together,
+            docs=docs_list,
+            tools_data=tools_data,
+        )
 
     def _load_conversation_history(self):
         """Load conversation history either from DB or request"""
@@ -124,9 +159,17 @@ class StreamProcessor:
             if settings.ENABLE_CONVERSATION_COMPRESSION:
                 self._handle_compression(conversation)
             else:
-                # Original behavior - load all history
+                # Original behavior - load all history (include metadata if present)
                 self.history = [
-                    {"prompt": query["prompt"], "response": query["response"]}
+                    {
+                        "prompt": query["prompt"],
+                        "response": query["response"],
+                        **(
+                            {"metadata": query["metadata"]}
+                            if "metadata" in query
+                            else {}
+                        ),
+                    }
                     for query in conversation.get("queries", [])
                 ]
         else:
@@ -135,14 +178,8 @@ class StreamProcessor:
             )
 
     def _handle_compression(self, conversation: Dict[str, Any]):
-        """
-        Handle conversation compression logic using orchestrator.
-
-        Args:
-            conversation: Full conversation document
-        """
+        """Handle conversation compression logic using orchestrator."""
         try:
-            # Use orchestrator to handle all compression logic
             result = self.compression_orchestrator.compress_if_needed(
                 conversation_id=self.conversation_id,
                 user_id=self.initial_user_id,
@@ -153,12 +190,15 @@ class StreamProcessor:
             if not result.success:
                 logger.error(f"Compression failed: {result.error}, using full history")
                 self.history = [
-                    {"prompt": query["prompt"], "response": query["response"]}
+                    {
+                        "prompt": query["prompt"],
+                        "response": query["response"],
+                        **({"metadata": query["metadata"]} if "metadata" in query else {}),
+                    }
                     for query in conversation.get("queries", [])
                 ]
                 return
 
-            # Set compressed summary if compression was performed
             if result.compression_performed and result.compressed_summary:
                 self.compressed_summary = result.compressed_summary
                 self.compressed_summary_tokens = TokenCounter.count_message_tokens(
@@ -169,17 +209,27 @@ class StreamProcessor:
                     f"+ {len(result.recent_queries)} recent messages"
                 )
 
-            # Build history from recent queries
             self.history = result.as_history()
+            # Preserve metadata from recent queries (as_history only has prompt/response)
+            recent = result.recent_queries if result.recent_queries else conversation.get("queries", [])
+            for i, entry in enumerate(self.history):
+                # Match by index from the end of recent queries
+                offset = len(recent) - len(self.history)
+                qi = offset + i
+                if 0 <= qi < len(recent) and "metadata" in recent[qi]:
+                    entry["metadata"] = recent[qi]["metadata"]
 
         except Exception as e:
             logger.error(
                 f"Error handling compression, falling back to standard history: {str(e)}",
                 exc_info=True,
             )
-            # Fallback to original behavior
             self.history = [
-                {"prompt": query["prompt"], "response": query["response"]}
+                {
+                    "prompt": query["prompt"],
+                    "response": query["response"],
+                    **({"metadata": query["metadata"]} if "metadata" in query else {}),
+                }
                 for query in conversation.get("queries", [])
             ]
 
@@ -191,9 +241,6 @@ class StreamProcessor:
         )
 
     def _get_attachments_content(self, attachment_ids, user_id):
-        """
-        Retrieve content from attachment documents based on their IDs.
-        """
         if not attachment_ids:
             return []
         attachments = []
@@ -202,7 +249,6 @@ class StreamProcessor:
                 attachment_doc = self.attachments_collection.find_one(
                     {"_id": ObjectId(attachment_id), "user": user_id}
                 )
-
                 if attachment_doc:
                     attachments.append(attachment_doc)
             except Exception as e:
@@ -232,7 +278,6 @@ class StreamProcessor:
                 )
             self.model_id = requested_model
         else:
-            # Check if agent has a default model configured
             agent_default_model = self.agent_config.get("default_model_id", "")
             if agent_default_model and validate_model_id(agent_default_model):
                 self.model_id = agent_default_model
@@ -285,7 +330,6 @@ class StreamProcessor:
             data["source"] = "default"
         else:
             data["source"] = None
-        # Handle multiple sources
 
         sources = data.get("sources", [])
         if sources and isinstance(sources, list):
@@ -311,28 +355,34 @@ class StreamProcessor:
         else:
             data["sources"] = []
 
-        # Preserve model configuration from agent
         data["default_model_id"] = data.get("default_model_id", "")
 
         return data
 
     def _configure_source(self):
-        """Configure the source based on agent data"""
-        api_key = self.data.get("api_key") or self.agent_key
+        """Configure the source based on agent data.
 
-        if api_key:
-            agent_data = self._get_data_from_api_key(api_key)
+        The literal string ``"default"`` is a placeholder meaning "no
+        ingested source" and is normalized to an empty source so that no
+        retrieval is attempted.
+        """
+        if self._agent_data:
+            agent_data = self._agent_data
 
             if agent_data.get("sources") and len(agent_data["sources"]) > 0:
                 source_ids = [
-                    source["id"] for source in agent_data["sources"] if source.get("id")
+                    source["id"]
+                    for source in agent_data["sources"]
+                    if source.get("id") and source["id"] != "default"
                 ]
                 if source_ids:
                     self.source = {"active_docs": source_ids}
                 else:
                     self.source = {}
-                self.all_sources = agent_data["sources"]
-            elif agent_data.get("source"):
+                self.all_sources = [
+                    s for s in agent_data["sources"] if s.get("id") != "default"
+                ]
+            elif agent_data.get("source") and agent_data["source"] != "default":
                 self.source = {"active_docs": agent_data["source"]}
                 self.all_sources = [
                     {
@@ -345,10 +395,23 @@ class StreamProcessor:
                 self.all_sources = []
             return
         if "active_docs" in self.data:
-            self.source = {"active_docs": self.data["active_docs"]}
+            active_docs = self.data["active_docs"]
+            if active_docs and active_docs != "default":
+                self.source = {"active_docs": active_docs}
+            else:
+                self.source = {}
             return
         self.source = {}
         self.all_sources = []
+
+    def _has_active_docs(self) -> bool:
+        """Return True if a real document source is configured for retrieval."""
+        active_docs = self.source.get("active_docs") if self.source else None
+        if not active_docs:
+            return False
+        if active_docs == "default":
+            return False
+        return True
 
     def _resolve_agent_id(self) -> Optional[str]:
         """Resolve agent_id from request, then fall back to conversation context."""
@@ -376,7 +439,10 @@ class StreamProcessor:
         return None
 
     def _configure_agent(self):
-        """Configure the agent based on request data"""
+        """Configure the agent based on request data.
+
+        Unified flow: resolve the effective API key, then extract config once.
+        """
         agent_id = self._resolve_agent_id()
 
         self.agent_key, self.is_shared_usage, self.shared_token = self._get_agent_key(
@@ -384,71 +450,45 @@ class StreamProcessor:
         )
         self.agent_id = str(agent_id) if agent_id else None
 
-        api_key = self.data.get("api_key")
-        if api_key:
-            data_key = self._get_data_from_api_key(api_key)
-            if data_key.get("_id"):
-                self.agent_id = str(data_key.get("_id"))
+        # Determine the effective API key (explicit > agent-derived)
+        effective_key = self.data.get("api_key") or self.agent_key
+
+        if effective_key:
+            self._agent_data = self._get_data_from_api_key(effective_key)
+            if self._agent_data.get("_id"):
+                self.agent_id = str(self._agent_data.get("_id"))
+
             self.agent_config.update(
                 {
-                    "prompt_id": data_key.get("prompt_id", "default"),
-                    "agent_type": data_key.get("agent_type", settings.AGENT_NAME),
-                    "user_api_key": api_key,
-                    "json_schema": data_key.get("json_schema"),
-                    "default_model_id": data_key.get("default_model_id", ""),
+                    "prompt_id": self._agent_data.get("prompt_id", "default"),
+                    "agent_type": self._agent_data.get("agent_type", settings.AGENT_NAME),
+                    "user_api_key": effective_key,
+                    "json_schema": self._agent_data.get("json_schema"),
+                    "default_model_id": self._agent_data.get("default_model_id", ""),
+                    "models": self._agent_data.get("models", []),
+                    "allow_system_prompt_override": self._agent_data.get(
+                        "allow_system_prompt_override", False
+                    ),
                 }
             )
-            self.initial_user_id = data_key.get("user")
-            self.decoded_token = {"sub": data_key.get("user")}
-            if data_key.get("source"):
-                self.source = {"active_docs": data_key["source"]}
-            if data_key.get("workflow"):
-                self.agent_config["workflow"] = data_key["workflow"]
-                self.agent_config["workflow_owner"] = data_key.get("user")
-            if data_key.get("retriever"):
-                self.retriever_config["retriever_name"] = data_key["retriever"]
-            if data_key.get("chunks") is not None:
-                try:
-                    self.retriever_config["chunks"] = int(data_key["chunks"])
-                except (ValueError, TypeError):
-                    logger.warning(
-                        f"Invalid chunks value: {data_key['chunks']}, using default value 2"
-                    )
-                    self.retriever_config["chunks"] = 2
-        elif self.agent_key:
-            data_key = self._get_data_from_api_key(self.agent_key)
-            if data_key.get("_id"):
-                self.agent_id = str(data_key.get("_id"))
-            self.agent_config.update(
-                {
-                    "prompt_id": data_key.get("prompt_id", "default"),
-                    "agent_type": data_key.get("agent_type", settings.AGENT_NAME),
-                    "user_api_key": self.agent_key,
-                    "json_schema": data_key.get("json_schema"),
-                    "default_model_id": data_key.get("default_model_id", ""),
-                }
-            )
-            self.decoded_token = (
-                self.decoded_token
-                if self.is_shared_usage
-                else {"sub": data_key.get("user")}
-            )
-            if data_key.get("source"):
-                self.source = {"active_docs": data_key["source"]}
-            if data_key.get("workflow"):
-                self.agent_config["workflow"] = data_key["workflow"]
-                self.agent_config["workflow_owner"] = data_key.get("user")
-            if data_key.get("retriever"):
-                self.retriever_config["retriever_name"] = data_key["retriever"]
-            if data_key.get("chunks") is not None:
-                try:
-                    self.retriever_config["chunks"] = int(data_key["chunks"])
-                except (ValueError, TypeError):
-                    logger.warning(
-                        f"Invalid chunks value: {data_key['chunks']}, using default value 2"
-                    )
-                    self.retriever_config["chunks"] = 2
+
+            # Set identity context
+            if self.data.get("api_key"):
+                # External API key: use the key owner's identity
+                self.initial_user_id = self._agent_data.get("user")
+                self.decoded_token = {"sub": self._agent_data.get("user")}
+            elif self.is_shared_usage:
+                # Shared agent: keep the caller's identity
+                pass
+            else:
+                # Owner using their own agent
+                self.decoded_token = {"sub": self._agent_data.get("user")}
+
+            if self._agent_data.get("workflow"):
+                self.agent_config["workflow"] = self._agent_data["workflow"]
+                self.agent_config["workflow_owner"] = self._agent_data.get("user")
         else:
+            # No API key — default/workflow configuration
             agent_type = settings.AGENT_NAME
             if self.data.get("workflow") and isinstance(
                 self.data.get("workflow"), dict
@@ -469,14 +509,45 @@ class StreamProcessor:
             )
 
     def _configure_retriever(self):
+        """Assemble retriever config with precedence: request > agent > default."""
         doc_token_limit = calculate_doc_token_budget(model_id=self.model_id)
 
+        # Start with defaults
+        retriever_name = "classic"
+        chunks = 2
+
+        # Layer agent-level config (if present)
+        if self._agent_data:
+            if self._agent_data.get("retriever"):
+                retriever_name = self._agent_data["retriever"]
+            if self._agent_data.get("chunks") is not None:
+                try:
+                    chunks = int(self._agent_data["chunks"])
+                except (ValueError, TypeError):
+                    logger.warning(
+                        f"Invalid agent chunks value: {self._agent_data['chunks']}, "
+                        "using default value 2"
+                    )
+
+        # Explicit request values win over agent config
+        if "retriever" in self.data:
+            retriever_name = self.data["retriever"]
+        if "chunks" in self.data:
+            try:
+                chunks = int(self.data["chunks"])
+            except (ValueError, TypeError):
+                logger.warning(
+                    f"Invalid request chunks value: {self.data['chunks']}, "
+                    "using default value 2"
+                )
+
         self.retriever_config = {
-            "retriever_name": self.data.get("retriever", "classic"),
-            "chunks": int(self.data.get("chunks", 2)),
+            "retriever_name": retriever_name,
+            "chunks": chunks,
             "doc_token_limit": doc_token_limit,
         }
 
+        # isNoneDoc without an API key forces no retrieval
         api_key = self.data.get("api_key") or self.agent_key
         if not api_key and "isNoneDoc" in self.data and self.data["isNoneDoc"]:
             self.retriever_config["chunks"] = 0
@@ -499,6 +570,9 @@ class StreamProcessor:
         """Pre-fetch documents for template rendering before agent creation"""
         if self.data.get("isNoneDoc", False) and not self.agent_id:
             logger.info("Pre-fetch skipped: isNoneDoc=True")
+            return None, None
+        if not self._has_active_docs():
+            logger.info("Pre-fetch skipped: no active docs configured")
             return None, None
         try:
             retriever = self.create_retriever()
@@ -531,12 +605,7 @@ class StreamProcessor:
             return None, None
 
     def pre_fetch_tools(self) -> Optional[Dict[str, Any]]:
-        """Pre-fetch tool data for template rendering before agent creation
-
-        Can be controlled via:
-        1. Global setting: ENABLE_TOOL_PREFETCH in .env
-        2. Per-request: disable_tool_prefetch in request data
-        """
+        """Pre-fetch tool data for template rendering before agent creation"""
         if not settings.ENABLE_TOOL_PREFETCH:
             logger.info(
                 "Tool pre-fetching disabled globally via ENABLE_TOOL_PREFETCH setting"
@@ -748,6 +817,121 @@ class StreamProcessor:
             logger.warning(f"Failed to fetch memory tool data: {str(e)}")
             return None
 
+    def resume_from_tool_actions(
+        self,
+        tool_actions: list,
+        conversation_id: str,
+    ):
+        """Resume a paused agent from saved continuation state.
+
+        Loads the pending state from MongoDB, recreates the agent with
+        the saved configuration, and returns an agent ready to call
+        ``gen_continuation()``.
+
+        Args:
+            tool_actions: Client-provided actions (approvals / results).
+            conversation_id: The conversation being resumed.
+
+        Returns:
+            Tuple of (agent, messages, tools_dict, pending_tool_calls, tool_actions).
+        """
+        from application.api.answer.services.continuation_service import (
+            ContinuationService,
+        )
+        from application.agents.agent_creator import AgentCreator
+        from application.agents.tool_executor import ToolExecutor
+        from application.llm.handlers.handler_creator import LLMHandlerCreator
+        from application.llm.llm_creator import LLMCreator
+
+        cont_service = ContinuationService()
+        state = cont_service.load_state(conversation_id, self.initial_user_id)
+        if not state:
+            raise ValueError("No pending tool state found for this conversation")
+
+        messages = state["messages"]
+        pending_tool_calls = state["pending_tool_calls"]
+        tools_dict = state["tools_dict"]
+        tool_schemas = state.get("tool_schemas", [])
+        agent_config = state["agent_config"]
+
+        model_id = agent_config.get("model_id")
+        llm_name = agent_config.get("llm_name", settings.LLM_PROVIDER)
+        api_key = agent_config.get("api_key")
+        user_api_key = agent_config.get("user_api_key")
+        agent_id = agent_config.get("agent_id")
+        prompt = agent_config.get("prompt", "")
+        json_schema = agent_config.get("json_schema")
+        retriever_config = agent_config.get("retriever_config")
+
+        # Recreate dependencies
+        system_api_key = api_key or get_api_key_for_provider(llm_name)
+        llm = LLMCreator.create_llm(
+            llm_name,
+            api_key=system_api_key,
+            user_api_key=user_api_key,
+            decoded_token=self.decoded_token,
+            model_id=model_id,
+            agent_id=agent_id,
+        )
+        llm_handler = LLMHandlerCreator.create_handler(llm_name or "default")
+        tool_executor = ToolExecutor(
+            user_api_key=user_api_key,
+            user=self.initial_user_id,
+            decoded_token=self.decoded_token,
+        )
+        tool_executor.conversation_id = conversation_id
+        # Restore client tools so they stay available for subsequent LLM calls
+        saved_client_tools = state.get("client_tools")
+        if saved_client_tools:
+            tool_executor.client_tools = saved_client_tools
+            # Re-merge into tools_dict (they may have been stripped during serialization)
+            tool_executor.merge_client_tools(tools_dict, saved_client_tools)
+
+        agent_type = agent_config.get("agent_type", "ClassicAgent")
+        # Map class names back to agent creator keys
+        type_map = {
+            "ClassicAgent": "classic",
+            "AgenticAgent": "agentic",
+            "ResearchAgent": "research",
+            "WorkflowAgent": "workflow",
+        }
+        agent_key = type_map.get(agent_type, "classic")
+
+        agent_kwargs = {
+            "endpoint": "stream",
+            "llm_name": llm_name,
+            "model_id": model_id,
+            "api_key": system_api_key,
+            "agent_id": agent_id,
+            "user_api_key": user_api_key,
+            "prompt": prompt,
+            "chat_history": [],
+            "decoded_token": self.decoded_token,
+            "json_schema": json_schema,
+            "llm": llm,
+            "llm_handler": llm_handler,
+            "tool_executor": tool_executor,
+        }
+
+        if agent_key in ("agentic", "research") and retriever_config:
+            agent_kwargs["retriever_config"] = retriever_config
+
+        agent = AgentCreator.create_agent(agent_key, **agent_kwargs)
+        agent.conversation_id = conversation_id
+        agent.initial_user_id = self.initial_user_id
+        agent.tools = tool_schemas
+
+        # Store config for the route layer
+        self.model_id = model_id
+        self.agent_id = agent_id
+        self.agent_config["user_api_key"] = user_api_key
+        self.conversation_id = conversation_id
+
+        # Delete state so it can't be replayed
+        cont_service.delete_state(conversation_id, self.initial_user_id)
+
+        return agent, messages, tools_dict, pending_tool_calls, tool_actions
+
     def create_agent(
         self,
         docs_together: Optional[str] = None,
@@ -755,22 +939,40 @@ class StreamProcessor:
         tools_data: Optional[Dict[str, Any]] = None,
     ):
         """Create and return the configured agent with rendered prompt"""
+        agent_type = self.agent_config["agent_type"]
+
+        # For agentic agents, swap standard presets for their agentic
+        # counterparts (which include search tool instructions instead of
+        # {summaries}). Custom / user-provided prompts pass through as-is.
         raw_prompt = self._get_prompt_content()
         if raw_prompt is None:
-            raw_prompt = get_prompt(
-                self.agent_config["prompt_id"], self.prompts_collection
-            )
+            prompt_id = self.agent_config.get("prompt_id", "default")
+            agentic_presets = {"default", "creative", "strict"}
+            if agent_type in ("agentic", "research") and prompt_id in agentic_presets:
+                raw_prompt = get_prompt(
+                    f"agentic_{prompt_id}", self.prompts_collection
+                )
+            else:
+                raw_prompt = get_prompt(prompt_id, self.prompts_collection)
             self._prompt_content = raw_prompt
 
-        rendered_prompt = self.prompt_renderer.render_prompt(
-            prompt_content=raw_prompt,
-            user_id=self.initial_user_id,
-            request_id=self.data.get("request_id"),
-            passthrough_data=self.data.get("passthrough"),
-            docs=docs,
-            docs_together=docs_together,
-            tools_data=tools_data,
-        )
+        # Allow API callers to override the system prompt when the agent
+        # has opted in via allow_system_prompt_override.
+        if (
+            self.agent_config.get("allow_system_prompt_override", False)
+            and self.data.get("system_prompt_override")
+        ):
+            rendered_prompt = self.data["system_prompt_override"]
+        else:
+            rendered_prompt = self.prompt_renderer.render_prompt(
+                prompt_content=raw_prompt,
+                user_id=self.initial_user_id,
+                request_id=self.data.get("request_id"),
+                passthrough_data=self.data.get("passthrough"),
+                docs=docs,
+                docs_together=docs_together,
+                tools_data=tools_data,
+            )
 
         provider = (
             get_provider_from_model_id(self.model_id)
@@ -779,7 +981,39 @@ class StreamProcessor:
         )
         system_api_key = get_api_key_for_provider(provider or settings.LLM_PROVIDER)
 
-        agent_type = self.agent_config["agent_type"]
+        # Create LLM and handler (dependency injection)
+        from application.llm.llm_creator import LLMCreator
+        from application.llm.handlers.handler_creator import LLMHandlerCreator
+        from application.agents.tool_executor import ToolExecutor
+
+        # Compute backup models: agent's configured models minus the active one
+        agent_models = self.agent_config.get("models", [])
+        backup_models = [m for m in agent_models if m != self.model_id]
+
+        llm = LLMCreator.create_llm(
+            provider or settings.LLM_PROVIDER,
+            api_key=system_api_key,
+            user_api_key=self.agent_config["user_api_key"],
+            decoded_token=self.decoded_token,
+            model_id=self.model_id,
+            agent_id=self.agent_id,
+            backup_models=backup_models,
+        )
+        llm_handler = LLMHandlerCreator.create_handler(
+            provider if provider else "default"
+        )
+
+        user = self.decoded_token.get("sub") if self.decoded_token else None
+        tool_executor = ToolExecutor(
+            user_api_key=self.agent_config["user_api_key"],
+            user=user,
+            decoded_token=self.decoded_token,
+        )
+        tool_executor.conversation_id = self.conversation_id
+        # Pass client-side tools so they get merged in get_tools()
+        client_tools = self.data.get("client_tools")
+        if client_tools:
+            tool_executor.client_tools = client_tools
 
         # Base agent kwargs
         agent_kwargs = {
@@ -796,10 +1030,31 @@ class StreamProcessor:
             "attachments": self.attachments,
             "json_schema": self.agent_config.get("json_schema"),
             "compressed_summary": self.compressed_summary,
+            "llm": llm,
+            "llm_handler": llm_handler,
+            "tool_executor": tool_executor,
         }
 
-        # Workflow-specific kwargs for workflow agents
-        if agent_type == "workflow":
+        # Type-specific kwargs
+        if agent_type in ("agentic", "research"):
+            agent_kwargs["retriever_config"] = {
+                "source": self.source,
+                "retriever_name": self.retriever_config.get(
+                    "retriever_name", "classic"
+                ),
+                "chunks": self.retriever_config.get("chunks", 2),
+                "doc_token_limit": self.retriever_config.get(
+                    "doc_token_limit", 50000
+                ),
+                "model_id": self.model_id,
+                "user_api_key": self.agent_config["user_api_key"],
+                "agent_id": self.agent_id,
+                "llm_name": provider or settings.LLM_PROVIDER,
+                "api_key": system_api_key,
+                "decoded_token": self.decoded_token,
+            }
+
+        elif agent_type == "workflow":
             workflow_config = self.agent_config.get("workflow")
             if isinstance(workflow_config, str):
                 agent_kwargs["workflow_id"] = workflow_config

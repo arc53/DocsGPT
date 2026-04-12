@@ -463,6 +463,16 @@ class ManageSourceFiles(Resource):
                 removed_files = []
                 map_updated = False
                 for file_path in file_paths:
+                    if ".." in str(file_path) or str(file_path).startswith("/"):
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "message": "Invalid file path",
+                                }
+                            ),
+                            400,
+                        )
                     full_path = f"{source_file_path}/{file_path}"
 
                     # Remove from storage

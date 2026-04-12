@@ -196,9 +196,9 @@ class TestGoogleLLMHandler:
         assert result.finish_reason == "tool_calls"
 
     def test_create_tool_message(self):
-        """Test creating tool message."""
+        """Test creating tool message in standard format."""
         handler = GoogleLLMHandler()
-        
+
         tool_call = ToolCall(
             id="call_123",
             name="get_weather",
@@ -206,35 +206,26 @@ class TestGoogleLLMHandler:
             index=0
         )
         result = {"temperature": "25C", "condition": "cloudy"}
-        
+
         message = handler.create_tool_message(tool_call, result)
-        
-        expected = {
-            "role": "model",
-            "content": [
-                {
-                    "function_response": {
-                        "name": "get_weather",
-                        "response": {"result": result},
-                    }
-                }
-            ],
-        }
-        
-        assert message == expected
+
+        assert message["role"] == "tool"
+        assert message["tool_call_id"] == "call_123"
+        import json
+        assert json.loads(message["content"]) == result
 
     def test_create_tool_message_string_result(self):
         """Test creating tool message with string result."""
         handler = GoogleLLMHandler()
-        
+
         tool_call = ToolCall(id="call_456", name="get_time", arguments={})
         result = "2023-12-01 15:30:00 JST"
-        
+
         message = handler.create_tool_message(tool_call, result)
-        
-        assert message["role"] == "model"
-        assert message["content"][0]["function_response"]["response"]["result"] == result
-        assert message["content"][0]["function_response"]["name"] == "get_time"
+
+        assert message["role"] == "tool"
+        assert message["tool_call_id"] == "call_456"
+        assert message["content"] == result
 
     def test_iterate_stream(self):
         """Test stream iteration."""

@@ -54,6 +54,7 @@
     },
     "sources": {
       "title": "ここでは、利用可能なすべてのソースファイルとアップロードしたファイルを管理できます。",
+      "subtitle": "レスポンスを機能させるドキュメントとナレッジソースをアップロードして管理",
       "label": "ソース",
       "name": "ソース名",
       "date": "ベクトル日付",
@@ -118,6 +119,7 @@
     },
     "analytics": {
       "label": "分析",
+      "subtitle": "アカウント全体のメッセージ量、トークン使用量、ユーザーフィードバックを追跡",
       "filterByChatbot": "チャットボットでフィルター",
       "selectChatbot": "チャットボットを選択",
       "filterOptions": {
@@ -137,6 +139,7 @@
     },
     "logs": {
       "label": "ログ",
+      "subtitle": "APIコールと会話ログを表示・監視",
       "filterByChatbot": "チャットボットでフィルター",
       "selectChatbot": "チャットボットを選択",
       "none": "なし",
@@ -144,6 +147,7 @@
     },
     "tools": {
       "label": "ツール",
+      "subtitle": "エージェントを強化するツールやインテグレーションを検索、接続、設定",
       "searchPlaceholder": "検索...",
       "addTool": "ツールを追加",
       "noToolsFound": "ツールが見つかりません",
@@ -325,6 +329,10 @@
         "share_point": {
           "label": "SharePoint",
           "heading": "SharePointからアップロード"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "Confluenceからアップロード"
         }
       },
       "connectors": {
@@ -637,7 +645,9 @@
         "tokenLimiting": "トークン制限",
         "tokenLimitingDescription": "このエージェントが使用できる1日の合計トークン数を制限します",
         "requestLimiting": "リクエスト制限",
-        "requestLimitingDescription": "このエージェントに対して行える1日の合計リクエスト数を制限します"
+        "requestLimitingDescription": "このエージェントに対して行える1日の合計リクエスト数を制限します",
+        "systemPromptOverride": "プロンプトの上書きを許可",
+        "systemPromptOverrideDescription": "v1 API呼び出し元がこのエージェントのシステムプロンプトを置き換えることを許可します"
       },
       "preview": {
         "publishedPreview": "公開されたエージェントはここでプレビューできます"

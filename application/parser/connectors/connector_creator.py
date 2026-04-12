@@ -1,5 +1,7 @@
-from application.parser.connectors.google_drive.loader import GoogleDriveLoader
+from application.parser.connectors.confluence.auth import ConfluenceAuth
+from application.parser.connectors.confluence.loader import ConfluenceLoader
 from application.parser.connectors.google_drive.auth import GoogleDriveAuth
+from application.parser.connectors.google_drive.loader import GoogleDriveLoader
 from application.parser.connectors.share_point.auth import SharePointAuth
 from application.parser.connectors.share_point.loader import SharePointLoader
 
@@ -13,11 +15,13 @@ class ConnectorCreator:
     """
 
     connectors = {
+        "confluence": ConfluenceLoader,
         "google_drive": GoogleDriveLoader,
         "share_point": SharePointLoader,
     }
 
     auth_providers = {
+        "confluence": ConfluenceAuth,
         "google_drive": GoogleDriveAuth,
         "share_point": SharePointAuth,
     }

@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+results.txt
 experiments/
 
 experiments
@@ -107,6 +108,8 @@ celerybeat.pid
 # Environments
 .env
 .venv
+# Machine-specific Claude Code guidance (see CLAUDE.md preamble)
+CLAUDE.md
 env/
 venv/
 ENV/
@@ -180,5 +183,6 @@ application/vectors/
 
 node_modules/
 .vscode/settings.json
+.vscode/sftp.json
 /models/
 model/

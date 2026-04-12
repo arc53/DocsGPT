@@ -15,6 +15,8 @@ from werkzeug.utils import secure_filename
 
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.users import UsersRepository
 from application.storage.storage_creator import StorageCreator
 from application.vectorstore.vector_creator import VectorCreator
 
@@ -132,6 +134,9 @@ def ensure_user_doc(user_id):
     if updates:
         users_collection.update_one({"user_id": user_id}, {"$set": updates})
         user_doc = users_collection.find_one({"user_id": user_id})
+
+    dual_write(UsersRepository, lambda repo: repo.upsert(user_id))
+
     return user_doc
 
 
@@ -145,14 +150,22 @@ def resolve_tool_details(tool_ids):
     Returns:
         List of tool details with id, name, and display_name
     """
+    valid_ids = []
+    for tid in tool_ids:
+        try:
+            valid_ids.append(ObjectId(tid))
+        except Exception:
+            continue
     tools = user_tools_collection.find(
-        {"_id": {"$in": [ObjectId(tid) for tid in tool_ids]}}
-    )
+        {"_id": {"$in": valid_ids}}
+    ) if valid_ids else []
     return [
         {
             "id": str(tool["_id"]),
             "name": tool.get("name", ""),
-            "display_name": tool.get("displayName", tool.get("name", "")),
+            "display_name": tool.get("customName")
+            or tool.get("displayName")
+            or tool.get("name", ""),
         }
         for tool in tools
     ]

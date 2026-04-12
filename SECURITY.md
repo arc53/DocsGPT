@@ -2,13 +2,21 @@
 
 ## Supported Versions
 
-Supported Versions:
-
-Currently, we support security patches by committing changes and bumping the version published on Github.
+Security patches target the latest release and the `main` branch. We recommend always running the most recent version.
 
 ## Reporting a Vulnerability
 
-Found a vulnerability? Please email us:
+Preferred method: use GitHub's private vulnerability reporting flow:
+https://github.com/arc53/DocsGPT/security
 
-security@arc53.com
+Then click **Report a vulnerability**.
+
+
+Alternatively, email us at: security@arc53.com
+
+We aim to acknowledge reports within 48 hours.
+
+## Incident Handling
+
+Arc53 maintains internal incident response procedures. If you believe an active exploit is occurring, include **URGENT** in your report subject line.
 

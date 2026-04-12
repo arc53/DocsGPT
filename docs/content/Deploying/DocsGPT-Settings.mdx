@@ -104,14 +104,14 @@ DocsGPT can transcribe audio in two places:
 - Voice input in the chat.
 - Audio file ingestion. Uploaded `.wav`, `.mp3`, `.m4a`, `.ogg`, and `.webm` files are transcribed first and then passed through the normal parser, chunking, embedding, and indexing pipeline.
 
-For an end-to-end walkthrough, see the [Speech and Audio Guide](/Guides/speech-and-audio).
+The settings below control speech-to-text behaviour for both voice input and audio file ingestion.
 
 | Setting | Purpose | Typical values |
 | --- | --- | --- |
 | `STT_PROVIDER` | Speech-to-text backend provider. | `openai`, `faster_whisper` |
 | `OPENAI_STT_MODEL` | OpenAI transcription model used when `STT_PROVIDER=openai`. | `gpt-4o-mini-transcribe` |
 | `STT_LANGUAGE` | Optional language hint passed to the provider. Leave unset for auto-detection when supported. | `en`, `es`, unset |
-| `STT_MAX_FILE_SIZE_MB` | Maximum file size accepted by the synchronous `/api/stt` endpoint. | `25` |
+| `STT_MAX_FILE_SIZE_MB` | Maximum file size accepted by the synchronous `/api/stt` endpoint. | `50` |
 | `STT_ENABLE_TIMESTAMPS` | Include timestamp segments in the normalized transcript response and stored parser metadata. | `true`, `false` |
 | `STT_ENABLE_DIARIZATION` | Reserved provider option for speaker diarization. Some providers may ignore it. | `true`, `false` |
 
@@ -122,7 +122,7 @@ STT_PROVIDER=openai
 OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 OPENAI_STT_MODEL=gpt-4o-mini-transcribe
 STT_LANGUAGE=
-STT_MAX_FILE_SIZE_MB=25
+STT_MAX_FILE_SIZE_MB=50
 STT_ENABLE_TIMESTAMPS=false
 STT_ENABLE_DIARIZATION=false
 ```
@@ -214,6 +214,31 @@ If you have configured `AUTH_TYPE=simple_jwt`, the DocsGPT frontend will prompt 
   }}
 />
 
+## S3 Storage Backend
+
+By default DocsGPT stores files locally. Set `STORAGE_TYPE=s3` to use Amazon S3 instead.
+
+| Setting | Description | Default |
+| --- | --- | --- |
+| `STORAGE_TYPE` | `local` or `s3` | `local` |
+| `S3_BUCKET_NAME` | S3 bucket name | `docsgpt-test-bucket` |
+| `SAGEMAKER_ACCESS_KEY` | AWS access key ID | — |
+| `SAGEMAKER_SECRET_KEY` | AWS secret access key | — |
+| `SAGEMAKER_REGION` | AWS region | — |
+| `URL_STRATEGY` | `backend` (proxy through API) or `s3` (direct S3 URLs) | `backend` |
+
+The S3 credentials use `SAGEMAKER_*` variable names because they are shared with the SageMaker integration.
+
+```env
+STORAGE_TYPE=s3
+S3_BUCKET_NAME=your-bucket-name
+SAGEMAKER_ACCESS_KEY=your-aws-access-key-id
+SAGEMAKER_SECRET_KEY=your-aws-secret-access-key
+SAGEMAKER_REGION=us-east-1
+```
+
+Your IAM user needs these permissions on the bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`, `s3:HeadObject`.
+
 ## Exploring More Settings
 
 These are just the basic settings to get you started. The `settings.py` file contains many more advanced options that you can explore to further customize DocsGPT, such as:
@@ -224,4 +249,3 @@ These are just the basic settings to get you started. The `settings.py` file con
 - And many more!
 
 For a complete list of available settings and their descriptions, refer to the `settings.py` file in `application/core`. Remember to restart your Docker containers after making changes to your `.env` file or `settings.py` for the changes to take effect.
-

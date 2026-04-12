@@ -60,6 +60,10 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       displayName: 'SharePoint',
       rootName: 'My Files',
     },
+    confluence: {
+      displayName: 'Confluence',
+      rootName: 'Spaces',
+    },
   } as const;
 
   const getProviderConfig = (provider: string) => {
@@ -93,9 +97,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   const [isConnected, setIsConnected] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
   const [allowsSharedContent, setAllowsSharedContent] = useState(false);
-  const [activeTab, setActiveTab] = useState<'my_files' | 'shared'>(
-    'my_files',
-  );
+  const [activeTab, setActiveTab] = useState<'my_files' | 'shared'>('my_files');
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -204,7 +206,9 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       if (!validateResponse.ok) {
         removeSessionToken(provider);
         setIsConnected(false);
-        setAuthError('Session expired. Please reconnect to Google Drive.');
+        setAuthError(
+          `Session expired. Please reconnect to ${getProviderConfig(provider).displayName}.`,
+        );
         return;
       }
 
@@ -214,9 +218,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
         setIsConnected(true);
         setAuthError('');
         if (provider === 'share_point') {
-          setAllowsSharedContent(
-            validateData.allows_shared_content ?? false,
-          );
+          setAllowsSharedContent(validateData.allows_shared_content ?? false);
         }
 
         setFiles([]);
@@ -369,9 +371,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       {
         id: null,
         name:
-          tab === 'shared'
-            ? 'Shared'
-            : getProviderConfig(provider).rootName,
+          tab === 'shared' ? 'Shared' : getProviderConfig(provider).rootName,
       },
     ]);
     const sessionToken = getSessionToken(provider);
@@ -379,8 +379,6 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       loadCloudFiles(sessionToken, null, undefined, '', tab === 'shared');
     }
   };
-
-
 
   const handleFileSelect = (fileId: string, isFolder: boolean) => {
     if (isFolder) {
@@ -406,6 +404,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
       <ConnectorAuth
         provider={provider}
+        label={`Connect to ${getProviderConfig(provider).displayName}`}
         onSuccess={(data) => {
           setUserEmail(data.user_email || 'Connected User');
           setIsConnected(true);
@@ -459,10 +458,10 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       />
 
       {isConnected && (
-        <div className="mt-3 overflow-hidden rounded-lg border border-[#D7D7D7] dark:border-[#6A6A6A]">
-          <div className="rounded-t-lg border-[#EEE6FF78] dark:border-[#6A6A6A]">
+        <div className="border-border dark:border-border mt-3 overflow-hidden rounded-lg border">
+          <div className="border-border dark:border-border rounded-t-lg">
             {provider === 'share_point' && allowsSharedContent && (
-              <div className="flex border-b border-[#D7D7D7] dark:border-[#6A6A6A]">
+              <div className="border-border dark:border-border flex border-b">
                 <button
                   onClick={() => handleTabChange('my_files')}
                   className={`px-4 py-2 text-sm font-medium ${
@@ -485,7 +484,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                 </button>
               </div>
             )}
-            <div className="rounded-t-lg bg-[#EEE6FF78] px-4 pt-4 dark:bg-[#2A262E]">
+            <div className="dark:bg-muted rounded-t-lg bg-[#EEE6FF78] px-4 pt-4">
               <div className="mb-2 flex items-center gap-1">
                 {folderPath.map((path, index) => (
                   <div
@@ -516,7 +515,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                   onChange={(e) => handleSearchChange(e.target.value)}
                   colorVariant="silver"
                   borderVariant="thin"
-                  labelBgClassName="bg-[#EEE6FF78] dark:bg-[#2A262E]"
+                  labelBgClassName="bg-[#EEE6FF78] dark:bg-muted"
                   leftIcon={
                     <img src={SearchIcon} alt="Search" width={16} height={16} />
                   }
@@ -531,7 +530,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
               </div>
             </div>
 
-            <div className="h-72 border-t border-[#D7D7D7] dark:border-[#6A6A6A]">
+            <div className="border-border dark:border-border h-72 border-t">
               <TableContainer
                 ref={scrollContainerRef}
                 height="288px"
@@ -586,7 +585,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                               >
                                 <TableCell width="40px" align="center">
                                   <div
-                                    className="mx-auto flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center border border-[#EEE6FF78] p-[0.5px] text-sm dark:border-[#6A6A6A]"
+                                    className="border-border dark:border-border mx-auto flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center border p-[0.5px] text-sm"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleFileSelect(file.id, isFolder(file));
@@ -615,7 +614,9 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                                         className="h-6 w-6"
                                       />
                                     </div>
-                                    <span className="truncate">{file.name}</span>
+                                    <span className="truncate">
+                                      {file.name}
+                                    </span>
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-xs">
@@ -626,7 +627,8 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                                 </TableCell>
                               </TableRow>
                             ))}
-                        {isLoading && files.length > 0 &&
+                        {isLoading &&
+                          files.length > 0 &&
                           Array.from({ length: 3 }).map((_, i) => (
                             <TableRow key={`load-more-skeleton-${i}`}>
                               <TableCell width="40px" align="center">

@@ -330,6 +330,170 @@ class TestStreamProcessorDocPrefetch:
         assert docs_together is not None
         assert "Agent doc content" in docs_together
 
+    def test_configure_source_treats_default_string_as_no_docs(self, mock_mongo_db):
+        from application.api.answer.services.stream_processor import StreamProcessor
+        from application.core.settings import settings
+
+        db = mock_mongo_db[settings.MONGO_DB_NAME]
+        agents_collection = db["agents"]
+
+        agent_id = ObjectId()
+        agents_collection.insert_one(
+            {
+                "_id": agent_id,
+                "key": "agent_default_source_key",
+                "user": "user_123",
+                "prompt_id": "default",
+                "agent_type": "classic",
+                "source": "default",
+            }
+        )
+
+        processor = StreamProcessor(
+            {"question": "Hi", "api_key": "agent_default_source_key"},
+            None,
+        )
+        processor._configure_agent()
+        processor._configure_source()
+
+        assert processor.source == {}
+        assert processor.all_sources == []
+
+    def test_prefetch_skipped_when_no_active_docs(self, mock_mongo_db):
+        from unittest.mock import MagicMock
+
+        from application.api.answer.services.stream_processor import StreamProcessor
+
+        processor = StreamProcessor(
+            {"question": "Hi there"},
+            {"sub": "user_123"},
+        )
+        processor.initialize()
+        processor.create_retriever = MagicMock()
+
+        docs_together, docs = processor.pre_fetch_docs("Hi there")
+
+        processor.create_retriever.assert_not_called()
+        assert docs_together is None
+        assert docs is None
+
+    def test_prefetch_skipped_when_active_docs_is_default(self, mock_mongo_db):
+        from unittest.mock import MagicMock
+
+        from application.api.answer.services.stream_processor import StreamProcessor
+
+        processor = StreamProcessor(
+            {"question": "Hi", "active_docs": "default"},
+            {"sub": "user_123"},
+        )
+        processor.initialize()
+        processor.create_retriever = MagicMock()
+
+        docs_together, docs = processor.pre_fetch_docs("Hi")
+
+        processor.create_retriever.assert_not_called()
+        assert docs_together is None
+        assert docs is None
+
+    def test_agent_retriever_and_chunks_propagate_to_retriever_config(self, mock_mongo_db):
+        from application.api.answer.services.stream_processor import StreamProcessor
+        from application.core.settings import settings
+
+        db = mock_mongo_db[settings.MONGO_DB_NAME]
+        agents_collection = db["agents"]
+        source_id = ObjectId()
+        db["sources"].insert_one(
+            {"_id": source_id, "name": "src", "retriever": "hybrid", "chunks": 5}
+        )
+
+        agent_id = ObjectId()
+        agents_collection.insert_one(
+            {
+                "_id": agent_id,
+                "key": "agent_ret_key",
+                "user": "user_123",
+                "prompt_id": "default",
+                "agent_type": "classic",
+                "retriever": "hybrid",
+                "chunks": 5,
+                "source": DBRef("sources", source_id),
+            }
+        )
+
+        processor = StreamProcessor(
+            {"question": "Test", "api_key": "agent_ret_key"},
+            None,
+        )
+        processor.initialize()
+
+        assert processor.retriever_config["retriever_name"] == "hybrid"
+        assert processor.retriever_config["chunks"] == 5
+
+    def test_request_retriever_and_chunks_override_agent_config(self, mock_mongo_db):
+        from application.api.answer.services.stream_processor import StreamProcessor
+        from application.core.settings import settings
+
+        db = mock_mongo_db[settings.MONGO_DB_NAME]
+        agents_collection = db["agents"]
+
+        agent_id = ObjectId()
+        agents_collection.insert_one(
+            {
+                "_id": agent_id,
+                "key": "agent_override_key",
+                "user": "user_123",
+                "prompt_id": "default",
+                "agent_type": "classic",
+                "retriever": "hybrid",
+                "chunks": 5,
+            }
+        )
+
+        processor = StreamProcessor(
+            {
+                "question": "Test",
+                "api_key": "agent_override_key",
+                "retriever": "classic",
+                "chunks": 7,
+            },
+            None,
+        )
+        processor.initialize()
+
+        assert processor.retriever_config["retriever_name"] == "classic"
+        assert processor.retriever_config["chunks"] == 7
+
+    def test_agent_data_fetched_once_per_request(self, mock_mongo_db):
+        from unittest.mock import patch
+
+        from application.api.answer.services.stream_processor import StreamProcessor
+        from application.core.settings import settings
+
+        db = mock_mongo_db[settings.MONGO_DB_NAME]
+        agents_collection = db["agents"]
+
+        agent_id = ObjectId()
+        agents_collection.insert_one(
+            {
+                "_id": agent_id,
+                "key": "agent_once_key",
+                "user": "user_123",
+                "prompt_id": "default",
+                "agent_type": "classic",
+            }
+        )
+
+        processor = StreamProcessor(
+            {"question": "Test", "api_key": "agent_once_key"},
+            None,
+        )
+
+        with patch.object(
+            processor, "_get_data_from_api_key", wraps=processor._get_data_from_api_key
+        ) as spy:
+            processor.initialize()
+            assert spy.call_count == 1
+
 
 @pytest.mark.unit
 class TestStreamProcessorAttachments:

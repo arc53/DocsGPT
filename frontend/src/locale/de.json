@@ -54,6 +54,7 @@
     },
     "sources": {
       "title": "Hier kannst du alle verfügbaren Quelldateien verwalten, die dir zur Verfügung stehen und die du hochgeladen hast.",
+      "subtitle": "Dokumente und Wissensquellen hochladen und verwalten, die deine Antworten antreiben",
       "label": "Quellen",
       "name": "Quellenname",
       "date": "Vektor-Datum",
@@ -118,6 +119,7 @@
     },
     "analytics": {
       "label": "Analytik",
+      "subtitle": "Nachrichtenvolumen, Token-Verbrauch und Nutzerfeedback in deinem Konto verfolgen",
       "filterByChatbot": "Nach Chatbot filtern",
       "selectChatbot": "Chatbot auswählen",
       "filterOptions": {
@@ -137,6 +139,7 @@
     },
     "logs": {
       "label": "Protokolle",
+      "subtitle": "API-Aufrufe und Konversationsprotokolle einsehen und überwachen",
       "filterByChatbot": "Nach Chatbot filtern",
       "selectChatbot": "Chatbot auswählen",
       "none": "Keine",
@@ -144,6 +147,7 @@
     },
     "tools": {
       "label": "Werkzeuge",
+      "subtitle": "Werkzeuge und Integrationen durchsuchen, verbinden und konfigurieren, die deine Agenten antreiben",
       "searchPlaceholder": "Werkzeuge suchen...",
       "addTool": "Werkzeug hinzufügen",
       "noToolsFound": "Keine Werkzeuge gefunden",
@@ -321,6 +325,14 @@
         "s3": {
           "label": "Amazon S3",
           "heading": "Inhalt von Amazon S3 hinzufügen"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "Von SharePoint hochladen"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "Von Confluence hochladen"
         }
       },
       "connectors": {
@@ -615,7 +627,9 @@
         "tokenLimiting": "Token-Limitierung",
         "tokenLimitingDescription": "Begrenze die täglich von diesem Agenten verwendbaren Tokens",
         "requestLimiting": "Anfrage-Limitierung",
-        "requestLimitingDescription": "Begrenze die täglich an diesen Agenten gestellten Anfragen"
+        "requestLimitingDescription": "Begrenze die täglich an diesen Agenten gestellten Anfragen",
+        "systemPromptOverride": "Prompt-Überschreibung erlauben",
+        "systemPromptOverrideDescription": "Erlaubt v1-API-Aufrufern, den System-Prompt dieses Agenten zu ersetzen"
       },
       "preview": {
         "publishedPreview": "Veröffentlichte Agenten können hier in der Vorschau angezeigt werden"

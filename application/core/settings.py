@@ -5,8 +5,12 @@ from typing import Optional
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-current_dir = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+from application.core.db_uri import (  # noqa: E402
+    normalize_pgvector_connection_string,
+    normalize_postgres_uri,
 )
 
 
@@ -15,19 +19,20 @@ class Settings(BaseSettings):
 
     AUTH_TYPE: Optional[str] = None  # simple_jwt, session_jwt, or None
     LLM_PROVIDER: str = "docsgpt"
-    LLM_NAME: Optional[str] = (
-        None  # if LLM_PROVIDER is openai, LLM_NAME can be gpt-4 or gpt-3.5-turbo
-    )
+    LLM_NAME: Optional[str] = None  # if LLM_PROVIDER is openai, LLM_NAME can be gpt-4 or gpt-3.5-turbo
     EMBEDDINGS_NAME: str = "huggingface_sentence-transformers/all-mpnet-base-v2"
     EMBEDDINGS_BASE_URL: Optional[str] = None  # Remote embeddings API URL (OpenAI-compatible)
-    EMBEDDINGS_KEY: Optional[str] = (
-        None  # api key for embeddings (if using openai, just copy API_KEY)
-    )
-    
+    EMBEDDINGS_KEY: Optional[str] = None  # api key for embeddings (if using openai, just copy API_KEY)
+
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
     MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
     MONGO_DB_NAME: str = "docsgpt"
+    # User-data Postgres DB.
+    POSTGRES_URI: Optional[str] = None
+
+    # MongoDB→Postgres migration: dual-write to Postgres (Mongo stays source of truth)
+    USE_POSTGRES: bool = False
     LLM_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     DEFAULT_MAX_HISTORY: int = 150
     DEFAULT_LLM_TOKEN_LIMIT: int = 128000  # Fallback when model not found in registry
@@ -45,9 +50,7 @@ class Settings(BaseSettings):
     PARSE_IMAGE_REMOTE: bool = False
     DOCLING_OCR_ENABLED: bool = False  # Enable OCR for docling parsers (PDF, images)
     DOCLING_OCR_ATTACHMENTS_ENABLED: bool = False  # Enable OCR for docling when parsing attachments
-    VECTOR_STORE: str = (
-        "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector"
-    )
+    VECTOR_STORE: str = "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector"
     RETRIEVERS_ENABLED: list = ["classic_rag"]
     AGENT_NAME: str = "classic"
     FALLBACK_LLM_PROVIDER: Optional[str] = None  # provider for fallback llm
@@ -55,12 +58,8 @@ class Settings(BaseSettings):
     FALLBACK_LLM_API_KEY: Optional[str] = None  # api key for fallback llm
 
     # Google Drive integration
-    GOOGLE_CLIENT_ID: Optional[str] = (
-        None  # Replace with your actual Google OAuth client ID
-    )
-    GOOGLE_CLIENT_SECRET: Optional[str] = (
-        None  # Replace with your actual Google OAuth client secret
-    )
+    GOOGLE_CLIENT_ID: Optional[str] = None  # Replace with your actual Google OAuth client ID
+    GOOGLE_CLIENT_SECRET: Optional[str] = None  # Replace with your actual Google OAuth client secret
     CONNECTOR_REDIRECT_BASE_URI: Optional[str] = (
         "http://127.0.0.1:7091/api/connectors/callback"  ##add redirect url as it is to your provider's console(gcp)
     )
@@ -71,8 +70,12 @@ class Settings(BaseSettings):
     MICROSOFT_TENANT_ID: Optional[str] = "common"  # Azure AD Tenant ID (or 'common' for multi-tenant)
     MICROSOFT_AUTHORITY: Optional[str] = None  # e.g., "https://login.microsoftonline.com/{tenant_id}"
 
+    # Confluence Cloud integration
+    CONFLUENCE_CLIENT_ID: Optional[str] = None
+    CONFLUENCE_CLIENT_SECRET: Optional[str] = None
+
     # GitHub source
-    GITHUB_ACCESS_TOKEN: Optional[str] = None # PAT token with read repo access
+    GITHUB_ACCESS_TOKEN: Optional[str] = None  # PAT token with read repo access
 
     # LLM Cache
     CACHE_REDIS_URL: str = "redis://localhost:6379/2"
@@ -90,16 +93,13 @@ class Settings(BaseSettings):
     GROQ_API_KEY: Optional[str] = None
     HUGGINGFACE_API_KEY: Optional[str] = None
     OPEN_ROUTER_API_KEY: Optional[str] = None
+    NOVITA_API_KEY: Optional[str] = None
 
     OPENAI_API_BASE: Optional[str] = None  # azure openai api base url
     OPENAI_API_VERSION: Optional[str] = None  # azure openai api version
     AZURE_DEPLOYMENT_NAME: Optional[str] = None  # azure deployment name for answering
-    AZURE_EMBEDDINGS_DEPLOYMENT_NAME: Optional[str] = (
-        None  # azure deployment name for embeddings
-    )
-    OPENAI_BASE_URL: Optional[str] = (
-        None  # openai base url for open ai compatable models
-    )
+    AZURE_EMBEDDINGS_DEPLOYMENT_NAME: Optional[str] = None  # azure deployment name for embeddings
+    OPENAI_BASE_URL: Optional[str] = None  # openai base url for open ai compatable models
 
     # elasticsearch
     ELASTIC_CLOUD_ID: Optional[str] = None  # cloud id for elasticsearch
@@ -132,7 +132,10 @@ class Settings(BaseSettings):
     QDRANT_PATH: Optional[str] = None
     QDRANT_DISTANCE_FUNC: str = "Cosine"
 
-    # PGVector vectorstore config
+    # PGVector vectorstore config. Write the URI in whichever form you
+    # prefer — ``postgres://``, ``postgresql://``, or even the SQLAlchemy
+    # dialect form (``postgresql+psycopg://``) are all accepted and
+    # normalized internally for ``psycopg.connect()``.
     PGVECTOR_CONNECTION_STRING: Optional[str] = None
     # Milvus vectorstore config
     MILVUS_COLLECTION_NAME: Optional[str] = "docsgpt"
@@ -141,9 +144,7 @@ class Settings(BaseSettings):
 
     # LanceDB vectorstore config
     LANCEDB_PATH: str = "./data/lancedb"  # Path where LanceDB stores its local data
-    LANCEDB_TABLE_NAME: Optional[str] = (
-        "docsgpts"  # Name of the table to use for storing vectors
-    )
+    LANCEDB_TABLE_NAME: Optional[str] = "docsgpts"  # Name of the table to use for storing vectors
 
     FLASK_DEBUG_MODE: bool = False
     STORAGE_TYPE: str = "local"  # local or s3
@@ -159,7 +160,7 @@ class Settings(BaseSettings):
     STT_PROVIDER: str = "openai"  # openai or faster_whisper
     OPENAI_STT_MODEL: str = "gpt-4o-mini-transcribe"
     STT_LANGUAGE: Optional[str] = None
-    STT_MAX_FILE_SIZE_MB: int = 25
+    STT_MAX_FILE_SIZE_MB: int = 50
     STT_ENABLE_TIMESTAMPS: bool = False
     STT_ENABLE_DIARIZATION: bool = False
 
@@ -173,6 +174,16 @@ class Settings(BaseSettings):
     COMPRESSION_PROMPT_VERSION: str = "v1.0"  # Track prompt iterations
     COMPRESSION_MAX_HISTORY_POINTS: int = 3  # Keep only last N compression points to prevent DB bloat
 
+    @field_validator("POSTGRES_URI", mode="before")
+    @classmethod
+    def _normalize_postgres_uri_validator(cls, v):
+        return normalize_postgres_uri(v)
+
+    @field_validator("PGVECTOR_CONNECTION_STRING", mode="before")
+    @classmethod
+    def _normalize_pgvector_connection_string_validator(cls, v):
+        return normalize_pgvector_connection_string(v)
+
     @field_validator(
         "API_KEY",
         "OPENAI_API_KEY",
@@ -180,6 +191,7 @@ class Settings(BaseSettings):
         "GOOGLE_API_KEY",
         "GROQ_API_KEY",
         "HUGGINGFACE_API_KEY",
+        "NOVITA_API_KEY",
         "EMBEDDINGS_KEY",
         "FALLBACK_LLM_API_KEY",
         "QDRANT_API_KEY",
