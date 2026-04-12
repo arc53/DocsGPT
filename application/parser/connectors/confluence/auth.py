@@ -145,9 +145,7 @@ class ConfluenceAuth(BaseConnectorAuth):
             return bool(token_info.get("access_token"))
 
         try:
-            from dateutil import parser
-
-            expiry_dt = parser.parse(expiry)
+            expiry_dt = datetime.datetime.fromisoformat(expiry)
             now = datetime.datetime.now(datetime.timezone.utc)
             return now >= expiry_dt - datetime.timedelta(seconds=60)
         except Exception:

@@ -7,6 +7,10 @@ export default {
     "title": "🔗 SharePoint / OneDrive",
     "href": "/Guides/Integrations/sharepoint-connector"
   },
+  "confluence-connector": {
+    "title": "🔗 Confluence",
+    "href": "/Guides/Integrations/confluence-connector"
+  },
   "mcp-tool-integration": {
     "title": "🔗 MCP Tools",
     "href": "/Guides/Integrations/mcp-tool-integration"

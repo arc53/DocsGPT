@@ -343,7 +343,11 @@ class ConfluenceLoader(BaseConnectorLoader):
                     if not download_link:
                         continue
 
-                    file_name = att.get("title", att.get("id", "attachment"))
+                    raw_name = att.get("title", att.get("id", "attachment"))
+                    file_name = "".join(
+                        c if c.isalnum() or c in " -_." else "_"
+                        for c in os.path.basename(raw_name)
+                    ) or "attachment"
                     file_path = os.path.join(local_dir, file_name)
 
                     url = f"{self.download_base}{download_link}"
