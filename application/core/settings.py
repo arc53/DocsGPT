@@ -8,6 +8,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+from application.core.db_uri import (  # noqa: E402
+    normalize_pgvector_connection_string,
+    normalize_postgres_uri,
+)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
@@ -22,6 +28,13 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
     MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
     MONGO_DB_NAME: str = "docsgpt"
+    # User-data Postgres DB Optional during the MongoDB→Postgres migration; becomes required once the migration is
+    # complete.
+    POSTGRES_URI: Optional[str] = None
+
+    # MongoDB→Postgres migration switches
+    USE_POSTGRES: bool = False
+    READ_POSTGRES: bool = False
     LLM_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     DEFAULT_MAX_HISTORY: int = 150
     DEFAULT_LLM_TOKEN_LIMIT: int = 128000  # Fallback when model not found in registry
@@ -117,7 +130,10 @@ class Settings(BaseSettings):
     QDRANT_PATH: Optional[str] = None
     QDRANT_DISTANCE_FUNC: str = "Cosine"
 
-    # PGVector vectorstore config
+    # PGVector vectorstore config. Write the URI in whichever form you
+    # prefer — ``postgres://``, ``postgresql://``, or even the SQLAlchemy
+    # dialect form (``postgresql+psycopg://``) are all accepted and
+    # normalized internally for ``psycopg.connect()``.
     PGVECTOR_CONNECTION_STRING: Optional[str] = None
     # Milvus vectorstore config
     MILVUS_COLLECTION_NAME: Optional[str] = "docsgpt"
@@ -155,6 +171,16 @@ class Settings(BaseSettings):
     COMPRESSION_MODEL_OVERRIDE: Optional[str] = None  # Use different model for compression
     COMPRESSION_PROMPT_VERSION: str = "v1.0"  # Track prompt iterations
     COMPRESSION_MAX_HISTORY_POINTS: int = 3  # Keep only last N compression points to prevent DB bloat
+
+    @field_validator("POSTGRES_URI", mode="before")
+    @classmethod
+    def _normalize_postgres_uri_validator(cls, v):
+        return normalize_postgres_uri(v)
+
+    @field_validator("PGVECTOR_CONNECTION_STRING", mode="before")
+    @classmethod
+    def _normalize_pgvector_connection_string_validator(cls, v):
+        return normalize_pgvector_connection_string(v)
 
     @field_validator(
         "API_KEY",

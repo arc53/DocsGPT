@@ -23,6 +23,8 @@ from application.api.user.base import (
     workflow_nodes_collection,
     workflows_collection,
 )
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.users import UsersRepository
 from application.core.json_schema_utils import (
     JsonSchemaValidationError,
     normalize_json_schema_payload,
@@ -1250,6 +1252,9 @@ class PinnedAgents(Resource):
                     {"user_id": user_id},
                     {"$pullAll": {"agent_preferences.pinned": stale_ids}},
                 )
+                dual_write(UsersRepository,
+                    lambda repo, uid=user_id, ids=stale_ids: repo.remove_pinned_bulk(uid, ids)
+                )
             list_pinned_agents = [
                 {
                     "id": str(agent["_id"]),
@@ -1381,11 +1386,17 @@ class PinAgent(Resource):
                     {"user_id": user_id},
                     {"$pull": {"agent_preferences.pinned": agent_id}},
                 )
+                dual_write(UsersRepository,
+                    lambda repo, uid=user_id, aid=agent_id: repo.remove_pinned(uid, aid)
+                )
                 action = "unpinned"
             else:
                 users_collection.update_one(
                     {"user_id": user_id},
                     {"$addToSet": {"agent_preferences.pinned": agent_id}},
+                )
+                dual_write(UsersRepository,
+                    lambda repo, uid=user_id, aid=agent_id: repo.add_pinned(uid, aid)
                 )
                 action = "pinned"
         except Exception as err:
@@ -1431,6 +1442,9 @@ class RemoveSharedAgent(Resource):
                         "agent_preferences.pinned": agent_id,
                     }
                 },
+            )
+            dual_write(UsersRepository,
+                lambda repo, uid=user_id, aid=agent_id: repo.remove_agent_from_all(uid, aid)
             )
 
             return make_response(jsonify({"success": True, "action": "removed"}), 200)
