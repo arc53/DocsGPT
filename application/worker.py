@@ -1173,6 +1173,16 @@ def attachment_worker(self, file_info, user):
             }
         )
 
+        from application.storage.db.dual_write import dual_write
+        from application.storage.db.repositories.attachments import AttachmentsRepository
+
+        dual_write(
+            AttachmentsRepository,
+            lambda repo, u=user, fn=filename, p=relative_path, mt=mime_type: repo.create(
+                u, fn, p, mime_type=mt,
+            ),
+        )
+
         logging.info(
             f"Stored attachment with ID: {attachment_id}", extra={"user": user}
         )

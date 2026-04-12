@@ -13,6 +13,8 @@ from application.api.user.base import (
     agent_folders_collection,
     agents_collection,
 )
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.agent_folders import AgentFoldersRepository
 
 agents_folders_ns = Namespace(
     "agents_folders", description="Agent folder management", path="/api/agents/folders"
@@ -83,6 +85,10 @@ class AgentFolders(Resource):
                 "updated_at": now,
             }
             result = agent_folders_collection.insert_one(folder)
+            dual_write(
+                AgentFoldersRepository,
+                lambda repo, u=user, n=data["name"]: repo.create(u, n),
+            )
             return make_response(
                 jsonify({"id": str(result.inserted_id), "name": data["name"], "parent_id": parent_id}),
                 201,
@@ -167,6 +173,10 @@ class AgentFolder(Resource):
                 {"user": user, "parent_id": folder_id}, {"$unset": {"parent_id": ""}}
             )
             result = agent_folders_collection.delete_one({"_id": ObjectId(folder_id), "user": user})
+            dual_write(
+                AgentFoldersRepository,
+                lambda repo, fid=folder_id, u=user: repo.delete(fid, u),
+            )
             if result.deleted_count == 0:
                 return make_response(jsonify({"success": False, "message": "Folder not found"}), 404)
             return make_response(jsonify({"success": True}), 200)
