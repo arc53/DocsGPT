@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     MICROSOFT_TENANT_ID: Optional[str] = "common"  # Azure AD Tenant ID (or 'common' for multi-tenant)
     MICROSOFT_AUTHORITY: Optional[str] = None  # e.g., "https://login.microsoftonline.com/{tenant_id}"
 
+    # Confluence Cloud integration
+    CONFLUENCE_CLIENT_ID: Optional[str] = None
+    CONFLUENCE_CLIENT_SECRET: Optional[str] = None
+
     # GitHub source
     GITHUB_ACCESS_TOKEN: Optional[str] = None  # PAT token with read repo access
 

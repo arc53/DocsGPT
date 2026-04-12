@@ -329,6 +329,10 @@
         "share_point": {
           "label": "SharePoint",
           "heading": "SharePointからアップロード"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "Confluenceからアップロード"
         }
       },
       "connectors": {

@@ -60,6 +60,10 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       displayName: 'SharePoint',
       rootName: 'My Files',
     },
+    confluence: {
+      displayName: 'Confluence',
+      rootName: 'Spaces',
+    },
   } as const;
 
   const getProviderConfig = (provider: string) => {
@@ -202,7 +206,9 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       if (!validateResponse.ok) {
         removeSessionToken(provider);
         setIsConnected(false);
-        setAuthError('Session expired. Please reconnect to Google Drive.');
+        setAuthError(
+          `Session expired. Please reconnect to ${getProviderConfig(provider).displayName}.`,
+        );
         return;
       }
 
@@ -398,6 +404,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
       <ConnectorAuth
         provider={provider}
+        label={`Connect to ${getProviderConfig(provider).displayName}`}
         onSuccess={(data) => {
           setUserEmail(data.user_email || 'Connected User');
           setIsConnected(true);
