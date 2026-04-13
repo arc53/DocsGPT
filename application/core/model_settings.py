@@ -19,6 +19,8 @@ class ModelProvider(str, Enum):
     PREMAI = "premai"
     SAGEMAKER = "sagemaker"
     NOVITA = "novita"
+    ASTRAFLOW = "astraflow"
+    ASTRAFLOW_CN = "astraflow-cn"
 
 
 @dataclass
@@ -118,6 +120,14 @@ class ModelRegistry:
             settings.LLM_PROVIDER == "novita" and settings.API_KEY
         ):
             self._add_novita_models(settings)
+        if settings.ASTRAFLOW_API_KEY or (
+            settings.LLM_PROVIDER == "astraflow" and settings.API_KEY
+        ):
+            self._add_astraflow_models(settings)
+        if settings.ASTRAFLOW_CN_API_KEY or (
+            settings.LLM_PROVIDER == "astraflow-cn" and settings.API_KEY
+        ):
+            self._add_astraflow_cn_models(settings)
         if settings.HUGGINGFACE_API_KEY or (
             settings.LLM_PROVIDER == "huggingface" and settings.API_KEY
         ):
@@ -262,6 +272,36 @@ class ModelRegistry:
                     self.models[model.id] = model
                     return
         for model in NOVITA_MODELS:
+            self.models[model.id] = model
+
+    def _add_astraflow_models(self, settings):
+        from application.core.model_configs import ASTRAFLOW_MODELS
+
+        if settings.ASTRAFLOW_API_KEY:
+            for model in ASTRAFLOW_MODELS:
+                self.models[model.id] = model
+            return
+        if settings.LLM_PROVIDER == "astraflow" and settings.LLM_NAME:
+            for model in ASTRAFLOW_MODELS:
+                if model.id == settings.LLM_NAME:
+                    self.models[model.id] = model
+                    return
+        for model in ASTRAFLOW_MODELS:
+            self.models[model.id] = model
+
+    def _add_astraflow_cn_models(self, settings):
+        from application.core.model_configs import ASTRAFLOW_CN_MODELS
+
+        if settings.ASTRAFLOW_CN_API_KEY:
+            for model in ASTRAFLOW_CN_MODELS:
+                self.models[model.id] = model
+            return
+        if settings.LLM_PROVIDER == "astraflow-cn" and settings.LLM_NAME:
+            for model in ASTRAFLOW_CN_MODELS:
+                if model.id == settings.LLM_NAME:
+                    self.models[model.id] = model
+                    return
+        for model in ASTRAFLOW_CN_MODELS:
             self.models[model.id] = model
 
     def _add_docsgpt_models(self, settings):
