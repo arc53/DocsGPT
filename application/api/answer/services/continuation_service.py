@@ -13,6 +13,11 @@ from bson import ObjectId
 
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.conversations import ConversationsRepository
+from application.storage.db.repositories.pending_tool_state import (
+    PendingToolStateRepository,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +112,26 @@ class ContinuationService:
             f"Saved continuation state for conversation {conversation_id} "
             f"with {len(pending_tool_calls)} pending tool call(s)"
         )
+
+        # Dual-write to Postgres — upsert against the same Mongo conversation
+        # by resolving its UUID via conversations.legacy_mongo_id.
+        def _pg_save(_: PendingToolStateRepository) -> None:
+            conn = _._conn  # reuse the existing transaction
+            conv = ConversationsRepository(conn).get_by_legacy_id(conversation_id)
+            if conv is None:
+                return
+            _.save_state(
+                conv["id"],
+                user,
+                messages=_make_serializable(messages),
+                pending_tool_calls=_make_serializable(pending_tool_calls),
+                tools_dict=_make_serializable(tools_dict),
+                tool_schemas=_make_serializable(tool_schemas),
+                agent_config=_make_serializable(agent_config),
+                client_tools=_make_serializable(client_tools) if client_tools else None,
+            )
+
+        dual_write(PendingToolStateRepository, _pg_save)
         return state_id
 
     def load_state(
@@ -138,4 +163,13 @@ class ContinuationService:
             logger.info(
                 f"Deleted continuation state for conversation {conversation_id}"
             )
+
+        # Dual-write to Postgres — delete the same row.
+        def _pg_delete(repo: PendingToolStateRepository) -> None:
+            conv = ConversationsRepository(repo._conn).get_by_legacy_id(conversation_id)
+            if conv is None:
+                return
+            repo.delete_state(conv["id"], user)
+
+        dual_write(PendingToolStateRepository, _pg_delete)
         return result.deleted_count > 0

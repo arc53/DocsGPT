@@ -15,6 +15,9 @@ from application.agents.workflows.workflow_engine import WorkflowEngine
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.logging import log_activity, LogContext
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.workflow_runs import WorkflowRunsRepository
+from application.storage.db.repositories.workflows import WorkflowsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +184,9 @@ class WorkflowAgent(BaseAgent):
     def _save_workflow_run(self, query: str) -> None:
         if not self._engine:
             return
+        owner_id = self.workflow_owner
+        if not owner_id and isinstance(self.decoded_token, dict):
+            owner_id = self.decoded_token.get("sub")
         try:
             mongo = MongoDB.get_client()
             db = mongo[settings.MONGO_DB_NAME]
@@ -188,6 +194,7 @@ class WorkflowAgent(BaseAgent):
 
             run = WorkflowRun(
                 workflow_id=self.workflow_id or "unknown",
+                user=owner_id,
                 status=self._determine_run_status(),
                 inputs={"query": query},
                 outputs=self._serialize_state(self._engine.state),
@@ -196,7 +203,34 @@ class WorkflowAgent(BaseAgent):
                 completed_at=datetime.now(timezone.utc),
             )
 
-            workflow_runs_coll.insert_one(run.to_mongo_doc())
+            result = workflow_runs_coll.insert_one(run.to_mongo_doc())
+            legacy_mongo_id = (
+                str(result.inserted_id)
+                if getattr(result, "inserted_id", None) is not None
+                else None
+            )
+
+            def _pg_write(repo: WorkflowRunsRepository) -> None:
+                if not self.workflow_id or not owner_id or not legacy_mongo_id:
+                    return
+                workflow = WorkflowsRepository(repo._conn).get_by_legacy_id(
+                    self.workflow_id, owner_id,
+                )
+                if workflow is None:
+                    return
+                repo.create(
+                    workflow["id"],
+                    owner_id,
+                    run.status.value,
+                    inputs=run.inputs,
+                    result=run.outputs,
+                    steps=[step.model_dump(mode="json") for step in run.steps],
+                    started_at=run.created_at,
+                    ended_at=run.completed_at,
+                    legacy_mongo_id=legacy_mongo_id,
+                )
+
+            dual_write(WorkflowRunsRepository, _pg_write)
         except Exception as e:
             logger.error(f"Failed to save workflow run: {e}")
 

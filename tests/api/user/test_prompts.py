@@ -18,12 +18,19 @@ class TestCreatePrompt:
         from application.api.user.prompts.routes import CreatePrompt
 
         mock_collection = Mock()
+        mock_repo = Mock()
         inserted_id = ObjectId()
         mock_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
+
+        def _run_dual_write(_repo_cls, fn):
+            fn(mock_repo)
 
         with patch(
             "application.api.user.prompts.routes.prompts_collection",
             mock_collection,
+        ), patch(
+            "application.api.user.prompts.routes.dual_write",
+            side_effect=_run_dual_write,
         ):
             with app.test_request_context(
                 "/api/create_prompt",
@@ -41,6 +48,12 @@ class TestCreatePrompt:
         doc = mock_collection.insert_one.call_args[0][0]
         assert doc["name"] == "My Prompt"
         assert doc["user"] == "user1"
+        mock_repo.create.assert_called_once_with(
+            "user1",
+            "My Prompt",
+            "You are helpful.",
+            legacy_mongo_id=str(inserted_id),
+        )
 
     def test_returns_401_unauthenticated(self, app):
         from application.api.user.prompts.routes import CreatePrompt
@@ -204,10 +217,17 @@ class TestDeletePrompt:
 
         prompt_id = ObjectId()
         mock_collection = Mock()
+        mock_repo = Mock()
+
+        def _run_dual_write(_repo_cls, fn):
+            fn(mock_repo)
 
         with patch(
             "application.api.user.prompts.routes.prompts_collection",
             mock_collection,
+        ), patch(
+            "application.api.user.prompts.routes.dual_write",
+            side_effect=_run_dual_write,
         ):
             with app.test_request_context(
                 "/api/delete_prompt",
@@ -224,6 +244,7 @@ class TestDeletePrompt:
         mock_collection.delete_one.assert_called_once_with(
             {"_id": prompt_id, "user": "user1"}
         )
+        mock_repo.delete_by_legacy_id.assert_called_once_with(str(prompt_id), "user1")
 
     def test_returns_400_missing_id(self, app):
         from application.api.user.prompts.routes import DeletePrompt
@@ -249,10 +270,17 @@ class TestUpdatePrompt:
 
         prompt_id = ObjectId()
         mock_collection = Mock()
+        mock_repo = Mock()
+
+        def _run_dual_write(_repo_cls, fn):
+            fn(mock_repo)
 
         with patch(
             "application.api.user.prompts.routes.prompts_collection",
             mock_collection,
+        ), patch(
+            "application.api.user.prompts.routes.dual_write",
+            side_effect=_run_dual_write,
         ):
             with app.test_request_context(
                 "/api/update_prompt",
@@ -271,6 +299,12 @@ class TestUpdatePrompt:
         assert response.status_code == 200
         assert response.json["success"] is True
         mock_collection.update_one.assert_called_once()
+        mock_repo.update_by_legacy_id.assert_called_once_with(
+            str(prompt_id),
+            "user1",
+            "Updated",
+            "New content",
+        )
 
     def test_returns_400_missing_fields(self, app):
         from application.api.user.prompts.routes import UpdatePrompt

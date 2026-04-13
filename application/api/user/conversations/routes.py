@@ -8,6 +8,8 @@ from flask_restx import fields, Namespace, Resource
 
 from application.api import api
 from application.api.user.base import attachments_collection, conversations_collection
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.conversations import ConversationsRepository
 from application.utils import check_required_fields
 
 conversations_ns = Namespace(
@@ -30,15 +32,23 @@ class DeleteConversation(Resource):
             return make_response(
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
+        user_id = decoded_token["sub"]
         try:
             conversations_collection.delete_one(
-                {"_id": ObjectId(conversation_id), "user": decoded_token["sub"]}
+                {"_id": ObjectId(conversation_id), "user": user_id}
             )
         except Exception as err:
             current_app.logger.error(
                 f"Error deleting conversation: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
+
+        def _pg_delete(repo: ConversationsRepository) -> None:
+            conv = repo.get_by_legacy_id(conversation_id)
+            if conv is not None:
+                repo.delete(conv["id"], user_id)
+
+        dual_write(ConversationsRepository, _pg_delete)
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -59,6 +69,11 @@ class DeleteAllConversations(Resource):
                 f"Error deleting all conversations: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
+
+        dual_write(
+            ConversationsRepository,
+            lambda r, uid=user_id: r.delete_all_for_user(uid),
+        )
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -190,9 +205,10 @@ class UpdateConversationName(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        user_id = decoded_token.get("sub")
         try:
             conversations_collection.update_one(
-                {"_id": ObjectId(data["id"]), "user": decoded_token.get("sub")},
+                {"_id": ObjectId(data["id"]), "user": user_id},
                 {"$set": {"name": data["name"]}},
             )
         except Exception as err:
@@ -200,6 +216,13 @@ class UpdateConversationName(Resource):
                 f"Error updating conversation name: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
+
+        def _pg_rename(repo: ConversationsRepository) -> None:
+            conv = repo.get_by_legacy_id(data["id"])
+            if conv is not None:
+                repo.rename(conv["id"], user_id, data["name"])
+
+        dual_write(ConversationsRepository, _pg_rename)
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -277,4 +300,21 @@ class SubmitFeedback(Resource):
         except Exception as err:
             current_app.logger.error(f"Error submitting feedback: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
+
+        # Dual-write to Postgres: mirror the per-message feedback set/unset.
+        feedback_value = data["feedback"]
+        question_index = int(data["question_index"])
+        feedback_payload = (
+            None if feedback_value is None
+            else {"text": feedback_value, "timestamp": datetime.datetime.now(
+                datetime.timezone.utc
+            ).isoformat()}
+        )
+
+        def _pg_feedback(repo: ConversationsRepository) -> None:
+            conv = repo.get_by_legacy_id(data["conversation_id"])
+            if conv is not None:
+                repo.set_feedback(conv["id"], question_index, feedback_payload)
+
+        dual_write(ConversationsRepository, _pg_feedback)
         return make_response(jsonify({"success": True}), 200)

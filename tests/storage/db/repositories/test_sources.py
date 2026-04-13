@@ -25,12 +25,6 @@ class TestCreate:
         assert doc["type"] == "url"
         assert doc["id"] is not None
 
-    def test_creates_system_source_without_user(self, pg_conn):
-        repo = _repo(pg_conn)
-        doc = repo.create("system-src")
-        assert doc["user_id"] is None
-        assert doc["name"] == "system-src"
-
     def test_creates_source_with_metadata(self, pg_conn):
         repo = _repo(pg_conn)
         doc = repo.create("src", user_id="u", metadata={"url": "https://example.com"})
@@ -38,7 +32,7 @@ class TestCreate:
 
     def test_create_returns_id_and_underscore_id(self, pg_conn):
         repo = _repo(pg_conn)
-        doc = repo.create("s")
+        doc = repo.create("s", user_id="u")
         assert doc["_id"] == doc["id"]
 
 

@@ -211,6 +211,7 @@ class WorkflowRun(BaseModel):
     model_config = ConfigDict(extra="allow")
     id: Optional[str] = Field(None, alias="_id")
     workflow_id: str
+    user: Optional[str] = None
     status: ExecutionStatus = ExecutionStatus.PENDING
     inputs: Dict[str, str] = Field(default_factory=dict)
     outputs: Dict[str, Any] = Field(default_factory=dict)
@@ -226,7 +227,7 @@ class WorkflowRun(BaseModel):
         return v
 
     def to_mongo_doc(self) -> Dict[str, Any]:
-        return {
+        doc = {
             "workflow_id": self.workflow_id,
             "status": self.status.value,
             "inputs": self.inputs,
@@ -235,3 +236,7 @@ class WorkflowRun(BaseModel):
             "created_at": self.created_at,
             "completed_at": self.completed_at,
         }
+        if self.user:
+            doc["user"] = self.user
+            doc["user_id"] = self.user
+        return doc

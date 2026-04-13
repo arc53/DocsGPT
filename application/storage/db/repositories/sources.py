@@ -15,7 +15,7 @@ class SourcesRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
 
-    def create(self, name: str, *, user_id: Optional[str] = None,
+    def create(self, name: str, *, user_id: str,
                type: Optional[str] = None, metadata: Optional[dict] = None) -> dict:
         result = self._conn.execute(
             text(
@@ -55,12 +55,12 @@ class SourcesRepository:
         if not filtered:
             return
 
-        values: dict = {}
-        for col, val in filtered.items():
-            if col == "metadata":
-                values[col] = json.dumps(val) if isinstance(val, dict) else val
-            else:
-                values[col] = val
+        # Pass Python objects directly for JSONB columns when using
+        # SQLAlchemy Core .update() — the JSONB type processor json.dumps
+        # them itself; pre-serialising here would double-encode and the
+        # value would round-trip as a JSON string instead of the original
+        # dict.
+        values: dict = dict(filtered)
         values["updated_at"] = func.now()
 
         t = sources_table

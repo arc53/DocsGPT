@@ -37,6 +37,16 @@ class TestCreate:
         doc = repo.create("u", "f", "/p")
         assert doc["_id"] == doc["id"]
 
+    def test_create_with_legacy_mongo_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create(
+            "u",
+            "f",
+            "/p",
+            legacy_mongo_id="507f1f77bcf86cd799439011",
+        )
+        assert doc["legacy_mongo_id"] == "507f1f77bcf86cd799439011"
+
 
 class TestGet:
     def test_get_existing(self, pg_conn):
@@ -53,6 +63,17 @@ class TestGet:
         repo = _repo(pg_conn)
         created = repo.create("u", "f", "/p")
         assert repo.get(created["id"], "other") is None
+
+    def test_get_by_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create(
+            "u",
+            "f",
+            "/p",
+            legacy_mongo_id="507f1f77bcf86cd799439011",
+        )
+        fetched = repo.get_by_legacy_id("507f1f77bcf86cd799439011", "u")
+        assert fetched["id"] == created["id"]
 
 
 class TestListForUser:
