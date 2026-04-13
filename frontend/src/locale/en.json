@@ -341,6 +341,10 @@
         "share_point": {
           "label": "SharePoint",
           "heading": "Upload from SharePoint"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "Upload from Confluence"
         }
       },
       "connectors": {
@@ -653,7 +657,9 @@
         "tokenLimiting": "Token limiting",
         "tokenLimitingDescription": "Limit daily total tokens that can be used by this agent",
         "requestLimiting": "Request limiting",
-        "requestLimitingDescription": "Limit daily total requests that can be made to this agent"
+        "requestLimitingDescription": "Limit daily total requests that can be made to this agent",
+        "systemPromptOverride": "Allow prompt override",
+        "systemPromptOverrideDescription": "Let v1 API callers replace this agent's system prompt"
       },
       "preview": {
         "publishedPreview": "Published agents can be previewed here"

@@ -110,6 +110,20 @@ def update_token_usage(decoded_token, user_api_key, token_usage, agent_id=None):
         usage_data["agent_id"] = normalized_agent_id
     usage_collection.insert_one(usage_data)
 
+    from application.storage.db.dual_write import dual_write
+    from application.storage.db.repositories.token_usage import TokenUsageRepository
+
+    dual_write(
+        TokenUsageRepository,
+        lambda repo, d=usage_data: repo.insert(
+            user_id=d.get("user_id"),
+            api_key=d.get("api_key"),
+            agent_id=d.get("agent_id"),
+            prompt_tokens=d["prompt_tokens"],
+            generated_tokens=d["generated_tokens"],
+        ),
+    )
+
 
 def gen_token_usage(func):
     def wrapper(self, model, messages, stream, tools, **kwargs):

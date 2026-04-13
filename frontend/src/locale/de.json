@@ -325,6 +325,14 @@
         "s3": {
           "label": "Amazon S3",
           "heading": "Inhalt von Amazon S3 hinzufügen"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "Von SharePoint hochladen"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "Von Confluence hochladen"
         }
       },
       "connectors": {
@@ -619,7 +627,9 @@
         "tokenLimiting": "Token-Limitierung",
         "tokenLimitingDescription": "Begrenze die täglich von diesem Agenten verwendbaren Tokens",
         "requestLimiting": "Anfrage-Limitierung",
-        "requestLimitingDescription": "Begrenze die täglich an diesen Agenten gestellten Anfragen"
+        "requestLimitingDescription": "Begrenze die täglich an diesen Agenten gestellten Anfragen",
+        "systemPromptOverride": "Prompt-Überschreibung erlauben",
+        "systemPromptOverrideDescription": "Erlaubt v1-API-Aufrufern, den System-Prompt dieses Agenten zu ersetzen"
       },
       "preview": {
         "publishedPreview": "Veröffentlichte Agenten können hier in der Vorschau angezeigt werden"

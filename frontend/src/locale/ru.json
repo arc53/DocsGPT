@@ -329,6 +329,10 @@
         "share_point": {
           "label": "SharePoint",
           "heading": "Загрузить из SharePoint"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "Загрузить из Confluence"
         }
       },
       "connectors": {
@@ -641,7 +645,9 @@
         "tokenLimiting": "Лимит токенов",
         "tokenLimitingDescription": "Ограничить ежедневное общее количество токенов, которые может использовать этот агент",
         "requestLimiting": "Лимит запросов",
-        "requestLimitingDescription": "Ограничить ежедневное общее количество запросов, которые можно сделать к этому агенту"
+        "requestLimitingDescription": "Ограничить ежедневное общее количество запросов, которые можно сделать к этому агенту",
+        "systemPromptOverride": "Разрешить замену промпта",
+        "systemPromptOverrideDescription": "Разрешить вызовам API v1 заменять системный промпт этого агента"
       },
       "preview": {
         "publishedPreview": "Опубликованные агенты можно просмотреть здесь"

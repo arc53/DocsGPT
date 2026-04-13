@@ -16,10 +16,9 @@ def _make_store(
     ) as mock_settings, patch.dict(
         "sys.modules",
         {
-            "psycopg2": MagicMock(),
-            "psycopg2.extras": MagicMock(),
+            "psycopg": MagicMock(),
             "pgvector": MagicMock(),
-            "pgvector.psycopg2": MagicMock(),
+            "pgvector.psycopg": MagicMock(),
         },
     ):
         mock_emb = Mock()
@@ -63,15 +62,15 @@ class TestPGVectorStoreInit:
         ) as mock_settings, patch.dict(
             "sys.modules",
             {
-                "psycopg2": MagicMock(),
-                "psycopg2.extras": MagicMock(),
+                "psycopg": MagicMock(),
                 "pgvector": MagicMock(),
-                "pgvector.psycopg2": MagicMock(),
+                "pgvector.psycopg": MagicMock(),
             },
         ):
             mock_get_emb.return_value = Mock(dimension=768)
             mock_settings.EMBEDDINGS_NAME = "test_model"
             mock_settings.PGVECTOR_CONNECTION_STRING = None
+            mock_settings.POSTGRES_URI = None
 
             from application.vectorstore.pgvector import PGVectorStore
 
@@ -264,13 +263,13 @@ class TestPGVectorStoreConnection:
         store, mock_conn, _, _ = _make_store()
         mock_conn.closed = True
 
-        mock_psycopg2 = MagicMock()
+        mock_psycopg = MagicMock()
         new_conn = MagicMock()
-        mock_psycopg2.connect.return_value = new_conn
-        store._psycopg2 = mock_psycopg2
+        mock_psycopg.connect.return_value = new_conn
+        store._psycopg = mock_psycopg
 
         conn = store._get_connection()
-        mock_psycopg2.connect.assert_called_once()
+        mock_psycopg.connect.assert_called_once()
         assert conn is new_conn
 
     def test_get_connection_reuses_open(self):

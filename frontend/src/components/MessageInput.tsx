@@ -1375,9 +1375,8 @@ export default function MessageInput({
   }, []);
 
   useEffect(() => {
-    if (autoFocus) inputRef.current?.focus();
     handleInput();
-  }, [autoFocus, handleInput]);
+  }, [handleInput]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setValue(e.target.value);
@@ -1445,14 +1444,15 @@ export default function MessageInput({
       setValue('');
       clearSelectedImage();
       // Refocus input after submission if autoFocus is enabled
-      if (autoFocus) {
+      if (isTouch) {
+        inputRef.current?.blur();
+      } else if (autoFocus) {
         setTimeout(() => {
           if (isMountedRef.current) {
             inputRef.current?.focus();
           }
         }, 0);
       }
-    }
   };
 
   const handleCancel = () => {
@@ -1638,6 +1638,7 @@ export default function MessageInput({
             id="message-input"
             ref={inputRef}
             value={value}
+            autoFocus={autoFocus && !isTouch}
             onChange={handleChange}
             readOnly={
               recordingState === 'recording' ||

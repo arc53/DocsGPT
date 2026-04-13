@@ -73,7 +73,7 @@ class BraveSearchTool(Tool):
             "X-Subscription-Token": self.token,
         }
 
-        response = requests.get(url, params=params, headers=headers)
+        response = requests.get(url, params=params, headers=headers, timeout=100)
 
         if response.status_code == 200:
             return {
@@ -118,7 +118,7 @@ class BraveSearchTool(Tool):
             "X-Subscription-Token": self.token,
         }
 
-        response = requests.get(url, params=params, headers=headers)
+        response = requests.get(url, params=params, headers=headers, timeout=100)
 
         if response.status_code == 200:
             return {

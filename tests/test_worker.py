@@ -342,7 +342,7 @@ class TestDownloadFile:
         dest = str(tmp_path / "downloaded.txt")
         download_file("http://example.com/file", {"key": "val"}, dest)
 
-        mock_get.assert_called_once_with("http://example.com/file", params={"key": "val"})
+        mock_get.assert_called_once_with("http://example.com/file", params={"key": "val"}, timeout=100)
         with open(dest, "rb") as f:
             assert f.read() == b"file content"
 

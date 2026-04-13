@@ -251,7 +251,7 @@ export default function Conversation() {
           isSplitArtifactOpen ? 'w-[60%] px-6' : 'w-full'
         }`}
       >
-        <div className="min-h-0 flex-1">
+        <div className="relative min-h-0 flex-1 ">
           <ConversationMessages
             handleQuestion={handleQuestion}
             handleQuestionSubmission={handleQuestionSubmission}
@@ -270,6 +270,7 @@ export default function Conversation() {
               ) : undefined
             }
           />
+          <div className="from-background pointer-events-none absolute right-1.5 bottom-0 left-0 h-6 rounded-t-2xl bg-linear-to-t to-transparent" />
         </div>
 
         <div

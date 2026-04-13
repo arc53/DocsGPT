@@ -266,6 +266,23 @@ function Upload({
             initialSelectedFolders={selectedFolders}
           />
         );
+      case 'confluence_picker':
+        return (
+          <FilePicker
+            key={field.name}
+            onSelectionChange={(
+              selectedFileIds: string[],
+              selectedFolderIds: string[] = [],
+            ) => {
+              setSelectedFiles(selectedFileIds);
+              setSelectedFolders(selectedFolderIds);
+            }}
+            provider="confluence"
+            token={token}
+            initialSelectedFiles={selectedFiles}
+            initialSelectedFolders={selectedFolders}
+          />
+        );
       default:
         return null;
     }
@@ -551,6 +568,9 @@ function Upload({
     const hasSharePointPicker = schema.some(
       (field: FormField) => field.type === 'share_point_picker',
     );
+    const hasConfluencePicker = schema.some(
+      (field: FormField) => field.type === 'confluence_picker',
+    );
 
     let configData: Record<string, unknown> = { ...ingestor.config };
 
@@ -561,7 +581,8 @@ function Upload({
     } else if (
       hasRemoteFilePicker ||
       hasGoogleDrivePicker ||
-      hasSharePointPicker
+      hasSharePointPicker ||
+      hasConfluencePicker
     ) {
       const sessionToken = getSessionToken(ingestor.type as string);
       configData = {
@@ -721,6 +742,9 @@ function Upload({
     const hasSharePointPicker = schema.some(
       (field: FormField) => field.type === 'share_point_picker',
     );
+    const hasConfluencePicker = schema.some(
+      (field: FormField) => field.type === 'confluence_picker',
+    );
 
     if (hasLocalFilePicker) {
       if (files.length === 0) {
@@ -729,7 +753,8 @@ function Upload({
     } else if (
       hasRemoteFilePicker ||
       hasGoogleDrivePicker ||
-      hasSharePointPicker
+      hasSharePointPicker ||
+      hasConfluencePicker
     ) {
       if (selectedFiles.length === 0 && selectedFolders.length === 0) {
         return true;

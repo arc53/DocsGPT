@@ -80,6 +80,17 @@ def extract_conversation_id(messages: List[Dict]) -> Optional[str]:
     return None
 
 
+def extract_system_prompt(messages: List[Dict]) -> Optional[str]:
+    """Extract the first system message content from the messages array.
+
+    Returns None if no system message is present.
+    """
+    for msg in messages:
+        if msg.get("role") == "system":
+            return msg.get("content", "")
+    return None
+
+
 def convert_history(messages: List[Dict]) -> List[Dict]:
     """Convert chat completions messages array to DocsGPT history format.
 
@@ -148,20 +159,27 @@ def translate_request(
             break
 
     history = convert_history(messages)
+    system_prompt_override = extract_system_prompt(messages)
+
+    docsgpt = data.get("docsgpt", {})
 
     result = {
         "question": question,
         "api_key": api_key,
         "history": json.dumps(history),
-        "save_conversation": True,
+        # Conversations are NOT persisted by default on the v1 endpoint.
+        # Callers opt in via ``docsgpt.save_conversation: true``.
+        "save_conversation": bool(docsgpt.get("save_conversation", False)),
     }
+
+    if system_prompt_override is not None:
+        result["system_prompt_override"] = system_prompt_override
 
     # Client tools
     if data.get("tools"):
         result["client_tools"] = data["tools"]
 
     # DocsGPT extensions
-    docsgpt = data.get("docsgpt", {})
     if docsgpt.get("attachments"):
         result["attachments"] = docsgpt["attachments"]
 

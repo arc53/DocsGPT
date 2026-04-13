@@ -8,6 +8,8 @@ from flask_restx import fields, Namespace, Resource
 
 from application.api import api
 from application.api.user.base import current_dir, prompts_collection
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.prompts import PromptsRepository
 from application.utils import check_required_fields
 
 prompts_ns = Namespace(
@@ -49,6 +51,10 @@ class CreatePrompt(Resource):
                 }
             )
             new_id = str(resp.inserted_id)
+            dual_write(
+                PromptsRepository,
+                lambda repo, u=user, n=data["name"], c=data["content"]: repo.create(u, n, c),
+            )
         except Exception as err:
             current_app.logger.error(f"Error creating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -149,6 +155,10 @@ class DeletePrompt(Resource):
             return missing_fields
         try:
             prompts_collection.delete_one({"_id": ObjectId(data["id"]), "user": user})
+            dual_write(
+                PromptsRepository,
+                lambda repo, pid=data["id"], u=user: repo.delete(pid, u),
+            )
         except Exception as err:
             current_app.logger.error(f"Error deleting prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -184,6 +194,10 @@ class UpdatePrompt(Resource):
             prompts_collection.update_one(
                 {"_id": ObjectId(data["id"]), "user": user},
                 {"$set": {"name": data["name"], "content": data["content"]}},
+            )
+            dual_write(
+                PromptsRepository,
+                lambda repo, pid=data["id"], u=user, n=data["name"], c=data["content"]: repo.update(pid, u, n, c),
             )
         except Exception as err:
             current_app.logger.error(f"Error updating prompt: {err}", exc_info=True)

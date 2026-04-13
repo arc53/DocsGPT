@@ -9,6 +9,8 @@ from application.agents.tools.tool_manager import ToolManager
 from application.api import api
 from application.api.user.base import user_tools_collection
 from application.core.url_validation import SSRFError, validate_url
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.user_tools import UserToolsRepository
 from application.security.encryption import decrypt_credentials, encrypt_credentials
 from application.utils import check_required_fields, validate_function_name
 
@@ -294,6 +296,13 @@ class CreateTool(Resource):
             }
             resp = user_tools_collection.insert_one(new_tool)
             new_id = str(resp.inserted_id)
+            dual_write(
+                UserToolsRepository,
+                lambda repo, u=user, t=new_tool: repo.create(
+                    u, t["name"], config=t.get("config"),
+                    custom_name=t.get("customName"), display_name=t.get("displayName"),
+                ),
+            )
         except Exception as err:
             current_app.logger.error(f"Error creating tool: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -580,6 +589,10 @@ class DeleteTool(Resource):
         try:
             result = user_tools_collection.delete_one(
                 {"_id": ObjectId(data["id"]), "user": user}
+            )
+            dual_write(
+                UserToolsRepository,
+                lambda repo, tid=data["id"], u=user: repo.delete(tid, u),
             )
             if result.deleted_count == 0:
                 return make_response(

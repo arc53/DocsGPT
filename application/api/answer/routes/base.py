@@ -469,6 +469,18 @@ class BaseAnswerResource:
                     log_data[key] = value[:10000]
             self.user_logs_collection.insert_one(log_data)
 
+            from application.storage.db.dual_write import dual_write
+            from application.storage.db.repositories.user_logs import UserLogsRepository
+
+            dual_write(
+                UserLogsRepository,
+                lambda repo, d=log_data: repo.insert(
+                    user_id=d.get("user"),
+                    endpoint="stream_answer",
+                    data=d,
+                ),
+            )
+
             data = json.dumps({"type": "end"})
             yield f"data: {data}\n\n"
         except GeneratorExit:
