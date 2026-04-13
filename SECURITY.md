@@ -18,5 +18,5 @@ We aim to acknowledge reports within 48 hours.
 
 ## Incident Handling
 
-Arc53 maintains internal incident response procedures. If you believe an active exploit is occurring, include **URGENT** in your report subject line.
+For the public incident response process, see [`INCIDENT_RESPONSE.md`](./.github/INCIDENT_RESPONSE.md). If you believe an active exploit is occurring, include **URGENT** in your report subject line.
 
