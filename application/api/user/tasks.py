@@ -134,6 +134,12 @@ def setup_periodic_tasks(sender, **kwargs):
         timedelta(days=30),
         schedule_syncs.s("monthly"),
     )
+    # Replaces Mongo's TTL index on pending_tool_state.expires_at.
+    sender.add_periodic_task(
+        timedelta(seconds=60),
+        cleanup_pending_tool_state.s(),
+        name="cleanup-pending-tool-state",
+    )
 
 
 @celery.task(bind=True)
@@ -146,3 +152,27 @@ def mcp_oauth_task(self, config, user):
 def mcp_oauth_status_task(self, task_id):
     resp = mcp_oauth_status(self, task_id)
     return resp
+
+
+@celery.task(bind=True)
+def cleanup_pending_tool_state(self):
+    """Delete pending_tool_state rows past their TTL.
+
+    Replaces Mongo's ``expireAfterSeconds=0`` TTL index — Postgres has
+    no native TTL, so this task runs every 60 seconds to keep
+    ``pending_tool_state`` bounded. No-ops if ``POSTGRES_URI`` isn't
+    configured (keeps the task runnable in Mongo-only environments).
+    """
+    from application.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from application.storage.db.engine import get_engine
+    from application.storage.db.repositories.pending_tool_state import (
+        PendingToolStateRepository,
+    )
+
+    engine = get_engine()
+    with engine.begin() as conn:
+        deleted = PendingToolStateRepository(conn).cleanup_expired()
+    return {"deleted": deleted}

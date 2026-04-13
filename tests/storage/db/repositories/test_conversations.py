@@ -1,0 +1,374 @@
+"""Tests for ConversationsRepository against a real Postgres instance."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import pytest
+
+from application.storage.db.repositories.conversations import ConversationsRepository
+
+pytestmark = pytest.mark.skipif(
+    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
+    reason="POSTGRES_URI not configured",
+)
+
+
+def _repo(conn) -> ConversationsRepository:
+    return ConversationsRepository(conn)
+
+
+# ------------------------------------------------------------------
+# Conversation CRUD
+# ------------------------------------------------------------------
+
+
+class TestCreate:
+    def test_creates_conversation(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("user-1", "My Chat")
+        assert doc["user_id"] == "user-1"
+        assert doc["name"] == "My Chat"
+        assert doc["id"] is not None
+        assert doc["_id"] == doc["id"]
+
+    def test_create_with_agent(self, pg_conn):
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        agent_repo = AgentsRepository(pg_conn)
+        agent = agent_repo.create("user-1", "a", "active")
+        repo = _repo(pg_conn)
+        doc = repo.create(
+            "user-1", "Chat",
+            agent_id=agent["id"],
+            api_key="ak-123",
+            is_shared_usage=True,
+            shared_token="tok-abc",
+        )
+        assert str(doc["agent_id"]) == agent["id"]
+        assert doc["api_key"] == "ak-123"
+        assert doc["is_shared_usage"] is True
+        assert doc["shared_token"] == "tok-abc"
+
+
+class TestGet:
+    def test_get_owned(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "c")
+        fetched = repo.get(created["id"], "user-1")
+        assert fetched["id"] == created["id"]
+
+    def test_get_nonexistent(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.get("00000000-0000-0000-0000-000000000000", "u") is None
+
+    def test_get_wrong_user(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "c")
+        assert repo.get(created["id"], "user-other") is None
+
+
+class TestListForUser:
+    def test_lists_own_conversations(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("alice", "c1")
+        repo.create("alice", "c2")
+        repo.create("bob", "c3")
+        results = repo.list_for_user("alice")
+        assert len(results) == 2
+        assert all(r["user_id"] == "alice" for r in results)
+
+    def test_excludes_api_key_without_agent(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("alice", "normal")
+        repo.create("alice", "api-only", api_key="key-1")
+        results = repo.list_for_user("alice")
+        assert len(results) == 1
+        assert results[0]["name"] == "normal"
+
+
+class TestRename:
+    def test_renames(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "old")
+        assert repo.rename(created["id"], "user-1", "new") is True
+        fetched = repo.get(created["id"], "user-1")
+        assert fetched["name"] == "new"
+
+    def test_rename_wrong_user(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "old")
+        assert repo.rename(created["id"], "user-other", "new") is False
+
+
+class TestDelete:
+    def test_deletes(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "c")
+        assert repo.delete(created["id"], "user-1") is True
+        assert repo.get(created["id"], "user-1") is None
+
+    def test_delete_wrong_user(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "c")
+        assert repo.delete(created["id"], "user-other") is False
+
+    def test_delete_cascades_messages(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "hi", "response": "hello"})
+        repo.delete(conv["id"], "user-1")
+        assert repo.get_messages(conv["id"]) == []
+
+    def test_delete_all_for_user(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("user-1", "c1")
+        repo.create("user-1", "c2")
+        repo.create("user-2", "c3")
+        count = repo.delete_all_for_user("user-1")
+        assert count == 2
+        assert repo.list_for_user("user-1") == []
+        assert len(repo.list_for_user("user-2")) == 1
+
+
+# ------------------------------------------------------------------
+# Messages
+# ------------------------------------------------------------------
+
+
+class TestAppendMessage:
+    def test_append_first_message(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        msg = repo.append_message(conv["id"], {
+            "prompt": "hello",
+            "response": "hi there",
+            "model_id": "gpt-4",
+        })
+        assert msg["position"] == 0
+        assert msg["prompt"] == "hello"
+        assert msg["response"] == "hi there"
+        assert msg["model_id"] == "gpt-4"
+
+    def test_append_increments_position(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        m0 = repo.append_message(conv["id"], {"prompt": "q1", "response": "a1"})
+        m1 = repo.append_message(conv["id"], {"prompt": "q2", "response": "a2"})
+        assert m0["position"] == 0
+        assert m1["position"] == 1
+
+    def test_append_with_sources_and_tools(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        msg = repo.append_message(conv["id"], {
+            "prompt": "q",
+            "response": "a",
+            "sources": [{"title": "doc1"}],
+            "tool_calls": [{"name": "search", "args": {}}],
+            "metadata": {"search_query": "rewritten"},
+        })
+        assert msg["sources"] == [{"title": "doc1"}]
+        assert msg["tool_calls"] == [{"name": "search", "args": {}}]
+        assert msg["metadata"] == {"search_query": "rewritten"}
+
+    def test_append_preserves_explicit_timestamp(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        ts = datetime.now(timezone.utc)
+        msg = repo.append_message(conv["id"], {
+            "prompt": "q",
+            "response": "a",
+            "timestamp": ts,
+        })
+        assert msg["timestamp"] == ts
+
+
+class TestGetMessages:
+    def test_returns_ordered_messages(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "q1", "response": "a1"})
+        repo.append_message(conv["id"], {"prompt": "q2", "response": "a2"})
+        msgs = repo.get_messages(conv["id"])
+        assert len(msgs) == 2
+        assert msgs[0]["position"] == 0
+        assert msgs[1]["position"] == 1
+
+    def test_get_message_at(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "q1", "response": "a1"})
+        repo.append_message(conv["id"], {"prompt": "q2", "response": "a2"})
+        msg = repo.get_message_at(conv["id"], 1)
+        assert msg["prompt"] == "q2"
+
+    def test_get_message_at_nonexistent(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        assert repo.get_message_at(conv["id"], 99) is None
+
+
+class TestUpdateMessageAt:
+    def test_updates_response(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "q", "response": "old"})
+        assert repo.update_message_at(conv["id"], 0, {"response": "new"}) is True
+        msg = repo.get_message_at(conv["id"], 0)
+        assert msg["response"] == "new"
+
+    def test_update_disallowed_field(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "q", "response": "a"})
+        assert repo.update_message_at(conv["id"], 0, {"id": "bad"}) is False
+
+    def test_updates_explicit_timestamp(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "q", "response": "old"})
+        ts = datetime.now(timezone.utc)
+        assert repo.update_message_at(
+            conv["id"], 0, {"response": "new", "timestamp": ts},
+        ) is True
+        msg = repo.get_message_at(conv["id"], 0)
+        assert msg["response"] == "new"
+        assert msg["timestamp"] == ts
+
+
+class TestTruncateAfter:
+    def test_truncates_messages(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        for i in range(5):
+            repo.append_message(conv["id"], {"prompt": f"q{i}", "response": f"a{i}"})
+        deleted = repo.truncate_after(conv["id"], 2)
+        assert deleted == 2
+        msgs = repo.get_messages(conv["id"])
+        assert len(msgs) == 3
+        assert [m["position"] for m in msgs] == [0, 1, 2]
+
+
+class TestSetFeedback:
+    def test_set_feedback(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "q", "response": "a"})
+        assert repo.set_feedback(conv["id"], 0, {"text": "thumbs_up"}) is True
+        msg = repo.get_message_at(conv["id"], 0)
+        assert msg["feedback"] == {"text": "thumbs_up"}
+
+    def test_unset_feedback(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "q", "response": "a"})
+        repo.set_feedback(conv["id"], 0, {"text": "thumbs_up"})
+        assert repo.set_feedback(conv["id"], 0, None) is True
+        msg = repo.get_message_at(conv["id"], 0)
+        assert msg["feedback"] is None
+
+    def test_set_feedback_nonexistent_position(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        assert repo.set_feedback(conv["id"], 99, {"text": "x"}) is False
+
+
+class TestMessageCount:
+    def test_counts_messages(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        assert repo.message_count(conv["id"]) == 0
+        repo.append_message(conv["id"], {"prompt": "q", "response": "a"})
+        assert repo.message_count(conv["id"]) == 1
+
+
+class TestCompressionMetadata:
+    def test_set_compression_metadata(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        meta = {"is_compressed": True, "last_compression_at": "2026-01-01T00:00:00Z"}
+        assert repo.update_compression_metadata(conv["id"], "user-1", meta) is True
+        fetched = repo.get(conv["id"], "user-1")
+        assert fetched["compression_metadata"]["is_compressed"] is True
+
+    def test_set_compression_flags_preserves_points(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.update_compression_metadata(conv["id"], "user-1", {
+            "is_compressed": False,
+            "compression_points": [{"summary": "earlier"}],
+        })
+        assert repo.set_compression_flags(
+            conv["id"], is_compressed=True, last_compression_at="2026-01-02",
+        ) is True
+        fetched = repo.get(conv["id"], "user-1")
+        assert fetched["compression_metadata"]["is_compressed"] is True
+        assert fetched["compression_metadata"]["last_compression_at"] == "2026-01-02"
+        assert fetched["compression_metadata"]["compression_points"] == [
+            {"summary": "earlier"}
+        ]
+
+    def test_append_compression_point_slices_to_max(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        for i in range(5):
+            assert repo.append_compression_point(
+                conv["id"], {"summary": f"p{i}"}, max_points=3,
+            ) is True
+        fetched = repo.get(conv["id"], "user-1")
+        points = fetched["compression_metadata"]["compression_points"]
+        assert [p["summary"] for p in points] == ["p2", "p3", "p4"]
+
+
+class TestConcurrentAppend:
+    """Two threads appending to the same conversation must not race on
+    ``position``. The plan (migration-postgres.md §Phase 3) explicitly
+    calls this out as the single trickiest invariant, so we exercise it
+    directly with two parallel connections."""
+
+    def test_concurrent_appends_get_distinct_positions(self, pg_engine, pg_conn):
+        import threading
+
+        # Arrange — one conversation, created inside the outer test txn so
+        # it disappears on teardown even if the workers somehow commit.
+        # We commit it explicitly so the workers' separate sessions see it.
+        repo_setup = _repo(pg_conn)
+        conv = repo_setup.create("user-concurrent", "c")
+        pg_conn.commit()
+
+        try:
+            errors: list[BaseException] = []
+
+            def worker() -> None:
+                try:
+                    with pg_engine.begin() as worker_conn:
+                        ConversationsRepository(worker_conn).append_message(
+                            conv["id"], {"prompt": "q", "response": "a"},
+                        )
+                except BaseException as e:  # noqa: BLE001
+                    errors.append(e)
+
+            threads = [threading.Thread(target=worker) for _ in range(2)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            assert errors == [], f"worker threads errored: {errors}"
+
+            # Assert — the parent row-lock in append_message must have
+            # serialised the two inserts so they land at positions {0, 1}.
+            with pg_engine.connect() as verify_conn:
+                msgs = ConversationsRepository(verify_conn).get_messages(conv["id"])
+            positions = sorted(m["position"] for m in msgs)
+            assert positions == [0, 1], (
+                f"concurrent appends raced; got positions {positions}"
+            )
+        finally:
+            # Clean up — the conversation was committed, so the transaction
+            # rollback won't drop it.
+            with pg_engine.begin() as cleanup_conn:
+                ConversationsRepository(cleanup_conn).delete(
+                    conv["id"], "user-concurrent"
+                )

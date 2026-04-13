@@ -15,7 +15,70 @@ from application.api.user.base import (
     conversations_collection,
     shared_conversations_collections,
 )
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.conversations import ConversationsRepository
+from application.storage.db.repositories.shared_conversations import (
+    SharedConversationsRepository,
+)
 from application.utils import check_required_fields
+
+
+def _dual_write_share(
+    mongo_conv_id: str,
+    share_uuid: str,
+    user: str,
+    *,
+    is_promptable: bool,
+    first_n_queries: int,
+    api_key: str | None,
+    prompt_id: str | None = None,
+    chunks: int | None = None,
+) -> None:
+    """Mirror a Mongo share-record insert into Postgres.
+
+    Preserves the Mongo-generated UUID so public ``/shared/{uuid}`` URLs
+    resolve from both stores during cutover.
+    """
+    def _write(repo: SharedConversationsRepository) -> None:
+        conv = ConversationsRepository(repo._conn).get_by_legacy_id(
+            mongo_conv_id, user_id=user,
+        )
+        if conv is None:
+            return
+        # prompt_id / chunks are only meaningful for promptable shares;
+        # prompt_id is often the string "default" or an ObjectId that
+        # hasn't been migrated — pass as-is and let the repo drop
+        # non-UUID values. Scope the prompt lookup by user_id so an
+        # authenticated caller can't link another user's prompt into
+        # their share record.
+        resolved_prompt_id = None
+        if prompt_id and len(str(prompt_id)) == 24:
+            from sqlalchemy import text as _text
+            row = repo._conn.execute(
+                _text(
+                    "SELECT id FROM prompts "
+                    "WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id"
+                ),
+                {"legacy_id": str(prompt_id), "user_id": user},
+            ).fetchone()
+            if row:
+                resolved_prompt_id = str(row[0])
+        # get_or_create is race-free on the PG side thanks to the
+        # composite partial unique index on the dedup tuple
+        # (migration 0008). It converges concurrent share requests to
+        # a single row.
+        repo.get_or_create(
+            conv["id"],
+            user,
+            is_promptable=is_promptable,
+            first_n_queries=first_n_queries,
+            api_key=api_key,
+            prompt_id=resolved_prompt_id,
+            chunks=chunks,
+            share_uuid=share_uuid,
+        )
+
+    dual_write(SharedConversationsRepository, _write)
 
 sharing_ns = Namespace(
     "sharing", description="Conversation sharing operations", path="/api"
@@ -124,6 +187,16 @@ class ShareConversation(Resource):
                                 "api_key": api_uuid,
                             }
                         )
+                        _dual_write_share(
+                            conversation_id,
+                            str(explicit_binary.as_uuid()),
+                            user,
+                            is_promptable=is_promptable,
+                            first_n_queries=current_n_queries,
+                            api_key=api_uuid,
+                            prompt_id=prompt_id,
+                            chunks=int(chunks) if chunks else None,
+                        )
                         return make_response(
                             jsonify(
                                 {
@@ -154,6 +227,16 @@ class ShareConversation(Resource):
                             "user": user,
                             "api_key": api_uuid,
                         }
+                    )
+                    _dual_write_share(
+                        conversation_id,
+                        str(explicit_binary.as_uuid()),
+                        user,
+                        is_promptable=is_promptable,
+                        first_n_queries=current_n_queries,
+                        api_key=api_uuid,
+                        prompt_id=prompt_id,
+                        chunks=int(chunks) if chunks else None,
                     )
                     return make_response(
                         jsonify(
@@ -191,6 +274,14 @@ class ShareConversation(Resource):
                         "first_n_queries": current_n_queries,
                         "user": user,
                     }
+                )
+                _dual_write_share(
+                    conversation_id,
+                    str(explicit_binary.as_uuid()),
+                    user,
+                    is_promptable=is_promptable,
+                    first_n_queries=current_n_queries,
+                    api_key=None,
                 )
                 return make_response(
                     jsonify(

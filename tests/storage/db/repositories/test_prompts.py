@@ -30,6 +30,11 @@ class TestCreate:
         doc = repo.create("user-1", "p", "c")
         assert doc["_id"] == doc["id"]
 
+    def test_create_with_legacy_mongo_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("user-1", "p", "c", legacy_mongo_id="507f1f77bcf86cd799439011")
+        assert doc["legacy_mongo_id"] == "507f1f77bcf86cd799439011"
+
 
 class TestGet:
     def test_get_by_id_and_user(self, pg_conn):
@@ -46,6 +51,17 @@ class TestGet:
     def test_get_nonexistent_returns_none(self, pg_conn):
         repo = _repo(pg_conn)
         assert repo.get("00000000-0000-0000-0000-000000000000", "user-1") is None
+
+    def test_get_by_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create(
+            "user-1",
+            "p",
+            "c",
+            legacy_mongo_id="507f1f77bcf86cd799439011",
+        )
+        fetched = repo.get_by_legacy_id("507f1f77bcf86cd799439011", "user-1")
+        assert fetched["id"] == created["id"]
 
 
 class TestGetForRendering:
@@ -88,6 +104,24 @@ class TestUpdate:
         fetched = repo.get(created["id"], "user-1")
         assert fetched["name"] == "old"
 
+    def test_update_by_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create(
+            "user-1",
+            "old",
+            "old-content",
+            legacy_mongo_id="507f1f77bcf86cd799439011",
+        )
+        assert repo.update_by_legacy_id(
+            "507f1f77bcf86cd799439011",
+            "user-1",
+            "new",
+            "new-content",
+        ) is True
+        fetched = repo.get_by_legacy_id("507f1f77bcf86cd799439011", "user-1")
+        assert fetched["name"] == "new"
+        assert fetched["content"] == "new-content"
+
 
 class TestDelete:
     def test_deletes_prompt(self, pg_conn):
@@ -101,6 +135,17 @@ class TestDelete:
         created = repo.create("user-1", "p", "c")
         repo.delete(created["id"], "user-other")
         assert repo.get(created["id"], "user-1") is not None
+
+    def test_delete_by_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create(
+            "user-1",
+            "p",
+            "c",
+            legacy_mongo_id="507f1f77bcf86cd799439011",
+        )
+        assert repo.delete_by_legacy_id("507f1f77bcf86cd799439011", "user-1") is True
+        assert repo.get(created["id"], "user-1") is None
 
 
 class TestFindOrCreate:

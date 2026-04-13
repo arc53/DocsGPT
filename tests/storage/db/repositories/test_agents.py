@@ -44,6 +44,21 @@ class TestCreate:
         doc = repo.create("u", "a", "draft")
         assert doc["_id"] == doc["id"]
 
+    def test_create_with_legacy_mongo_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create(
+            "u",
+            "a",
+            "draft",
+            legacy_mongo_id="507f1f77bcf86cd799439011",
+        )
+        assert doc["legacy_mongo_id"] == "507f1f77bcf86cd799439011"
+
+    def test_create_normalizes_blank_key_to_null(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "a", "draft", key="")
+        assert doc["key"] is None
+
 
 class TestGet:
     def test_get_existing(self, pg_conn):
@@ -60,6 +75,17 @@ class TestGet:
         repo = _repo(pg_conn)
         created = repo.create("user-1", "a", "draft")
         assert repo.get(created["id"], "user-other") is None
+
+    def test_get_by_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create(
+            "user-1",
+            "a",
+            "draft",
+            legacy_mongo_id="507f1f77bcf86cd799439011",
+        )
+        fetched = repo.get_by_legacy_id("507f1f77bcf86cd799439011", "user-1")
+        assert fetched["id"] == created["id"]
 
 
 class TestFindByKey:
@@ -108,6 +134,31 @@ class TestUpdate:
         updated = repo.update(created["id"], "user-1", {"id": "bad"})
         assert updated is False
 
+    def test_update_by_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create(
+            "user-1",
+            "old",
+            "draft",
+            legacy_mongo_id="507f1f77bcf86cd799439011",
+        )
+        updated = repo.update_by_legacy_id(
+            "507f1f77bcf86cd799439011",
+            "user-1",
+            {"name": "new", "last_used_at": None},
+        )
+        assert updated is True
+        fetched = repo.get_by_legacy_id("507f1f77bcf86cd799439011", "user-1")
+        assert fetched["name"] == "new"
+
+    def test_update_normalizes_blank_key_to_null(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "old", "draft", key="my-unique-key")
+        updated = repo.update(created["id"], "user-1", {"key": ""})
+        assert updated is True
+        fetched = repo.get(created["id"], "user-1")
+        assert fetched["key"] is None
+
 
 class TestDelete:
     def test_deletes_agent(self, pg_conn):
@@ -123,6 +174,18 @@ class TestDelete:
         deleted = repo.delete(created["id"], "user-other")
         assert deleted is False
         assert repo.get(created["id"], "user-1") is not None
+
+    def test_delete_by_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create(
+            "user-1",
+            "a",
+            "draft",
+            legacy_mongo_id="507f1f77bcf86cd799439011",
+        )
+        deleted = repo.delete_by_legacy_id("507f1f77bcf86cd799439011", "user-1")
+        assert deleted is True
+        assert repo.get(created["id"], "user-1") is None
 
 
 class TestSetFolder:

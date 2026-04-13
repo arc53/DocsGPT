@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 from application.core.mongo_db import MongoDB
 
 from application.core.settings import settings
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.conversations import ConversationsRepository
 from bson import ObjectId
 
 
@@ -113,6 +115,26 @@ class ConversationService:
                 },
                 {"$push": {"queries": {"$each": [], "$slice": index + 1}}},
             )
+            # Dual-write to Postgres: update the message at :index and
+            # truncate anything after it, mirroring Mongo's $set+$slice.
+            def _pg_update_at_index(repo: ConversationsRepository) -> None:
+                conv = repo.get_by_legacy_id(conversation_id)
+                if conv is None:
+                    return
+                repo.update_message_at(conv["id"], index, {
+                    "prompt": question,
+                    "response": response,
+                    "thought": thought,
+                    "sources": sources,
+                    "tool_calls": tool_calls,
+                    "attachments": attachment_ids,
+                    "model_id": model_id,
+                    "timestamp": current_time,
+                    **({"metadata": metadata} if metadata else {}),
+                })
+                repo.truncate_after(conv["id"], index)
+
+            dual_write(ConversationsRepository, _pg_update_at_index)
             return conversation_id
         elif conversation_id:
             # Append new message to existing conversation
@@ -138,6 +160,25 @@ class ConversationService:
 
             if result.matched_count == 0:
                 raise ValueError("Conversation not found or unauthorized")
+
+            # Dual-write to Postgres: append the same message.
+            def _pg_append(repo: ConversationsRepository) -> None:
+                conv = repo.get_by_legacy_id(conversation_id)
+                if conv is None:
+                    return
+                repo.append_message(conv["id"], {
+                    "prompt": question,
+                    "response": response,
+                    "thought": thought,
+                    "sources": sources,
+                    "tool_calls": tool_calls,
+                    "attachments": attachment_ids,
+                    "model_id": model_id,
+                    "timestamp": current_time,
+                    "metadata": metadata or {},
+                })
+
+            dual_write(ConversationsRepository, _pg_append)
             return conversation_id
         else:
             # Create new conversation
@@ -193,7 +234,34 @@ class ConversationService:
                 if agent:
                     conversation_data["api_key"] = agent["key"]
             result = self.conversations_collection.insert_one(conversation_data)
-            return str(result.inserted_id)
+            inserted_id = str(result.inserted_id)
+
+            # Dual-write to Postgres: create the conversation row with
+            # legacy_mongo_id and append the first message.
+            def _pg_create(repo: ConversationsRepository) -> None:
+                conv = repo.create(
+                    user_id,
+                    completion,
+                    agent_id=conversation_data.get("agent_id"),
+                    api_key=conversation_data.get("api_key"),
+                    is_shared_usage=conversation_data.get("is_shared_usage", False),
+                    shared_token=conversation_data.get("shared_token"),
+                    legacy_mongo_id=inserted_id,
+                )
+                repo.append_message(conv["id"], {
+                    "prompt": question,
+                    "response": response,
+                    "thought": thought,
+                    "sources": sources,
+                    "tool_calls": tool_calls,
+                    "attachments": attachment_ids,
+                    "model_id": model_id,
+                    "timestamp": current_time,
+                    "metadata": metadata or {},
+                })
+
+            dual_write(ConversationsRepository, _pg_create)
+            return inserted_id
 
     def update_compression_metadata(
         self, conversation_id: str, compression_metadata: Dict[str, Any]
@@ -230,6 +298,24 @@ class ConversationService:
             logger.info(
                 f"Updated compression metadata for conversation {conversation_id}"
             )
+
+            # Dual-write to Postgres: mirror $set + $push $slice.
+            def _pg_compression(repo: ConversationsRepository) -> None:
+                conv = repo.get_by_legacy_id(conversation_id)
+                if conv is None:
+                    return
+                repo.set_compression_flags(
+                    conv["id"],
+                    is_compressed=True,
+                    last_compression_at=compression_metadata.get("timestamp"),
+                )
+                repo.append_compression_point(
+                    conv["id"],
+                    compression_metadata,
+                    max_points=settings.COMPRESSION_MAX_HISTORY_POINTS,
+                )
+
+            dual_write(ConversationsRepository, _pg_compression)
         except Exception as e:
             logger.error(
                 f"Error updating compression metadata: {str(e)}", exc_info=True
@@ -266,6 +352,23 @@ class ConversationService:
                     }
                 },
             )
+
+            def _pg_append_summary(repo: ConversationsRepository) -> None:
+                conv = repo.get_by_legacy_id(conversation_id)
+                if conv is None:
+                    return
+                repo.append_message(conv["id"], {
+                    "prompt": "[Context Compression Summary]",
+                    "response": summary,
+                    "thought": "",
+                    "sources": [],
+                    "tool_calls": [],
+                    "attachments": [],
+                    "model_id": compression_metadata.get("model_used"),
+                    "timestamp": timestamp,
+                })
+
+            dual_write(ConversationsRepository, _pg_append_summary)
             logger.info(f"Appended compression summary to conversation {conversation_id}")
         except Exception as e:
             logger.error(

@@ -27,16 +27,27 @@ class PromptsRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
 
-    def create(self, user_id: str, name: str, content: str) -> dict:
+    def create(
+        self,
+        user_id: str,
+        name: str,
+        content: str,
+        *,
+        legacy_mongo_id: str | None = None,
+    ) -> dict:
+        sql = """
+            INSERT INTO prompts (user_id, name, content, legacy_mongo_id)
+            VALUES (:user_id, :name, :content, :legacy_mongo_id)
+            RETURNING *
+        """
         result = self._conn.execute(
-            text(
-                """
-                INSERT INTO prompts (user_id, name, content)
-                VALUES (:user_id, :name, :content)
-                RETURNING *
-                """
-            ),
-            {"user_id": user_id, "name": name, "content": content},
+            text(sql),
+            {
+                "user_id": user_id,
+                "name": name,
+                "content": content,
+                "legacy_mongo_id": legacy_mongo_id,
+            },
         )
         return row_to_dict(result.fetchone())
 
@@ -45,6 +56,17 @@ class PromptsRepository:
             text("SELECT * FROM prompts WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
             {"id": prompt_id, "user_id": user_id},
         )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def get_by_legacy_id(self, legacy_mongo_id: str, user_id: str | None = None) -> Optional[dict]:
+        """Fetch a prompt by the original Mongo ObjectId string."""
+        sql = "SELECT * FROM prompts WHERE legacy_mongo_id = :legacy_id"
+        params: dict[str, str] = {"legacy_id": legacy_mongo_id}
+        if user_id is not None:
+            sql += " AND user_id = :user_id"
+            params["user_id"] = user_id
+        result = self._conn.execute(text(sql), params)
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
@@ -80,11 +102,47 @@ class PromptsRepository:
             {"id": prompt_id, "user_id": user_id, "name": name, "content": content},
         )
 
+    def update_by_legacy_id(
+        self,
+        legacy_mongo_id: str,
+        user_id: str,
+        name: str,
+        content: str,
+    ) -> bool:
+        """Update a prompt addressed by the Mongo ObjectId string."""
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE prompts
+                SET name = :name, content = :content, updated_at = now()
+                WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id
+                """
+            ),
+            {
+                "legacy_id": legacy_mongo_id,
+                "user_id": user_id,
+                "name": name,
+                "content": content,
+            },
+        )
+        return result.rowcount > 0
+
     def delete(self, prompt_id: str, user_id: str) -> None:
         self._conn.execute(
             text("DELETE FROM prompts WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
             {"id": prompt_id, "user_id": user_id},
         )
+
+    def delete_by_legacy_id(self, legacy_mongo_id: str, user_id: str) -> bool:
+        """Delete a prompt addressed by the Mongo ObjectId string."""
+        result = self._conn.execute(
+            text(
+                "DELETE FROM prompts "
+                "WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id"
+            ),
+            {"legacy_id": legacy_mongo_id, "user_id": user_id},
+        )
+        return result.rowcount > 0
 
     def find_or_create(self, user_id: str, name: str, content: str) -> dict:
         """Return existing prompt matching (user, name, content), or create one.

@@ -336,6 +336,34 @@ class TestSaveWorkflowRun:
             agent._save_workflow_run("query")
 
         mock_collection.insert_one.assert_called_once()
+        saved_doc = mock_collection.insert_one.call_args.args[0]
+        assert saved_doc["user"] == "user1"
+        assert saved_doc["user_id"] == "user1"
+
+    @pytest.mark.unit
+    def test_dual_writes_when_mongo_insert_returns_id(self):
+        agent = _make_agent(workflow_id="507f1f77bcf86cd799439011")
+        mock_engine = MagicMock()
+        mock_engine.state = {"query": "test"}
+        mock_engine.execution_log = []
+        mock_engine.get_execution_summary.return_value = []
+        agent._engine = mock_engine
+
+        insert_result = MagicMock()
+        insert_result.inserted_id = "507f1f77bcf86cd799439012"
+        mock_collection = MagicMock()
+        mock_collection.insert_one.return_value = insert_result
+        mock_db = MagicMock()
+        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+
+        with patch("application.agents.workflow_agent.MongoDB") as MockMongo, \
+             patch("application.agents.workflow_agent.settings") as mock_settings, \
+             patch("application.agents.workflow_agent.dual_write") as mock_dual_write:
+            mock_settings.MONGO_DB_NAME = "test_db"
+            MockMongo.get_client.return_value = {"test_db": mock_db}
+            agent._save_workflow_run("query")
+
+        mock_dual_write.assert_called_once()
 
     @pytest.mark.unit
     def test_exception_does_not_propagate(self):

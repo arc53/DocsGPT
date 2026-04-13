@@ -973,14 +973,21 @@ class TestUpdateAgent:
         agent_id = ObjectId()
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
+        mock_repo = Mock()
         mock_col.find_one.return_value = existing
         mock_col.update_one.return_value = Mock(matched_count=1, modified_count=1)
         mock_handle_img = Mock(return_value=("", None))
+
+        def _run_dual_write(_repo_cls, fn):
+            fn(mock_repo)
 
         with patch(
             "application.api.user.agents.routes.agents_collection", mock_col
         ), patch(
             "application.api.user.agents.routes.handle_image_upload", mock_handle_img
+        ), patch(
+            "application.api.user.agents.routes.dual_write",
+            side_effect=_run_dual_write,
         ):
             with app.test_request_context(
                 f"/api/update_agent/{agent_id}",
@@ -993,6 +1000,11 @@ class TestUpdateAgent:
                 response = UpdateAgent().put(str(agent_id))
                 assert response.status_code == 200
                 assert response.json["success"] is True
+        mock_repo.update_by_legacy_id.assert_called_once_with(
+            str(agent_id),
+            "user1",
+            {"name": "Updated Name"},
+        )
 
     def test_returns_400_invalid_status(self, app):
         from application.api.user.agents.routes import UpdateAgent
@@ -1945,14 +1957,21 @@ class TestDeleteAgent:
 
         agent_id = ObjectId()
         mock_col = Mock()
+        mock_repo = Mock()
         mock_col.find_one_and_delete.return_value = {
             "_id": agent_id,
             "user": "user1",
             "agent_type": "classic",
         }
 
+        def _run_dual_write(_repo_cls, fn):
+            fn(mock_repo)
+
         with patch(
             "application.api.user.agents.routes.agents_collection", mock_col
+        ), patch(
+            "application.api.user.agents.routes.dual_write",
+            side_effect=_run_dual_write,
         ):
             with app.test_request_context(f"/api/delete_agent?id={agent_id}"):
                 from flask import request
@@ -1961,6 +1980,7 @@ class TestDeleteAgent:
                 response = DeleteAgent().delete()
                 assert response.status_code == 200
                 assert response.json["id"] == str(agent_id)
+        mock_repo.delete_by_legacy_id.assert_called_once_with(str(agent_id), "user1")
 
     def test_deletes_workflow_agent_cleans_up(self, app):
         from application.api.user.agents.routes import DeleteAgent

@@ -12,7 +12,6 @@ the legacy Mongo code performs on ``agents_collection``:
 
 from __future__ import annotations
 
-import json
 from typing import Optional
 
 from sqlalchemy import Connection, func, text
@@ -26,6 +25,13 @@ class AgentsRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
 
+    @staticmethod
+    def _normalize_unique_text(col: str, val):
+        """Coerce blank strings for nullable unique text columns to NULL."""
+        if col == "key" and val == "":
+            return None
+        return val
+
     def create(self, user_id: str, name: str, status: str, **kwargs) -> dict:
         values: dict = {"user_id": user_id, "name": name, "status": status}
 
@@ -35,14 +41,18 @@ class AgentsRepository:
             "source_id", "prompt_id", "folder_id",
             "chunks", "token_limit", "request_limit",
             "limited_token_mode", "limited_request_mode", "shared",
-            "tools", "json_schema", "models",
+            "tools", "json_schema", "models", "legacy_mongo_id",
         }
 
         for col, val in kwargs.items():
             if col not in _ALLOWED or val is None:
                 continue
             if col in ("tools", "json_schema", "models"):
-                values[col] = json.dumps(val)
+                # JSONB columns: pass the Python object directly. SQLAlchemy
+                # Core's JSONB type processor json.dumps it once during
+                # bind; pre-serialising would double-encode and the value
+                # would round-trip as a JSON string instead of the dict.
+                values[col] = val
             elif col in ("chunks", "token_limit", "request_limit"):
                 values[col] = int(val)
             elif col in ("limited_token_mode", "limited_request_mode", "shared"):
@@ -50,7 +60,7 @@ class AgentsRepository:
             elif col in ("source_id", "prompt_id", "folder_id"):
                 values[col] = str(val)
             else:
-                values[col] = val
+                values[col] = self._normalize_unique_text(col, val)
 
         stmt = pg_insert(agents_table).values(**values).returning(agents_table)
         result = self._conn.execute(stmt)
@@ -61,6 +71,17 @@ class AgentsRepository:
             text("SELECT * FROM agents WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
             {"id": agent_id, "user_id": user_id},
         )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def get_by_legacy_id(self, legacy_mongo_id: str, user_id: str | None = None) -> Optional[dict]:
+        """Fetch an agent by the original Mongo ObjectId string."""
+        sql = "SELECT * FROM agents WHERE legacy_mongo_id = :legacy_id"
+        params: dict[str, str] = {"legacy_id": legacy_mongo_id}
+        if user_id is not None:
+            sql += " AND user_id = :user_id"
+            params["user_id"] = user_id
+        result = self._conn.execute(text(sql), params)
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
@@ -108,11 +129,13 @@ class AgentsRepository:
         values: dict = {}
         for col, val in filtered.items():
             if col in ("tools", "json_schema", "models"):
-                values[col] = json.dumps(val) if not isinstance(val, str) else val
+                # See note in create(): JSONB columns receive Python
+                # objects, the type processor handles serialisation.
+                values[col] = val
             elif col in ("source_id", "prompt_id", "folder_id"):
                 values[col] = str(val) if val else None
             else:
-                values[col] = val
+                values[col] = self._normalize_unique_text(col, val)
         values["updated_at"] = func.now()
 
         t = agents_table
@@ -125,10 +148,28 @@ class AgentsRepository:
         result = self._conn.execute(stmt)
         return result.rowcount > 0
 
+    def update_by_legacy_id(self, legacy_mongo_id: str, user_id: str, fields: dict) -> bool:
+        """Update an agent addressed by the Mongo ObjectId string."""
+        agent = self.get_by_legacy_id(legacy_mongo_id, user_id)
+        if agent is None:
+            return False
+        return self.update(agent["id"], user_id, fields)
+
     def delete(self, agent_id: str, user_id: str) -> bool:
         result = self._conn.execute(
             text("DELETE FROM agents WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
             {"id": agent_id, "user_id": user_id},
+        )
+        return result.rowcount > 0
+
+    def delete_by_legacy_id(self, legacy_mongo_id: str, user_id: str) -> bool:
+        """Delete an agent addressed by the Mongo ObjectId string."""
+        result = self._conn.execute(
+            text(
+                "DELETE FROM agents "
+                "WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id"
+            ),
+            {"legacy_id": legacy_mongo_id, "user_id": user_id},
         )
         return result.rowcount > 0
 

@@ -14,12 +14,15 @@ class AttachmentsRepository:
         self._conn = conn
 
     def create(self, user_id: str, filename: str, upload_path: str, *,
-               mime_type: Optional[str] = None, size: Optional[int] = None) -> dict:
+               mime_type: Optional[str] = None, size: Optional[int] = None,
+               legacy_mongo_id: Optional[str] = None) -> dict:
         result = self._conn.execute(
             text(
                 """
-                INSERT INTO attachments (user_id, filename, upload_path, mime_type, size)
-                VALUES (:user_id, :filename, :upload_path, :mime_type, :size)
+                INSERT INTO attachments
+                    (user_id, filename, upload_path, mime_type, size, legacy_mongo_id)
+                VALUES
+                    (:user_id, :filename, :upload_path, :mime_type, :size, :legacy_mongo_id)
                 RETURNING *
                 """
             ),
@@ -29,6 +32,7 @@ class AttachmentsRepository:
                 "upload_path": upload_path,
                 "mime_type": mime_type,
                 "size": size,
+                "legacy_mongo_id": legacy_mongo_id,
             },
         )
         return row_to_dict(result.fetchone())
@@ -40,6 +44,17 @@ class AttachmentsRepository:
             ),
             {"id": attachment_id, "user_id": user_id},
         )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def get_by_legacy_id(self, legacy_mongo_id: str, user_id: str | None = None) -> Optional[dict]:
+        """Fetch an attachment by the original Mongo ObjectId string."""
+        sql = "SELECT * FROM attachments WHERE legacy_mongo_id = :legacy_id"
+        params: dict[str, str] = {"legacy_id": legacy_mongo_id}
+        if user_id is not None:
+            sql += " AND user_id = :user_id"
+            params["user_id"] = user_id
+        result = self._conn.execute(text(sql), params)
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
