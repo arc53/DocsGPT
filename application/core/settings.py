@@ -26,17 +26,11 @@ class Settings(BaseSettings):
 
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
+    # Consulted only by the Mongo vector-store backend and the one-shot
+    # backfill migration script; user data lives exclusively in Postgres.
     MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
-    MONGO_DB_NAME: str = "docsgpt"
     # User-data Postgres DB.
     POSTGRES_URI: Optional[str] = None
-
-    # MongoDB→Postgres migration: dual-write to Postgres (Mongo stays source of truth)
-    USE_POSTGRES: bool = False
-    # Staging-only: surface dual-write failures as exceptions instead of
-    # swallowing to a warning log. Leave off in prod during the dual-write
-    # window so a Postgres outage can't break a user-facing Mongo write.
-    DUAL_WRITE_STRICT: bool = False
     LLM_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     DEFAULT_MAX_HISTORY: int = 150
     DEFAULT_LLM_TOKEN_LIMIT: int = 128000  # Fallback when model not found in registry

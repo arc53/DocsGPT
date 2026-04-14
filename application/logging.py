@@ -6,8 +6,8 @@ import logging
 import uuid
 from typing import Any, Callable, Dict, Generator, List
 
-from application.core.mongo_db import MongoDB
-from application.core.settings import settings
+from application.storage.db.repositories.stack_logs import StackLogsRepository
+from application.storage.db.session import db_session
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -101,7 +101,7 @@ def _consume_and_log(generator: Generator, context: "LogContext"):
     except Exception as e:
         logging.exception(f"Error in {context.endpoint} - {context.activity_id}: {e}")
         context.stacks.append({"component": "error", "data": {"message": str(e)}})
-        _log_to_mongodb(
+        _log_activity_to_db(
             endpoint=context.endpoint,
             activity_id=context.activity_id,
             user=context.user,
@@ -112,7 +112,7 @@ def _consume_and_log(generator: Generator, context: "LogContext"):
         )
         raise
     finally:
-        _log_to_mongodb(
+        _log_activity_to_db(
             endpoint=context.endpoint,
             activity_id=context.activity_id,
             user=context.user,
@@ -123,7 +123,7 @@ def _consume_and_log(generator: Generator, context: "LogContext"):
         )
 
 
-def _log_to_mongodb(
+def _log_activity_to_db(
     endpoint: str,
     activity_id: str,
     user: str,
@@ -132,46 +132,26 @@ def _log_to_mongodb(
     stacks: List[Dict],
     level: str,
 ) -> None:
+    """Append a per-request activity log row to Postgres (``stack_logs``)."""
     try:
-        mongo = MongoDB.get_client()
-        db = mongo[settings.MONGO_DB_NAME]
-        user_logs_collection = db["stack_logs"]
-        
+        # Clean up text fields to be no longer than 10000 characters so a
+        # runaway payload can't blow up the insert.
+        def _truncate(val):
+            if isinstance(val, str) and len(val) > 10000:
+                return val[:10000]
+            return val
 
-
-        log_entry = {
-            "endpoint": endpoint,
-            "id": activity_id,
-            "level": level,
-            "user": user,
-            "api_key": api_key,
-            "query": query,
-            "stacks": stacks,
-            "timestamp": datetime.datetime.now(datetime.timezone.utc),
-        }
-        # clean up text fields to be no longer than 10000 characters
-        for key, value in log_entry.items():
-            if isinstance(value, str) and len(value) > 10000:
-                log_entry[key] = value[:10000]
-    
-        user_logs_collection.insert_one(log_entry)
-        logging.debug(f"Logged activity to MongoDB: {activity_id}")
-
-        from application.storage.db.dual_write import dual_write
-        from application.storage.db.repositories.stack_logs import StackLogsRepository
-
-        dual_write(
-            StackLogsRepository,
-            lambda repo, e=log_entry: repo.insert(
-                activity_id=e["id"],
-                endpoint=e.get("endpoint"),
-                level=e.get("level"),
-                user_id=e.get("user"),
-                api_key=e.get("api_key"),
-                query=e.get("query"),
-                stacks=e.get("stacks"),
-            ),
-        )
-
+        with db_session() as conn:
+            StackLogsRepository(conn).insert(
+                activity_id=activity_id,
+                endpoint=_truncate(endpoint),
+                level=_truncate(level),
+                user_id=_truncate(user),
+                api_key=_truncate(api_key),
+                query=_truncate(query),
+                stacks=stacks,
+                timestamp=datetime.datetime.now(datetime.timezone.utc),
+            )
+        logging.debug(f"Logged activity to Postgres: {activity_id}")
     except Exception as e:
-        logging.error(f"Failed to log to MongoDB: {e}", exc_info=True)
+        logging.error(f"Failed to log activity to Postgres: {e}", exc_info=True)

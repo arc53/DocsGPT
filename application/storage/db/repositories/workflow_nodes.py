@@ -135,6 +135,7 @@ class WorkflowNodesRepository:
 
     def get_by_legacy_id(self, legacy_mongo_id: str) -> Optional[dict]:
         """Find a node by the original Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         result = self._conn.execute(
             text("SELECT * FROM workflow_nodes WHERE legacy_mongo_id = :legacy_id"),
             {"legacy_id": legacy_mongo_id},

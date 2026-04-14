@@ -1,4 +1,12 @@
-"""Centralized utilities for API routes."""
+"""Centralized utilities for API routes.
+
+TODO(pg-cutover): ``validate_object_id``, ``check_resource_ownership``,
+``paginated_response``, and ``serialize_object_id`` remain Mongo-shaped
+because ``application/api/user/workflows/routes.py`` still depends on
+them (Agent B's slice). Once workflows flip to PG, this module's Mongo
+imports (``bson``, ``pymongo.collection.Collection``) can be dropped
+along with the helpers above.
+"""
 
 from functools import wraps
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -162,11 +170,11 @@ def check_resource_ownership(
         Tuple of (resource_dict or None, error_response or None)
 
     Example:
-        workflow, error = check_resource_ownership(
-            workflows_collection,
-            workflow_id,
+        resource, error = check_resource_ownership(
+            some_collection,
+            resource_id,
             user_id,
-            "Workflow"
+            "Resource"
         )
         if error:
             return error
@@ -247,11 +255,11 @@ def paginated_response(
 
     Example:
         return paginated_response(
-            workflows_collection,
+            some_collection,
             {"user": user_id},
-            serialize_workflow,
+            serialize_resource,
             limit, skip,
-            response_key="workflows"
+            response_key="resources"
         )
     """
     items = list(

@@ -69,6 +69,7 @@ class AgentFoldersRepository:
     def get_by_legacy_id(
         self, legacy_mongo_id: str, user_id: Optional[str] = None
     ) -> Optional[dict]:
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         sql = "SELECT * FROM agent_folders WHERE legacy_mongo_id = :legacy_id"
         params: dict[str, str] = {"legacy_id": legacy_mongo_id}
         if user_id is not None:

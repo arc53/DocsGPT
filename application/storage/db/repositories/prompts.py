@@ -61,6 +61,7 @@ class PromptsRepository:
 
     def get_by_legacy_id(self, legacy_mongo_id: str, user_id: str | None = None) -> Optional[dict]:
         """Fetch a prompt by the original Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         sql = "SELECT * FROM prompts WHERE legacy_mongo_id = :legacy_id"
         params: dict[str, str] = {"legacy_id": legacy_mongo_id}
         if user_id is not None:
@@ -110,6 +111,7 @@ class PromptsRepository:
         content: str,
     ) -> bool:
         """Update a prompt addressed by the Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         result = self._conn.execute(
             text(
                 """
@@ -135,6 +137,7 @@ class PromptsRepository:
 
     def delete_by_legacy_id(self, legacy_mongo_id: str, user_id: str) -> bool:
         """Delete a prompt addressed by the Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         result = self._conn.execute(
             text(
                 "DELETE FROM prompts "

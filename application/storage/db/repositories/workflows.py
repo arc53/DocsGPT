@@ -63,6 +63,7 @@ class WorkflowsRepository:
         self, legacy_mongo_id: str, user_id: str | None = None,
     ) -> Optional[dict]:
         """Fetch a workflow by its original Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         sql = "SELECT * FROM workflows WHERE legacy_mongo_id = :legacy_id"
         params: dict[str, str] = {"legacy_id": legacy_mongo_id}
         if user_id is not None:
@@ -130,6 +131,7 @@ class WorkflowsRepository:
         The ``workflow_nodes`` and ``workflow_edges`` rows are removed
         automatically via ``ON DELETE CASCADE``.
         """
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         result = self._conn.execute(
             text(
                 "DELETE FROM workflows "

@@ -152,13 +152,15 @@ class ConfluenceAuth(BaseConnectorAuth):
             return True
 
     def get_token_info_from_session(self, session_token: str) -> Dict[str, Any]:
-        from application.core.mongo_db import MongoDB
-        from application.core.settings import settings as app_settings
+        from application.storage.db.repositories.connector_sessions import (
+            ConnectorSessionsRepository,
+        )
+        from application.storage.db.session import db_readonly
 
-        mongo = MongoDB.get_client()
-        db = mongo[app_settings.MONGO_DB_NAME]
-
-        session = db["connector_sessions"].find_one({"session_token": session_token})
+        with db_readonly() as conn:
+            session = ConnectorSessionsRepository(conn).get_by_session_token(
+                session_token
+            )
         if not session:
             raise ValueError(f"Invalid session token: {session_token}")
 

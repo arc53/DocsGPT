@@ -209,6 +209,7 @@ class TodosRepository:
         return result.rowcount > 0
 
     def get_by_legacy_id(self, legacy_mongo_id: str) -> Optional[dict]:
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         result = self._conn.execute(
             text("SELECT * FROM todos WHERE legacy_mongo_id = :legacy"),
             {"legacy": legacy_mongo_id},
@@ -223,6 +224,7 @@ class TodosRepository:
         title: Optional[str] = None,
         completed: Optional[bool] = None,
     ) -> bool:
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         sets = []
         params: dict[str, Any] = {"legacy": legacy_mongo_id}
         if title is not None:

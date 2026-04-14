@@ -39,11 +39,19 @@ from typing import Any, Callable, Optional
 # Make the project root importable regardless of cwd.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from pymongo import MongoClient  # noqa: E402
 from sqlalchemy import Connection, text  # noqa: E402
 
-from application.core.mongo_db import MongoDB  # noqa: E402
 from application.core.settings import settings  # noqa: E402
 from application.storage.db.engine import get_engine  # noqa: E402
+
+
+# The backfill tool is the one remaining consumer of MongoDB in this repo.
+# It reads from Mongo and writes to Postgres, so it keeps its own client
+# rather than going through the (now-deleted) ``application.core.mongo_db``
+# wrapper. The DB name is hard-coded to ``docsgpt`` — historically surfaced
+# as ``settings.MONGO_DB_NAME`` but that setting has been removed post-cutover.
+_MONGO_DB_NAME = "docsgpt"
 
 logger = logging.getLogger("backfill")
 
@@ -455,7 +463,7 @@ def _backfill_token_usage(
         """
     )
     cursor = mongo_db["token_usage"].find({}, no_cursor_timeout=True).batch_size(batch_size)
-    seen = written = 0
+    seen = written = skipped = 0
     batch: list[dict] = []
     try:
         for doc in cursor:
@@ -466,9 +474,21 @@ def _backfill_token_usage(
                 s = str(agent_id)
                 if len(s) == 36 and "-" in s:
                     agent_id_str = s
+            # Legacy Mongo docs: sometimes stored under ``user``, sometimes
+            # ``user_id``. Normalise so the attribution CHECK doesn't reject
+            # rows that actually have a user.
+            user_id = doc.get("user_id") or doc.get("user")
+            api_key = doc.get("api_key")
+            # token_usage_attribution_chk requires at least one of
+            # (user_id, api_key, agent_id) to be non-null. Rows missing all
+            # three carry no usable attribution — skip them rather than fail
+            # the batch.
+            if not user_id and not api_key and not agent_id_str:
+                skipped += 1
+                continue
             batch.append({
-                "user_id": doc.get("user_id"),
-                "api_key": doc.get("api_key"),
+                "user_id": user_id,
+                "api_key": api_key,
                 "agent_id": agent_id_str,
                 "prompt_tokens": doc.get("prompt_tokens", 0),
                 "generated_tokens": doc.get("generated_tokens", 0),
@@ -485,7 +505,7 @@ def _backfill_token_usage(
             written += len(batch)
     finally:
         cursor.close()
-    return {"seen": seen, "written": written}
+    return {"seen": seen, "written": written, "skipped": skipped}
 
 
 # ---------------------------------------------------------------------------
@@ -2220,8 +2240,8 @@ def main() -> int:
         )
         return 1
 
-    mongo = MongoDB.get_client()
-    mongo_db = mongo[settings.MONGO_DB_NAME]
+    mongo = MongoClient(settings.MONGO_URI)
+    mongo_db = mongo[_MONGO_DB_NAME]
     engine = get_engine()
 
     # Ensure the ``__system__`` sentinel user exists before any template

@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 from sqlalchemy import Connection, func, text
 
-from application.storage.db.base_repository import row_to_dict
+from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.models import sources_table
 
 
@@ -124,6 +124,19 @@ class SourcesRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def get_any(self, source_id: str, user_id: str) -> Optional[dict]:
+        """Resolve a source by either PG UUID or legacy Mongo ObjectId string.
+
+        Cutover helper: URLs / bookmarks may still hold Mongo ObjectIds.
+        Tries the UUID path first, then falls back to ``legacy_mongo_id``.
+        Both paths are scoped by ``user_id``.
+        """
+        if looks_like_uuid(source_id):
+            row = self.get(source_id, user_id)
+            if row is not None:
+                return row
+        return self.get_by_legacy_id(source_id, user_id)
+
     def list_for_user(self, user_id: str) -> list[dict]:
         result = self._conn.execute(
             text("SELECT * FROM sources WHERE user_id = :user_id ORDER BY created_at DESC"),
@@ -153,6 +166,7 @@ class SourcesRepository:
     def get_by_legacy_id(
         self, legacy_mongo_id: str, user_id: Optional[str] = None,
     ) -> Optional[dict]:
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         sql = "SELECT * FROM sources WHERE legacy_mongo_id = :legacy_id"
         params: dict[str, str] = {"legacy_id": legacy_mongo_id}
         if user_id is not None:
@@ -171,6 +185,7 @@ class SourcesRepository:
         haven't resolved the PG UUID yet. Returns ``True`` if a row was
         updated (i.e. the legacy id was found).
         """
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         row = self.get_by_legacy_id(legacy_mongo_id, user_id)
         if row is None:
             return False
@@ -179,6 +194,7 @@ class SourcesRepository:
 
     def delete_by_legacy_id(self, legacy_mongo_id: str, user_id: str) -> bool:
         """Delete by Mongo ObjectId. Used by dual_write in DeleteOldIndexes."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         result = self._conn.execute(
             text(
                 "DELETE FROM sources "

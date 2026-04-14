@@ -17,7 +17,7 @@ from typing import Optional
 from sqlalchemy import Connection, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from application.storage.db.base_repository import row_to_dict
+from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.models import agents_table
 
 
@@ -84,8 +84,23 @@ class AgentsRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def get_any(self, agent_id: str, user_id: str) -> Optional[dict]:
+        """Resolve an agent by either PG UUID or legacy Mongo ObjectId string.
+
+        Cutover helper: URLs / bookmarks / old client state may still hold
+        Mongo ObjectId-strings. Try the UUID path first (the post-cutover
+        shape) and fall back to ``legacy_mongo_id`` — both are scoped by
+        ``user_id`` so cross-user access is impossible.
+        """
+        if looks_like_uuid(agent_id):
+            row = self.get(agent_id, user_id)
+            if row is not None:
+                return row
+        return self.get_by_legacy_id(agent_id, user_id)
+
     def get_by_legacy_id(self, legacy_mongo_id: str, user_id: str | None = None) -> Optional[dict]:
         """Fetch an agent by the original Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         sql = "SELECT * FROM agents WHERE legacy_mongo_id = :legacy_id"
         params: dict[str, str] = {"legacy_id": legacy_mongo_id}
         if user_id is not None:
@@ -188,6 +203,7 @@ class AgentsRepository:
 
     def update_by_legacy_id(self, legacy_mongo_id: str, user_id: str, fields: dict) -> bool:
         """Update an agent addressed by the Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         agent = self.get_by_legacy_id(legacy_mongo_id, user_id)
         if agent is None:
             return False
@@ -202,6 +218,7 @@ class AgentsRepository:
 
     def delete_by_legacy_id(self, legacy_mongo_id: str, user_id: str) -> bool:
         """Delete an agent addressed by the Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         result = self._conn.execute(
             text(
                 "DELETE FROM agents "

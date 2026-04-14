@@ -1,23 +1,20 @@
 """Service for saving and restoring tool-call continuation state.
 
 When a stream pauses (tool needs approval or client-side execution),
-the full execution state is persisted to MongoDB so the client can
+the full execution state is persisted to Postgres so the client can
 resume later by sending tool_actions.
 """
 
-import datetime
 import logging
 from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
 
-from application.core.mongo_db import MongoDB
-from application.core.settings import settings
-from application.storage.db.dual_write import dual_write
 from application.storage.db.repositories.conversations import ConversationsRepository
 from application.storage.db.repositories.pending_tool_state import (
     PendingToolStateRepository,
 )
+from application.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
 
@@ -39,25 +36,13 @@ def _make_serializable(obj: Any) -> Any:
 
 
 class ContinuationService:
-    """Manages pending tool-call state in MongoDB."""
+    """Manages pending tool-call state in Postgres."""
 
     def __init__(self):
-        mongo = MongoDB.get_client()
-        db = mongo[settings.MONGO_DB_NAME]
-        self.collection = db["pending_tool_state"]
-        self._ensure_indexes()
-
-    def _ensure_indexes(self):
-        try:
-            self.collection.create_index(
-                "expires_at", expireAfterSeconds=0
-            )
-            self.collection.create_index(
-                [("conversation_id", 1), ("user", 1)], unique=True
-            )
-        except Exception:
-            # Indexes may already exist or mongomock doesn't support TTL
-            pass
+        # No-op constructor retained for call-site compatibility. State
+        # lives in Postgres now; each operation opens its own short-lived
+        # session rather than holding a connection on the service.
+        pass
 
     def save_state(
         self,
@@ -72,6 +57,10 @@ class ContinuationService:
     ) -> str:
         """Save execution state for later continuation.
 
+        ``conversation_id`` may be a Postgres UUID or the legacy Mongo
+        ``ObjectId`` string — the latter is resolved via
+        ``conversations.legacy_mongo_id`` to find the matching row.
+
         Args:
             conversation_id: The conversation this state belongs to.
             user: Owner user ID.
@@ -83,45 +72,13 @@ class ContinuationService:
             client_tools: Client-provided tool schemas for client-side execution.
 
         Returns:
-            The string ID of the saved state document.
+            The string ID (conversation_id as provided) of the saved state.
         """
-        now = datetime.datetime.now(datetime.timezone.utc)
-        expires_at = now + datetime.timedelta(seconds=PENDING_STATE_TTL_SECONDS)
-
-        doc = {
-            "conversation_id": conversation_id,
-            "user": user,
-            "messages": _make_serializable(messages),
-            "pending_tool_calls": _make_serializable(pending_tool_calls),
-            "tools_dict": _make_serializable(tools_dict),
-            "tool_schemas": _make_serializable(tool_schemas),
-            "agent_config": _make_serializable(agent_config),
-            "client_tools": _make_serializable(client_tools) if client_tools else None,
-            "created_at": now,
-            "expires_at": expires_at,
-        }
-
-        # Upsert — only one pending state per conversation per user
-        result = self.collection.replace_one(
-            {"conversation_id": conversation_id, "user": user},
-            doc,
-            upsert=True,
-        )
-        state_id = str(result.upserted_id) if result.upserted_id else conversation_id
-        logger.info(
-            f"Saved continuation state for conversation {conversation_id} "
-            f"with {len(pending_tool_calls)} pending tool call(s)"
-        )
-
-        # Dual-write to Postgres — upsert against the same Mongo conversation
-        # by resolving its UUID via conversations.legacy_mongo_id.
-        def _pg_save(_: PendingToolStateRepository) -> None:
-            conn = _._conn  # reuse the existing transaction
+        with db_session() as conn:
             conv = ConversationsRepository(conn).get_by_legacy_id(conversation_id)
-            if conv is None:
-                return
-            _.save_state(
-                conv["id"],
+            pg_conv_id = conv["id"] if conv is not None else conversation_id
+            PendingToolStateRepository(conn).save_state(
+                pg_conv_id,
                 user,
                 messages=_make_serializable(messages),
                 pending_tool_calls=_make_serializable(pending_tool_calls),
@@ -131,8 +88,11 @@ class ContinuationService:
                 client_tools=_make_serializable(client_tools) if client_tools else None,
             )
 
-        dual_write(PendingToolStateRepository, _pg_save)
-        return state_id
+        logger.info(
+            f"Saved continuation state for conversation {conversation_id} "
+            f"with {len(pending_tool_calls)} pending tool call(s)"
+        )
+        return conversation_id
 
     def load_state(
         self, conversation_id: str, user: str
@@ -142,34 +102,26 @@ class ContinuationService:
         Returns:
             The state dict, or None if no pending state exists.
         """
-        doc = self.collection.find_one(
-            {"conversation_id": conversation_id, "user": user}
-        )
+        with db_readonly() as conn:
+            conv = ConversationsRepository(conn).get_by_legacy_id(conversation_id)
+            pg_conv_id = conv["id"] if conv is not None else conversation_id
+            doc = PendingToolStateRepository(conn).load_state(pg_conv_id, user)
         if not doc:
             return None
-        doc["_id"] = str(doc["_id"])
         return doc
 
     def delete_state(self, conversation_id: str, user: str) -> bool:
         """Delete pending state after successful resumption.
 
         Returns:
-            True if a document was deleted.
+            True if a row was deleted.
         """
-        result = self.collection.delete_one(
-            {"conversation_id": conversation_id, "user": user}
-        )
-        if result.deleted_count:
+        with db_session() as conn:
+            conv = ConversationsRepository(conn).get_by_legacy_id(conversation_id)
+            pg_conv_id = conv["id"] if conv is not None else conversation_id
+            deleted = PendingToolStateRepository(conn).delete_state(pg_conv_id, user)
+        if deleted:
             logger.info(
                 f"Deleted continuation state for conversation {conversation_id}"
             )
-
-        # Dual-write to Postgres — delete the same row.
-        def _pg_delete(repo: PendingToolStateRepository) -> None:
-            conv = ConversationsRepository(repo._conn).get_by_legacy_id(conversation_id)
-            if conv is None:
-                return
-            repo.delete_state(conv["id"], user)
-
-        dual_write(PendingToolStateRepository, _pg_delete)
-        return result.deleted_count > 0
+        return deleted

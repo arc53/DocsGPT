@@ -5,10 +5,6 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
-from bson.dbref import DBRef
-
-from bson.objectid import ObjectId
-
 from application.agents.agent_creator import AgentCreator
 from application.api.answer.services.compression import CompressionOrchestrator
 from application.api.answer.services.compression.token_counter import TokenCounter
@@ -20,10 +16,16 @@ from application.core.model_utils import (
     get_provider_from_model_id,
     validate_model_id,
 )
-from application.core.mongo_db import MongoDB
 from application.core.settings import settings
-from application.storage.db.dual_write import dual_write
+from sqlalchemy import text as sql_text
+
+from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.attachments import AttachmentsRepository
+from application.storage.db.repositories.prompts import PromptsRepository
+from application.storage.db.repositories.sources import SourcesRepository
+from application.storage.db.repositories.user_tools import UserToolsRepository
+from application.storage.db.session import db_readonly, db_session
 from application.retriever.retriever_creator import RetrieverCreator
 from application.utils import (
     calculate_doc_token_budget,
@@ -34,28 +36,41 @@ logger = logging.getLogger(__name__)
 
 
 def get_prompt(prompt_id: str, prompts_collection=None) -> str:
+    """Get a prompt by preset name or Postgres ID (UUID or legacy ObjectId).
+
+    The ``prompts_collection`` parameter is retained for backwards
+    compatibility with call sites that still pass it positionally; it is
+    ignored post-cutover.
     """
-    Get a prompt by preset name or MongoDB ID
-    """
+    del prompts_collection  # unused — retained for call-site compatibility
+    # Callers may pass a ``uuid.UUID`` (from a PG ``prompt_id`` column) or a
+    # plain string ("default"/"creative"/legacy ObjectId). Normalise to str
+    # so both the preset lookup and the UUID-vs-legacy branching work.
+    # ``None`` / empty means "use the default prompt" — agents that never
+    # set a custom prompt land here (PG ``agents.prompt_id`` is NULL).
+    if prompt_id is None or prompt_id == "":
+        prompt_id = "default"
+    elif not isinstance(prompt_id, str):
+        prompt_id = str(prompt_id)
     current_dir = Path(__file__).resolve().parents[3]
     prompts_dir = current_dir / "prompts"
 
-    # Maps for classic agent types
     CLASSIC_PRESETS = {
         "default": "chat_combine_default.txt",
         "creative": "chat_combine_creative.txt",
         "strict": "chat_combine_strict.txt",
         "reduce": "chat_reduce_prompt.txt",
     }
-
-    # Agentic counterparts — same styles, but with search tool instructions
     AGENTIC_PRESETS = {
         "default": "agentic/default.txt",
         "creative": "agentic/creative.txt",
         "strict": "agentic/strict.txt",
     }
 
-    preset_mapping = {**CLASSIC_PRESETS, **{f"agentic_{k}": v for k, v in AGENTIC_PRESETS.items()}}
+    preset_mapping = {
+        **CLASSIC_PRESETS,
+        **{f"agentic_{k}": v for k, v in AGENTIC_PRESETS.items()},
+    }
 
     if prompt_id in preset_mapping:
         file_path = os.path.join(prompts_dir, preset_mapping[prompt_id])
@@ -65,14 +80,18 @@ def get_prompt(prompt_id: str, prompts_collection=None) -> str:
         except FileNotFoundError:
             raise FileNotFoundError(f"Prompt file not found: {file_path}")
     try:
-        if prompts_collection is None:
-            mongo = MongoDB.get_client()
-            db = mongo[settings.MONGO_DB_NAME]
-            prompts_collection = db["prompts"]
-        prompt_doc = prompts_collection.find_one({"_id": ObjectId(prompt_id)})
+        with db_readonly() as conn:
+            repo = PromptsRepository(conn)
+            prompt_doc = None
+            if looks_like_uuid(prompt_id):
+                prompt_doc = repo.get_for_rendering(prompt_id)
+            if prompt_doc is None:
+                prompt_doc = repo.get_by_legacy_id(prompt_id)
         if not prompt_doc:
             raise ValueError(f"Prompt with ID {prompt_id} not found")
         return prompt_doc["content"]
+    except ValueError:
+        raise
     except Exception as e:
         raise ValueError(f"Invalid prompt ID: {prompt_id}") from e
 
@@ -81,12 +100,9 @@ class StreamProcessor:
     def __init__(
         self, request_data: Dict[str, Any], decoded_token: Optional[Dict[str, Any]]
     ):
-        mongo = MongoDB.get_client()
-        self.db = mongo[settings.MONGO_DB_NAME]
-        self.agents_collection = self.db["agents"]
-        self.attachments_collection = self.db["attachments"]
-        self.prompts_collection = self.db["prompts"]
-
+        # Legacy attribute retained as None for any external callers that
+        # introspect the processor; all DB access uses per-op connections.
+        self.prompts_collection = None
         self.data = request_data
         self.decoded_token = decoded_token
         self.initial_user_id = (
@@ -246,17 +262,21 @@ class StreamProcessor:
         if not attachment_ids:
             return []
         attachments = []
-        for attachment_id in attachment_ids:
-            try:
-                attachment_doc = self.attachments_collection.find_one(
-                    {"_id": ObjectId(attachment_id), "user": user_id}
-                )
-                if attachment_doc:
-                    attachments.append(attachment_doc)
-            except Exception as e:
-                logger.error(
-                    f"Error retrieving attachment {attachment_id}: {e}", exc_info=True
-                )
+        try:
+            with db_readonly() as conn:
+                repo = AttachmentsRepository(conn)
+                for attachment_id in attachment_ids:
+                    try:
+                        attachment_doc = repo.get_any(str(attachment_id), user_id)
+                        if attachment_doc:
+                            attachments.append(attachment_doc)
+                    except Exception as e:
+                        logger.error(
+                            f"Error retrieving attachment {attachment_id}: {e}",
+                            exc_info=True,
+                        )
+        except Exception as e:
+            logger.error(f"Error opening attachments connection: {e}", exc_info=True)
         return attachments
 
     def _validate_and_set_model(self):
@@ -287,85 +307,100 @@ class StreamProcessor:
                 self.model_id = get_default_model_id()
 
     def _get_agent_key(self, agent_id: Optional[str], user_id: Optional[str]) -> tuple:
-        """Get API key for agent with access control"""
+        """Get API key for agent with access control."""
         if not agent_id:
             return None, False, None
         try:
-            agent = self.agents_collection.find_one({"_id": ObjectId(agent_id)})
+            with db_readonly() as conn:
+                # Lookup without user scoping — access control is done
+                # against ``user_id`` / ``shared_with`` / ``shared`` flags
+                # right below, matching the legacy Mongo semantics.
+                repo = AgentsRepository(conn)
+                agent = None
+                if looks_like_uuid(str(agent_id)):
+                    result = conn.execute(
+                        sql_text(
+                            "SELECT * FROM agents WHERE id = CAST(:id AS uuid)"
+                        ),
+                        {"id": str(agent_id)},
+                    )
+                    row = result.fetchone()
+                    if row is not None:
+                        agent = row_to_dict(row)
+                if agent is None:
+                    agent = repo.get_by_legacy_id(str(agent_id))
             if agent is None:
                 raise Exception("Agent not found")
-            is_owner = agent.get("user") == user_id
-            is_shared_with_user = agent.get(
-                "shared_publicly", False
-            ) or user_id in agent.get("shared_with", [])
+            agent_owner = agent.get("user_id")
+            is_owner = agent_owner == user_id
+            is_shared_with_user = bool(agent.get("shared", False))
 
             if not (is_owner or is_shared_with_user):
                 raise Exception("Unauthorized access to the agent")
             if is_owner:
                 now = datetime.datetime.now(datetime.timezone.utc)
-                self.agents_collection.update_one(
-                    {"_id": ObjectId(agent_id)},
-                    {
-                        "$set": {
-                            "lastUsedAt": now
-                        }
-                    },
-                )
-                dual_write(
-                    AgentsRepository,
-                    lambda repo, aid=agent_id, u=user_id, ts=now: repo.update_by_legacy_id(
-                        aid, u, {"last_used_at": ts},
-                    ),
-                )
-            return str(agent["key"]), not is_owner, agent.get("shared_token")
+                try:
+                    with db_session() as conn:
+                        AgentsRepository(conn).update(
+                            str(agent["id"]), agent_owner,
+                            {"last_used_at": now},
+                        )
+                except Exception as upd_err:
+                    logger.warning(
+                        f"Failed to update last_used_at for agent {agent_id}: {upd_err}"
+                    )
+            return (
+                str(agent["key"]) if agent.get("key") else None,
+                not is_owner,
+                agent.get("shared_token"),
+            )
         except Exception as e:
             logger.error(f"Error in get_agent_key: {str(e)}", exc_info=True)
             raise
 
     def _get_data_from_api_key(self, api_key: str) -> Dict[str, Any]:
-        data = self.agents_collection.find_one({"key": api_key})
-        if not data:
-            raise Exception("Invalid API Key, please generate a new key", 401)
-        source = data.get("source")
-        if isinstance(source, DBRef):
-            source_doc = self.db.dereference(source)
-            if source_doc:
-                data["source"] = str(source_doc["_id"])
-                data["retriever"] = source_doc.get("retriever", data.get("retriever"))
-                data["chunks"] = source_doc.get("chunks", data.get("chunks"))
+        with db_readonly() as conn:
+            agent = AgentsRepository(conn).find_by_key(api_key)
+            if not agent:
+                raise Exception("Invalid API Key, please generate a new key", 401)
+            sources_repo = SourcesRepository(conn)
+            # The repo dict uses "user_id" — the streaming path expects
+            # a "user" key (legacy Mongo shape) for identity propagation.
+            data: Dict[str, Any] = dict(agent)
+            data["user"] = agent.get("user_id")
+
+            # Resolve the primary source row (if any) for retriever/chunks.
+            source_id = agent.get("source_id")
+            if source_id:
+                source_doc = sources_repo.get(str(source_id), agent.get("user_id"))
+                if source_doc:
+                    data["source"] = str(source_doc["id"])
+                    data["retriever"] = source_doc.get(
+                        "retriever", data.get("retriever")
+                    )
+                    data["chunks"] = source_doc.get("chunks", data.get("chunks"))
+                else:
+                    data["source"] = None
             else:
                 data["source"] = None
-        elif source == "default":
-            data["source"] = "default"
-        else:
-            data["source"] = None
 
-        sources = data.get("sources", [])
-        if sources and isinstance(sources, list):
             sources_list = []
-            for i, source_ref in enumerate(sources):
-                if source_ref == "default":
-                    processed_source = {
-                        "id": "default",
-                        "retriever": "classic",
-                        "chunks": data.get("chunks", "2"),
-                    }
-                    sources_list.append(processed_source)
-                elif isinstance(source_ref, DBRef):
-                    source_doc = self.db.dereference(source_ref)
+            extra = agent.get("extra_source_ids") or []
+            if extra:
+                for sid in extra:
+                    source_doc = sources_repo.get(str(sid), agent.get("user_id"))
                     if source_doc:
-                        processed_source = {
-                            "id": str(source_doc["_id"]),
-                            "retriever": source_doc.get("retriever", "classic"),
-                            "chunks": source_doc.get("chunks", data.get("chunks", "2")),
-                        }
-                        sources_list.append(processed_source)
-            data["sources"] = sources_list
-        else:
-            data["sources"] = []
-
+                        sources_list.append(
+                            {
+                                "id": str(source_doc["id"]),
+                                "retriever": source_doc.get("retriever", "classic"),
+                                "chunks": source_doc.get(
+                                    "chunks", data.get("chunks", "2")
+                                ),
+                            }
+                        )
+        data["sources"] = sources_list
         data["default_model_id"] = data.get("default_model_id", "")
-
         return data
 
     def _configure_source(self):
@@ -493,8 +528,14 @@ class StreamProcessor:
                 # Owner using their own agent
                 self.decoded_token = {"sub": self._agent_data.get("user")}
 
-            if self._agent_data.get("workflow"):
-                self.agent_config["workflow"] = self._agent_data["workflow"]
+            # PG row exposes the workflow as ``workflow_id`` (UUID column);
+            # legacy Mongo shape used the key ``workflow``. Accept either so
+            # API-key-invoked workflow agents bind correctly downstream.
+            wf_ref = self._agent_data.get("workflow") or self._agent_data.get(
+                "workflow_id"
+            )
+            if wf_ref:
+                self.agent_config["workflow"] = str(wf_ref)
                 self.agent_config["workflow_owner"] = self._agent_data.get("user")
         else:
             # No API key — default/workflow configuration
@@ -629,12 +670,9 @@ class StreamProcessor:
         filtering_enabled = required_tool_actions is not None
 
         try:
-            user_tools_collection = self.db["user_tools"]
             user_id = self.initial_user_id or "local"
-
-            user_tools = list(
-                user_tools_collection.find({"user": user_id, "status": True})
-            )
+            with db_readonly() as conn:
+                user_tools = UserToolsRepository(conn).list_active_for_user(user_id)
 
             if not user_tools:
                 return None
@@ -995,8 +1033,10 @@ class StreamProcessor:
         from application.llm.handlers.handler_creator import LLMHandlerCreator
         from application.agents.tool_executor import ToolExecutor
 
-        # Compute backup models: agent's configured models minus the active one
-        agent_models = self.agent_config.get("models", [])
+        # Compute backup models: agent's configured models minus the active one.
+        # PG agents may carry an explicit ``models: NULL`` (not absent), so
+        # ``.get("models", [])`` isn't enough — coerce None → [].
+        agent_models = self.agent_config.get("models") or []
         backup_models = [m for m in agent_models if m != self.model_id]
 
         llm = LLMCreator.create_llm(

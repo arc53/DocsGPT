@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 from sqlalchemy import Connection, text
 
-from application.storage.db.base_repository import row_to_dict
+from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 
 
 _UPDATABLE_SCALARS = {
@@ -78,8 +78,17 @@ class AttachmentsRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def get_any(self, attachment_id: str, user_id: str) -> Optional[dict]:
+        """Resolve an attachment by either PG UUID or legacy Mongo ObjectId string."""
+        if looks_like_uuid(attachment_id):
+            row = self.get(attachment_id, user_id)
+            if row is not None:
+                return row
+        return self.get_by_legacy_id(attachment_id, user_id)
+
     def get_by_legacy_id(self, legacy_mongo_id: str, user_id: str | None = None) -> Optional[dict]:
         """Fetch an attachment by the original Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         sql = "SELECT * FROM attachments WHERE legacy_mongo_id = :legacy_id"
         params: dict[str, str] = {"legacy_id": legacy_mongo_id}
         if user_id is not None:
@@ -125,6 +134,20 @@ class AttachmentsRepository:
         )
         return result.rowcount > 0
 
+    def update_any(self, attachment_id: str, user_id: str, fields: dict) -> bool:
+        """Partial update addressed by either PG UUID or legacy Mongo ObjectId.
+
+        Cutover helper used by the LLM provider file-ID caching hot path:
+        the attachment dict in hand may carry a UUID (post-cutover shape)
+        or an ObjectId-string ``_id`` (legacy). Try the UUID path first
+        when the id looks like a UUID; otherwise fall back to the
+        ``legacy_mongo_id`` update.
+        """
+        if looks_like_uuid(attachment_id):
+            if self.update(attachment_id, user_id, fields):
+                return True
+        return self.update_by_legacy_id(attachment_id, fields)
+
     def update_by_legacy_id(self, legacy_mongo_id: str, fields: dict) -> bool:
         """Like ``update`` but addressed by the Mongo ObjectId string.
 
@@ -132,6 +155,7 @@ class AttachmentsRepository:
         only has the Mongo ``_id`` in hand (the PG UUID hasn't been
         looked up yet). No user scoping — the ObjectId is itself unique.
         """
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         filtered = {
             k: v for k, v in fields.items()
             if k in _UPDATABLE_SCALARS | _UPDATABLE_JSONB

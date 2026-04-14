@@ -2,16 +2,15 @@
 
 import secrets
 
-from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, request
 from flask_restx import Namespace, Resource
 
 from application.api import api
-from application.api.user.base import agents_collection, require_agent
+from application.api.user.base import require_agent
 from application.api.user.tasks import process_agent_webhook
 from application.core.settings import settings
-from application.storage.db.dual_write import dual_write
 from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.session import db_readonly, db_session
 
 
 agents_webhooks_ns = Namespace(
@@ -36,9 +35,8 @@ class AgentWebhook(Resource):
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
         try:
-            agent = agents_collection.find_one(
-                {"_id": ObjectId(agent_id), "user": user}
-            )
+            with db_readonly() as conn:
+                agent = AgentsRepository(conn).get_any(agent_id, user)
             if not agent:
                 return make_response(
                     jsonify({"success": False, "message": "Agent not found"}), 404
@@ -46,16 +44,11 @@ class AgentWebhook(Resource):
             webhook_token = agent.get("incoming_webhook_token")
             if not webhook_token:
                 webhook_token = secrets.token_urlsafe(32)
-                agents_collection.update_one(
-                    {"_id": ObjectId(agent_id), "user": user},
-                    {"$set": {"incoming_webhook_token": webhook_token}},
-                )
-                dual_write(
-                    AgentsRepository,
-                    lambda repo, aid=agent_id, u=user, tok=webhook_token: repo.update_by_legacy_id(
-                        aid, u, {"incoming_webhook_token": tok},
-                    ),
-                )
+                with db_session() as conn:
+                    AgentsRepository(conn).update(
+                        str(agent["id"]), user,
+                        {"incoming_webhook_token": webhook_token},
+                    )
             base_url = settings.API_URL.rstrip("/")
             full_webhook_url = f"{base_url}/api/webhooks/agents/{webhook_token}"
         except Exception as err:

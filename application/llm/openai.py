@@ -527,27 +527,34 @@ class OpenAILLM(BaseLLM):
                 ).id,
             )
 
-            from application.core.mongo_db import MongoDB
-
-            mongo = MongoDB.get_client()
-            db = mongo[settings.MONGO_DB_NAME]
-            attachments_collection = db["attachments"]
-            if "_id" in attachment:
-                attachments_collection.update_one(
-                    {"_id": attachment["_id"]}, {"$set": {"openai_file_id": file_id}}
-                )
-                # Mirror to Postgres so we don't re-upload on cutover.
-                from application.storage.db.dual_write import dual_write
+            # Cache the OpenAI file id on the attachment row so we don't
+            # re-upload the same blob on the next LLM call. Prefer the PG
+            # UUID (``id``) when present; fall back to the legacy Mongo
+            # ObjectId string (``_id``). Opened per-write — this runs
+            # inside the hot LLM path, so we don't want a long-lived
+            # session wrapping the generator.
+            attachment_id = attachment.get("id") or attachment.get("_id")
+            if attachment_id:
+                user_id = None
+                decoded = getattr(self, "decoded_token", None)
+                if isinstance(decoded, dict):
+                    user_id = decoded.get("sub")
                 from application.storage.db.repositories.attachments import (
                     AttachmentsRepository,
                 )
+                from application.storage.db.session import db_session
 
-                dual_write(
-                    AttachmentsRepository,
-                    lambda repo, mid=str(attachment["_id"]), fid=file_id: repo.update_by_legacy_id(
-                        mid, {"openai_file_id": fid},
-                    ),
-                )
+                try:
+                    with db_session() as conn:
+                        AttachmentsRepository(conn).update_any(
+                            str(attachment_id),
+                            user_id,
+                            {"openai_file_id": file_id},
+                        )
+                except Exception as cache_err:
+                    logging.warning(
+                        f"Failed to cache openai_file_id on attachment {attachment_id}: {cache_err}"
+                    )
             return file_id
         except Exception as e:
             logging.error(f"Error uploading file to OpenAI: {e}", exc_info=True)

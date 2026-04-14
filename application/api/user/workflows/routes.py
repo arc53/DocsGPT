@@ -1,34 +1,26 @@
 """Workflow management routes."""
 
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
 from flask import current_app, request
 from flask_restx import Namespace, Resource
 
-from application.api.user.base import (
-    workflow_edges_collection,
-    workflow_nodes_collection,
-    workflows_collection,
-)
-from application.storage.db.dual_write import dual_write
+from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
 from application.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
 from application.storage.db.repositories.workflows import WorkflowsRepository
+from application.storage.db.session import db_readonly, db_session
 from application.core.json_schema_utils import (
     JsonSchemaValidationError,
     normalize_json_schema_payload,
 )
 from application.core.model_utils import get_model_capabilities
 from application.api.user.utils import (
-    check_resource_ownership,
     error_response,
     get_user_id,
     require_auth,
     require_fields,
-    safe_db_operation,
     success_response,
-    validate_object_id,
 )
 
 workflows_ns = Namespace("workflows", path="/api")
@@ -39,109 +31,15 @@ def _workflow_error_response(message: str, err: Exception):
     return error_response(message)
 
 
-# ---------------------------------------------------------------------------
-# Postgres dual-write helpers
-#
-# Workflows are unusual relative to other Phase 3 tables: a single user
-# action (create / update) writes to three collections in concert
-# (workflows + workflow_nodes + workflow_edges) and the edges reference
-# nodes by user-provided string ids. The Postgres mirror needs to:
-#
-# 1. Run all three writes inside one PG transaction (so the just-created
-#    nodes are visible when we resolve their UUIDs for the edge insert).
-# 2. Translate edge source_id/target_id strings → workflow_nodes.id UUIDs
-#    after the bulk_create returns them.
-#
-# Each helper opens exactly one ``dual_write`` call (one PG txn) and uses
-# the connection from whichever repo it was instantiated with to spin up
-# any sibling repos it needs.
-# ---------------------------------------------------------------------------
-
-
-def _dual_write_workflow_create(
-    mongo_workflow_id: str,
-    user_id: str,
-    name: str,
-    description: str,
-    nodes_data: List[Dict],
-    edges_data: List[Dict],
-    graph_version: int = 1,
-) -> None:
-    """Mirror a Mongo workflow create into Postgres."""
-
-    def _do(repo: WorkflowsRepository) -> None:
-        conn = repo._conn
-        wf = repo.create(
-            user_id,
-            name,
-            description=description,
-            legacy_mongo_id=mongo_workflow_id,
-        )
-        _write_graph(conn, wf["id"], graph_version, nodes_data, edges_data)
-
-    dual_write(WorkflowsRepository, _do)
-
-
-def _dual_write_workflow_update(
-    mongo_workflow_id: str,
-    user_id: str,
-    name: str,
-    description: str,
-    nodes_data: List[Dict],
-    edges_data: List[Dict],
-    next_graph_version: int,
-) -> None:
-    """Mirror a Mongo workflow update into Postgres.
-
-    Mirrors the Mongo route: insert the new graph_version's nodes/edges,
-    bump the workflow's name/description/current_graph_version, then drop
-    every other graph_version's nodes/edges.
-    """
-
-    def _do(repo: WorkflowsRepository) -> None:
-        conn = repo._conn
-        wf = _resolve_pg_workflow(conn, mongo_workflow_id)
-        if wf is None:
-            return
-        _write_graph(conn, wf["id"], next_graph_version, nodes_data, edges_data)
-        repo.update(wf["id"], user_id, {
-            "name": name,
-            "description": description,
-            "current_graph_version": next_graph_version,
-        })
-        WorkflowNodesRepository(conn).delete_other_versions(
-            wf["id"], next_graph_version,
-        )
-        WorkflowEdgesRepository(conn).delete_other_versions(
-            wf["id"], next_graph_version,
-        )
-
-    dual_write(WorkflowsRepository, _do)
-
-
-def _dual_write_workflow_delete(mongo_workflow_id: str, user_id: str) -> None:
-    """Mirror a Mongo workflow delete into Postgres.
-
-    The CASCADE on workflows.id → workflow_nodes/workflow_edges takes
-    care of the children automatically.
-    """
-
-    def _do(repo: WorkflowsRepository) -> None:
-        wf = _resolve_pg_workflow(repo._conn, mongo_workflow_id)
-        if wf is not None:
-            repo.delete(wf["id"], user_id)
-
-    dual_write(WorkflowsRepository, _do)
-
-
-def _resolve_pg_workflow(conn, mongo_workflow_id: str) -> Optional[Dict]:
-    """Look up a Postgres workflow by its Mongo ObjectId string."""
-    from sqlalchemy import text as _text
-    row = conn.execute(
-        _text("SELECT id FROM workflows WHERE legacy_mongo_id = :legacy_id"),
-        {"legacy_id": mongo_workflow_id},
-    ).fetchone()
-    return {"id": str(row[0])} if row else None
+def _resolve_workflow(repo: WorkflowsRepository, workflow_id: str, user_id: str):
+    """Resolve a workflow by UUID or legacy Mongo id, scoped to user."""
+    if not workflow_id:
+        return None
+    if looks_like_uuid(workflow_id):
+        row = repo.get(workflow_id, user_id)
+        if row is not None:
+            return row
+    return repo.get_by_legacy_id(workflow_id, user_id)
 
 
 def _write_graph(
@@ -150,14 +48,13 @@ def _write_graph(
     graph_version: int,
     nodes_data: List[Dict],
     edges_data: List[Dict],
-) -> None:
-    """Bulk-create nodes + edges for one graph version inside one txn.
+) -> List[Dict]:
+    """Bulk-create nodes + edges for one graph version. Uses ON CONFLICT upsert.
 
-    Edges arrive with source/target as user-provided node-id strings
-    (the same shape the Mongo route stores). We bulk-insert nodes first,
-    capture their ``node_id → UUID`` map from the returned rows, then
-    translate edge source/target strings to those UUIDs before the edge
-    bulk insert. Edges referencing missing nodes are dropped (logged).
+    Edges arrive with source/target as user-provided node-id strings. We
+    insert nodes first, capture their ``node_id → UUID`` map, then
+    translate edges before insertion. Edges referencing missing nodes are
+    dropped with a warning.
     """
     nodes_repo = WorkflowNodesRepository(conn)
     edges_repo = WorkflowEdgesRepository(conn)
@@ -173,13 +70,13 @@ def _write_graph(
                     "description": n.get("description", ""),
                     "position": n.get("position", {"x": 0, "y": 0}),
                     "config": n.get("data", {}),
-                    "legacy_mongo_id": n.get("legacy_mongo_id"),
                 }
                 for n in nodes_data
             ],
         )
         node_uuid_by_str = {n["node_id"]: n["id"] for n in created_nodes}
     else:
+        created_nodes = []
         node_uuid_by_str = {}
 
     if edges_data:
@@ -191,7 +88,7 @@ def _write_graph(
             to_uuid = node_uuid_by_str.get(tgt)
             if not from_uuid or not to_uuid:
                 current_app.logger.warning(
-                    "PG dual-write: dropping edge %s; node refs unresolved "
+                    "Workflow graph write: dropping edge %s; node refs unresolved "
                     "(source=%s, target=%s)",
                     e.get("id"), src, tgt,
                 )
@@ -204,36 +101,42 @@ def _write_graph(
                 "target_handle": e.get("targetHandle"),
             })
         if translated_edges:
-            edges_repo.bulk_create(pg_workflow_id, graph_version, translated_edges)
+            edges_repo.bulk_create(
+                pg_workflow_id, graph_version, translated_edges,
+            )
+
+    return created_nodes
 
 
 def serialize_workflow(w: Dict) -> Dict:
-    """Serialize workflow document to API response format."""
+    """Serialize workflow row to API response format."""
+    created_at = w.get("created_at")
+    updated_at = w.get("updated_at")
     return {
-        "id": str(w["_id"]),
+        "id": str(w["id"]),
         "name": w.get("name"),
         "description": w.get("description"),
-        "created_at": w["created_at"].isoformat() if w.get("created_at") else None,
-        "updated_at": w["updated_at"].isoformat() if w.get("updated_at") else None,
+        "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
+        "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else updated_at,
     }
 
 
 def serialize_node(n: Dict) -> Dict:
-    """Serialize workflow node document to API response format."""
+    """Serialize workflow node row to API response format."""
     return {
-        "id": n["id"],
-        "type": n["type"],
+        "id": n["node_id"],
+        "type": n["node_type"],
         "title": n.get("title"),
         "description": n.get("description"),
         "position": n.get("position"),
-        "data": n.get("config", {}),
+        "data": n.get("config", {}) or {},
     }
 
 
 def serialize_edge(e: Dict) -> Dict:
-    """Serialize workflow edge document to API response format."""
+    """Serialize workflow edge row to API response format."""
     return {
-        "id": e["id"],
+        "id": e["edge_id"],
         "source": e.get("source_id"),
         "target": e.get("target_id"),
         "sourceHandle": e.get("source_handle"),
@@ -242,29 +145,13 @@ def serialize_edge(e: Dict) -> Dict:
 
 
 def get_workflow_graph_version(workflow: Dict) -> int:
-    """Get current graph version with legacy fallback."""
+    """Get current graph version with fallback."""
     raw_version = workflow.get("current_graph_version", 1)
     try:
         version = int(raw_version)
         return version if version > 0 else 1
     except (ValueError, TypeError):
         return 1
-
-
-def fetch_graph_documents(collection, workflow_id: str, graph_version: int) -> List[Dict]:
-    """Fetch graph docs for active version, with fallback for legacy unversioned data."""
-    docs = list(
-        collection.find({"workflow_id": workflow_id, "graph_version": graph_version})
-    )
-    if docs:
-        return docs
-    if graph_version == 1:
-        return list(
-            collection.find(
-                {"workflow_id": workflow_id, "graph_version": {"$exists": False}}
-            )
-        )
-    return docs
 
 
 def validate_json_schema_payload(
@@ -487,53 +374,6 @@ def _can_reach_end(
     return any(_can_reach_end(t, edges, node_map, end_ids, visited) for t in outgoing if t)
 
 
-def create_workflow_nodes(
-    workflow_id: str, nodes_data: List[Dict], graph_version: int
-) -> List[Dict]:
-    """Insert workflow nodes into Mongo and return rows with Mongo ids."""
-    if nodes_data:
-        mongo_nodes = [
-            {
-                "id": n["id"],
-                "workflow_id": workflow_id,
-                "graph_version": graph_version,
-                "type": n["type"],
-                "title": n.get("title", ""),
-                "description": n.get("description", ""),
-                "position": n.get("position", {"x": 0, "y": 0}),
-                "config": n.get("data", {}),
-            }
-            for n in nodes_data
-        ]
-        result = workflow_nodes_collection.insert_many(mongo_nodes)
-        return [
-            {**node, "legacy_mongo_id": str(inserted_id)}
-            for node, inserted_id in zip(nodes_data, result.inserted_ids)
-        ]
-    return []
-
-
-def create_workflow_edges(
-    workflow_id: str, edges_data: List[Dict], graph_version: int
-) -> None:
-    """Insert workflow edges into database."""
-    if edges_data:
-        workflow_edges_collection.insert_many(
-            [
-                {
-                    "id": e["id"],
-                    "workflow_id": workflow_id,
-                    "graph_version": graph_version,
-                    "source_id": e.get("source"),
-                    "target_id": e.get("target"),
-                    "source_handle": e.get("sourceHandle"),
-                    "target_handle": e.get("targetHandle"),
-                }
-                for e in edges_data
-            ]
-        )
-
-
 @workflows_ns.route("/workflows")
 class WorkflowList(Resource):
 
@@ -545,6 +385,7 @@ class WorkflowList(Resource):
         data = request.get_json()
 
         name = data.get("name", "").strip()
+        description = data.get("description", "")
         nodes_data = data.get("nodes", [])
         edges_data = data.get("edges", [])
 
@@ -555,44 +396,16 @@ class WorkflowList(Resource):
             )
         nodes_data = normalize_agent_node_json_schemas(nodes_data)
 
-        now = datetime.now(timezone.utc)
-        workflow_doc = {
-            "name": name,
-            "description": data.get("description", ""),
-            "user": user_id,
-            "created_at": now,
-            "updated_at": now,
-            "current_graph_version": 1,
-        }
-
-        result, error = safe_db_operation(
-            lambda: workflows_collection.insert_one(workflow_doc),
-            "Failed to create workflow",
-        )
-        if error:
-            return error
-
-        workflow_id = str(result.inserted_id)
-
         try:
-            created_nodes = create_workflow_nodes(workflow_id, nodes_data, 1)
-            create_workflow_edges(workflow_id, edges_data, 1)
+            with db_session() as conn:
+                repo = WorkflowsRepository(conn)
+                workflow = repo.create(user_id, name, description=description)
+                pg_workflow_id = str(workflow["id"])
+                _write_graph(conn, pg_workflow_id, 1, nodes_data, edges_data)
         except Exception as err:
-            workflow_nodes_collection.delete_many({"workflow_id": workflow_id})
-            workflow_edges_collection.delete_many({"workflow_id": workflow_id})
-            workflows_collection.delete_one({"_id": result.inserted_id})
-            return _workflow_error_response("Failed to create workflow structure", err)
+            return _workflow_error_response("Failed to create workflow", err)
 
-        _dual_write_workflow_create(
-            workflow_id,
-            user_id,
-            name,
-            data.get("description", ""),
-            created_nodes,
-            edges_data,
-        )
-
-        return success_response({"id": workflow_id}, 201)
+        return success_response({"id": pg_workflow_id}, 201)
 
 
 @workflows_ns.route("/workflows/<string:workflow_id>")
@@ -602,23 +415,22 @@ class WorkflowDetail(Resource):
     def get(self, workflow_id: str):
         """Get workflow details with nodes and edges."""
         user_id = get_user_id()
-        obj_id, error = validate_object_id(workflow_id, "Workflow")
-        if error:
-            return error
-
-        workflow, error = check_resource_ownership(
-            workflows_collection, obj_id, user_id, "Workflow"
-        )
-        if error:
-            return error
-
-        graph_version = get_workflow_graph_version(workflow)
-        nodes = fetch_graph_documents(
-            workflow_nodes_collection, workflow_id, graph_version
-        )
-        edges = fetch_graph_documents(
-            workflow_edges_collection, workflow_id, graph_version
-        )
+        try:
+            with db_readonly() as conn:
+                repo = WorkflowsRepository(conn)
+                workflow = _resolve_workflow(repo, workflow_id, user_id)
+                if workflow is None:
+                    return error_response("Workflow not found", 404)
+                pg_workflow_id = str(workflow["id"])
+                graph_version = get_workflow_graph_version(workflow)
+                nodes = WorkflowNodesRepository(conn).find_by_version(
+                    pg_workflow_id, graph_version,
+                )
+                edges = WorkflowEdgesRepository(conn).find_by_version(
+                    pg_workflow_id, graph_version,
+                )
+        except Exception as err:
+            return _workflow_error_response("Failed to fetch workflow", err)
 
         return success_response(
             {
@@ -633,18 +445,9 @@ class WorkflowDetail(Resource):
     def put(self, workflow_id: str):
         """Update workflow and replace nodes/edges."""
         user_id = get_user_id()
-        obj_id, error = validate_object_id(workflow_id, "Workflow")
-        if error:
-            return error
-
-        workflow, error = check_resource_ownership(
-            workflows_collection, obj_id, user_id, "Workflow"
-        )
-        if error:
-            return error
-
         data = request.get_json()
         name = data.get("name", "").strip()
+        description = data.get("description", "")
         nodes_data = data.get("nodes", [])
         edges_data = data.get("edges", [])
 
@@ -655,67 +458,36 @@ class WorkflowDetail(Resource):
             )
         nodes_data = normalize_agent_node_json_schemas(nodes_data)
 
-        current_graph_version = get_workflow_graph_version(workflow)
-        next_graph_version = current_graph_version + 1
         try:
-            created_nodes = create_workflow_nodes(
-                workflow_id, nodes_data, next_graph_version,
-            )
-            create_workflow_edges(workflow_id, edges_data, next_graph_version)
-        except Exception as err:
-            workflow_nodes_collection.delete_many(
-                {"workflow_id": workflow_id, "graph_version": next_graph_version}
-            )
-            workflow_edges_collection.delete_many(
-                {"workflow_id": workflow_id, "graph_version": next_graph_version}
-            )
-            return _workflow_error_response("Failed to update workflow structure", err)
+            with db_session() as conn:
+                repo = WorkflowsRepository(conn)
+                workflow = _resolve_workflow(repo, workflow_id, user_id)
+                if workflow is None:
+                    return error_response("Workflow not found", 404)
+                pg_workflow_id = str(workflow["id"])
+                current_graph_version = get_workflow_graph_version(workflow)
+                next_graph_version = current_graph_version + 1
 
-        now = datetime.now(timezone.utc)
-        _, error = safe_db_operation(
-            lambda: workflows_collection.update_one(
-                {"_id": obj_id},
-                {
-                    "$set": {
+                _write_graph(
+                    conn, pg_workflow_id, next_graph_version,
+                    nodes_data, edges_data,
+                )
+                repo.update(
+                    pg_workflow_id, user_id,
+                    {
                         "name": name,
-                        "description": data.get("description", ""),
-                        "updated_at": now,
+                        "description": description,
                         "current_graph_version": next_graph_version,
-                    }
-                },
-            ),
-            "Failed to update workflow",
-        )
-        if error:
-            workflow_nodes_collection.delete_many(
-                {"workflow_id": workflow_id, "graph_version": next_graph_version}
-            )
-            workflow_edges_collection.delete_many(
-                {"workflow_id": workflow_id, "graph_version": next_graph_version}
-            )
-            return error
-
-        try:
-            workflow_nodes_collection.delete_many(
-                {"workflow_id": workflow_id, "graph_version": {"$ne": next_graph_version}}
-            )
-            workflow_edges_collection.delete_many(
-                {"workflow_id": workflow_id, "graph_version": {"$ne": next_graph_version}}
-            )
-        except Exception as cleanup_err:
-            current_app.logger.warning(
-                f"Failed to clean old workflow graph versions for {workflow_id}: {cleanup_err}"
-            )
-
-        _dual_write_workflow_update(
-            workflow_id,
-            user_id,
-            name,
-            data.get("description", ""),
-            created_nodes,
-            edges_data,
-            next_graph_version,
-        )
+                    },
+                )
+                WorkflowNodesRepository(conn).delete_other_versions(
+                    pg_workflow_id, next_graph_version,
+                )
+                WorkflowEdgesRepository(conn).delete_other_versions(
+                    pg_workflow_id, next_graph_version,
+                )
+        except Exception as err:
+            return _workflow_error_response("Failed to update workflow", err)
 
         return success_response()
 
@@ -723,23 +495,15 @@ class WorkflowDetail(Resource):
     def delete(self, workflow_id: str):
         """Delete workflow and its graph."""
         user_id = get_user_id()
-        obj_id, error = validate_object_id(workflow_id, "Workflow")
-        if error:
-            return error
-
-        workflow, error = check_resource_ownership(
-            workflows_collection, obj_id, user_id, "Workflow"
-        )
-        if error:
-            return error
-
         try:
-            workflow_nodes_collection.delete_many({"workflow_id": workflow_id})
-            workflow_edges_collection.delete_many({"workflow_id": workflow_id})
-            workflows_collection.delete_one({"_id": workflow["_id"], "user": user_id})
+            with db_session() as conn:
+                repo = WorkflowsRepository(conn)
+                workflow = _resolve_workflow(repo, workflow_id, user_id)
+                if workflow is None:
+                    return error_response("Workflow not found", 404)
+                # ON DELETE CASCADE on workflow_nodes/edges cleans children.
+                repo.delete(str(workflow["id"]), user_id)
         except Exception as err:
             return _workflow_error_response("Failed to delete workflow", err)
-
-        _dual_write_workflow_delete(workflow_id, user_id)
 
         return success_response()

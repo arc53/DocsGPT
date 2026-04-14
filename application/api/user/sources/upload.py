@@ -5,16 +5,16 @@ import os
 import tempfile
 import zipfile
 
-from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
 from application.api import api
-from application.api.user.base import sources_collection
 from application.api.user.tasks import ingest, ingest_connector_task, ingest_remote
 from application.core.settings import settings
 from application.parser.connectors.connector_creator import ConnectorCreator
 from application.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
+from application.storage.db.repositories.sources import SourcesRepository
+from application.storage.db.session import db_readonly, db_session
 from application.storage.storage_creator import StorageCreator
 from application.stt.upload_limits import (
     AudioFileTooLargeError,
@@ -329,15 +329,8 @@ class ManageSourceFiles(Resource):
                 400,
             )
         try:
-            ObjectId(source_id)
-        except Exception:
-            return make_response(
-                jsonify({"success": False, "message": "Invalid source ID format"}), 400
-            )
-        try:
-            source = sources_collection.find_one(
-                {"_id": ObjectId(source_id), "user": user}
-            )
+            with db_readonly() as conn:
+                source = SourcesRepository(conn).get_any(source_id, user)
             if not source:
                 return make_response(
                     jsonify(
@@ -353,6 +346,7 @@ class ManageSourceFiles(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Database error"}), 500
             )
+        resolved_source_id = str(source["id"])
         try:
             storage = StorageCreator.get_storage()
             source_file_path = source.get("file_path", "")
@@ -411,27 +405,18 @@ class ManageSourceFiles(Resource):
                             map_updated = True
 
                 if map_updated:
-                    sources_collection.update_one(
-                        {"_id": ObjectId(source_id)},
-                        {"$set": {"file_name_map": file_name_map}},
-                    )
-
-                    from application.storage.db.dual_write import dual_write
-                    from application.storage.db.repositories.sources import (
-                        SourcesRepository,
-                    )
-
-                    dual_write(
-                        SourcesRepository,
-                        lambda repo, lid=source_id, u=user, fnm=dict(file_name_map): repo.update_by_legacy_id(
-                            lid, u, {"file_name_map": fnm}
-                        ),
-                    )
+                    with db_session() as conn:
+                        SourcesRepository(conn).update(
+                            resolved_source_id, user,
+                            {"file_name_map": dict(file_name_map)},
+                        )
                 # Trigger re-ingestion pipeline
 
                 from application.api.user.tasks import reingest_source_task
 
-                task = reingest_source_task.delay(source_id=source_id, user=user)
+                task = reingest_source_task.delay(
+                    source_id=resolved_source_id, user=user
+                )
 
                 return make_response(
                     jsonify(
@@ -497,27 +482,18 @@ class ManageSourceFiles(Resource):
                         map_updated = True
 
                 if map_updated and isinstance(file_name_map, dict):
-                    sources_collection.update_one(
-                        {"_id": ObjectId(source_id)},
-                        {"$set": {"file_name_map": file_name_map}},
-                    )
-
-                    from application.storage.db.dual_write import dual_write
-                    from application.storage.db.repositories.sources import (
-                        SourcesRepository,
-                    )
-
-                    dual_write(
-                        SourcesRepository,
-                        lambda repo, lid=source_id, u=user, fnm=dict(file_name_map): repo.update_by_legacy_id(
-                            lid, u, {"file_name_map": fnm}
-                        ),
-                    )
+                    with db_session() as conn:
+                        SourcesRepository(conn).update(
+                            resolved_source_id, user,
+                            {"file_name_map": dict(file_name_map)},
+                        )
                 # Trigger re-ingestion pipeline
 
                 from application.api.user.tasks import reingest_source_task
 
-                task = reingest_source_task.delay(source_id=source_id, user=user)
+                task = reingest_source_task.delay(
+                    source_id=resolved_source_id, user=user
+                )
 
                 return make_response(
                     jsonify(
@@ -605,28 +581,19 @@ class ManageSourceFiles(Resource):
                     if keys_to_remove:
                         for key in keys_to_remove:
                             file_name_map.pop(key, None)
-                        sources_collection.update_one(
-                            {"_id": ObjectId(source_id)},
-                            {"$set": {"file_name_map": file_name_map}},
-                        )
-
-                        from application.storage.db.dual_write import dual_write
-                        from application.storage.db.repositories.sources import (
-                            SourcesRepository,
-                        )
-
-                        dual_write(
-                            SourcesRepository,
-                            lambda repo, lid=source_id, u=user, fnm=dict(file_name_map): repo.update_by_legacy_id(
-                                lid, u, {"file_name_map": fnm}
-                            ),
-                        )
+                        with db_session() as conn:
+                            SourcesRepository(conn).update(
+                                resolved_source_id, user,
+                                {"file_name_map": dict(file_name_map)},
+                            )
 
                 # Trigger re-ingestion pipeline
 
                 from application.api.user.tasks import reingest_source_task
 
-                task = reingest_source_task.delay(source_id=source_id, user=user)
+                task = reingest_source_task.delay(
+                    source_id=resolved_source_id, user=user
+                )
 
                 return make_response(
                     jsonify(

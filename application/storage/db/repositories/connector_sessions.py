@@ -153,6 +153,7 @@ class ConnectorSessionsRepository:
     def get_by_legacy_id(
         self, legacy_mongo_id: str, user_id: Optional[str] = None,
     ) -> Optional[dict]:
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         sql = "SELECT * FROM connector_sessions WHERE legacy_mongo_id = :legacy_id"
         params: dict[str, str] = {"legacy_id": legacy_mongo_id}
         if user_id is not None:
@@ -196,6 +197,7 @@ class ConnectorSessionsRepository:
         return result.rowcount > 0
 
     def update_by_legacy_id(self, legacy_mongo_id: str, fields: dict) -> bool:
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         filtered = {
             k: v for k, v in fields.items()
             if k in _UPDATABLE_SCALARS | _UPDATABLE_JSONB

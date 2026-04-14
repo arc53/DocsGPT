@@ -174,6 +174,7 @@ class ConversationsRepository:
         provided, the lookup is scoped to rows owned by that user so
         callers can't accidentally resolve another user's conversation.
         """
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         if user_id is not None:
             result = self._conn.execute(
                 text(
@@ -204,6 +205,17 @@ class ConversationsRepository:
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
+
+    def get_any(self, conversation_id: str, user_id: str) -> Optional[dict]:
+        """Resolve a conversation by either PG UUID or legacy Mongo ObjectId string.
+
+        Returns a conversation the user owns or has shared access to.
+        """
+        if _looks_like_uuid(conversation_id):
+            row = self.get(conversation_id, user_id)
+            if row is not None:
+                return row
+        return self.get_by_legacy_id(conversation_id, user_id)
 
     def get_owned(self, conversation_id: str, user_id: str) -> Optional[dict]:
         """Fetch a conversation owned by the user (no shared access)."""

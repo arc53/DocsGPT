@@ -22,15 +22,11 @@ from redis import Redis
 from application.agents.tools.base import Tool
 from application.api.user.tasks import mcp_oauth_status_task, mcp_oauth_task
 from application.cache import get_redis_instance
-from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.core.url_validation import SSRFError, validate_url
 from application.security.encryption import decrypt_credentials
 
 logger = logging.getLogger(__name__)
-
-mongo = MongoDB.get_client()
-db = mongo[settings.MONGO_DB_NAME]
 
 _mcp_clients_cache = {}
 
@@ -161,7 +157,6 @@ class MCPTool(Tool):
                     scopes=self.oauth_scopes,
                     redis_client=redis_client,
                     redirect_uri=self.redirect_uri,
-                    db=db,
                     user_id=self.user_id,
                 )
             else:
@@ -171,7 +166,6 @@ class MCPTool(Tool):
                     redis_client=redis_client,
                     redirect_uri=self.redirect_uri,
                     task_id=self.oauth_task_id,
-                    db=db,
                     user_id=self.user_id,
                 )
         elif self.auth_type == "bearer":
@@ -491,7 +485,7 @@ class MCPTool(Tool):
 
     def _test_oauth_connection(self) -> Dict:
         storage = DBTokenStorage(
-            server_url=self.server_url, user_id=self.user_id, db_client=db
+            server_url=self.server_url, user_id=self.user_id,
         )
         loop = asyncio.new_event_loop()
         try:
@@ -683,7 +677,6 @@ class DocsGPTOAuth(OAuthClientProvider):
         scopes: str | list[str] | None = None,
         client_name: str = "DocsGPT-MCP",
         user_id=None,
-        db=None,
         additional_client_metadata: dict[str, Any] | None = None,
         skip_redirect_validation: bool = False,
     ):
@@ -692,7 +685,6 @@ class DocsGPTOAuth(OAuthClientProvider):
         self.redis_prefix = redis_prefix
         self.task_id = task_id
         self.user_id = user_id
-        self.db = db
 
         parsed_url = urlparse(mcp_url)
         self.server_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
@@ -711,7 +703,6 @@ class DocsGPTOAuth(OAuthClientProvider):
         storage = DBTokenStorage(
             server_url=self.server_base_url,
             user_id=self.user_id,
-            db_client=self.db,
             expected_redirect_uri=None if skip_redirect_validation else redirect_uri,
         )
 
@@ -853,69 +844,90 @@ class DBTokenStorage(TokenStorage):
         self,
         server_url: str,
         user_id: str,
-        db_client,
         expected_redirect_uri: Optional[str] = None,
     ):
         self.server_url = server_url
         self.user_id = user_id
-        self.db_client = db_client
         self.expected_redirect_uri = expected_redirect_uri
-        self.collection = db_client["connector_sessions"]
 
     @staticmethod
     def get_base_url(url: str) -> str:
         parsed = urlparse(url)
         return f"{parsed.scheme}://{parsed.netloc}"
 
-    def get_db_key(self) -> dict:
-        return {
-            "server_url": self.get_base_url(self.server_url),
-            "user_id": self.user_id,
-        }
+    def _pg_provider(self) -> str:
+        return f"mcp:{self.get_base_url(self.server_url)}"
+
+    def _fetch_session_data(self) -> dict:
+        """Read the JSONB ``session_data`` blob for this MCP server row."""
+        from application.storage.db.repositories.connector_sessions import (
+            ConnectorSessionsRepository,
+        )
+        from application.storage.db.session import db_readonly
+
+        base_url = self.get_base_url(self.server_url)
+        with db_readonly() as conn:
+            row = ConnectorSessionsRepository(conn).get_by_user_and_server_url(
+                self.user_id, base_url,
+            )
+        if not row:
+            return {}
+        data = row.get("session_data") or {}
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except ValueError:
+                return {}
+        return data if isinstance(data, dict) else {}
 
     async def get_tokens(self) -> OAuthToken | None:
-        doc = await asyncio.to_thread(self.collection.find_one, self.get_db_key())
-        if not doc or "tokens" not in doc:
+        data = await asyncio.to_thread(self._fetch_session_data)
+        if not data or "tokens" not in data:
             return None
         try:
-            return OAuthToken.model_validate(doc["tokens"])
+            return OAuthToken.model_validate(data["tokens"])
         except ValidationError as e:
             logger.error("Could not load tokens: %s", e)
             return None
 
-    async def set_tokens(self, tokens: OAuthToken) -> None:
-        await asyncio.to_thread(
-            self.collection.update_one,
-            self.get_db_key(),
-            {"$set": {"tokens": tokens.model_dump()}},
-            True,
-        )
-        logger.info("Saved tokens for %s", self.get_base_url(self.server_url))
-
-        from application.storage.db.dual_write import dual_write
+    def _merge(self, patch: dict) -> None:
         from application.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
+        from application.storage.db.session import db_session
 
-        base_url = self.get_base_url(self.server_url)
-        pg_provider = f"mcp:{base_url}"
-        token_dump = tokens.model_dump()
-        dual_write(
+        with db_session() as conn:
+            ConnectorSessionsRepository(conn).merge_session_data(
+                self.user_id, self._pg_provider(), patch,
+            )
+
+    def _delete(self) -> None:
+        from application.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
-            lambda repo, u=self.user_id, p=pg_provider, burl=base_url, td=token_dump: repo.merge_session_data(
-                u, p, {"server_url": burl, "tokens": td},
-            ),
         )
+        from application.storage.db.session import db_session
+
+        with db_session() as conn:
+            ConnectorSessionsRepository(conn).delete(
+                self.user_id, self._pg_provider(),
+            )
+
+    async def set_tokens(self, tokens: OAuthToken) -> None:
+        base_url = self.get_base_url(self.server_url)
+        token_dump = tokens.model_dump()
+        await asyncio.to_thread(
+            self._merge, {"server_url": base_url, "tokens": token_dump},
+        )
+        logger.info("Saved tokens for %s", base_url)
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
-        doc = await asyncio.to_thread(self.collection.find_one, self.get_db_key())
-        if not doc or "client_info" not in doc:
-            logger.debug(
-                "No client_info in DB for %s", self.get_base_url(self.server_url)
-            )
+        data = await asyncio.to_thread(self._fetch_session_data)
+        base_url = self.get_base_url(self.server_url)
+        if not data or "client_info" not in data:
+            logger.debug("No client_info in DB for %s", base_url)
             return None
         try:
-            client_info = OAuthClientInformationFull.model_validate(doc["client_info"])
+            client_info = OAuthClientInformationFull.model_validate(data["client_info"])
             if self.expected_redirect_uri:
                 stored_uris = [
                     str(uri).rstrip("/") for uri in client_info.redirect_uris
@@ -924,32 +936,21 @@ class DBTokenStorage(TokenStorage):
                 if expected_uri not in stored_uris:
                     logger.warning(
                         "Redirect URI mismatch for %s: expected=%s stored=%s — clearing.",
-                        self.get_base_url(self.server_url),
+                        base_url,
                         expected_uri,
                         stored_uris,
                     )
+                    # Drop ``tokens`` and ``client_info`` from the JSONB
+                    # blob via merge_session_data's ``None``-drops-key
+                    # semantics — preserves the row + any other keys.
                     await asyncio.to_thread(
-                        self.collection.update_one,
-                        self.get_db_key(),
-                        {"$unset": {"client_info": "", "tokens": ""}},
+                        self._merge,
+                        {
+                            "server_url": base_url,
+                            "tokens": None,
+                            "client_info": None,
+                        },
                     )
-
-                    from application.storage.db.dual_write import dual_write
-                    from application.storage.db.repositories.connector_sessions import (
-                        ConnectorSessionsRepository,
-                    )
-
-                    base_url = self.get_base_url(self.server_url)
-                    pg_provider = f"mcp:{base_url}"
-                    # Mirror the $unset by writing explicit nulls through the
-                    # merge helper: it drops keys set to None from the merged doc.
-                    dual_write(
-                        ConnectorSessionsRepository,
-                        lambda repo, u=self.user_id, p=pg_provider, burl=base_url: repo.merge_session_data(
-                            u, p, {"server_url": burl, "tokens": None, "client_info": None},
-                        ),
-                    )
-
                     return None
             return client_info
         except ValidationError as e:
@@ -963,48 +964,38 @@ class DBTokenStorage(TokenStorage):
 
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
         serialized_info = self._serialize_client_info(client_info.model_dump())
-        await asyncio.to_thread(
-            self.collection.update_one,
-            self.get_db_key(),
-            {"$set": {"client_info": serialized_info}},
-            True,
-        )
-        logger.info("Saved client info for %s", self.get_base_url(self.server_url))
-
-        from application.storage.db.dual_write import dual_write
-        from application.storage.db.repositories.connector_sessions import (
-            ConnectorSessionsRepository,
-        )
-
         base_url = self.get_base_url(self.server_url)
-        pg_provider = f"mcp:{base_url}"
-        dual_write(
-            ConnectorSessionsRepository,
-            lambda repo, u=self.user_id, p=pg_provider, burl=base_url, ci=serialized_info: repo.merge_session_data(
-                u, p, {"server_url": burl, "client_info": ci},
-            ),
+        await asyncio.to_thread(
+            self._merge,
+            {"server_url": base_url, "client_info": serialized_info},
         )
+        logger.info("Saved client info for %s", base_url)
 
     async def clear(self) -> None:
-        await asyncio.to_thread(self.collection.delete_one, self.get_db_key())
+        await asyncio.to_thread(self._delete)
         logger.info("Cleared OAuth cache for %s", self.get_base_url(self.server_url))
 
-        from application.storage.db.dual_write import dual_write
-        from application.storage.db.repositories.connector_sessions import (
-            ConnectorSessionsRepository,
-        )
-
-        base_url = self.get_base_url(self.server_url)
-        pg_provider = f"mcp:{base_url}"
-        dual_write(
-            ConnectorSessionsRepository,
-            lambda repo, u=self.user_id, p=pg_provider: repo.delete(u, p),
-        )
-
     @classmethod
-    async def clear_all(cls, db_client) -> None:
-        collection = db_client["connector_sessions"]
-        await asyncio.to_thread(collection.delete_many, {})
+    async def clear_all(cls, db_client=None) -> None:
+        """Delete every MCP-tagged connector session row.
+
+        ``db_client`` retained for call-site compatibility but unused —
+        storage is Postgres-only now.
+        """
+        from sqlalchemy import text
+
+        from application.storage.db.session import db_session
+
+        def _delete_all() -> None:
+            with db_session() as conn:
+                conn.execute(
+                    text(
+                        "DELETE FROM connector_sessions "
+                        "WHERE provider LIKE 'mcp:%'"
+                    )
+                )
+
+        await asyncio.to_thread(_delete_all)
         logger.info("Cleared all OAuth client cache data.")
 
 

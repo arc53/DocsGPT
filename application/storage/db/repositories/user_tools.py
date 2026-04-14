@@ -19,7 +19,7 @@ from typing import Any, Optional
 
 from sqlalchemy import Connection, text
 
-from application.storage.db.base_repository import row_to_dict
+from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 
 
 _JSONB_COLUMNS = {"config", "config_requirements", "actions"}
@@ -59,6 +59,7 @@ class UserToolsRepository:
         actions: Optional[list] = None,
         status: bool = True,
         extra: Optional[dict] = None,
+        legacy_mongo_id: Optional[str] = None,
     ) -> dict:
         """Insert a new tool row. ``extra`` is merged into the config JSONB."""
         cfg = config or {}
@@ -69,14 +70,14 @@ class UserToolsRepository:
                 """
                 INSERT INTO user_tools (
                     user_id, name, custom_name, display_name, description,
-                    config, config_requirements, actions, status
+                    config, config_requirements, actions, status, legacy_mongo_id
                 )
                 VALUES (
                     :user_id, :name, :custom_name, :display_name, :description,
                     CAST(:config AS jsonb),
                     CAST(:config_requirements AS jsonb),
                     CAST(:actions AS jsonb),
-                    :status
+                    :status, :legacy_mongo_id
                 )
                 RETURNING *
                 """
@@ -91,6 +92,7 @@ class UserToolsRepository:
                 "config_requirements": _encode_jsonb(config_requirements or {}),
                 "actions": _encode_jsonb(actions or []),
                 "status": status,
+                "legacy_mongo_id": legacy_mongo_id,
             },
         )
         return row_to_dict(result.fetchone())
@@ -102,6 +104,32 @@ class UserToolsRepository:
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
+
+    def get_by_legacy_id(
+        self, legacy_mongo_id: str, user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Fetch a user_tool by the original Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
+        sql = "SELECT * FROM user_tools WHERE legacy_mongo_id = :legacy_id"
+        params: dict = {"legacy_id": legacy_mongo_id}
+        if user_id is not None:
+            sql += " AND user_id = :user_id"
+            params["user_id"] = user_id
+        result = self._conn.execute(text(sql), params)
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def get_any(self, tool_id: str, user_id: str) -> Optional[dict]:
+        """Resolve a user_tool by PG UUID or legacy Mongo ObjectId string.
+
+        Cutover helper: route handlers may receive either shape from
+        older clients. Always returns a row scoped to ``user_id``.
+        """
+        if looks_like_uuid(tool_id):
+            row = self.get(tool_id, user_id)
+            if row is not None:
+                return row
+        return self.get_by_legacy_id(tool_id, user_id)
 
     def list_for_user(self, user_id: str) -> list[dict]:
         result = self._conn.execute(

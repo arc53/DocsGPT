@@ -3,14 +3,14 @@
 import json
 import math
 
-from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, redirect, request
 from flask_restx import fields, Namespace, Resource
 
 from application.api import api
-from application.api.user.base import sources_collection
 from application.api.user.tasks import sync_source
 from application.core.settings import settings
+from application.storage.db.repositories.sources import SourcesRepository
+from application.storage.db.session import db_readonly, db_session
 from application.storage.storage_creator import StorageCreator
 from application.utils import check_required_fields
 from application.vectorstore.vector_creator import VectorCreator
@@ -56,11 +56,20 @@ class CombinedJson(Resource):
         ]
 
         try:
-            for index in sources_collection.find({"user": user}).sort("date", -1):
+            with db_readonly() as conn:
+                indexes = SourcesRepository(conn).list_for_user(user)
+            # list_for_user sorts by created_at DESC; legacy shape sorted by
+            # "date" DESC. Both are monotonic on creation so the ordering is
+            # equivalent for dev; re-sort defensively.
+            indexes = sorted(
+                indexes, key=lambda r: r.get("date") or r.get("created_at") or "",
+                reverse=True,
+            )
+            for index in indexes:
                 provider = _get_provider_from_remote_data(index.get("remote_data"))
                 data.append(
                     {
-                        "id": str(index["_id"]),
+                        "id": str(index["id"]),
                         "name": index.get("name"),
                         "date": index.get("date"),
                         "model": settings.EMBEDDINGS_NAME,
@@ -70,9 +79,7 @@ class CombinedJson(Resource):
                         "syncFrequency": index.get("sync_frequency", ""),
                         "provider": provider,
                         "is_nested": bool(index.get("directory_structure")),
-                        "type": index.get(
-                            "type", "file"
-                        ),  # Add type field with default "file"
+                        "type": index.get("type", "file"),
                     }
                 )
         except Exception as err:
@@ -89,57 +96,54 @@ class PaginatedSources(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
-        sort_field = request.args.get("sort", "date")  # Default to 'date'
-        sort_order = request.args.get("order", "desc")  # Default to 'desc'
-        page = int(request.args.get("page", 1))  # Default to 1
-        rows_per_page = int(request.args.get("rows", 10))  # Default to 10
-        # add .strip() to remove leading and trailing whitespaces
-
-        search_term = request.args.get(
-            "search", ""
-        ).strip()  # add search for filter documents
-
-        # Prepare query for filtering
-
-        query = {"user": user}
-        if search_term:
-            query["name"] = {
-                "$regex": search_term,
-                "$options": "i",  # using case-insensitive search
-            }
-        total_documents = sources_collection.count_documents(query)
-        total_pages = max(1, math.ceil(total_documents / rows_per_page))
-        page = min(
-            max(1, page), total_pages
-        )  # add this to make sure page inbound is within the range
-        sort_order = 1 if sort_order == "asc" else -1
-        skip = (page - 1) * rows_per_page
+        sort_field = request.args.get("sort", "date")
+        sort_order = request.args.get("order", "desc")
+        page = int(request.args.get("page", 1))
+        rows_per_page = int(request.args.get("rows", 10))
+        search_term = request.args.get("search", "").strip()
 
         try:
-            documents = (
-                sources_collection.find(query)
-                .sort(sort_field, sort_order)
-                .skip(skip)
-                .limit(rows_per_page)
+            with db_readonly() as conn:
+                all_docs = SourcesRepository(conn).list_for_user(user)
+            # Case-insensitive substring filter on name (matches legacy
+            # Mongo $regex with $options:"i" for typical search UX).
+            if search_term:
+                needle = search_term.lower()
+                all_docs = [
+                    d for d in all_docs
+                    if needle in (d.get("name") or "").lower()
+                ]
+
+            reverse = sort_order != "asc"
+            all_docs.sort(
+                key=lambda d: (d.get(sort_field) is None, d.get(sort_field)),
+                reverse=reverse,
             )
 
+            total_documents = len(all_docs)
+            total_pages = max(1, math.ceil(total_documents / rows_per_page))
+            page = min(max(1, page), total_pages)
+            skip = (page - 1) * rows_per_page
+            window = all_docs[skip : skip + rows_per_page]
+
             paginated_docs = []
-            for doc in documents:
+            for doc in window:
                 provider = _get_provider_from_remote_data(doc.get("remote_data"))
-                doc_data = {
-                    "id": str(doc["_id"]),
-                    "name": doc.get("name", ""),
-                    "date": doc.get("date", ""),
-                    "model": settings.EMBEDDINGS_NAME,
-                    "location": "local",
-                    "tokens": doc.get("tokens", ""),
-                    "retriever": doc.get("retriever", "classic"),
-                    "syncFrequency": doc.get("sync_frequency", ""),
-                    "provider": provider,
-                    "isNested": bool(doc.get("directory_structure")),
-                    "type": doc.get("type", "file"),
-                }
-                paginated_docs.append(doc_data)
+                paginated_docs.append(
+                    {
+                        "id": str(doc["id"]),
+                        "name": doc.get("name", ""),
+                        "date": doc.get("date", ""),
+                        "model": settings.EMBEDDINGS_NAME,
+                        "location": "local",
+                        "tokens": doc.get("tokens", ""),
+                        "retriever": doc.get("retriever", "classic"),
+                        "syncFrequency": doc.get("sync_frequency", ""),
+                        "provider": provider,
+                        "isNested": bool(doc.get("directory_structure")),
+                        "type": doc.get("type", "file"),
+                    }
+                )
             response = {
                 "total": total_documents,
                 "totalPages": total_pages,
@@ -166,14 +170,13 @@ class DeleteByIds(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Missing required fields"}), 400
             )
-        try:
-            result = sources_collection.delete_index(ids=ids)
-            if result:
-                return make_response(jsonify({"success": True}), 200)
-        except Exception as err:
-            current_app.logger.error(f"Error deleting indexes: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": False}), 400)
+        # TODO(pg-cutover): vector-store-level ``delete_index(ids=...)`` used
+        # to hang off the legacy ``sources_collection`` wrapper. That path
+        # goes through the vector store, not user-data Postgres — left as a
+        # follow-up since this endpoint is admin-only.
+        return make_response(
+            jsonify({"success": False, "message": "Not implemented"}), 501
+        )
 
 
 @sources_ns.route("/delete_old")
@@ -192,25 +195,27 @@ class DeleteOldIndexes(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Missing required fields"}), 400
             )
-        doc = sources_collection.find_one(
-            {"_id": ObjectId(source_id), "user": user}
-        )
+        try:
+            with db_readonly() as conn:
+                doc = SourcesRepository(conn).get_any(source_id, user)
+        except Exception as err:
+            current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
         if not doc:
             return make_response(jsonify({"status": "not found"}), 404)
         storage = StorageCreator.get_storage()
+        resolved_id = str(doc["id"])
 
         try:
-            # Delete vector index
-
             if settings.VECTOR_STORE == "faiss":
-                index_path = f"indexes/{str(doc['_id'])}"
+                index_path = f"indexes/{resolved_id}"
                 if storage.file_exists(f"{index_path}/index.faiss"):
                     storage.delete_file(f"{index_path}/index.faiss")
                 if storage.file_exists(f"{index_path}/index.pkl"):
                     storage.delete_file(f"{index_path}/index.pkl")
             else:
                 vectorstore = VectorCreator.create_vectorstore(
-                    settings.VECTOR_STORE, source_id=str(doc["_id"])
+                    settings.VECTOR_STORE, source_id=resolved_id
                 )
                 vectorstore.delete_index()
             if "file_path" in doc and doc["file_path"]:
@@ -228,14 +233,14 @@ class DeleteOldIndexes(Resource):
                 f"Error deleting files and indexes: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
-        sources_collection.delete_one({"_id": ObjectId(source_id)})
-        from application.storage.db.dual_write import dual_write
-        from application.storage.db.repositories.sources import SourcesRepository
-
-        dual_write(
-            SourcesRepository,
-            lambda repo, lid=source_id, u=user: repo.delete_by_legacy_id(lid, u),
-        )
+        try:
+            with db_session() as conn:
+                SourcesRepository(conn).delete(resolved_id, user)
+        except Exception as err:
+            current_app.logger.error(
+                f"Error deleting source row: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -280,27 +285,16 @@ class ManageSync(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Invalid frequency"}), 400
             )
-        update_data = {"$set": {"sync_frequency": sync_frequency}}
         try:
-            sources_collection.update_one(
-                {
-                    "_id": ObjectId(source_id),
-                    "user": user,
-                },
-                update_data,
-            )
-
-            from application.storage.db.dual_write import dual_write
-            from application.storage.db.repositories.sources import (
-                SourcesRepository,
-            )
-
-            dual_write(
-                SourcesRepository,
-                lambda repo, lid=source_id, u=user, sf=sync_frequency: repo.update_by_legacy_id(
-                    lid, u, {"sync_frequency": sf}
-                ),
-            )
+            with db_session() as conn:
+                repo = SourcesRepository(conn)
+                doc = repo.get_any(source_id, user)
+                if doc is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Source not found"}),
+                        404,
+                    )
+                repo.update(str(doc["id"]), user, {"sync_frequency": sync_frequency})
         except Exception as err:
             current_app.logger.error(
                 f"Error updating sync frequency: {err}", exc_info=True
@@ -329,19 +323,20 @@ class SyncSource(Resource):
         if missing_fields:
             return missing_fields
         source_id = data["source_id"]
-        if not ObjectId.is_valid(source_id):
+        try:
+            with db_readonly() as conn:
+                doc = SourcesRepository(conn).get_any(source_id, user)
+        except Exception as err:
+            current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
             return make_response(
                 jsonify({"success": False, "message": "Invalid source ID"}), 400
             )
-        doc = sources_collection.find_one(
-            {"_id": ObjectId(source_id), "user": user}
-        )
         if not doc:
             return make_response(
                 jsonify({"success": False, "message": "Source not found"}), 404
             )
         source_type = doc.get("type", "")
-        if source_type.startswith("connector"):
+        if source_type and source_type.startswith("connector"):
             return make_response(
                 jsonify(
                     {
@@ -364,7 +359,7 @@ class SyncSource(Resource):
                 loader=source_type,
                 sync_frequency=doc.get("sync_frequency", "never"),
                 retriever=doc.get("retriever", "classic"),
-                doc_id=source_id,
+                doc_id=str(doc["id"]),
             )
         except Exception as err:
             current_app.logger.error(
@@ -390,10 +385,9 @@ class DirectoryStructure(Resource):
 
         if not doc_id:
             return make_response(jsonify({"error": "Document ID is required"}), 400)
-        if not ObjectId.is_valid(doc_id):
-            return make_response(jsonify({"error": "Invalid document ID"}), 400)
         try:
-            doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
+            with db_readonly() as conn:
+                doc = SourcesRepository(conn).get_any(doc_id, user)
             if not doc:
                 return make_response(
                     jsonify({"error": "Document not found or access denied"}), 404
@@ -407,6 +401,8 @@ class DirectoryStructure(Resource):
                 if isinstance(remote_data, str) and remote_data:
                     remote_data_obj = json.loads(remote_data)
                     provider = remote_data_obj.get("provider")
+                elif isinstance(remote_data, dict):
+                    provider = remote_data.get("provider")
             except Exception as e:
                 current_app.logger.warning(
                     f"Failed to parse remote_data for doc {doc_id}: {e}"
@@ -426,4 +422,7 @@ class DirectoryStructure(Resource):
             current_app.logger.error(
                 f"Error retrieving directory structure: {e}", exc_info=True
             )
-            return make_response(jsonify({"success": False, "error": "Failed to retrieve directory structure"}), 500)
+            return make_response(
+                jsonify({"success": False, "error": "Failed to retrieve directory structure"}),
+                500,
+            )

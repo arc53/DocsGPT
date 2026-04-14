@@ -64,6 +64,7 @@ class WorkflowRunsRepository:
 
     def get_by_legacy_id(self, legacy_mongo_id: str) -> Optional[dict]:
         """Fetch a workflow run by the original Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         res = self._conn.execute(
             text("SELECT * FROM workflow_runs WHERE legacy_mongo_id = :legacy_id"),
             {"legacy_id": legacy_mongo_id},
