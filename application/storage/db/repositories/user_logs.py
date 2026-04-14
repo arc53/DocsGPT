@@ -46,7 +46,7 @@ class UserLogsRepository:
             {
                 "user_id": user_id,
                 "endpoint": endpoint,
-                "data": json.dumps(data) if data is not None else None,
+                "data": json.dumps(data, default=str) if data is not None else None,
                 "timestamp": timestamp,
             },
         )

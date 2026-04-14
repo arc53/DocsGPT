@@ -1178,8 +1178,8 @@ def attachment_worker(self, file_info, user):
 
         dual_write(
             AttachmentsRepository,
-            lambda repo, u=user, fn=filename, p=relative_path, mt=mime_type: repo.create(
-                u, fn, p, mime_type=mt,
+            lambda repo, u=user, fn=filename, p=relative_path, mt=mime_type, mid=attachment_id: repo.create(
+                u, fn, p, mime_type=mt, legacy_mongo_id=mid,
             ),
         )
 

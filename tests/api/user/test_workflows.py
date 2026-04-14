@@ -886,7 +886,13 @@ class TestWorkflowListPost:
         mock_wf_collection = Mock()
         mock_wf_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
         mock_nodes_collection = Mock()
+        mock_nodes_collection.insert_many.return_value = Mock(
+            inserted_ids=[ObjectId(), ObjectId()]
+        )
         mock_edges_collection = Mock()
+        mock_edges_collection.insert_many.return_value = Mock(
+            inserted_ids=[ObjectId()]
+        )
 
         with patch(
             "application.api.user.workflows.routes.workflows_collection",
@@ -1152,7 +1158,13 @@ class TestWorkflowDetailPut:
         }
         mock_wf_collection.update_one.return_value = Mock()
         mock_nodes_collection = Mock()
+        mock_nodes_collection.insert_many.return_value = Mock(
+            inserted_ids=[ObjectId(), ObjectId()]
+        )
         mock_edges_collection = Mock()
+        mock_edges_collection.insert_many.return_value = Mock(
+            inserted_ids=[ObjectId()]
+        )
 
         with patch(
             "application.api.user.workflows.routes.workflows_collection",

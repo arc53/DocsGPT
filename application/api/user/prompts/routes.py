@@ -53,7 +53,9 @@ class CreatePrompt(Resource):
             new_id = str(resp.inserted_id)
             dual_write(
                 PromptsRepository,
-                lambda repo, u=user, n=data["name"], c=data["content"]: repo.create(u, n, c),
+                lambda repo, u=user, n=data["name"], c=data["content"], mid=new_id: repo.create(
+                    u, n, c, legacy_mongo_id=mid,
+                ),
             )
         except Exception as err:
             current_app.logger.error(f"Error creating prompt: {err}", exc_info=True)
@@ -157,7 +159,7 @@ class DeletePrompt(Resource):
             prompts_collection.delete_one({"_id": ObjectId(data["id"]), "user": user})
             dual_write(
                 PromptsRepository,
-                lambda repo, pid=data["id"], u=user: repo.delete(pid, u),
+                lambda repo, pid=data["id"], u=user: repo.delete_by_legacy_id(pid, u),
             )
         except Exception as err:
             current_app.logger.error(f"Error deleting prompt: {err}", exc_info=True)
@@ -197,7 +199,9 @@ class UpdatePrompt(Resource):
             )
             dual_write(
                 PromptsRepository,
-                lambda repo, pid=data["id"], u=user, n=data["name"], c=data["content"]: repo.update(pid, u, n, c),
+                lambda repo, pid=data["id"], u=user, n=data["name"], c=data["content"]: repo.update_by_legacy_id(
+                    pid, u, n, c,
+                ),
             )
         except Exception as err:
             current_app.logger.error(f"Error updating prompt: {err}", exc_info=True)

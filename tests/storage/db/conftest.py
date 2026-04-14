@@ -27,18 +27,15 @@ from application.core.settings import settings
 def _run_alembic_upgrade(engine):
     """Run ``alembic upgrade head`` to ensure the full schema is present.
 
-    Falls back to inline DDL for CI environments where alembic is not
-    on PATH (shouldn't happen, but defence in depth).
+    Non-zero exit is re-raised so genuine schema-drift bugs surface as
+    test failures. If alembic reports the schema is already at head,
+    the subprocess still exits zero.
     """
     alembic_ini = Path(__file__).resolve().parents[3] / "application" / "alembic.ini"
-    try:
-        subprocess.check_call(
-            [sys.executable, "-m", "alembic", "-c", str(alembic_ini), "upgrade", "head"],
-            timeout=30,
-        )
-    except Exception:
-        # Alembic failed — tables likely already exist from a prior run.
-        pass
+    subprocess.check_call(
+        [sys.executable, "-m", "alembic", "-c", str(alembic_ini), "upgrade", "head"],
+        timeout=60,
+    )
 
 
 @pytest.fixture(scope="session")

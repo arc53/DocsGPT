@@ -114,6 +114,35 @@ AGENT_TYPE_SCHEMAS["research"] = AGENT_TYPE_SCHEMAS["classic"]
 AGENT_TYPE_SCHEMAS["openai"] = AGENT_TYPE_SCHEMAS["classic"]
 
 
+def _build_pg_agent_fields(fields: dict) -> dict:
+    """Translate Mongo-shaped agent fields into the Postgres mirror subset."""
+    allowed = {
+        "name",
+        "description",
+        "agent_type",
+        "status",
+        "key",
+        "chunks",
+        "retriever",
+        "tools",
+        "json_schema",
+        "models",
+        "default_model_id",
+        "limited_token_mode",
+        "token_limit",
+        "limited_request_mode",
+        "request_limit",
+        "incoming_webhook_token",
+        "lastUsedAt",
+    }
+    translated: dict = {}
+    for key, value in fields.items():
+        if key not in allowed:
+            continue
+        translated["last_used_at" if key == "lastUsedAt" else key] = value
+    return translated
+
+
 def normalize_workflow_reference(workflow_value):
     """Normalize workflow references from form/json payloads."""
     if workflow_value is None:
@@ -626,13 +655,14 @@ class CreateAgent(Resource):
             new_id = str(resp.inserted_id)
             dual_write(
                 AgentsRepository,
-                lambda repo, u=user, a=new_agent: repo.create(
+                lambda repo, u=user, a=new_agent, mid=new_id: repo.create(
                     u, a.get("name", ""), a.get("status", "draft"),
                     key=a.get("key"), description=a.get("description"),
                     retriever=a.get("retriever"), chunks=a.get("chunks"),
                     tools=a.get("tools"), models=a.get("models"),
                     shared=a.get("shared", False),
                     incoming_webhook_token=a.get("incoming_webhook_token"),
+                    legacy_mongo_id=mid,
                 ),
             )
         except Exception as err:
@@ -1170,6 +1200,14 @@ class UpdateAgent(Resource):
                 jsonify({"success": False, "message": "Database error during update"}),
                 500,
             )
+        pg_update_fields = _build_pg_agent_fields(update_fields)
+        if pg_update_fields:
+            dual_write(
+                AgentsRepository,
+                lambda repo, aid=agent_id, u=user, fields=pg_update_fields: repo.update_by_legacy_id(
+                    aid, u, fields,
+                ),
+            )
         response_data = {
             "success": True,
             "id": agent_id,
@@ -1199,7 +1237,7 @@ class DeleteAgent(Resource):
             )
             dual_write(
                 AgentsRepository,
-                lambda repo, aid=agent_id, u=user: repo.delete(aid, u),
+                lambda repo, aid=agent_id, u=user: repo.delete_by_legacy_id(aid, u),
             )
             if not deleted_agent:
                 return make_response(
