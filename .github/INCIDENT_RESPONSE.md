@@ -52,7 +52,7 @@ This playbook describes how maintainers respond to confirmed or suspected securi
 ### Supply-chain compromise
 
 1. Freeze releases and investigate blast radius.
-2. Rotate credentials in order: Docker Hub -> GitHub tokens -> LLM provider keys -> DB credentials -> Flask `SECRET_KEY` and `INTERNAL_KEY`.
+2. Rotate credentials in order: Docker Hub -> GitHub tokens -> LLM provider keys -> DB credentials -> `JWT_SECRET_KEY` -> `ENCRYPTION_SECRET_KEY` -> `INTERNAL_KEY`.
 3. Replace compromised artifacts/tags with clean releases and revoke/remove bad tags where possible.
 4. Publish advisory with exact affected versions and required user actions.
 
@@ -85,8 +85,9 @@ Treat confirmed AI-specific abuse as security incidents:
 | GitHub tokens/PATs | Revoke/replace in GitHub; update automation secrets |
 | LLM provider API keys | Rotate in provider console; update runtime/deploy secrets |
 | Database credentials | Rotate in DB platform; redeploy with new secrets |
-| Flask `SECRET_KEY` | Rotate and redeploy (invalidates active sessions) |
-| Flask `INTERNAL_KEY` | Rotate and redeploy (invalidates active sessions) |
+| `JWT_SECRET_KEY` | Rotate and redeploy (invalidates all active user sessions/tokens) |
+| `ENCRYPTION_SECRET_KEY` | Rotate and redeploy (re-encrypt stored data if possible; existing encrypted data may become inaccessible) |
+| `INTERNAL_KEY` | Rotate and redeploy (invalidates worker-to-backend authentication) |
 
 ## Maintenance
 
