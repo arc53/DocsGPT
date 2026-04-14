@@ -132,6 +132,10 @@ const ConversationBubble = forwardRef<
   }, [message]);
 
   const handleEditClick = () => {
+    if (editInputBox.trim() === (message ?? '').trim()) {
+      setIsEditClicked(false);
+      return;
+    }
     setIsEditClicked(false);
     handleUpdatedQuestionSubmission?.(editInputBox, true, questionNumber);
   };
@@ -242,8 +246,9 @@ const ConversationBubble = forwardRef<
                   {t('conversation.edit.cancel')}
                 </button>
                 <button
-                  className="bg-primary hover:bg-primary/90 dark:hover:bg-primary/90 rounded-full px-4 py-2 text-sm font-medium text-white transition-colors"
+                  className="bg-primary hover:bg-primary/90 dark:hover:bg-primary/90 rounded-full px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={handleEditClick}
+                  disabled={editInputBox.trim() === (message ?? '').trim()}
                 >
                   {t('conversation.edit.update')}
                 </button>
