@@ -168,14 +168,16 @@ class ClassicRAG(BaseRetriever):
                         doc_tokens = num_tokens_from_string(doc_text_with_header)
 
                         if cumulative_tokens + doc_tokens < token_budget:
-                            all_docs.append(
-                                {
-                                    "title": title,
-                                    "text": page_content,
-                                    "source": source_path,
-                                    "filename": filename,
-                                }
-                            )
+                            entry = {
+                                "title": title,
+                                "text": page_content,
+                                "source": source_path,
+                                "filename": filename,
+                            }
+                            page = metadata.get("page")
+                            if page is not None:
+                                entry["page"] = page
+                            all_docs.append(entry)
                             cumulative_tokens += doc_tokens
 
                     if cumulative_tokens >= token_budget:

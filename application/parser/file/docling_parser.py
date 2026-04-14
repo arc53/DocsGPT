@@ -9,7 +9,7 @@ images (PNG, JPEG, TIFF, BMP, WEBP), WebVTT, and specialized XML formats.
 import importlib.util
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from application.parser.file.base_parser import BaseParser
 
@@ -224,6 +224,9 @@ class DoclingPDFParser(DoclingParser):
     - Bitmap/image regions: OCR only these areas (smart)
 
     Set force_full_page_ocr=True only for fully scanned documents.
+
+    PDFs are split into one segment per page so each chunk can carry a ``page``
+    field in vector metadata for citations.
     """
 
     def __init__(
@@ -242,6 +245,94 @@ class DoclingPDFParser(DoclingParser):
             ocr_languages=ocr_languages,
             force_full_page_ocr=force_full_page_ocr,
         )
+        self._per_segment_extra_info: Optional[List[Dict[str, Any]]] = None
+
+    def get_per_segment_extra_info(self) -> Optional[List[Dict[str, Any]]]:
+        return self._per_segment_extra_info
+
+    @staticmethod
+    def _resolve_page_numbers(document) -> List[int]:
+        """Return sorted 1-based page numbers present in the Docling document."""
+        pages = getattr(document, "pages", None)
+        if isinstance(pages, dict) and pages:
+            return sorted(pages.keys())
+
+        num_pages_attr = getattr(document, "num_pages", None)
+        n = None
+        if callable(num_pages_attr):
+            try:
+                n = num_pages_attr()
+            except Exception:
+                n = None
+        elif isinstance(num_pages_attr, int):
+            n = num_pages_attr
+
+        if isinstance(n, int) and n > 0:
+            return list(range(1, n + 1))
+        return []
+
+    def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
+        """Parse PDF into a list of strings (one non-empty page each) with page metadata."""
+        logger.info(f"parse_file (per-page) called for: {file}")
+        self._per_segment_extra_info = None
+
+        if self._converter is None:
+            self._init_parser()
+
+        try:
+            logger.info(f"Converting PDF with hybrid OCR: {file}")
+            result = self._converter.convert(str(file))
+            document = result.document
+            page_numbers = self._resolve_page_numbers(document)
+            traverse_pictures = self.ocr_enabled
+
+            if not page_numbers:
+                content = self._export_content(document)
+                logger.info(
+                    f"PDF parse fallback (no page list), length: {len(content)} chars"
+                )
+                return content
+
+            segments: List[str] = []
+            extras: List[Dict[str, Any]] = []
+
+            for page_no in page_numbers:
+                try:
+                    md = document.export_to_markdown(
+                        page_no=page_no,
+                        traverse_pictures=traverse_pictures,
+                    )
+                except TypeError:
+                    # Older docling without traverse_pictures
+                    md = document.export_to_markdown(page_no=page_no)
+
+                stripped = (md or "").strip()
+                if len(stripped) < 2:
+                    continue
+                segments.append(md)
+                extras.append({"page": page_no})
+
+            self._per_segment_extra_info = extras if extras else None
+
+            if not segments:
+                content = self._export_content(document)
+                logger.info(
+                    "Per-page export empty; falling back to full document export"
+                )
+                return content
+
+            logger.info(
+                f"PDF parse complete: {len(segments)} page segments from "
+                f"{len(page_numbers)} pages"
+            )
+            return segments
+
+        except Exception as e:
+            logger.error(f"Error parsing PDF with docling: {e}", exc_info=True)
+            self._per_segment_extra_info = None
+            if errors == "ignore":
+                return f"[Error parsing file with docling: {str(e)}]"
+            raise
 
 
 class DoclingDocxParser(DoclingParser):

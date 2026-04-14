@@ -63,8 +63,13 @@ class CitationManager:
         """Register a source, return its citation number. Deduplicates by source."""
         source = doc.get("source", "")
         title = doc.get("title", "")
+        page = doc.get("page")
         for num, existing in self.citations.items():
-            if existing.get("source") == source and existing.get("title") == title:
+            if (
+                existing.get("source") == source
+                and existing.get("title") == title
+                and existing.get("page") == page
+            ):
                 return num
         self._counter += 1
         self.citations[self._counter] = doc
@@ -89,6 +94,9 @@ class CitationManager:
             source = doc.get("source", "Unknown")
             filename = doc.get("filename", "")
             display = filename or title
+            page = doc.get("page")
+            if page is not None:
+                display = f"{display} (p. {page})"
             lines.append(f"[{num}] {display} — {source}")
         return "\n".join(lines)
 

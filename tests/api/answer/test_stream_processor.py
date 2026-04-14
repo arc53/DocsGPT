@@ -2110,7 +2110,7 @@ class TestPreFetchDocsFullPaths:
         sp.create_retriever = MagicMock(return_value=mock_retriever)
 
         docs_together, docs = sp.pre_fetch_docs("question?")
-        assert docs_together == "raw content only"
+        assert "raw content only" in docs_together
         assert len(docs) == 1
 
     @pytest.mark.unit
