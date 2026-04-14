@@ -73,7 +73,7 @@ This playbook describes how maintainers respond to confirmed or suspected securi
 
 Treat confirmed AI-specific abuse as security incidents:
 
-- Prompt injection causing sensitive data exfiltration (from tools that dont belong to agent) -> **High**
+- Prompt injection causing sensitive data exfiltration (from tools that don't belong to the agent) -> **High**
 - Cross-tenant retrieval/isolation failure -> **High**
 - API key disclosure in output -> **High**
 
