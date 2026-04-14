@@ -860,15 +860,39 @@ def reingest_source_worker(self, source_id, user):
                         directory_structure, file_name_map
                     )
 
+                    now = datetime.datetime.now()
                     sources_collection.update_one(
                         {"_id": ObjectId(source_id)},
                         {
                             "$set": {
                                 "directory_structure": directory_structure,
-                                "date": datetime.datetime.now(),
+                                "date": now,
                                 "tokens": total_tokens,
                             }
                         },
+                    )
+
+                    from application.storage.db.dual_write import dual_write
+                    from application.storage.db.repositories.sources import (
+                        SourcesRepository,
+                    )
+
+                    dual_write(
+                        SourcesRepository,
+                        lambda repo,
+                        lid=source_id,
+                        u=user,
+                        ds=directory_structure,
+                        d=now,
+                        tok=total_tokens: repo.update_by_legacy_id(
+                            lid,
+                            u,
+                            {
+                                "directory_structure": ds,
+                                "date": d,
+                                "tokens": tok,
+                            },
+                        ),
                     )
                 except Exception as e:
                     logging.error(
@@ -1030,7 +1054,20 @@ def remote_worker(
         }
 
         if operation_mode == "sync":
-            file_data["last_sync"] = datetime.datetime.now()
+            last_sync_now = datetime.datetime.now()
+            file_data["last_sync"] = last_sync_now
+
+            from application.storage.db.dual_write import dual_write
+            from application.storage.db.repositories.sources import (
+                SourcesRepository,
+            )
+
+            dual_write(
+                SourcesRepository,
+                lambda repo, lid=str(id), u=user, d=last_sync_now: repo.update_by_legacy_id(
+                    lid, u, {"date": d}
+                ),
+            )
         upload_index(full_path, file_data)
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
@@ -1411,6 +1448,18 @@ def ingest_connector(
                 file_data["last_sync"] = datetime.datetime.now()
             else:
                 file_data["last_sync"] = datetime.datetime.now()
+
+            from application.storage.db.dual_write import dual_write
+            from application.storage.db.repositories.sources import (
+                SourcesRepository,
+            )
+
+            dual_write(
+                SourcesRepository,
+                lambda repo, lid=str(id), u=user, d=file_data["last_sync"]: repo.update_by_legacy_id(
+                    lid, u, {"date": d}
+                ),
+            )
 
             upload_index(vector_store_path, file_data)
 

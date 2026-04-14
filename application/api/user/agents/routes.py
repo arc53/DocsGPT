@@ -23,9 +23,12 @@ from application.api.user.base import (
     workflow_nodes_collection,
     workflows_collection,
 )
+from sqlalchemy import text as _sql_text
+
 from application.storage.db.dual_write import dual_write
 from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.users import UsersRepository
+from application.storage.db.repositories.workflows import WorkflowsRepository
 from application.core.json_schema_utils import (
     JsonSchemaValidationError,
     normalize_json_schema_payload,
@@ -115,32 +118,287 @@ AGENT_TYPE_SCHEMAS["openai"] = AGENT_TYPE_SCHEMAS["classic"]
 
 
 def _build_pg_agent_fields(fields: dict) -> dict:
-    """Translate Mongo-shaped agent fields into the Postgres mirror subset."""
+    """Translate Mongo-shaped agent fields into the Postgres mirror subset.
+
+    Covers every Mongo write key that has a direct column equivalent on
+    the PG ``agents`` table. Shape-translation rules:
+
+    * ``shared_publicly`` → ``shared`` (boolean collapse).
+    * ``lastUsedAt`` → ``last_used_at`` (column rename).
+    * ``prompt_id``/``folder_id``/``workflow``: forwarded as-is — the
+      repository's ``update`` coerces them to strings but expects PG
+      UUIDs already. Callers holding a legacy Mongo ObjectId MUST
+      resolve to a UUID via ``_resolve_legacy_uuid`` before handing
+      the field to this translator.
+    * ``source``/``sources`` DBRef shapes are intentionally dropped —
+      the create-path handles DBRef resolution, and updates to those
+      fields at runtime are rare.
+    """
     allowed = {
         "name",
         "description",
         "agent_type",
         "status",
         "key",
+        "image",
         "chunks",
         "retriever",
         "tools",
         "json_schema",
         "models",
         "default_model_id",
+        "prompt_id",
+        "folder_id",
+        "workflow_id",
         "limited_token_mode",
         "token_limit",
         "limited_request_mode",
         "request_limit",
+        "allow_system_prompt_override",
+        "shared",
+        "shared_token",
+        "shared_metadata",
         "incoming_webhook_token",
         "lastUsedAt",
     }
+    rename = {"lastUsedAt": "last_used_at", "workflow": "workflow_id"}
     translated: dict = {}
     for key, value in fields.items():
+        # Mongo's boolean-share flag maps to the PG ``shared`` column.
+        if key == "shared_publicly":
+            translated["shared"] = bool(value)
+            continue
+        # Mongo's ``workflow`` key is the PG ``workflow_id`` column.
+        if key == "workflow":
+            translated["workflow_id"] = value
+            continue
         if key not in allowed:
             continue
-        translated["last_used_at" if key == "lastUsedAt" else key] = value
+        translated[rename.get(key, key)] = value
     return translated
+
+
+def _resolve_agent_id_to_uuid(agent_id: str) -> str | None:
+    """Return the PG agent UUID for either a UUID or a Mongo ObjectId string.
+
+    Pin/share paths persist the agent identifier the frontend supplied
+    (historically a Mongo ObjectId, increasingly a PG UUID) into
+    ``users.agent_preferences.{pinned,shared_with_me}``. The Postgres
+    cleanup trigger keys off ``agents.id::text`` (UUID shape), so any
+    ObjectId that lands there post-cutover is orphaned. Translate up
+    front so the PG mirror row always matches the trigger's key.
+
+    Returns the canonical UUID string; ``None`` if the input is
+    shape-invalid or the ObjectId can't be resolved (caller should log
+    and skip the dual_write in that case).
+
+    Distinct from ``_resolve_legacy_uuid`` above: this helper opens its
+    own engine connection (for call sites that don't already have one
+    in scope, notably the pin/share dual_write lambdas) whereas
+    ``_resolve_legacy_uuid`` is an in-transaction helper.
+    """
+    if not agent_id:
+        return None
+    if len(agent_id) == 36 and agent_id.count("-") == 4:
+        return agent_id
+    if len(agent_id) == 24:
+        try:
+            int(agent_id, 16)
+        except ValueError:
+            return None
+        try:
+            from application.storage.db.engine import get_engine
+
+            with get_engine().begin() as conn:
+                row = conn.execute(
+                    _sql_text(
+                        "SELECT id FROM agents WHERE legacy_mongo_id = :lid"
+                    ),
+                    {"lid": agent_id},
+                ).fetchone()
+                if row is not None:
+                    return str(row._mapping["id"])
+        except Exception:
+            return None
+    return None
+
+
+def _resolve_legacy_uuid(conn, table: str, legacy_id: str, user_id: str | None = None) -> str | None:
+    """Best-effort Mongo ObjectId → Postgres UUID resolver.
+
+    Returns the PG UUID (as string) for a row in ``table`` whose
+    ``legacy_mongo_id`` matches ``legacy_id``, or ``None`` if the row
+    hasn't been backfilled yet or the table doesn't carry a
+    ``legacy_mongo_id`` column.
+    """
+    if not legacy_id:
+        return None
+    sql = f"SELECT id FROM {table} WHERE legacy_mongo_id = :legacy_id"
+    params: dict[str, str] = {"legacy_id": str(legacy_id)}
+    if user_id is not None:
+        sql += " AND user_id = :user_id"
+        params["user_id"] = user_id
+    try:
+        row = conn.execute(_sql_text(sql), params).fetchone()
+    except Exception:
+        return None
+    return str(row[0]) if row else None
+
+
+def _pg_agent_create_kwargs(conn, mongo_doc: dict, legacy_id: str) -> dict:
+    """Build kwargs for ``AgentsRepository.create`` from a Mongo agent doc.
+
+    Handles the Mongo→Postgres shape translation called out in the
+    Phase 4/5 migration plan:
+
+    * ``shared_publicly`` → ``shared``
+    * ``workflow`` (Mongo ObjectId) → ``workflow_id`` (PG UUID via
+      ``workflows.legacy_mongo_id`` lookup)
+    * ``source`` DBRef / ``"default"`` string → ``source_id`` (PG UUID or None)
+    * ``sources`` list of DBRefs → ``extra_source_ids`` (list of PG UUIDs)
+    * ``prompt_id`` ``"default"`` → ``None``, else legacy→UUID lookup
+    * ``folder_id`` / source / prompt IDs get best-effort UUID resolution;
+      unresolvable references are silently dropped (dual_write is
+      best-effort).
+    * ``chunks`` coerced to int; empty string → ``None``.
+    """
+    user = mongo_doc.get("user")
+    kwargs: dict = {"legacy_mongo_id": legacy_id}
+
+    # Simple pass-throughs.
+    for k in (
+        "description",
+        "agent_type",
+        "key",
+        "image",
+        "retriever",
+        "default_model_id",
+        "incoming_webhook_token",
+        "shared_token",
+    ):
+        if mongo_doc.get(k) not in (None, ""):
+            kwargs[k] = mongo_doc[k]
+
+    # shared_metadata is a JSONB dict on Mongo; pass through as-is.
+    if mongo_doc.get("shared_metadata") is not None:
+        kwargs["shared_metadata"] = mongo_doc["shared_metadata"]
+
+    # Booleans.
+    for k in (
+        "limited_token_mode",
+        "limited_request_mode",
+        "allow_system_prompt_override",
+    ):
+        if k in mongo_doc:
+            kwargs[k] = bool(mongo_doc[k])
+    if "shared_publicly" in mongo_doc:
+        kwargs["shared"] = bool(mongo_doc["shared_publicly"])
+
+    # Integers.
+    for k in ("token_limit", "request_limit"):
+        v = mongo_doc.get(k)
+        if v not in (None, ""):
+            try:
+                kwargs[k] = int(v)
+            except (TypeError, ValueError):
+                pass
+
+    # chunks: "" → None, int-coercible string → int.
+    chunks_val = mongo_doc.get("chunks")
+    if chunks_val not in (None, ""):
+        try:
+            kwargs["chunks"] = int(chunks_val)
+        except (TypeError, ValueError):
+            pass
+
+    # JSONB columns.
+    if mongo_doc.get("tools") is not None:
+        kwargs["tools"] = mongo_doc["tools"]
+    if mongo_doc.get("json_schema") is not None:
+        kwargs["json_schema"] = mongo_doc["json_schema"]
+    if mongo_doc.get("models") is not None:
+        kwargs["models"] = mongo_doc["models"]
+
+    # source / sources → source_id / extra_source_ids via legacy_mongo_id.
+    source_val = mongo_doc.get("source")
+    if isinstance(source_val, DBRef):
+        resolved = _resolve_legacy_uuid(conn, "sources", str(source_val.id))
+        if resolved:
+            kwargs["source_id"] = resolved
+    elif isinstance(source_val, str) and source_val not in ("", "default"):
+        resolved = _resolve_legacy_uuid(conn, "sources", source_val)
+        if resolved:
+            kwargs["source_id"] = resolved
+
+    sources_val = mongo_doc.get("sources")
+    if isinstance(sources_val, list) and sources_val:
+        extra: list[str] = []
+        for entry in sources_val:
+            if isinstance(entry, DBRef):
+                resolved = _resolve_legacy_uuid(conn, "sources", str(entry.id))
+            elif isinstance(entry, str) and entry not in ("", "default"):
+                resolved = _resolve_legacy_uuid(conn, "sources", entry)
+            else:
+                resolved = None
+            if resolved:
+                extra.append(resolved)
+        if extra:
+            kwargs["extra_source_ids"] = extra
+
+    # prompt_id: "default" → None, otherwise legacy lookup.
+    prompt_val = mongo_doc.get("prompt_id")
+    if prompt_val and prompt_val != "default":
+        resolved = _resolve_legacy_uuid(conn, "prompts", str(prompt_val), user)
+        if resolved:
+            kwargs["prompt_id"] = resolved
+
+    # folder_id: Mongo ObjectId string → PG UUID via legacy_mongo_id.
+    folder_val = mongo_doc.get("folder_id")
+    if folder_val:
+        resolved = _resolve_legacy_uuid(conn, "agent_folders", str(folder_val), user)
+        if resolved:
+            kwargs["folder_id"] = resolved
+
+    # workflow (Mongo ObjectId) → workflow_id (PG UUID).
+    workflow_val = mongo_doc.get("workflow")
+    if workflow_val:
+        wf_id = normalize_workflow_reference(workflow_val)
+        if wf_id:
+            resolved = _resolve_legacy_uuid(conn, "workflows", str(wf_id), user)
+            if resolved:
+                kwargs["workflow_id"] = resolved
+
+    # Timestamps.
+    for src_key, dst_key in (
+        ("createdAt", "created_at"),
+        ("updatedAt", "updated_at"),
+        ("lastUsedAt", "last_used_at"),
+    ):
+        v = mongo_doc.get(src_key)
+        if v is not None:
+            kwargs[dst_key] = v
+
+    return kwargs
+
+
+def _dual_write_agent_create(user: str, mongo_doc: dict, mongo_id: str) -> None:
+    """Mirror an ``agents_collection.insert_one`` into Postgres.
+
+    Resolves every field present on the Mongo document to its Postgres
+    equivalent (including cross-collection references via
+    ``legacy_mongo_id`` lookups) and calls ``AgentsRepository.create``.
+    Best-effort — wrapped in ``dual_write`` so any failure is swallowed.
+    """
+    def _write(repo: AgentsRepository) -> None:
+        kwargs = _pg_agent_create_kwargs(repo._conn, mongo_doc, mongo_id)
+        repo.create(
+            user,
+            mongo_doc.get("name", ""),
+            mongo_doc.get("status", "draft"),
+            **kwargs,
+        )
+
+    dual_write(AgentsRepository, _write)
 
 
 def normalize_workflow_reference(workflow_value):
@@ -653,18 +911,7 @@ class CreateAgent(Resource):
                     new_agent["retriever"] = "classic"
             resp = agents_collection.insert_one(new_agent)
             new_id = str(resp.inserted_id)
-            dual_write(
-                AgentsRepository,
-                lambda repo, u=user, a=new_agent, mid=new_id: repo.create(
-                    u, a.get("name", ""), a.get("status", "draft"),
-                    key=a.get("key"), description=a.get("description"),
-                    retriever=a.get("retriever"), chunks=a.get("chunks"),
-                    tools=a.get("tools"), models=a.get("models"),
-                    shared=a.get("shared", False),
-                    incoming_webhook_token=a.get("incoming_webhook_token"),
-                    legacy_mongo_id=mid,
-                ),
-            )
+            _dual_write_agent_create(user, new_agent, new_id)
         except Exception as err:
             current_app.logger.error(f"Error creating agent: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -1258,6 +1505,16 @@ class DeleteAgent(Resource):
                         workflow_nodes_collection.delete_many({"workflow_id": workflow_id})
                         workflow_edges_collection.delete_many({"workflow_id": workflow_id})
                         workflows_collection.delete_one({"_id": workflow_oid, "user": user})
+                        # Postgres mirror: delete the workflow row.
+                        # ``workflow_nodes`` and ``workflow_edges`` cascade
+                        # via ON DELETE CASCADE, so a single delete is
+                        # enough.
+                        dual_write(
+                            WorkflowsRepository,
+                            lambda repo, wid=workflow_id, u=user: repo.delete_by_legacy_id(
+                                wid, u,
+                            ),
+                        )
                     else:
                         current_app.logger.warning(
                             f"Skipping workflow cleanup for non-owned workflow {workflow_id}"
@@ -1306,8 +1563,13 @@ class PinnedAgents(Resource):
                     {"user_id": user_id},
                     {"$pullAll": {"agent_preferences.pinned": stale_ids}},
                 )
+                # Strip both ObjectId-shaped entries and any already-
+                # remediated UUID-shaped entries from the Postgres mirror.
+                pg_stale_ids = list(stale_ids) + [
+                    u for u in (_resolve_agent_id_to_uuid(sid) for sid in stale_ids) if u
+                ]
                 dual_write(UsersRepository,
-                    lambda repo, uid=user_id, ids=stale_ids: repo.remove_pinned_bulk(uid, ids)
+                    lambda repo, uid=user_id, ids=pg_stale_ids: repo.remove_pinned_bulk(uid, ids)
                 )
             list_pinned_agents = [
                 {
@@ -1356,7 +1618,12 @@ class GetTemplateAgents(Resource):
     @api.doc(description="Get template/premade agents")
     def get(self):
         try:
-            template_agents = agents_collection.find({"user": "system"})
+            # Accept both the legacy "system" sentinel and the current
+            # "__system__" so template rows stay discoverable during the
+            # Mongo→Postgres cutover window.
+            template_agents = agents_collection.find(
+                {"user": {"$in": ["system", "__system__"]}}
+            )
             template_agents = [
                 {
                     "id": str(agent["_id"]),
@@ -1384,7 +1651,10 @@ class AdoptAgent(Resource):
             )
         try:
             agent = agents_collection.find_one(
-                {"_id": ObjectId(agent_id), "user": "system"}
+                {
+                    "_id": ObjectId(agent_id),
+                    "user": {"$in": ["system", "__system__"]},
+                }
             )
             if not agent:
                 return make_response(jsonify({"status": "Not found"}), 404)
@@ -1395,6 +1665,9 @@ class AdoptAgent(Resource):
             new_agent["lastUsedAt"] = datetime.datetime.now(datetime.timezone.utc)
             new_agent["key"] = str(uuid.uuid4())
             insert_result = agents_collection.insert_one(new_agent)
+            _dual_write_agent_create(
+                decoded_token["sub"], new_agent, str(insert_result.inserted_id)
+            )
 
             response_agent = new_agent.copy()
             response_agent.pop("_id", None)
@@ -1435,23 +1708,29 @@ class PinAgent(Resource):
             user_doc = ensure_user_doc(user_id)
             pinned_list = user_doc.get("agent_preferences", {}).get("pinned", [])
 
+            # Postgres stores pinned entries as UUIDs (the cleanup trigger
+            # joins on ``agents.id::text``). Resolve the Mongo ObjectId
+            # before mirroring so the PG row is never orphaned.
+            pg_agent_id = _resolve_agent_id_to_uuid(agent_id)
             if agent_id in pinned_list:
                 users_collection.update_one(
                     {"user_id": user_id},
                     {"$pull": {"agent_preferences.pinned": agent_id}},
                 )
-                dual_write(UsersRepository,
-                    lambda repo, uid=user_id, aid=agent_id: repo.remove_pinned(uid, aid)
-                )
+                if pg_agent_id:
+                    dual_write(UsersRepository,
+                        lambda repo, uid=user_id, aid=pg_agent_id: repo.remove_pinned(uid, aid)
+                    )
                 action = "unpinned"
             else:
                 users_collection.update_one(
                     {"user_id": user_id},
                     {"$addToSet": {"agent_preferences.pinned": agent_id}},
                 )
-                dual_write(UsersRepository,
-                    lambda repo, uid=user_id, aid=agent_id: repo.add_pinned(uid, aid)
-                )
+                if pg_agent_id:
+                    dual_write(UsersRepository,
+                        lambda repo, uid=user_id, aid=pg_agent_id: repo.add_pinned(uid, aid)
+                    )
                 action = "pinned"
         except Exception as err:
             current_app.logger.error(f"Error pinning/unpinning agent: {err}")
@@ -1497,8 +1776,11 @@ class RemoveSharedAgent(Resource):
                     }
                 },
             )
+            # Resolve the Mongo ObjectId to the PG UUID so the mirror
+            # removes the entry the cleanup trigger keys off.
+            pg_agent_id = _resolve_agent_id_to_uuid(agent_id) or agent_id
             dual_write(UsersRepository,
-                lambda repo, uid=user_id, aid=agent_id: repo.remove_agent_from_all(uid, aid)
+                lambda repo, uid=user_id, aid=pg_agent_id: repo.remove_agent_from_all(uid, aid)
             )
 
             return make_response(jsonify({"success": True, "action": "removed"}), 200)

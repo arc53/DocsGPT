@@ -167,14 +167,19 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE user_tools (
-            id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id      TEXT NOT NULL,
-            name         TEXT NOT NULL,
-            custom_name  TEXT,
-            display_name TEXT,
-            config       JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+            id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id             TEXT NOT NULL,
+            name                TEXT NOT NULL,
+            custom_name         TEXT,
+            display_name        TEXT,
+            description         TEXT,
+            config              JSONB NOT NULL DEFAULT '{}'::jsonb,
+            config_requirements JSONB NOT NULL DEFAULT '{}'::jsonb,
+            actions             JSONB NOT NULL DEFAULT '[]'::jsonb,
+            status              BOOLEAN NOT NULL DEFAULT true,
+            created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+            legacy_mongo_id     TEXT
         );
         """
     )
@@ -228,12 +233,14 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE agent_folders (
-            id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id     TEXT NOT NULL,
-            name        TEXT NOT NULL,
-            description TEXT,
-            created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id         TEXT NOT NULL,
+            name            TEXT NOT NULL,
+            description     TEXT,
+            parent_id       UUID REFERENCES agent_folders(id) ON DELETE SET NULL,
+            created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+            legacy_mongo_id TEXT
         );
         """
     )
@@ -241,13 +248,24 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE sources (
-            id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id    TEXT NOT NULL,
-            name       TEXT NOT NULL,
-            type       TEXT,
-            metadata   JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id             TEXT NOT NULL,
+            name                TEXT NOT NULL,
+            language            TEXT,
+            date                TIMESTAMPTZ NOT NULL DEFAULT now(),
+            model               TEXT,
+            type                TEXT,
+            metadata            JSONB NOT NULL DEFAULT '{}'::jsonb,
+            retriever           TEXT,
+            sync_frequency      TEXT,
+            tokens              TEXT,
+            file_path           TEXT,
+            remote_data         JSONB,
+            directory_structure JSONB,
+            file_name_map       JSONB,
+            created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+            legacy_mongo_id     TEXT
         );
         """
     )
@@ -255,33 +273,38 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE agents (
-            id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id                TEXT NOT NULL,
-            name                   TEXT NOT NULL,
-            description            TEXT,
-            agent_type             TEXT,
-            status                 TEXT NOT NULL,
-            key                    CITEXT UNIQUE,
-            source_id              UUID REFERENCES sources(id) ON DELETE SET NULL,
-            extra_source_ids       UUID[] NOT NULL DEFAULT '{}',
-            chunks                 INTEGER,
-            retriever              TEXT,
-            prompt_id              UUID REFERENCES prompts(id) ON DELETE SET NULL,
-            tools                  JSONB NOT NULL DEFAULT '[]'::jsonb,
-            json_schema            JSONB,
-            models                 JSONB,
-            default_model_id       TEXT,
-            folder_id              UUID REFERENCES agent_folders(id) ON DELETE SET NULL,
-            limited_token_mode     BOOLEAN NOT NULL DEFAULT false,
-            token_limit            INTEGER,
-            limited_request_mode   BOOLEAN NOT NULL DEFAULT false,
-            request_limit          INTEGER,
-            shared                 BOOLEAN NOT NULL DEFAULT false,
-            incoming_webhook_token CITEXT UNIQUE,
-            created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
-            last_used_at           TIMESTAMPTZ,
-            legacy_mongo_id        TEXT
+            id                           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id                      TEXT NOT NULL,
+            name                         TEXT NOT NULL,
+            description                  TEXT,
+            agent_type                   TEXT,
+            status                       TEXT NOT NULL,
+            key                          CITEXT UNIQUE,
+            image                        TEXT,
+            source_id                    UUID REFERENCES sources(id) ON DELETE SET NULL,
+            extra_source_ids             UUID[] NOT NULL DEFAULT '{}',
+            chunks                       INTEGER,
+            retriever                    TEXT,
+            prompt_id                    UUID REFERENCES prompts(id) ON DELETE SET NULL,
+            tools                        JSONB NOT NULL DEFAULT '[]'::jsonb,
+            json_schema                  JSONB,
+            models                       JSONB,
+            default_model_id             TEXT,
+            folder_id                    UUID REFERENCES agent_folders(id) ON DELETE SET NULL,
+            workflow_id                  UUID,
+            limited_token_mode           BOOLEAN NOT NULL DEFAULT false,
+            token_limit                  INTEGER,
+            limited_request_mode         BOOLEAN NOT NULL DEFAULT false,
+            request_limit                INTEGER,
+            allow_system_prompt_override BOOLEAN NOT NULL DEFAULT false,
+            shared                       BOOLEAN NOT NULL DEFAULT false,
+            shared_token                 CITEXT UNIQUE,
+            shared_metadata              JSONB,
+            incoming_webhook_token       CITEXT UNIQUE,
+            created_at                   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at                   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            last_used_at                 TIMESTAMPTZ,
+            legacy_mongo_id              TEXT
         );
         """
     )
@@ -299,6 +322,11 @@ def upgrade() -> None:
             upload_path     TEXT NOT NULL,
             mime_type       TEXT,
             size            BIGINT,
+            content         TEXT,
+            token_count     INTEGER,
+            openai_file_id  TEXT,
+            google_file_uri TEXT,
+            metadata        JSONB,
             created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
             legacy_mongo_id TEXT
         );
@@ -313,6 +341,7 @@ def upgrade() -> None:
             tool_id    UUID REFERENCES user_tools(id) ON DELETE CASCADE,
             path       TEXT NOT NULL,
             content    TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
         """
@@ -321,13 +350,15 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE todos (
-            id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id    TEXT NOT NULL,
-            tool_id    UUID REFERENCES user_tools(id) ON DELETE CASCADE,
-            title      TEXT NOT NULL,
-            completed  BOOLEAN NOT NULL DEFAULT false,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id         TEXT NOT NULL,
+            tool_id         UUID REFERENCES user_tools(id) ON DELETE CASCADE,
+            todo_id         INTEGER,
+            title           TEXT NOT NULL,
+            completed       BOOLEAN NOT NULL DEFAULT false,
+            created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+            legacy_mongo_id TEXT
         );
         """
     )
@@ -349,12 +380,18 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE connector_sessions (
-            id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id      TEXT NOT NULL,
-            provider     TEXT NOT NULL,
-            session_data JSONB NOT NULL,
-            expires_at   TIMESTAMPTZ,
-            created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id         TEXT NOT NULL,
+            provider        TEXT NOT NULL,
+            server_url      TEXT,
+            session_token   TEXT UNIQUE,
+            user_email      TEXT,
+            status          TEXT,
+            token_info      JSONB,
+            session_data    JSONB NOT NULL DEFAULT '{}'::jsonb,
+            expires_at      TIMESTAMPTZ,
+            created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+            legacy_mongo_id TEXT
         );
         """
     )
@@ -454,6 +491,14 @@ def upgrade() -> None:
         );
         """
     )
+    # Backfill the agents.workflow_id FK now that workflows exists.
+    # The column was created without a FK (forward reference to a table
+    # that hadn't been declared yet); add the constraint here so workflow
+    # deletion still cascades through to agent unset.
+    op.execute(
+        "ALTER TABLE agents ADD CONSTRAINT agents_workflow_fk "
+        "FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE SET NULL;"
+    )
 
     op.execute(
         """
@@ -539,12 +584,25 @@ def upgrade() -> None:
     )
 
     op.execute(
-        "CREATE UNIQUE INDEX connector_sessions_user_provider_uidx "
-        "ON connector_sessions (user_id, provider);"
+        # MCP and OAuth connectors share the ``provider`` slot, so the
+        # dedup key is ``(user_id, server_url, provider)``: MCP rows
+        # differentiate by server_url (one per MCP server), OAuth rows
+        # have server_url = NULL and differentiate by provider alone.
+        # COALESCE lets NULL server_url participate in the constraint.
+        "CREATE UNIQUE INDEX connector_sessions_user_endpoint_uidx "
+        "ON connector_sessions (user_id, COALESCE(server_url, ''), provider);"
     )
     op.execute(
         "CREATE INDEX connector_sessions_expiry_idx "
         "ON connector_sessions (expires_at) WHERE expires_at IS NOT NULL;"
+    )
+    op.execute(
+        "CREATE INDEX connector_sessions_server_url_idx "
+        "ON connector_sessions (server_url) WHERE server_url IS NOT NULL;"
+    )
+    op.execute(
+        "CREATE UNIQUE INDEX connector_sessions_legacy_mongo_id_uidx "
+        "ON connector_sessions (legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;"
     )
 
     op.execute(
@@ -616,6 +674,20 @@ def upgrade() -> None:
     )
 
     op.execute("CREATE INDEX sources_user_idx ON sources (user_id);")
+    op.execute(
+        "CREATE UNIQUE INDEX sources_legacy_mongo_id_uidx "
+        "ON sources (legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;"
+    )
+    op.execute(
+        "CREATE UNIQUE INDEX user_tools_legacy_mongo_id_uidx "
+        "ON user_tools (legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;"
+    )
+    op.execute(
+        "CREATE UNIQUE INDEX agent_folders_legacy_mongo_id_uidx "
+        "ON agent_folders (legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;"
+    )
+    op.execute("CREATE INDEX agent_folders_parent_idx ON agent_folders (parent_id);")
+    op.execute("CREATE INDEX agents_workflow_idx ON agents (workflow_id);")
 
     op.execute('CREATE INDEX stack_logs_timestamp_idx ON stack_logs ("timestamp" DESC);')
     op.execute('CREATE INDEX stack_logs_user_ts_idx   ON stack_logs (user_id, "timestamp" DESC);')
@@ -624,6 +696,14 @@ def upgrade() -> None:
 
     op.execute("CREATE INDEX todos_user_tool_idx ON todos (user_id, tool_id);")
     op.execute("CREATE INDEX todos_tool_id_idx   ON todos (tool_id);")
+    op.execute(
+        "CREATE UNIQUE INDEX todos_legacy_mongo_id_uidx "
+        "ON todos (legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;"
+    )
+    op.execute(
+        "CREATE UNIQUE INDEX todos_tool_todo_id_uidx "
+        "ON todos (tool_id, todo_id) WHERE todo_id IS NOT NULL;"
+    )
 
     op.execute('CREATE INDEX token_usage_user_ts_idx  ON token_usage (user_id, "timestamp" DESC);')
     op.execute('CREATE INDEX token_usage_key_ts_idx   ON token_usage (api_key, "timestamp" DESC);')

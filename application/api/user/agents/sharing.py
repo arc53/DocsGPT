@@ -19,6 +19,7 @@ from application.api.user.base import (
     users_collection,
 )
 from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.users import UsersRepository
 from application.utils import generate_image_url
 
@@ -107,9 +108,18 @@ class SharedAgent(Resource):
                         {"user_id": user_id},
                         {"$addToSet": {"agent_preferences.shared_with_me": agent_id}},
                     )
-                    dual_write(UsersRepository,
-                        lambda repo, uid=user_id, aid=agent_id: repo.add_shared(uid, aid)
+                    # Resolve the Mongo ObjectId to the PG agent UUID so
+                    # the shared_with_me entry matches the cleanup
+                    # trigger's join key.
+                    from application.api.user.agents.routes import (
+                        _resolve_agent_id_to_uuid,
                     )
+
+                    pg_agent_id = _resolve_agent_id_to_uuid(agent_id)
+                    if pg_agent_id:
+                        dual_write(UsersRepository,
+                            lambda repo, uid=user_id, aid=pg_agent_id: repo.add_shared(uid, aid)
+                        )
             return make_response(jsonify(data), 200)
         except Exception as err:
             current_app.logger.error(f"Error retrieving shared agent: {err}")
@@ -144,8 +154,17 @@ class SharedAgents(Resource):
                     {"user_id": user_id},
                     {"$pullAll": {"agent_preferences.shared_with_me": stale_ids}},
                 )
+                # Strip both ObjectId-shaped and any UUID-remediated
+                # entries from the Postgres mirror so neither shape lingers.
+                from application.api.user.agents.routes import (
+                    _resolve_agent_id_to_uuid,
+                )
+
+                pg_stale_ids = list(stale_ids) + [
+                    u for u in (_resolve_agent_id_to_uuid(sid) for sid in stale_ids) if u
+                ]
                 dual_write(UsersRepository,
-                    lambda repo, uid=user_id, ids=stale_ids: repo.remove_shared_bulk(uid, ids)
+                    lambda repo, uid=user_id, ids=pg_stale_ids: repo.remove_shared_bulk(uid, ids)
                 )
             pinned_ids = set(user_doc.get("agent_preferences", {}).get("pinned", []))
 
@@ -256,11 +275,34 @@ class ShareAgent(Resource):
                         }
                     },
                 )
+                dual_write(
+                    AgentsRepository,
+                    lambda repo, aid=agent_id, u=user, tok=shared_token,
+                    meta=shared_metadata: repo.update_by_legacy_id(
+                        aid, u,
+                        {
+                            "shared": True,
+                            "shared_token": tok,
+                            "shared_metadata": meta,
+                        },
+                    ),
+                )
             else:
                 agents_collection.update_one(
                     {"_id": agent_oid, "user": user},
                     {"$set": {"shared_publicly": shared, "shared_token": None}},
                     {"$unset": {"shared_metadata": ""}},
+                )
+                dual_write(
+                    AgentsRepository,
+                    lambda repo, aid=agent_id, u=user: repo.update_by_legacy_id(
+                        aid, u,
+                        {
+                            "shared": False,
+                            "shared_token": None,
+                            "shared_metadata": None,
+                        },
+                    ),
                 )
         except Exception as err:
             current_app.logger.error(f"Error sharing/unsharing agent: {err}", exc_info=True)

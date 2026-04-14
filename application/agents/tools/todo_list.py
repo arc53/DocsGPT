@@ -1,10 +1,17 @@
-from datetime import datetime
+import datetime
 from typing import Any, Dict, List, Optional
 import uuid
 
 from .base import Tool
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.todos import TodosRepository
+
+
+def _utcnow() -> datetime.datetime:
+    """Return a timezone-aware UTC ``datetime`` (replaces ``datetime.utcnow``)."""
+    return datetime.datetime.now(datetime.timezone.utc)
 
 
 class TodoListTool(Tool):
@@ -234,7 +241,7 @@ class TodoListTool(Tool):
         if not title:
             return "Error: Title is required."
 
-        now = datetime.now()
+        now = _utcnow()
         todo_id = self._get_next_todo_id()
 
         doc = {
@@ -250,6 +257,17 @@ class TodoListTool(Tool):
         inserted_id = getattr(insert_result, "inserted_id", None) or doc.get("_id")
         if inserted_id is not None:
             self._last_artifact_id = str(inserted_id)
+        legacy_mongo_id = str(inserted_id) if inserted_id is not None else None
+        dual_write(
+            TodosRepository,
+            lambda r: r.create(
+                self.user_id,
+                self.tool_id,
+                title,
+                todo_id=todo_id,
+                legacy_mongo_id=legacy_mongo_id,
+            ),
+        )
         return f"Todo created with ID {todo_id}: {title}"
 
     def _get(self, todo_id: Optional[Any]) -> str:
@@ -287,7 +305,7 @@ class TodoListTool(Tool):
         query = {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": parsed_todo_id}
         doc = self.collection.find_one_and_update(
             query,
-            {"$set": {"title": title, "updated_at": datetime.now()}},
+            {"$set": {"title": title, "updated_at": _utcnow()}},
         )
         if not doc:
             return f"Error: Todo with ID {parsed_todo_id} not found."
@@ -295,6 +313,12 @@ class TodoListTool(Tool):
         if doc.get("_id") is not None:
             self._last_artifact_id = str(doc.get("_id"))
 
+        dual_write(
+            TodosRepository,
+            lambda r: r.update_title_by_tool_and_todo_id(
+                self.user_id, self.tool_id, parsed_todo_id, title
+            ),
+        )
         return f"Todo {parsed_todo_id} updated to: {title}"
 
     def _complete(self, todo_id: Optional[Any]) -> str:
@@ -306,7 +330,7 @@ class TodoListTool(Tool):
         query = {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": parsed_todo_id}
         doc = self.collection.find_one_and_update(
             query,
-            {"$set": {"status": "completed", "updated_at": datetime.now()}},
+            {"$set": {"status": "completed", "updated_at": _utcnow()}},
         )
         if not doc:
             return f"Error: Todo with ID {parsed_todo_id} not found."
@@ -314,6 +338,12 @@ class TodoListTool(Tool):
         if doc.get("_id") is not None:
             self._last_artifact_id = str(doc.get("_id"))
 
+        dual_write(
+            TodosRepository,
+            lambda r: r.set_completed(
+                self.user_id, self.tool_id, parsed_todo_id, True
+            ),
+        )
         return f"Todo {parsed_todo_id} marked as completed."
 
     def _delete(self, todo_id: Optional[Any]) -> str:
@@ -330,4 +360,10 @@ class TodoListTool(Tool):
         if doc.get("_id") is not None:
             self._last_artifact_id = str(doc.get("_id"))
 
+        dual_write(
+            TodosRepository,
+            lambda r: r.delete_by_tool_and_todo_id(
+                self.user_id, self.tool_id, parsed_todo_id
+            ),
+        )
         return f"Todo {parsed_todo_id} deleted."

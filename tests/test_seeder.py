@@ -29,7 +29,7 @@ class TestDatabaseSeederInit:
         assert seeder.sources_collection == mock_db["sources"]
         assert seeder.agents_collection == mock_db["agents"]
         assert seeder.prompts_collection == mock_db["prompts"]
-        assert seeder.system_user_id == "system"
+        assert seeder.system_user_id == "__system__"
 
 
 # ── _is_already_seeded ─────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ class TestIsAlreadySeeded:
         assert seeder._is_already_seeded() is False
 
     def test_already_seeded(self, seeder, mock_db):
-        mock_db["agents"].insert_one({"user": "system", "name": "test"})
+        mock_db["agents"].insert_one({"user": "__system__", "name": "test"})
         assert seeder._is_already_seeded() is True
 
 
@@ -94,7 +94,7 @@ class TestHandlePrompt:
         doc = mock_db["prompts"].find_one({"name": "My Prompt"})
         assert doc is not None
         assert doc["content"] == "You are helpful."
-        assert doc["user"] == "system"
+        assert doc["user"] == "__system__"
 
     def test_duplicate_prompt_returns_existing(self, seeder, mock_db):
         config = {
@@ -145,7 +145,7 @@ class TestHandleTools:
         assert len(ids) == 1
         doc = mock_db["user_tools"].find_one({"name": "my_tool"})
         assert doc is not None
-        assert doc["user"] == "system"
+        assert doc["user"] == "__system__"
 
     @patch("application.seed.seeder.tool_manager")
     def test_duplicate_tool_returns_existing(self, mock_tm, seeder, mock_db):
@@ -197,7 +197,7 @@ class TestHandleSource:
 
     def test_existing_source_returns_id(self, seeder, mock_db):
         inserted = mock_db["sources"].insert_one(
-            {"user": "system", "remote_data": "http://example.com"}
+            {"user": "__system__", "remote_data": "http://example.com"}
         )
         config = {
             "name": "a",
@@ -222,7 +222,7 @@ class TestHandleSource:
         mock_ingest.delay.assert_called_once_with(
             source_data="http://new.com",
             job_name="new_src",
-            user="system",
+            user="__system__",
             loader="web",
         )
 
@@ -275,13 +275,13 @@ class TestHandleSource:
 @pytest.mark.unit
 class TestSeedInitialData:
     def test_already_seeded_skips(self, seeder, mock_db):
-        mock_db["agents"].insert_one({"user": "system", "name": "existing"})
+        mock_db["agents"].insert_one({"user": "__system__", "name": "existing"})
         with patch.object(seeder, "_seed_from_config") as mock_seed:
             seeder.seed_initial_data()
             mock_seed.assert_not_called()
 
     def test_force_reseeds(self, seeder, mock_db):
-        mock_db["agents"].insert_one({"user": "system", "name": "existing"})
+        mock_db["agents"].insert_one({"user": "__system__", "name": "existing"})
         yaml_content = "agents: []"
         with patch("builtins.open", mock_open(read_data=yaml_content)):
             with patch.object(seeder, "_seed_from_config") as mock_seed:
@@ -329,7 +329,7 @@ class TestSeedFromConfig:
         seeder._seed_from_config(config)
         agent = mock_db["agents"].find_one({"name": "TestAgent"})
         assert agent is not None
-        assert agent["user"] == "system"
+        assert agent["user"] == "__system__"
         assert agent["agent_type"] == "classic"
         assert agent["status"] == "template"
 
@@ -338,7 +338,7 @@ class TestSeedFromConfig:
     @patch.object(DatabaseSeeder, "_handle_prompt", return_value=None)
     def test_updates_existing_agent(self, mock_prompt, mock_tools, mock_source, seeder, mock_db):
         mock_db["agents"].insert_one(
-            {"user": "system", "name": "TestAgent", "description": "old"}
+            {"user": "__system__", "name": "TestAgent", "description": "old"}
         )
         config = {
             "agents": [

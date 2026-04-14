@@ -15,6 +15,7 @@ Covers every operation the legacy Mongo code performs on
 from __future__ import annotations
 
 import json
+import re
 from typing import Optional
 
 from sqlalchemy import Connection, text
@@ -22,6 +23,19 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from application.storage.db.base_repository import row_to_dict
 from application.storage.db.models import conversations_table, conversation_messages_table
+
+
+# Canonical UUID-string shape, e.g. "123e4567-e89b-12d3-a456-426614174000".
+# Legacy Mongo ObjectIds are 24-char lowercase hex strings, so the two
+# shapes are unambiguous and cheap to distinguish without a DB roundtrip.
+_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+def _looks_like_uuid(value: str) -> bool:
+    return bool(_UUID_RE.match(value))
 
 
 def _message_row_to_dict(row) -> dict:
@@ -37,6 +51,73 @@ def _message_row_to_dict(row) -> dict:
 class ConversationsRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
+
+    # ------------------------------------------------------------------
+    # Reference translation helpers
+    # ------------------------------------------------------------------
+    #
+    # During the Mongo→Postgres dual-write window, callers routinely
+    # hand us Mongo ObjectId strings (24-char hex) for fields that are
+    # UUID FKs in Postgres (``agent_id``, ``attachments`` entries, ...).
+    # Casting those straight to ``uuid`` raises and the outer dual-write
+    # shim swallows the exception, so the write silently drops. These
+    # helpers translate via the ``legacy_mongo_id`` columns we added
+    # precisely for this purpose.
+
+    def _resolve_agent_ref(self, agent_id_raw: str | None) -> str | None:
+        """Translate ``agent_id_raw`` to a Postgres UUID string.
+
+        - ``None``/empty → ``None`` (no agent).
+        - Already-UUID-shaped → returned as-is.
+        - Otherwise treated as a Mongo ObjectId and looked up via
+          ``agents.legacy_mongo_id``. Returns ``None`` if no PG row
+          exists yet (e.g. the agent was created before Phase 1
+          backfill).
+        """
+        if not agent_id_raw:
+            return None
+        value = str(agent_id_raw)
+        if _looks_like_uuid(value):
+            return value
+        result = self._conn.execute(
+            text("SELECT id FROM agents WHERE legacy_mongo_id = :lid LIMIT 1"),
+            {"lid": value},
+        )
+        row = result.fetchone()
+        return str(row[0]) if row is not None else None
+
+    def _resolve_attachment_refs(
+        self, ids: list[str] | None,
+    ) -> list[str]:
+        """Translate a list of attachment ids (Mongo ObjectId or UUID)
+        to PG attachment UUIDs.
+
+        Unknown ids (no matching ``attachments.legacy_mongo_id``) are
+        dropped rather than raising — they'd have failed the ``uuid[]``
+        cast otherwise and the entire row would have vanished via
+        dual-write's exception swallow.
+        """
+        if not ids:
+            return []
+        out: list[str] = []
+        for raw in ids:
+            if raw is None:
+                continue
+            value = str(raw)
+            if _looks_like_uuid(value):
+                out.append(value)
+                continue
+            result = self._conn.execute(
+                text(
+                    "SELECT id FROM attachments "
+                    "WHERE legacy_mongo_id = :lid LIMIT 1"
+                ),
+                {"lid": value},
+            )
+            row = result.fetchone()
+            if row is not None:
+                out.append(str(row[0]))
+        return out
 
     # ------------------------------------------------------------------
     # Conversation CRUD
@@ -65,8 +146,11 @@ class ConversationsRepository:
             "user_id": user_id,
             "name": name,
         }
-        if agent_id:
-            values["agent_id"] = agent_id
+        # ``agent_id`` may arrive as a Mongo ObjectId during the dual-write
+        # window; resolve to a UUID (or drop silently if not yet backfilled).
+        resolved_agent_id = self._resolve_agent_ref(agent_id)
+        if resolved_agent_id:
+            values["agent_id"] = resolved_agent_id
         if api_key:
             values["api_key"] = api_key
         if is_shared_usage:
@@ -156,6 +240,61 @@ class ConversationsRepository:
                 "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
             ),
             {"id": conversation_id, "user_id": user_id, "name": name},
+        )
+        return result.rowcount > 0
+
+    def add_shared_user(self, conversation_id: str, user_to_add: str) -> bool:
+        """Idempotently append ``user_to_add`` to ``shared_with``.
+
+        Accepts either a PG UUID or a legacy Mongo ObjectId as the
+        conversation id. Mirrors Mongo ``$addToSet`` semantics via the
+        ``NOT (:user = ANY(shared_with))`` guard.
+        """
+        if not user_to_add:
+            return False
+        if _looks_like_uuid(conversation_id):
+            sql = (
+                "UPDATE conversations "
+                "SET shared_with = array_append(shared_with, :user), "
+                "    updated_at = now() "
+                "WHERE id = CAST(:id AS uuid) "
+                "AND NOT (:user = ANY(shared_with))"
+            )
+        else:
+            sql = (
+                "UPDATE conversations "
+                "SET shared_with = array_append(shared_with, :user), "
+                "    updated_at = now() "
+                "WHERE legacy_mongo_id = :id "
+                "AND NOT (:user = ANY(shared_with))"
+            )
+        result = self._conn.execute(
+            text(sql), {"id": conversation_id, "user": user_to_add},
+        )
+        return result.rowcount > 0
+
+    def remove_shared_user(self, conversation_id: str, user_to_remove: str) -> bool:
+        """Remove ``user_to_remove`` from ``shared_with``. Mirror of Mongo ``$pull``."""
+        if not user_to_remove:
+            return False
+        if _looks_like_uuid(conversation_id):
+            sql = (
+                "UPDATE conversations "
+                "SET shared_with = array_remove(shared_with, :user), "
+                "    updated_at = now() "
+                "WHERE id = CAST(:id AS uuid) "
+                "AND :user = ANY(shared_with)"
+            )
+        else:
+            sql = (
+                "UPDATE conversations "
+                "SET shared_with = array_remove(shared_with, :user), "
+                "    updated_at = now() "
+                "WHERE legacy_mongo_id = :id "
+                "AND :user = ANY(shared_with)"
+            )
+        result = self._conn.execute(
+            text(sql), {"id": conversation_id, "user": user_to_remove},
         )
         return result.rowcount > 0
 
@@ -371,7 +510,13 @@ class ConversationsRepository:
 
         attachments = message.get("attachments")
         if attachments:
-            values["attachments"] = [str(a) for a in attachments]
+            # Attachment ids may arrive as Mongo ObjectIds during the
+            # dual-write window — resolve each to a PG UUID or drop it.
+            resolved = self._resolve_attachment_refs(
+                [str(a) for a in attachments],
+            )
+            if resolved:
+                values["attachments"] = resolved
 
         stmt = (
             pg_insert(conversation_messages_table)
@@ -399,6 +544,11 @@ class ConversationsRepository:
         allowed = {
             "prompt", "response", "thought", "sources", "tool_calls",
             "attachments", "model_id", "metadata", "timestamp",
+            # Feedback can be re-set in rare continuation flows; without
+            # it in the whitelist an upstream re-append that happens to
+            # carry feedback would silently lose it. Mirrors
+            # ``set_feedback`` — column is JSONB.
+            "feedback", "feedback_timestamp",
         }
         filtered = {k: v for k, v in fields.items() if k in allowed}
         if not filtered:
@@ -411,12 +561,21 @@ class ConversationsRepository:
         params: dict = {"conv_id": conversation_id, "pos": position}
         for key, val in filtered.items():
             col = api_to_col.get(key, key)
-            if key in ("sources", "tool_calls", "metadata"):
+            if key in ("sources", "tool_calls", "metadata", "feedback"):
                 set_parts.append(f"{col} = CAST(:{col} AS jsonb)")
-                params[col] = json.dumps(val) if not isinstance(val, str) else val
+                if val is None:
+                    params[col] = None
+                else:
+                    params[col] = (
+                        json.dumps(val) if not isinstance(val, str) else val
+                    )
             elif key == "attachments":
+                # Attachment ids may be Mongo ObjectIds during the
+                # dual-write window; translate via attachments.legacy_mongo_id.
                 set_parts.append(f"{col} = CAST(:{col} AS uuid[])")
-                params[col] = [str(a) for a in val] if val else []
+                params[col] = self._resolve_attachment_refs(
+                    [str(a) for a in val] if val else [],
+                )
             else:
                 set_parts.append(f"{col} = :{col}")
                 params[col] = val

@@ -33,6 +33,10 @@ class Settings(BaseSettings):
 
     # MongoDB→Postgres migration: dual-write to Postgres (Mongo stays source of truth)
     USE_POSTGRES: bool = False
+    # Staging-only: surface dual-write failures as exceptions instead of
+    # swallowing to a warning log. Leave off in prod during the dual-write
+    # window so a Postgres outage can't break a user-facing Mongo write.
+    DUAL_WRITE_STRICT: bool = False
     LLM_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     DEFAULT_MAX_HISTORY: int = 150
     DEFAULT_LLM_TOKEN_LIMIT: int = 128000  # Fallback when model not found in registry

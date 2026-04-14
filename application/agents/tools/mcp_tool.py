@@ -892,6 +892,21 @@ class DBTokenStorage(TokenStorage):
         )
         logger.info("Saved tokens for %s", self.get_base_url(self.server_url))
 
+        from application.storage.db.dual_write import dual_write
+        from application.storage.db.repositories.connector_sessions import (
+            ConnectorSessionsRepository,
+        )
+
+        base_url = self.get_base_url(self.server_url)
+        pg_provider = f"mcp:{base_url}"
+        token_dump = tokens.model_dump()
+        dual_write(
+            ConnectorSessionsRepository,
+            lambda repo, u=self.user_id, p=pg_provider, burl=base_url, td=token_dump: repo.merge_session_data(
+                u, p, {"server_url": burl, "tokens": td},
+            ),
+        )
+
     async def get_client_info(self) -> OAuthClientInformationFull | None:
         doc = await asyncio.to_thread(self.collection.find_one, self.get_db_key())
         if not doc or "client_info" not in doc:
@@ -918,6 +933,23 @@ class DBTokenStorage(TokenStorage):
                         self.get_db_key(),
                         {"$unset": {"client_info": "", "tokens": ""}},
                     )
+
+                    from application.storage.db.dual_write import dual_write
+                    from application.storage.db.repositories.connector_sessions import (
+                        ConnectorSessionsRepository,
+                    )
+
+                    base_url = self.get_base_url(self.server_url)
+                    pg_provider = f"mcp:{base_url}"
+                    # Mirror the $unset by writing explicit nulls through the
+                    # merge helper: it drops keys set to None from the merged doc.
+                    dual_write(
+                        ConnectorSessionsRepository,
+                        lambda repo, u=self.user_id, p=pg_provider, burl=base_url: repo.merge_session_data(
+                            u, p, {"server_url": burl, "tokens": None, "client_info": None},
+                        ),
+                    )
+
                     return None
             return client_info
         except ValidationError as e:
@@ -939,9 +971,35 @@ class DBTokenStorage(TokenStorage):
         )
         logger.info("Saved client info for %s", self.get_base_url(self.server_url))
 
+        from application.storage.db.dual_write import dual_write
+        from application.storage.db.repositories.connector_sessions import (
+            ConnectorSessionsRepository,
+        )
+
+        base_url = self.get_base_url(self.server_url)
+        pg_provider = f"mcp:{base_url}"
+        dual_write(
+            ConnectorSessionsRepository,
+            lambda repo, u=self.user_id, p=pg_provider, burl=base_url, ci=serialized_info: repo.merge_session_data(
+                u, p, {"server_url": burl, "client_info": ci},
+            ),
+        )
+
     async def clear(self) -> None:
         await asyncio.to_thread(self.collection.delete_one, self.get_db_key())
         logger.info("Cleared OAuth cache for %s", self.get_base_url(self.server_url))
+
+        from application.storage.db.dual_write import dual_write
+        from application.storage.db.repositories.connector_sessions import (
+            ConnectorSessionsRepository,
+        )
+
+        base_url = self.get_base_url(self.server_url)
+        pg_provider = f"mcp:{base_url}"
+        dual_write(
+            ConnectorSessionsRepository,
+            lambda repo, u=self.user_id, p=pg_provider: repo.delete(u, p),
+        )
 
     @classmethod
     async def clear_all(cls, db_client) -> None:

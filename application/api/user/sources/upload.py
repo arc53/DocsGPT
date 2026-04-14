@@ -415,6 +415,18 @@ class ManageSourceFiles(Resource):
                         {"_id": ObjectId(source_id)},
                         {"$set": {"file_name_map": file_name_map}},
                     )
+
+                    from application.storage.db.dual_write import dual_write
+                    from application.storage.db.repositories.sources import (
+                        SourcesRepository,
+                    )
+
+                    dual_write(
+                        SourcesRepository,
+                        lambda repo, lid=source_id, u=user, fnm=dict(file_name_map): repo.update_by_legacy_id(
+                            lid, u, {"file_name_map": fnm}
+                        ),
+                    )
                 # Trigger re-ingestion pipeline
 
                 from application.api.user.tasks import reingest_source_task
@@ -488,6 +500,18 @@ class ManageSourceFiles(Resource):
                     sources_collection.update_one(
                         {"_id": ObjectId(source_id)},
                         {"$set": {"file_name_map": file_name_map}},
+                    )
+
+                    from application.storage.db.dual_write import dual_write
+                    from application.storage.db.repositories.sources import (
+                        SourcesRepository,
+                    )
+
+                    dual_write(
+                        SourcesRepository,
+                        lambda repo, lid=source_id, u=user, fnm=dict(file_name_map): repo.update_by_legacy_id(
+                            lid, u, {"file_name_map": fnm}
+                        ),
                     )
                 # Trigger re-ingestion pipeline
 
@@ -584,6 +608,18 @@ class ManageSourceFiles(Resource):
                         sources_collection.update_one(
                             {"_id": ObjectId(source_id)},
                             {"$set": {"file_name_map": file_name_map}},
+                        )
+
+                        from application.storage.db.dual_write import dual_write
+                        from application.storage.db.repositories.sources import (
+                            SourcesRepository,
+                        )
+
+                        dual_write(
+                            SourcesRepository,
+                            lambda repo, lid=source_id, u=user, fnm=dict(file_name_map): repo.update_by_legacy_id(
+                                lid, u, {"file_name_map": fnm}
+                            ),
                         )
 
                 # Trigger re-ingestion pipeline

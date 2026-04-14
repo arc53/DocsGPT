@@ -75,6 +75,17 @@ class ConnectorAuth(Resource):
                 "status": "pending",
                 "created_at": now
             })
+            from application.storage.db.dual_write import dual_write
+            from application.storage.db.repositories.connector_sessions import (
+                ConnectorSessionsRepository,
+            )
+
+            dual_write(
+                ConnectorSessionsRepository,
+                lambda repo, u=user_id, p=provider, mid=str(result.inserted_id): repo.upsert(
+                    u, p, status="pending", legacy_mongo_id=mid,
+                ),
+            )
             state_dict = {
                 "provider": provider,
                 "object_id": str(result.inserted_id)
@@ -170,6 +181,25 @@ class ConnectorsCallback(Resource):
                             "status": "authorized"
                         }
                     }
+                )
+                from application.storage.db.dual_write import dual_write
+                from application.storage.db.repositories.connector_sessions import (
+                    ConnectorSessionsRepository,
+                )
+
+                dual_write(
+                    ConnectorSessionsRepository,
+                    lambda repo, mid=str(state_object_id),
+                           st=session_token, ti=sanitized_token_info,
+                           ue=user_email: repo.update_by_legacy_id(
+                        mid,
+                        {
+                            "session_token": st,
+                            "token_info": ti,
+                            "user_email": ue,
+                            "status": "authorized",
+                        },
+                    ),
                 )
 
                 # Redirect to success page with session token and user email
@@ -304,6 +334,17 @@ class ConnectorValidateSession(Resource):
                         {"session_token": session_token},
                         {"$set": {"token_info": sanitized_token_info}}
                     )
+                    from application.storage.db.dual_write import dual_write
+                    from application.storage.db.repositories.connector_sessions import (
+                        ConnectorSessionsRepository,
+                    )
+
+                    def _pg_refresh_token(repo, tok=session_token, info=sanitized_token_info):
+                        row = repo.get_by_session_token(tok)
+                        if row:
+                            repo.update(str(row["id"]), {"token_info": info})
+
+                    dual_write(ConnectorSessionsRepository, _pg_refresh_token)
                     token_info = sanitized_token_info
                     is_expired = False
                 except Exception as refresh_error:
@@ -348,7 +389,16 @@ class ConnectorDisconnect(Resource):
 
             if session_token:
                 sessions_collection.delete_one({"session_token": session_token})
-            
+                from application.storage.db.dual_write import dual_write
+                from application.storage.db.repositories.connector_sessions import (
+                    ConnectorSessionsRepository,
+                )
+
+                dual_write(
+                    ConnectorSessionsRepository,
+                    lambda repo, tok=session_token: repo.delete_by_session_token(tok),
+                )
+
             return make_response(jsonify({"success": True}), 200)
         except Exception as e:
             current_app.logger.error(f"Error disconnecting connector session: {e}", exc_info=True)

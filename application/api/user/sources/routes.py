@@ -186,13 +186,14 @@ class DeleteOldIndexes(Resource):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
         source_id = request.args.get("source_id")
         if not source_id:
             return make_response(
                 jsonify({"success": False, "message": "Missing required fields"}), 400
             )
         doc = sources_collection.find_one(
-            {"_id": ObjectId(source_id), "user": decoded_token.get("sub")}
+            {"_id": ObjectId(source_id), "user": user}
         )
         if not doc:
             return make_response(jsonify({"status": "not found"}), 404)
@@ -228,6 +229,13 @@ class DeleteOldIndexes(Resource):
             )
             return make_response(jsonify({"success": False}), 400)
         sources_collection.delete_one({"_id": ObjectId(source_id)})
+        from application.storage.db.dual_write import dual_write
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        dual_write(
+            SourcesRepository,
+            lambda repo, lid=source_id, u=user: repo.delete_by_legacy_id(lid, u),
+        )
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -280,6 +288,18 @@ class ManageSync(Resource):
                     "user": user,
                 },
                 update_data,
+            )
+
+            from application.storage.db.dual_write import dual_write
+            from application.storage.db.repositories.sources import (
+                SourcesRepository,
+            )
+
+            dual_write(
+                SourcesRepository,
+                lambda repo, lid=source_id, u=user, sf=sync_frequency: repo.update_by_legacy_id(
+                    lid, u, {"sync_frequency": sf}
+                ),
             )
         except Exception as err:
             current_app.logger.error(

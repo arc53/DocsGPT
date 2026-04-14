@@ -10,6 +10,8 @@ from application.api import api
 from application.api.user.base import agents_collection, require_agent
 from application.api.user.tasks import process_agent_webhook
 from application.core.settings import settings
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.agents import AgentsRepository
 
 
 agents_webhooks_ns = Namespace(
@@ -47,6 +49,12 @@ class AgentWebhook(Resource):
                 agents_collection.update_one(
                     {"_id": ObjectId(agent_id), "user": user},
                     {"$set": {"incoming_webhook_token": webhook_token}},
+                )
+                dual_write(
+                    AgentsRepository,
+                    lambda repo, aid=agent_id, u=user, tok=webhook_token: repo.update_by_legacy_id(
+                        aid, u, {"incoming_webhook_token": tok},
+                    ),
                 )
             base_url = settings.API_URL.rstrip("/")
             full_webhook_url = f"{base_url}/api/webhooks/agents/{webhook_token}"

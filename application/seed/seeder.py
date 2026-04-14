@@ -12,6 +12,8 @@ from pymongo import MongoClient
 
 from application.agents.tools.tool_manager import ToolManager
 from application.api.user.tasks import ingest_remote
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.prompts import PromptsRepository
 
 load_dotenv()
 tool_config = {}
@@ -25,7 +27,10 @@ class DatabaseSeeder:
         self.sources_collection = self.db["sources"]
         self.agents_collection = self.db["agents"]
         self.prompts_collection = self.db["prompts"]
-        self.system_user_id = "system"
+        # Sentinel user id for template rows (agents/prompts/sources/folders).
+        # Kept in sync with the Postgres backfill / cleanup-trigger sentinel
+        # so template ownership is predictable across the dual-write window.
+        self.system_user_id = "__system__"
         self.logger = logging.getLogger(__name__)
 
     def seed_initial_data(self, config_path: str = None, force=False):
@@ -242,6 +247,21 @@ class DatabaseSeeder:
             result = self.prompts_collection.insert_one(prompt_data)
             prompt_id = str(result.inserted_id)
             self.logger.info(f"Created new prompt: {prompt_id}")
+            # Mirror the template prompt insert into Postgres so the
+            # PG-side ``prompts`` table has the same system-owned rows.
+            # Without this, prompt_id references embedded on seeded
+            # agents point to a Mongo-only prompt document that the
+            # Postgres read paths cannot resolve.
+            def _pg_create_prompt(
+                repo,
+                u=self.system_user_id,
+                n=prompt_name,
+                c=prompt_content,
+                mid=prompt_id,
+            ):
+                repo.create(u, n, c, legacy_mongo_id=mid)
+
+            dual_write(PromptsRepository, _pg_create_prompt)
             return prompt_id
 
         except Exception as e:

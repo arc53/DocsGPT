@@ -13,8 +13,34 @@ from application.api.user.base import (
     agent_folders_collection,
     agents_collection,
 )
+from sqlalchemy import text as _sql_text
+
 from application.storage.db.dual_write import dual_write
 from application.storage.db.repositories.agent_folders import AgentFoldersRepository
+from application.storage.db.repositories.agents import AgentsRepository
+
+
+def _resolve_folder_pg_uuid(conn, folder_mongo_id: str, user_id: str) -> str | None:
+    """Best-effort Mongo folder ObjectId → Postgres UUID resolver.
+
+    The ``agent_folders`` table has no ``legacy_mongo_id`` column in the
+    current schema, so this currently always returns None. Kept as a
+    single resolution point for when the column lands — dual_write call
+    sites don't have to change then.
+    """
+    if not folder_mongo_id:
+        return None
+    try:
+        row = conn.execute(
+            _sql_text(
+                "SELECT id FROM agent_folders "
+                "WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id"
+            ),
+            {"legacy_id": str(folder_mongo_id), "user_id": user_id},
+        ).fetchone()
+    except Exception:
+        return None
+    return str(row[0]) if row else None
 
 agents_folders_ns = Namespace(
     "agents_folders", description="Agent folder management", path="/api/agents/folders"
@@ -85,10 +111,33 @@ class AgentFolders(Resource):
                 "updated_at": now,
             }
             result = agent_folders_collection.insert_one(folder)
-            dual_write(
-                AgentFoldersRepository,
-                lambda repo, u=user, n=data["name"]: repo.create(u, n),
-            )
+            mongo_id = str(result.inserted_id)
+            description_value = data.get("description")
+
+            def _mirror_create_folder(
+                repo,
+                u=user,
+                n=data["name"],
+                desc=description_value,
+                pid_legacy=parent_id,
+                mid=mongo_id,
+            ):
+                # Resolve the Mongo parent ObjectId to a PG UUID via
+                # legacy_mongo_id; fall back to None if the parent
+                # row hasn't been backfilled yet.
+                pg_parent_id = None
+                if pid_legacy:
+                    parent_row = repo.get_by_legacy_id(pid_legacy, u)
+                    if parent_row is not None:
+                        pg_parent_id = parent_row["id"]
+                repo.create(
+                    u, n,
+                    description=desc,
+                    parent_id=pg_parent_id,
+                    legacy_mongo_id=mid,
+                )
+
+            dual_write(AgentFoldersRepository, _mirror_create_folder)
             return make_response(
                 jsonify({"id": str(result.inserted_id), "name": data["name"], "parent_id": parent_id}),
                 201,
@@ -155,6 +204,43 @@ class AgentFolder(Resource):
             )
             if result.matched_count == 0:
                 return make_response(jsonify({"success": False, "message": "Folder not found"}), 404)
+
+            # Mirror the update into Postgres. ``parent_id`` arrives as
+            # a Mongo ObjectId; resolve via ``legacy_mongo_id`` to a PG
+            # UUID before writing. Pass through ``name``/``description``
+            # as-is (the repo's update whitelist enforces the column set).
+            mirror_fields: dict = {}
+            if "name" in data:
+                mirror_fields["name"] = data["name"]
+            if "description" in data:
+                mirror_fields["description"] = data["description"]
+            parent_legacy = data.get("parent_id") if "parent_id" in data else None
+
+            def _mirror_folder_update(
+                repo,
+                u=user,
+                fid_legacy=folder_id,
+                mfields=mirror_fields,
+                pid_legacy=parent_legacy,
+                has_parent_key="parent_id" in data,
+            ):
+                folder_row = repo.get_by_legacy_id(fid_legacy, u)
+                if folder_row is None:
+                    return
+                update_payload = dict(mfields)
+                if has_parent_key:
+                    if pid_legacy:
+                        parent_row = repo.get_by_legacy_id(pid_legacy, u)
+                        update_payload["parent_id"] = (
+                            parent_row["id"] if parent_row else None
+                        )
+                    else:
+                        update_payload["parent_id"] = None
+                if update_payload:
+                    repo.update(folder_row["id"], u, update_payload)
+
+            dual_write(AgentFoldersRepository, _mirror_folder_update)
+
             return make_response(jsonify({"success": True}), 200)
         except Exception as err:
             return _folder_error_response("Failed to update folder", err)
@@ -169,6 +255,15 @@ class AgentFolder(Resource):
             agents_collection.update_many(
                 {"user": user, "folder_id": folder_id}, {"$unset": {"folder_id": ""}}
             )
+            # Postgres mirror: clear the folder assignment from every
+            # agent owned by this user whose folder matches. The folder
+            # ObjectId → PG UUID lookup is best-effort and is silently
+            # skipped when the folder hasn't been backfilled yet.
+            def _clear_folder(repo: AgentsRepository, fid=folder_id, u=user) -> None:
+                pg_folder_id = _resolve_folder_pg_uuid(repo._conn, fid, u)
+                if pg_folder_id:
+                    repo.clear_folder_for_all(pg_folder_id, u)
+            dual_write(AgentsRepository, _clear_folder)
             agent_folders_collection.update_many(
                 {"user": user, "parent_id": folder_id}, {"$unset": {"parent_id": ""}}
             )
@@ -225,6 +320,25 @@ class MoveAgentToFolder(Resource):
                     {"_id": ObjectId(agent_id)}, {"$unset": {"folder_id": ""}}
                 )
 
+            # Postgres mirror. We need the PG agent UUID (looked up by
+            # legacy_mongo_id) and, if setting a folder, the PG folder
+            # UUID (also looked up by legacy). Either lookup missing
+            # falls back to a no-op.
+            def _mirror_move(
+                repo: AgentsRepository, aid=agent_id, fid=folder_id, u=user,
+            ) -> None:
+                agent_row = repo.get_by_legacy_id(aid, u)
+                if agent_row is None:
+                    return
+                pg_folder_id = (
+                    _resolve_folder_pg_uuid(repo._conn, fid, u) if fid else None
+                )
+                if fid and pg_folder_id is None:
+                    # Target folder isn't backfilled yet — skip.
+                    return
+                repo.set_folder(agent_row["id"], u, pg_folder_id)
+
+            dual_write(AgentsRepository, _mirror_move)
             return make_response(jsonify({"success": True}), 200)
         except Exception as err:
             return _folder_error_response("Failed to move agent", err)
@@ -271,6 +385,21 @@ class BulkMoveAgents(Resource):
                     {"_id": {"$in": object_ids}, "user": user},
                     {"$unset": {"folder_id": ""}},
                 )
+
+            def _mirror_bulk_move(
+                repo: AgentsRepository, aids=agent_ids, fid=folder_id, u=user,
+            ) -> None:
+                pg_folder_id = (
+                    _resolve_folder_pg_uuid(repo._conn, fid, u) if fid else None
+                )
+                if fid and pg_folder_id is None:
+                    return
+                for mongo_aid in aids:
+                    agent_row = repo.get_by_legacy_id(mongo_aid, u)
+                    if agent_row is not None:
+                        repo.set_folder(agent_row["id"], u, pg_folder_id)
+
+            dual_write(AgentsRepository, _mirror_bulk_move)
             return make_response(jsonify({"success": True}), 200)
         except Exception as err:
             return _folder_error_response("Failed to move agents", err)

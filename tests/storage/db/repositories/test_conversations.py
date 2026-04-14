@@ -321,6 +321,133 @@ class TestCompressionMetadata:
         assert [p["summary"] for p in points] == ["p2", "p3", "p4"]
 
 
+class TestResolveAgentRef:
+    """The repo must translate Mongo ObjectId-shaped ``agent_id`` values
+    to Postgres UUIDs on ``create`` so that dual-write from the
+    ObjectId-era conversation service doesn't silently lose rows."""
+
+    def test_create_translates_objectid_agent_id(self, pg_conn):
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        agent_repo = AgentsRepository(pg_conn)
+        legacy_oid = "507f1f77bcf86cd799439099"
+        agent = agent_repo.create(
+            "user-1", "a", "active", legacy_mongo_id=legacy_oid,
+        )
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "chat", agent_id=legacy_oid)
+        assert str(conv["agent_id"]) == agent["id"]
+
+    def test_create_passes_through_uuid_agent_id(self, pg_conn):
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        agent_repo = AgentsRepository(pg_conn)
+        agent = agent_repo.create("user-1", "a", "active")
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "chat", agent_id=agent["id"])
+        assert str(conv["agent_id"]) == agent["id"]
+
+    def test_create_drops_unknown_objectid_agent_id(self, pg_conn):
+        # Unknown legacy id resolves to None — the conversation row still
+        # inserts (dual_write stays quiet) but without an agent FK.
+        repo = _repo(pg_conn)
+        conv = repo.create(
+            "user-1", "chat", agent_id="507f1f77bcf86cd7994390aa",
+        )
+        assert conv["agent_id"] is None
+
+
+class TestResolveAttachmentRefs:
+    """``append_message`` and ``update_message_at`` must translate Mongo
+    ObjectId attachment ids to PG UUIDs via ``attachments.legacy_mongo_id``.
+    Without this, the ``uuid[]`` cast raises and dual_write drops the
+    whole message."""
+
+    def _create_attachment(self, pg_conn, legacy: str) -> str:
+        from application.storage.db.repositories.attachments import (
+            AttachmentsRepository,
+        )
+
+        att = AttachmentsRepository(pg_conn).create(
+            "user-1", "a.txt", "/tmp/a.txt", legacy_mongo_id=legacy,
+        )
+        return att["id"]
+
+    def test_append_translates_objectid_attachments(self, pg_conn):
+        att_uuid = self._create_attachment(
+            pg_conn, "507f1f77bcf86cd799439011",
+        )
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        msg = repo.append_message(conv["id"], {
+            "prompt": "q", "response": "a",
+            "attachments": ["507f1f77bcf86cd799439011"],
+        })
+        assert [str(a) for a in msg["attachments"]] == [att_uuid]
+
+    def test_append_passes_through_uuid_attachments(self, pg_conn):
+        att_uuid = self._create_attachment(
+            pg_conn, "507f1f77bcf86cd799439022",
+        )
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        msg = repo.append_message(conv["id"], {
+            "prompt": "q", "response": "a",
+            "attachments": [att_uuid],
+        })
+        assert [str(a) for a in msg["attachments"]] == [att_uuid]
+
+    def test_append_drops_unknown_objectid_attachments(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        # Unknown legacy id is silently dropped; message still inserts.
+        msg = repo.append_message(conv["id"], {
+            "prompt": "q", "response": "a",
+            "attachments": ["507f1f77bcf86cd7994390bb"],
+        })
+        assert list(msg["attachments"] or []) == []
+
+    def test_update_translates_objectid_attachments(self, pg_conn):
+        att_uuid = self._create_attachment(
+            pg_conn, "507f1f77bcf86cd799439033",
+        )
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "q", "response": "a"})
+        assert repo.update_message_at(
+            conv["id"], 0,
+            {"attachments": ["507f1f77bcf86cd799439033"]},
+        ) is True
+        msg = repo.get_message_at(conv["id"], 0)
+        assert [str(a) for a in msg["attachments"]] == [att_uuid]
+
+
+class TestUpdateMessageFeedback:
+    """``feedback`` / ``feedback_timestamp`` must be in the update whitelist
+    so continuation-flow re-appends don't silently strip them."""
+
+    def test_update_sets_feedback(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "q", "response": "a"})
+        assert repo.update_message_at(
+            conv["id"], 0, {"feedback": {"text": "thumbs_up"}},
+        ) is True
+        msg = repo.get_message_at(conv["id"], 0)
+        assert msg["feedback"] == {"text": "thumbs_up"}
+
+    def test_update_clears_feedback(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "q", "response": "a"})
+        repo.set_feedback(conv["id"], 0, {"text": "thumbs_up"})
+        assert repo.update_message_at(
+            conv["id"], 0, {"feedback": None},
+        ) is True
+        msg = repo.get_message_at(conv["id"], 0)
+        assert msg["feedback"] is None
+
+
 class TestConcurrentAppend:
     """Two threads appending to the same conversation must not race on
     ``position``. The plan (migration-postgres.md §Phase 3) explicitly
@@ -372,3 +499,63 @@ class TestConcurrentAppend:
                 ConversationsRepository(cleanup_conn).delete(
                     conv["id"], "user-concurrent"
                 )
+                ConversationsRepository(cleanup_conn).delete(
+                    conv["id"], "user-concurrent"
+                )
+
+
+class TestSharedWith:
+    def test_add_shared_user_by_uuid(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("owner", "c")
+        assert repo.add_shared_user(conv["id"], "bob") is True
+        fetched = repo.get(conv["id"], "bob")
+        assert fetched is not None
+        assert "bob" in fetched["shared_with"]
+
+    def test_add_shared_user_is_idempotent(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("owner", "c")
+        assert repo.add_shared_user(conv["id"], "bob") is True
+        # Second call is a no-op (mirrors Mongo $addToSet semantics).
+        assert repo.add_shared_user(conv["id"], "bob") is False
+        fetched = repo.get(conv["id"], "bob")
+        assert fetched["shared_with"].count("bob") == 1
+
+    def test_add_shared_user_by_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create(
+            "owner", "c", legacy_mongo_id="507f1f77bcf86cd799439abc"
+        )
+        assert repo.add_shared_user("507f1f77bcf86cd799439abc", "bob") is True
+        fetched = repo.get(conv["id"], "bob")
+        assert "bob" in fetched["shared_with"]
+
+    def test_add_shared_user_empty_user_returns_false(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("owner", "c")
+        assert repo.add_shared_user(conv["id"], "") is False
+
+    def test_remove_shared_user(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("owner", "c")
+        repo.add_shared_user(conv["id"], "bob")
+        repo.add_shared_user(conv["id"], "carol")
+        assert repo.remove_shared_user(conv["id"], "bob") is True
+        fetched = repo.get(conv["id"], "carol")
+        assert fetched["shared_with"] == ["carol"]
+
+    def test_remove_missing_user_returns_false(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("owner", "c")
+        assert repo.remove_shared_user(conv["id"], "bob") is False
+
+    def test_remove_shared_user_by_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create(
+            "owner", "c", legacy_mongo_id="507f1f77bcf86cd799439def"
+        )
+        repo.add_shared_user("507f1f77bcf86cd799439def", "bob")
+        assert repo.remove_shared_user("507f1f77bcf86cd799439def", "bob") is True
+        fetched = repo.get(conv["id"], "owner")
+        assert fetched["shared_with"] == []

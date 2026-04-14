@@ -60,6 +60,17 @@ def dual_write(repo_cls: type[_Repo], fn: Callable[[_Repo], None]) -> None:
         with get_engine().begin() as conn:
             fn(repo_cls(conn))
     except Exception:
+        # Strict mode (staging/CI only): re-raise so translation bugs
+        # surface immediately instead of being buried in a warning.
+        # Production leaves this off — Mongo remains the source of truth
+        # and backfill reconciles any drift.
+        if getattr(settings, "DUAL_WRITE_STRICT", False):
+            logger.error(
+                "Postgres dual-write failed for %s (strict mode — re-raising)",
+                repo_cls.__name__,
+                exc_info=True,
+            )
+            raise
         logger.warning(
             "Postgres dual-write failed for %s — Mongo write already committed",
             repo_cls.__name__,

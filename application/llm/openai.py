@@ -536,6 +536,18 @@ class OpenAILLM(BaseLLM):
                 attachments_collection.update_one(
                     {"_id": attachment["_id"]}, {"$set": {"openai_file_id": file_id}}
                 )
+                # Mirror to Postgres so we don't re-upload on cutover.
+                from application.storage.db.dual_write import dual_write
+                from application.storage.db.repositories.attachments import (
+                    AttachmentsRepository,
+                )
+
+                dual_write(
+                    AttachmentsRepository,
+                    lambda repo, mid=str(attachment["_id"]), fid=file_id: repo.update_by_legacy_id(
+                        mid, {"openai_file_id": fid},
+                    ),
+                )
             return file_id
         except Exception as e:
             logging.error(f"Error uploading file to OpenAI: {e}", exc_info=True)

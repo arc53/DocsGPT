@@ -156,3 +156,119 @@ class TestDelete:
         deleted = repo.delete(created["id"], "other")
         assert deleted is False
         assert repo.get(created["id"], "u") is not None
+
+
+class TestTodoIdAllocation:
+    def test_create_allocates_sequential_todo_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        a = repo.create("u", tool_id, "first")
+        b = repo.create("u", tool_id, "second")
+        c = repo.create("u", tool_id, "third")
+        assert a["todo_id"] == 1
+        assert b["todo_id"] == 2
+        assert c["todo_id"] == 3
+
+    def test_create_respects_explicit_todo_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        doc = repo.create("u", tool_id, "explicit", todo_id=42)
+        assert doc["todo_id"] == 42
+        # Subsequent auto-allocation continues from MAX
+        nxt = repo.create("u", tool_id, "auto")
+        assert nxt["todo_id"] == 43
+
+    def test_todo_id_unique_per_tool(self, pg_conn):
+        """The partial unique index allows the same todo_id across tools."""
+        repo = _repo(pg_conn)
+        tool_a = _make_tool(pg_conn, name="t-a")
+        tool_b = _make_tool(pg_conn, name="t-b")
+        a = repo.create("u", tool_a, "x")
+        b = repo.create("u", tool_b, "y")
+        assert a["todo_id"] == 1
+        assert b["todo_id"] == 1
+
+
+class TestListForTool:
+    def test_orders_by_todo_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        repo.create("u", tool_id, "second", todo_id=2)
+        repo.create("u", tool_id, "first", todo_id=1)
+        repo.create("u", tool_id, "third", todo_id=3)
+        rows = repo.list_for_tool("u", tool_id)
+        assert [r["todo_id"] for r in rows] == [1, 2, 3]
+
+
+class TestGetByToolAndTodoId:
+    def test_returns_matching_row(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        repo.create("u", tool_id, "hello", todo_id=7)
+        fetched = repo.get_by_tool_and_todo_id("u", tool_id, 7)
+        assert fetched is not None
+        assert fetched["title"] == "hello"
+
+    def test_returns_none_when_missing(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        assert repo.get_by_tool_and_todo_id("u", tool_id, 99) is None
+
+
+class TestSetCompletedByToolAndTodoId:
+    def test_marks_completed(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        created = repo.create("u", tool_id, "t")
+        ok = repo.set_completed("u", tool_id, created["todo_id"], True)
+        assert ok is True
+        fetched = repo.get_by_tool_and_todo_id("u", tool_id, created["todo_id"])
+        assert fetched["completed"] is True
+
+    def test_unmarks_completed(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        created = repo.create("u", tool_id, "t")
+        repo.set_completed("u", tool_id, created["todo_id"], True)
+        repo.set_completed("u", tool_id, created["todo_id"], False)
+        fetched = repo.get_by_tool_and_todo_id("u", tool_id, created["todo_id"])
+        assert fetched["completed"] is False
+
+    def test_returns_false_for_missing(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        assert repo.set_completed("u", tool_id, 99, True) is False
+
+
+class TestDeleteByToolAndTodoId:
+    def test_deletes(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        created = repo.create("u", tool_id, "t")
+        ok = repo.delete_by_tool_and_todo_id("u", tool_id, created["todo_id"])
+        assert ok is True
+        assert repo.get_by_tool_and_todo_id("u", tool_id, created["todo_id"]) is None
+
+    def test_returns_false_for_missing(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        assert repo.delete_by_tool_and_todo_id("u", tool_id, 99) is False
+
+
+class TestLegacyMongoIdLookup:
+    def test_get_and_update_by_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        created = repo.create("u", tool_id, "t", legacy_mongo_id="abc123")
+        fetched = repo.get_by_legacy_id("abc123")
+        assert fetched["id"] == created["id"]
+
+        ok = repo.update_by_legacy_id("abc123", title="renamed", completed=True)
+        assert ok is True
+        again = repo.get_by_legacy_id("abc123")
+        assert again["title"] == "renamed"
+        assert again["completed"] is True
+
+    def test_get_by_legacy_id_missing(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.get_by_legacy_id("nope") is None

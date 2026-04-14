@@ -1,15 +1,103 @@
+"""Root pytest fixtures for the DocsGPT backend suite.
+
+Postgres fixture strategy
+-------------------------
+
+Regular unit tests get a Postgres connection from the ``pg_conn`` fixture
+below, which is backed by ``pytest-postgresql``. That plugin spins up an
+ephemeral ``pg_ctl``-managed cluster in a temp directory and tears it
+down at the end of the session, so CI only needs Postgres *binaries*
+installed, not a running service.
+
+Tests under ``tests/storage/db/`` intentionally override ``pg_conn`` in
+their own conftest to point at a real, long-running Postgres instance
+(DBngin locally, a service container in CI). Those are integration/e2e
+tests and are marked with ``@pytest.mark.integration``.
+
+No mongomock. The ``mock_mongo_db`` fixture that used to live here was
+removed as part of the Phase 4/5 Mongo→Postgres cutover. Tests that
+still reference it will fail with "fixture not found" until the
+corresponding route handler is migrated to a repository read.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
 from unittest.mock import Mock
 
-import mongomock
-
 import pytest
+from pytest_postgresql import factories
+from sqlalchemy import create_engine
 
 
-def get_settings():
-    """Lazy load settings to avoid import-time errors."""
-    from application.core.settings import settings
+# ---------------------------------------------------------------------------
+# Postgres fixtures (ephemeral cluster via pytest-postgresql)
+# ---------------------------------------------------------------------------
 
-    return settings
+# ``postgresql_proc`` starts a fresh ``pg_ctl`` cluster once per session.
+# ``postgresql`` hands out a per-test DB on top of it. We layer our own
+# SQLAlchemy engine + rolled-back transaction on top for test isolation.
+postgresql_proc = factories.postgresql_proc()
+postgresql = factories.postgresql("postgresql_proc")
+
+
+def _sqlalchemy_url(pg_conn_info) -> str:
+    return (
+        "postgresql+psycopg://"
+        f"{pg_conn_info.user}:{pg_conn_info.password or ''}"
+        f"@{pg_conn_info.host}:{pg_conn_info.port}/{pg_conn_info.dbname}"
+    )
+
+
+@pytest.fixture(scope="session")
+def _alembic_ini_path() -> Path:
+    return Path(__file__).resolve().parent.parent / "application" / "alembic.ini"
+
+
+@pytest.fixture()
+def pg_engine(postgresql, _alembic_ini_path, monkeypatch):
+    """Per-test SQLAlchemy engine against a fresh ephemeral Postgres DB.
+
+    Alembic is run from scratch against the per-test database so the full
+    schema is present. ``POSTGRES_URI`` is patched in the environment for
+    the duration of the test so any code that reads it via
+    ``application.core.settings`` sees the ephemeral DB.
+    """
+    url = _sqlalchemy_url(postgresql.info)
+    monkeypatch.setenv("POSTGRES_URI", url)
+
+    # Reset the settings cache so the new POSTGRES_URI is picked up if the
+    # settings module is already imported.
+    from application.core import settings as settings_module
+
+    monkeypatch.setattr(settings_module.settings, "POSTGRES_URI", url, raising=False)
+
+    subprocess.check_call(
+        [sys.executable, "-m", "alembic", "-c", str(_alembic_ini_path), "upgrade", "head"],
+        timeout=60,
+        env={**__import__("os").environ, "POSTGRES_URI": url},
+    )
+
+    engine = create_engine(url)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture()
+def pg_conn(pg_engine):
+    """Per-test connection wrapped in a transaction that always rolls back."""
+    conn = pg_engine.connect()
+    txn = conn.begin()
+    yield conn
+    txn.rollback()
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Generic unit-test fixtures (no DB, no Mongo)
+# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -39,55 +127,6 @@ def mock_retriever():
         ]
     )
     return retriever
-
-
-@pytest.fixture
-def mock_mongo_db(monkeypatch):
-    """Mock MongoDB using mongomock - industry standard MongoDB mocking library."""
-    settings = get_settings()
-
-    mock_client = mongomock.MongoClient()
-    mock_db = mock_client[settings.MONGO_DB_NAME]
-
-    def get_mock_client():
-        return {settings.MONGO_DB_NAME: mock_db}
-
-    monkeypatch.setattr("application.core.mongo_db.MongoDB.get_client", get_mock_client)
-
-    monkeypatch.setattr("application.api.user.base.users_collection", mock_db["users"])
-    monkeypatch.setattr(
-        "application.api.user.base.user_tools_collection", mock_db["user_tools"]
-    )
-    monkeypatch.setattr(
-        "application.api.user.base.agents_collection", mock_db["agents"]
-    )
-    monkeypatch.setattr(
-        "application.api.user.base.conversations_collection", mock_db["conversations"]
-    )
-    monkeypatch.setattr(
-        "application.api.user.base.sources_collection", mock_db["sources"]
-    )
-    monkeypatch.setattr(
-        "application.api.user.base.prompts_collection", mock_db["prompts"]
-    )
-    monkeypatch.setattr(
-        "application.api.user.base.feedback_collection", mock_db["feedback"]
-    )
-    monkeypatch.setattr(
-        "application.api.user.base.token_usage_collection", mock_db["token_usage"]
-    )
-    monkeypatch.setattr(
-        "application.api.user.base.attachments_collection", mock_db["attachments"]
-    )
-    monkeypatch.setattr(
-        "application.api.user.base.user_logs_collection", mock_db["user_logs"]
-    )
-    monkeypatch.setattr(
-        "application.api.user.base.shared_conversations_collections",
-        mock_db["shared_conversations"],
-    )
-
-    return get_mock_client()
 
 
 @pytest.fixture

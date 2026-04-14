@@ -22,6 +22,8 @@ from application.core.model_utils import (
 )
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.agents import AgentsRepository
 from application.retriever.retriever_creator import RetrieverCreator
 from application.utils import (
     calculate_doc_token_budget,
@@ -300,13 +302,20 @@ class StreamProcessor:
             if not (is_owner or is_shared_with_user):
                 raise Exception("Unauthorized access to the agent")
             if is_owner:
+                now = datetime.datetime.now(datetime.timezone.utc)
                 self.agents_collection.update_one(
                     {"_id": ObjectId(agent_id)},
                     {
                         "$set": {
-                            "lastUsedAt": datetime.datetime.now(datetime.timezone.utc)
+                            "lastUsedAt": now
                         }
                     },
+                )
+                dual_write(
+                    AgentsRepository,
+                    lambda repo, aid=agent_id, u=user_id, ts=now: repo.update_by_legacy_id(
+                        aid, u, {"last_used_at": ts},
+                    ),
                 )
             return str(agent["key"]), not is_owner, agent.get("shared_token")
         except Exception as e:

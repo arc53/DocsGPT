@@ -15,7 +15,10 @@ from application.api.user.base import (
     conversations_collection,
     shared_conversations_collections,
 )
+from sqlalchemy import text as _sql_text
+
 from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.conversations import ConversationsRepository
 from application.storage.db.repositories.shared_conversations import (
     SharedConversationsRepository,
@@ -217,7 +220,53 @@ class ShareConversation(Resource):
                         )
                     if "retriever" in data:
                         new_api_key_data["retriever"] = data["retriever"]
-                    agents_collection.insert_one(new_api_key_data)
+                    share_agent_result = agents_collection.insert_one(new_api_key_data)
+                    # Postgres mirror for the share-as-agent insert. The
+                    # Mongo-side ``source`` is a DBRef; sources don't
+                    # carry a ``legacy_mongo_id`` column yet (Phase 4),
+                    # so source_id isn't mirrored here — the mirror row
+                    # still captures name/key/retriever/chunks and the
+                    # legacy id link.
+                    def _mirror_share_agent(
+                        repo: AgentsRepository,
+                        data=new_api_key_data,
+                        legacy_id=str(share_agent_result.inserted_id),
+                        u=user,
+                    ) -> None:
+                        chunks_val = data.get("chunks")
+                        try:
+                            chunks_int = (
+                                int(chunks_val) if chunks_val not in (None, "") else None
+                            )
+                        except (TypeError, ValueError):
+                            chunks_int = None
+                        prompt_val = data.get("prompt_id")
+                        prompt_pg_id = None
+                        if prompt_val and prompt_val != "default":
+                            try:
+                                row = repo._conn.execute(
+                                    _sql_text(
+                                        "SELECT id FROM prompts "
+                                        "WHERE legacy_mongo_id = :lid "
+                                        "AND user_id = :uid"
+                                    ),
+                                    {"lid": str(prompt_val), "uid": u},
+                                ).fetchone()
+                                if row:
+                                    prompt_pg_id = str(row[0])
+                            except Exception:
+                                pass
+                        repo.create(
+                            u,
+                            data.get("name", ""),
+                            "published",
+                            key=data.get("key"),
+                            retriever=data.get("retriever"),
+                            chunks=chunks_int,
+                            prompt_id=prompt_pg_id,
+                            legacy_mongo_id=legacy_id,
+                        )
+                    dual_write(AgentsRepository, _mirror_share_agent)
                     shared_conversations_collections.insert_one(
                         {
                             "uuid": explicit_binary,

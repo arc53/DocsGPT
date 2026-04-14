@@ -1,12 +1,18 @@
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import logging
 import re
 import uuid
 
 from .base import Tool
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.memories import MemoriesRepository
+
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryTool(Tool):
@@ -39,6 +45,24 @@ class MemoryTool(Tool):
 
         db = MongoDB.get_client()[settings.MONGO_DB_NAME]
         self.collection = db["memories"]
+
+    def _pg_mirror_enabled(self) -> bool:
+        """Return True if this MemoryTool's tool_id can be mirrored to Postgres.
+
+        The ``memories`` PG table has a UUID foreign key to ``user_tools``.
+        The sentinel ``default_{uid}`` fallback tool_id is not a UUID and
+        has no row in ``user_tools``, so skip the mirror in that case.
+        """
+        tool_id = getattr(self, "tool_id", None)
+        if not tool_id or not isinstance(tool_id, str):
+            return False
+        if tool_id.startswith("default_"):
+            logger.debug(
+                "Skipping Postgres mirror for MemoryTool with sentinel tool_id=%s",
+                tool_id,
+            )
+            return False
+        return True
 
     # -----------------------------
     # Action implementations
@@ -355,6 +379,12 @@ class MemoryTool(Tool):
             upsert=True
         )
 
+        if self._pg_mirror_enabled():
+            dual_write(
+                MemoriesRepository,
+                lambda repo, u=self.user_id, t=self.tool_id, p=validated_path, c=file_text: repo.upsert(u, t, p, c),
+            )
+
         return f"File created: {validated_path}"
 
     def _str_replace(self, path: str, old_str: str, new_str: str) -> str:
@@ -390,6 +420,12 @@ class MemoryTool(Tool):
                 }
             }
         )
+
+        if self._pg_mirror_enabled():
+            dual_write(
+                MemoriesRepository,
+                lambda repo, u=self.user_id, t=self.tool_id, p=validated_path, c=updated_content: repo.upsert(u, t, p, c),
+            )
 
         return f"File updated: {validated_path}"
 
@@ -428,6 +464,12 @@ class MemoryTool(Tool):
             }
         )
 
+        if self._pg_mirror_enabled():
+            dual_write(
+                MemoriesRepository,
+                lambda repo, u=self.user_id, t=self.tool_id, p=validated_path, c=updated_content: repo.upsert(u, t, p, c),
+            )
+
         return f"Text inserted at line {insert_line} in {validated_path}"
 
     def _delete(self, path: str) -> str:
@@ -439,6 +481,11 @@ class MemoryTool(Tool):
         if validated_path == "/":
             # Delete all files for this user and tool
             result = self.collection.delete_many({"user_id": self.user_id, "tool_id": self.tool_id})
+            if self._pg_mirror_enabled():
+                dual_write(
+                    MemoriesRepository,
+                    lambda repo, u=self.user_id, t=self.tool_id: repo.delete_all(u, t),
+                )
             return f"Deleted {result.deleted_count} file(s) from memory."
 
         # Check if it's a directory (ends with /)
@@ -449,6 +496,11 @@ class MemoryTool(Tool):
                 "tool_id": self.tool_id,
                 "path": {"$regex": f"^{re.escape(validated_path)}"}
             })
+            if self._pg_mirror_enabled():
+                dual_write(
+                    MemoriesRepository,
+                    lambda repo, u=self.user_id, t=self.tool_id, pfx=validated_path: repo.delete_by_prefix(u, t, pfx),
+                )
             return f"Deleted directory and {result.deleted_count} file(s)."
 
         # Try to delete as directory first (without trailing slash)
@@ -461,6 +513,11 @@ class MemoryTool(Tool):
         })
 
         if directory_result.deleted_count > 0:
+            if self._pg_mirror_enabled():
+                dual_write(
+                    MemoriesRepository,
+                    lambda repo, u=self.user_id, t=self.tool_id, pfx=search_path: repo.delete_by_prefix(u, t, pfx),
+                )
             return f"Deleted directory and {directory_result.deleted_count} file(s)."
 
         # Delete single file
@@ -471,6 +528,11 @@ class MemoryTool(Tool):
         })
 
         if result.deleted_count:
+            if self._pg_mirror_enabled():
+                dual_write(
+                    MemoriesRepository,
+                    lambda repo, u=self.user_id, t=self.tool_id, p=validated_path: repo.delete_by_path(u, t, p),
+                )
             return f"Deleted: {validated_path}"
         return f"Error: File not found: {validated_path}"
 
@@ -511,6 +573,12 @@ class MemoryTool(Tool):
                     {"$set": {"path": new_file_path, "updated_at": datetime.now()}}
                 )
 
+                if self._pg_mirror_enabled():
+                    dual_write(
+                        MemoriesRepository,
+                        lambda repo, u=self.user_id, t=self.tool_id, op=old_file_path, np=new_file_path: repo.update_path(u, t, op, np),
+                    )
+
             return f"Renamed directory: {validated_old} -> {validated_new} ({len(docs)} files)"
 
         # Rename single file
@@ -542,5 +610,11 @@ class MemoryTool(Tool):
             "content": doc.get("content", ""),
             "updated_at": datetime.now()
         })
+
+        if self._pg_mirror_enabled():
+            dual_write(
+                MemoriesRepository,
+                lambda repo, u=self.user_id, t=self.tool_id, op=validated_old, np=validated_new: repo.update_path(u, t, op, np),
+            )
 
         return f"Renamed: {validated_old} -> {validated_new}"

@@ -34,7 +34,7 @@ import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 # Make the project root importable regardless of cwd.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -51,6 +51,94 @@ logger = logging.getLogger("backfill")
 # ---------------------------------------------------------------------------
 # Per-table backfillers
 # ---------------------------------------------------------------------------
+
+
+_WORKFLOW_RUN_STATUS_MAP: dict[str, str] = {
+    "pending": "pending",
+    "queued": "pending",
+    "waiting": "pending",
+    "running": "running",
+    "in_progress": "running",
+    "active": "running",
+    "completed": "completed",
+    "success": "completed",
+    "done": "completed",
+    "finished": "completed",
+    "failed": "failed",
+    "error": "failed",
+    "failure": "failed",
+    "aborted": "failed",
+    "timeout": "failed",
+    "cancelled": "failed",
+}
+
+
+def _coerce_workflow_run_status(raw: Any) -> str:
+    """Map Mongo-era ``workflow_runs.status`` into the PG CHECK-allowed set.
+
+    The Postgres ``workflow_runs`` table's CHECK constraint only accepts
+    ``pending|running|completed|failed``. Legacy Mongo docs used a wider
+    vocabulary. Unknown / unmappable values collapse to ``failed`` so a
+    stray row never aborts the batch insert.
+    """
+    if raw is None:
+        return "failed"
+    key = str(raw).strip().lower()
+    return _WORKFLOW_RUN_STATUS_MAP.get(key, "failed")
+
+
+SYSTEM_USER_ID = "__system__"
+
+
+def _normalize_system_user(raw_user: Any) -> str:
+    """Coerce legacy "system" / missing / empty user values to the sentinel.
+
+    Template rows created by the seeder (premade agents, sources,
+    prompts) landed in Mongo with ``user="system"``. Older documents may
+    have no ``user`` field or an empty string. Postgres enforces
+    ``user_id TEXT NOT NULL`` and the cleanup triggers expect the
+    sentinel ``__system__`` — unifying all three shapes here prevents
+    mid-batch aborts and keeps template ownership predictable.
+    """
+    if raw_user is None:
+        return SYSTEM_USER_ID
+    text_value = str(raw_user)
+    if text_value == "" or text_value == "system":
+        return SYSTEM_USER_ID
+    return text_value
+
+
+def _ensure_system_user(conn: Connection) -> None:
+    """Insert the ``__system__`` row in ``users`` if it doesn't already exist.
+
+    Template rows all land with ``user_id = '__system__'``; without the
+    row present, the UI's "who owns this?" joins show blank. Idempotent.
+    """
+    conn.execute(
+        text(
+            "INSERT INTO users (user_id) VALUES (:uid) "
+            "ON CONFLICT (user_id) DO NOTHING"
+        ),
+        {"uid": SYSTEM_USER_ID},
+    )
+
+
+def _is_uuid_str(value: str) -> bool:
+    """Canonical UUID-string shape check (36 chars with dashes)."""
+    if not isinstance(value, str) or len(value) != 36:
+        return False
+    return value.count("-") == 4
+
+
+def _is_object_id_str(value: str) -> bool:
+    """24-char lowercase hex check — the shape of Mongo ObjectId strings."""
+    if not isinstance(value, str) or len(value) != 24:
+        return False
+    try:
+        int(value, 16)
+    except ValueError:
+        return False
+    return True
 
 
 def _extract_mongo_id_text(value: Any) -> str | None:
@@ -136,11 +224,15 @@ def _backfill_users(
                 continue
 
             raw_prefs = doc.get("agent_preferences") or {}
-            prefs = {
-                "pinned": list(raw_prefs.get("pinned") or []),
-                "shared_with_me": list(raw_prefs.get("shared_with_me") or []),
-            }
-            batch.append({"user_id": user_id, "prefs": json.dumps(prefs)})
+            # Start from the full Mongo doc so any historic/theme/settings
+            # keys survive the backfill untouched, then normalise the two
+            # known lists (pinned, shared_with_me). The agents read-path
+            # cutover (_remediate_user_agent_prefs) handles ObjectId ↔ UUID
+            # translation for those two fields.
+            prefs = dict(raw_prefs) if isinstance(raw_prefs, dict) else {}
+            prefs["pinned"] = list(raw_prefs.get("pinned") or [])
+            prefs["shared_with_me"] = list(raw_prefs.get("shared_with_me") or [])
+            batch.append({"user_id": user_id, "prefs": json.dumps(prefs, default=str)})
 
             if len(batch) >= batch_size:
                 if not dry_run:
@@ -178,10 +270,7 @@ def _backfill_prompts(
     try:
         for doc in cursor:
             seen += 1
-            user_id = doc.get("user")
-            if not user_id:
-                skipped += 1
-                continue
+            user_id = _normalize_system_user(doc.get("user"))
             batch.append({
                 "user_id": user_id,
                 "name": doc.get("name", ""),
@@ -207,9 +296,32 @@ def _backfill_user_tools(
 ) -> dict:
     insert_sql = text(
         """
-        INSERT INTO user_tools (user_id, name, custom_name, display_name, config)
-        VALUES (:user_id, :name, :custom_name, :display_name, CAST(:config AS jsonb))
-        ON CONFLICT DO NOTHING
+        INSERT INTO user_tools (
+            user_id, name, custom_name, display_name, description,
+            config, config_requirements, actions, status,
+            created_at, updated_at, legacy_mongo_id
+        )
+        VALUES (
+            :user_id, :name, :custom_name, :display_name, :description,
+            CAST(:config AS jsonb),
+            CAST(:config_requirements AS jsonb),
+            CAST(:actions AS jsonb),
+            :status,
+            COALESCE(:created_at, now()),
+            COALESCE(:updated_at, now()),
+            :legacy_mongo_id
+        )
+        ON CONFLICT (legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL
+        DO UPDATE SET
+            name = EXCLUDED.name,
+            custom_name = EXCLUDED.custom_name,
+            display_name = EXCLUDED.display_name,
+            description = EXCLUDED.description,
+            config = EXCLUDED.config,
+            config_requirements = EXCLUDED.config_requirements,
+            actions = EXCLUDED.actions,
+            status = EXCLUDED.status,
+            updated_at = EXCLUDED.updated_at
         """
     )
     cursor = mongo_db["user_tools"].find({}, no_cursor_timeout=True).batch_size(batch_size)
@@ -218,16 +330,20 @@ def _backfill_user_tools(
     try:
         for doc in cursor:
             seen += 1
-            user_id = doc.get("user")
-            if not user_id:
-                skipped += 1
-                continue
+            user_id = _normalize_system_user(doc.get("user"))
             batch.append({
                 "user_id": user_id,
                 "name": doc.get("name", ""),
                 "custom_name": doc.get("customName"),
                 "display_name": doc.get("displayName"),
+                "description": doc.get("description"),
                 "config": json.dumps(doc.get("config") or {}),
+                "config_requirements": json.dumps(doc.get("configRequirements") or {}),
+                "actions": json.dumps(doc.get("actions") or []),
+                "status": bool(doc.get("status", True)),
+                "created_at": doc.get("created_at"),
+                "updated_at": doc.get("updated_at"),
+                "legacy_mongo_id": str(doc["_id"]),
             })
             if len(batch) >= batch_size:
                 if not dry_run:
@@ -380,40 +496,130 @@ def _backfill_token_usage(
 def _backfill_agent_folders(
     *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
-    upsert_sql = text(
+    """Backfill ``agent_folders`` in two passes.
+
+    Folders are self-referential via ``parent_id``. Pass 1 inserts every
+    folder with ``parent_id = NULL`` so legacy_mongo_ids are present in PG.
+    Pass 2 issues ``UPDATE`` statements that resolve the Mongo parent
+    ObjectId to the corresponding Postgres UUID via ``legacy_mongo_id``.
+    """
+    insert_sql = text(
         """
-        INSERT INTO agent_folders (user_id, name, description)
-        VALUES (:user_id, :name, :description)
-        ON CONFLICT DO NOTHING
+        INSERT INTO agent_folders (
+            user_id, name, description, created_at, updated_at, legacy_mongo_id
+        )
+        VALUES (
+            :user_id, :name, :description,
+            COALESCE(:created_at, now()),
+            COALESCE(:updated_at, now()),
+            :legacy_mongo_id
+        )
+        ON CONFLICT (legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL
+        DO UPDATE SET
+            name = EXCLUDED.name,
+            description = EXCLUDED.description,
+            updated_at = EXCLUDED.updated_at
         """
     )
-    cursor = mongo_db["agent_folders"].find({}, no_cursor_timeout=True).batch_size(batch_size)
+    update_parent_sql = text(
+        """
+        UPDATE agent_folders
+        SET parent_id = CAST(:parent_pg_id AS uuid)
+        WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id
+        """
+    )
+
+    # Pass 1 — insert all folders without resolving parent_id
+    cursor = mongo_db["agent_folders"].find(
+        {}, no_cursor_timeout=True,
+    ).batch_size(batch_size)
     seen = written = skipped = 0
+    parent_links: list[dict] = []
     batch: list[dict] = []
     try:
         for doc in cursor:
             seen += 1
-            user_id = doc.get("user")
-            if not user_id:
-                skipped += 1
-                continue
+            user_id = _normalize_system_user(doc.get("user"))
+            legacy_id = str(doc["_id"])
             batch.append({
                 "user_id": user_id,
                 "name": doc.get("name", ""),
                 "description": doc.get("description"),
+                "created_at": doc.get("created_at"),
+                "updated_at": doc.get("updated_at"),
+                "legacy_mongo_id": legacy_id,
             })
+            if doc.get("parent_id"):
+                parent_links.append({
+                    "user_id": user_id,
+                    "legacy_id": legacy_id,
+                    "parent_legacy_id": str(doc["parent_id"]),
+                })
             if len(batch) >= batch_size:
                 if not dry_run:
-                    conn.execute(upsert_sql, batch)
+                    conn.execute(insert_sql, batch)
                 written += len(batch)
                 batch.clear()
         if batch:
             if not dry_run:
-                conn.execute(upsert_sql, batch)
+                conn.execute(insert_sql, batch)
             written += len(batch)
     finally:
         cursor.close()
-    return {"seen": seen, "written": written, "skipped": skipped}
+
+    # Pass 2 — resolve parent_id once every folder row has a legacy_mongo_id
+    parent_links_resolved = 0
+    if parent_links and not dry_run:
+        folders_id_map = _build_legacy_id_map(conn, "agent_folders")
+        update_batch: list[dict] = []
+        for link in parent_links:
+            parent_pg_id = folders_id_map.get(link["parent_legacy_id"])
+            if not parent_pg_id:
+                continue
+            update_batch.append({
+                "user_id": link["user_id"],
+                "legacy_id": link["legacy_id"],
+                "parent_pg_id": parent_pg_id,
+            })
+        if update_batch:
+            conn.execute(update_parent_sql, update_batch)
+            parent_links_resolved = len(update_batch)
+
+    return {
+        "seen": seen,
+        "written": written,
+        "skipped": skipped,
+        "parent_links_resolved": parent_links_resolved,
+    }
+
+
+def _normalize_mongo_jsonb(value: Any) -> Optional[str]:
+    """Serialize a Mongo field into a bind value for a Postgres JSONB column.
+
+    Mongo docs store ``remote_data`` as either a dict or a JSON string, and
+    may embed ``ObjectId`` values inside nested dicts. This helper returns a
+    JSON string (or ``None``) suitable for ``CAST(:x AS jsonb)``.
+
+    Seeder-created template sources store ``remote_data`` as a bare URL
+    string (``"https://docs.docsgpt.cloud/"``). The connector-sync path
+    expects a dict with ``provider``/``url`` keys, so URL-shaped strings
+    are wrapped as ``{"provider": "crawler", "url": <s>}`` instead of
+    the lossless-but-unusable ``{"raw": <s>}`` fallback.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        if stripped.startswith("http://") or stripped.startswith("https://"):
+            return json.dumps({"provider": "crawler", "url": stripped})
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            return json.dumps({"raw": value})
+        return json.dumps(parsed, default=str)
+    return json.dumps(value, default=str)
 
 
 def _backfill_sources(
@@ -421,14 +627,59 @@ def _backfill_sources(
 ) -> dict:
     insert_sql = text(
         """
-        INSERT INTO sources (user_id, name, type, metadata)
-        VALUES (:user_id, :name, :type, CAST(:metadata AS jsonb))
-        ON CONFLICT DO NOTHING
+        INSERT INTO sources (
+            user_id, name, type, metadata,
+            retriever, sync_frequency, tokens, file_path,
+            remote_data, directory_structure, file_name_map,
+            language, model, date, created_at, updated_at, legacy_mongo_id
+        )
+        VALUES (
+            :user_id, :name, :type, CAST(:metadata AS jsonb),
+            :retriever, :sync_frequency, :tokens, :file_path,
+            CAST(:remote_data AS jsonb),
+            CAST(:directory_structure AS jsonb),
+            CAST(:file_name_map AS jsonb),
+            :language, :model,
+            COALESCE(:date, now()),
+            COALESCE(:created_at, now()),
+            COALESCE(:updated_at, now()),
+            :legacy_mongo_id
+        )
+        ON CONFLICT (legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL
+        DO UPDATE SET
+            name = EXCLUDED.name,
+            type = EXCLUDED.type,
+            metadata = EXCLUDED.metadata,
+            retriever = EXCLUDED.retriever,
+            sync_frequency = EXCLUDED.sync_frequency,
+            tokens = EXCLUDED.tokens,
+            file_path = EXCLUDED.file_path,
+            remote_data = EXCLUDED.remote_data,
+            directory_structure = EXCLUDED.directory_structure,
+            file_name_map = EXCLUDED.file_name_map,
+            language = EXCLUDED.language,
+            model = EXCLUDED.model,
+            date = EXCLUDED.date,
+            updated_at = EXCLUDED.updated_at
         """
     )
     cursor = mongo_db["sources"].find({}, no_cursor_timeout=True).batch_size(batch_size)
     seen = written = 0
     batch: list[dict] = []
+    # Legacy ingestion/status fields that never got promoted columns. We
+    # fold them under metadata.ingestion so nothing is silently dropped
+    # on backfill — if any consumer still needs them they can read the
+    # JSONB.
+    _LEGACY_INGESTION_KEYS = {
+        "status", "status_code", "uploaded", "reason", "task_id", "file_token",
+    }
+    # Known top-level columns we don't want duplicated in metadata.
+    _SOURCES_KNOWN_TOP = {
+        "_id", "user", "name", "type", "metadata", "retriever",
+        "sync_frequency", "tokens", "file_path", "remote_data",
+        "directory_structure", "file_name_map", "language", "model",
+        "date", "created_at", "updated_at",
+    }
     try:
         for doc in cursor:
             seen += 1
@@ -441,11 +692,47 @@ def _backfill_sources(
                     clean_meta[k] = str(v)
                 else:
                     clean_meta[k] = v
+            # Preserve any legacy/unknown top-level keys under metadata so
+            # they round-trip through backfill rather than being dropped.
+            extras: dict = {}
+            for k, v in doc.items():
+                if k in _SOURCES_KNOWN_TOP:
+                    continue
+                if k in _LEGACY_INGESTION_KEYS or k not in _SOURCES_KNOWN_TOP:
+                    if hasattr(v, "__str__") and type(v).__name__ == "ObjectId":
+                        extras[k] = str(v)
+                    else:
+                        extras[k] = v
+            if extras:
+                existing_legacy = clean_meta.get("legacy_fields") or {}
+                if isinstance(existing_legacy, dict):
+                    existing_legacy = {**existing_legacy, **extras}
+                else:
+                    existing_legacy = extras
+                clean_meta["legacy_fields"] = existing_legacy
+            tokens_val = doc.get("tokens")
+            if tokens_val is not None and not isinstance(tokens_val, str):
+                tokens_val = str(tokens_val)
             batch.append({
-                "user_id": doc.get("user"),
+                "user_id": _normalize_system_user(doc.get("user")),
                 "name": doc.get("name", ""),
                 "type": doc.get("type"),
                 "metadata": json.dumps(clean_meta, default=str),
+                "retriever": doc.get("retriever"),
+                "sync_frequency": doc.get("sync_frequency"),
+                "tokens": tokens_val,
+                "file_path": doc.get("file_path"),
+                "remote_data": _normalize_mongo_jsonb(doc.get("remote_data")),
+                "directory_structure": _normalize_mongo_jsonb(
+                    doc.get("directory_structure")
+                ),
+                "file_name_map": _normalize_mongo_jsonb(doc.get("file_name_map")),
+                "language": doc.get("language"),
+                "model": doc.get("model"),
+                "date": doc.get("date"),
+                "created_at": doc.get("date") or doc.get("created_at"),
+                "updated_at": doc.get("date") or doc.get("updated_at"),
+                "legacy_mongo_id": str(doc["_id"]),
             })
             if len(batch) >= batch_size:
                 if not dry_run:
@@ -461,33 +748,96 @@ def _backfill_sources(
     return {"seen": seen, "written": written}
 
 
+def _resolve_one_source_ref(entry: Any, sources_id_map: dict[str, str]) -> Optional[str]:
+    """Resolve a single Mongo source reference (DBRef | ObjectId | str) to a PG UUID."""
+    if entry is None or entry == "" or entry == "default":
+        return None
+    # bson.dbref.DBRef has an `.id` attr; duck-type to avoid a hard bson import.
+    if hasattr(entry, "id"):
+        oid = str(entry.id)
+    else:
+        oid = str(entry)
+    if not oid or oid == "default":
+        return None
+    return sources_id_map.get(oid)
+
+
+def _resolve_source_refs(
+    source_field: Any,
+    sources_field: Any,
+    sources_id_map: dict[str, str],
+) -> tuple[Optional[str], list[str]]:
+    """Map Mongo agent ``source`` (singular, primary) + ``sources`` (array, extras)
+    to PG (source_id, extra_source_ids).
+
+    Mongo's schema uses ``source`` (DBRef or ObjectId-string or the
+    literal ``"default"``) for the primary attached source, and
+    ``sources`` (array of DBRefs) for any additional ones. Earlier audit
+    iterations missed the singular field; backfilling only the array
+    dropped the primary FK on ~13 of our dev agents.
+    """
+    primary = _resolve_one_source_ref(source_field, sources_id_map)
+    extras: list[str] = []
+    if sources_field:
+        for entry in sources_field:
+            mapped = _resolve_one_source_ref(entry, sources_id_map)
+            if mapped and mapped != primary and mapped not in extras:
+                extras.append(mapped)
+    return primary, extras
+
+
 def _backfill_agents(
     *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
+    sources_id_map = _build_legacy_id_map(conn, "sources")
+    prompts_id_map = _build_legacy_id_map(conn, "prompts")
+    folders_id_map = _build_legacy_id_map(conn, "agent_folders")
+    workflows_id_map = _build_legacy_id_map(conn, "workflows")
+
     insert_sql = text(
         """
         INSERT INTO agents (
-            user_id, name, status, key, description, agent_type,
+            user_id, name, status, key, image, description, agent_type,
+            source_id, extra_source_ids,
             chunks, retriever, default_model_id,
+            prompt_id, folder_id, workflow_id,
             tools, json_schema, models,
             limited_token_mode, token_limit, limited_request_mode, request_limit,
-            shared, incoming_webhook_token, legacy_mongo_id
+            allow_system_prompt_override,
+            shared, shared_token, shared_metadata,
+            incoming_webhook_token,
+            created_at, updated_at, last_used_at,
+            legacy_mongo_id
         ) VALUES (
-            :user_id, :name, :status, :key, :description, :agent_type,
+            :user_id, :name, :status, :key, :image, :description, :agent_type,
+            CAST(:source_id AS uuid), CAST(:extra_source_ids AS uuid[]),
             :chunks, :retriever, :default_model_id,
+            CAST(:prompt_id AS uuid), CAST(:folder_id AS uuid), CAST(:workflow_id AS uuid),
             CAST(:tools AS jsonb), CAST(:json_schema AS jsonb), CAST(:models AS jsonb),
             :limited_token_mode, :token_limit, :limited_request_mode, :request_limit,
-            :shared, :incoming_webhook_token, :legacy_mongo_id
+            :allow_system_prompt_override,
+            :shared, :shared_token, CAST(:shared_metadata AS jsonb),
+            :incoming_webhook_token,
+            COALESCE(:created_at, now()),
+            COALESCE(:updated_at, now()),
+            :last_used_at,
+            :legacy_mongo_id
         )
         ON CONFLICT (legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL
         DO UPDATE SET
             name = EXCLUDED.name,
             status = EXCLUDED.status,
+            image = EXCLUDED.image,
             description = EXCLUDED.description,
             agent_type = EXCLUDED.agent_type,
+            source_id = EXCLUDED.source_id,
+            extra_source_ids = EXCLUDED.extra_source_ids,
             chunks = EXCLUDED.chunks,
             retriever = EXCLUDED.retriever,
             default_model_id = EXCLUDED.default_model_id,
+            prompt_id = EXCLUDED.prompt_id,
+            folder_id = EXCLUDED.folder_id,
+            workflow_id = EXCLUDED.workflow_id,
             tools = EXCLUDED.tools,
             json_schema = EXCLUDED.json_schema,
             models = EXCLUDED.models,
@@ -495,8 +845,12 @@ def _backfill_agents(
             token_limit = EXCLUDED.token_limit,
             limited_request_mode = EXCLUDED.limited_request_mode,
             request_limit = EXCLUDED.request_limit,
+            allow_system_prompt_override = EXCLUDED.allow_system_prompt_override,
             shared = EXCLUDED.shared,
-            updated_at = now()
+            shared_token = EXCLUDED.shared_token,
+            shared_metadata = EXCLUDED.shared_metadata,
+            updated_at = EXCLUDED.updated_at,
+            last_used_at = EXCLUDED.last_used_at
         """
     )
     cursor = mongo_db["agents"].find({}, no_cursor_timeout=True).batch_size(batch_size)
@@ -505,10 +859,27 @@ def _backfill_agents(
     try:
         for doc in cursor:
             seen += 1
-            user_id = doc.get("user")
-            if not user_id:
-                skipped += 1
-                continue
+            user_id = _normalize_system_user(doc.get("user"))
+
+            primary_source_id, extra_source_ids = _resolve_source_refs(
+                doc.get("source"), doc.get("sources"), sources_id_map,
+            )
+
+            prompt_oid = doc.get("prompt_id")
+            prompt_pg = (
+                prompts_id_map.get(str(prompt_oid))
+                if prompt_oid and str(prompt_oid) != "default"
+                else None
+            )
+
+            folder_oid = doc.get("folder_id")
+            folder_pg = folders_id_map.get(str(folder_oid)) if folder_oid else None
+
+            workflow_oid = doc.get("workflow")
+            workflow_pg = (
+                workflows_id_map.get(str(workflow_oid)) if workflow_oid else None
+            )
+
             batch.append({
                 "user_id": user_id,
                 "name": doc.get("name", ""),
@@ -518,11 +889,17 @@ def _backfill_agents(
                 # strings to NULL so the unique constraint is only
                 # enforced for actual API keys.
                 "key": (doc.get("key") or None),
+                "image": doc.get("image"),
                 "description": doc.get("description"),
                 "agent_type": doc.get("agent_type"),
+                "source_id": primary_source_id,
+                "extra_source_ids": extra_source_ids,
                 "chunks": doc.get("chunks"),
                 "retriever": doc.get("retriever"),
                 "default_model_id": doc.get("default_model_id"),
+                "prompt_id": prompt_pg,
+                "folder_id": folder_pg,
+                "workflow_id": workflow_pg,
                 "tools": json.dumps(doc.get("tools") or []),
                 "json_schema": json.dumps(doc.get("json_schema")) if doc.get("json_schema") else None,
                 "models": json.dumps(doc.get("models")) if doc.get("models") else None,
@@ -530,8 +907,24 @@ def _backfill_agents(
                 "token_limit": doc.get("token_limit"),
                 "limited_request_mode": bool(doc.get("limited_request_mode", False)),
                 "request_limit": doc.get("request_limit"),
-                "shared": bool(doc.get("shared", False)),
+                "allow_system_prompt_override": bool(
+                    doc.get("allow_system_prompt_override", False)
+                ),
+                # Mongo field is `shared_publicly`; accept `shared` too for
+                # forward-compatibility with any PG-native writes that
+                # somehow end up in Mongo during the dual-write window.
+                "shared": bool(
+                    doc.get("shared_publicly", doc.get("shared", False))
+                ),
+                "shared_token": doc.get("shared_token") or None,
+                "shared_metadata": (
+                    json.dumps(doc.get("shared_metadata"), default=str)
+                    if doc.get("shared_metadata") else None
+                ),
                 "incoming_webhook_token": doc.get("incoming_webhook_token"),
+                "created_at": doc.get("createdAt") or doc.get("created_at"),
+                "updated_at": doc.get("updatedAt") or doc.get("updated_at"),
+                "last_used_at": doc.get("lastUsedAt") or doc.get("last_used_at"),
                 "legacy_mongo_id": str(doc["_id"]),
             })
             if len(batch) >= batch_size:
@@ -553,16 +946,29 @@ def _backfill_attachments(
 ) -> dict:
     insert_sql = text(
         """
-        INSERT INTO attachments (user_id, filename, upload_path, mime_type, size,
-                                 legacy_mongo_id)
-        VALUES (:user_id, :filename, :upload_path, :mime_type, :size,
-                :legacy_mongo_id)
+        INSERT INTO attachments (
+            user_id, filename, upload_path, mime_type, size,
+            content, token_count, openai_file_id, google_file_uri,
+            metadata, created_at, legacy_mongo_id
+        )
+        VALUES (
+            :user_id, :filename, :upload_path, :mime_type, :size,
+            :content, :token_count, :openai_file_id, :google_file_uri,
+            CAST(:metadata AS jsonb),
+            COALESCE(:created_at, now()),
+            :legacy_mongo_id
+        )
         ON CONFLICT (legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL
         DO UPDATE SET
             filename = EXCLUDED.filename,
             upload_path = EXCLUDED.upload_path,
             mime_type = EXCLUDED.mime_type,
-            size = EXCLUDED.size
+            size = EXCLUDED.size,
+            content = EXCLUDED.content,
+            token_count = EXCLUDED.token_count,
+            openai_file_id = EXCLUDED.openai_file_id,
+            google_file_uri = EXCLUDED.google_file_uri,
+            metadata = EXCLUDED.metadata
         """
     )
     cursor = mongo_db["attachments"].find({}, no_cursor_timeout=True).batch_size(batch_size)
@@ -578,9 +984,21 @@ def _backfill_attachments(
             batch.append({
                 "user_id": user_id,
                 "filename": doc.get("filename", ""),
-                "upload_path": doc.get("upload_path", ""),
+                # Mongo writes this column as ``path`` (see worker.py);
+                # the PG column is ``upload_path``. Earlier backfill
+                # copies read doc["upload_path"] and always got "".
+                "upload_path": doc.get("path") or doc.get("upload_path", ""),
                 "mime_type": doc.get("mime_type"),
                 "size": doc.get("size"),
+                "content": doc.get("content"),
+                "token_count": doc.get("token_count"),
+                "openai_file_id": doc.get("openai_file_id"),
+                "google_file_uri": doc.get("google_file_uri"),
+                "metadata": (
+                    json.dumps(doc.get("metadata"), default=str)
+                    if doc.get("metadata") else None
+                ),
+                "created_at": doc.get("date") or doc.get("created_at"),
                 "legacy_mongo_id": str(doc["_id"]),
             })
             if len(batch) >= batch_size:
@@ -651,8 +1069,12 @@ def _backfill_memories(
     tool_id_map = _build_tool_id_map(conn, mongo_db)
     insert_sql = text(
         """
-        INSERT INTO memories (user_id, tool_id, path, content)
-        VALUES (:user_id, CAST(:tool_id AS uuid), :path, :content)
+        INSERT INTO memories (user_id, tool_id, path, content, created_at, updated_at)
+        VALUES (
+            :user_id, CAST(:tool_id AS uuid), :path, :content,
+            COALESCE(:created_at, now()),
+            COALESCE(:updated_at, now())
+        )
         ON CONFLICT DO NOTHING
         """
     )
@@ -672,6 +1094,8 @@ def _backfill_memories(
                 "tool_id": pg_tool_id,
                 "path": doc.get("path", "/"),
                 "content": doc.get("content", ""),
+                "created_at": doc.get("created_at"),
+                "updated_at": doc.get("updated_at") or doc.get("created_at"),
             })
             if len(batch) >= batch_size:
                 if not dry_run:
@@ -690,11 +1114,32 @@ def _backfill_memories(
 def _backfill_todos(
     *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
+    """Backfill ``todos`` idempotently.
+
+    Preserves the Mongo ``todo_id`` (per-tool monotonic integer the LLM
+    uses as a handle), maps Mongo ``status`` → PG ``completed``, and
+    carries ``created_at`` / ``updated_at``. Idempotent via
+    ``legacy_mongo_id``.
+    """
     tool_id_map = _build_tool_id_map(conn, mongo_db)
-    insert_sql = text(
+    upsert_sql = text(
         """
-        INSERT INTO todos (user_id, tool_id, title, completed)
-        VALUES (:user_id, CAST(:tool_id AS uuid), :title, :completed)
+        INSERT INTO todos (
+            user_id, tool_id, todo_id, title, completed,
+            legacy_mongo_id, created_at, updated_at
+        )
+        VALUES (
+            :user_id, CAST(:tool_id AS uuid), :todo_id, :title, :completed,
+            :legacy_mongo_id,
+            COALESCE(:created_at, now()),
+            COALESCE(:updated_at, now())
+        )
+        ON CONFLICT (legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL
+        DO UPDATE SET
+            title      = EXCLUDED.title,
+            completed  = EXCLUDED.completed,
+            todo_id    = EXCLUDED.todo_id,
+            updated_at = EXCLUDED.updated_at
         """
     )
     cursor = mongo_db["todos"].find({}, no_cursor_timeout=True).batch_size(batch_size)
@@ -709,20 +1154,29 @@ def _backfill_todos(
                 skipped += 1
                 continue
             status = doc.get("status", "open")
+            todo_id_raw = doc.get("todo_id")
+            try:
+                todo_id_value = int(todo_id_raw) if todo_id_raw is not None else None
+            except (TypeError, ValueError):
+                todo_id_value = None
             batch.append({
                 "user_id": user_id,
                 "tool_id": pg_tool_id,
+                "todo_id": todo_id_value,
                 "title": doc.get("title", ""),
                 "completed": status == "completed",
+                "legacy_mongo_id": str(doc["_id"]),
+                "created_at": doc.get("created_at"),
+                "updated_at": doc.get("updated_at"),
             })
             if len(batch) >= batch_size:
                 if not dry_run:
-                    conn.execute(insert_sql, batch)
+                    conn.execute(upsert_sql, batch)
                 written += len(batch)
                 batch.clear()
         if batch:
             if not dry_run:
-                conn.execute(insert_sql, batch)
+                conn.execute(upsert_sql, batch)
             written += len(batch)
     finally:
         cursor.close()
@@ -732,13 +1186,24 @@ def _backfill_todos(
 def _backfill_notes(
     *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
+    """Backfill ``notes``. Body lives in Mongo's ``note`` field; PG splits
+    it into ``content`` + a NOT NULL ``title``. When title is missing,
+    fall back through ``path`` → stable ``"note"`` constant. Timestamps
+    are preserved.
+    """
     tool_id_map = _build_tool_id_map(conn, mongo_db)
     insert_sql = text(
         """
-        INSERT INTO notes (user_id, tool_id, title, content)
-        VALUES (:user_id, CAST(:tool_id AS uuid), :title, :content)
+        INSERT INTO notes (user_id, tool_id, title, content, created_at, updated_at)
+        VALUES (
+            :user_id, CAST(:tool_id AS uuid), :title, :content,
+            COALESCE(:created_at, now()),
+            COALESCE(:updated_at, now())
+        )
         ON CONFLICT (user_id, tool_id) DO UPDATE
-            SET content = EXCLUDED.content, title = EXCLUDED.title
+            SET content    = EXCLUDED.content,
+                title      = EXCLUDED.title,
+                updated_at = EXCLUDED.updated_at
         """
     )
     cursor = mongo_db["notes"].find({}, no_cursor_timeout=True).batch_size(batch_size)
@@ -752,11 +1217,15 @@ def _backfill_notes(
             if not user_id or not pg_tool_id:
                 skipped += 1
                 continue
+            title = doc.get("title") or doc.get("path") or "note"
+            content = doc.get("content") or doc.get("note") or ""
             batch.append({
                 "user_id": user_id,
                 "tool_id": pg_tool_id,
-                "title": doc.get("title", "note"),
-                "content": doc.get("note") or doc.get("content", ""),
+                "title": title,
+                "content": content,
+                "created_at": doc.get("created_at"),
+                "updated_at": doc.get("updated_at"),
             })
             if len(batch) >= batch_size:
                 if not dry_run:
@@ -777,28 +1246,92 @@ def _backfill_connector_sessions(
 ) -> dict:
     insert_sql = text(
         """
-        INSERT INTO connector_sessions (user_id, provider, session_data)
-        VALUES (:user_id, :provider, CAST(:session_data AS jsonb))
-        ON CONFLICT (user_id, provider) DO UPDATE
-            SET session_data = EXCLUDED.session_data
+        INSERT INTO connector_sessions (
+            user_id, provider, server_url,
+            session_token, user_email, status, token_info,
+            session_data, expires_at, created_at, legacy_mongo_id
+        )
+        VALUES (
+            :user_id, :provider, :server_url,
+            :session_token, :user_email, :status, CAST(:token_info AS jsonb),
+            CAST(:session_data AS jsonb), :expires_at,
+            COALESCE(:created_at, now()), :legacy_mongo_id
+        )
+        ON CONFLICT (legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL
+        DO UPDATE SET
+            server_url    = EXCLUDED.server_url,
+            session_token = EXCLUDED.session_token,
+            user_email    = EXCLUDED.user_email,
+            status        = EXCLUDED.status,
+            token_info    = EXCLUDED.token_info,
+            session_data  = EXCLUDED.session_data,
+            expires_at    = EXCLUDED.expires_at
         """
     )
-    cursor = mongo_db["connector_sessions"].find({}, no_cursor_timeout=True).batch_size(batch_size)
-    seen = written = skipped = 0
+    # Dedupe stale pending OAuth starts: multiple Mongo rows often share
+    # the same ``(user_id, server_url, provider)`` triple because each
+    # OAuth button click inserts a pending row; only the last one
+    # successfully authorized. The PG composite unique constraint would
+    # reject the duplicates, so keep the newest row per triple — prefer
+    # authorized rows over pending ones, then newer ``created_at``.
+    raw_docs = list(mongo_db["connector_sessions"].find({}, no_cursor_timeout=True))
+    dedup: dict[tuple, dict] = {}
+    for doc in raw_docs:
+        user_id = doc.get("user_id") or doc.get("user")
+        provider = doc.get("provider")
+        if not user_id or not provider:
+            continue
+        server_url = doc.get("server_url") or ""
+        key = (user_id, server_url, provider)
+        existing = dedup.get(key)
+        if existing is None:
+            dedup[key] = doc
+            continue
+        # Prefer authorized (has token_info) over pending.
+        existing_has_token = bool(existing.get("token_info"))
+        doc_has_token = bool(doc.get("token_info"))
+        if doc_has_token and not existing_has_token:
+            dedup[key] = doc
+            continue
+        if existing_has_token and not doc_has_token:
+            continue
+        # Both same class — newer wins.
+        existing_ts = existing.get("created_at")
+        doc_ts = doc.get("created_at")
+        if doc_ts and (existing_ts is None or doc_ts > existing_ts):
+            dedup[key] = doc
+
+    seen = len(raw_docs)
+    skipped = seen - len(dedup)
+    written = 0
+    # Mongo top-level keys that are now promoted to dedicated PG columns
+    # should NOT also end up stuffed into session_data.
+    _PROMOTED = {
+        "_id", "user_id", "user", "provider", "server_url",
+        "session_token", "user_email", "status", "token_info",
+        "expires_at", "created_at",
+    }
     batch: list[dict] = []
     try:
-        for doc in cursor:
-            seen += 1
+        for doc in dedup.values():
             user_id = doc.get("user_id") or doc.get("user")
             provider = doc.get("provider")
-            if not user_id or not provider:
-                skipped += 1
-                continue
-            session_data = {k: v for k, v in doc.items() if k not in ("_id", "user_id", "user", "provider")}
+            session_data = {k: v for k, v in doc.items() if k not in _PROMOTED}
             batch.append({
                 "user_id": user_id,
                 "provider": provider,
+                "server_url": doc.get("server_url"),
+                "session_token": doc.get("session_token"),
+                "user_email": doc.get("user_email"),
+                "status": doc.get("status"),
+                "token_info": (
+                    json.dumps(doc.get("token_info"), default=str)
+                    if doc.get("token_info") else None
+                ),
                 "session_data": json.dumps(session_data, default=str),
+                "expires_at": doc.get("expires_at"),
+                "created_at": doc.get("created_at"),
+                "legacy_mongo_id": str(doc["_id"]),
             })
             if len(batch) >= batch_size:
                 if not dry_run:
@@ -810,7 +1343,9 @@ def _backfill_connector_sessions(
                 conn.execute(insert_sql, batch)
             written += len(batch)
     finally:
-        cursor.close()
+        # ``raw_docs`` was materialised up-front (to support the dedupe
+        # pass), so there's no cursor to close here.
+        pass
     return {"seen": seen, "written": written, "skipped": skipped}
 
 
@@ -1033,6 +1568,77 @@ def _build_legacy_id_map(conn: Connection, table: str) -> dict[str, str]:
     return {r._mapping["legacy_mongo_id"]: str(r._mapping["id"]) for r in rows}
 
 
+def _remediate_user_agent_prefs(
+    *, conn: Connection, mongo_db: Any = None, batch_size: int = 500, dry_run: bool = False,
+) -> dict:
+    """Rewrite ``users.agent_preferences`` ObjectId entries to Postgres UUIDs.
+
+    Pre-cutover Mongo data stored ``agent_preferences.pinned`` /
+    ``agent_preferences.shared_with_me`` as 24-char ObjectId strings. The
+    Postgres ``cleanup_user_agent_prefs`` trigger compares
+    ``agents.id::text`` (UUID, 36 chars) against those entries, so
+    without remediation deleted agents leave stale pinned/shared rows
+    that no UI lookup can resolve.
+
+    Idempotent: already-UUID entries pass through untouched.
+    """
+    legacy_to_uuid = _build_legacy_id_map(conn, "agents")
+
+    rows = conn.execute(
+        text("SELECT user_id, agent_preferences FROM users")
+    ).fetchall()
+
+    seen = updated = entries_kept = entries_remapped = entries_dropped = 0
+    for row in rows:
+        seen += 1
+        user_id = row._mapping["user_id"]
+        prefs = row._mapping["agent_preferences"] or {}
+        if not isinstance(prefs, dict):
+            continue
+        new_prefs = dict(prefs)
+        changed = False
+        for key in ("pinned", "shared_with_me"):
+            original = list(prefs.get(key) or [])
+            rewritten: list[str] = []
+            for entry in original:
+                if not isinstance(entry, str):
+                    entry = str(entry)
+                if _is_uuid_str(entry):
+                    rewritten.append(entry)
+                    entries_kept += 1
+                elif _is_object_id_str(entry):
+                    pg_uuid = legacy_to_uuid.get(entry)
+                    if pg_uuid:
+                        rewritten.append(pg_uuid)
+                        entries_remapped += 1
+                    else:
+                        entries_dropped += 1
+                else:
+                    rewritten.append(entry)
+                    entries_kept += 1
+            if rewritten != original:
+                changed = True
+            new_prefs[key] = rewritten
+        if changed:
+            updated += 1
+            if not dry_run:
+                conn.execute(
+                    text(
+                        "UPDATE users SET agent_preferences = CAST(:prefs AS jsonb), "
+                        "updated_at = now() WHERE user_id = :uid"
+                    ),
+                    {"prefs": json.dumps(new_prefs), "uid": user_id},
+                )
+
+    return {
+        "seen": seen,
+        "updated": updated,
+        "entries_kept": entries_kept,
+        "entries_remapped": entries_remapped,
+        "entries_dropped": entries_dropped,
+    }
+
+
 def _backfill_shared_conversations(
     *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
@@ -1234,16 +1840,22 @@ def _backfill_workflows(
     """
     insert_sql = text(
         """
-        INSERT INTO workflows (user_id, name, description, current_graph_version,
-                               legacy_mongo_id)
-        VALUES (:user_id, :name, :description, :current_graph_version,
-                :legacy_mongo_id)
+        INSERT INTO workflows (
+            user_id, name, description, current_graph_version,
+            created_at, updated_at, legacy_mongo_id
+        )
+        VALUES (
+            :user_id, :name, :description, :current_graph_version,
+            COALESCE(:created_at, now()),
+            COALESCE(:updated_at, now()),
+            :legacy_mongo_id
+        )
         ON CONFLICT (legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL
         DO UPDATE SET
             name = EXCLUDED.name,
             description = EXCLUDED.description,
             current_graph_version = EXCLUDED.current_graph_version,
-            updated_at = now()
+            updated_at = COALESCE(EXCLUDED.updated_at, now())
         """
     )
     cursor = mongo_db["workflows"].find({}, no_cursor_timeout=True).batch_size(batch_size)
@@ -1261,6 +1873,8 @@ def _backfill_workflows(
                 "name": doc.get("name", ""),
                 "description": doc.get("description"),
                 "current_graph_version": doc.get("current_graph_version", 1),
+                "created_at": doc.get("created_at") or doc.get("createdAt"),
+                "updated_at": doc.get("updated_at") or doc.get("updatedAt"),
                 "legacy_mongo_id": str(doc["_id"]),
             })
             if len(batch) >= batch_size:
@@ -1482,7 +2096,7 @@ def _backfill_workflow_runs(
             batch.append({
                 "workflow_id": pg_wf_id,
                 "user_id": doc.get("user_id") or doc.get("user") or "",
-                "status": doc.get("status", "unknown"),
+                "status": _coerce_workflow_run_status(doc.get("status")),
                 "inputs": json.dumps(doc.get("inputs") or {}, default=str),
                 "result": json.dumps(doc.get("outputs") or doc.get("result"), default=str),
                 "steps": json.dumps(doc.get("steps") or [], default=str),
@@ -1527,7 +2141,16 @@ BACKFILLERS: dict[str, BackfillFn] = {
     "agent_folders": _backfill_agent_folders,
     "sources": _backfill_sources,
     "attachments": _backfill_attachments,
+    # Workflows are migrated before agents because agents.workflow_id
+    # FK-references the workflows table and the agents backfill resolves
+    # the Mongo `workflow` ObjectId via a `legacy_mongo_id` lookup that
+    # only works if workflows rows are already in place.
+    "workflows": _backfill_workflows,
     "agents": _backfill_agents,
+    # Remediation pass: rewrite any ObjectId-shaped entries in
+    # ``users.agent_preferences.{pinned,shared_with_me}`` to PG UUIDs.
+    # Must run after ``agents`` so the legacy→UUID lookup table is full.
+    "users_prefs_remediation": _remediate_user_agent_prefs,
     "memories": _backfill_memories,
     "todos": _backfill_todos,
     "notes": _backfill_notes,
@@ -1536,7 +2159,6 @@ BACKFILLERS: dict[str, BackfillFn] = {
     "conversations": _backfill_conversations,
     "shared_conversations": _backfill_shared_conversations,
     "pending_tool_state": _backfill_pending_tool_state,
-    "workflows": _backfill_workflows,
     "workflow_nodes": _backfill_workflow_nodes,
     "workflow_edges": _backfill_workflow_edges,
     "workflow_runs": _backfill_workflow_runs,
@@ -1601,6 +2223,12 @@ def main() -> int:
     mongo = MongoDB.get_client()
     mongo_db = mongo[settings.MONGO_DB_NAME]
     engine = get_engine()
+
+    # Ensure the ``__system__`` sentinel user exists before any template
+    # rows try to attach to it. Cheap, idempotent, safe to run every time.
+    if not args.dry_run:
+        with engine.begin() as conn:
+            _ensure_system_user(conn)
 
     failures = 0
     for table in requested:

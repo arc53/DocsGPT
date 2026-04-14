@@ -36,6 +36,76 @@ class TestCreate:
         assert doc["_id"] == doc["id"]
 
 
+class TestCreateConnectorFields:
+    def test_persists_sync_and_retriever(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create(
+            "connector-src",
+            user_id="u",
+            retriever="classic",
+            sync_frequency="daily",
+            tokens="1234",
+            file_path="/var/lib/docsgpt/u/src",
+        )
+        assert doc["retriever"] == "classic"
+        assert doc["sync_frequency"] == "daily"
+        assert doc["tokens"] == "1234"
+        assert doc["file_path"] == "/var/lib/docsgpt/u/src"
+
+    def test_remote_data_accepts_dict(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create(
+            "s", user_id="u",
+            remote_data={"provider": "google_drive", "folder_id": "abc"},
+        )
+        assert doc["remote_data"] == {"provider": "google_drive", "folder_id": "abc"}
+
+    def test_remote_data_accepts_json_string(self, pg_conn):
+        """Legacy Mongo docs store remote_data as a JSON-encoded string."""
+        repo = _repo(pg_conn)
+        doc = repo.create("s", user_id="u", remote_data='{"provider": "github"}')
+        assert doc["remote_data"] == {"provider": "github"}
+
+    def test_remote_data_non_json_string_wrapped(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("s", user_id="u", remote_data="not-json")
+        assert doc["remote_data"] == {"raw": "not-json"}
+
+    def test_persists_language_and_model(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create(
+            "src", user_id="u",
+            language="english", model="text-embedding-3-small",
+        )
+        assert doc["language"] == "english"
+        assert doc["model"] == "text-embedding-3-small"
+
+    def test_persists_explicit_date(self, pg_conn):
+        import datetime
+
+        repo = _repo(pg_conn)
+        when = datetime.datetime(2025, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
+        doc = repo.create("src", user_id="u", date=when)
+        assert doc["date"] == when
+
+    def test_persists_legacy_mongo_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        doc = repo.create("src", user_id="u", legacy_mongo_id="oid_xyz")
+        assert doc["legacy_mongo_id"] == "oid_xyz"
+
+    def test_directory_structure_and_file_name_map(self, pg_conn):
+        repo = _repo(pg_conn)
+        dir_struct = {"docs": {"readme.md": {}}}
+        name_map = {"abc123_readme.md": "readme.md"}
+        doc = repo.create(
+            "s", user_id="u",
+            directory_structure=dir_struct,
+            file_name_map=name_map,
+        )
+        assert doc["directory_structure"] == dir_struct
+        assert doc["file_name_map"] == name_map
+
+
 class TestGet:
     def test_get_existing(self, pg_conn):
         repo = _repo(pg_conn)
@@ -78,6 +148,21 @@ class TestUpdate:
         repo.update(created["id"], "u", {"metadata": {"a": 2, "b": 3}})
         fetched = repo.get(created["id"], "u")
         assert fetched["metadata"] == {"a": 2, "b": 3}
+
+    def test_updates_retriever_and_sync_frequency(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("s", user_id="u", retriever="classic", sync_frequency="never")
+        repo.update(created["id"], "u", {"retriever": "hybrid", "sync_frequency": "weekly"})
+        fetched = repo.get(created["id"], "u")
+        assert fetched["retriever"] == "hybrid"
+        assert fetched["sync_frequency"] == "weekly"
+
+    def test_updates_remote_data_from_string(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("s", user_id="u")
+        repo.update(created["id"], "u", {"remote_data": '{"provider": "notion"}'})
+        fetched = repo.get(created["id"], "u")
+        assert fetched["remote_data"] == {"provider": "notion"}
 
     def test_update_disallowed_field_is_noop(self, pg_conn):
         repo = _repo(pg_conn)

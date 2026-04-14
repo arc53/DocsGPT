@@ -139,6 +139,33 @@ class TestFindNode:
         assert found["id"] == created["id"]
 
 
+class TestBulkCreateOnConflict:
+    """Two overlapping ``PUT /workflows/{id}/graph`` calls at the same
+    ``graph_version`` must not drift. ``bulk_create`` uses
+    ``ON CONFLICT ... DO UPDATE`` so last-writer-wins on every mutable
+    column."""
+
+    def test_bulk_create_overwrites_same_node_id(self, pg_conn):
+        wf = _wf(pg_conn)
+        repo = _repo(pg_conn)
+        repo.bulk_create(wf["id"], 1, [
+            {"node_id": "n1", "node_type": "start", "title": "v1"},
+        ])
+        # Second writer overwrites — no unique-violation, no silent drop.
+        repo.bulk_create(wf["id"], 1, [
+            {
+                "node_id": "n1",
+                "node_type": "start",
+                "title": "v2",
+                "config": {"changed": True},
+            },
+        ])
+        nodes = repo.find_by_version(wf["id"], 1)
+        assert len(nodes) == 1
+        assert nodes[0]["title"] == "v2"
+        assert nodes[0]["config"] == {"changed": True}
+
+
 class TestDelete:
     def test_delete_by_workflow(self, pg_conn):
         wf = _wf(pg_conn)

@@ -300,7 +300,12 @@ class CreateTool(Resource):
                 UserToolsRepository,
                 lambda repo, u=user, t=new_tool: repo.create(
                     u, t["name"], config=t.get("config"),
-                    custom_name=t.get("customName"), display_name=t.get("displayName"),
+                    custom_name=t.get("customName"),
+                    display_name=t.get("displayName"),
+                    description=t.get("description"),
+                    config_requirements=t.get("configRequirements"),
+                    actions=t.get("actions"),
+                    status=bool(t.get("status", True)),
                 ),
             )
         except Exception as err:

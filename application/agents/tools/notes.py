@@ -1,10 +1,24 @@
-from datetime import datetime
+import datetime
 from typing import Any, Dict, List, Optional
 import uuid
 
 from .base import Tool
 from application.core.mongo_db import MongoDB
 from application.core.settings import settings
+from application.storage.db.dual_write import dual_write
+from application.storage.db.repositories.notes import NotesRepository
+
+
+# Stable synthetic title used in the Postgres ``notes.title`` column.
+# The notes tool stores one note per (user_id, tool_id); there is no
+# user-facing title. PG requires ``title`` NOT NULL, so we write a stable
+# constant alongside the actual note body in ``content``.
+_NOTE_TITLE = "note"
+
+
+def _utcnow() -> datetime.datetime:
+    """Return a timezone-aware UTC ``datetime`` (replaces ``datetime.utcnow``)."""
+    return datetime.datetime.now(datetime.timezone.utc)
 
 
 class NotesTool(Tool):
@@ -137,11 +151,12 @@ class NotesTool(Tool):
     # -----------------------------
     def _get_note(self) -> str:
         doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id})
-        if not doc or not doc.get("note"):
+        body = (doc or {}).get("content") or (doc or {}).get("note")
+        if not doc or not body:
             return "No note found."
         if doc.get("_id") is not None:
             self._last_artifact_id = str(doc.get("_id"))
-        return str(doc["note"])
+        return str(body)
 
     def _overwrite_note(self, content: str) -> str:
         content = (content or "").strip()
@@ -149,12 +164,23 @@ class NotesTool(Tool):
             return "Note content required."
         result = self.collection.find_one_and_update(
             {"user_id": self.user_id, "tool_id": self.tool_id},
-            {"$set": {"note": content, "updated_at": datetime.utcnow()}},
+            {
+                "$set": {
+                    "note": content,
+                    "title": _NOTE_TITLE,
+                    "content": content,
+                    "updated_at": _utcnow(),
+                }
+            },
             upsert=True,
             return_document=True,
         )
         if result and result.get("_id") is not None:
             self._last_artifact_id = str(result.get("_id"))
+        dual_write(
+            NotesRepository,
+            lambda r: r.upsert(self.user_id, self.tool_id, _NOTE_TITLE, content),
+        )
         return "Note saved."
 
     def _str_replace(self, old_str: str, new_str: str) -> str:
@@ -162,10 +188,11 @@ class NotesTool(Tool):
             return "old_str is required."
 
         doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id})
-        if not doc or not doc.get("note"):
+        existing = (doc or {}).get("content") or (doc or {}).get("note")
+        if not doc or not existing:
             return "No note found."
 
-        current_note = str(doc["note"])
+        current_note = str(existing)
 
         # Case-insensitive search
         if old_str.lower() not in current_note.lower():
@@ -177,11 +204,22 @@ class NotesTool(Tool):
 
         result = self.collection.find_one_and_update(
             {"user_id": self.user_id, "tool_id": self.tool_id},
-            {"$set": {"note": updated_note, "updated_at": datetime.utcnow()}},
+            {
+                "$set": {
+                    "note": updated_note,
+                    "title": _NOTE_TITLE,
+                    "content": updated_note,
+                    "updated_at": _utcnow(),
+                }
+            },
             return_document=True,
         )
         if result and result.get("_id") is not None:
             self._last_artifact_id = str(result.get("_id"))
+        dual_write(
+            NotesRepository,
+            lambda r: r.upsert(self.user_id, self.tool_id, _NOTE_TITLE, updated_note),
+        )
         return "Note updated."
 
     def _insert(self, line_number: int, text: str) -> str:
@@ -189,10 +227,11 @@ class NotesTool(Tool):
             return "Text is required."
 
         doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id})
-        if not doc or not doc.get("note"):
+        existing = (doc or {}).get("content") or (doc or {}).get("note")
+        if not doc or not existing:
             return "No note found."
 
-        current_note = str(doc["note"])
+        current_note = str(existing)
         lines = current_note.split("\n")
 
         # Convert to 0-indexed and validate
@@ -205,11 +244,22 @@ class NotesTool(Tool):
 
         result = self.collection.find_one_and_update(
             {"user_id": self.user_id, "tool_id": self.tool_id},
-            {"$set": {"note": updated_note, "updated_at": datetime.utcnow()}},
+            {
+                "$set": {
+                    "note": updated_note,
+                    "title": _NOTE_TITLE,
+                    "content": updated_note,
+                    "updated_at": _utcnow(),
+                }
+            },
             return_document=True,
         )
         if result and result.get("_id") is not None:
             self._last_artifact_id = str(result.get("_id"))
+        dual_write(
+            NotesRepository,
+            lambda r: r.upsert(self.user_id, self.tool_id, _NOTE_TITLE, updated_note),
+        )
         return "Text inserted."
 
     def _delete_note(self) -> str:
@@ -220,4 +270,8 @@ class NotesTool(Tool):
             return "No note found to delete."
         if doc.get("_id") is not None:
             self._last_artifact_id = str(doc.get("_id"))
+        dual_write(
+            NotesRepository,
+            lambda r: r.delete(self.user_id, self.tool_id),
+        )
         return "Note deleted."

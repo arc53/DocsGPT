@@ -134,6 +134,29 @@ def upload_index_files():
             {"_id": ObjectId(id)},
             {"$set": update_fields},
         )
+
+        from application.storage.db.dual_write import dual_write
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        pg_update_fields = {
+            "name": job_name,
+            "type": type,
+            "language": job_name,
+            "date": update_fields["date"],
+            "model": settings.EMBEDDINGS_NAME,
+            "tokens": tokens,
+            "retriever": retriever,
+            "remote_data": remote_data,
+            "sync_frequency": sync_frequency,
+            "file_path": file_path,
+            "directory_structure": directory_structure,
+        }
+        if file_name_map is not None:
+            pg_update_fields["file_name_map"] = file_name_map
+        dual_write(
+            SourcesRepository,
+            lambda repo, lid=str(id), u=user, f=pg_update_fields: repo.update_by_legacy_id(lid, u, f),
+        )
     else:
         insert_doc = {
             "_id": ObjectId(id),
@@ -153,4 +176,41 @@ def upload_index_files():
         if file_name_map is not None:
             insert_doc["file_name_map"] = file_name_map
         sources_collection.insert_one(insert_doc)
+
+        from application.storage.db.dual_write import dual_write
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        dual_write(
+            SourcesRepository,
+            lambda repo,
+            u=user,
+            n=job_name,
+            t=type,
+            tok=tokens,
+            r=retriever,
+            rd=remote_data,
+            sf=sync_frequency,
+            fp=file_path,
+            ds=directory_structure,
+            fnm=file_name_map,
+            lang=job_name,
+            m=settings.EMBEDDINGS_NAME,
+            d=insert_doc["date"],
+            lid=str(id): repo.create(
+                n,
+                user_id=u,
+                type=t,
+                tokens=tok,
+                retriever=r,
+                remote_data=rd,
+                sync_frequency=sf,
+                file_path=fp,
+                directory_structure=ds,
+                file_name_map=fnm,
+                language=lang,
+                model=m,
+                date=d,
+                legacy_mongo_id=lid,
+            ),
+        )
     return {"status": "ok"}
