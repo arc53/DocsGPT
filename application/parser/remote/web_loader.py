@@ -1,8 +1,8 @@
 import logging
 from application.parser.remote.base import BaseRemote
 from application.parser.schema.base import Document
+from application.core.url_validation import validate_url, SSRFError
 from langchain_community.document_loaders import WebBaseLoader
-from urllib.parse import urlparse
 
 headers = {
     "User-Agent": "Mozilla/5.0",
@@ -26,9 +26,11 @@ class WebLoader(BaseRemote):
             urls = [urls]
         documents = []
         for url in urls:
-            # Check if the URL scheme is provided, if not, assume http
-            if not urlparse(url).scheme:
-                url = "http://" + url
+            try:
+                url = validate_url(url)
+            except SSRFError as e:
+                logging.error(f"URL validation failed for {url}: {e}")
+                continue
             try:
                 loader = self.loader([url], header_template=headers)
                 loaded_docs = loader.load()
