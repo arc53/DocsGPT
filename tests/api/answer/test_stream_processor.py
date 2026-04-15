@@ -1022,7 +1022,7 @@ class TestGetDataFromApiKey:
 
     @pytest.mark.unit
     def test_valid_key_with_dbref_source(self):
-        from bson.dbref import DBRef
+        from application.api.answer.services.stream_processor import DBRef
         sp = self._make_sp()
         sp.agents_collection = MagicMock()
         source_ref = DBRef("sources", "source_id_1")
@@ -1045,7 +1045,7 @@ class TestGetDataFromApiKey:
 
     @pytest.mark.unit
     def test_valid_key_with_dbref_source_none_doc(self):
-        from bson.dbref import DBRef
+        from application.api.answer.services.stream_processor import DBRef
         sp = self._make_sp()
         sp.agents_collection = MagicMock()
         source_ref = DBRef("sources", "source_id_1")
@@ -1062,7 +1062,7 @@ class TestGetDataFromApiKey:
 
     @pytest.mark.unit
     def test_sources_list_with_dbref_entries(self):
-        from bson.dbref import DBRef
+        from application.api.answer.services.stream_processor import DBRef
         sp = self._make_sp()
         sp.agents_collection = MagicMock()
         ref1 = DBRef("sources", "sid1")
@@ -1531,7 +1531,7 @@ class TestGetDataFromApiKeyFullPaths:
     @pytest.mark.unit
     def test_sources_list_with_dbref_returns_none(self):
         """Cover lines 344-352: DBRef entry in sources where dereference returns None."""
-        from bson.dbref import DBRef
+        from application.api.answer.services.stream_processor import DBRef
         sp = self._make_sp()
         sp.agents_collection = MagicMock()
         ref1 = DBRef("sources", "missing_id")

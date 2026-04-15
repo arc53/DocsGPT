@@ -4,10 +4,10 @@ Target missing lines:
   - 257-262: paginated_response (collection query + serializer + response)
 """
 
+import uuid
 from unittest.mock import MagicMock
 
 import pytest
-from bson import ObjectId
 from flask import Flask
 
 
@@ -26,8 +26,8 @@ class TestPaginatedResponse:
 
         mock_collection = MagicMock()
         items = [
-            {"_id": ObjectId(), "name": "item1"},
-            {"_id": ObjectId(), "name": "item2"},
+            {"_id": uuid.uuid4().hex[:24], "name": "item1"},
+            {"_id": uuid.uuid4().hex[:24], "name": "item2"},
         ]
 
         # Chain: collection.find().sort().skip().limit() returns items
@@ -35,7 +35,7 @@ class TestPaginatedResponse:
         mock_collection.count_documents.return_value = 2
 
         def serializer(item):
-            return {"id": str(item["_id"]), "name": item["name"]}
+            return {"id": item["_id"], "name": item["name"]}
 
         with app.app_context():
             resp = paginated_response(

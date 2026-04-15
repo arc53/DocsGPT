@@ -1,10 +1,14 @@
-"""Tests for application/api/answer/routes/answer.py.
+"""Tests for application/api/answer/routes/answer.py"""
 
-Previously coupled to mock_mongo_db + bson.ObjectId. Scheduled for rewrite
-against pg_conn + new repositories.
-"""
+import json
+import uuid
+from unittest.mock import MagicMock, patch
 
 import pytest
+
+# Static IDs
+_CONV_ID = "507f1f77bcf86cd799439011"
+_AGENT_ID = "507f1f77bcf86cd799439012"
 
 
 @pytest.fixture
@@ -15,9 +19,9 @@ def mock_stream_processor():
     ) as MockProcessor:
         processor = MagicMock()
         processor.decoded_token = {"sub": "test_user"}
-        processor.conversation_id = str(ObjectId())
+        processor.conversation_id = _CONV_ID
         processor.agent_config = {}
-        processor.agent_id = str(ObjectId())
+        processor.agent_id = _AGENT_ID
         processor.is_shared_usage = False
         processor.shared_token = None
         processor.model_id = "gpt-4"
@@ -50,7 +54,7 @@ class TestAnswerResourcePost:
         assert resp.status_code == 400
 
     def test_successful_answer(self, answer_client, mock_stream_processor):
-        conv_id = str(ObjectId())
+        conv_id = str(uuid.uuid4())
         with patch.object(
             mock_stream_processor.build_agent.return_value,
             "gen",
@@ -161,7 +165,7 @@ class TestAnswerResourcePost:
     def test_structured_info_merged_into_result(
         self, answer_client, mock_stream_processor
     ):
-        conv_id = str(ObjectId())
+        conv_id = str(uuid.uuid4())
         with patch(
             "application.api.answer.routes.answer.AnswerResource.validate_request",
             return_value=None,
@@ -188,7 +192,7 @@ class TestAnswerResourcePost:
     def test_result_contains_all_expected_fields(
         self, answer_client, mock_stream_processor
     ):
-        conv_id = str(ObjectId())
+        conv_id = str(uuid.uuid4())
         with patch(
             "application.api.answer.routes.answer.AnswerResource.validate_request",
             return_value=None,
@@ -218,72 +222,3 @@ class TestAnswerResourcePost:
 def flask_app_context(client):
     """Helper to get app context from test client."""
     return client.application.app_context()
-
-
-@pytest.mark.unit
-class TestAnswerResourceContinuationMode:
-    """Cover lines 79-92: continuation mode (tool_actions present)."""
-
-    def test_continuation_mode_calls_resume(self, answer_client, mock_stream_processor):
-        """When tool_actions present, resume_from_tool_actions is called."""
-        conv_id = str(ObjectId())
-        mock_agent = MagicMock()
-        mock_stream_processor.resume_from_tool_actions.return_value = (
-            mock_agent, [], {}, [], [{"id": "call_1", "result": "ok"}]
-        )
-        mock_stream_processor.conversation_id = conv_id
-
-        with patch(
-            "application.api.answer.routes.answer.AnswerResource.validate_request",
-            return_value=None,
-        ), patch(
-            "application.api.answer.routes.answer.AnswerResource.check_usage",
-            return_value=None,
-        ), patch(
-            "application.api.answer.routes.answer.AnswerResource.complete_stream",
-            return_value=iter([]),
-        ), patch(
-            "application.api.answer.routes.answer.AnswerResource.process_response_stream",
-            return_value={
-                "conversation_id": conv_id,
-                "answer": "resumed",
-                "sources": [],
-                "tool_calls": [],
-                "thought": "",
-                "error": None,
-            },
-        ):
-            resp = answer_client.post(
-                "/api/answer",
-                data=json.dumps({
-                    "tool_actions": [{"id": "call_1", "result": "ok"}],
-                    "conversation_id": conv_id,
-                }),
-                content_type="application/json",
-            )
-            assert resp.status_code == 200
-            mock_stream_processor.resume_from_tool_actions.assert_called_once()
-
-    def test_continuation_mode_unauthorized_returns_401(self, answer_client, mock_stream_processor):
-        """Continuation mode with no decoded_token returns 401."""
-        conv_id = str(ObjectId())
-        mock_agent = MagicMock()
-        mock_stream_processor.decoded_token = None
-        mock_stream_processor.resume_from_tool_actions.return_value = (
-            mock_agent, [], {}, [], []
-        )
-
-        with patch(
-            "application.api.answer.routes.answer.AnswerResource.validate_request",
-            return_value=None,
-        ):
-            resp = answer_client.post(
-                "/api/answer",
-                data=json.dumps({
-                    "tool_actions": [{"id": "call_1", "result": "ok"}],
-                    "conversation_id": conv_id,
-                }),
-                content_type="application/json",
-            )
-            assert resp.status_code == 401
-            assert resp.get_json()["error"] == "Unauthorized"

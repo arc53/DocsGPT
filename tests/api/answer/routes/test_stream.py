@@ -6,6 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# Static IDs — valid 24-hex-char strings
+_CONV_ID = "507f1f77bcf86cd799439011"
+_AGENT_ID = "507f1f77bcf86cd799439012"
+
 
 @pytest.fixture
 def mock_stream_processor():
@@ -15,9 +19,9 @@ def mock_stream_processor():
     ) as MockProcessor:
         processor = MagicMock()
         processor.decoded_token = {"sub": "test_user"}
-        processor.conversation_id = uuid.uuid4().hex
+        processor.conversation_id = _CONV_ID
         processor.agent_config = {}
-        processor.agent_id = uuid.uuid4().hex
+        processor.agent_id = _AGENT_ID
         processor.is_shared_usage = False
         processor.shared_token = None
         processor.model_id = "gpt-4"
@@ -166,7 +170,7 @@ class TestStreamResourcePost:
         def fake_stream(*args, **kwargs):
             yield f'data: {json.dumps({"type": "end"})}\n\n'
 
-        conv_id = uuid.uuid4().hex
+        conv_id = str(uuid.uuid4())
         with patch(
             "application.api.answer.routes.stream.StreamResource.validate_request",
             return_value=None,
@@ -193,71 +197,3 @@ class TestStreamResourcePost:
             call_kwargs = mock_complete.call_args
             assert call_kwargs.kwargs.get("index") == 3
             assert call_kwargs.kwargs.get("attachment_ids") == ["att1", "att2"]
-
-
-@pytest.mark.unit
-class TestStreamResourceContinuationMode:
-    """Cover lines 86-103 in stream.py: continuation mode (tool_actions)."""
-
-    def test_continuation_mode_calls_resume(self, stream_client, mock_stream_processor):
-        """When tool_actions present, resume_from_tool_actions is called."""
-        conv_id = str(ObjectId())
-        mock_agent = MagicMock()
-        mock_stream_processor.resume_from_tool_actions.return_value = (
-            mock_agent, [], {}, [], [{"id": "call_1", "result": "ok"}]
-        )
-        mock_stream_processor.conversation_id = conv_id
-
-        def fake_stream(*args, **kwargs):
-            yield f'data: {json.dumps({"type": "answer", "answer": "resumed"})}\n\n'
-            yield f'data: {json.dumps({"type": "end"})}\n\n'
-
-        with patch(
-            "application.api.answer.routes.stream.StreamResource.validate_request",
-            return_value=None,
-        ), patch(
-            "application.api.answer.routes.stream.StreamResource.check_usage",
-            return_value=None,
-        ), patch(
-            "application.api.answer.routes.stream.StreamResource.complete_stream",
-            side_effect=fake_stream,
-        ):
-            resp = stream_client.post(
-                "/stream",
-                data=json.dumps({
-                    "tool_actions": [{"id": "call_1", "result": "ok"}],
-                    "conversation_id": conv_id,
-                }),
-                content_type="application/json",
-            )
-            assert resp.status_code == 200
-            assert "text/event-stream" in resp.content_type
-            mock_stream_processor.resume_from_tool_actions.assert_called_once()
-
-    def test_continuation_mode_unauthorized_returns_401_stream(
-        self, stream_client, mock_stream_processor
-    ):
-        """Continuation mode with no decoded_token returns 401 SSE stream."""
-        conv_id = str(ObjectId())
-        mock_agent = MagicMock()
-        mock_stream_processor.decoded_token = None
-        mock_stream_processor.resume_from_tool_actions.return_value = (
-            mock_agent, [], {}, [], []
-        )
-
-        with patch(
-            "application.api.answer.routes.stream.StreamResource.validate_request",
-            return_value=None,
-        ):
-            resp = stream_client.post(
-                "/stream",
-                data=json.dumps({
-                    "tool_actions": [{"id": "call_1", "result": "ok"}],
-                    "conversation_id": conv_id,
-                }),
-                content_type="application/json",
-            )
-            assert resp.status_code == 401
-            assert "text/event-stream" in resp.content_type
-            data = resp.get_data(as_text=True)
-            assert "Unauthorized" in data

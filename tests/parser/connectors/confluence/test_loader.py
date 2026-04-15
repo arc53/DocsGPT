@@ -2,12 +2,11 @@
 
 import os
 import tempfile
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 
-from application.parser.schema.base import Document
 
 
 # ---------------------------------------------------------------------------
@@ -830,7 +829,7 @@ class TestRetryOnAuthFailure:
         loader._persist_refreshed_tokens = MagicMock()
 
         with patch("requests.get", side_effect=flaky_request):
-            docs = loader.load_data({})
+            loader.load_data({})
 
         assert loader.auth.refresh_access_token.called
         assert loader.access_token == "new_at"

@@ -658,7 +658,7 @@ class TestPromptRendererIntegration:
 )
 class TestStreamProcessorPromptRendering:
 
-    def test_stream_processor_pre_fetch_docs_none_doc_mode(self, mock_mongo_db):
+    def test_stream_processor_pre_fetch_docs_none_doc_mode(self):
         from application.api.answer.services.stream_processor import StreamProcessor
 
         request_data = {"question": "Test question", "isNoneDoc": True}
@@ -669,7 +669,7 @@ class TestStreamProcessorPromptRendering:
         assert docs_together is None
         assert docs_list is None
 
-    def test_pre_fetch_tools_disabled_globally(self, mock_mongo_db, monkeypatch):
+    def test_pre_fetch_tools_disabled_globally(self, monkeypatch):
         from application.api.answer.services.stream_processor import StreamProcessor
         from application.core.settings import settings
 
@@ -682,7 +682,7 @@ class TestStreamProcessorPromptRendering:
 
         assert result is None
 
-    def test_pre_fetch_tools_disabled_per_request(self, mock_mongo_db):
+    def test_pre_fetch_tools_disabled_per_request(self):
         from application.api.answer.services.stream_processor import StreamProcessor
 
         request_data = {"question": "test", "disable_tool_prefetch": True}
@@ -696,18 +696,17 @@ class TestStreamProcessorPromptRendering:
         from unittest.mock import MagicMock, patch
 
         from application.api.answer.services.stream_processor import StreamProcessor
-        from application.core.mongo_db import MongoDB
-        from bson import ObjectId
+        from application.core.settings import settings
 
-        db = MongoDB.get_client()[list(MongoDB.get_client().keys())[0]]
-        tool_doc = {
-            "_id": ObjectId(),
-            "name": "memory",
-            "user": "user1",
-            "status": True,
-            "config": {},
-        }
-        db["user_tools"].insert_one(tool_doc)
+        db = mock_mongo_db[settings.MONGO_DB_NAME]
+        db["user_tools"].insert_one(
+            {
+                "name": "memory",
+                "user": "user1",
+                "status": True,
+                "config": {},
+            }
+        )
 
         request_data = {"question": "test"}
         processor = StreamProcessor(request_data, {"sub": "user1"})
@@ -734,18 +733,17 @@ class TestStreamProcessorPromptRendering:
         from unittest.mock import MagicMock, patch
 
         from application.api.answer.services.stream_processor import StreamProcessor
-        from application.core.mongo_db import MongoDB
-        from bson import ObjectId
+        from application.core.settings import settings
 
-        db = MongoDB.get_client()[list(MongoDB.get_client().keys())[0]]
-        tool_doc = {
-            "_id": ObjectId(),
-            "name": "memory",
-            "user": "user1",
-            "status": True,
-            "config": {},
-        }
-        db["user_tools"].insert_one(tool_doc)
+        db = mock_mongo_db[settings.MONGO_DB_NAME]
+        db["user_tools"].insert_one(
+            {
+                "name": "memory",
+                "user": "user1",
+                "status": True,
+                "config": {},
+            }
+        )
 
         request_data = {"question": "test"}
         processor = StreamProcessor(request_data, {"sub": "user1"})
@@ -772,7 +770,7 @@ class TestStreamProcessorPromptRendering:
             assert "memory" in result
             assert "memory_ls" in result["memory"]
 
-    def test_pre_fetch_tools_no_tools_configured(self, mock_mongo_db):
+    def test_pre_fetch_tools_no_tools_configured(self):
         from application.api.answer.services.stream_processor import StreamProcessor
 
         request_data = {"question": "test"}
@@ -786,18 +784,17 @@ class TestStreamProcessorPromptRendering:
         from unittest.mock import MagicMock, patch
 
         from application.api.answer.services.stream_processor import StreamProcessor
-        from application.core.mongo_db import MongoDB
-        from bson import ObjectId
+        from application.core.settings import settings
 
-        db = MongoDB.get_client()[list(MongoDB.get_client().keys())[0]]
-        tool_doc = {
-            "_id": ObjectId(),
-            "name": "memory",
-            "user": "user1",
-            "status": True,
-            "config": {},
-        }
-        db["user_tools"].insert_one(tool_doc)
+        db = mock_mongo_db[settings.MONGO_DB_NAME]
+        db["user_tools"].insert_one(
+            {
+                "name": "memory",
+                "user": "user1",
+                "status": True,
+                "config": {},
+            }
+        )
 
         request_data = {"question": "test"}
         processor = StreamProcessor(request_data, {"sub": "user1"})
@@ -827,18 +824,17 @@ class TestStreamProcessorPromptRendering:
         from unittest.mock import MagicMock, patch
 
         from application.api.answer.services.stream_processor import StreamProcessor
-        from application.core.mongo_db import MongoDB
-        from bson import ObjectId
+        from application.core.settings import settings
 
-        db = MongoDB.get_client()[list(MongoDB.get_client().keys())[0]]
-        tool_doc = {
-            "_id": ObjectId(),
-            "name": "memory",
-            "user": "user1",
-            "status": True,
-            "config": {},
-        }
-        db["user_tools"].insert_one(tool_doc)
+        db = mock_mongo_db[settings.MONGO_DB_NAME]
+        db["user_tools"].insert_one(
+            {
+                "name": "memory",
+                "user": "user1",
+                "status": True,
+                "config": {},
+            }
+        )
 
         request_data = {"question": "test"}
         processor = StreamProcessor(request_data, {"sub": "user1"})

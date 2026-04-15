@@ -8,6 +8,7 @@ Tests targeting specific uncovered lines in:
 """
 
 import importlib
+import uuid
 from unittest.mock import MagicMock, Mock, patch, mock_open
 
 import pytest
@@ -61,10 +62,9 @@ class TestGetDirectoryStructureMissingLines:
 
     def test_source_doc_not_found_continues(self):
         """Line 79: source_doc is None, should continue to next doc."""
-        from bson.objectid import ObjectId
         from application.agents.tools.internal_search import InternalSearchTool
 
-        doc_id = str(ObjectId())
+        doc_id = uuid.uuid4().hex[:24]
         tool = InternalSearchTool({"source": {"active_docs": [doc_id]}})
 
         with patch("application.core.mongo_db.MongoDB") as mock_mongo_cls:
@@ -83,10 +83,9 @@ class TestGetDirectoryStructureMissingLines:
 
     def test_inner_exception_continues_to_next_doc(self):
         """Lines 89-90: find_one raises for a doc_id → logged, continue."""
-        from bson.objectid import ObjectId
         from application.agents.tools.internal_search import InternalSearchTool
 
-        doc_id = str(ObjectId())
+        doc_id = uuid.uuid4().hex[:24]
         tool = InternalSearchTool({"source": {"active_docs": [doc_id]}})
 
         with patch("application.core.mongo_db.MongoDB") as mock_mongo_cls:
@@ -104,10 +103,9 @@ class TestGetDirectoryStructureMissingLines:
 
     def test_outer_exception_in_get_directory_structure(self):
         """Lines 93-94: outer exception in MongoDB connect."""
-        from bson.objectid import ObjectId
         from application.agents.tools.internal_search import InternalSearchTool
 
-        doc_id = str(ObjectId())
+        doc_id = uuid.uuid4().hex[:24]
         tool = InternalSearchTool({"source": {"active_docs": [doc_id]}})
 
         with patch("application.core.mongo_db.MongoDB") as mock_mongo_cls:
@@ -238,7 +236,6 @@ class TestAppHomeFunction:
         from application.app import app, home
 
         with app.test_request_context("/", environ_base={"REMOTE_ADDR": "127.0.0.1"}):
-            from flask import request as flask_request
             response = home()
             # redirect() returns a Response object; check Location header
             assert "5173" in response.headers.get("Location", "")
@@ -325,7 +322,6 @@ class TestAppJwtKeySetupLogic:
 
     def test_jwt_key_raises_runtime_error_on_other_exception(self):
         """Lines 60-61: non-FileNotFoundError raises RuntimeError."""
-        import os
 
         key_file = ".jwt_secret_key"
 

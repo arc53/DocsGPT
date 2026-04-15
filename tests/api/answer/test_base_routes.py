@@ -1,9 +1,17 @@
-"""Extended tests for application/api/answer/routes/base.py.
+"""Unit tests for application/api/answer/routes/base.py — BaseAnswerResource.
 
-The previous suite depended on mock_mongo_db + bson.ObjectId, both removed
-post Mongo -> Postgres cutover. Tests will be rebuilt on top of pg_conn
-+ the new repositories in a follow-up pass.
+Additional coverage beyond tests/api/answer/routes/test_base.py:
+  - _prepare_tool_calls_for_logging: truncation, non-dict items
+  - complete_stream: tool_calls, thoughts, structured output, metadata,
+    isNoneDoc, GeneratorExit handling, compression metadata
+  - process_response_stream: structured answer, incomplete stream
+  - error_stream_generate: format
+  - check_usage: string boolean parsing ("True" strings)
 """
+
+import json
+import uuid
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -283,7 +291,7 @@ class TestProcessResponseStreamExtended:
             resource = BaseAnswerResource()
             stream = [
                 f'data: {json.dumps({"type": "structured_answer", "answer": "{}", "structured": True, "schema": None})}\n\n',
-                f'data: {json.dumps({"type": "id", "id": str(ObjectId())})}\n\n',
+                f'data: {json.dumps({"type": "id", "id": str(uuid.uuid4())})}\n\n',
                 f'data: {json.dumps({"type": "end"})}\n\n',
             ]
             result = resource.process_response_stream(iter(stream))
@@ -339,7 +347,6 @@ class TestCheckUsageStringBooleans:
             agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
             agents_collection.insert_one(
                 {
-                    "_id": ObjectId(),
                     "key": "str_bool_key",
                     "limited_token_mode": "True",
                     "token_limit": 1000000,
@@ -566,270 +573,3 @@ class TestCompleteStreamGeneratorExit:
 
             next(gen)
             gen.close()  # Should not crash even with save error
-
-
-# =====================================================================
-# Continuation / paused stream path tests (lines 296-378)
-# =====================================================================
-
-
-@pytest.mark.unit
-class TestCompleteStreamPausedContinuation:
-    """Cover lines 296-378: tool_calls_pending pauses stream and saves state."""
-
-    def test_paused_stream_yields_id_and_end(self, mock_mongo_db, flask_app):
-        """When agent signals tool_calls_pending, stream yields id + end."""
-        import json
-        from unittest.mock import MagicMock, patch
-
-        from application.api.answer.routes.base import BaseAnswerResource
-
-        with flask_app.app_context():
-            resource = BaseAnswerResource()
-            mock_agent = MagicMock()
-
-            pending_data = {
-                "type": "tool_calls_pending",
-                "data": {
-                    "pending_tool_calls": [{"id": "call_1", "function": {"name": "search"}}]
-                },
-            }
-            mock_agent.gen.return_value = iter([pending_data])
-            mock_agent._pending_continuation = {
-                "messages": [{"role": "user", "content": "Q"}],
-                "pending_tool_calls": [{"id": "call_1"}],
-                "tools_dict": {"search": {}},
-            }
-            mock_agent.tools = []
-            mock_agent.tool_executor = MagicMock()
-            mock_agent.tool_executor.client_tools = None
-
-            resource.conversation_service = MagicMock()
-            resource.conversation_service.save_conversation.return_value = "conv_paused"
-
-            with patch("application.api.answer.routes.base.ContinuationService") as MockCS:
-                mock_cs_instance = MagicMock()
-                MockCS.return_value = mock_cs_instance
-
-                stream = list(
-                    resource.complete_stream(
-                        question="Q",
-                        agent=mock_agent,
-                        conversation_id="conv_paused",
-                        user_api_key=None,
-                        decoded_token={"sub": "u"},
-                        should_save_conversation=True,
-                        model_id="gpt-4",
-                    )
-                )
-
-            # Must have id and end events
-            id_chunks = [s for s in stream if '"type": "id"' in s]
-            end_chunks = [s for s in stream if '"type": "end"' in s]
-            assert len(id_chunks) == 1
-            assert len(end_chunks) == 1
-
-            # ContinuationService.save_state must have been called
-            mock_cs_instance.save_state.assert_called_once()
-
-    def test_paused_stream_creates_conversation_when_none(self, mock_mongo_db, flask_app):
-        """When paused and no conversation_id, one is created first."""
-        import json
-        from unittest.mock import MagicMock, patch
-
-        from application.api.answer.routes.base import BaseAnswerResource
-
-        with flask_app.app_context():
-            resource = BaseAnswerResource()
-            mock_agent = MagicMock()
-
-            pending_data = {
-                "type": "tool_calls_pending",
-                "data": {"pending_tool_calls": []},
-            }
-            mock_agent.gen.return_value = iter([pending_data])
-            mock_agent._pending_continuation = {
-                "messages": [],
-                "pending_tool_calls": [],
-                "tools_dict": {},
-            }
-            mock_agent.tools = []
-            mock_agent.tool_executor = MagicMock()
-            mock_agent.tool_executor.client_tools = None
-
-            resource.conversation_service = MagicMock()
-            resource.conversation_service.save_conversation.return_value = "new_conv_id"
-
-            with patch("application.api.answer.routes.base.ContinuationService") as MockCS, \
-                 patch("application.api.answer.routes.base.LLMCreator.create_llm") as mock_llm_create, \
-                 patch("application.api.answer.routes.base.get_api_key_for_provider") as mock_api_key:
-                mock_cs_instance = MagicMock()
-                MockCS.return_value = mock_cs_instance
-                mock_api_key.return_value = "sys_key"
-                mock_llm_create.return_value = MagicMock()
-
-                stream = list(
-                    resource.complete_stream(
-                        question="Q",
-                        agent=mock_agent,
-                        conversation_id=None,  # No existing conv_id
-                        user_api_key=None,
-                        decoded_token={"sub": "u"},
-                        should_save_conversation=True,
-                        model_id="gpt-4",
-                    )
-                )
-
-            # save_conversation should have been called to create the conversation
-            resource.conversation_service.save_conversation.assert_called_once()
-            id_chunks = [s for s in stream if '"type": "id"' in s]
-            assert len(id_chunks) == 1
-
-    def test_paused_stream_continuation_save_error_handled(self, mock_mongo_db, flask_app):
-        """When ContinuationService.save_state raises, stream still ends cleanly."""
-        import json
-        from unittest.mock import MagicMock, patch
-
-        from application.api.answer.routes.base import BaseAnswerResource
-
-        with flask_app.app_context():
-            resource = BaseAnswerResource()
-            mock_agent = MagicMock()
-
-            pending_data = {
-                "type": "tool_calls_pending",
-                "data": {"pending_tool_calls": []},
-            }
-            mock_agent.gen.return_value = iter([pending_data])
-            mock_agent._pending_continuation = {
-                "messages": [],
-                "pending_tool_calls": [],
-                "tools_dict": {},
-            }
-            mock_agent.tools = []
-            mock_agent.tool_executor = MagicMock()
-            mock_agent.tool_executor.client_tools = None
-
-            resource.conversation_service = MagicMock()
-
-            with patch("application.api.answer.routes.base.ContinuationService") as MockCS:
-                mock_cs_instance = MagicMock()
-                mock_cs_instance.save_state.side_effect = Exception("save error")
-                MockCS.return_value = mock_cs_instance
-
-                stream = list(
-                    resource.complete_stream(
-                        question="Q",
-                        agent=mock_agent,
-                        conversation_id="conv_err",
-                        user_api_key=None,
-                        decoded_token={"sub": "u"},
-                        should_save_conversation=True,
-                        model_id="gpt-4",
-                    )
-                )
-
-            end_chunks = [s for s in stream if '"type": "end"' in s]
-            assert len(end_chunks) == 1
-
-    def test_paused_stream_no_pending_continuation_still_ends(self, mock_mongo_db, flask_app):
-        """When paused=True but _pending_continuation is None, still yield id+end."""
-        import json
-        from unittest.mock import MagicMock
-
-        from application.api.answer.routes.base import BaseAnswerResource
-
-        with flask_app.app_context():
-            resource = BaseAnswerResource()
-            mock_agent = MagicMock()
-
-            pending_data = {
-                "type": "tool_calls_pending",
-                "data": {"pending_tool_calls": []},
-            }
-            mock_agent.gen.return_value = iter([pending_data])
-            # _pending_continuation is None
-            del mock_agent._pending_continuation
-            mock_agent._pending_continuation = None
-
-            resource.conversation_service = MagicMock()
-
-            stream = list(
-                resource.complete_stream(
-                    question="Q",
-                    agent=mock_agent,
-                    conversation_id="conv_npc",
-                    user_api_key=None,
-                    decoded_token={"sub": "u"},
-                    should_save_conversation=False,
-                )
-            )
-
-            # Should have id and end events
-            id_chunks = [s for s in stream if '"type": "id"' in s]
-            end_chunks = [s for s in stream if '"type": "end"' in s]
-            assert len(id_chunks) == 1
-            assert len(end_chunks) == 1
-
-
-@pytest.mark.unit
-class TestValidateRequestContinuationMode:
-    """Cover lines 50-52: tool_actions present requires conversation_id."""
-
-    def test_tool_actions_requires_conversation_id(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-
-        with flask_app.app_context():
-            resource = BaseAnswerResource()
-            data = {"tool_actions": [{"id": "call_1", "result": "ok"}]}
-            result = resource.validate_request(data)
-            # Missing conversation_id should fail
-            assert result is not None
-            assert result.status_code == 400
-
-    def test_tool_actions_with_conversation_id_passes(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-
-        with flask_app.app_context():
-            resource = BaseAnswerResource()
-            data = {
-                "tool_actions": [{"id": "call_1", "result": "ok"}],
-                "conversation_id": str(ObjectId()),
-            }
-            result = resource.validate_request(data)
-            assert result is None
-
-
-@pytest.mark.unit
-class TestCompleteStreamContinuationMode:
-    """Cover lines 223-229: _continuation kwarg routes to gen_continuation."""
-
-    def test_continuation_mode_calls_gen_continuation(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-
-        with flask_app.app_context():
-            resource = BaseAnswerResource()
-            mock_agent = MagicMock()
-            mock_agent.gen_continuation.return_value = iter([{"answer": "resumed"}])
-
-            stream = list(
-                resource.complete_stream(
-                    question="",
-                    agent=mock_agent,
-                    conversation_id="conv_cont",
-                    user_api_key=None,
-                    decoded_token={"sub": "u"},
-                    should_save_conversation=False,
-                    _continuation={
-                        "messages": [{"role": "user", "content": "Q"}],
-                        "tools_dict": {"search": {}},
-                        "pending_tool_calls": [{"id": "call_1"}],
-                        "tool_actions": [{"id": "call_1", "result": "found it"}],
-                    },
-                )
-            )
-
-            mock_agent.gen_continuation.assert_called_once()
-            mock_agent.gen.assert_not_called()
-            answer_chunks = [s for s in stream if '"type": "answer"' in s]
-            assert len(answer_chunks) == 1

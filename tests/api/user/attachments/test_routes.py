@@ -70,7 +70,7 @@ class FakeRedis:
 class TestStoreAttachmentEndpoint:
     @patch("application.api.user.tasks.store_attachment.delay")
     def test_store_attachment_preserves_upload_indexes_for_partial_failures(
-        self, mock_store_attachment, flask_app, mock_mongo_db
+        self, mock_store_attachment, flask_app
     ):
         from application.api.user.attachments.routes import StoreAttachment
 
@@ -116,7 +116,7 @@ class TestStoreAttachmentEndpoint:
     @patch("application.api.user.tasks.store_attachment.delay")
     @patch("application.stt.upload_limits.settings")
     def test_store_attachment_rejects_oversized_audio_files(
-        self, mock_limit_settings, mock_store_attachment, flask_app, mock_mongo_db
+        self, mock_limit_settings, mock_store_attachment, flask_app
     ):
         from application.api.user.attachments.routes import StoreAttachment
 
@@ -145,7 +145,7 @@ class TestStoreAttachmentEndpoint:
 
 
 class TestSpeechToTextEndpoint:
-    def test_stt_returns_400_when_file_is_missing(self, flask_app, mock_mongo_db):
+    def test_stt_returns_400_when_file_is_missing(self, flask_app):
         from application.api.user.attachments.routes import SpeechToText
 
         app = Flask(__name__)
@@ -160,7 +160,7 @@ class TestSpeechToTextEndpoint:
             assert _get_response_json(response)["message"] == "Missing file"
 
     def test_stt_returns_401_when_authentication_is_missing(
-        self, flask_app, mock_mongo_db
+        self, flask_app
     ):
         from application.api.user.attachments.routes import SpeechToText
 
@@ -182,7 +182,7 @@ class TestSpeechToTextEndpoint:
 
     @patch("application.api.user.attachments.routes.STTCreator.create_stt")
     def test_stt_transcribes_audio_for_authenticated_user(
-        self, mock_create_stt, flask_app, mock_mongo_db
+        self, mock_create_stt, flask_app
     ):
         from application.api.user.attachments.routes import SpeechToText
 
@@ -223,7 +223,7 @@ class TestSpeechToTextEndpoint:
             mock_create_stt.assert_called_once()
             mock_stt.transcribe.assert_called_once()
 
-    def test_stt_rejects_unsupported_extension(self, flask_app, mock_mongo_db):
+    def test_stt_rejects_unsupported_extension(self, flask_app):
         from application.api.user.attachments.routes import SpeechToText
 
         app = Flask(__name__)
@@ -246,7 +246,7 @@ class TestSpeechToTextEndpoint:
 class TestLiveSpeechToTextEndpoint:
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_start_creates_session(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import LiveSpeechToTextStart
 
@@ -273,7 +273,7 @@ class TestLiveSpeechToTextEndpoint:
     @patch("application.api.user.attachments.routes.STTCreator.create_stt")
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_reconciles_transcript_progressively(
-        self, mock_get_redis, mock_create_stt, flask_app, mock_mongo_db
+        self, mock_get_redis, mock_create_stt, flask_app
     ):
         from application.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
@@ -392,7 +392,7 @@ class TestLiveSpeechToTextEndpoint:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_rejects_missing_session(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import LiveSpeechToTextChunk
 
@@ -420,7 +420,7 @@ class TestLiveSpeechToTextEndpoint:
     @patch("application.api.user.attachments.routes.STTCreator.create_stt")
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_hides_internal_value_errors(
-        self, mock_get_redis, mock_create_stt, flask_app, mock_mongo_db
+        self, mock_get_redis, mock_create_stt, flask_app
     ):
         from application.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
@@ -486,7 +486,7 @@ class TestResolveAuthenticatedUser:
             assert result is not None
             assert "jwt_user" in result
 
-    def test_returns_user_from_valid_api_key_form(self, flask_app, mock_mongo_db):
+    def test_returns_user_from_valid_api_key_form(self, flask_app):
         from application.api.user.attachments.routes import _resolve_authenticated_user
 
         app = Flask(__name__)
@@ -503,7 +503,7 @@ class TestResolveAuthenticatedUser:
                 assert result is not None
                 assert "apikey_user" in result
 
-    def test_returns_401_for_invalid_api_key(self, flask_app, mock_mongo_db):
+    def test_returns_401_for_invalid_api_key(self, flask_app):
         from application.api.user.attachments.routes import _resolve_authenticated_user
 
         app = Flask(__name__)
@@ -613,7 +613,7 @@ class TestStoreAttachmentAdditional:
     """Additional tests for StoreAttachment endpoint."""
 
     def test_store_attachment_returns_401_for_invalid_api_key(
-        self, flask_app, mock_mongo_db
+        self, flask_app
     ):
         from application.api.user.attachments.routes import StoreAttachment
 
@@ -636,7 +636,7 @@ class TestStoreAttachmentAdditional:
                 response = resource.post()
                 assert _get_response_status(response) == 401
 
-    def test_store_attachment_missing_file(self, flask_app, mock_mongo_db):
+    def test_store_attachment_missing_file(self, flask_app):
         from application.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
@@ -652,7 +652,7 @@ class TestStoreAttachmentAdditional:
             response = resource.post()
             assert _get_response_status(response) == 400
 
-    def test_store_attachment_no_auth_returns_401(self, flask_app, mock_mongo_db):
+    def test_store_attachment_no_auth_returns_401(self, flask_app):
         from application.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
@@ -670,7 +670,7 @@ class TestStoreAttachmentAdditional:
 
     @patch("application.api.user.tasks.store_attachment.delay")
     def test_store_attachment_single_file_response(
-        self, mock_store_attachment, flask_app, mock_mongo_db
+        self, mock_store_attachment, flask_app
     ):
         from application.api.user.attachments.routes import StoreAttachment
 
@@ -697,7 +697,7 @@ class TestStoreAttachmentAdditional:
 
     @patch("application.api.user.tasks.store_attachment.delay")
     def test_store_attachment_all_files_fail_returns_400(
-        self, mock_store_attachment, flask_app, mock_mongo_db
+        self, mock_store_attachment, flask_app
     ):
         from application.api.user.attachments.routes import StoreAttachment
 
@@ -720,7 +720,7 @@ class TestStoreAttachmentAdditional:
 
     @patch("application.api.user.tasks.store_attachment.delay")
     def test_store_attachment_outer_exception(
-        self, mock_store_attachment, flask_app, mock_mongo_db
+        self, mock_store_attachment, flask_app
     ):
         from application.api.user.attachments.routes import StoreAttachment
 
@@ -742,7 +742,7 @@ class TestStoreAttachmentAdditional:
                 response = resource.post()
                 assert _get_response_status(response) == 400
 
-    def test_store_attachment_empty_filename_files(self, flask_app, mock_mongo_db):
+    def test_store_attachment_empty_filename_files(self, flask_app):
         from application.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
@@ -760,7 +760,7 @@ class TestStoreAttachmentAdditional:
 
     @patch("application.api.user.tasks.store_attachment.delay")
     def test_store_attachment_via_api_key_auth(
-        self, mock_store_attachment, flask_app, mock_mongo_db
+        self, mock_store_attachment, flask_app
     ):
         from application.api.user.attachments.routes import StoreAttachment
 
@@ -801,7 +801,7 @@ class TestSpeechToTextAdditional:
         return_value=False,
     )
     def test_stt_rejects_unsupported_mimetype(
-        self, mock_mimetype_check, flask_app, mock_mongo_db
+        self, mock_mimetype_check, flask_app
     ):
         from application.api.user.attachments.routes import SpeechToText
 
@@ -821,7 +821,7 @@ class TestSpeechToTextAdditional:
 
     @patch("application.stt.upload_limits.settings")
     def test_stt_rejects_oversized_audio(
-        self, mock_limit_settings, flask_app, mock_mongo_db
+        self, mock_limit_settings, flask_app
     ):
         from application.api.user.attachments.routes import SpeechToText
 
@@ -845,7 +845,7 @@ class TestSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.STTCreator.create_stt")
     def test_stt_transcription_error_returns_400(
-        self, mock_create_stt, flask_app, mock_mongo_db
+        self, mock_create_stt, flask_app
     ):
         from application.api.user.attachments.routes import SpeechToText
 
@@ -872,7 +872,7 @@ class TestSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.STTCreator.create_stt")
     def test_stt_uses_language_form_param(
-        self, mock_create_stt, flask_app, mock_mongo_db
+        self, mock_create_stt, flask_app
     ):
         from application.api.user.attachments.routes import SpeechToText
 
@@ -908,7 +908,7 @@ class TestLiveSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_start_returns_401_no_auth(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import LiveSpeechToTextStart
 
@@ -928,7 +928,7 @@ class TestLiveSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_start_returns_503_when_redis_unavailable(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import LiveSpeechToTextStart
 
@@ -948,7 +948,7 @@ class TestLiveSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_returns_401_no_auth(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import LiveSpeechToTextChunk
 
@@ -973,7 +973,7 @@ class TestLiveSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_returns_503_no_redis(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import LiveSpeechToTextChunk
 
@@ -998,7 +998,7 @@ class TestLiveSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_missing_session_id(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import LiveSpeechToTextChunk
 
@@ -1024,7 +1024,7 @@ class TestLiveSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_forbidden_different_user(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
@@ -1063,7 +1063,7 @@ class TestLiveSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_missing_chunk_index(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
@@ -1103,7 +1103,7 @@ class TestLiveSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_invalid_chunk_index(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
@@ -1143,7 +1143,7 @@ class TestLiveSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_missing_file(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
@@ -1182,7 +1182,7 @@ class TestLiveSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_unsupported_extension(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
@@ -1223,7 +1223,7 @@ class TestLiveSpeechToTextAdditional:
     @patch("application.api.user.attachments.routes.STTCreator.create_stt")
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_transcription_error(
-        self, mock_get_redis, mock_create_stt, flask_app, mock_mongo_db
+        self, mock_get_redis, mock_create_stt, flask_app
     ):
         from application.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
@@ -1272,7 +1272,7 @@ class TestLiveSpeechToTextAdditional:
     @patch("application.api.user.attachments.routes.STTCreator.create_stt")
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_chunk_detects_language(
-        self, mock_get_redis, mock_create_stt, mock_settings, flask_app, mock_mongo_db
+        self, mock_get_redis, mock_create_stt, mock_settings, flask_app
     ):
         from application.api.user.attachments.routes import (
             LiveSpeechToTextChunk,
@@ -1326,7 +1326,7 @@ class TestLiveSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_finish_returns_401_no_auth(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import LiveSpeechToTextFinish
 
@@ -1346,7 +1346,7 @@ class TestLiveSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_finish_returns_503_no_redis(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import LiveSpeechToTextFinish
 
@@ -1366,7 +1366,7 @@ class TestLiveSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_finish_missing_session_id(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import LiveSpeechToTextFinish
 
@@ -1387,7 +1387,7 @@ class TestLiveSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_finish_session_not_found(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import LiveSpeechToTextFinish
 
@@ -1407,7 +1407,7 @@ class TestLiveSpeechToTextAdditional:
 
     @patch("application.api.user.attachments.routes.get_redis_instance")
     def test_live_stt_finish_forbidden_different_user(
-        self, mock_get_redis, flask_app, mock_mongo_db
+        self, mock_get_redis, flask_app
     ):
         from application.api.user.attachments.routes import (
             LiveSpeechToTextFinish,
@@ -1444,7 +1444,7 @@ class TestLiveSpeechToTextAdditional:
 class TestServeImage:
     """Tests for ServeImage endpoint."""
 
-    def test_serve_image_success(self, flask_app, mock_mongo_db):
+    def test_serve_image_success(self, flask_app):
         from application.api.user.attachments.routes import ServeImage
 
         app = Flask(__name__)
@@ -1462,7 +1462,7 @@ class TestServeImage:
                 assert _get_response_status(response) == 200
                 assert response.headers.get("Content-Type") == "image/png"
 
-    def test_serve_image_jpg_content_type(self, flask_app, mock_mongo_db):
+    def test_serve_image_jpg_content_type(self, flask_app):
         from application.api.user.attachments.routes import ServeImage
 
         app = Flask(__name__)
@@ -1480,7 +1480,7 @@ class TestServeImage:
                 assert _get_response_status(response) == 200
                 assert response.headers.get("Content-Type") == "image/jpeg"
 
-    def test_serve_image_not_found(self, flask_app, mock_mongo_db):
+    def test_serve_image_not_found(self, flask_app):
         from application.api.user.attachments.routes import ServeImage
 
         app = Flask(__name__)
@@ -1496,7 +1496,7 @@ class TestServeImage:
                 response = resource.get("missing/image.png")
                 assert _get_response_status(response) == 404
 
-    def test_serve_image_generic_error(self, flask_app, mock_mongo_db):
+    def test_serve_image_generic_error(self, flask_app):
         from application.api.user.attachments.routes import ServeImage
 
         app = Flask(__name__)
@@ -1518,7 +1518,7 @@ class TestTextToSpeech:
     """Tests for TextToSpeech endpoint."""
 
     @patch("application.api.user.attachments.routes.TTSCreator.create_tts")
-    def test_tts_success(self, mock_create_tts, flask_app, mock_mongo_db):
+    def test_tts_success(self, mock_create_tts, flask_app):
         from application.api.user.attachments.routes import TextToSpeech
 
         app = Flask(__name__)
@@ -1540,7 +1540,7 @@ class TestTextToSpeech:
             assert payload["lang"] == "en"
 
     @patch("application.api.user.attachments.routes.TTSCreator.create_tts")
-    def test_tts_error_returns_400(self, mock_create_tts, flask_app, mock_mongo_db):
+    def test_tts_error_returns_400(self, mock_create_tts, flask_app):
         from application.api.user.attachments.routes import TextToSpeech
 
         app = Flask(__name__)

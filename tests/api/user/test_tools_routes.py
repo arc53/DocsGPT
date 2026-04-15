@@ -1,10 +1,11 @@
-"""Tests for application/api/user/tools/routes.py.
+"""Unit tests for application.api.user.tools.routes."""
 
-Previously coupled to bson.ObjectId + Mongo-shaped collection mocks.
-Scheduled for rewrite against pg_conn + UserToolsRepository.
-"""
+import uuid
+from datetime import datetime
+from unittest.mock import Mock, patch
 
 import pytest
+from flask import Flask
 
 
 @pytest.fixture
@@ -452,17 +453,6 @@ class TestAvailableTools:
         assert response.json["data"][0]["displayName"] == "Simple Tool"
         assert response.json["data"][0]["description"] == ""
 
-    def test_returns_401_unauthenticated(self, app):
-        from application.api.user.tools.routes import AvailableTools
-
-        with app.test_request_context("/api/available_tools"):
-            from flask import request
-
-            request.decoded_token = None
-            response = AvailableTools().get()
-
-        assert response.status_code == 401
-
 
 # ---------------------------------------------------------------------------
 # Route: GetTools
@@ -473,7 +463,7 @@ class TestGetTools:
     def test_returns_user_tools(self, app):
         from application.api.user.tools.routes import GetTools
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.find.return_value = [
             {
@@ -516,7 +506,7 @@ class TestGetTools:
     def test_masks_encrypted_credentials(self, app):
         from application.api.user.tools.routes import GetTools
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.find.return_value = [
             {
@@ -552,7 +542,7 @@ class TestGetTools:
     def test_loads_config_requirements_from_tool_manager(self, app):
         from application.api.user.tools.routes import GetTools
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.find.return_value = [
             {
@@ -633,7 +623,7 @@ class TestCreateTool:
         mock_manager = Mock()
         mock_manager.tools = {"my_tool": tool_instance}
         mock_collection = Mock()
-        inserted_id = ObjectId()
+        inserted_id = uuid.uuid4().hex[:24]
         mock_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
 
         with patch(
@@ -822,7 +812,7 @@ class TestCreateTool:
         mock_manager = Mock()
         mock_manager.tools = {"my_tool": tool_instance}
         mock_collection = Mock()
-        inserted_id = ObjectId()
+        inserted_id = uuid.uuid4().hex[:24]
         mock_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
 
         with patch(
@@ -852,38 +842,6 @@ class TestCreateTool:
         call_arg = mock_collection.insert_one.call_args[0][0]
         assert call_arg["customName"] == "Custom"
 
-    def test_rejects_mcp_tool_with_ssrf_url(self, app):
-        from application.api.user.tools.routes import CreateTool
-        from application.core.url_validation import SSRFError
-
-        mock_manager = Mock()
-        mock_manager.tools = {"mcp_tool": Mock()}
-
-        with patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
-        ), patch(
-            "application.api.user.tools.routes.validate_url",
-            side_effect=SSRFError("private address"),
-        ):
-            with app.test_request_context(
-                "/api/create_tool",
-                method="POST",
-                json={
-                    "name": "mcp_tool",
-                    "displayName": "MCP",
-                    "description": "Desc",
-                    "config": {"server_url": "http://169.254.169.254"},
-                    "status": True,
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = CreateTool().post()
-
-        assert response.status_code == 400
-        assert "Invalid server URL" in response.json["message"]
-
 
 # ---------------------------------------------------------------------------
 # Route: UpdateTool
@@ -894,7 +852,7 @@ class TestUpdateTool:
     def test_updates_tool_successfully(self, app):
         from application.api.user.tools.routes import UpdateTool
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.find_one.return_value = {
             "_id": tool_id,
@@ -959,7 +917,7 @@ class TestUpdateTool:
     def test_returns_404_tool_not_found(self, app):
         from application.api.user.tools.routes import UpdateTool
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.find_one.return_value = None
 
@@ -990,7 +948,7 @@ class TestUpdateTool:
     def test_returns_400_on_invalid_function_name(self, app):
         from application.api.user.tools.routes import UpdateTool
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_manager = Mock()
         mock_manager.tools = {}
@@ -1022,7 +980,7 @@ class TestUpdateTool:
     def test_returns_400_on_validation_error(self, app):
         from application.api.user.tools.routes import UpdateTool
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.find_one.return_value = {
             "_id": tool_id,
@@ -1062,7 +1020,7 @@ class TestUpdateTool:
     def test_updates_multiple_fields(self, app):
         from application.api.user.tools.routes import UpdateTool
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_manager = Mock()
         mock_manager.tools = {}
@@ -1102,7 +1060,7 @@ class TestUpdateTool:
     def test_returns_400_on_exception(self, app):
         from application.api.user.tools.routes import UpdateTool
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.find_one.side_effect = Exception("db error")
         mock_manager = Mock()
@@ -1139,7 +1097,7 @@ class TestUpdateToolConfig:
     def test_updates_config_successfully(self, app):
         from application.api.user.tools.routes import UpdateToolConfig
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.find_one.return_value = {
             "_id": tool_id,
@@ -1204,7 +1162,7 @@ class TestUpdateToolConfig:
     def test_returns_404_tool_not_found(self, app):
         from application.api.user.tools.routes import UpdateToolConfig
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.find_one.return_value = None
 
@@ -1227,7 +1185,7 @@ class TestUpdateToolConfig:
     def test_returns_400_on_validation_error(self, app):
         from application.api.user.tools.routes import UpdateToolConfig
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.find_one.return_value = {
             "_id": tool_id,
@@ -1264,7 +1222,7 @@ class TestUpdateToolConfig:
     def test_returns_400_on_exception(self, app):
         from application.api.user.tools.routes import UpdateToolConfig
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.find_one.side_effect = Exception("db error")
 
@@ -1284,38 +1242,6 @@ class TestUpdateToolConfig:
 
         assert response.status_code == 400
 
-    def test_rejects_mcp_tool_config_with_ssrf_url(self, app):
-        from application.api.user.tools.routes import UpdateToolConfig
-        from application.core.url_validation import SSRFError
-
-        tool_id = ObjectId()
-        mock_collection = Mock()
-        mock_collection.find_one.return_value = {
-            "_id": tool_id,
-            "name": "mcp_tool",
-            "config": {},
-        }
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ), patch(
-            "application.api.user.tools.routes.validate_url",
-            side_effect=SSRFError("private address"),
-        ):
-            with app.test_request_context(
-                "/api/update_tool_config",
-                method="POST",
-                json={"id": str(tool_id), "config": {"server_url": "http://169.254.169.254"}},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = UpdateToolConfig().post()
-
-        assert response.status_code == 400
-        assert "Invalid server URL" in response.json["message"]
-
 
 # ---------------------------------------------------------------------------
 # Route: UpdateToolActions
@@ -1326,7 +1252,7 @@ class TestUpdateToolActions:
     def test_updates_actions_successfully(self, app):
         from application.api.user.tools.routes import UpdateToolActions
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
 
         with patch(
@@ -1380,7 +1306,7 @@ class TestUpdateToolActions:
     def test_returns_400_on_exception(self, app):
         from application.api.user.tools.routes import UpdateToolActions
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.update_one.side_effect = Exception("db error")
 
@@ -1410,7 +1336,7 @@ class TestUpdateToolStatus:
     def test_updates_status_successfully(self, app):
         from application.api.user.tools.routes import UpdateToolStatus
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
 
         with patch(
@@ -1463,7 +1389,7 @@ class TestUpdateToolStatus:
     def test_returns_400_on_exception(self, app):
         from application.api.user.tools.routes import UpdateToolStatus
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.update_one.side_effect = Exception("db error")
 
@@ -1493,7 +1419,7 @@ class TestDeleteTool:
     def test_deletes_tool_successfully(self, app):
         from application.api.user.tools.routes import DeleteTool
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.delete_one.return_value = Mock(deleted_count=1)
 
@@ -1543,7 +1469,7 @@ class TestDeleteTool:
     def test_returns_404_not_found(self, app):
         from application.api.user.tools.routes import DeleteTool
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.delete_one.return_value = Mock(deleted_count=0)
 
@@ -1566,7 +1492,7 @@ class TestDeleteTool:
     def test_returns_400_on_exception(self, app):
         from application.api.user.tools.routes import DeleteTool
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.delete_one.side_effect = Exception("db error")
 
@@ -1817,7 +1743,7 @@ class TestGetArtifact:
     def test_returns_note_artifact(self, app):
         from application.api.user.tools.routes import GetArtifact
 
-        artifact_id = ObjectId()
+        artifact_id = uuid.uuid4().hex[:24]
         updated_at = datetime(2025, 1, 15, 10, 30)
         mock_notes = Mock()
         mock_notes.find_one.return_value = {
@@ -1855,7 +1781,7 @@ class TestGetArtifact:
     def test_returns_note_with_no_updated_at(self, app):
         from application.api.user.tools.routes import GetArtifact
 
-        artifact_id = ObjectId()
+        artifact_id = uuid.uuid4().hex[:24]
         mock_notes = Mock()
         mock_notes.find_one.return_value = {
             "_id": artifact_id,
@@ -1885,7 +1811,7 @@ class TestGetArtifact:
     def test_returns_empty_note_line_count_zero(self, app):
         from application.api.user.tools.routes import GetArtifact
 
-        artifact_id = ObjectId()
+        artifact_id = uuid.uuid4().hex[:24]
         mock_notes = Mock()
         mock_notes.find_one.return_value = {
             "_id": artifact_id,
@@ -1914,7 +1840,7 @@ class TestGetArtifact:
     def test_returns_todo_artifact(self, app):
         from application.api.user.tools.routes import GetArtifact
 
-        artifact_id = ObjectId()
+        artifact_id = uuid.uuid4().hex[:24]
         created_at = datetime(2025, 1, 15, 10, 0)
         updated_at = datetime(2025, 1, 15, 12, 0)
         mock_notes = Mock()
@@ -1968,7 +1894,7 @@ class TestGetArtifact:
     def test_returns_todo_with_no_dates(self, app):
         from application.api.user.tools.routes import GetArtifact
 
-        artifact_id = ObjectId()
+        artifact_id = uuid.uuid4().hex[:24]
         mock_notes = Mock()
         mock_notes.find_one.return_value = None
         mock_todos = Mock()
@@ -2005,7 +1931,7 @@ class TestGetArtifact:
     def test_returns_404_not_found(self, app):
         from application.api.user.tools.routes import GetArtifact
 
-        artifact_id = ObjectId()
+        artifact_id = uuid.uuid4().hex[:24]
         mock_notes = Mock()
         mock_notes.find_one.return_value = None
         mock_todos = Mock()

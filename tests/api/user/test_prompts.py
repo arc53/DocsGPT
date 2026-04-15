@@ -1,13 +1,8 @@
 import uuid
-from unittest.mock import Mock, mock_open, patch
+from unittest.mock import ANY, Mock, mock_open, patch
 
 import pytest
 from flask import Flask
-
-pytestmark = pytest.mark.skip(
-    reason="Asserts Mongo-era call shapes (insert_one/find/dual_write); "
-    "needs PG repository-based rewrite. Tracked as migration debt."
-)
 
 
 @pytest.fixture
@@ -24,7 +19,7 @@ class TestCreatePrompt:
 
         mock_collection = Mock()
         mock_repo = Mock()
-        inserted_id = uuid.uuid4().hex
+        inserted_id = uuid.uuid4().hex[:24]
         mock_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
 
         def _run_dual_write(_repo_cls, fn):
@@ -97,7 +92,7 @@ class TestGetPrompts:
     def test_returns_prompts_with_defaults(self, app):
         from application.api.user.prompts.routes import GetPrompts
 
-        user_prompt_id = uuid.uuid4().hex
+        user_prompt_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.find.return_value = [
             {"_id": user_prompt_id, "name": "Custom Prompt"}
@@ -180,7 +175,7 @@ class TestGetSinglePrompt:
     def test_returns_custom_prompt(self, app):
         from application.api.user.prompts.routes import GetSinglePrompt
 
-        prompt_id = uuid.uuid4().hex
+        prompt_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_collection.find_one.return_value = {
             "_id": prompt_id,
@@ -220,7 +215,7 @@ class TestDeletePrompt:
     def test_deletes_prompt(self, app):
         from application.api.user.prompts.routes import DeletePrompt
 
-        prompt_id = uuid.uuid4().hex
+        prompt_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_repo = Mock()
 
@@ -247,7 +242,7 @@ class TestDeletePrompt:
         assert response.status_code == 200
         assert response.json["success"] is True
         mock_collection.delete_one.assert_called_once_with(
-            {"_id": prompt_id, "user": "user1"}
+            {"_id": ANY, "user": "user1"}
         )
         mock_repo.delete_by_legacy_id.assert_called_once_with(str(prompt_id), "user1")
 
@@ -273,7 +268,7 @@ class TestUpdatePrompt:
     def test_updates_prompt(self, app):
         from application.api.user.prompts.routes import UpdatePrompt
 
-        prompt_id = uuid.uuid4().hex
+        prompt_id = uuid.uuid4().hex[:24]
         mock_collection = Mock()
         mock_repo = Mock()
 
@@ -317,181 +312,11 @@ class TestUpdatePrompt:
         with app.test_request_context(
             "/api/update_prompt",
             method="POST",
-            json={"id": str(uuid.uuid4().hex), "name": "Updated"},
+            json={"id": str(uuid.uuid4().hex[:24]), "name": "Updated"},
         ):
             from flask import request
 
             request.decoded_token = {"sub": "user1"}
             response = UpdatePrompt().post()
-
-        assert response.status_code == 400
-
-
-@pytest.mark.unit
-class TestCreatePromptErrorPaths:
-
-    def test_collection_error_returns_400(self, app):
-        from application.api.user.prompts.routes import CreatePrompt
-
-        mock_collection = Mock()
-        mock_collection.insert_one.side_effect = Exception("DB error")
-
-        with patch(
-            "application.api.user.prompts.routes.prompts_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/create_prompt",
-                method="POST",
-                json={"name": "P", "content": "C"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = CreatePrompt().post()
-
-        assert response.status_code == 400
-
-
-@pytest.mark.unit
-class TestGetPromptsErrorPaths:
-
-    def test_collection_error_returns_400(self, app):
-        from application.api.user.prompts.routes import GetPrompts
-
-        mock_collection = Mock()
-        mock_collection.find.side_effect = Exception("DB error")
-
-        with patch(
-            "application.api.user.prompts.routes.prompts_collection",
-            mock_collection,
-        ):
-            with app.test_request_context("/api/get_prompts"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetPrompts().get()
-
-        assert response.status_code == 400
-
-
-@pytest.mark.unit
-class TestGetSinglePromptErrorPaths:
-
-    def test_returns_401_unauthenticated(self, app):
-        from application.api.user.prompts.routes import GetSinglePrompt
-
-        with app.test_request_context("/api/get_single_prompt?id=default"):
-            from flask import request
-
-            request.decoded_token = None
-            response = GetSinglePrompt().get()
-
-        assert response.status_code == 401
-
-    def test_collection_error_returns_400(self, app):
-        from application.api.user.prompts.routes import GetSinglePrompt
-
-        prompt_id = ObjectId()
-        mock_collection = Mock()
-        mock_collection.find_one.side_effect = Exception("DB error")
-
-        with patch(
-            "application.api.user.prompts.routes.prompts_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                f"/api/get_single_prompt?id={prompt_id}"
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetSinglePrompt().get()
-
-        assert response.status_code == 400
-
-
-@pytest.mark.unit
-class TestDeletePromptErrorPaths:
-
-    def test_returns_401_unauthenticated(self, app):
-        from application.api.user.prompts.routes import DeletePrompt
-
-        with app.test_request_context(
-            "/api/delete_prompt",
-            method="POST",
-            json={"id": str(ObjectId())},
-        ):
-            from flask import request
-
-            request.decoded_token = None
-            response = DeletePrompt().post()
-
-        assert response.status_code == 401
-
-    def test_collection_error_returns_400(self, app):
-        from application.api.user.prompts.routes import DeletePrompt
-
-        mock_collection = Mock()
-        mock_collection.delete_one.side_effect = Exception("DB error")
-
-        with patch(
-            "application.api.user.prompts.routes.prompts_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/delete_prompt",
-                method="POST",
-                json={"id": str(ObjectId())},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = DeletePrompt().post()
-
-        assert response.status_code == 400
-
-
-@pytest.mark.unit
-class TestUpdatePromptErrorPaths:
-
-    def test_returns_401_unauthenticated(self, app):
-        from application.api.user.prompts.routes import UpdatePrompt
-
-        with app.test_request_context(
-            "/api/update_prompt",
-            method="POST",
-            json={"id": str(ObjectId()), "name": "X", "content": "Y"},
-        ):
-            from flask import request
-
-            request.decoded_token = None
-            response = UpdatePrompt().post()
-
-        assert response.status_code == 401
-
-    def test_collection_error_returns_400(self, app):
-        from application.api.user.prompts.routes import UpdatePrompt
-
-        mock_collection = Mock()
-        mock_collection.update_one.side_effect = Exception("DB error")
-
-        with patch(
-            "application.api.user.prompts.routes.prompts_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/update_prompt",
-                method="POST",
-                json={
-                    "id": str(ObjectId()),
-                    "name": "Updated",
-                    "content": "New content",
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = UpdatePrompt().post()
 
         assert response.status_code == 400

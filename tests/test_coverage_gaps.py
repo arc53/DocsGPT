@@ -7,6 +7,7 @@ import datetime
 import io
 import json
 import os
+import uuid
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -715,30 +716,19 @@ class TestCompressionPromptBuilder:
 @pytest.mark.unit
 @pytest.mark.skip(reason="needs PG fixture rewrite — tracked as part of post-cutover test cleanup")
 class TestCompressionServiceGetCompressedHistory:
-    def test_no_compression_metadata(self, mock_mongo_db):
+    def test_no_compression_metadata(self):
         from application.api.answer.services.compression import CompressionService
 
         mock_llm = Mock()
         service = CompressionService(llm=mock_llm, model_id="gpt-4o")
 
-        from application.core.settings import settings as s
-
-        db = mock_mongo_db[s.MONGO_DB_NAME]
-        conv_id = "507f1f77bcf86cd799439011"
-        db["conversations"].insert_one(
-            {
-                "_id": conv_id,
-                "queries": [{"prompt": "Q", "response": "A"}],
-                "compression_metadata": {"is_compressed": False},
-            }
-        )
         summary, queries = service.get_compressed_context(
             {"compression_metadata": {"is_compressed": False}, "queries": [{"prompt": "Q"}]}
         )
         assert summary is None
         assert len(queries) == 1
 
-    def test_compressed_history_with_compression_points(self, mock_mongo_db):
+    def test_compressed_history_with_compression_points(self):
         from application.api.answer.services.compression import CompressionService
 
         mock_llm = Mock()
@@ -765,7 +755,7 @@ class TestCompressionServiceGetCompressedHistory:
         assert summary == "Old summary"
         assert len(queries) == 1  # Only Q3 (after index 1)
 
-    def test_queries_is_none(self, mock_mongo_db):
+    def test_queries_is_none(self):
         from application.api.answer.services.compression import CompressionService
 
         mock_llm = Mock()
@@ -779,7 +769,7 @@ class TestCompressionServiceGetCompressedHistory:
         assert summary is None
         assert queries == []
 
-    def test_compressed_empty_points_queries_none(self, mock_mongo_db):
+    def test_compressed_empty_points_queries_none(self):
         """Cover lines 215-216: compressed=True but empty points and queries=None."""
         from application.api.answer.services.compression import CompressionService
 
@@ -797,7 +787,7 @@ class TestCompressionServiceGetCompressedHistory:
         assert summary is None
         assert queries == []
 
-    def test_compressed_with_full_data(self, mock_mongo_db):
+    def test_compressed_with_full_data(self):
         """Cover lines 222-224: full retrieval of compression point data."""
         from application.api.answer.services.compression import CompressionService
 
@@ -1086,24 +1076,46 @@ class TestTemplateEngineEdge:
 @pytest.mark.unit
 @pytest.mark.skip(reason="needs PG fixture rewrite — tracked as part of post-cutover test cleanup")
 class TestConversationServiceEdge:
-    def test_save_with_api_key_and_agent_id(self, mock_mongo_db):
+    def test_save_with_api_key_and_agent_id(self, monkeypatch):
         from application.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.core.settings import settings as s
 
-        service = ConversationService()
-        db = mock_mongo_db[s.MONGO_DB_NAME]
+        agent_id_str = str(uuid.uuid4())
 
-        agent_oid = "507f1f77bcf86cd799439011"
-        db["agents"].insert_one(
-            {"_id": agent_oid, "key": "agent_api_key", "name": "TestAgent"}
+        mock_conv_col = MagicMock()
+        mock_conv_col.find_one.return_value = None  # no existing conversation
+
+        captured = {}
+
+        def fake_insert(doc):
+            result = MagicMock()
+            result.inserted_id = doc.get("_id", str(uuid.uuid4()))
+            captured["doc"] = doc
+            return result
+
+        mock_conv_col.insert_one.side_effect = fake_insert
+
+        mock_agents_col = MagicMock()
+        mock_agents_col.find_one.return_value = {
+            "_id": agent_id_str,
+            "key": "agent_api_key",
+            "name": "TestAgent",
+        }
+
+        monkeypatch.setattr(
+            "application.api.answer.services.conversation_service.dual_write",
+            lambda repo_cls, fn: None,
         )
+
+        service = ConversationService.__new__(ConversationService)
+        service.conversations_collection = mock_conv_col
+        service.agents_collection = mock_agents_col
 
         mock_llm = Mock()
         mock_llm.gen.return_value = "Summary"
 
-        conv_id = service.save_conversation(
+        service.save_conversation(
             conversation_id=None,
             question="Q",
             response="A",
@@ -1114,87 +1126,105 @@ class TestConversationServiceEdge:
             model_id="gpt-4",
             decoded_token={"sub": "user1"},
             api_key="agent_api_key",
-            agent_id=str(agent_oid),
+            agent_id=agent_id_str,
             is_shared_usage=True,
             shared_token="tok",
         )
-        saved = db["conversations"].find_one({"_id": conv_id})
-        assert saved["api_key"] == "agent_api_key"
-        assert saved["agent_id"] == str(agent_oid)
-        assert saved["is_shared_usage"] is True
+        assert captured["doc"]["api_key"] == "agent_api_key"
+        assert captured["doc"]["agent_id"] == agent_id_str
+        assert captured["doc"]["is_shared_usage"] is True
 
-    def test_update_compression_metadata(self, mock_mongo_db):
+    def test_update_compression_metadata(self, monkeypatch):
         from application.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.core.settings import settings as s
 
-        service = ConversationService()
-        db = mock_mongo_db[s.MONGO_DB_NAME]
-
-        conv_id = "507f1f77bcf86cd799439011"
-        db["conversations"].insert_one(
-            {"_id": conv_id, "user": "u1", "queries": []}
+        monkeypatch.setattr(
+            "application.api.answer.services.conversation_service.dual_write",
+            lambda repo_cls, fn: None,
         )
+
+        conv_id_str = uuid.uuid4().hex[:24]
+        mock_conv_col = MagicMock()
+
+        service = ConversationService.__new__(ConversationService)
+        service.conversations_collection = mock_conv_col
+        service.agents_collection = MagicMock()
 
         metadata = {
             "compressed_summary": "test summary",
             "timestamp": datetime.datetime.now(datetime.timezone.utc),
         }
-        service.update_compression_metadata(str(conv_id), metadata)
+        service.update_compression_metadata(conv_id_str, metadata)
+        mock_conv_col.update_one.assert_called_once()
 
-    def test_append_compression_message(self, mock_mongo_db):
+    def test_append_compression_message(self, monkeypatch):
         from application.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.core.settings import settings as s
 
-        service = ConversationService()
-        db = mock_mongo_db[s.MONGO_DB_NAME]
-
-        conv_id = "507f1f77bcf86cd799439011"
-        db["conversations"].insert_one(
-            {"_id": conv_id, "user": "u1", "queries": []}
+        monkeypatch.setattr(
+            "application.api.answer.services.conversation_service.dual_write",
+            lambda repo_cls, fn: None,
         )
+
+        conv_id_str = uuid.uuid4().hex[:24]
+        mock_conv_col = MagicMock()
+
+        service = ConversationService.__new__(ConversationService)
+        service.conversations_collection = mock_conv_col
+        service.agents_collection = MagicMock()
 
         metadata = {"compressed_summary": "summary text"}
-        service.append_compression_message(str(conv_id), metadata)
+        service.append_compression_message(conv_id_str, metadata)
+        mock_conv_col.update_one.assert_called_once()
 
-    def test_append_compression_message_empty_summary(self, mock_mongo_db):
+    def test_append_compression_message_empty_summary(self):
         from application.api.answer.services.conversation_service import (
             ConversationService,
         )
 
-        service = ConversationService()
-        # Should return without error
+        mock_conv_col = MagicMock()
+        service = ConversationService.__new__(ConversationService)
+        service.conversations_collection = mock_conv_col
+        service.agents_collection = MagicMock()
+
+        # Should return without error (empty summary → early return)
         service.append_compression_message("fakeid", {"compressed_summary": ""})
+        mock_conv_col.update_one.assert_not_called()
 
-    def test_get_compression_metadata(self, mock_mongo_db):
+    def test_get_compression_metadata(self, monkeypatch):
         from application.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.core.settings import settings as s
 
-        service = ConversationService()
-        db = mock_mongo_db[s.MONGO_DB_NAME]
+        conv_id_str = uuid.uuid4().hex[:24]
+        mock_conv_col = MagicMock()
+        mock_conv_col.find_one.return_value = {
+            "_id": conv_id_str,
+            "compression_metadata": {"is_compressed": True},
+        }
 
-        conv_id = "507f1f77bcf86cd799439011"
-        db["conversations"].insert_one(
-            {
-                "_id": conv_id,
-                "user": "u1",
-                "compression_metadata": {"is_compressed": True},
-            }
-        )
-        result = service.get_compression_metadata(str(conv_id))
+        service = ConversationService.__new__(ConversationService)
+        service.conversations_collection = mock_conv_col
+        service.agents_collection = MagicMock()
+
+        result = service.get_compression_metadata(conv_id_str)
         assert result["is_compressed"] is True
 
-    def test_get_compression_metadata_not_found(self, mock_mongo_db):
+    def test_get_compression_metadata_not_found(self):
         from application.api.answer.services.conversation_service import (
             ConversationService,
         )
-        service = ConversationService()
-        result = service.get_compression_metadata("507f1f77bcf86cd799439011")
+
+        mock_conv_col = MagicMock()
+        mock_conv_col.find_one.return_value = None
+
+        service = ConversationService.__new__(ConversationService)
+        service.conversations_collection = mock_conv_col
+        service.agents_collection = MagicMock()
+
+        result = service.get_compression_metadata(str(uuid.uuid4())[:24])
         assert result is None
 
 
@@ -1593,7 +1623,7 @@ class TestConversationRoutes:
 
         return app
 
-    def test_delete_conversation_exception(self, app, mock_mongo_db):
+    def test_delete_conversation_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.conversations.routes.conversations_collection"
@@ -1602,7 +1632,7 @@ class TestConversationRoutes:
                 resp = client.post("/api/delete_conversation?id=507f1f77bcf86cd799439011")
             assert resp.status_code == 400
 
-    def test_delete_all_conversations_exception(self, app, mock_mongo_db):
+    def test_delete_all_conversations_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.conversations.routes.conversations_collection"
@@ -1611,7 +1641,7 @@ class TestConversationRoutes:
                 resp = client.get("/api/delete_all_conversations")
             assert resp.status_code == 400
 
-    def test_get_conversations_exception(self, app, mock_mongo_db):
+    def test_get_conversations_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.conversations.routes.conversations_collection"
@@ -1620,7 +1650,7 @@ class TestConversationRoutes:
                 resp = client.get("/api/get_conversations")
             assert resp.status_code == 400
 
-    def test_get_single_conversation_exception(self, app, mock_mongo_db):
+    def test_get_single_conversation_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.conversations.routes.conversations_collection"
@@ -1629,7 +1659,7 @@ class TestConversationRoutes:
                 resp = client.get("/api/get_single_conversation?id=507f1f77bcf86cd799439011")
             assert resp.status_code == 400
 
-    def test_get_single_conversation_attachment_error(self, app, mock_mongo_db):
+    def test_get_single_conversation_attachment_error(self, app):
         conv_id = "507f1f77bcf86cd799439011"
         with app.test_client() as client:
             with patch(
@@ -1649,7 +1679,7 @@ class TestConversationRoutes:
                 resp = client.get(f"/api/get_single_conversation?id={conv_id}")
             assert resp.status_code == 200
 
-    def test_update_conversation_name_exception(self, app, mock_mongo_db):
+    def test_update_conversation_name_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.conversations.routes.conversations_collection"
@@ -1661,7 +1691,7 @@ class TestConversationRoutes:
                 )
             assert resp.status_code == 400
 
-    def test_feedback_exception(self, app, mock_mongo_db):
+    def test_feedback_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.conversations.routes.conversations_collection"
@@ -1705,7 +1735,7 @@ class TestPromptRoutes:
 
         return app
 
-    def test_create_prompt_exception(self, app, mock_mongo_db):
+    def test_create_prompt_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.prompts.routes.prompts_collection"
@@ -1717,7 +1747,7 @@ class TestPromptRoutes:
                 )
             assert resp.status_code == 400
 
-    def test_get_prompts_exception(self, app, mock_mongo_db):
+    def test_get_prompts_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.prompts.routes.prompts_collection"
@@ -1726,12 +1756,12 @@ class TestPromptRoutes:
                 resp = client.get("/api/get_prompts")
             assert resp.status_code == 400
 
-    def test_get_single_prompt_no_id(self, app, mock_mongo_db):
+    def test_get_single_prompt_no_id(self, app):
         with app.test_client() as client:
             resp = client.get("/api/get_single_prompt")
         assert resp.status_code == 400
 
-    def test_get_single_prompt_exception(self, app, mock_mongo_db):
+    def test_get_single_prompt_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.prompts.routes.prompts_collection"
@@ -1742,7 +1772,7 @@ class TestPromptRoutes:
                 )
             assert resp.status_code == 400
 
-    def test_delete_prompt_exception(self, app, mock_mongo_db):
+    def test_delete_prompt_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.prompts.routes.prompts_collection"
@@ -1754,7 +1784,7 @@ class TestPromptRoutes:
                 )
             assert resp.status_code == 400
 
-    def test_update_prompt_exception(self, app, mock_mongo_db):
+    def test_update_prompt_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.prompts.routes.prompts_collection"
@@ -1950,12 +1980,12 @@ class TestAgentFolderRoutes:
 
         return app
 
-    def test_create_folder_no_name(self, app, mock_mongo_db):
+    def test_create_folder_no_name(self, app):
         with app.test_client() as client:
             resp = client.post("/api/agents/folders/", json={})
         assert resp.status_code == 400
 
-    def test_create_folder_exception(self, app, mock_mongo_db):
+    def test_create_folder_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.agents.folders.agent_folders_collection"
@@ -1966,7 +1996,7 @@ class TestAgentFolderRoutes:
                 )
         assert resp.status_code == 400
 
-    def test_get_folder_not_auth(self, app, mock_mongo_db):
+    def test_get_folder_not_auth(self, app):
         # Override to have no token
         @app.before_request
         def no_token():
@@ -1977,7 +2007,7 @@ class TestAgentFolderRoutes:
             resp = client.get("/api/agents/folders/507f1f77bcf86cd799439011")
         assert resp.status_code == 401
 
-    def test_get_folder_exception(self, app, mock_mongo_db):
+    def test_get_folder_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.agents.folders.agent_folders_collection"
@@ -1986,7 +2016,7 @@ class TestAgentFolderRoutes:
                 resp = client.get("/api/agents/folders/507f1f77bcf86cd799439011")
         assert resp.status_code == 400
 
-    def test_update_folder_no_data(self, app, mock_mongo_db):
+    def test_update_folder_no_data(self, app):
         with app.test_client() as client:
             resp = client.put(
                 "/api/agents/folders/507f1f77bcf86cd799439011",
@@ -1996,7 +2026,7 @@ class TestAgentFolderRoutes:
         # Should be 400 for no data
         assert resp.status_code in (400, 500)
 
-    def test_update_folder_self_parent(self, app, mock_mongo_db):
+    def test_update_folder_self_parent(self, app):
         fid = "507f1f77bcf86cd799439011"
         with app.test_client() as client:
             resp = client.put(
@@ -2005,7 +2035,7 @@ class TestAgentFolderRoutes:
             )
         assert resp.status_code == 400
 
-    def test_update_folder_exception(self, app, mock_mongo_db):
+    def test_update_folder_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.agents.folders.agent_folders_collection"
@@ -2017,7 +2047,7 @@ class TestAgentFolderRoutes:
                 )
         assert resp.status_code == 400
 
-    def test_delete_folder_exception(self, app, mock_mongo_db):
+    def test_delete_folder_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.agents.folders.agent_folders_collection"
@@ -2026,12 +2056,12 @@ class TestAgentFolderRoutes:
                 resp = client.delete("/api/agents/folders/507f1f77bcf86cd799439011")
         assert resp.status_code == 400
 
-    def test_move_agent_no_agent_id(self, app, mock_mongo_db):
+    def test_move_agent_no_agent_id(self, app):
         with app.test_client() as client:
             resp = client.post("/api/agents/folders/move_agent", json={})
         assert resp.status_code == 400
 
-    def test_move_agent_exception(self, app, mock_mongo_db):
+    def test_move_agent_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.agents.folders.agents_collection"
@@ -2043,12 +2073,12 @@ class TestAgentFolderRoutes:
                 )
         assert resp.status_code == 400
 
-    def test_bulk_move_no_ids(self, app, mock_mongo_db):
+    def test_bulk_move_no_ids(self, app):
         with app.test_client() as client:
             resp = client.post("/api/agents/folders/bulk_move", json={})
         assert resp.status_code == 400
 
-    def test_bulk_move_exception(self, app, mock_mongo_db):
+    def test_bulk_move_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.agents.folders.agents_collection"
@@ -2367,7 +2397,7 @@ class TestWebhookRoutes:
 
         return app
 
-    def test_get_webhook_exception(self, app, mock_mongo_db):
+    def test_get_webhook_exception(self, app):
         with app.test_client() as client:
             with patch(
                 "application.api.user.agents.webhooks.agents_collection"
@@ -2376,7 +2406,7 @@ class TestWebhookRoutes:
                 resp = client.get("/api/agent_webhook?id=507f1f77bcf86cd799439011")
         assert resp.status_code == 400
 
-    def test_webhook_post_no_json(self, app, mock_mongo_db):
+    def test_webhook_post_no_json(self, app):
         agent_id = "507f1f77bcf86cd799439011"
         with app.test_client() as client:
             with patch(
