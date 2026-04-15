@@ -182,6 +182,8 @@ class UserToolsRepository:
         set_clauses: list[str] = []
         params: dict = {"id": tool_id, "user_id": user_id}
         for col, val in filtered.items():
+            if col not in _ALLOWED_COLUMNS:
+                raise ValueError(f"disallowed column: {col!r}")
             if col in _JSONB_COLUMNS:
                 set_clauses.append(f"{col} = CAST(:{col} AS jsonb)")
                 params[col] = _encode_jsonb(val)
