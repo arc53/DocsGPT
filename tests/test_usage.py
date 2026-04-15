@@ -1,4 +1,5 @@
 import sys
+from contextlib import contextmanager
 
 import pytest
 
@@ -288,9 +289,6 @@ class _FakeTokenUsageRepo:
 
     def insert(self, **kwargs):
         self.inserted.append(kwargs)
-
-
-from contextlib import contextmanager
 
 
 @contextmanager

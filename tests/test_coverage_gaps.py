@@ -11,7 +11,6 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from application.core.settings import settings
 
 
 # ---------------------------------------------------------------------------
@@ -471,7 +470,7 @@ class TestTodoListToolEdgeCases:
                 key = (q.get("user_id"), q.get("tool_id"), q.get("todo_id"))
                 return self.docs.pop(key, None)
 
-        fc = FakeCollection()
+        FakeCollection()
         from application.agents.tools.todo_list import TodoListTool
 
         return TodoListTool({"tool_id": "tt"}, user_id="u1")
@@ -599,7 +598,7 @@ class TestNotesToolEdgeCases:
                 key = f"{q.get('user_id')}:{q.get('tool_id')}"
                 return self.docs.pop(key, None)
 
-        fc = FakeCollection()
+        FakeCollection()
         from application.agents.tools.notes import NotesTool
 
         return NotesTool({"tool_id": "nt"}, user_id="u1")

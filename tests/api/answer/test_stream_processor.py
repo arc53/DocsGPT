@@ -13,19 +13,17 @@ Extended coverage for StreamProcessor including:
   - pre_fetch_docs
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
+
+from application.api.answer.services.stream_processor import get_prompt
 
 pytestmark = pytest.mark.skip(
     reason="Uses legacy Mongo ObjectId placeholder prompt IDs; get_prompt raises "
     "ValueError on the missing PG row. Needs prompt seeding via PG fixture or a "
     "monkeypatched get_prompt. Tracked as migration debt."
 )
-
-from unittest.mock import MagicMock, patch
-
-import pytest
-
-from application.api.answer.services.stream_processor import get_prompt
 
 
 class TestGetPrompt:
