@@ -3,6 +3,8 @@ title: DocsGPT Settings
 description: Configure your DocsGPT application by understanding the basic settings.
 ---
 
+import { Callout } from 'nextra/components'
+
 # DocsGPT Settings
 
 DocsGPT is highly configurable, allowing you to tailor it to your specific needs and preferences. You can control various aspects of the application, from choosing the Large Language Model (LLM) provider to selecting embedding models and vector stores.
@@ -238,6 +240,39 @@ SAGEMAKER_REGION=us-east-1
 ```
 
 Your IAM user needs these permissions on the bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`, `s3:HeadObject`.
+
+## User-Data Storage (Postgres)
+
+DocsGPT stores user data — conversations, agents, prompts, sources, attachments, workflows, logs, and token usage — in **PostgreSQL**. The backend connects via a single setting:
+
+| Setting | Description | Default |
+| --- | --- | --- |
+| `POSTGRES_URI` | SQLAlchemy-compatible Postgres URI. Any standard `postgresql://` form works — DocsGPT normalizes it internally to the `psycopg` v3 dialect. | — |
+
+Example:
+
+```env
+POSTGRES_URI=postgresql://docsgpt:docsgpt@localhost:5432/docsgpt
+# Append ?sslmode=require for managed providers that enforce SSL.
+```
+
+Apply the schema once (idempotent):
+
+```bash
+python scripts/db/init_postgres.py
+```
+
+The default Docker Compose file bundles a `postgres` service plus a one-shot `postgres-init` migrator, so you don't have to run this by hand for containerized deployments.
+
+<Callout type="info" emoji="ℹ️">
+  `MONGO_URI` is **opt-in**. It is only consulted when you select the
+  MongoDB Atlas vector-store backend (`VECTOR_STORE=mongodb`) or when
+  running the one-shot `scripts/db/backfill.py` migration from a legacy
+  Mongo-based install. Installing the optional Mongo client libraries
+  requires `pip install -r application/requirements-mongo.txt`. See
+  [PostgreSQL for User Data](/Deploying/Postgres-Migration) for the
+  migration path.
+</Callout>
 
 ## Exploring More Settings
 

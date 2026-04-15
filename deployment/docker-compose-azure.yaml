@@ -17,6 +17,7 @@ services:
       # Override URLs to use docker service names
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     ports:
       - "7091:7091"
     volumes:
@@ -24,7 +25,10 @@ services:
       - ../application/inputs:/app/application/inputs
       - ../application/vectors:/app/application/vectors
     depends_on:
-        - redis
+      redis:
+        condition: service_started
+      postgres-init:
+        condition: service_completed_successfully
 
   worker:
     build: ../application
@@ -36,10 +40,45 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - API_URL=http://backend:7091
+      - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     depends_on:
-        - redis
+      redis:
+        condition: service_started
+      postgres-init:
+        condition: service_completed_successfully
 
   redis:
     image: redis:6-alpine
     ports:
       - 6379:6379
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=docsgpt
+      - POSTGRES_PASSWORD=docsgpt
+      - POSTGRES_DB=docsgpt
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docsgpt -d docsgpt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres-init:
+    build: ../application
+    command: python scripts/db/init_postgres.py
+    env_file:
+      - ../.env
+    environment:
+      - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  postgres_data:

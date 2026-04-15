@@ -1,34 +1,34 @@
 ---
 title: PostgreSQL for User Data
-description: Set up PostgreSQL as the user-data store for DocsGPT and migrate from MongoDB at your own pace.
+description: PostgreSQL is the user-data store for DocsGPT. This page covers fresh installs and the one-shot migration from legacy MongoDB deployments.
 ---
 
 import { Callout } from 'nextra/components'
 
 # PostgreSQL for User Data
 
-DocsGPT is progressively moving user data (conversations, agents, prompts,
-preferences, etc.) from MongoDB to PostgreSQL, one collection at a time.
-Each collection is guarded by a feature flag so you can opt in and roll
-back instantly. MongoDB stays the source of truth until you cut over
-reads; vector stores (`VECTOR_STORE=pgvector`, `faiss`, `qdrant`, `mongodb`, …)
-are unaffected.
+DocsGPT uses **PostgreSQL** as the user-data store for conversations,
+agents, prompts, sources, attachments, workflows, logs, token usage,
+and the rest of the application's structured state. MongoDB is no
+longer required for a default install.
 
 <Callout type="info" emoji="ℹ️">
-  Which collections are available today is in the [Status](#status)
-  table below. That table is the only part of this page that changes
-  release to release.
+  Vector stores are independent from user-data storage. `VECTOR_STORE`
+  can still be `pgvector`, `faiss`, `qdrant`, `milvus`, `elasticsearch`,
+  or `mongodb` (Mongo Atlas Vector Search) — your choice there does not
+  affect this page.
 </Callout>
 
-## Setup
+## Fresh install
 
 1. **Run Postgres 13+.** Native install, Docker, or managed (Neon, RDS,
-   Supabase, Cloud SQL…) — all work. You'll need the `pgcrypto` and
-   `citext` extensions, both standard contrib modules available
-   everywhere.
+   Supabase, Cloud SQL…) — all work. The default Docker Compose file
+   ships a `postgres` service plus a one-shot `postgres-init` migrator
+   that applies the schema automatically.
 
 2. **Create a database and role** (skip if your managed provider gave
-   you these):
+   you these, or if you're using the bundled compose `postgres`
+   service):
 
    ```sql
    CREATE ROLE docsgpt LOGIN PASSWORD 'docsgpt';
@@ -36,79 +36,90 @@ are unaffected.
    ```
 
 3. **Set `POSTGRES_URI` in `.env`.** Any standard Postgres URI works —
-   DocsGPT normalizes it internally.
+   DocsGPT normalizes it internally to the SQLAlchemy `psycopg` (v3)
+   dialect.
 
    ```bash
    POSTGRES_URI=postgresql://docsgpt:docsgpt@localhost:5432/docsgpt
    # Append ?sslmode=require for managed providers that enforce SSL.
    ```
 
-4. **Apply the schema** (idempotent — safe to re-run):
+4. **Apply the schema** (idempotent — safe to re-run). The bundled
+   `postgres-init` compose service does this for you; if you're running
+   the backend outside compose, run it manually:
 
    ```bash
    python scripts/db/init_postgres.py
+   # or equivalently:
+   alembic -c application/alembic.ini upgrade head
    ```
 
-## Migrating data
+That's it — the backend will come up against Postgres.
 
-Two global flags, no per-collection knobs — every collection marked ✅
-in the [Status](#status) table is handled automatically.
+## Migrating from a legacy MongoDB install
 
-1. **Enable dual-write.** Writes go to both Mongo and Postgres; Mongo
-   remains source of truth. Set the flag in `.env` and restart:
+If you are upgrading from an older DocsGPT deployment that stored user
+data in MongoDB, a one-shot migration tool copies every collection into
+Postgres. The tool is run **once**, offline, with the app stopped.
+
+1. **Install the optional Mongo client libraries.** `pymongo` and
+   `dnspython` are no longer part of the default backend install; they
+   live in an optional requirements file:
 
    ```bash
-   USE_POSTGRES=true
+   pip install -r application/requirements.txt -r application/requirements-mongo.txt
    ```
 
-2. **Backfill existing data.** Idempotent — re-run any time to re-sync
+2. **Provision Postgres** following the [Fresh install](#fresh-install)
+   steps above, so `POSTGRES_URI` is set and the schema is applied.
+
+3. **Point the backfill at both databases.** Set `MONGO_URI` in the
+   environment alongside `POSTGRES_URI` for the duration of the
+   migration:
+
+   ```bash
+   export MONGO_URI="mongodb://user:pass@host:27017/docsgpt"
+   export POSTGRES_URI="postgresql://docsgpt:docsgpt@localhost:5432/docsgpt"
+   ```
+
+4. **Run the backfill.** Idempotent — re-run any time to re-sync
    drifted rows. Without arguments, backfills every registered table;
    pass `--tables` to limit.
 
    ```bash
-   python scripts/db/backfill.py --dry-run           # preview everything
-   python scripts/db/backfill.py                      # real run, everything
-   python scripts/db/backfill.py --tables users      # only specific tables
+   python scripts/db/backfill.py --dry-run        # preview everything
+   python scripts/db/backfill.py                   # real run, everything
+   python scripts/db/backfill.py --tables users    # only specific tables
    ```
 
-3. **Cut over reads** once you trust the Postgres state:
-
-   ```bash
-   READ_POSTGRES=true
-   ```
-
-   Rollback is instant: unset `READ_POSTGRES` and restart. Dual-write
-   keeps Postgres up to date so you can flip back and forth.
+5. **Restart the app against Postgres only.** Unset `MONGO_URI` (or
+   leave it unset — it is `Optional[str] = None` in settings) and start
+   the backend. Nothing in the default code path consults MongoDB
+   anymore.
 
 <Callout type="warning" emoji="⚠️">
-  Don't decommission MongoDB until every collection you use is fully
-  cut over. During the migration window, Mongo is still required.
+  The backfill is a one-shot tool. There is no dual-write window and no
+  runtime feature flag — once you're on the current version, Postgres
+  is the only user-data store the backend reads from or writes to.
 </Callout>
 
-## Status
-
-_Last updated: 2026-04-10_
-
-| Collection | Status |
-|---|---|
-| `users` | ✅ Phase 1 |
-| `prompts`, `user_tools`, `feedback`, `stack_logs`, `user_logs`, `token_usage` | ⏳ Phase 1 |
-| `agents`, `sources`, `attachments`, `memories`, `todos`, `notes`, `connector_sessions`, `agent_folders` | ⏳ Phase 2 |
-| `conversations`, `pending_tool_state`, `workflows` | ⏳ Phase 3 |
-
-Schemas for **every** row above already exist after `init_postgres.py`
-runs. What's landing progressively is the application-level dual-write
-wiring and the backfill logic for each collection. Once a collection
-is ✅, enabling `USE_POSTGRES=true` and running `python scripts/db/backfill.py`
-picks it up automatically — no per-collection config change.
+<Callout type="info" emoji="ℹ️">
+  Keep your MongoDB instance online until you have verified the
+  Postgres data is complete. You can re-run `backfill.py` at any time
+  to re-sync. Once you're satisfied, decommission MongoDB — unless you
+  also use it as your vector store (`VECTOR_STORE=mongodb`), in which
+  case keep it for that purpose.
+</Callout>
 
 ## Troubleshooting
 
-- **`relation "..." does not exist`** — run `python scripts/db/init_postgres.py`.
+- **`relation "..." does not exist`** — run `python scripts/db/init_postgres.py`
+  (or `alembic -c application/alembic.ini upgrade head`).
 - **`FATAL: role "docsgpt" does not exist`** — run the `CREATE ROLE` /
-  `CREATE DATABASE` statements from step 2 as a Postgres superuser.
+  `CREATE DATABASE` statements from step 2 of the fresh install as a
+  Postgres superuser.
 - **SSL errors on a managed provider** — append `?sslmode=require` to
   `POSTGRES_URI`.
-- **Dual-write warnings in the logs** — expected to be non-fatal. Mongo
-  is source of truth, so the user-facing request succeeds. Re-run the
-  backfill to re-sync whichever rows drifted.
+- **`ModuleNotFoundError: pymongo` when running `backfill.py`** —
+  install the optional Mongo requirements:
+  `pip install -r application/requirements-mongo.txt`.

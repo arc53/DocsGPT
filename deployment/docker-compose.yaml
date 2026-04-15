@@ -23,6 +23,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - CACHE_REDIS_URL=redis://redis:6379/2
+      - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     ports:
       - "7091:7091"
     volumes:
@@ -30,7 +31,10 @@ services:
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
     depends_on:
-      - redis
+      redis:
+        condition: service_started
+      postgres-init:
+        condition: service_completed_successfully
 
   worker:
     user: root
@@ -44,15 +48,53 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - API_URL=http://backend:7091
       - CACHE_REDIS_URL=redis://redis:6379/2
+      - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     volumes:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
     depends_on:
-      - redis
+      redis:
+        condition: service_started
+      postgres-init:
+        condition: service_completed_successfully
 
   redis:
     image: redis:6-alpine
     ports:
       - 6379:6379
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=docsgpt
+      - POSTGRES_PASSWORD=docsgpt
+      - POSTGRES_DB=docsgpt
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docsgpt -d docsgpt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot migrator: runs alembic upgrade head, then exits. The backend
+  # and worker services wait for it via `service_completed_successfully`,
+  # so they never see a partially-migrated schema.
+  postgres-init:
+    build: ../application
+    command: python scripts/db/init_postgres.py
+    env_file:
+      - ../.env
+    environment:
+      - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  postgres_data:
 
