@@ -25,6 +25,8 @@ jobs:
         with:
           files: docs
           fail_on_error: false
+          reporter: github-pr-check
+          filter_mode: nofilter
           version: 3.0.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
