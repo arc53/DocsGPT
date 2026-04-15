@@ -7,8 +7,7 @@ resume later by sending tool_actions.
 
 import logging
 from typing import Any, Dict, List, Optional
-
-from bson import ObjectId
+from uuid import UUID
 
 from application.storage.db.repositories.conversations import ConversationsRepository
 from application.storage.db.repositories.pending_tool_state import (
@@ -23,8 +22,13 @@ PENDING_STATE_TTL_SECONDS = 30 * 60  # 30 minutes
 
 
 def _make_serializable(obj: Any) -> Any:
-    """Recursively convert MongoDB ObjectIds and other non-JSON types."""
-    if isinstance(obj, ObjectId):
+    """Recursively coerce non-JSON values into JSON-safe forms.
+
+    Handles ``uuid.UUID`` (from PG columns), ``bytes``, and recurses into
+    dicts/lists. Post-Mongo-cutover the ObjectId branch is gone — none of
+    our writers produce them anymore.
+    """
+    if isinstance(obj, UUID):
         return str(obj)
     if isinstance(obj, dict):
         return {str(k): _make_serializable(v) for k, v in obj.items()}
