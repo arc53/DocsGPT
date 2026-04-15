@@ -345,9 +345,10 @@ class StreamProcessor:
                             str(agent["id"]), agent_owner,
                             {"last_used_at": now},
                         )
-                except Exception as upd_err:
+                except Exception:
                     logger.warning(
-                        f"Failed to update last_used_at for agent {agent_id}: {upd_err}"
+                        "Failed to update last_used_at for agent",
+                        exc_info=True,
                     )
             return (
                 str(agent["key"]) if agent.get("key") else None,
