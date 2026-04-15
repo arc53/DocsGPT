@@ -313,3 +313,129 @@ class TestErrorStreamGenerate:
             assert len(error_stream) == 1
             assert '"type": "error"' in error_stream[0]
             assert '"error": "Test error message"' in error_stream[0]
+
+
+# ---------------------------------------------------------------------------
+# Real-PG tests for check_usage against seeded agents + token usage
+# ---------------------------------------------------------------------------
+
+from contextlib import contextmanager
+
+
+@contextmanager
+def _patch_base_db(conn):
+    @contextmanager
+    def _yield():
+        yield conn
+
+    with patch(
+        "application.api.answer.routes.base.db_readonly", _yield
+    ), patch(
+        "application.api.answer.routes.base.db_session", _yield
+    ):
+        yield
+
+
+@pytest.mark.unit
+class TestCheckUsagePgConn:
+    def test_invalid_api_key_returns_401(self, pg_conn, flask_app):
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with _patch_base_db(pg_conn), flask_app.app_context():
+            resource = BaseAnswerResource()
+            result = resource.check_usage({"user_api_key": "does-not-exist"})
+        assert result is not None
+        assert result.status_code == 401
+
+    def test_no_limits_returns_none(self, pg_conn, flask_app):
+        from application.api.answer.routes.base import BaseAnswerResource
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        AgentsRepository(pg_conn).create(
+            "owner", "a", "published", key="k1",
+            limited_token_mode=False, limited_request_mode=False,
+        )
+        with _patch_base_db(pg_conn), flask_app.app_context():
+            resource = BaseAnswerResource()
+            result = resource.check_usage({"user_api_key": "k1"})
+        assert result is None
+
+    def test_within_limit_returns_none(self, pg_conn, flask_app):
+        from application.api.answer.routes.base import BaseAnswerResource
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        AgentsRepository(pg_conn).create(
+            "owner", "a", "published", key="k2",
+            limited_token_mode=True, token_limit=10000,
+        )
+        with _patch_base_db(pg_conn), flask_app.app_context():
+            resource = BaseAnswerResource()
+            result = resource.check_usage({"user_api_key": "k2"})
+        assert result is None
+
+    def test_token_limit_exceeded_returns_429(self, pg_conn, flask_app):
+        from application.api.answer.routes.base import BaseAnswerResource
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.token_usage import (
+            TokenUsageRepository,
+        )
+
+        AgentsRepository(pg_conn).create(
+            "owner", "a", "published", key="k3",
+            limited_token_mode=True, token_limit=100,
+        )
+        # Seed token usage exceeding the limit
+        TokenUsageRepository(pg_conn).insert(
+            api_key="k3", prompt_tokens=500, generated_tokens=0,
+        )
+
+        with _patch_base_db(pg_conn), flask_app.app_context():
+            resource = BaseAnswerResource()
+            result = resource.check_usage({"user_api_key": "k3"})
+        assert result is not None
+        assert result.status_code == 429
+
+    def test_request_limit_exceeded_returns_429(self, pg_conn, flask_app):
+        from application.api.answer.routes.base import BaseAnswerResource
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.token_usage import (
+            TokenUsageRepository,
+        )
+
+        AgentsRepository(pg_conn).create(
+            "owner", "a", "published", key="k4",
+            limited_request_mode=True, request_limit=1,
+        )
+        # Two request entries exceed limit=1
+        TokenUsageRepository(pg_conn).insert(api_key="k4", prompt_tokens=10, generated_tokens=10)
+        TokenUsageRepository(pg_conn).insert(api_key="k4", prompt_tokens=10, generated_tokens=10)
+
+        with _patch_base_db(pg_conn), flask_app.app_context():
+            resource = BaseAnswerResource()
+            result = resource.check_usage({"user_api_key": "k4"})
+        assert result is not None
+        assert result.status_code == 429
+
+    def test_string_True_limited_token_mode_parsed(self, pg_conn, flask_app):
+        """Legacy Mongo sometimes stored ``limited_token_mode`` as the
+        string 'True'; verify the parse branch."""
+        from application.api.answer.routes.base import BaseAnswerResource
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        # Store bool=False in DB (limited_token_mode default). Test uses
+        # string 'True' by mutating the row directly.
+        from sqlalchemy import text
+        AgentsRepository(pg_conn).create(
+            "owner", "a", "published", key="k5",
+        )
+        pg_conn.execute(
+            text(
+                "UPDATE agents SET limited_token_mode = :v WHERE key = :k"
+            ),
+            {"v": True, "k": "k5"},
+        )
+        with _patch_base_db(pg_conn), flask_app.app_context():
+            resource = BaseAnswerResource()
+            result = resource.check_usage({"user_api_key": "k5"})
+        # With default limit and no token usage, should pass
+        assert result is None

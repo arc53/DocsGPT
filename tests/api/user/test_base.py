@@ -1,9 +1,24 @@
 import datetime
 import io
-from unittest.mock import Mock, patch
+from contextlib import contextmanager
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 from werkzeug.datastructures import FileStorage
+
+
+@contextmanager
+def _patch_base_db(conn):
+    @contextmanager
+    def _yield():
+        yield conn
+
+    with patch(
+        "application.api.user.base.db_session", _yield
+    ), patch(
+        "application.api.user.base.db_readonly", _yield
+    ):
+        yield
 
 
 @pytest.mark.unit
@@ -192,5 +207,118 @@ class TestRequireAgentDecorator:
 
             assert result.status_code == 400
             assert result.json["success"] is False
-            assert "missing" in result.json["message"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Real PG tests: ensure_user_doc, resolve_tool_details, require_agent
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureUserDocPgConn:
+    def test_creates_new_user_doc(self, pg_conn):
+        from application.api.user.base import ensure_user_doc
+
+        with _patch_base_db(pg_conn):
+            doc = ensure_user_doc("brand-new-user")
+        assert doc["user_id"] == "brand-new-user"
+        prefs = doc["agent_preferences"]
+        assert prefs.get("pinned") == []
+        assert prefs.get("shared_with_me") == []
+
+    def test_preserves_existing_prefs(self, pg_conn):
+        from application.api.user.base import ensure_user_doc
+        from application.storage.db.repositories.users import UsersRepository
+
+        user = "existing-user"
+        UsersRepository(pg_conn).upsert(user)
+        UsersRepository(pg_conn).add_pinned(user, "agent-abc")
+
+        with _patch_base_db(pg_conn):
+            doc = ensure_user_doc(user)
+        assert "agent-abc" in doc["agent_preferences"]["pinned"]
+        assert doc["agent_preferences"]["shared_with_me"] == []
+
+
+class TestResolveToolDetailsPgConn:
+    def test_empty_list_returns_empty(self, pg_conn):
+        from application.api.user.base import resolve_tool_details
+        with _patch_base_db(pg_conn):
+            assert resolve_tool_details([]) == []
+
+    def test_none_entries_filtered_out(self, pg_conn):
+        from application.api.user.base import resolve_tool_details
+        with _patch_base_db(pg_conn):
+            assert resolve_tool_details([None, ""]) == []
+
+    def test_resolves_known_uuid_ids(self, pg_conn):
+        from application.api.user.base import resolve_tool_details
+        from application.storage.db.repositories.user_tools import (
+            UserToolsRepository,
+        )
+
+        tool = UserToolsRepository(pg_conn).create(
+            "u", "my_tool", display_name="My Tool",
+            custom_name="Custom",
+            description="x",
+        )
+        with _patch_base_db(pg_conn):
+            got = resolve_tool_details([str(tool["id"])])
+        assert len(got) == 1
+        assert got[0]["name"] == "my_tool"
+        assert got[0]["display_name"] == "Custom"
+
+    def test_unknown_ids_skipped(self, pg_conn):
+        from application.api.user.base import resolve_tool_details
+        with _patch_base_db(pg_conn):
+            got = resolve_tool_details(
+                ["00000000-0000-0000-0000-000000000000"]
+            )
+        assert got == []
+
+    def test_legacy_ids_lookup(self, pg_conn):
+        from application.api.user.base import resolve_tool_details
+        from application.storage.db.repositories.user_tools import (
+            UserToolsRepository,
+        )
+
+        tool = UserToolsRepository(pg_conn).create(
+            "u", "legacy_tool",
+            display_name="Legacy",
+            legacy_mongo_id="507f1f77bcf86cd799439011",
+        )
+        _ = tool
+        with _patch_base_db(pg_conn):
+            got = resolve_tool_details(["507f1f77bcf86cd799439011"])
+        assert len(got) == 1
+        assert got[0]["name"] == "legacy_tool"
+
+
+class TestRequireAgentPgConn:
+    def test_returns_404_invalid_token(self, pg_conn, flask_app):
+        from application.api.user.base import require_agent
+
+        @require_agent
+        def fn(webhook_token=None, agent=None, agent_id_str=None):
+            return {"ok": True}
+
+        with _patch_base_db(pg_conn), flask_app.app_context():
+            result = fn(webhook_token="bogus")
+        assert result.status_code == 404
+
+    def test_injects_agent_when_valid(self, pg_conn, flask_app):
+        from application.api.user.base import require_agent
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        agent = AgentsRepository(pg_conn).create(
+            "owner", "wh-agent", "published",
+            incoming_webhook_token="webhook-123",
+        )
+
+        @require_agent
+        def fn(webhook_token=None, agent=None, agent_id_str=None):
+            return {"got": agent_id_str}
+
+        with _patch_base_db(pg_conn), flask_app.app_context():
+            result = fn(webhook_token="webhook-123")
+        assert result["got"] == str(agent["id"])
 

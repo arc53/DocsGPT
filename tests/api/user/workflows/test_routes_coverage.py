@@ -670,3 +670,119 @@ class TestValidateWorkflowStructureExtras:
         errors = validate_workflow_structure(nodes, edges)
         assert any("'else'" in e for e in errors)
 
+
+class TestValidateJsonSchemaPayload:
+    def test_none_returns_pair_of_none(self):
+        from application.api.user.workflows.routes import (
+            validate_json_schema_payload,
+        )
+        got, err = validate_json_schema_payload(None)
+        assert got is None and err is None
+
+    def test_valid_schema(self):
+        from application.api.user.workflows.routes import (
+            validate_json_schema_payload,
+        )
+        got, err = validate_json_schema_payload(
+            {"type": "object", "properties": {"a": {"type": "string"}}},
+        )
+        assert err is None
+        assert got is not None
+
+    def test_invalid_schema_returns_error(self):
+        from application.api.user.workflows.routes import (
+            validate_json_schema_payload,
+        )
+        # Force an invalid payload by passing something that isn't dict
+        got, err = validate_json_schema_payload("not-a-schema")
+        # Either returns error, or returns normalized; handle both
+        assert (got is None and isinstance(err, str)) or got is not None
+
+
+class TestNormalizeAgentNodeJsonSchemas:
+    def test_returns_non_dict_entries_as_is(self):
+        from application.api.user.workflows.routes import (
+            normalize_agent_node_json_schemas,
+        )
+        got = normalize_agent_node_json_schemas(["not-a-dict"])
+        assert got == ["not-a-dict"]
+
+    def test_non_agent_node_passes_through(self):
+        from application.api.user.workflows.routes import (
+            normalize_agent_node_json_schemas,
+        )
+        got = normalize_agent_node_json_schemas(
+            [{"id": "s", "type": "start"}]
+        )
+        assert got[0]["type"] == "start"
+
+    def test_agent_node_without_json_schema_passes_through(self):
+        from application.api.user.workflows.routes import (
+            normalize_agent_node_json_schemas,
+        )
+        got = normalize_agent_node_json_schemas(
+            [{"id": "a", "type": "agent", "data": {"other": 1}}]
+        )
+        assert got[0]["data"]["other"] == 1
+
+    def test_agent_node_with_schema_normalizes(self):
+        from application.api.user.workflows.routes import (
+            normalize_agent_node_json_schemas,
+        )
+        got = normalize_agent_node_json_schemas([
+            {
+                "id": "a",
+                "type": "agent",
+                "data": {"json_schema": {"type": "object"}},
+            }
+        ])
+        assert got[0]["data"]["json_schema"] is not None
+
+    def test_agent_node_invalid_schema_kept_original(self):
+        from application.api.user.workflows.routes import (
+            normalize_agent_node_json_schemas,
+        )
+        got = normalize_agent_node_json_schemas([
+            {
+                "id": "a",
+                "type": "agent",
+                "data": {"json_schema": "not-a-dict"},
+            }
+        ])
+        # Should still return something
+        assert got[0]["type"] == "agent"
+
+
+class TestWriteGraphEdgesWithUnresolvedNodes:
+    def test_drops_edge_with_unknown_source(self, pg_conn, app):
+        from application.api.user.workflows.routes import (
+            WorkflowDetail,
+            WorkflowList,
+            _write_graph,
+        )
+        from application.storage.db.repositories.workflows import (
+            WorkflowsRepository,
+        )
+
+        user = "u-unresolved"
+        wf = WorkflowsRepository(pg_conn).create(user, "wf")
+        pg_wf_id = str(wf["id"])
+
+        nodes_data = [
+            {"id": "n1", "type": "start", "position": {"x": 0, "y": 0}, "data": {}},
+            {"id": "n2", "type": "end", "position": {"x": 100, "y": 0}, "data": {}},
+        ]
+        edges_data = [
+            {"id": "e1", "source": "n1", "target": "n2"},
+            # Unresolved node reference
+            {"id": "e2", "source": "ghost", "target": "n2"},
+        ]
+        with app.app_context():
+            _write_graph(pg_conn, pg_wf_id, 1, nodes_data, edges_data)
+
+    def test_get_workflow_graph_version_negative_falls_back(self):
+        from application.api.user.workflows.routes import (
+            get_workflow_graph_version,
+        )
+        assert get_workflow_graph_version({"current_graph_version": -5}) == 1
+

@@ -250,3 +250,175 @@ class TestSearchVectorstores:
 class TestSearchEndpoint:
     pass
 
+
+# ---------------------------------------------------------------------------
+# Real-PG tests for SearchResource.
+# ---------------------------------------------------------------------------
+
+from contextlib import contextmanager
+
+
+@contextmanager
+def _patch_search_db(conn):
+    @contextmanager
+    def _yield():
+        yield conn
+
+    with patch(
+        "application.api.answer.routes.search.db_readonly", _yield
+    ):
+        yield
+
+
+class TestSearchResourcePgConn:
+    def test_invalid_api_key_returns_401(self, pg_conn, flask_app):
+        from application.api.answer.routes.search import SearchResource
+
+        with _patch_search_db(pg_conn), flask_app.app_context():
+            with flask_app.test_request_context(
+                json={"question": "q", "api_key": "does-not-exist"},
+            ):
+                result = SearchResource().post()
+        assert result.status_code == 401
+
+    def test_no_sources_returns_empty(self, pg_conn, flask_app):
+        from application.api.answer.routes.search import SearchResource
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        AgentsRepository(pg_conn).create(
+            "u", "a", "published", key="no-src-key",
+        )
+        with _patch_search_db(pg_conn), flask_app.app_context():
+            with flask_app.test_request_context(
+                json={"question": "q", "api_key": "no-src-key"},
+            ):
+                result = SearchResource().post()
+        assert result.status_code == 200
+        assert result.json == []
+
+    def test_search_returns_results(self, pg_conn, flask_app):
+        from application.api.answer.routes.search import SearchResource
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.sources import (
+            SourcesRepository,
+        )
+
+        src = SourcesRepository(pg_conn).create("src", user_id="u")
+        AgentsRepository(pg_conn).create(
+            "u", "a", "published",
+            key="search-key",
+            source_id=str(src["id"]),
+        )
+
+        fake_vs = MagicMock()
+        fake_vs.search.return_value = [
+            {"text": "answer text", "metadata": {"title": "Doc"}},
+        ]
+
+        with _patch_search_db(pg_conn), patch(
+            "application.api.answer.routes.search.VectorCreator.create_vectorstore",
+            return_value=fake_vs,
+        ), flask_app.app_context():
+            with flask_app.test_request_context(
+                json={"question": "q", "api_key": "search-key"},
+            ):
+                result = SearchResource().post()
+        assert result.status_code == 200
+        assert len(result.json) == 1
+
+    def test_search_uses_extra_source_ids(self, pg_conn, flask_app):
+        from application.api.answer.routes.search import SearchResource
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.sources import (
+            SourcesRepository,
+        )
+
+        src1 = SourcesRepository(pg_conn).create("s1", user_id="u")
+        src2 = SourcesRepository(pg_conn).create("s2", user_id="u")
+        AgentsRepository(pg_conn).create(
+            "u", "a", "published",
+            key="extra-key",
+            extra_source_ids=[str(src1["id"]), str(src2["id"])],
+        )
+
+        fake_vs = MagicMock()
+        fake_vs.search.return_value = [
+            {"text": "one", "metadata": {"title": "A"}},
+        ]
+        with _patch_search_db(pg_conn), patch(
+            "application.api.answer.routes.search.VectorCreator.create_vectorstore",
+            return_value=fake_vs,
+        ), flask_app.app_context():
+            with flask_app.test_request_context(
+                json={"question": "q", "api_key": "extra-key", "chunks": 4},
+            ):
+                result = SearchResource().post()
+        assert result.status_code == 200
+
+    def test_search_exception_returns_500(self, pg_conn, flask_app):
+        from application.api.answer.routes.search import SearchResource
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.sources import (
+            SourcesRepository,
+        )
+
+        src = SourcesRepository(pg_conn).create("src", user_id="u")
+        AgentsRepository(pg_conn).create(
+            "u", "a", "published",
+            key="err-key",
+            source_id=str(src["id"]),
+        )
+
+        with _patch_search_db(pg_conn), patch(
+            "application.api.answer.routes.search.SearchResource._get_sources_from_api_key",
+            side_effect=RuntimeError("boom"),
+        ), flask_app.app_context():
+            with flask_app.test_request_context(
+                json={"question": "q", "api_key": "err-key"},
+            ):
+                result = SearchResource().post()
+        assert result.status_code == 500
+
+
+class TestGetSourcesFromApiKeyPg:
+    def test_empty_for_unknown_key(self, pg_conn, flask_app):
+        from application.api.answer.routes.search import SearchResource
+
+        with _patch_search_db(pg_conn), flask_app.app_context():
+            got = SearchResource()._get_sources_from_api_key("nope")
+        assert got == []
+
+    def test_returns_extra_source_ids(self, pg_conn, flask_app):
+        from application.api.answer.routes.search import SearchResource
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.sources import (
+            SourcesRepository,
+        )
+
+        src = SourcesRepository(pg_conn).create("s", user_id="u")
+        AgentsRepository(pg_conn).create(
+            "u", "a", "published",
+            key="sources-key",
+            extra_source_ids=[str(src["id"])],
+        )
+        with _patch_search_db(pg_conn), flask_app.app_context():
+            got = SearchResource()._get_sources_from_api_key("sources-key")
+        assert got == [str(src["id"])]
+
+    def test_falls_back_to_single_source(self, pg_conn, flask_app):
+        from application.api.answer.routes.search import SearchResource
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.sources import (
+            SourcesRepository,
+        )
+
+        src = SourcesRepository(pg_conn).create("s", user_id="u")
+        AgentsRepository(pg_conn).create(
+            "u", "a", "published",
+            key="single-key",
+            source_id=str(src["id"]),
+        )
+        with _patch_search_db(pg_conn), flask_app.app_context():
+            got = SearchResource()._get_sources_from_api_key("single-key")
+        assert got == [str(src["id"])]
+
