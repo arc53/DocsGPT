@@ -1,9 +1,43 @@
 import io
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import Flask, request
+
+
+class _FakeAgentsRepo:
+    """Post-PG migration replacement for the old Mongo `agents_collection`
+    mock. Tests set `_FakeAgentsRepo._row` to control what `find_by_key`
+    returns."""
+
+    _row = None
+
+    def __init__(self, *a, **kw):
+        pass
+
+    def find_by_key(self, key):
+        return self._row
+
+
+@contextmanager
+def _fake_readonly():
+    yield None
+
+
+def _patch_agents_repo(row):
+    _FakeAgentsRepo._row = row
+    return (
+        patch(
+            "application.api.user.attachments.routes.AgentsRepository",
+            _FakeAgentsRepo,
+        ),
+        patch(
+            "application.api.user.attachments.routes.db_readonly",
+            _fake_readonly,
+        ),
+    )
 
 
 def _get_response_status(response):
@@ -456,10 +490,9 @@ class TestResolveAuthenticatedUser:
         from application.api.user.attachments.routes import _resolve_authenticated_user
 
         app = Flask(__name__)
-        mock_agents = MagicMock()
-        mock_agents.find_one.return_value = {"key": "valid_key", "user": "apikey_user"}
+        p1, p2 = _patch_agents_repo({"key": "valid_key", "user_id": "apikey_user"})
 
-        with patch("application.api.user.base.agents_collection", mock_agents):
+        with p1, p2:
             with app.test_request_context(
                 "/api/store_attachment",
                 method="POST",
@@ -474,10 +507,9 @@ class TestResolveAuthenticatedUser:
         from application.api.user.attachments.routes import _resolve_authenticated_user
 
         app = Flask(__name__)
-        mock_agents = MagicMock()
-        mock_agents.find_one.return_value = None
+        p1, p2 = _patch_agents_repo(None)
 
-        with patch("application.api.user.base.agents_collection", mock_agents):
+        with p1, p2:
             with app.test_request_context(
                 "/api/store_attachment",
                 method="POST",
@@ -586,12 +618,9 @@ class TestStoreAttachmentAdditional:
         from application.api.user.attachments.routes import StoreAttachment
 
         app = Flask(__name__)
-        mock_agents = MagicMock()
-        mock_agents.find_one.return_value = None
+        p1, p2 = _patch_agents_repo(None)
 
-        with patch(
-            "application.api.user.base.agents_collection", mock_agents
-        ):
+        with p1, p2:
             with app.test_request_context(
                 "/api/store_attachment",
                 method="POST",
@@ -739,15 +768,11 @@ class TestStoreAttachmentAdditional:
         mock_storage = MagicMock()
         mock_storage.save_file.return_value = {"storage_type": "local"}
         mock_store_attachment.return_value = SimpleNamespace(id="task-api")
-        mock_agents = MagicMock()
-        mock_agents.find_one.return_value = {
-            "key": "valid_key",
-            "user": "apikey_user",
-        }
+        p1, p2 = _patch_agents_repo(
+            {"key": "valid_key", "user_id": "apikey_user"}
+        )
 
-        with patch("application.api.user.base.storage", mock_storage), patch(
-            "application.api.user.base.agents_collection", mock_agents
-        ):
+        with patch("application.api.user.base.storage", mock_storage), p1, p2:
             with app.test_request_context(
                 "/api/store_attachment",
                 method="POST",

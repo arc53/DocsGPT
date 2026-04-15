@@ -277,19 +277,41 @@ def test_stream_token_usage_counts_tools_and_image_inputs(monkeypatch):
     assert captured[1]["prompt_tokens"] > captured[0]["prompt_tokens"]
 
 
-@pytest.mark.unit
-def test_update_token_usage_inserts_with_agent_id_only(monkeypatch):
-    inserted_docs = []
+class _FakeTokenUsageRepo:
+    """In-memory stand-in for TokenUsageRepository used by the usage tests."""
 
-    class FakeCollection:
-        def insert_one(self, doc):
-            inserted_docs.append(doc)
+    last_instance = None
 
+    def __init__(self, conn=None):
+        self.inserted = []
+        _FakeTokenUsageRepo.last_instance = self
+
+    def insert(self, **kwargs):
+        self.inserted.append(kwargs)
+
+
+from contextlib import contextmanager
+
+
+@contextmanager
+def _fake_db_session():
+    yield None
+
+
+def _install_fake_token_repo(monkeypatch):
+    """Replace TokenUsageRepository + db_session and strip pytest sentinel."""
     modules_without_pytest = dict(sys.modules)
     modules_without_pytest.pop("pytest", None)
-
     monkeypatch.setattr("application.usage.sys.modules", modules_without_pytest)
-    monkeypatch.setattr("application.usage.usage_collection", FakeCollection())
+    monkeypatch.setattr(
+        "application.usage.TokenUsageRepository", _FakeTokenUsageRepo
+    )
+    monkeypatch.setattr("application.usage.db_session", _fake_db_session)
+
+
+@pytest.mark.unit
+def test_update_token_usage_inserts_with_agent_id_only(monkeypatch):
+    _install_fake_token_repo(monkeypatch)
 
     update_token_usage(
         decoded_token=None,
@@ -298,25 +320,17 @@ def test_update_token_usage_inserts_with_agent_id_only(monkeypatch):
         agent_id="agent_123",
     )
 
-    assert len(inserted_docs) == 1
-    assert inserted_docs[0]["agent_id"] == "agent_123"
-    assert inserted_docs[0]["user_id"] is None
-    assert inserted_docs[0]["api_key"] is None
+    inserted = _FakeTokenUsageRepo.last_instance.inserted
+    assert len(inserted) == 1
+    assert inserted[0]["agent_id"] == "agent_123"
+    assert inserted[0]["user_id"] is None
+    assert inserted[0]["api_key"] is None
 
 
 @pytest.mark.unit
 def test_update_token_usage_skips_when_all_ids_missing(monkeypatch):
-    inserted_docs = []
-
-    class FakeCollection:
-        def insert_one(self, doc):
-            inserted_docs.append(doc)
-
-    modules_without_pytest = dict(sys.modules)
-    modules_without_pytest.pop("pytest", None)
-
-    monkeypatch.setattr("application.usage.sys.modules", modules_without_pytest)
-    monkeypatch.setattr("application.usage.usage_collection", FakeCollection())
+    _FakeTokenUsageRepo.last_instance = None
+    _install_fake_token_repo(monkeypatch)
 
     update_token_usage(
         decoded_token=None,
@@ -325,7 +339,12 @@ def test_update_token_usage_skips_when_all_ids_missing(monkeypatch):
         agent_id=None,
     )
 
-    assert inserted_docs == []
+    # The repository is never even constructed when all ids are missing
+    # because the route short-circuits before entering db_session().
+    assert (
+        _FakeTokenUsageRepo.last_instance is None
+        or _FakeTokenUsageRepo.last_instance.inserted == []
+    )
 
 
 # ── _serialize_for_token_count ──────────────────────────────────────────────
@@ -514,76 +533,43 @@ class TestCountPromptTokens:
 
 @pytest.mark.unit
 def test_update_token_usage_with_user_api_key(monkeypatch):
-    inserted_docs = []
-
-    class FakeCollection:
-        def insert_one(self, doc):
-            inserted_docs.append(doc)
-
-    modules_without_pytest = dict(sys.modules)
-    modules_without_pytest.pop("pytest", None)
-
-    monkeypatch.setattr("application.usage.sys.modules", modules_without_pytest)
-    monkeypatch.setattr("application.usage.usage_collection", FakeCollection())
-
+    _install_fake_token_repo(monkeypatch)
     update_token_usage(
         decoded_token=None,
         user_api_key="api-key-123",
         token_usage={"prompt_tokens": 10, "generated_tokens": 5},
         agent_id=None,
     )
-
-    assert len(inserted_docs) == 1
-    assert inserted_docs[0]["api_key"] == "api-key-123"
-    assert inserted_docs[0]["user_id"] is None
-    assert "agent_id" not in inserted_docs[0]
+    inserted = _FakeTokenUsageRepo.last_instance.inserted
+    assert len(inserted) == 1
+    assert inserted[0]["api_key"] == "api-key-123"
+    assert inserted[0]["user_id"] is None
+    assert inserted[0].get("agent_id") is None
 
 
 @pytest.mark.unit
 def test_update_token_usage_with_decoded_token(monkeypatch):
-    inserted_docs = []
-
-    class FakeCollection:
-        def insert_one(self, doc):
-            inserted_docs.append(doc)
-
-    modules_without_pytest = dict(sys.modules)
-    modules_without_pytest.pop("pytest", None)
-
-    monkeypatch.setattr("application.usage.sys.modules", modules_without_pytest)
-    monkeypatch.setattr("application.usage.usage_collection", FakeCollection())
-
+    _install_fake_token_repo(monkeypatch)
     update_token_usage(
         decoded_token={"sub": "user-abc"},
         user_api_key=None,
         token_usage={"prompt_tokens": 20, "generated_tokens": 10},
         agent_id=None,
     )
-
-    assert len(inserted_docs) == 1
-    assert inserted_docs[0]["user_id"] == "user-abc"
+    inserted = _FakeTokenUsageRepo.last_instance.inserted
+    assert len(inserted) == 1
+    assert inserted[0]["user_id"] == "user-abc"
 
 
 @pytest.mark.unit
 def test_update_token_usage_non_dict_decoded_token(monkeypatch):
-    inserted_docs = []
-
-    class FakeCollection:
-        def insert_one(self, doc):
-            inserted_docs.append(doc)
-
-    modules_without_pytest = dict(sys.modules)
-    modules_without_pytest.pop("pytest", None)
-
-    monkeypatch.setattr("application.usage.sys.modules", modules_without_pytest)
-    monkeypatch.setattr("application.usage.usage_collection", FakeCollection())
-
+    _install_fake_token_repo(monkeypatch)
     update_token_usage(
         decoded_token="not-a-dict",
         user_api_key="key",
         token_usage={"prompt_tokens": 5, "generated_tokens": 3},
         agent_id=None,
     )
-
-    assert len(inserted_docs) == 1
-    assert inserted_docs[0]["user_id"] is None
+    inserted = _FakeTokenUsageRepo.last_instance.inserted
+    assert len(inserted) == 1
+    assert inserted[0]["user_id"] is None

@@ -138,8 +138,7 @@ class TestGetArtifact:
     def test_invalid_artifact_id_returns_not_found(
         self, _patch_db_readonly, flask_app, decoded_token
     ):
-        """Post-cutover, a non-UUID id is swallowed by the repo try/except
-        path and reported as "Artifact not found" (404), not a 400."""
+        """Post-cutover, a non-UUID id is rejected early with 400."""
         from application.api.user.tools.routes import GetArtifact
 
         with flask_app.app_context():
@@ -148,8 +147,7 @@ class TestGetArtifact:
                 resource = GetArtifact()
                 resp = resource.get("not_an_object_id")
 
-        assert resp.status_code == 404
-        assert resp.json["message"] == "Artifact not found"
+        assert resp.status_code == 400
 
     def test_artifact_not_found_returns_404(
         self, _patch_db_readonly, flask_app, decoded_token

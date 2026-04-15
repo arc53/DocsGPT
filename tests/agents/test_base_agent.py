@@ -440,6 +440,7 @@ class TestBaseAgentToolExecution:
 
         tools_dict = {
             "1": {
+                "id": "11111111-1111-1111-1111-111111111111",
                 "name": "custom_tool",
                 "config": {},
                 "actions": [
@@ -514,6 +515,7 @@ class TestBaseAgentToolExecution:
 
         tools_dict = {
             "1": {
+                "id": "22222222-2222-2222-2222-222222222222",
                 "name": "custom_tool",
                 "config": {},
                 "actions": [

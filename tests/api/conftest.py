@@ -87,3 +87,20 @@ def flask_app():
 
     app = Flask(__name__)
     return app
+
+
+@pytest.fixture
+def mock_mongo_db():
+    """Compatibility shim for tests written against the old mongomock fixture.
+
+    The canonical ``mock_mongo_db`` fixture was removed when the answer pipeline
+    moved from Mongo to Postgres (see tests/conftest.py docstring). Most API
+    tests that still request it only do so as a historical gate: they patch
+    specific mongo collections (``agents_collection``, etc.) via
+    ``unittest.mock.patch`` inside the test body and never touch the fixture's
+    return value. Yielding ``None`` keeps those tests runnable without
+    reintroducing mongomock. Tests that actually need a working Mongo client
+    (e.g. ones that call ``MongoDB.get_client()``) will still fail; skip or
+    rewrite those per-case rather than reviving a global fake.
+    """
+    yield None
