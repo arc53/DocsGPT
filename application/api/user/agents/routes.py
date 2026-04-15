@@ -259,7 +259,10 @@ def _build_create_kwargs(data: dict, *, image_url: str, agent_type: str) -> dict
             try:
                 kwargs["chunks"] = int(chunks_val)
             except (TypeError, ValueError):
-                pass
+                current_app.logger.debug(
+                    "Ignoring invalid 'chunks' value while building agent create kwargs: %r",
+                    chunks_val,
+                )
 
     for key in ("limited_token_mode", "limited_request_mode", "allow_system_prompt_override"):
         if key in allowed_fields and key in data:
@@ -271,7 +274,11 @@ def _build_create_kwargs(data: dict, *, image_url: str, agent_type: str) -> dict
             try:
                 kwargs[key] = int(data[key])
             except (TypeError, ValueError):
-                pass
+                current_app.logger.debug(
+                    "Ignoring invalid %s value while building agent create kwargs: %r",
+                    key,
+                    data.get(key),
+                )
 
     if "tools" in allowed_fields and data.get("tools") is not None:
         kwargs["tools"] = data["tools"]

@@ -164,13 +164,13 @@ class ConnectorsCallback(Resource):
                 }
                 with db_session() as conn:
                     repo = ConnectorSessionsRepository(conn)
-                    updated = False
                     if state_object_id:
                         value = str(state_object_id)
+                        updated = False
                         if len(value) == 36 and "-" in value:
                             updated = repo.update(value, patch)
                         if not updated:
-                            updated = repo.update_by_legacy_id(value, patch)
+                            repo.update_by_legacy_id(value, patch)
 
                 # Redirect to success page with session token and user email
                 return redirect(build_callback_redirect({
