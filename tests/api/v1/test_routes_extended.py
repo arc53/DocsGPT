@@ -12,6 +12,9 @@ Covers:
 """
 
 
+from contextlib import contextmanager
+from unittest.mock import MagicMock, patch
+
 import pytest
 from flask import Flask
 
@@ -174,9 +177,6 @@ class TestListModelsExtra:
 # ---------------------------------------------------------------------------
 # Tests using the ephemeral pg_conn fixture against real PG
 # ---------------------------------------------------------------------------
-
-from contextlib import contextmanager
-from unittest.mock import patch, MagicMock
 
 
 @contextmanager

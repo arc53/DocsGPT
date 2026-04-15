@@ -5,8 +5,9 @@ The agent routes still read from Mongo collections internally; we mock
 those collection objects so the tests run without pymongo installed.
 """
 
-from unittest.mock import Mock, patch
 import uuid
+from contextlib import contextmanager
+from unittest.mock import Mock, patch
 
 import pytest
 from flask import Flask
@@ -138,8 +139,6 @@ class TestAgentWebhookListenerGaps:
 # ---------------------------------------------------------------------------
 # Real-PG tests for AgentWebhook (get) and AgentWebhookListener
 # ---------------------------------------------------------------------------
-
-from contextlib import contextmanager
 
 
 @contextmanager

@@ -1,4 +1,5 @@
 import uuid
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -318,8 +319,6 @@ class TestErrorStreamGenerate:
 # ---------------------------------------------------------------------------
 # Real-PG tests for check_usage against seeded agents + token usage
 # ---------------------------------------------------------------------------
-
-from contextlib import contextmanager
 
 
 @contextmanager

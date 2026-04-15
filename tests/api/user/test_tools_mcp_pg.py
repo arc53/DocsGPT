@@ -103,7 +103,6 @@ class TestValidateMcpServerUrl:
     def test_valid_public_url_passes(self):
         from application.api.user.tools.mcp import _validate_mcp_server_url
         # Should not raise for a public-ish URL
-        from application.core.url_validation import SSRFError
         try:
             _validate_mcp_server_url({"server_url": "https://example.com/mcp"})
         except ValueError as e:

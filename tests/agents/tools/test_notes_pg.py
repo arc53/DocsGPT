@@ -3,7 +3,6 @@
 from contextlib import contextmanager
 from unittest.mock import patch
 
-import pytest
 
 
 @contextmanager
@@ -60,7 +59,6 @@ class TestNotesToolExecuteGuards:
         assert "not configured" in msg
 
     def test_unknown_action(self, pg_conn):
-        import uuid as _uuid
         # Real tool_id requires a user_tools row
         from application.storage.db.repositories.user_tools import (
             UserToolsRepository,
@@ -76,7 +74,6 @@ class TestNotesToolExecuteGuards:
 
 class TestNotesActionsMetadata:
     def test_returns_list(self):
-        from application.agents.tools.notes import NotesTool
         tool = _make_tool()
         got = tool.get_actions_metadata()
         assert isinstance(got, list)

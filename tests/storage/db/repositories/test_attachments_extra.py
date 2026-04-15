@@ -1,6 +1,5 @@
 """Extra tests for AttachmentsRepository covering remaining branches."""
 
-import pytest
 
 
 class TestResolveIds:

@@ -1,6 +1,5 @@
 """Extra tests for ConnectorSessionsRepository covering remaining branches."""
 
-import pytest
 
 
 class TestGetByUserAndProvider:

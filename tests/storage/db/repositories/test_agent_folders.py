@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from application.storage.db.repositories.agent_folders import AgentFoldersRepository
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from sqlalchemy import text
 
 from application.storage.db.repositories.stack_logs import StackLogsRepository

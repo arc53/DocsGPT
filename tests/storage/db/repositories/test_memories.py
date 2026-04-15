@@ -5,7 +5,6 @@ Memories have a FK to user_tools, so each test creates a tool row first.
 
 from __future__ import annotations
 
-import pytest
 from sqlalchemy import text
 
 from application.storage.db.repositories.memories import MemoriesRepository

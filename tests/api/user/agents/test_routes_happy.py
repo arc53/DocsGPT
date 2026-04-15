@@ -1067,7 +1067,7 @@ class TestCreateAgentMore:
 # ---------------------------------------------------------------------------
 
 
-class TestAdoptAgent:
+class TestAdoptAgentMore:
     def test_adopts_template_agent(self, app, pg_conn):
         from application.api.user.agents.routes import AdoptAgent
         from application.storage.db.repositories.agents import AgentsRepository

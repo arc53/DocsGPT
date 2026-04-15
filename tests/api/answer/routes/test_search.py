@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -254,8 +255,6 @@ class TestSearchEndpoint:
 # ---------------------------------------------------------------------------
 # Real-PG tests for SearchResource.
 # ---------------------------------------------------------------------------
-
-from contextlib import contextmanager
 
 
 @contextmanager

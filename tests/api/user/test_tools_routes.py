@@ -1,5 +1,6 @@
 """Unit tests for application.api.user.tools.routes."""
 
+from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
 import pytest
@@ -1033,9 +1034,6 @@ class TestGetArtifact:
 # ---------------------------------------------------------------------------
 # Happy-path tests using pg_conn
 # ---------------------------------------------------------------------------
-
-from contextlib import contextmanager
-from unittest.mock import MagicMock
 
 
 @contextmanager

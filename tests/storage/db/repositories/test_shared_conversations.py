@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from application.storage.db.repositories.conversations import ConversationsRepository
 from application.storage.db.repositories.shared_conversations import SharedConversationsRepository

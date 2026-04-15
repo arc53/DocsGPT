@@ -9,7 +9,6 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 
 def _make_agent(*, workflow_id=None, workflow=None, workflow_owner=None,

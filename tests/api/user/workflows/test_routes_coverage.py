@@ -7,6 +7,7 @@ Repository classes (WorkflowsRepository, etc.) are patched for dual-write paths.
 """
 
 import uuid
+from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
 import pytest
@@ -224,8 +225,6 @@ class TestWorkflowDetailDeleteCoverage:
 # ---------------------------------------------------------------------------
 # Real-PG happy-path tests using pg_conn
 # ---------------------------------------------------------------------------
-
-from contextlib import contextmanager
 
 
 @contextmanager
@@ -756,8 +755,6 @@ class TestNormalizeAgentNodeJsonSchemas:
 class TestWriteGraphEdgesWithUnresolvedNodes:
     def test_drops_edge_with_unknown_source(self, pg_conn, app):
         from application.api.user.workflows.routes import (
-            WorkflowDetail,
-            WorkflowList,
             _write_graph,
         )
         from application.storage.db.repositories.workflows import (

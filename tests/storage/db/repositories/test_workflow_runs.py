@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
 
 from application.storage.db.repositories.workflows import WorkflowsRepository
 from application.storage.db.repositories.workflow_runs import WorkflowRunsRepository

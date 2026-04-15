@@ -3,7 +3,6 @@
 from contextlib import contextmanager
 from unittest.mock import patch
 
-import pytest
 
 
 @contextmanager

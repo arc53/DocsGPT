@@ -6,7 +6,6 @@ in the parent conftest) so no data leaks between tests.
 
 from __future__ import annotations
 
-import pytest
 
 from application.storage.db.repositories.users import UsersRepository
 

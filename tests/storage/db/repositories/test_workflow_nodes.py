@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from application.storage.db.repositories.workflows import WorkflowsRepository
 from application.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
