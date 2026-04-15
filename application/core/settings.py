@@ -26,9 +26,8 @@ class Settings(BaseSettings):
 
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
-    # Consulted only by the Mongo vector-store backend and the one-shot
-    # backfill migration script; user data lives exclusively in Postgres.
-    MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
+    # Only consulted when VECTOR_STORE=mongodb or when running scripts/db/backfill.py; user data lives in Postgres.
+    MONGO_URI: Optional[str] = None
     # User-data Postgres DB.
     POSTGRES_URI: Optional[str] = None
     LLM_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")

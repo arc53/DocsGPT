@@ -1,7 +1,7 @@
+import uuid
 from datetime import datetime, timezone
 
 import pytest
-from bson import ObjectId
 from pydantic import ValidationError
 
 from application.agents.workflows.schemas import (
@@ -220,7 +220,7 @@ class TestWorkflowEdgeCreate:
 class TestWorkflowEdge:
     @pytest.mark.unit
     def test_objectid_conversion(self):
-        oid = ObjectId()
+        oid = uuid.uuid4().hex
         e = WorkflowEdge(
             _id=oid,
             id="e1",
@@ -304,7 +304,7 @@ class TestWorkflowNodeCreate:
 class TestWorkflowNode:
     @pytest.mark.unit
     def test_objectid_conversion(self):
-        oid = ObjectId()
+        oid = uuid.uuid4().hex
         n = WorkflowNode(
             _id=oid, id="n1", workflow_id="w1", type=NodeType.AGENT
         )
@@ -355,7 +355,7 @@ class TestWorkflowCreate:
 class TestWorkflow:
     @pytest.mark.unit
     def test_objectid_conversion(self):
-        oid = ObjectId()
+        oid = uuid.uuid4().hex
         w = Workflow(_id=oid)
         assert w.id == str(oid)
 
@@ -526,7 +526,7 @@ class TestWorkflowRun:
 
     @pytest.mark.unit
     def test_objectid_conversion(self):
-        oid = ObjectId()
+        oid = uuid.uuid4().hex
         r = WorkflowRun(_id=oid, workflow_id="w1")
         assert r.id == str(oid)
 

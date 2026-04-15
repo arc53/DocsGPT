@@ -10,9 +10,15 @@
 For feature work, do **not** assume the environment needs to be recreated.
 
 - Check whether the user already has a Python virtual environment such as `venv/` or `.venv/`.
-- Check whether MongoDB is already running.
+- Check whether Postgres is already running and reachable via `POSTGRES_URI` (the canonical user-data store).
 - Check whether Redis is already running.
-- Reuse what is already working. Do not stop or recreate MongoDB, Redis, or the Python environment unless the task is environment setup or troubleshooting.
+- Reuse what is already working. Do not stop or recreate Postgres, Redis, or the Python environment unless the task is environment setup or troubleshooting.
+
+> MongoDB is **not** required for the default install. It is only needed if
+> the user opts into the Mongo vector-store backend (`VECTOR_STORE=mongodb`)
+> or is running the one-shot `scripts/db/backfill.py` to migrate existing
+> user data from the legacy Mongo-based install. In those cases, `pymongo`
+> is available as an optional extra, not a core dependency.
 
 ## Normal local development commands
 

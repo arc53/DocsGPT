@@ -107,6 +107,19 @@ class DatabaseSeeder:
                 continue
         self.logger.info("Database seeding completed")
 
+    @staticmethod
+    def _coerce_uuid_fk(raw) -> Optional[str]:
+        """Coerce sentinel/blank values to ``None`` for nullable UUID FK columns.
+
+        Mirrors the route-side handling in ``application/api/user/agents/routes.py``:
+        the literal string ``"default"``, empty string, and ``None`` all map
+        to ``None`` so the repository layer skips the column and Postgres
+        keeps the FK NULL (FKs are ``ON DELETE SET NULL``).
+        """
+        if raw in (None, "", "default"):
+            return None
+        return str(raw)
+
     def _upsert_agent(
         self,
         agent_config: Dict,
@@ -116,17 +129,27 @@ class DatabaseSeeder:
     ) -> None:
         """Create or update a template agent owned by ``__system__``."""
         name = agent_config["name"]
+        prompt_id_val = self._coerce_uuid_fk(
+            prompt_id if prompt_id is not None else agent_config.get("prompt_id")
+        )
+        folder_id_val = self._coerce_uuid_fk(agent_config.get("folder_id"))
+        workflow_id_val = self._coerce_uuid_fk(agent_config.get("workflow_id"))
+        source_id_val = self._coerce_uuid_fk(source_id)
         agent_fields = {
             "description": agent_config["description"],
             "image": agent_config.get("image", ""),
             "tools": [str(tid) for tid in tool_ids],
             "agent_type": agent_config["agent_type"],
-            "prompt_id": prompt_id or agent_config.get("prompt_id", "default"),
+            "prompt_id": prompt_id_val,
             "chunks": agent_config.get("chunks", "0"),
             "retriever": agent_config.get("retriever", ""),
         }
-        if source_id:
-            agent_fields["source_id"] = str(source_id)
+        if folder_id_val is not None:
+            agent_fields["folder_id"] = folder_id_val
+        if workflow_id_val is not None:
+            agent_fields["workflow_id"] = workflow_id_val
+        if source_id_val is not None:
+            agent_fields["source_id"] = source_id_val
 
         with db_session() as conn:
             repo = AgentsRepository(conn)

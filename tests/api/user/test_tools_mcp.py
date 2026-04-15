@@ -1,10 +1,10 @@
 """Unit tests for application.api.user.tools.mcp."""
 
 import json
+import uuid
 from unittest.mock import Mock, patch
 
 import pytest
-from bson import ObjectId
 from flask import Flask
 
 
@@ -417,7 +417,7 @@ class TestMCPServerSave:
     def test_creates_new_mcp_server_no_auth(self, app):
         from application.api.user.tools.mcp import MCPServerSave
 
-        inserted_id = ObjectId()
+        inserted_id = uuid.uuid4().hex
         mock_mcp_tool = Mock()
         mock_mcp_tool.discover_tools.return_value = None
         mock_mcp_tool.get_actions_metadata.return_value = [
@@ -459,7 +459,7 @@ class TestMCPServerSave:
     def test_creates_with_bearer_auth(self, app):
         from application.api.user.tools.mcp import MCPServerSave
 
-        inserted_id = ObjectId()
+        inserted_id = uuid.uuid4().hex
         mock_mcp_tool = Mock()
         mock_mcp_tool.discover_tools.return_value = None
         mock_mcp_tool.get_actions_metadata.return_value = []
@@ -502,7 +502,7 @@ class TestMCPServerSave:
     def test_updates_existing_mcp_server(self, app):
         from application.api.user.tools.mcp import MCPServerSave
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex
         mock_mcp_tool = Mock()
         mock_mcp_tool.discover_tools.return_value = None
         mock_mcp_tool.get_actions_metadata.return_value = [
@@ -549,7 +549,7 @@ class TestMCPServerSave:
     def test_returns_404_update_not_found(self, app):
         from application.api.user.tools.mcp import MCPServerSave
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex
         mock_mcp_tool = Mock()
         mock_mcp_tool.discover_tools.return_value = None
         mock_mcp_tool.get_actions_metadata.return_value = []
@@ -644,7 +644,7 @@ class TestMCPServerSave:
     def test_oauth_auth_completed_successfully(self, app):
         from application.api.user.tools.mcp import MCPServerSave
 
-        inserted_id = ObjectId()
+        inserted_id = uuid.uuid4().hex
         mock_manager = Mock()
         mock_manager.get_oauth_status.return_value = {
             "status": "completed",
@@ -736,7 +736,7 @@ class TestMCPServerSave:
     def test_strips_sensitive_fields_from_storage(self, app):
         from application.api.user.tools.mcp import MCPServerSave
 
-        inserted_id = ObjectId()
+        inserted_id = uuid.uuid4().hex
         mock_mcp_tool = Mock()
         mock_mcp_tool.discover_tools.return_value = None
         mock_mcp_tool.get_actions_metadata.return_value = []
@@ -784,7 +784,7 @@ class TestMCPServerSave:
     def test_merges_existing_encrypted_credentials_on_update(self, app):
         from application.api.user.tools.mcp import MCPServerSave
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex
         mock_mcp_tool = Mock()
         mock_mcp_tool.discover_tools.return_value = None
         mock_mcp_tool.get_actions_metadata.return_value = []
@@ -834,7 +834,7 @@ class TestMCPServerSave:
     def test_preserves_existing_encrypted_when_no_new_credentials(self, app):
         from application.api.user.tools.mcp import MCPServerSave
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex
         mock_mcp_tool = Mock()
         mock_mcp_tool.discover_tools.return_value = None
         mock_mcp_tool.get_actions_metadata.return_value = []
@@ -1105,7 +1105,7 @@ class TestMCPAuthStatus:
     def test_returns_configured_for_non_oauth_tools(self, app):
         from application.api.user.tools.mcp import MCPAuthStatus
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex
         mock_collection = Mock()
         mock_collection.find.return_value = [
             {
@@ -1130,7 +1130,7 @@ class TestMCPAuthStatus:
     def test_returns_connected_for_oauth_with_tokens(self, app):
         from application.api.user.tools.mcp import MCPAuthStatus
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex
         mock_collection = Mock()
         mock_collection.find.return_value = [
             {
@@ -1168,7 +1168,7 @@ class TestMCPAuthStatus:
     def test_returns_needs_auth_for_oauth_without_tokens(self, app):
         from application.api.user.tools.mcp import MCPAuthStatus
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex
         mock_collection = Mock()
         mock_collection.find.return_value = [
             {
@@ -1201,7 +1201,7 @@ class TestMCPAuthStatus:
     def test_returns_needs_auth_for_oauth_without_server_url(self, app):
         from application.api.user.tools.mcp import MCPAuthStatus
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex
         mock_collection = Mock()
         mock_collection.find.return_value = [
             {
@@ -1226,7 +1226,7 @@ class TestMCPAuthStatus:
     def test_returns_configured_for_none_auth_type(self, app):
         from application.api.user.tools.mcp import MCPAuthStatus
 
-        tool_id = ObjectId()
+        tool_id = uuid.uuid4().hex
         mock_collection = Mock()
         mock_collection.find.return_value = [
             {"_id": tool_id, "config": {}}
@@ -1267,9 +1267,9 @@ class TestMCPAuthStatus:
     def test_multiple_tools_mixed_auth(self, app):
         from application.api.user.tools.mcp import MCPAuthStatus
 
-        tool_id_1 = ObjectId()
-        tool_id_2 = ObjectId()
-        tool_id_3 = ObjectId()
+        tool_id_1 = uuid.uuid4().hex
+        tool_id_2 = uuid.uuid4().hex
+        tool_id_3 = uuid.uuid4().hex
         mock_collection = Mock()
         mock_collection.find.return_value = [
             {"_id": tool_id_1, "config": {"auth_type": "api_key"}},

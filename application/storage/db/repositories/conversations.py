@@ -89,34 +89,47 @@ class ConversationsRepository:
     def _resolve_attachment_refs(
         self, ids: list[str] | None,
     ) -> list[str]:
-        """Translate a list of attachment ids (Mongo ObjectId or UUID)
-        to PG attachment UUIDs.
+        """Translate a list of attachment ids to canonical PG
+        ``attachments.id`` UUIDs.
 
-        Unknown ids (no matching ``attachments.legacy_mongo_id``) are
-        dropped rather than raising — they'd have failed the ``uuid[]``
-        cast otherwise and the entire row would have vanished via
-        dual-write's exception swallow.
+        Inputs may be:
+
+        - A Mongo ObjectId string (24-hex), legacy dual-write era —
+          must be looked up via ``attachments.legacy_mongo_id``.
+        - A UUID string that is a real ``attachments.id`` PK.
+        - A UUID string that is *only* present as
+          ``attachments.legacy_mongo_id`` — this is the post-cutover
+          shape: ``/store_attachment`` mints a UUID, hands it to the
+          worker, and the worker stashes it in ``legacy_mongo_id``
+          while the row gets a freshly-generated PK. Trusting the
+          input UUID as a PK here orphans the array entry: the column
+          is ``uuid[]`` (no FK), so PG accepts the bad value and all
+          downstream reads via ``AttachmentsRepository.get_any`` miss.
+
+        Resolution therefore tries ``legacy_mongo_id`` first for every
+        id (UUID-shaped or not), then falls back to the direct PK
+        match. Unknown ids are dropped — they'd have failed the
+        ``uuid[]`` cast otherwise and the whole row would have vanished
+        via dual-write's exception swallow.
         """
         if not ids:
             return []
+        # Defer to AttachmentsRepository for the batched lookup so the
+        # legacy-first semantics live in one place.
+        from application.storage.db.repositories.attachments import (
+            AttachmentsRepository,
+        )
+
+        clean: list[str] = [str(raw) for raw in ids if raw is not None]
+        if not clean:
+            return []
+        repo = AttachmentsRepository(self._conn)
+        mapping = repo.resolve_ids(clean)
         out: list[str] = []
-        for raw in ids:
-            if raw is None:
-                continue
-            value = str(raw)
-            if _looks_like_uuid(value):
-                out.append(value)
-                continue
-            result = self._conn.execute(
-                text(
-                    "SELECT id FROM attachments "
-                    "WHERE legacy_mongo_id = :lid LIMIT 1"
-                ),
-                {"lid": value},
-            )
-            row = result.fetchone()
-            if row is not None:
-                out.append(str(row[0]))
+        for value in clean:
+            mapped = mapping.get(value)
+            if mapped is not None:
+                out.append(mapped)
         return out
 
     # ------------------------------------------------------------------

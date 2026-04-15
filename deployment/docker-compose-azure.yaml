@@ -17,7 +17,6 @@ services:
       # Override URLs to use docker service names
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
-      - MONGO_URI=mongodb://mongo:27017/docsgpt
     ports:
       - "7091:7091"
     volumes:
@@ -26,7 +25,6 @@ services:
       - ../application/vectors:/app/application/vectors
     depends_on:
         - redis
-        - mongo
 
   worker:
     build: ../application
@@ -37,25 +35,11 @@ services:
       # Override URLs to use docker service names
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
-      - MONGO_URI=mongodb://mongo:27017/docsgpt
       - API_URL=http://backend:7091
     depends_on:
         - redis
-        - mongo
 
   redis:
     image: redis:6-alpine
     ports:
       - 6379:6379
-
-  mongo:
-    image: mongo:6
-    ports:
-      - 27017:27017
-    volumes:
-      - mongodb_data_container:/data/db
-
-
-
-volumes:
-  mongodb_data_container:

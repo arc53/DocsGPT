@@ -13,6 +13,12 @@ variables — ``USE_POSTGRES`` / ``READ_POSTGRES`` in ``.env`` are the
 only knobs operators need. This script discovers what's available from
 the :data:`BACKFILLERS` registry and runs whichever tables were asked for.
 
+This script imports ``pymongo`` directly. ``pymongo`` is not part of the
+base ``application/requirements.txt`` post-migration — install the optional
+Mongo extras before running::
+
+    pip install -r application/requirements-mongo.txt
+
 Usage::
 
     python scripts/db/backfill.py                     # every registered table
@@ -29,6 +35,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import logging
 import sys
@@ -804,6 +811,188 @@ def _resolve_source_refs(
             if mapped and mapped != primary and mapped not in extras:
                 extras.append(mapped)
     return primary, extras
+
+
+_FAISS_INDEX_FILES = ("index.faiss", "index.pkl")
+
+
+def _rename_faiss_indexes(
+    *,
+    conn: Connection,
+    mongo_db: Any,  # unused; kept for registry signature uniformity
+    batch_size: int,  # unused; filesystem work, not DB batching
+    dry_run: bool,
+) -> dict:
+    """Rename FAISS index dirs from legacy Mongo ObjectId to PG UUID.
+
+    FAISS-specific: other vector stores (Qdrant, Elasticsearch, Chroma,
+    pgvector, Milvus, LanceDB, MongoDB Atlas Vector Search) key their
+    collections/indexes by the source identifier the application hands
+    them at query time — once the app starts emitting PG UUIDs post-
+    cutover, the next write re-keys the remote collection automatically
+    and any stale ObjectId-keyed collections are harmless orphans the
+    operator can clean up separately. FAISS, by contrast, stores each
+    index as a directory on disk (``indexes/<source_id>/index.faiss`` +
+    ``index.pkl``), so its on-disk layout must be physically renamed to
+    match the new PG UUIDs or the app will ``FileNotFoundError`` on the
+    first query after cutover.
+
+    This backfiller is a no-op (log-only) unless ``settings.VECTOR_STORE``
+    is ``"faiss"``.
+
+    It reads ``sources.legacy_mongo_id -> sources.id`` from Postgres and,
+    for each row, renames ``indexes/<legacy_mongo_id>/`` to
+    ``indexes/<pg_uuid>/`` via the storage abstraction so both local and
+    S3 backends are handled. Orphan directories (names matching no live
+    source) are left alone and only counted in the stats. Idempotent:
+    if the target dir already exists it is treated as a collision and
+    skipped.
+    """
+    stats = {
+        "seen": 0,
+        "renamed": 0,
+        "skipped_missing": 0,
+        "skipped_collision": 0,
+        "other_vector_store": False,
+    }
+
+    vector_store = (settings.VECTOR_STORE or "").strip().lower()
+    if vector_store != "faiss":
+        stats["other_vector_store"] = True
+        logger.info(
+            "rename_faiss_indexes: VECTOR_STORE=%s (not 'faiss'); "
+            "skipping FAISS-specific index directory rename. Other vector "
+            "stores re-key their collections on the first post-cutover write.",
+            vector_store or "<unset>",
+        )
+        return stats
+
+    from application.storage.storage_creator import StorageCreator
+
+    storage = StorageCreator.get_storage()
+    storage_type = getattr(storage, "__class__", type(storage)).__name__
+    base_dir = "indexes"
+
+    rows = conn.execute(
+        text(
+            "SELECT id::text AS id, legacy_mongo_id "
+            "FROM sources "
+            "WHERE legacy_mongo_id IS NOT NULL"
+        )
+    ).mappings().all()
+
+    live_legacy_ids = {row["legacy_mongo_id"] for row in rows}
+
+    for row in rows:
+        legacy_id = row["legacy_mongo_id"]
+        pg_uuid = row["id"]
+        stats["seen"] += 1
+
+        src_dir = f"{base_dir}/{legacy_id}"
+        dst_dir = f"{base_dir}/{pg_uuid}"
+
+        if not storage.is_directory(src_dir):
+            stats["skipped_missing"] += 1
+            continue
+
+        if storage.is_directory(dst_dir):
+            logger.info(
+                "rename_faiss_indexes: target already exists, skipping: "
+                "%s -> %s",
+                src_dir,
+                dst_dir,
+            )
+            stats["skipped_collision"] += 1
+            continue
+
+        if dry_run:
+            logger.info(
+                "rename_faiss_indexes: would rename %s -> %s", src_dir, dst_dir
+            )
+            stats["renamed"] += 1
+            continue
+
+        # No directory-move primitive on BaseStorage. Copy each known
+        # FAISS file, then delete the source file(s). This works for
+        # both LocalStorage and S3Storage since both implement
+        # get_file/save_file/delete_file on BaseStorage.
+        moved_files: list[str] = []
+        try:
+            for fname in _FAISS_INDEX_FILES:
+                src_path = f"{src_dir}/{fname}"
+                dst_path = f"{dst_dir}/{fname}"
+                if not storage.file_exists(src_path):
+                    # Partial/legacy index dir. Copy whatever else is there
+                    # via list_files so we don't silently drop data.
+                    continue
+                data = storage.get_file(src_path).read()
+                storage.save_file(io.BytesIO(data), dst_path)
+                moved_files.append(src_path)
+
+            # Pick up any auxiliary files that aren't in _FAISS_INDEX_FILES.
+            for rel_path in storage.list_files(src_dir):
+                # storage.list_files returns paths relative to the storage
+                # root (e.g. ``indexes/<legacy_id>/index.faiss``). Skip the
+                # two canonical files we already handled.
+                leaf = rel_path.rsplit("/", 1)[-1]
+                if leaf in _FAISS_INDEX_FILES:
+                    continue
+                dst_extra = f"{dst_dir}/{leaf}"
+                data = storage.get_file(rel_path).read()
+                storage.save_file(io.BytesIO(data), dst_extra)
+                moved_files.append(rel_path)
+
+            # Only remove the source dir once every copy succeeded.
+            storage.remove_directory(src_dir)
+            stats["renamed"] += 1
+            logger.info(
+                "rename_faiss_indexes: renamed %s -> %s (%s)",
+                src_dir,
+                dst_dir,
+                storage_type,
+            )
+        except Exception:
+            logger.exception(
+                "rename_faiss_indexes: failed to rename %s -> %s; "
+                "partial state may exist on %s. Files copied so far: %s",
+                src_dir,
+                dst_dir,
+                storage_type,
+                moved_files,
+            )
+            raise
+
+    # Count orphan dirs (in indexes/ but no matching live source) purely
+    # for operator visibility — leave them alone, as they may be
+    # previously-deleted sources unrelated to this migration.
+    try:
+        orphan_count = 0
+        if storage.is_directory(base_dir):
+            seen_dirs: set[str] = set()
+            for rel_path in storage.list_files(base_dir):
+                parts = rel_path.split("/")
+                if len(parts) < 2:
+                    continue
+                dir_name = parts[1]
+                if dir_name in seen_dirs:
+                    continue
+                seen_dirs.add(dir_name)
+                if dir_name not in live_legacy_ids and not _is_uuid_str(dir_name):
+                    orphan_count += 1
+            if orphan_count:
+                logger.info(
+                    "rename_faiss_indexes: %d orphan index director(y/ies) "
+                    "under %s/ do not match any live source — left untouched.",
+                    orphan_count,
+                    base_dir,
+                )
+    except Exception:
+        # Orphan counting is diagnostic only; never let it fail the backfill.
+        logger.debug(
+            "rename_faiss_indexes: orphan scan skipped", exc_info=True
+        )
+
+    return stats
 
 
 def _backfill_agents(
@@ -2160,6 +2349,11 @@ BACKFILLERS: dict[str, BackfillFn] = {
     # Phase 2 (order: FK targets first)
     "agent_folders": _backfill_agent_folders,
     "sources": _backfill_sources,
+    # Filesystem rename of FAISS index dirs (legacy Mongo ObjectId -> PG UUID).
+    # No-op unless VECTOR_STORE=faiss. Runs after `sources` so the
+    # legacy_mongo_id -> id mapping is queryable, and before `agents` to keep
+    # the vector-store plumbing adjacent to the table it depends on.
+    "rename_faiss_indexes": _rename_faiss_indexes,
     "attachments": _backfill_attachments,
     # Workflows are migrated before agents because agents.workflow_id
     # FK-references the workflows table and the agents backfill resolves

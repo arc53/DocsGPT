@@ -17,7 +17,12 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _patch_mcp_globals(monkeypatch):
-    """Patch module-level MongoDB and cache to avoid real connections."""
+    """Patch module-level cache to avoid real connections.
+
+    MongoDB is no longer used at module level; DBTokenStorage now backs
+    onto the ``connector_sessions`` Postgres repository. The cache patch
+    is still required to avoid hitting real Redis.
+    """
     import sys
 
     if "application.agents.tools.mcp_tool" in sys.modules:

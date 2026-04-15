@@ -351,6 +351,17 @@ class ToolExecutor:
             headers=headers, query_params=query_params,
         )
 
+        if tool is None:
+            error_message = (
+                f"Failed to load tool '{tool_data.get('name')}' (tool_id key={tool_id}): "
+                "missing 'id' on tool row."
+            )
+            logger.error(error_message)
+            tool_call_data["result"] = error_message
+            yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
+            self.tool_calls.append(tool_call_data)
+            return error_message, call_id
+
         resolved_arguments = (
             {"query_params": query_params, "headers": headers, "body": body}
             if tool_data["name"] == "api_tool"
@@ -437,7 +448,16 @@ class ToolExecutor:
                 tool_config.update(decrypted)
                 tool_config["auth_credentials"] = decrypted
                 tool_config.pop("encrypted_credentials", None)
-            tool_config["tool_id"] = str(tool_data.get("_id", tool_id))
+            row_id = tool_data.get("id")
+            if not row_id:
+                logger.error(
+                    "Tool data missing 'id' for tool name=%s (enumerate-key tool_id=%s); "
+                    "skipping load to avoid binding a non-UUID downstream.",
+                    tool_data.get("name"),
+                    tool_id,
+                )
+                return None
+            tool_config["tool_id"] = str(row_id)
             if self.conversation_id:
                 tool_config["conversation_id"] = self.conversation_id
             if tool_data["name"] == "mcp_tool":

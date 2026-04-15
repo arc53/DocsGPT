@@ -4,7 +4,6 @@ import uuid
 from unittest.mock import Mock, patch
 
 import pytest
-from bson import DBRef, ObjectId
 from flask import Flask
 
 
@@ -53,7 +52,7 @@ class TestNormalizeWorkflowReference:
     def test_returns_plain_string_value(self):
         from application.api.user.agents.routes import normalize_workflow_reference
 
-        oid = str(ObjectId())
+        oid = str(uuid.uuid4().hex)
         assert normalize_workflow_reference(oid) == oid
 
     def test_parses_json_string_value(self):
@@ -120,7 +119,7 @@ class TestValidateWorkflowAccess:
 
         mock_wf_col = Mock()
         mock_wf_col.find_one.return_value = None
-        oid = str(ObjectId())
+        oid = str(uuid.uuid4().hex)
 
         with app.app_context():
             with patch(
@@ -133,8 +132,8 @@ class TestValidateWorkflowAccess:
         from application.api.user.agents.routes import validate_workflow_access
 
         mock_wf_col = Mock()
-        mock_wf_col.find_one.return_value = {"_id": ObjectId(), "user": "user1"}
-        oid = str(ObjectId())
+        mock_wf_col.find_one.return_value = {"_id": uuid.uuid4().hex, "user": "user1"}
+        oid = str(uuid.uuid4().hex)
 
         with app.app_context():
             with patch(
@@ -232,7 +231,7 @@ class TestBuildAgentDocument:
     def test_source_and_sources_passed_through(self):
         from application.api.user.agents.routes import build_agent_document
 
-        source_ref = DBRef("sources", ObjectId())
+        source_ref = uuid.uuid4().hex  # TODO: was DBRef("sources", uuid.uuid4().hex)
         doc = build_agent_document(
             {"name": "A", "status": "draft"},
             "user1",
@@ -277,7 +276,7 @@ class TestGetAgent:
     def test_returns_404_agent_not_found(self, app):
         from application.api.user.agents.routes import GetAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         mock_col = Mock()
         mock_col.find_one.return_value = None
 
@@ -294,7 +293,7 @@ class TestGetAgent:
     def test_returns_agent_data_on_success(self, app):
         from application.api.user.agents.routes import GetAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         key = str(uuid.uuid4())
         mock_col = Mock()
         mock_col.find_one.return_value = {
@@ -341,7 +340,7 @@ class TestGetAgent:
         with patch(
             "application.api.user.agents.routes.agents_collection", mock_col
         ):
-            with app.test_request_context(f"/api/get_agent?id={ObjectId()}"):
+            with app.test_request_context(f"/api/get_agent?id={uuid.uuid4().hex}"):
                 from flask import request
 
                 request.decoded_token = {"sub": "user1"}
@@ -365,7 +364,7 @@ class TestGetAgents:
     def test_returns_agents_list(self, app):
         from application.api.user.agents.routes import GetAgents
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         key = str(uuid.uuid4())
         mock_agents_col = Mock()
         mock_agents_col.find.return_value = [
@@ -415,7 +414,7 @@ class TestGetAgents:
         # Agent without source/retriever and not workflow type -> filtered out
         mock_agents_col.find.return_value = [
             {
-                "_id": ObjectId(),
+                "_id": uuid.uuid4().hex,
                 "user": "user1",
                 "name": "BadAgent",
                 "agent_type": "classic",
@@ -451,7 +450,7 @@ class TestGetAgents:
     def test_includes_workflow_agent_without_source(self, app):
         from application.api.user.agents.routes import GetAgents
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         mock_agents_col = Mock()
         mock_agents_col.find.return_value = [
             {
@@ -540,7 +539,7 @@ class TestCreateAgent:
     def test_creates_draft_agent_success(self, app):
         from application.api.user.agents.routes import CreateAgent
 
-        inserted_id = ObjectId()
+        inserted_id = uuid.uuid4().hex
         mock_agents_col = Mock()
         mock_agents_col.insert_one.return_value = Mock(inserted_id=inserted_id)
 
@@ -573,11 +572,11 @@ class TestCreateAgent:
     def test_creates_published_classic_agent(self, app):
         from application.api.user.agents.routes import CreateAgent
 
-        inserted_id = ObjectId()
+        inserted_id = uuid.uuid4().hex
         mock_agents_col = Mock()
         mock_agents_col.insert_one.return_value = Mock(inserted_id=inserted_id)
         mock_handle_img = Mock(return_value=("img.png", None))
-        source_id = str(ObjectId())
+        source_id = str(uuid.uuid4().hex)
 
         with patch(
             "application.api.user.agents.routes.agents_collection", mock_agents_col
@@ -638,13 +637,13 @@ class TestCreateAgent:
     def test_creates_workflow_agent(self, app):
         from application.api.user.agents.routes import CreateAgent
 
-        inserted_id = ObjectId()
-        wf_id = str(ObjectId())
+        inserted_id = uuid.uuid4().hex
+        wf_id = str(uuid.uuid4().hex)
         mock_agents_col = Mock()
         mock_agents_col.insert_one.return_value = Mock(inserted_id=inserted_id)
         mock_handle_img = Mock(return_value=("", None))
         mock_wf_col = Mock()
-        mock_wf_col.find_one.return_value = {"_id": ObjectId(wf_id), "user": "user1"}
+        mock_wf_col.find_one.return_value = {"_id": wf_id, "user": "user1"}
 
         with patch(
             "application.api.user.agents.routes.agents_collection", mock_agents_col
@@ -724,7 +723,7 @@ class TestCreateAgent:
         mock_handle_img = Mock(return_value=("", None))
         mock_folders = Mock()
         mock_folders.find_one.return_value = None
-        folder_id = str(ObjectId())
+        folder_id = str(uuid.uuid4().hex)
 
         with patch(
             "application.api.user.agents.routes.handle_image_upload", mock_handle_img
@@ -774,7 +773,7 @@ class TestCreateAgent:
     def test_form_data_with_json_fields(self, app):
         from application.api.user.agents.routes import CreateAgent
 
-        inserted_id = ObjectId()
+        inserted_id = uuid.uuid4().hex
         mock_agents_col = Mock()
         mock_agents_col.insert_one.return_value = Mock(inserted_id=inserted_id)
         mock_handle_img = Mock(return_value=("", None))
@@ -807,7 +806,7 @@ class TestCreateAgent:
     def test_form_data_invalid_json_tools(self, app):
         from application.api.user.agents.routes import CreateAgent
 
-        inserted_id = ObjectId()
+        inserted_id = uuid.uuid4().hex
         mock_agents_col = Mock()
         mock_agents_col.insert_one.return_value = Mock(inserted_id=inserted_id)
         mock_handle_img = Mock(return_value=("", None))
@@ -838,8 +837,8 @@ class TestCreateAgent:
     def test_create_with_sources_list(self, app):
         from application.api.user.agents.routes import CreateAgent
 
-        inserted_id = ObjectId()
-        src_id = str(ObjectId())
+        inserted_id = uuid.uuid4().hex
+        src_id = str(uuid.uuid4().hex)
         mock_agents_col = Mock()
         mock_agents_col.insert_one.return_value = Mock(inserted_id=inserted_id)
         mock_handle_img = Mock(return_value=("", None))
@@ -902,7 +901,7 @@ class TestUpdateAgent:
 
     def _make_existing_agent(self, agent_id=None):
         return {
-            "_id": agent_id or ObjectId(),
+            "_id": agent_id or uuid.uuid4().hex,
             "user": "user1",
             "name": "Existing Agent",
             "description": "existing desc",
@@ -946,7 +945,7 @@ class TestUpdateAgent:
     def test_returns_404_agent_not_found(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = str(ObjectId())
+        agent_id = str(uuid.uuid4().hex)
         mock_col = Mock()
         mock_col.find_one.return_value = None
         mock_handle_img = Mock(return_value=("", None))
@@ -970,7 +969,7 @@ class TestUpdateAgent:
     def test_updates_agent_name_success(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_repo = Mock()
@@ -1009,7 +1008,7 @@ class TestUpdateAgent:
     def test_returns_400_invalid_status(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1034,7 +1033,7 @@ class TestUpdateAgent:
     def test_returns_400_negative_chunks(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1059,7 +1058,7 @@ class TestUpdateAgent:
     def test_returns_400_tools_not_list(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1084,7 +1083,7 @@ class TestUpdateAgent:
     def test_returns_400_no_update_data(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1109,7 +1108,7 @@ class TestUpdateAgent:
     def test_limited_token_mode_without_limit(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1134,7 +1133,7 @@ class TestUpdateAgent:
     def test_limited_request_mode_without_limit(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1159,7 +1158,7 @@ class TestUpdateAgent:
     def test_token_limit_without_mode(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1184,7 +1183,7 @@ class TestUpdateAgent:
     def test_request_limit_without_mode(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1209,7 +1208,7 @@ class TestUpdateAgent:
     def test_source_with_invalid_oid(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1234,7 +1233,7 @@ class TestUpdateAgent:
     def test_sources_list_with_invalid_oid(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1259,7 +1258,7 @@ class TestUpdateAgent:
     def test_update_source_to_default(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1285,7 +1284,7 @@ class TestUpdateAgent:
     def test_update_empty_source_on_draft(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         existing["status"] = "draft"
         existing["key"] = ""
@@ -1313,7 +1312,7 @@ class TestUpdateAgent:
     def test_update_empty_source_on_published_fails(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         # Published agent with only "default" source
         existing["source"] = "default"
@@ -1340,7 +1339,7 @@ class TestUpdateAgent:
     def test_update_chunks_empty_defaults_to_2(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1368,7 +1367,7 @@ class TestUpdateAgent:
     def test_update_invalid_chunks_value(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1393,7 +1392,7 @@ class TestUpdateAgent:
     def test_update_matched_but_not_modified(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1420,7 +1419,7 @@ class TestUpdateAgent:
     def test_update_matched_zero_returns_404(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1446,7 +1445,7 @@ class TestUpdateAgent:
     def test_publish_draft_generates_key(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         existing["status"] = "draft"
         existing["key"] = ""
@@ -1476,7 +1475,7 @@ class TestUpdateAgent:
     def test_publish_missing_required_fields(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = {
             "_id": agent_id,
             "user": "user1",
@@ -1513,7 +1512,7 @@ class TestUpdateAgent:
     def test_db_update_exception(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1539,7 +1538,7 @@ class TestUpdateAgent:
     def test_update_json_schema_valid(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1571,7 +1570,7 @@ class TestUpdateAgent:
         from application.api.user.agents.routes import UpdateAgent
         from application.core.json_schema_utils import JsonSchemaValidationError
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1602,7 +1601,7 @@ class TestUpdateAgent:
     def test_update_json_schema_none(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1628,15 +1627,15 @@ class TestUpdateAgent:
     def test_update_folder_id_valid(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
-        folder_id = str(ObjectId())
+        agent_id = uuid.uuid4().hex
+        folder_id = str(uuid.uuid4().hex)
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
         mock_col.update_one.return_value = Mock(matched_count=1, modified_count=1)
         mock_handle_img = Mock(return_value=("", None))
         mock_folders = Mock()
-        mock_folders.find_one.return_value = {"_id": ObjectId(folder_id), "user": "user1"}
+        mock_folders.find_one.return_value = {"_id": folder_id, "user": "user1"}
 
         with patch(
             "application.api.user.agents.routes.agents_collection", mock_col
@@ -1659,7 +1658,7 @@ class TestUpdateAgent:
     def test_update_folder_id_invalid_format(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1684,8 +1683,8 @@ class TestUpdateAgent:
     def test_update_folder_not_found(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
-        folder_id = str(ObjectId())
+        agent_id = uuid.uuid4().hex
+        folder_id = str(uuid.uuid4().hex)
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1714,7 +1713,7 @@ class TestUpdateAgent:
     def test_update_folder_id_empty_sets_none(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1742,7 +1741,7 @@ class TestUpdateAgent:
     def test_empty_name_field_rejected(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1767,8 +1766,8 @@ class TestUpdateAgent:
     def test_update_workflow_field(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
-        wf_id = str(ObjectId())
+        agent_id = uuid.uuid4().hex
+        wf_id = str(uuid.uuid4().hex)
         existing = self._make_existing_agent(agent_id)
         existing["agent_type"] = "workflow"
         existing["status"] = "draft"
@@ -1777,7 +1776,7 @@ class TestUpdateAgent:
         mock_col.update_one.return_value = Mock(matched_count=1, modified_count=1)
         mock_handle_img = Mock(return_value=("", None))
         mock_wf_col = Mock()
-        mock_wf_col.find_one.return_value = {"_id": ObjectId(wf_id), "user": "user1"}
+        mock_wf_col.find_one.return_value = {"_id": wf_id, "user": "user1"}
 
         with patch(
             "application.api.user.agents.routes.agents_collection", mock_col
@@ -1800,7 +1799,7 @@ class TestUpdateAgent:
     def test_publish_workflow_without_workflow_field(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = {
             "_id": agent_id,
             "user": "user1",
@@ -1833,8 +1832,8 @@ class TestUpdateAgent:
     def test_form_data_json_parse_error(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = str(ObjectId())
-        existing = self._make_existing_agent(ObjectId(agent_id))
+        agent_id = str(uuid.uuid4().hex)
+        existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
         mock_handle_img = Mock(return_value=("", None))
@@ -1859,7 +1858,7 @@ class TestUpdateAgent:
     def test_limited_token_mode_string_true(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1888,8 +1887,8 @@ class TestUpdateAgent:
     def test_update_sources_with_default(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
-        src_id = str(ObjectId())
+        agent_id = uuid.uuid4().hex
+        src_id = str(uuid.uuid4().hex)
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -1945,7 +1944,7 @@ class TestDeleteAgent:
         with patch(
             "application.api.user.agents.routes.agents_collection", mock_col
         ):
-            with app.test_request_context(f"/api/delete_agent?id={ObjectId()}"):
+            with app.test_request_context(f"/api/delete_agent?id={uuid.uuid4().hex}"):
                 from flask import request
 
                 request.decoded_token = {"sub": "user1"}
@@ -1955,7 +1954,7 @@ class TestDeleteAgent:
     def test_deletes_classic_agent_success(self, app):
         from application.api.user.agents.routes import DeleteAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         mock_col = Mock()
         mock_repo = Mock()
         mock_col.find_one_and_delete.return_value = {
@@ -1985,8 +1984,8 @@ class TestDeleteAgent:
     def test_deletes_workflow_agent_cleans_up(self, app):
         from application.api.user.agents.routes import DeleteAgent
 
-        agent_id = ObjectId()
-        wf_id = str(ObjectId())
+        agent_id = uuid.uuid4().hex
+        wf_id = str(uuid.uuid4().hex)
         mock_agents_col = Mock()
         mock_agents_col.find_one_and_delete.return_value = {
             "_id": agent_id,
@@ -1995,7 +1994,7 @@ class TestDeleteAgent:
             "workflow": wf_id,
         }
         mock_wf_col = Mock()
-        mock_wf_col.find_one.return_value = {"_id": ObjectId(wf_id), "user": "user1"}
+        mock_wf_col.find_one.return_value = {"_id": wf_id, "user": "user1"}
         mock_nodes_col = Mock()
         mock_edges_col = Mock()
 
@@ -2021,8 +2020,8 @@ class TestDeleteAgent:
     def test_deletes_workflow_agent_non_owned_skips_cleanup(self, app):
         from application.api.user.agents.routes import DeleteAgent
 
-        agent_id = ObjectId()
-        wf_id = str(ObjectId())
+        agent_id = uuid.uuid4().hex
+        wf_id = str(uuid.uuid4().hex)
         mock_agents_col = Mock()
         mock_agents_col.find_one_and_delete.return_value = {
             "_id": agent_id,
@@ -2061,7 +2060,7 @@ class TestDeleteAgent:
         with patch(
             "application.api.user.agents.routes.agents_collection", mock_col
         ):
-            with app.test_request_context(f"/api/delete_agent?id={ObjectId()}"):
+            with app.test_request_context(f"/api/delete_agent?id={uuid.uuid4().hex}"):
                 from flask import request
 
                 request.decoded_token = {"sub": "user1"}
@@ -2106,7 +2105,7 @@ class TestPinnedAgents:
     def test_returns_pinned_agents(self, app):
         from application.api.user.agents.routes import PinnedAgents
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         key = str(uuid.uuid4())
         mock_ensure = Mock(
             return_value={
@@ -2152,7 +2151,7 @@ class TestPinnedAgents:
     def test_cleans_up_stale_pinned_ids(self, app):
         from application.api.user.agents.routes import PinnedAgents
 
-        stale_id = str(ObjectId())
+        stale_id = str(uuid.uuid4().hex)
         mock_ensure = Mock(
             return_value={
                 "user_id": "user1",
@@ -2200,7 +2199,7 @@ class TestGetTemplateAgents:
     def test_returns_template_agents(self, app):
         from application.api.user.agents.routes import GetTemplateAgents
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         mock_col = Mock()
         mock_col.find.return_value = [
             {
@@ -2263,7 +2262,7 @@ class TestAdoptAgent:
 
         mock_col = Mock()
         mock_col.find_one.return_value = None
-        agent_id = str(ObjectId())
+        agent_id = str(uuid.uuid4().hex)
 
         with patch(
             "application.api.user.agents.routes.agents_collection", mock_col
@@ -2278,8 +2277,8 @@ class TestAdoptAgent:
     def test_adopts_agent_success(self, app):
         from application.api.user.agents.routes import AdoptAgent
 
-        agent_id = ObjectId()
-        new_id = ObjectId()
+        agent_id = uuid.uuid4().hex
+        new_id = uuid.uuid4().hex
         mock_col = Mock()
         mock_col.find_one.return_value = {
             "_id": agent_id,
@@ -2316,7 +2315,7 @@ class TestAdoptAgent:
         with patch(
             "application.api.user.agents.routes.agents_collection", mock_col
         ):
-            with app.test_request_context(f"/api/adopt_agent?id={ObjectId()}"):
+            with app.test_request_context(f"/api/adopt_agent?id={uuid.uuid4().hex}"):
                 from flask import request
 
                 request.decoded_token = {"sub": "user1"}
@@ -2356,7 +2355,7 @@ class TestPinAgent:
         with patch(
             "application.api.user.agents.routes.agents_collection", mock_col
         ):
-            with app.test_request_context(f"/api/pin_agent?id={ObjectId()}"):
+            with app.test_request_context(f"/api/pin_agent?id={uuid.uuid4().hex}"):
                 from flask import request
 
                 request.decoded_token = {"sub": "user1"}
@@ -2366,9 +2365,9 @@ class TestPinAgent:
     def test_pins_agent(self, app):
         from application.api.user.agents.routes import PinAgent
 
-        agent_id = str(ObjectId())
+        agent_id = str(uuid.uuid4().hex)
         mock_col = Mock()
-        mock_col.find_one.return_value = {"_id": ObjectId(agent_id)}
+        mock_col.find_one.return_value = {"_id": agent_id}
 
         mock_ensure = Mock(
             return_value={
@@ -2396,9 +2395,9 @@ class TestPinAgent:
     def test_unpins_agent(self, app):
         from application.api.user.agents.routes import PinAgent
 
-        agent_id = str(ObjectId())
+        agent_id = str(uuid.uuid4().hex)
         mock_col = Mock()
-        mock_col.find_one.return_value = {"_id": ObjectId(agent_id)}
+        mock_col.find_one.return_value = {"_id": agent_id}
 
         mock_ensure = Mock(
             return_value={
@@ -2432,7 +2431,7 @@ class TestPinAgent:
         with patch(
             "application.api.user.agents.routes.agents_collection", mock_col
         ):
-            with app.test_request_context(f"/api/pin_agent?id={ObjectId()}"):
+            with app.test_request_context(f"/api/pin_agent?id={uuid.uuid4().hex}"):
                 from flask import request
 
                 request.decoded_token = {"sub": "user1"}
@@ -2473,7 +2472,7 @@ class TestRemoveSharedAgent:
             "application.api.user.agents.routes.agents_collection", mock_col
         ):
             with app.test_request_context(
-                f"/api/remove_shared_agent?id={ObjectId()}"
+                f"/api/remove_shared_agent?id={uuid.uuid4().hex}"
             ):
                 from flask import request
 
@@ -2484,10 +2483,10 @@ class TestRemoveSharedAgent:
     def test_removes_shared_agent_success(self, app):
         from application.api.user.agents.routes import RemoveSharedAgent
 
-        agent_id = str(ObjectId())
+        agent_id = str(uuid.uuid4().hex)
         mock_col = Mock()
         mock_col.find_one.return_value = {
-            "_id": ObjectId(agent_id),
+            "_id": agent_id,
             "shared_publicly": True,
         }
 
@@ -2527,7 +2526,7 @@ class TestRemoveSharedAgent:
             "application.api.user.agents.routes.agents_collection", mock_col
         ):
             with app.test_request_context(
-                f"/api/remove_shared_agent?id={ObjectId()}"
+                f"/api/remove_shared_agent?id={uuid.uuid4().hex}"
             ):
                 from flask import request
 
@@ -2549,7 +2548,7 @@ class TestCreateAgentFormDataEdgeCases:
         """Lines 474-475: invalid JSON for 'sources' falls back to []."""
         from application.api.user.agents.routes import CreateAgent
 
-        inserted_id = ObjectId()
+        inserted_id = uuid.uuid4().hex
         mock_agents_col = Mock()
         mock_agents_col.insert_one.return_value = Mock(inserted_id=inserted_id)
         mock_handle_img = Mock(return_value=("", None))
@@ -2580,7 +2579,7 @@ class TestCreateAgentFormDataEdgeCases:
         """Lines 479-480: invalid JSON for 'json_schema' falls back to None."""
         from application.api.user.agents.routes import CreateAgent
 
-        inserted_id = ObjectId()
+        inserted_id = uuid.uuid4().hex
         mock_agents_col = Mock()
         mock_agents_col.insert_one.return_value = Mock(inserted_id=inserted_id)
         mock_handle_img = Mock(return_value=("", None))
@@ -2611,7 +2610,7 @@ class TestCreateAgentFormDataEdgeCases:
         """Lines 484-485: invalid JSON for 'models' falls back to []."""
         from application.api.user.agents.routes import CreateAgent
 
-        inserted_id = ObjectId()
+        inserted_id = uuid.uuid4().hex
         mock_agents_col = Mock()
         mock_agents_col.insert_one.return_value = Mock(inserted_id=inserted_id)
         mock_handle_img = Mock(return_value=("", None))
@@ -2642,7 +2641,7 @@ class TestCreateAgentFormDataEdgeCases:
         """Line 511-517: unknown agent_type not in AGENT_TYPE_SCHEMAS."""
         from application.api.user.agents.routes import CreateAgent
 
-        inserted_id = ObjectId()
+        inserted_id = uuid.uuid4().hex
         mock_agents_col = Mock()
         mock_agents_col.insert_one.return_value = Mock(inserted_id=inserted_id)
         mock_handle_img = Mock(return_value=("", None))
@@ -2674,7 +2673,7 @@ class TestUpdateAgentFormDataEdgeCases:
 
     def _make_existing_agent(self, agent_id=None):
         return {
-            "_id": agent_id or ObjectId(),
+            "_id": agent_id or uuid.uuid4().hex,
             "user": "user1",
             "name": "Existing Agent",
             "description": "existing desc",
@@ -2691,7 +2690,7 @@ class TestUpdateAgentFormDataEdgeCases:
         """Line 699: form.to_dict() branch in UpdateAgent."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -2724,7 +2723,7 @@ class TestUpdateAgentFormDataEdgeCases:
         """Lines 712-713: invalid JSON for sources in form data."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -2752,7 +2751,7 @@ class TestUpdateAgentFormDataEdgeCases:
         """Lines 712-713: invalid JSON for models in form data."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -2780,7 +2779,7 @@ class TestUpdateAgentFormDataEdgeCases:
         """Line 715-716: empty json_schema string sets None."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -2808,7 +2807,7 @@ class TestUpdateAgentFormDataEdgeCases:
         """Line 730: exception when finding agent in DB."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = str(ObjectId())
+        agent_id = str(uuid.uuid4().hex)
         mock_col = Mock()
         mock_col.find_one.side_effect = Exception("DB connection lost")
         mock_handle_img = Mock(return_value=("", None))
@@ -2834,7 +2833,7 @@ class TestUpdateAgentFormDataEdgeCases:
         """Line 746: image upload error is returned directly."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -2861,7 +2860,7 @@ class TestUpdateAgentFormDataEdgeCases:
         """Lines 904-907: limited_request_mode as string 'True'."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -2891,7 +2890,7 @@ class TestUpdateAgentFormDataEdgeCases:
         """Line 1031: workflow_id is missing when publishing workflow."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = {
             "_id": agent_id,
             "user": "user1",
@@ -2926,7 +2925,7 @@ class TestUpdateAgentFormDataEdgeCases:
         """Line 1032-1033: workflow_id is present but not valid ObjectId."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = {
             "_id": agent_id,
             "user": "user1",
@@ -2960,8 +2959,8 @@ class TestUpdateAgentFormDataEdgeCases:
         """Lines 1035-1039: workflow exists but not found in DB."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
-        wf_id = str(ObjectId())
+        agent_id = uuid.uuid4().hex
+        wf_id = str(uuid.uuid4().hex)
         existing = {
             "_id": agent_id,
             "user": "user1",
@@ -3000,7 +2999,7 @@ class TestUpdateAgentFormDataEdgeCases:
         """Line 1000-1001: image_url is truthy, added to update_fields."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -3028,7 +3027,7 @@ class TestUpdateAgentFormDataEdgeCases:
         """Line 1134-1136: newly_generated_key is included in response."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         existing["status"] = "draft"
         existing["key"] = ""
@@ -3065,7 +3064,7 @@ class TestDeleteAgentWorkflowEdgeCases:
         """Lines 1179-1181: invalid workflow id skips cleanup."""
         from application.api.user.agents.routes import DeleteAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         mock_col = Mock()
         mock_col.find_one_and_delete.return_value = {
             "_id": agent_id,
@@ -3111,7 +3110,7 @@ class TestCreateAgentEmptyAgentType:
         from application.api.user.agents.routes import CreateAgent
 
         mock_col = Mock()
-        mock_col.insert_one.return_value = Mock(inserted_id=ObjectId())
+        mock_col.insert_one.return_value = Mock(inserted_id=uuid.uuid4().hex)
         mock_handle_img = Mock(return_value=("", None))
 
         with patch(
@@ -3154,7 +3153,7 @@ class TestUpdateAgentFormDataPath:
         """Cover line 699: form data parsing path."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -3182,7 +3181,7 @@ class TestUpdateAgentFormDataPath:
         """Cover lines 815-816: invalid source ID in sources list."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -3209,7 +3208,7 @@ class TestUpdateAgentFormDataPath:
         """Cover line 859: tools is not a list."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -3236,7 +3235,7 @@ class TestUpdateAgentFormDataPath:
         """Cover line 887: limited_token_mode string 'True' converted."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -3263,7 +3262,7 @@ class TestUpdateAgentFormDataPath:
         """Cover lines 948-951: request_limit without limited_request_mode."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -3293,15 +3292,15 @@ class TestUpdateAgentFormDataPath:
         """Cover lines 950-951: folder_id field update."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
         mock_col.update_one.return_value = Mock(matched_count=1, modified_count=1)
         mock_handle_img = Mock(return_value=("", None))
-        folder_oid = str(ObjectId())
+        folder_oid = str(uuid.uuid4().hex)
         mock_folders_col = Mock()
-        mock_folders_col.find_one.return_value = {"_id": ObjectId(folder_oid), "user": "user1"}
+        mock_folders_col.find_one.return_value = {"_id": folder_oid, "user": "user1"}
 
         with patch(
             "application.api.user.agents.routes.agents_collection", mock_col
@@ -3325,7 +3324,7 @@ class TestUpdateAgentFormDataPath:
         """Cover line 1073: published with source_val check."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = {
             "_id": agent_id,
             "user": "user1",
@@ -3362,7 +3361,7 @@ class TestUpdateAgentFormDataPath:
         """Cover line 1108: matched_count==0 returns 404."""
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -3393,7 +3392,7 @@ class TestGetPinnedAgents:
     def test_returns_pinned_agents_with_masked_key(self, app):
         from application.api.user.agents.routes import PinnedAgents
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         mock_col = Mock()
         mock_col.find.return_value = [
             {
@@ -3486,7 +3485,7 @@ class TestCreateAgentWorkflowError:
         from application.api.user.agents.routes import CreateAgent
 
         mock_col = Mock()
-        mock_col.insert_one.return_value = Mock(inserted_id=ObjectId())
+        mock_col.insert_one.return_value = Mock(inserted_id=uuid.uuid4().hex)
 
         error_response = Mock()
         error_response.status_code = 400
@@ -3532,7 +3531,7 @@ class TestUpdateAgentInvalidSourceInList:
     def test_invalid_source_in_list(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -3572,7 +3571,7 @@ class TestUpdateAgentModelsField:
     def test_models_field_update(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing
@@ -3616,7 +3615,7 @@ class TestUpdateAgentHasValidSourceDefault:
     def test_has_valid_source_with_default(self, app):
         from application.api.user.agents.routes import UpdateAgent
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         existing = self._make_existing_agent(agent_id)
         mock_col = Mock()
         mock_col.find_one.return_value = existing

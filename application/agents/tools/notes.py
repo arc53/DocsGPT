@@ -55,7 +55,9 @@ class NotesTool(Tool):
             return False
         if tool_id.startswith("default_"):
             return False
-        return True
+        from application.storage.db.base_repository import looks_like_uuid
+
+        return looks_like_uuid(tool_id)
 
     # -----------------------------
     # Action implementations

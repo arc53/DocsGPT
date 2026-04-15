@@ -64,7 +64,6 @@ py==1.11.0
 pydantic
 pydantic-core
 pydantic-settings
-pymongo==4.16.0
 pypdf==6.9.2
 python-dateutil==2.9.0.post0
 python-dotenv

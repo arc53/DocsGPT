@@ -1,8 +1,8 @@
 import datetime
+import uuid
 from unittest.mock import Mock, patch
 
 import pytest
-from bson import ObjectId
 from flask import Flask
 
 
@@ -87,7 +87,7 @@ class TestGetMessageAnalytics:
     def test_filters_by_api_key(self, app):
         from application.api.user.analytics.routes import GetMessageAnalytics
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         mock_agents = Mock()
         mock_agents.find_one.return_value = {
             "_id": agent_id,
@@ -295,7 +295,7 @@ class TestGetUserLogs:
     def test_returns_paginated_logs(self, app):
         from application.api.user.analytics.routes import GetUserLogs
 
-        log_id = ObjectId()
+        log_id = uuid.uuid4().hex
         mock_cursor = Mock()
         mock_cursor.sort.return_value.skip.return_value.limit.return_value = [
             {
@@ -341,7 +341,7 @@ class TestGetUserLogs:
         from application.api.user.analytics.routes import GetUserLogs
 
         items = [
-            {"_id": ObjectId(), "action": f"q{i}", "level": "info"}
+            {"_id": uuid.uuid4().hex, "action": f"q{i}", "level": "info"}
             for i in range(3)
         ]
         mock_cursor = Mock()
@@ -471,7 +471,7 @@ class TestGetTokenAnalyticsAdditional:
     def test_filters_by_api_key(self, app):
         from application.api.user.analytics.routes import GetTokenAnalytics
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         mock_agents = Mock()
         mock_agents.find_one.return_value = {
             "_id": agent_id,
@@ -519,7 +519,7 @@ class TestGetTokenAnalyticsAdditional:
                 method="POST",
                 json={
                     "filter_option": "last_30_days",
-                    "api_key_id": str(ObjectId()),
+                    "api_key_id": str(uuid.uuid4().hex),
                 },
             ):
                 from flask import request
@@ -660,7 +660,7 @@ class TestGetFeedbackAnalyticsAdditional:
     def test_filters_by_api_key(self, app):
         from application.api.user.analytics.routes import GetFeedbackAnalytics
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         mock_agents = Mock()
         mock_agents.find_one.return_value = {
             "_id": agent_id,
@@ -708,7 +708,7 @@ class TestGetFeedbackAnalyticsAdditional:
                 method="POST",
                 json={
                     "filter_option": "last_30_days",
-                    "api_key_id": str(ObjectId()),
+                    "api_key_id": str(uuid.uuid4().hex),
                 },
             ):
                 from flask import request
@@ -765,7 +765,7 @@ class TestGetMessageAnalyticsAdditional:
                 method="POST",
                 json={
                     "filter_option": "last_30_days",
-                    "api_key_id": str(ObjectId()),
+                    "api_key_id": str(uuid.uuid4().hex),
                 },
             ):
                 from flask import request
@@ -837,7 +837,7 @@ class TestGetUserLogsAdditional:
     def test_filters_by_api_key(self, app):
         from application.api.user.analytics.routes import GetUserLogs
 
-        agent_id = ObjectId()
+        agent_id = uuid.uuid4().hex
         mock_agents = Mock()
         mock_agents.find_one.return_value = {
             "_id": agent_id,
@@ -888,7 +888,7 @@ class TestGetUserLogsAdditional:
                 method="POST",
                 json={
                     "page": 1,
-                    "api_key_id": str(ObjectId()),
+                    "api_key_id": str(uuid.uuid4().hex),
                 },
             ):
                 from flask import request

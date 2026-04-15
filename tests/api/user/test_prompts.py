@@ -1,7 +1,7 @@
+import uuid
 from unittest.mock import Mock, mock_open, patch
 
 import pytest
-from bson import ObjectId
 from flask import Flask
 
 
@@ -19,7 +19,7 @@ class TestCreatePrompt:
 
         mock_collection = Mock()
         mock_repo = Mock()
-        inserted_id = ObjectId()
+        inserted_id = uuid.uuid4().hex
         mock_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
 
         def _run_dual_write(_repo_cls, fn):
@@ -92,7 +92,7 @@ class TestGetPrompts:
     def test_returns_prompts_with_defaults(self, app):
         from application.api.user.prompts.routes import GetPrompts
 
-        user_prompt_id = ObjectId()
+        user_prompt_id = uuid.uuid4().hex
         mock_collection = Mock()
         mock_collection.find.return_value = [
             {"_id": user_prompt_id, "name": "Custom Prompt"}
@@ -175,7 +175,7 @@ class TestGetSinglePrompt:
     def test_returns_custom_prompt(self, app):
         from application.api.user.prompts.routes import GetSinglePrompt
 
-        prompt_id = ObjectId()
+        prompt_id = uuid.uuid4().hex
         mock_collection = Mock()
         mock_collection.find_one.return_value = {
             "_id": prompt_id,
@@ -215,7 +215,7 @@ class TestDeletePrompt:
     def test_deletes_prompt(self, app):
         from application.api.user.prompts.routes import DeletePrompt
 
-        prompt_id = ObjectId()
+        prompt_id = uuid.uuid4().hex
         mock_collection = Mock()
         mock_repo = Mock()
 
@@ -268,7 +268,7 @@ class TestUpdatePrompt:
     def test_updates_prompt(self, app):
         from application.api.user.prompts.routes import UpdatePrompt
 
-        prompt_id = ObjectId()
+        prompt_id = uuid.uuid4().hex
         mock_collection = Mock()
         mock_repo = Mock()
 
@@ -312,7 +312,7 @@ class TestUpdatePrompt:
         with app.test_request_context(
             "/api/update_prompt",
             method="POST",
-            json={"id": str(ObjectId()), "name": "Updated"},
+            json={"id": str(uuid.uuid4().hex), "name": "Updated"},
         ):
             from flask import request
 

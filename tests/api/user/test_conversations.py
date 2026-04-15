@@ -301,7 +301,7 @@ class TestSubmitFeedback:
                 "/api/feedback",
                 method="POST",
                 json={
-                    "feedback": "LIKE",
+                    "feedback": "like",
                     "conversation_id": str(conv_id),
                     "question_index": 0,
                 },
@@ -350,7 +350,7 @@ class TestSubmitFeedback:
         with app.test_request_context(
             "/api/feedback",
             method="POST",
-            json={"feedback": "LIKE"},
+            json={"feedback": "like"},
         ):
             from flask import request
 

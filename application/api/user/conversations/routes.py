@@ -273,6 +273,11 @@ class SubmitFeedback(Resource):
         user_id = decoded_token.get("sub")
         feedback_value = data["feedback"]
         question_index = int(data["question_index"])
+        # Normalize string feedback to lowercase so analytics queries
+        # (which match 'like'/'dislike') count rows correctly. Tolerate
+        # legacy uppercase clients on ingest. Non-string values pass through.
+        if isinstance(feedback_value, str):
+            feedback_value = feedback_value.lower()
         feedback_payload = (
             None
             if feedback_value is None

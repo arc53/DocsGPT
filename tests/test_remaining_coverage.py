@@ -52,38 +52,6 @@ class TestCeleryInitConfigLoggers:
 
 
 # ---------------------------------------------------------------------------
-# application/core/mongo_db.py  (lines 22-24)
-# ---------------------------------------------------------------------------
-@pytest.mark.unit
-class TestMongoDBCloseClient:
-    def test_close_client_when_connected(self):
-        """Cover lines 22-24: close_client closes and sets to None."""
-        from application.core.mongo_db import MongoDB
-
-        mock_client = MagicMock()
-        original = MongoDB._client
-        try:
-            MongoDB._client = mock_client
-            MongoDB.close_client()
-            mock_client.close.assert_called_once()
-            assert MongoDB._client is None
-        finally:
-            MongoDB._client = original
-
-    def test_close_client_when_not_connected(self):
-        """Cover: close_client is no-op when _client is None."""
-        from application.core.mongo_db import MongoDB
-
-        original = MongoDB._client
-        try:
-            MongoDB._client = None
-            MongoDB.close_client()  # Should not raise
-            assert MongoDB._client is None
-        finally:
-            MongoDB._client = original
-
-
-# ---------------------------------------------------------------------------
 # application/llm/docsgpt_provider.py  (lines 10, 29, 51)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit

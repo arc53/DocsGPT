@@ -158,27 +158,6 @@ class PaginatedSources(Resource):
             return make_response(jsonify({"success": False}), 400)
 
 
-@sources_ns.route("/delete_by_ids")
-class DeleteByIds(Resource):
-    @api.doc(
-        description="Deletes documents from the vector store by IDs",
-        params={"path": "Comma-separated list of IDs"},
-    )
-    def get(self):
-        ids = request.args.get("path")
-        if not ids:
-            return make_response(
-                jsonify({"success": False, "message": "Missing required fields"}), 400
-            )
-        # TODO(pg-cutover): vector-store-level ``delete_index(ids=...)`` used
-        # to hang off the legacy ``sources_collection`` wrapper. That path
-        # goes through the vector store, not user-data Postgres — left as a
-        # follow-up since this endpoint is admin-only.
-        return make_response(
-            jsonify({"success": False, "message": "Not implemented"}), 501
-        )
-
-
 @sources_ns.route("/delete_old")
 class DeleteOldIndexes(Resource):
     @api.doc(

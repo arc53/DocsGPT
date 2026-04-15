@@ -1,10 +1,10 @@
 """Tests for application/api/answer/routes/stream.py"""
 
 import json
+import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
-from bson import ObjectId
 
 
 @pytest.fixture
@@ -15,9 +15,9 @@ def mock_stream_processor():
     ) as MockProcessor:
         processor = MagicMock()
         processor.decoded_token = {"sub": "test_user"}
-        processor.conversation_id = str(ObjectId())
+        processor.conversation_id = uuid.uuid4().hex
         processor.agent_config = {}
-        processor.agent_id = str(ObjectId())
+        processor.agent_id = uuid.uuid4().hex
         processor.is_shared_usage = False
         processor.shared_token = None
         processor.model_id = "gpt-4"
@@ -166,7 +166,7 @@ class TestStreamResourcePost:
         def fake_stream(*args, **kwargs):
             yield f'data: {json.dumps({"type": "end"})}\n\n'
 
-        conv_id = str(ObjectId())
+        conv_id = uuid.uuid4().hex
         with patch(
             "application.api.answer.routes.stream.StreamResource.validate_request",
             return_value=None,

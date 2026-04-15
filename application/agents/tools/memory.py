@@ -59,6 +59,14 @@ class MemoryTool(Tool):
                 tool_id,
             )
             return False
+        from application.storage.db.base_repository import looks_like_uuid
+
+        if not looks_like_uuid(tool_id):
+            logger.debug(
+                "Skipping Postgres operation for MemoryTool with non-UUID tool_id=%s",
+                tool_id,
+            )
+            return False
         return True
 
     # -----------------------------

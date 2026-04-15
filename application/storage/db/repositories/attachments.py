@@ -86,6 +86,65 @@ class AttachmentsRepository:
                 return row
         return self.get_by_legacy_id(attachment_id, user_id)
 
+    def resolve_ids(self, ids: list[str]) -> dict[str, str]:
+        """Batch-resolve a list of attachment ids (PG UUID *or* Mongo
+        ObjectId or post-cutover route-minted UUID stored only in
+        ``legacy_mongo_id``) to their canonical PG ``attachments.id``.
+
+        Returns a ``{input_id: pg_uuid}`` map. Inputs that don't match
+        any row are simply absent from the map (caller decides whether
+        to drop or keep). Single round-trip via ``= ANY(:ids)`` to
+        avoid N+1.
+
+        Resolution prefers ``legacy_mongo_id`` matches first, since
+        the post-cutover ``/store_attachment`` route mints a UUID that
+        is UUID-shaped but only ever lives in ``legacy_mongo_id``
+        (the row's own ``id`` is a fresh PG-generated UUID). A
+        UUID-shaped input that is *also* a real ``attachments.id``
+        falls back to the direct PK match.
+        """
+        if not ids:
+            return {}
+        # Deduplicate while preserving order for stable output mapping.
+        unique_ids: list[str] = []
+        seen: set[str] = set()
+        for raw in ids:
+            if raw is None:
+                continue
+            s = str(raw)
+            if s in seen:
+                continue
+            seen.add(s)
+            unique_ids.append(s)
+        if not unique_ids:
+            return {}
+        result = self._conn.execute(
+            text(
+                "SELECT id::text AS id, legacy_mongo_id "
+                "FROM attachments "
+                "WHERE legacy_mongo_id = ANY(:ids) "
+                "OR id::text = ANY(:ids)"
+            ),
+            {"ids": unique_ids},
+        )
+        rows = result.fetchall()
+        # Build two indexes so we can apply the legacy-first preference.
+        by_legacy: dict[str, str] = {}
+        by_pk: dict[str, str] = {}
+        for row in rows:
+            pg_id = str(row[0])
+            legacy = row[1]
+            by_pk[pg_id] = pg_id
+            if legacy is not None:
+                by_legacy[str(legacy)] = pg_id
+        out: dict[str, str] = {}
+        for s in unique_ids:
+            if s in by_legacy:
+                out[s] = by_legacy[s]
+            elif s in by_pk:
+                out[s] = by_pk[s]
+        return out
+
     def get_by_legacy_id(self, legacy_mongo_id: str, user_id: str | None = None) -> Optional[dict]:
         """Fetch an attachment by the original Mongo ObjectId string."""
         legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None

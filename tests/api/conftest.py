@@ -1,7 +1,8 @@
 """API-specific test fixtures."""
 
+import uuid
+
 import pytest
-from bson import ObjectId
 
 
 @pytest.fixture
@@ -27,7 +28,7 @@ def mock_request_token(monkeypatch, decoded_token):
 @pytest.fixture
 def sample_conversation():
     return {
-        "_id": ObjectId(),
+        "_id": uuid.uuid4().hex,
         "user": "test_user",
         "name": "Test Conversation",
         "queries": [
@@ -43,7 +44,7 @@ def sample_conversation():
 @pytest.fixture
 def sample_prompt():
     return {
-        "_id": ObjectId(),
+        "_id": uuid.uuid4().hex,
         "user": "test_user",
         "name": "Helpful Assistant",
         "content": "You are a helpful assistant that provides clear and concise answers.",
@@ -54,7 +55,7 @@ def sample_prompt():
 @pytest.fixture
 def sample_agent():
     return {
-        "_id": ObjectId(),
+        "_id": uuid.uuid4().hex,
         "user": "test_user",
         "name": "Test Agent",
         "type": "classic",
