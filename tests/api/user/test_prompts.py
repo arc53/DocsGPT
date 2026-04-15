@@ -325,3 +325,173 @@ class TestUpdatePrompt:
             response = UpdatePrompt().post()
 
         assert response.status_code == 400
+
+
+@pytest.mark.unit
+class TestCreatePromptErrorPaths:
+
+    def test_collection_error_returns_400(self, app):
+        from application.api.user.prompts.routes import CreatePrompt
+
+        mock_collection = Mock()
+        mock_collection.insert_one.side_effect = Exception("DB error")
+
+        with patch(
+            "application.api.user.prompts.routes.prompts_collection",
+            mock_collection,
+        ):
+            with app.test_request_context(
+                "/api/create_prompt",
+                method="POST",
+                json={"name": "P", "content": "C"},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = CreatePrompt().post()
+
+        assert response.status_code == 400
+
+
+@pytest.mark.unit
+class TestGetPromptsErrorPaths:
+
+    def test_collection_error_returns_400(self, app):
+        from application.api.user.prompts.routes import GetPrompts
+
+        mock_collection = Mock()
+        mock_collection.find.side_effect = Exception("DB error")
+
+        with patch(
+            "application.api.user.prompts.routes.prompts_collection",
+            mock_collection,
+        ):
+            with app.test_request_context("/api/get_prompts"):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = GetPrompts().get()
+
+        assert response.status_code == 400
+
+
+@pytest.mark.unit
+class TestGetSinglePromptErrorPaths:
+
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.prompts.routes import GetSinglePrompt
+
+        with app.test_request_context("/api/get_single_prompt?id=default"):
+            from flask import request
+
+            request.decoded_token = None
+            response = GetSinglePrompt().get()
+
+        assert response.status_code == 401
+
+    def test_collection_error_returns_400(self, app):
+        from application.api.user.prompts.routes import GetSinglePrompt
+
+        prompt_id = ObjectId()
+        mock_collection = Mock()
+        mock_collection.find_one.side_effect = Exception("DB error")
+
+        with patch(
+            "application.api.user.prompts.routes.prompts_collection",
+            mock_collection,
+        ):
+            with app.test_request_context(
+                f"/api/get_single_prompt?id={prompt_id}"
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = GetSinglePrompt().get()
+
+        assert response.status_code == 400
+
+
+@pytest.mark.unit
+class TestDeletePromptErrorPaths:
+
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.prompts.routes import DeletePrompt
+
+        with app.test_request_context(
+            "/api/delete_prompt",
+            method="POST",
+            json={"id": str(ObjectId())},
+        ):
+            from flask import request
+
+            request.decoded_token = None
+            response = DeletePrompt().post()
+
+        assert response.status_code == 401
+
+    def test_collection_error_returns_400(self, app):
+        from application.api.user.prompts.routes import DeletePrompt
+
+        mock_collection = Mock()
+        mock_collection.delete_one.side_effect = Exception("DB error")
+
+        with patch(
+            "application.api.user.prompts.routes.prompts_collection",
+            mock_collection,
+        ):
+            with app.test_request_context(
+                "/api/delete_prompt",
+                method="POST",
+                json={"id": str(ObjectId())},
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = DeletePrompt().post()
+
+        assert response.status_code == 400
+
+
+@pytest.mark.unit
+class TestUpdatePromptErrorPaths:
+
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.prompts.routes import UpdatePrompt
+
+        with app.test_request_context(
+            "/api/update_prompt",
+            method="POST",
+            json={"id": str(ObjectId()), "name": "X", "content": "Y"},
+        ):
+            from flask import request
+
+            request.decoded_token = None
+            response = UpdatePrompt().post()
+
+        assert response.status_code == 401
+
+    def test_collection_error_returns_400(self, app):
+        from application.api.user.prompts.routes import UpdatePrompt
+
+        mock_collection = Mock()
+        mock_collection.update_one.side_effect = Exception("DB error")
+
+        with patch(
+            "application.api.user.prompts.routes.prompts_collection",
+            mock_collection,
+        ):
+            with app.test_request_context(
+                "/api/update_prompt",
+                method="POST",
+                json={
+                    "id": str(ObjectId()),
+                    "name": "Updated",
+                    "content": "New content",
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = UpdatePrompt().post()
+
+        assert response.status_code == 400

@@ -1318,3 +1318,152 @@ class TestMCPAuthStatus:
         assert statuses[str(tool_id_1)] == "configured"
         assert statuses[str(tool_id_2)] == "connected"
         assert statuses[str(tool_id_3)] == "needs_auth"
+
+
+# ---------------------------------------------------------------------------
+# Helper: _validate_mcp_server_url
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+class TestValidateMcpServerUrl:
+
+    def test_raises_when_url_is_empty(self):
+        from application.api.user.tools.mcp import _validate_mcp_server_url
+
+        with pytest.raises(ValueError, match="server_url is required"):
+            _validate_mcp_server_url({})
+
+    def test_raises_when_url_is_none(self):
+        from application.api.user.tools.mcp import _validate_mcp_server_url
+
+        with pytest.raises(ValueError, match="server_url is required"):
+            _validate_mcp_server_url({"server_url": None})
+
+    def test_raises_when_url_is_ssrf(self):
+        from application.api.user.tools.mcp import _validate_mcp_server_url
+        from application.core.url_validation import SSRFError
+
+        with patch(
+            "application.api.user.tools.mcp.validate_url",
+            side_effect=SSRFError("private address"),
+        ):
+            with pytest.raises(ValueError, match="Invalid server URL"):
+                _validate_mcp_server_url({"server_url": "http://169.254.169.254"})
+
+    def test_passes_valid_url(self):
+        from application.api.user.tools.mcp import _validate_mcp_server_url
+
+        # Should not raise
+        _validate_mcp_server_url({"server_url": "https://mcp.example.com"})
+
+
+# ---------------------------------------------------------------------------
+# Additional coverage: ValueError paths in TestMCPServerConfig and MCPServerSave
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+class TestMCPServerConfigValueError:
+
+    def test_returns_400_when_url_missing(self, app):
+        from application.api.user.tools.mcp import TestMCPServerConfig
+
+        with patch(
+            "application.api.user.tools.mcp.validate_url",
+            side_effect=None,  # let validate_url pass but override _validate_mcp_server_url
+        ):
+            with patch(
+                "application.api.user.tools.mcp._validate_mcp_server_url",
+                side_effect=ValueError("server_url is required"),
+            ):
+                with app.test_request_context(
+                    "/api/mcp_server/test",
+                    method="POST",
+                    json={"config": {"transport_type": "http"}},
+                ):
+                    from flask import request
+
+                    request.decoded_token = {"sub": "user1"}
+                    response = TestMCPServerConfig().post()
+
+        assert response.status_code == 400
+        assert "Invalid MCP server configuration" in response.json["error"]
+
+    def test_returns_400_when_ssrf_url(self, app):
+        from application.api.user.tools.mcp import TestMCPServerConfig
+        from application.core.url_validation import SSRFError
+
+        with patch(
+            "application.api.user.tools.mcp.validate_url",
+            side_effect=SSRFError("private range"),
+        ):
+            with app.test_request_context(
+                "/api/mcp_server/test",
+                method="POST",
+                json={
+                    "config": {
+                        "server_url": "http://192.168.1.1",
+                        "transport_type": "http",
+                        "auth_type": "none",
+                    }
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = TestMCPServerConfig().post()
+
+        assert response.status_code == 400
+        assert "Invalid MCP server configuration" in response.json["error"]
+
+
+@pytest.mark.unit
+class TestMCPServerSaveValueError:
+
+    def test_returns_400_when_ssrf_url(self, app):
+        from application.api.user.tools.mcp import MCPServerSave
+        from application.core.url_validation import SSRFError
+
+        with patch(
+            "application.api.user.tools.mcp.validate_url",
+            side_effect=SSRFError("private range"),
+        ):
+            with app.test_request_context(
+                "/api/mcp_server/save",
+                method="POST",
+                json={
+                    "displayName": "MCP",
+                    "config": {
+                        "server_url": "http://192.168.1.1",
+                        "transport_type": "http",
+                        "auth_type": "none",
+                    },
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = MCPServerSave().post()
+
+        assert response.status_code == 400
+        assert "Invalid MCP server configuration" in response.json["error"]
+
+    def test_returns_400_when_url_missing(self, app):
+        from application.api.user.tools.mcp import MCPServerSave
+
+        with patch(
+            "application.api.user.tools.mcp._validate_mcp_server_url",
+            side_effect=ValueError("server_url is required"),
+        ):
+            with app.test_request_context(
+                "/api/mcp_server/save",
+                method="POST",
+                json={
+                    "displayName": "MCP",
+                    "config": {"transport_type": "http", "auth_type": "none"},
+                },
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = MCPServerSave().post()
+
+        assert response.status_code == 400
+        assert "Invalid MCP server configuration" in response.json["error"]
