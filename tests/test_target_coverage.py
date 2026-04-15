@@ -24,24 +24,28 @@ class TestSeederSourceIngestionNotSuccessful:
     """Cover seeder.py line 155: task.successful() returns False."""
 
     def test_task_successful_false_returns_false(self):
-        import mongomock
         from application.seed.seeder import DatabaseSeeder
 
-        client = mongomock.MongoClient()
-        db = client["test_db"]
-        seeder = DatabaseSeeder(db)
+        seeder = DatabaseSeeder()
 
-        with patch("application.seed.seeder.ingest_remote") as mock_ingest:
+        with patch("application.seed.seeder.ingest_remote") as mock_ingest, patch(
+            "application.seed.seeder.db_readonly"
+        ) as mock_readonly:
+            mock_readonly.return_value.__enter__.return_value = MagicMock()
             mock_task = MagicMock()
             mock_task.get.return_value = {"status": "error"}
             mock_task.successful.return_value = False
             mock_ingest.delay.return_value = mock_task
 
-            config = {
-                "name": "a",
-                "source": {"url": "http://fail.com", "name": "fail_src"},
-            }
-            result = seeder._handle_source(config)
+            with patch.object(
+                DatabaseSeeder, "_find_system_source_by_remote_url",
+                return_value=None,
+            ):
+                config = {
+                    "name": "a",
+                    "source": {"url": "http://fail.com", "name": "fail_src"},
+                }
+                result = seeder._handle_source(config)
 
         assert result is False
 
