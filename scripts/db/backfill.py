@@ -46,7 +46,6 @@ from typing import Any, Callable, Optional
 # Make the project root importable regardless of cwd.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from pymongo import MongoClient  # noqa: E402
 from sqlalchemy import Connection, text  # noqa: E402
 
 from application.core.settings import settings  # noqa: E402
@@ -2431,6 +2430,15 @@ def main() -> int:
             "Unknown table(s): %s. Available: %s",
             ", ".join(unknown),
             ", ".join(BACKFILLERS),
+        )
+        return 1
+
+    try:
+        from pymongo import MongoClient
+    except ImportError:
+        logger.error(
+            "pymongo is not installed. Install the Mongo extras to run the "
+            "backfill: pip install -r application/requirements-mongo.txt"
         )
         return 1
 
