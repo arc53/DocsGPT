@@ -1,11 +1,10 @@
-"""Gap-coverage tests for application.api.user.agents.folders.
+"""Tests for application/api/user/agents/folders.py.
 
-No bson/ObjectId imports. Mongo collections are replaced by Mock objects;
-the repository (AgentFoldersRepository) is patched for dual-write paths.
+Uses the ephemeral ``pg_conn`` fixture to exercise real PG repository code.
 """
 
-import uuid
-from unittest.mock import Mock, patch
+from contextlib import contextmanager
+from unittest.mock import patch
 
 import pytest
 from flask import Flask
@@ -16,424 +15,510 @@ def app():
     return Flask(__name__)
 
 
-def _fake_oid():
-    """24-character hex string that substitutes for a Mongo ObjectId string."""
-    return uuid.uuid4().hex[:24]
+@contextmanager
+def _patch_folders_db(conn):
+    @contextmanager
+    def _yield():
+        yield conn
+
+    with patch(
+        "application.api.user.agents.folders.db_session", _yield
+    ), patch(
+        "application.api.user.agents.folders.db_readonly", _yield
+    ):
+        yield
 
 
-# ---------------------------------------------------------------------------
-# AgentFolders.get — list user folders
-# ---------------------------------------------------------------------------
+def _seed_folder(pg_conn, user, name="F", parent_id=None):
+    from application.storage.db.repositories.agent_folders import (
+        AgentFoldersRepository,
+    )
+    return AgentFoldersRepository(pg_conn).create(user, name, parent_id=parent_id)
 
 
-@pytest.mark.unit
-class TestAgentFoldersGetGaps:
+def _seed_agent(pg_conn, user, folder_id=None):
+    from application.storage.db.repositories.agents import AgentsRepository
+    repo = AgentsRepository(pg_conn)
+    agent = repo.create(user, "test-agent", "published", description="x")
+    if folder_id:
+        repo.set_folder(str(agent["id"]), user, folder_id)
+    return agent
 
-    def test_returns_empty_list_when_no_folders(self, app):
+
+class TestAgentFoldersGet:
+    def test_returns_401_unauthenticated(self, app):
         from application.api.user.agents.folders import AgentFolders
 
-        mock_col = Mock()
-        mock_col.find.return_value = []
+        with app.test_request_context("/api/agents/folders/"):
+            from flask import request
+            request.decoded_token = None
+            response = AgentFolders().get()
+        assert response.status_code == 401
 
-        with patch(
-            "application.api.user.agents.folders.agent_folders_collection", mock_col
+    def test_returns_folders_list(self, app, pg_conn):
+        from application.api.user.agents.folders import AgentFolders
+
+        user = "u-folders-list"
+        _seed_folder(pg_conn, user, name="A")
+        _seed_folder(pg_conn, user, name="B")
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            "/api/agents/folders/"
         ):
-            with app.test_request_context("/api/agents/folders/", method="GET"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolders().get()
-
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = AgentFolders().get()
         assert response.status_code == 200
-        assert response.json["folders"] == []
+        names = [f["name"] for f in response.json["folders"]]
+        assert "A" in names and "B" in names
 
-    def test_returns_folder_timestamps_as_isoformat(self, app):
-        from application.api.user.agents.folders import AgentFolders
-        import datetime
 
-        now = datetime.datetime(2024, 3, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
-        fid = _fake_oid()
-        mock_col = Mock()
-        mock_col.find.return_value = [
-            {
-                "_id": fid,
-                "name": "Timestamped",
-                "parent_id": None,
-                "created_at": now,
-                "updated_at": now,
-            }
-        ]
-
-        with patch(
-            "application.api.user.agents.folders.agent_folders_collection", mock_col
-        ):
-            with app.test_request_context("/api/agents/folders/", method="GET"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolders().get()
-
-        assert response.status_code == 200
-        folder = response.json["folders"][0]
-        assert folder["created_at"] == now.isoformat()
-        assert folder["updated_at"] == now.isoformat()
-
-    def test_returns_folder_without_timestamps(self, app):
-        """Folders without created_at/updated_at return None for those fields."""
+class TestAgentFoldersPost:
+    def test_returns_401_unauthenticated(self, app):
         from application.api.user.agents.folders import AgentFolders
 
-        fid = _fake_oid()
-        mock_col = Mock()
-        mock_col.find.return_value = [{"_id": fid, "name": "NoTime"}]
-
-        with patch(
-            "application.api.user.agents.folders.agent_folders_collection", mock_col
+        with app.test_request_context(
+            "/api/agents/folders/", method="POST", json={"name": "F"}
         ):
-            with app.test_request_context("/api/agents/folders/", method="GET"):
-                from flask import request
+            from flask import request
+            request.decoded_token = None
+            response = AgentFolders().post()
+        assert response.status_code == 401
 
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolders().get()
-
-        assert response.status_code == 200
-        folder = response.json["folders"][0]
-        assert folder["created_at"] is None
-        assert folder["updated_at"] is None
-
-    def test_returns_500_on_db_exception(self, app):
+    def test_returns_400_missing_name(self, app):
         from application.api.user.agents.folders import AgentFolders
 
-        mock_col = Mock()
-        mock_col.find.side_effect = Exception("connection error")
-
-        with patch(
-            "application.api.user.agents.folders.agent_folders_collection", mock_col
+        with app.test_request_context(
+            "/api/agents/folders/", method="POST", json={}
         ):
-            with app.test_request_context("/api/agents/folders/", method="GET"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolders().get()
-
-        # _folder_error_response returns 400
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = AgentFolders().post()
         assert response.status_code == 400
 
-
-# ---------------------------------------------------------------------------
-# AgentFolders.post — create folder
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestAgentFoldersPostGaps:
-
-    def test_creates_folder_without_parent(self, app):
+    def test_creates_folder_at_root(self, app, pg_conn):
         from application.api.user.agents.folders import AgentFolders
 
-        inserted_id = _fake_oid()
-        mock_col = Mock()
-        mock_col.insert_one.return_value = Mock(inserted_id=inserted_id)
-
-        with patch(
-            "application.api.user.agents.folders.agent_folders_collection", mock_col
-        ), patch(
-            "application.api.user.agents.folders.dual_write",
-            lambda *a, **kw: None,
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            "/api/agents/folders/", method="POST",
+            json={"name": "Root Folder"},
         ):
-            with app.test_request_context(
-                "/api/agents/folders/",
-                method="POST",
-                json={"name": "Root Folder"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolders().post()
-
+            from flask import request
+            request.decoded_token = {"sub": "u-create"}
+            response = AgentFolders().post()
         assert response.status_code == 201
         assert response.json["name"] == "Root Folder"
+        assert response.json["parent_id"] is None
 
-    def test_rejects_missing_name_field(self, app):
+    def test_creates_nested_folder(self, app, pg_conn):
         from application.api.user.agents.folders import AgentFolders
 
-        with app.test_request_context(
-            "/api/agents/folders/", method="POST", json={"other": "data"}
+        user = "u-nested"
+        parent = _seed_folder(pg_conn, user, name="parent")
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            "/api/agents/folders/", method="POST",
+            json={"name": "child", "parent_id": str(parent["id"])},
         ):
             from flask import request
-
-            request.decoded_token = {"sub": "user1"}
+            request.decoded_token = {"sub": user}
             response = AgentFolders().post()
+        assert response.status_code == 201
+        assert response.json["parent_id"] == str(parent["id"])
 
-        assert response.status_code == 400
-
-    def test_rejects_empty_name_string(self, app):
+    def test_returns_404_for_missing_parent(self, app, pg_conn):
         from application.api.user.agents.folders import AgentFolders
 
-        with app.test_request_context(
-            "/api/agents/folders/", method="POST", json={"name": ""}
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            "/api/agents/folders/", method="POST",
+            json={
+                "name": "child",
+                "parent_id": "00000000-0000-0000-0000-000000000000",
+            },
         ):
             from flask import request
-
-            request.decoded_token = {"sub": "user1"}
+            request.decoded_token = {"sub": "u"}
             response = AgentFolders().post()
-
-        assert response.status_code == 400
-
-    def test_insert_exception_returns_400(self, app):
-        from application.api.user.agents.folders import AgentFolders
-
-        mock_col = Mock()
-        mock_col.find_one.return_value = None
-        mock_col.insert_one.side_effect = Exception("write error")
-
-        with patch(
-            "application.api.user.agents.folders.agent_folders_collection", mock_col
-        ):
-            with app.test_request_context(
-                "/api/agents/folders/", method="POST", json={"name": "Fail Folder"}
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolders().post()
-
-        assert response.status_code == 400
+        assert response.status_code == 404
 
 
-# ---------------------------------------------------------------------------
-# AgentFolder.get — retrieve single folder
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestAgentFolderGetGaps:
-
-    def test_returns_folder_with_empty_agents_list(self, app):
+class TestAgentFolderGet:
+    def test_returns_401_unauthenticated(self, app):
         from application.api.user.agents.folders import AgentFolder
 
-        fid = _fake_oid()
-        mock_folders = Mock()
-        mock_folders.find_one.return_value = {"_id": fid, "name": "Empty", "parent_id": None}
-        mock_folders.find.return_value = []
-        mock_agents = Mock()
-        mock_agents.find.return_value = []
+        with app.test_request_context("/api/agents/folders/abc"):
+            from flask import request
+            request.decoded_token = None
+            response = AgentFolder().get("abc")
+        assert response.status_code == 401
 
-        with patch(
-            "application.api.user.agents.folders.agent_folders_collection", mock_folders
-        ), patch(
-            "application.api.user.agents.folders.agents_collection", mock_agents
+    def test_returns_404_missing_folder(self, app, pg_conn):
+        from application.api.user.agents.folders import AgentFolder
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            "/api/agents/folders/00000000-0000-0000-0000-000000000000"
         ):
-            with app.test_request_context(f"/api/agents/folders/{fid}", method="GET"):
-                from flask import request
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = AgentFolder().get(
+                "00000000-0000-0000-0000-000000000000"
+            )
+        assert response.status_code == 404
 
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolder().get(fid)
+    def test_returns_folder_with_agents_and_subfolders(self, app, pg_conn):
+        from application.api.user.agents.folders import AgentFolder
 
+        user = "u-folder-detail"
+        parent = _seed_folder(pg_conn, user, name="parent")
+        _seed_folder(pg_conn, user, name="sub", parent_id=str(parent["id"]))
+        _seed_agent(pg_conn, user, folder_id=str(parent["id"]))
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            f"/api/agents/folders/{parent['id']}"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = AgentFolder().get(str(parent["id"]))
         assert response.status_code == 200
-        assert response.json["agents"] == []
-        assert response.json["subfolders"] == []
+        data = response.json
+        assert data["name"] == "parent"
+        assert len(data["agents"]) == 1
+        assert len(data["subfolders"]) == 1
 
 
-# ---------------------------------------------------------------------------
-# AgentFolder.put — update folder
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestAgentFolderPutGaps:
-
-    def test_prevents_self_parent_assignment(self, app):
+class TestAgentFolderPut:
+    def test_returns_401_unauthenticated(self, app):
         from application.api.user.agents.folders import AgentFolder
 
-        fid = _fake_oid()
         with app.test_request_context(
-            f"/api/agents/folders/{fid}",
+            "/api/agents/folders/abc", method="PUT", json={"name": "new"}
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = AgentFolder().put("abc")
+        assert response.status_code == 401
+
+    def test_returns_404_missing_folder(self, app, pg_conn):
+        from application.api.user.agents.folders import AgentFolder
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            "/api/agents/folders/00000000-0000-0000-0000-000000000000",
             method="PUT",
-            json={"parent_id": fid},
+            json={"name": "new"},
         ):
             from flask import request
-
-            request.decoded_token = {"sub": "user1"}
-            response = AgentFolder().put(fid)
-
-        assert response.status_code == 400
-        assert "parent" in response.json["message"].lower()
-
-    def test_update_exception_returns_400(self, app):
-        from application.api.user.agents.folders import AgentFolder
-
-        fid = _fake_oid()
-        mock_col = Mock()
-        mock_col.update_one.side_effect = Exception("db gone")
-
-        with patch(
-            "application.api.user.agents.folders.agent_folders_collection", mock_col
-        ):
-            with app.test_request_context(
-                f"/api/agents/folders/{fid}",
-                method="PUT",
-                json={"name": "New Name"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolder().put(fid)
-
-        assert response.status_code == 400
-
-
-# ---------------------------------------------------------------------------
-# AgentFolder.delete — delete folder
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestAgentFolderDeleteGaps:
-
-    def test_successful_delete_returns_200(self, app):
-        from application.api.user.agents.folders import AgentFolder
-
-        fid = _fake_oid()
-        mock_col = Mock()
-        mock_col.delete_one.return_value = Mock(deleted_count=1)
-        mock_col.update_many.return_value = Mock()
-        mock_col.update_one.return_value = Mock()
-        mock_agents = Mock()
-        mock_agents.update_many.return_value = Mock()
-
-        with patch(
-            "application.api.user.agents.folders.agent_folders_collection", mock_col
-        ), patch(
-            "application.api.user.agents.folders.agents_collection", mock_agents
-        ), patch(
-            "application.api.user.agents.folders.dual_write", lambda *a, **kw: None
-        ):
-            with app.test_request_context(
-                f"/api/agents/folders/{fid}", method="DELETE"
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolder().delete(fid)
-
-        assert response.status_code == 200
-        assert response.json["success"] is True
-
-    def test_delete_returns_404_when_not_found(self, app):
-        from application.api.user.agents.folders import AgentFolder
-
-        fid = _fake_oid()
-        mock_col = Mock()
-        mock_col.delete_one.return_value = Mock(deleted_count=0)
-        mock_col.update_many.return_value = Mock()
-        mock_agents = Mock()
-        mock_agents.update_many.return_value = Mock()
-
-        with patch(
-            "application.api.user.agents.folders.agent_folders_collection", mock_col
-        ), patch(
-            "application.api.user.agents.folders.agents_collection", mock_agents
-        ), patch(
-            "application.api.user.agents.folders.dual_write", lambda *a, **kw: None
-        ):
-            with app.test_request_context(
-                f"/api/agents/folders/{fid}", method="DELETE"
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentFolder().delete(fid)
-
+            request.decoded_token = {"sub": "u"}
+            response = AgentFolder().put(
+                "00000000-0000-0000-0000-000000000000"
+            )
         assert response.status_code == 404
 
+    def test_renames_folder(self, app, pg_conn):
+        from application.api.user.agents.folders import AgentFolder
 
-# ---------------------------------------------------------------------------
-# MoveAgentToFolder — move agent into / out of folder
-# ---------------------------------------------------------------------------
+        user = "u-rename"
+        folder = _seed_folder(pg_conn, user, name="old")
 
-
-@pytest.mark.unit
-class TestMoveAgentToFolderGaps:
-
-    def test_remove_agent_from_folder_when_folder_id_none(self, app):
-        from application.api.user.agents.folders import MoveAgentToFolder
-
-        agent_id = _fake_oid()
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = {"_id": agent_id, "user": "user1"}
-
-        with patch(
-            "application.api.user.agents.folders.agents_collection", mock_agents
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            f"/api/agents/folders/{folder['id']}",
+            method="PUT",
+            json={"name": "renamed"},
         ):
-            with app.test_request_context(
-                "/api/agents/folders/move_agent",
-                method="POST",
-                json={"agent_id": agent_id, "folder_id": None},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = MoveAgentToFolder().post()
-
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = AgentFolder().put(str(folder["id"]))
         assert response.status_code == 200
-        # $unset path should have been called
-        mock_agents.update_one.assert_called_once()
 
-    def test_returns_404_when_target_folder_missing(self, app):
-        from application.api.user.agents.folders import MoveAgentToFolder
+    def test_prevents_setting_self_as_parent(self, app, pg_conn):
+        from application.api.user.agents.folders import AgentFolder
 
-        agent_id = _fake_oid()
-        folder_id = _fake_oid()
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = {"_id": agent_id, "user": "user1"}
-        mock_folders = Mock()
-        mock_folders.find_one.return_value = None
+        user = "u-self-parent"
+        folder = _seed_folder(pg_conn, user, name="f1")
 
-        with patch(
-            "application.api.user.agents.folders.agents_collection", mock_agents
-        ), patch(
-            "application.api.user.agents.folders.agent_folders_collection", mock_folders
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            f"/api/agents/folders/{folder['id']}",
+            method="PUT",
+            json={"parent_id": str(folder["id"])},
         ):
-            with app.test_request_context(
-                "/api/agents/folders/move_agent",
-                method="POST",
-                json={"agent_id": agent_id, "folder_id": folder_id},
-            ):
-                from flask import request
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = AgentFolder().put(str(folder["id"]))
+        assert response.status_code == 400
 
-                request.decoded_token = {"sub": "user1"}
-                response = MoveAgentToFolder().post()
+    def test_sets_parent_to_other_folder(self, app, pg_conn):
+        from application.api.user.agents.folders import AgentFolder
 
+        user = "u-moveparent"
+        f1 = _seed_folder(pg_conn, user, name="f1")
+        f2 = _seed_folder(pg_conn, user, name="f2")
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            f"/api/agents/folders/{f1['id']}",
+            method="PUT",
+            json={"parent_id": str(f2["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = AgentFolder().put(str(f1["id"]))
+        assert response.status_code == 200
+
+    def test_returns_404_for_missing_parent(self, app, pg_conn):
+        from application.api.user.agents.folders import AgentFolder
+
+        user = "u-missingparent"
+        folder = _seed_folder(pg_conn, user, name="f")
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            f"/api/agents/folders/{folder['id']}",
+            method="PUT",
+            json={"parent_id": "00000000-0000-0000-0000-000000000000"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = AgentFolder().put(str(folder["id"]))
         assert response.status_code == 404
 
+    def test_clears_parent_id_when_null(self, app, pg_conn):
+        from application.api.user.agents.folders import AgentFolder
 
-# ---------------------------------------------------------------------------
-# BulkMoveAgents
-# ---------------------------------------------------------------------------
+        user = "u-clear"
+        parent = _seed_folder(pg_conn, user, name="p")
+        child = _seed_folder(
+            pg_conn, user, name="c", parent_id=str(parent["id"])
+        )
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            f"/api/agents/folders/{child['id']}",
+            method="PUT",
+            json={"parent_id": None},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = AgentFolder().put(str(child["id"]))
+        assert response.status_code == 200
 
 
-@pytest.mark.unit
-class TestBulkMoveAgentsGaps:
+class TestAgentFolderDelete:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.agents.folders import AgentFolder
 
-    def test_bulk_move_no_folder_id_clears_folder(self, app):
+        with app.test_request_context(
+            "/api/agents/folders/abc", method="DELETE"
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = AgentFolder().delete("abc")
+        assert response.status_code == 401
+
+    def test_returns_404_missing_folder(self, app, pg_conn):
+        from application.api.user.agents.folders import AgentFolder
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            "/api/agents/folders/00000000-0000-0000-0000-000000000000",
+            method="DELETE",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = AgentFolder().delete(
+                "00000000-0000-0000-0000-000000000000"
+            )
+        assert response.status_code == 404
+
+    def test_deletes_folder(self, app, pg_conn):
+        from application.api.user.agents.folders import AgentFolder
+
+        user = "u-del"
+        folder = _seed_folder(pg_conn, user, name="tbd")
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            f"/api/agents/folders/{folder['id']}", method="DELETE"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = AgentFolder().delete(str(folder["id"]))
+        assert response.status_code == 200
+
+
+class TestMoveAgentToFolder:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.agents.folders import MoveAgentToFolder
+
+        with app.test_request_context(
+            "/api/agents/folders/move_agent",
+            method="POST",
+            json={"agent_id": "x"},
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = MoveAgentToFolder().post()
+        assert response.status_code == 401
+
+    def test_returns_400_missing_agent_id(self, app):
+        from application.api.user.agents.folders import MoveAgentToFolder
+
+        with app.test_request_context(
+            "/api/agents/folders/move_agent",
+            method="POST",
+            json={},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = MoveAgentToFolder().post()
+        assert response.status_code == 400
+
+    def test_returns_404_agent_not_found(self, app, pg_conn):
+        from application.api.user.agents.folders import MoveAgentToFolder
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            "/api/agents/folders/move_agent",
+            method="POST",
+            json={"agent_id": "00000000-0000-0000-0000-000000000000"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = MoveAgentToFolder().post()
+        assert response.status_code == 404
+
+    def test_moves_agent_into_folder(self, app, pg_conn):
+        from application.api.user.agents.folders import MoveAgentToFolder
+
+        user = "u-move"
+        folder = _seed_folder(pg_conn, user, name="target")
+        agent = _seed_agent(pg_conn, user)
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            "/api/agents/folders/move_agent",
+            method="POST",
+            json={
+                "agent_id": str(agent["id"]),
+                "folder_id": str(folder["id"]),
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = MoveAgentToFolder().post()
+        assert response.status_code == 200
+
+    def test_returns_404_folder_not_found(self, app, pg_conn):
+        from application.api.user.agents.folders import MoveAgentToFolder
+
+        user = "u-move-nofolder"
+        agent = _seed_agent(pg_conn, user)
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            "/api/agents/folders/move_agent",
+            method="POST",
+            json={
+                "agent_id": str(agent["id"]),
+                "folder_id": "00000000-0000-0000-0000-000000000000",
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = MoveAgentToFolder().post()
+        assert response.status_code == 404
+
+    def test_removes_agent_from_folder(self, app, pg_conn):
+        from application.api.user.agents.folders import MoveAgentToFolder
+
+        user = "u-remove"
+        folder = _seed_folder(pg_conn, user, name="target")
+        agent = _seed_agent(pg_conn, user, folder_id=str(folder["id"]))
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            "/api/agents/folders/move_agent",
+            method="POST",
+            json={"agent_id": str(agent["id"]), "folder_id": None},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = MoveAgentToFolder().post()
+        assert response.status_code == 200
+
+
+class TestBulkMoveAgents:
+    def test_returns_401_unauthenticated(self, app):
         from application.api.user.agents.folders import BulkMoveAgents
 
-        ids = [_fake_oid(), _fake_oid()]
-        mock_agents = Mock()
-
-        with patch(
-            "application.api.user.agents.folders.agents_collection", mock_agents
+        with app.test_request_context(
+            "/api/agents/folders/bulk_move",
+            method="POST",
+            json={"agent_ids": ["a"]},
         ):
-            with app.test_request_context(
-                "/api/agents/folders/bulk_move",
-                method="POST",
-                json={"agent_ids": ids},
-            ):
-                from flask import request
+            from flask import request
+            request.decoded_token = None
+            response = BulkMoveAgents().post()
+        assert response.status_code == 401
 
-                request.decoded_token = {"sub": "user1"}
-                response = BulkMoveAgents().post()
+    def test_returns_400_missing_agent_ids(self, app):
+        from application.api.user.agents.folders import BulkMoveAgents
 
+        with app.test_request_context(
+            "/api/agents/folders/bulk_move",
+            method="POST",
+            json={},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = BulkMoveAgents().post()
+        assert response.status_code == 400
+
+    def test_bulk_moves_agents(self, app, pg_conn):
+        from application.api.user.agents.folders import BulkMoveAgents
+
+        user = "u-bulk"
+        folder = _seed_folder(pg_conn, user, name="dest")
+        a1 = _seed_agent(pg_conn, user)
+        a2 = _seed_agent(pg_conn, user)
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            "/api/agents/folders/bulk_move",
+            method="POST",
+            json={
+                "agent_ids": [str(a1["id"]), str(a2["id"])],
+                "folder_id": str(folder["id"]),
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = BulkMoveAgents().post()
         assert response.status_code == 200
-        # Should call update_many with $unset
-        mock_agents.update_many.assert_called_once()
+
+    def test_returns_404_when_folder_not_found(self, app, pg_conn):
+        from application.api.user.agents.folders import BulkMoveAgents
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            "/api/agents/folders/bulk_move",
+            method="POST",
+            json={
+                "agent_ids": ["a"],
+                "folder_id": "00000000-0000-0000-0000-000000000000",
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = BulkMoveAgents().post()
+        assert response.status_code == 404
+
+    def test_bulk_move_tolerates_missing_agents(self, app, pg_conn):
+        from application.api.user.agents.folders import BulkMoveAgents
+
+        user = "u-bulk-partial"
+        folder = _seed_folder(pg_conn, user, name="f")
+        a1 = _seed_agent(pg_conn, user)
+
+        with _patch_folders_db(pg_conn), app.test_request_context(
+            "/api/agents/folders/bulk_move",
+            method="POST",
+            json={
+                "agent_ids": [
+                    str(a1["id"]),
+                    "00000000-0000-0000-0000-000000000000",
+                ],
+                "folder_id": str(folder["id"]),
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = BulkMoveAgents().post()
+        assert response.status_code == 200

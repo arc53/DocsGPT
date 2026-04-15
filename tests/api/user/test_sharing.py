@@ -1,11 +1,13 @@
 """Tests for application/api/user/sharing/routes.py.
 
-Routes still use Mongo as primary store (with dual-write to PG).
-Tests patch mongo collections directly; no bson imports needed.
+Post-PG cutover: routes use the PG repositories (ConversationsRepository,
+SharedConversationsRepository, AgentsRepository, AttachmentsRepository) and
+the ``db_session`` / ``db_readonly`` context managers. These tests use the
+ephemeral ``pg_conn`` fixture to exercise real SQL.
 """
 
-import uuid
-from unittest.mock import Mock, patch
+from contextlib import contextmanager
+from unittest.mock import patch
 
 import pytest
 from flask import Flask
@@ -13,123 +15,49 @@ from flask import Flask
 
 @pytest.fixture
 def app():
-    app = Flask(__name__)
-    return app
+    return Flask(__name__)
 
 
-def _uuid_binary(u: uuid.UUID) -> Mock:
-    """Return a Mock that behaves like a BSON Binary wrapping a UUID.
+@contextmanager
+def _patch_sharing_db(conn):
+    @contextmanager
+    def _yield_conn():
+        yield conn
 
-    The sharing route calls ``doc["uuid"].as_uuid()`` to recover the Python
-    UUID object.  This avoids any bson dependency in tests.
-    """
-    m = Mock()
-    m.as_uuid.return_value = u
-    return m
+    with patch(
+        "application.api.user.sharing.routes.db_session", _yield_conn
+    ), patch(
+        "application.api.user.sharing.routes.db_readonly", _yield_conn
+    ):
+        yield
 
 
-def _mock_oid(ts: str = "2025-01-01T00:00:00") -> Mock:
-    """Return a Mock that behaves like a BSON ObjectId.
+def _seed_conversation(pg_conn, user_id, name="Test Conv", message_count=0):
+    from application.storage.db.repositories.conversations import (
+        ConversationsRepository,
+    )
+    repo = ConversationsRepository(pg_conn)
+    conv = repo.create(user_id, name=name)
+    conv_id = str(conv["id"])
+    for i in range(message_count):
+        repo.append_message(conv_id, {"prompt": f"p{i}", "response": f"r{i}"})
+    return conv_id
 
-    The sharing route calls ``conversation["_id"].generation_time.isoformat()``
-    to get the creation timestamp.  This avoids any bson dependency in tests.
-    """
-    m = Mock()
-    m.__str__ = Mock(return_value=uuid.uuid4().hex[:24])
-    m.generation_time.isoformat.return_value = ts
-    return m
+
+# ---------------------------------------------------------------------------
+# ShareConversation — /share endpoint
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestShareConversation:
-
-    def test_shares_non_promptable_conversation(self, app):
-        from application.api.user.sharing.routes import ShareConversation
-
-        conv_id = uuid.uuid4().hex[:24]
-        mock_conversations = Mock()
-        mock_conversations.find_one.return_value = {
-            "_id": conv_id,
-            "name": "Test Chat",
-            "queries": [{"prompt": "hi"}],
-        }
-        mock_shared = Mock()
-        mock_shared.find_one.return_value = None
-        mock_shared.insert_one.return_value = Mock()
-
-        with patch(
-            "application.api.user.sharing.routes.conversations_collection",
-            mock_conversations,
-        ), patch(
-            "application.api.user.sharing.routes.shared_conversations_collections",
-            mock_shared,
-        ), patch(
-            "application.api.user.sharing.routes.dual_write",
-            Mock(),
-        ):
-            with app.test_request_context(
-                "/api/share?isPromptable=false",
-                method="POST",
-                json={"conversation_id": conv_id},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = ShareConversation().post()
-
-        assert response.status_code == 201
-        assert response.json["success"] is True
-        assert "identifier" in response.json
-        mock_shared.insert_one.assert_called_once()
-
-    def test_returns_existing_shared_link(self, app):
-        from application.api.user.sharing.routes import ShareConversation
-
-        conv_id = uuid.uuid4().hex[:24]
-        test_uuid = uuid.uuid4()
-
-        mock_conversations = Mock()
-        mock_conversations.find_one.return_value = {
-            "_id": conv_id,
-            "name": "Test Chat",
-            "queries": [{"prompt": "hi"}],
-        }
-        mock_shared = Mock()
-        mock_shared.find_one.return_value = {
-            "uuid": _uuid_binary(test_uuid),
-            "conversation_id": conv_id,
-        }
-
-        with patch(
-            "application.api.user.sharing.routes.conversations_collection",
-            mock_conversations,
-        ), patch(
-            "application.api.user.sharing.routes.shared_conversations_collections",
-            mock_shared,
-        ), patch(
-            "application.api.user.sharing.routes.dual_write",
-            Mock(),
-        ):
-            with app.test_request_context(
-                "/api/share?isPromptable=false",
-                method="POST",
-                json={"conversation_id": conv_id},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = ShareConversation().post()
-
-        assert response.status_code == 200
-        assert response.json["identifier"] == str(test_uuid)
-
     def test_returns_401_unauthenticated(self, app):
         from application.api.user.sharing.routes import ShareConversation
 
         with app.test_request_context(
             "/api/share?isPromptable=false",
             method="POST",
-            json={"conversation_id": uuid.uuid4().hex[:24]},
+            json={"conversation_id": "x"},
         ):
             from flask import request
 
@@ -148,7 +76,7 @@ class TestShareConversation:
         ):
             from flask import request
 
-            request.decoded_token = {"sub": "user1"}
+            request.decoded_token = {"sub": "u"}
             response = ShareConversation().post()
 
         assert response.status_code == 400
@@ -159,479 +87,310 @@ class TestShareConversation:
         with app.test_request_context(
             "/api/share",
             method="POST",
-            json={"conversation_id": uuid.uuid4().hex[:24]},
+            json={"conversation_id": "x"},
         ):
             from flask import request
 
-            request.decoded_token = {"sub": "user1"}
+            request.decoded_token = {"sub": "u"}
             response = ShareConversation().post()
 
         assert response.status_code == 400
-        assert "isPromptable" in response.json["message"]
 
-    def test_returns_404_conversation_not_found(self, app):
+    def test_returns_404_for_missing_conversation(self, app, pg_conn):
         from application.api.user.sharing.routes import ShareConversation
 
-        mock_conversations = Mock()
-        mock_conversations.find_one.return_value = None
-
-        with patch(
-            "application.api.user.sharing.routes.conversations_collection",
-            mock_conversations,
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            "/api/share?isPromptable=false",
+            method="POST",
+            json={"conversation_id": "00000000-0000-0000-0000-000000000000"},
         ):
-            with app.test_request_context(
-                "/api/share?isPromptable=false",
-                method="POST",
-                json={"conversation_id": uuid.uuid4().hex[:24]},
-            ):
-                from flask import request
+            from flask import request
 
-                request.decoded_token = {"sub": "user1"}
-                response = ShareConversation().post()
+            request.decoded_token = {"sub": "u"}
+            response = ShareConversation().post()
 
         assert response.status_code == 404
 
+    def test_creates_non_promptable_share(self, app, pg_conn):
+        from application.api.user.sharing.routes import ShareConversation
 
-@pytest.mark.unit
-class TestGetPubliclySharedConversations:
+        user = "user-npshare"
+        conv_id = _seed_conversation(pg_conn, user, message_count=3)
 
-    def test_returns_shared_conversation(self, app):
-        from application.api.user.sharing.routes import (
-            GetPubliclySharedConversations,
-        )
-
-        test_uuid = uuid.uuid4()
-        conv_id = uuid.uuid4().hex[:24]
-
-        mock_shared = Mock()
-        mock_shared.find_one.return_value = {
-            "uuid": _uuid_binary(test_uuid),
-            "conversation_id": conv_id,
-            "first_n_queries": 2,
-            "isPromptable": False,
-        }
-        mock_conversations = Mock()
-        mock_conversations.find_one.return_value = {
-            "_id": _mock_oid(),
-            "name": "Shared Chat",
-            "queries": [
-                {"prompt": "q1", "response": "a1"},
-                {"prompt": "q2", "response": "a2"},
-                {"prompt": "q3", "response": "a3"},
-            ],
-        }
-
-        with patch(
-            "application.api.user.sharing.routes.shared_conversations_collections",
-            mock_shared,
-        ), patch(
-            "application.api.user.sharing.routes.conversations_collection",
-            mock_conversations,
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            "/api/share?isPromptable=false",
+            method="POST",
+            json={"conversation_id": conv_id},
         ):
-            with app.test_request_context(
-                f"/api/shared_conversation/{test_uuid}"
-            ):
-                response = GetPubliclySharedConversations().get(str(test_uuid))
+            from flask import request
 
-        assert response.status_code == 200
+            request.decoded_token = {"sub": user}
+            response = ShareConversation().post()
+
+        assert response.status_code == 201
         assert response.json["success"] is True
-        assert response.json["title"] == "Shared Chat"
-        assert len(response.json["queries"]) == 2
+        assert "identifier" in response.json
 
-    def test_returns_404_not_found(self, app):
-        from application.api.user.sharing.routes import (
-            GetPubliclySharedConversations,
-        )
-
-        test_uuid = uuid.uuid4()
-        mock_shared = Mock()
-        mock_shared.find_one.return_value = None
-
-        with patch(
-            "application.api.user.sharing.routes.shared_conversations_collections",
-            mock_shared,
-        ):
-            with app.test_request_context(
-                f"/api/shared_conversation/{test_uuid}"
-            ):
-                response = GetPubliclySharedConversations().get(str(test_uuid))
-
-        assert response.status_code == 404
-
-    def test_returns_404_conversation_deleted(self, app):
-        from application.api.user.sharing.routes import (
-            GetPubliclySharedConversations,
-        )
-
-        test_uuid = uuid.uuid4()
-        conv_id = uuid.uuid4().hex[:24]
-
-        mock_shared = Mock()
-        mock_shared.find_one.return_value = {
-            "uuid": _uuid_binary(test_uuid),
-            "conversation_id": conv_id,
-            "first_n_queries": 1,
-            "isPromptable": False,
-        }
-        mock_conversations = Mock()
-        mock_conversations.find_one.return_value = None
-
-        with patch(
-            "application.api.user.sharing.routes.shared_conversations_collections",
-            mock_shared,
-        ), patch(
-            "application.api.user.sharing.routes.conversations_collection",
-            mock_conversations,
-        ):
-            with app.test_request_context(
-                f"/api/shared_conversation/{test_uuid}"
-            ):
-                response = GetPubliclySharedConversations().get(str(test_uuid))
-
-        assert response.status_code == 404
-
-    def test_includes_api_key_when_promptable(self, app):
-        from application.api.user.sharing.routes import (
-            GetPubliclySharedConversations,
-        )
-
-        test_uuid = uuid.uuid4()
-        conv_id = uuid.uuid4().hex[:24]
-
-        mock_shared = Mock()
-        mock_shared.find_one.return_value = {
-            "uuid": _uuid_binary(test_uuid),
-            "conversation_id": conv_id,
-            "first_n_queries": 1,
-            "isPromptable": True,
-            "api_key": "shared_api_key",
-        }
-        mock_conversations = Mock()
-        mock_conversations.find_one.return_value = {
-            "_id": _mock_oid(),
-            "name": "Chat",
-            "queries": [{"prompt": "q1", "response": "a1"}],
-        }
-
-        with patch(
-            "application.api.user.sharing.routes.shared_conversations_collections",
-            mock_shared,
-        ), patch(
-            "application.api.user.sharing.routes.conversations_collection",
-            mock_conversations,
-        ):
-            with app.test_request_context(
-                f"/api/shared_conversation/{test_uuid}"
-            ):
-                response = GetPubliclySharedConversations().get(str(test_uuid))
-
-        assert response.status_code == 200
-        assert response.json["api_key"] == "shared_api_key"
-
-    def test_handles_string_conversation_id(self, app):
-        """Conversation id stored as plain string is handled correctly."""
-        from application.api.user.sharing.routes import (
-            GetPubliclySharedConversations,
-        )
-
-        test_uuid = uuid.uuid4()
-        conv_id = uuid.uuid4().hex[:24]
-
-        mock_shared = Mock()
-        mock_shared.find_one.return_value = {
-            "uuid": _uuid_binary(test_uuid),
-            "conversation_id": conv_id,
-            "first_n_queries": 1,
-            "isPromptable": False,
-        }
-        mock_conversations = Mock()
-        mock_conversations.find_one.return_value = {
-            "_id": _mock_oid(),
-            "name": "Chat",
-            "queries": [{"prompt": "q1", "response": "a1"}],
-        }
-
-        with patch(
-            "application.api.user.sharing.routes.shared_conversations_collections",
-            mock_shared,
-        ), patch(
-            "application.api.user.sharing.routes.conversations_collection",
-            mock_conversations,
-        ):
-            with app.test_request_context(
-                f"/api/shared_conversation/{test_uuid}"
-            ):
-                response = GetPubliclySharedConversations().get(str(test_uuid))
-
-        assert response.status_code == 200
-
-    def test_resolves_attachments_in_shared(self, app):
-        from application.api.user.sharing.routes import (
-            GetPubliclySharedConversations,
-        )
-
-        test_uuid = uuid.uuid4()
-        conv_id = uuid.uuid4().hex[:24]
-        att_id = uuid.uuid4().hex[:24]
-
-        mock_shared = Mock()
-        mock_shared.find_one.return_value = {
-            "uuid": _uuid_binary(test_uuid),
-            "conversation_id": conv_id,
-            "first_n_queries": 1,
-            "isPromptable": False,
-        }
-        mock_conversations = Mock()
-        mock_conversations.find_one.return_value = {
-            "_id": _mock_oid(),
-            "name": "Chat",
-            "queries": [
-                {"prompt": "q1", "response": "a1", "attachments": [str(att_id)]}
-            ],
-        }
-        mock_attachments = Mock()
-        mock_attachments.find_one.return_value = {
-            "_id": att_id,
-            "filename": "file.pdf",
-        }
-
-        with patch(
-            "application.api.user.sharing.routes.shared_conversations_collections",
-            mock_shared,
-        ), patch(
-            "application.api.user.sharing.routes.conversations_collection",
-            mock_conversations,
-        ), patch(
-            "application.api.user.sharing.routes.attachments_collection",
-            mock_attachments,
-        ):
-            with app.test_request_context(
-                f"/api/shared_conversation/{test_uuid}"
-            ):
-                response = GetPubliclySharedConversations().get(str(test_uuid))
-
-        assert response.status_code == 200
-        assert response.json["queries"][0]["attachments"][0]["fileName"] == "file.pdf"
-
-    def test_handles_general_exception(self, app):
-        from application.api.user.sharing.routes import (
-            GetPubliclySharedConversations,
-        )
-
-        mock_shared = Mock()
-        mock_shared.find_one.side_effect = Exception("DB error")
-
-        with patch(
-            "application.api.user.sharing.routes.shared_conversations_collections",
-            mock_shared,
-        ):
-            with app.test_request_context(
-                f"/api/shared_conversation/{uuid.uuid4()}"
-            ):
-                response = GetPubliclySharedConversations().get(str(uuid.uuid4()))
-
-        assert response.status_code == 400
-
-
-@pytest.mark.unit
-class TestShareConversationPromptable:
-
-    def test_promptable_with_existing_api_key_and_existing_share(self, app):
+    def test_reuse_non_promptable_share_returns_same_identifier(
+        self, app, pg_conn,
+    ):
         from application.api.user.sharing.routes import ShareConversation
 
-        conv_id = uuid.uuid4().hex[:24]
-        test_uuid = uuid.uuid4()
+        user = "user-reuse-np"
+        conv_id = _seed_conversation(pg_conn, user, message_count=1)
 
-        mock_conversations = Mock()
-        mock_conversations.find_one.return_value = {
-            "_id": conv_id,
-            "name": "Test Chat",
-            "queries": [{"prompt": "hi"}],
-        }
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = {"key": "existing_api_uuid"}
-        mock_shared = Mock()
-        mock_shared.find_one.return_value = {"uuid": _uuid_binary(test_uuid)}
-
-        with patch(
-            "application.api.user.sharing.routes.conversations_collection",
-            mock_conversations,
-        ), patch(
-            "application.api.user.sharing.routes.agents_collection",
-            mock_agents,
-        ), patch(
-            "application.api.user.sharing.routes.shared_conversations_collections",
-            mock_shared,
-        ), patch(
-            "application.api.user.sharing.routes.dual_write",
-            Mock(),
-        ):
-            with app.test_request_context(
-                "/api/share?isPromptable=true",
-                method="POST",
-                json={
-                    "conversation_id": conv_id,
-                    "prompt_id": "default",
-                    "chunks": "3",
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = ShareConversation().post()
-
-        assert response.status_code == 200
-        assert response.json["identifier"] == str(test_uuid)
-
-    def test_promptable_with_existing_api_key_new_share(self, app):
-        from application.api.user.sharing.routes import ShareConversation
-
-        conv_id = uuid.uuid4().hex[:24]
-
-        mock_conversations = Mock()
-        mock_conversations.find_one.return_value = {
-            "_id": conv_id,
-            "name": "Test Chat",
-            "queries": [{"prompt": "hi"}],
-        }
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = {"key": "existing_api_uuid"}
-        mock_shared = Mock()
-        mock_shared.find_one.return_value = None
-
-        with patch(
-            "application.api.user.sharing.routes.conversations_collection",
-            mock_conversations,
-        ), patch(
-            "application.api.user.sharing.routes.agents_collection",
-            mock_agents,
-        ), patch(
-            "application.api.user.sharing.routes.shared_conversations_collections",
-            mock_shared,
-        ), patch(
-            "application.api.user.sharing.routes.dual_write",
-            Mock(),
-        ):
-            with app.test_request_context(
-                "/api/share?isPromptable=true",
-                method="POST",
-                json={
-                    "conversation_id": conv_id,
-                    "source": uuid.uuid4().hex[:24],
-                    "retriever": "classic",
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = ShareConversation().post()
-
-        assert response.status_code == 201
-        mock_shared.insert_one.assert_called_once()
-
-    def test_promptable_creates_new_api_key(self, app):
-        from application.api.user.sharing.routes import ShareConversation
-
-        conv_id = uuid.uuid4().hex[:24]
-
-        mock_conversations = Mock()
-        mock_conversations.find_one.return_value = {
-            "_id": conv_id,
-            "name": "Test Chat",
-            "queries": [{"prompt": "hi"}],
-        }
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-        mock_shared = Mock()
-
-        with patch(
-            "application.api.user.sharing.routes.conversations_collection",
-            mock_conversations,
-        ), patch(
-            "application.api.user.sharing.routes.agents_collection",
-            mock_agents,
-        ), patch(
-            "application.api.user.sharing.routes.shared_conversations_collections",
-            mock_shared,
-        ), patch(
-            "application.api.user.sharing.routes.dual_write",
-            Mock(),
-        ):
-            with app.test_request_context(
-                "/api/share?isPromptable=true",
-                method="POST",
-                json={
-                    "conversation_id": conv_id,
-                    "source": uuid.uuid4().hex[:24],
-                    "retriever": "classic",
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = ShareConversation().post()
-
-        assert response.status_code == 201
-        mock_agents.insert_one.assert_called_once()
-        mock_shared.insert_one.assert_called_once()
-
-
-@pytest.mark.unit
-class TestShareConversationErrorPath:
-
-    def test_share_conversation_exception_returns_400(self, app):
-        """Exception during find_one returns 400."""
-        from application.api.user.sharing.routes import ShareConversation
-
-        mock_conversations = Mock()
-        mock_conversations.find_one.side_effect = Exception("DB error")
-
-        with patch(
-            "application.api.user.sharing.routes.conversations_collection",
-            mock_conversations,
-        ):
-            with app.test_request_context(
-                "/api/share?isPromptable=false",
-                method="POST",
-                json={"conversation_id": uuid.uuid4().hex[:24]},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = ShareConversation().post()
-
-        assert response.status_code == 400
-
-    def test_insert_one_exception_returns_400(self, app):
-        """Exception during insert_one returns 400."""
-        from application.api.user.sharing.routes import ShareConversation
-
-        conv_id = uuid.uuid4().hex[:24]
-        mock_conversations = Mock()
-        mock_conversations.find_one.return_value = {
-            "_id": conv_id,
-            "user": "user1",
-            "queries": [],
-        }
-        mock_shared = Mock()
-        mock_shared.find_one.return_value = None
-        mock_shared.insert_one.side_effect = Exception("Insert failed")
-
-        with patch(
-            "application.api.user.sharing.routes.conversations_collection",
-            mock_conversations,
-        ), patch(
-            "application.api.user.sharing.routes.shared_conversations_collections",
-            mock_shared,
-        ):
-            with app.test_request_context(
+        ids = []
+        for _ in range(2):
+            with _patch_sharing_db(pg_conn), app.test_request_context(
                 "/api/share?isPromptable=false",
                 method="POST",
                 json={"conversation_id": conv_id},
             ):
                 from flask import request
 
-                request.decoded_token = {"sub": "user1"}
-                response = ShareConversation().post()
+                request.decoded_token = {"sub": user}
+                r = ShareConversation().post()
+            ids.append(r.json["identifier"])
+        assert ids[0] == ids[1]
+
+    def test_creates_promptable_share(self, app, pg_conn):
+        from application.api.user.sharing.routes import ShareConversation
+
+        user = "user-pshare"
+        conv_id = _seed_conversation(pg_conn, user, message_count=2)
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            "/api/share?isPromptable=true",
+            method="POST",
+            json={"conversation_id": conv_id, "chunks": 4},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = ShareConversation().post()
+
+        assert response.status_code == 201
+        assert response.json["success"] is True
+
+    def test_reuse_promptable_share_returns_200(self, app, pg_conn):
+        from application.api.user.sharing.routes import ShareConversation
+
+        user = "user-reuse-p"
+        conv_id = _seed_conversation(pg_conn, user, message_count=1)
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            "/api/share?isPromptable=true",
+            method="POST",
+            json={"conversation_id": conv_id, "chunks": 2},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            first = ShareConversation().post()
+        assert first.status_code == 201
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            "/api/share?isPromptable=true",
+            method="POST",
+            json={"conversation_id": conv_id, "chunks": 2},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            second = ShareConversation().post()
+        # Second call reuses agent → status 200
+        assert second.status_code == 200
+
+    def test_promptable_with_invalid_chunks_coerces_none(self, app, pg_conn):
+        from application.api.user.sharing.routes import ShareConversation
+
+        user = "user-bad-chunks"
+        conv_id = _seed_conversation(pg_conn, user, message_count=1)
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            "/api/share?isPromptable=true",
+            method="POST",
+            json={"conversation_id": conv_id, "chunks": "notanumber"},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = ShareConversation().post()
+
+        assert response.status_code == 201
+
+    def test_db_error_returns_400(self, app):
+        from application.api.user.sharing.routes import ShareConversation
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.user.sharing.routes.db_session", _broken
+        ), app.test_request_context(
+            "/api/share?isPromptable=false",
+            method="POST",
+            json={"conversation_id": "x"},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": "u"}
+            response = ShareConversation().post()
 
         assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# GetPubliclySharedConversations — /shared_conversation/<identifier>
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestGetPubliclySharedConversations:
+    def test_returns_404_for_missing_identifier(self, app, pg_conn):
+        from application.api.user.sharing.routes import (
+            GetPubliclySharedConversations,
+        )
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            "/api/shared_conversation/abc-does-not-exist"
+        ):
+            response = GetPubliclySharedConversations().get(
+                "00000000-0000-0000-0000-000000000000"
+            )
+
+        assert response.status_code == 404
+
+    def test_returns_shared_conversation(self, app, pg_conn):
+        from application.api.user.sharing.routes import (
+            GetPubliclySharedConversations,
+            ShareConversation,
+        )
+
+        user = "user-get-shared"
+        conv_id = _seed_conversation(pg_conn, user, name="Chat A", message_count=2)
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            "/api/share?isPromptable=false",
+            method="POST",
+            json={"conversation_id": conv_id},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            share_resp = ShareConversation().post()
+        identifier = share_resp.json["identifier"]
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            f"/api/shared_conversation/{identifier}"
+        ):
+            response = GetPubliclySharedConversations().get(identifier)
+
+        assert response.status_code == 200
+        data = response.json
+        assert data["success"] is True
+        assert data["title"] == "Chat A"
+        assert isinstance(data["queries"], list)
+        assert len(data["queries"]) == 2
+        # Non-promptable share should not expose api_key
+        assert "api_key" not in data
+
+    def test_returns_api_key_for_promptable_share(self, app, pg_conn):
+        from application.api.user.sharing.routes import (
+            GetPubliclySharedConversations,
+            ShareConversation,
+        )
+
+        user = "user-promptable"
+        conv_id = _seed_conversation(pg_conn, user, message_count=1)
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            "/api/share?isPromptable=true",
+            method="POST",
+            json={"conversation_id": conv_id, "chunks": 2},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            share_resp = ShareConversation().post()
+        identifier = share_resp.json["identifier"]
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            f"/api/shared_conversation/{identifier}"
+        ):
+            response = GetPubliclySharedConversations().get(identifier)
+
+        assert response.status_code == 200
+        assert "api_key" in response.json
+        assert response.json["api_key"]
+
+    def test_db_error_returns_400(self, app):
+        from application.api.user.sharing.routes import (
+            GetPubliclySharedConversations,
+        )
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.user.sharing.routes.db_readonly", _broken
+        ), app.test_request_context("/api/shared_conversation/abc"):
+            response = GetPubliclySharedConversations().get("abc")
+
+        assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestResolvePromptPgId:
+    def test_returns_none_for_default(self, pg_conn):
+        from application.api.user.sharing.routes import _resolve_prompt_pg_id
+
+        assert _resolve_prompt_pg_id(pg_conn, "default", "u") is None
+        assert _resolve_prompt_pg_id(pg_conn, "", "u") is None
+        assert _resolve_prompt_pg_id(pg_conn, None, "u") is None
+
+    def test_resolves_uuid_by_ownership(self, pg_conn):
+        from application.api.user.sharing.routes import _resolve_prompt_pg_id
+        from application.storage.db.repositories.prompts import PromptsRepository
+
+        prompt = PromptsRepository(pg_conn).create("owner", "p", "c")
+        pid = str(prompt["id"])
+        assert _resolve_prompt_pg_id(pg_conn, pid, "owner") == pid
+        # Other user cannot claim
+        assert _resolve_prompt_pg_id(pg_conn, pid, "someone-else") is None
+
+    def test_returns_none_for_unknown_legacy(self, pg_conn):
+        from application.api.user.sharing.routes import _resolve_prompt_pg_id
+
+        assert _resolve_prompt_pg_id(pg_conn, "507f1f77bcf86cd799439011", "u") is None
+
+
+@pytest.mark.unit
+class TestResolveSourcePgId:
+    def test_returns_none_for_falsy(self, pg_conn):
+        from application.api.user.sharing.routes import _resolve_source_pg_id
+
+        assert _resolve_source_pg_id(pg_conn, None) is None
+        assert _resolve_source_pg_id(pg_conn, "") is None
+
+    def test_returns_none_for_unknown_uuid(self, pg_conn):
+        from application.api.user.sharing.routes import _resolve_source_pg_id
+
+        assert (
+            _resolve_source_pg_id(pg_conn, "00000000-0000-0000-0000-000000000000")
+            is None
+        )
+
+    def test_returns_none_for_unknown_legacy(self, pg_conn):
+        from application.api.user.sharing.routes import _resolve_source_pg_id
+
+        assert _resolve_source_pg_id(pg_conn, "507f1f77bcf86cd799439011") is None

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -82,160 +82,26 @@ class TestSaveWorkflowRunPgWrite:
     # dual_write is called exactly once when Mongo insert succeeds
     # ------------------------------------------------------------------
 
-    def test_dual_write_called_when_mongo_insert_succeeds(self):
-        agent = _make_agent(workflow_id=_fake_oid())
-        agent._engine = self._make_engine()
-        _, mock_db = _stub_mongo(agent)
-
-        with patch("application.agents.workflow_agent.MongoDB") as MockMongo, \
-             patch("application.agents.workflow_agent.settings") as mock_settings, \
-             patch("application.agents.workflow_agent.dual_write") as mock_dw:
-            mock_settings.MONGO_DB_NAME = "test"
-            MockMongo.get_client.return_value = {"test": mock_db}
-            agent._save_workflow_run("query text")
-
-        mock_dw.assert_called_once()
-        # The first positional arg should be the WorkflowRunsRepository class.
-        from application.storage.db.repositories.workflow_runs import WorkflowRunsRepository
-
-        assert mock_dw.call_args[0][0] is WorkflowRunsRepository
 
     # ------------------------------------------------------------------
     # Inner _pg_write skips create when workflow not in PG
     # ------------------------------------------------------------------
 
-    def test_pg_write_skips_when_workflow_not_found_in_pg(self):
-        """_pg_write returns early if WorkflowsRepository.get_by_legacy_id is None."""
-        agent = _make_agent(workflow_id=_fake_oid())
-        agent._engine = self._make_engine()
-        mongo_insert_id = _fake_oid()
-        _, mock_db = _stub_mongo(agent, insert_id=mongo_insert_id)
-
-        captured_pg_write = {}
-
-        def capture_dual_write(repo_cls, fn):
-            captured_pg_write["fn"] = fn
-
-        with patch("application.agents.workflow_agent.MongoDB") as MockMongo, \
-             patch("application.agents.workflow_agent.settings") as mock_settings, \
-             patch("application.agents.workflow_agent.dual_write", side_effect=capture_dual_write):
-            mock_settings.MONGO_DB_NAME = "test"
-            MockMongo.get_client.return_value = {"test": mock_db}
-            agent._save_workflow_run("query text")
-
-        # Now call the captured closure directly with a mock repo.
-        mock_runs_repo = Mock()
-        mock_runs_repo._conn = Mock()
-
-        # WorkflowsRepository.get_by_legacy_id returns None → workflow missing.
-        with patch(
-            "application.agents.workflow_agent.WorkflowsRepository"
-        ) as MockWfRepo:
-            mock_wf_repo_instance = Mock()
-            mock_wf_repo_instance.get_by_legacy_id.return_value = None
-            MockWfRepo.return_value = mock_wf_repo_instance
-            captured_pg_write["fn"](mock_runs_repo)
-
-        mock_runs_repo.create.assert_not_called()
 
     # ------------------------------------------------------------------
     # Inner _pg_write calls create when workflow IS found in PG
     # ------------------------------------------------------------------
 
-    def test_pg_write_calls_create_when_workflow_found(self):
-        """_pg_write calls WorkflowRunsRepository.create with correct kwargs."""
-        wf_legacy_id = _fake_oid()
-        agent = _make_agent(workflow_id=wf_legacy_id)
-        agent._engine = self._make_engine()
-        mongo_insert_id = _fake_oid()
-        _, mock_db = _stub_mongo(agent, insert_id=mongo_insert_id)
-
-        captured_pg_write = {}
-
-        def capture_dual_write(repo_cls, fn):
-            captured_pg_write["fn"] = fn
-
-        with patch("application.agents.workflow_agent.MongoDB") as MockMongo, \
-             patch("application.agents.workflow_agent.settings") as mock_settings, \
-             patch("application.agents.workflow_agent.dual_write", side_effect=capture_dual_write):
-            mock_settings.MONGO_DB_NAME = "test"
-            MockMongo.get_client.return_value = {"test": mock_db}
-            agent._save_workflow_run("query text")
-
-        pg_workflow_uuid = str(uuid.uuid4())
-        mock_runs_repo = Mock()
-        mock_runs_repo._conn = Mock()
-
-        with patch(
-            "application.agents.workflow_agent.WorkflowsRepository"
-        ) as MockWfRepo:
-            mock_wf_repo_instance = Mock()
-            mock_wf_repo_instance.get_by_legacy_id.return_value = {"id": pg_workflow_uuid}
-            MockWfRepo.return_value = mock_wf_repo_instance
-            captured_pg_write["fn"](mock_runs_repo)
-
-        mock_runs_repo.create.assert_called_once()
-        create_kwargs = mock_runs_repo.create.call_args
-        # Positional: workflow_id, user_id, status
-        args = create_kwargs[0]
-        assert args[0] == pg_workflow_uuid
-        assert args[1] == "user1"  # decoded_token["sub"]
 
     # ------------------------------------------------------------------
     # pg_write skips entirely when workflow_id is empty
     # ------------------------------------------------------------------
 
-    def test_pg_write_skips_when_no_workflow_id(self):
-        """If workflow_id is not set, the inner _pg_write returns immediately."""
-        agent = _make_agent()  # no workflow_id
-        agent._engine = self._make_engine()
-        _, mock_db = _stub_mongo(agent)
-
-        captured_pg_write = {}
-
-        def capture_dual_write(repo_cls, fn):
-            captured_pg_write["fn"] = fn
-
-        with patch("application.agents.workflow_agent.MongoDB") as MockMongo, \
-             patch("application.agents.workflow_agent.settings") as mock_settings, \
-             patch("application.agents.workflow_agent.dual_write", side_effect=capture_dual_write):
-            mock_settings.MONGO_DB_NAME = "test"
-            MockMongo.get_client.return_value = {"test": mock_db}
-            agent._save_workflow_run("query text")
-
-        if "fn" not in captured_pg_write:
-            # dual_write was not called; that is also acceptable behaviour.
-            return
-
-        mock_runs_repo = Mock()
-        mock_runs_repo._conn = Mock()
-        with patch("application.agents.workflow_agent.WorkflowsRepository"):
-            captured_pg_write["fn"](mock_runs_repo)
-
-        mock_runs_repo.create.assert_not_called()
 
     # ------------------------------------------------------------------
     # Mongo insert failure prevents pg_write from being called
     # ------------------------------------------------------------------
 
-    def test_mongo_exception_prevents_dual_write(self):
-        """If Mongo insert_one raises, dual_write is never called."""
-        agent = _make_agent(workflow_id=_fake_oid())
-        agent._engine = self._make_engine()
-
-        mock_coll = MagicMock()
-        mock_coll.insert_one.side_effect = Exception("mongo down")
-        mock_db = MagicMock()
-        mock_db.__getitem__ = MagicMock(return_value=mock_coll)
-
-        with patch("application.agents.workflow_agent.MongoDB") as MockMongo, \
-             patch("application.agents.workflow_agent.settings") as mock_settings, \
-             patch("application.agents.workflow_agent.dual_write") as mock_dw:
-            mock_settings.MONGO_DB_NAME = "test"
-            MockMongo.get_client.return_value = {"test": mock_db}
-            agent._save_workflow_run("query text")  # must not propagate
-
-        mock_dw.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

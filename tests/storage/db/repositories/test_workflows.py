@@ -6,11 +6,6 @@ import pytest
 
 from application.storage.db.repositories.workflows import WorkflowsRepository
 
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
-
 
 def _repo(conn) -> WorkflowsRepository:
     return WorkflowsRepository(conn)

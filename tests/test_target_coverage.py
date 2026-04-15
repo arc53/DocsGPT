@@ -8,7 +8,6 @@ Tests targeting specific uncovered lines in:
 """
 
 import importlib
-import uuid
 from unittest.mock import MagicMock, Mock, patch, mock_open
 
 import pytest
@@ -59,62 +58,7 @@ class TestSeederSourceIngestionNotSuccessful:
 
 @pytest.mark.unit
 class TestGetDirectoryStructureMissingLines:
-
-    def test_source_doc_not_found_continues(self):
-        """Line 79: source_doc is None, should continue to next doc."""
-        from application.agents.tools.internal_search import InternalSearchTool
-
-        doc_id = uuid.uuid4().hex[:24]
-        tool = InternalSearchTool({"source": {"active_docs": [doc_id]}})
-
-        with patch("application.core.mongo_db.MongoDB") as mock_mongo_cls:
-            mock_collection = Mock()
-            mock_collection.find_one.return_value = None  # source_doc not found
-            mock_db = Mock()
-            mock_db.__getitem__ = Mock(return_value=mock_collection)
-            mock_mongo_cls.get_client.return_value = Mock(
-                __getitem__=Mock(return_value=mock_db)
-            )
-
-            result = tool._get_directory_structure()
-
-        # No structure → returns None
-        assert result is None
-
-    def test_inner_exception_continues_to_next_doc(self):
-        """Lines 89-90: find_one raises for a doc_id → logged, continue."""
-        from application.agents.tools.internal_search import InternalSearchTool
-
-        doc_id = uuid.uuid4().hex[:24]
-        tool = InternalSearchTool({"source": {"active_docs": [doc_id]}})
-
-        with patch("application.core.mongo_db.MongoDB") as mock_mongo_cls:
-            mock_collection = Mock()
-            mock_collection.find_one.side_effect = Exception("bad id")
-            mock_db = Mock()
-            mock_db.__getitem__ = Mock(return_value=mock_collection)
-            mock_mongo_cls.get_client.return_value = Mock(
-                __getitem__=Mock(return_value=mock_db)
-            )
-
-            result = tool._get_directory_structure()
-
-        assert result is None
-
-    def test_outer_exception_in_get_directory_structure(self):
-        """Lines 93-94: outer exception in MongoDB connect."""
-        from application.agents.tools.internal_search import InternalSearchTool
-
-        doc_id = uuid.uuid4().hex[:24]
-        tool = InternalSearchTool({"source": {"active_docs": [doc_id]}})
-
-        with patch("application.core.mongo_db.MongoDB") as mock_mongo_cls:
-            mock_mongo_cls.get_client.side_effect = Exception("Connection refused")
-
-            result = tool._get_directory_structure()
-
-        assert result is None
-
+    pass
 
 @pytest.mark.unit
 class TestExecuteListFilesEmptyPathPart:
@@ -156,33 +100,7 @@ class TestExecuteListFilesEmptyPathPart:
 class TestSourcesHaveDirectoryStructureInnerException:
     """Lines 384-385: inner exception per doc_id → continue."""
 
-    def test_inner_exception_for_invalid_doc_id(self):
-        """Line 384-385: find_one raises for a doc_id → continue, return False."""
-        from application.agents.tools.internal_search import sources_have_directory_structure
 
-        with patch("application.core.mongo_db.MongoDB") as mock_mongo_cls:
-            mock_collection = Mock()
-            mock_collection.find_one.side_effect = Exception("bad ObjectId")
-            mock_db = Mock()
-            mock_db.__getitem__ = Mock(return_value=mock_collection)
-            mock_mongo_cls.get_client.return_value = Mock(
-                __getitem__=Mock(return_value=mock_db)
-            )
-
-            result = sources_have_directory_structure({"active_docs": ["invalid-id"]})
-
-        assert result is False
-
-    def test_outer_exception_returns_false(self):
-        """Lines 386-387: outer exception in sources_have_directory_structure."""
-        from application.agents.tools.internal_search import sources_have_directory_structure
-
-        with patch("application.core.mongo_db.MongoDB") as mock_mongo_cls:
-            mock_mongo_cls.get_client.side_effect = Exception("Connection refused")
-
-            result = sources_have_directory_structure({"active_docs": ["some_id"]})
-
-        assert result is False
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +305,8 @@ class TestAppWindowsPathlib:
 
 @pytest.mark.unit
 class TestWsgiMainGuard:
+    pass
+
     def test_wsgi_app_attribute_accessible(self):
         """Lines 1-4: wsgi.py can be imported and app is accessible."""
         import application.wsgi

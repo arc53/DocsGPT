@@ -1,241 +1,353 @@
-from unittest.mock import Mock
+"""Tests for application/api/answer/services/conversation_service.py."""
+
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 
-@pytest.mark.unit
+@contextmanager
+def _patch_db(conn):
+    @contextmanager
+    def _yield():
+        yield conn
+
+    with patch(
+        "application.api.answer.services.conversation_service.db_session",
+        _yield,
+    ), patch(
+        "application.api.answer.services.conversation_service.db_readonly",
+        _yield,
+    ):
+        yield
+
+
 class TestConversationServiceGet:
+    def test_returns_none_when_no_conversation_id(self):
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        assert ConversationService().get_conversation("", "u") is None
 
-    def test_returns_none_when_no_conversation_id(self, mock_mongo_db):
+    def test_returns_none_when_no_user_id(self):
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        assert (
+            ConversationService().get_conversation(
+                "00000000-0000-0000-0000-000000000001", ""
+            )
+            is None
+        )
+
+    def test_returns_none_when_not_found(self, pg_conn):
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        with _patch_db(pg_conn):
+            got = ConversationService().get_conversation(
+                "00000000-0000-0000-0000-000000000000", "u",
+            )
+        assert got is None
+
+    def test_returns_conversation_with_messages(self, pg_conn):
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "u-get"
+        repo = ConversationsRepository(pg_conn)
+        conv = repo.create(user, name="hi")
+        conv_id = str(conv["id"])
+        repo.append_message(
+            conv_id, {"prompt": "q1", "response": "r1"}
+        )
+
+        with _patch_db(pg_conn):
+            got = ConversationService().get_conversation(conv_id, user)
+        assert got is not None
+        assert got["_id"] == conv_id
+        assert len(got["queries"]) == 1
+
+    def test_handles_exception_returns_none(self):
         from application.api.answer.services.conversation_service import (
             ConversationService,
         )
 
-        service = ConversationService()
-        result = service.get_conversation("", "user_123")
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
 
-        assert result is None
-
-    def test_returns_none_when_no_user_id(self, mock_mongo_db):
-        from application.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-
-        service = ConversationService()
-        result = service.get_conversation("507f1f77bcf86cd799439011", "")
-
-        assert result is None
-
-    def test_returns_conversation_for_owner(self, mock_mongo_db):
-        from application.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-        from application.core.settings import settings
-
-        service = ConversationService()
-        collection = mock_mongo_db[settings.MONGO_DB_NAME]["conversations"]
-
-        result = collection.insert_one(
-            {
-                "user": "user_123",
-                "name": "Test Conv",
-                "queries": [],
-            }
-        )
-        conv_id = str(result.inserted_id)
-
-        conv = service.get_conversation(conv_id, "user_123")
-
-        assert conv is not None
-        assert conv["name"] == "Test Conv"
-        assert conv["_id"] == conv_id
-
-    def test_returns_none_for_unauthorized_user(self, mock_mongo_db):
-        from application.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-        from application.core.settings import settings
-
-        service = ConversationService()
-        collection = mock_mongo_db[settings.MONGO_DB_NAME]["conversations"]
-
-        result = collection.insert_one(
-            {"user": "owner_123", "name": "Private Conv"}
-        )
-        conv_id = str(result.inserted_id)
-
-        conv = service.get_conversation(conv_id, "hacker_456")
-
-        assert conv is None
-
-    def test_converts_objectid_to_string(self, mock_mongo_db):
-        from application.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-        from application.core.settings import settings
-
-        service = ConversationService()
-        collection = mock_mongo_db[settings.MONGO_DB_NAME]["conversations"]
-
-        result = collection.insert_one({"user": "user_123", "name": "Test"})
-        conv_id = str(result.inserted_id)
-
-        conv = service.get_conversation(conv_id, "user_123")
-
-        assert isinstance(conv["_id"], str)
-        assert conv["_id"] == conv_id
+        with patch(
+            "application.api.answer.services.conversation_service.db_readonly",
+            _broken,
+        ):
+            got = ConversationService().get_conversation("abc", "u")
+        assert got is None
 
 
-@pytest.mark.unit
 class TestConversationServiceSave:
-
-    def test_raises_error_when_no_user_in_token(self, mock_mongo_db):
-        """Test validation: user ID required"""
+    def test_raises_for_none_token(self):
         from application.api.answer.services.conversation_service import (
             ConversationService,
         )
-
-        service = ConversationService()
-        mock_llm = Mock()
-
-        with pytest.raises(ValueError, match="User ID not found"):
-            service.save_conversation(
+        with pytest.raises(ValueError):
+            ConversationService().save_conversation(
                 conversation_id=None,
-                question="Test?",
-                response="Answer",
-                thought="",
-                sources=[],
-                tool_calls=[],
-                llm=mock_llm,
-                model_id="gpt-4",
-                decoded_token={},  # No 'sub' key
+                question="q", response="r", thought="", sources=[],
+                tool_calls=[], llm=MagicMock(), model_id="gpt",
+                decoded_token=None,
             )
 
-    def test_truncates_long_source_text(self, mock_mongo_db):
+    def test_raises_when_no_user_in_token(self):
         from application.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.core.settings import settings
+        with pytest.raises(ValueError):
+            ConversationService().save_conversation(
+                conversation_id=None,
+                question="q", response="r", thought="", sources=[],
+                tool_calls=[], llm=MagicMock(), model_id="gpt",
+                decoded_token={},
+            )
 
-        service = ConversationService()
-        collection = mock_mongo_db[settings.MONGO_DB_NAME]["conversations"]
-
-        mock_llm = Mock()
-        mock_llm.gen.return_value = "Test Summary"
-
-        long_text = "x" * 2000
-        sources = [{"text": long_text, "title": "Doc"}]
-
-        service.save_conversation(
-            conversation_id=None,
-            question="Question",
-            response="Response",
-            thought="",
-            sources=sources,
-            tool_calls=[],
-            llm=mock_llm,
-            model_id="gpt-4",
-            decoded_token={"sub": "user_123"},
-        )
-
-        # Use str conv_id for lookup since the service returns a string
-        saved_conv = collection.find_one({"_id": collection.find_one({"queries.0.sources.0.text": {"$exists": True}})["_id"]})
-        saved_source_text = saved_conv["queries"][0]["sources"][0]["text"]
-
-        assert len(saved_source_text) == 1000
-        assert saved_source_text == "x" * 1000
-
-    def test_creates_new_conversation_with_summary(self, mock_mongo_db):
+    def test_creates_new_conversation(self, pg_conn):
         from application.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.core.settings import settings
-
-        service = ConversationService()
-        collection = mock_mongo_db[settings.MONGO_DB_NAME]["conversations"]
-
-        mock_llm = Mock()
-        mock_llm.gen.return_value = "Python Basics"
-
-        conv_id = service.save_conversation(
-            conversation_id=None,
-            question="What is Python?",
-            response="Python is a programming language",
-            thought="",
-            sources=[],
-            tool_calls=[],
-            llm=mock_llm,
-            model_id="gpt-4",
-            decoded_token={"sub": "user_123"},
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
         )
 
-        assert conv_id is not None
-        # Find by user since we have a string conv_id
-        saved_conv = collection.find_one({"user": "user_123"})
-        assert saved_conv["name"] == "Python Basics"
-        assert saved_conv["user"] == "user_123"
-        assert len(saved_conv["queries"]) == 1
-        assert saved_conv["queries"][0]["prompt"] == "What is Python?"
+        user = "u-save-new"
+        mock_llm = MagicMock()
+        mock_llm.gen.return_value = "Title"
 
-    def test_appends_to_existing_conversation(self, mock_mongo_db):
+        with _patch_db(pg_conn):
+            conv_id = ConversationService().save_conversation(
+                conversation_id=None,
+                question="q1", response="r1", thought="",
+                sources=[{"text": "x" * 2000}], tool_calls=[],
+                llm=mock_llm, model_id="gpt-4",
+                decoded_token={"sub": user},
+            )
+        got = ConversationsRepository(pg_conn).get_any(conv_id, user)
+        assert got is not None
+        assert got["name"] == "Title"
+
+    def test_appends_message_to_existing(self, pg_conn):
         from application.api.answer.services.conversation_service import (
             ConversationService,
         )
-        from application.core.settings import settings
-
-        service = ConversationService()
-        collection = mock_mongo_db[settings.MONGO_DB_NAME]["conversations"]
-
-        insert_result = collection.insert_one(
-            {
-                "user": "user_123",
-                "name": "Old Conv",
-                "queries": [{"prompt": "Q1", "response": "A1"}],
-            }
-        )
-        existing_conv_id = str(insert_result.inserted_id)
-
-        mock_llm = Mock()
-
-        result = service.save_conversation(
-            conversation_id=existing_conv_id,
-            question="Q2",
-            response="A2",
-            thought="",
-            sources=[],
-            tool_calls=[],
-            llm=mock_llm,
-            model_id="gpt-4",
-            decoded_token={"sub": "user_123"},
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
         )
 
-        assert result == existing_conv_id
+        user = "u-append"
+        repo = ConversationsRepository(pg_conn)
+        conv = repo.create(user, name="existing")
+        conv_id = str(conv["id"])
 
-    def test_prevents_unauthorized_conversation_update(self, mock_mongo_db):
-        from application.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-        from application.core.settings import settings
-
-        service = ConversationService()
-        collection = mock_mongo_db[settings.MONGO_DB_NAME]["conversations"]
-
-        insert_result = collection.insert_one(
-            {"user": "owner_123", "queries": []}
-        )
-        conv_id = str(insert_result.inserted_id)
-
-        mock_llm = Mock()
-
-        with pytest.raises(ValueError, match="not found or unauthorized"):
-            service.save_conversation(
+        with _patch_db(pg_conn):
+            got = ConversationService().save_conversation(
                 conversation_id=conv_id,
-                question="Hack",
-                response="Attempt",
-                thought="",
-                sources=[],
-                tool_calls=[],
-                llm=mock_llm,
-                model_id="gpt-4",
-                decoded_token={"sub": "hacker_456"},
+                question="q-new", response="r-new", thought="",
+                sources=[], tool_calls=[],
+                llm=MagicMock(), model_id="gpt-4",
+                decoded_token={"sub": user},
             )
+        assert got == conv_id
+        messages = repo.get_messages(conv_id)
+        assert any(m["prompt"] == "q-new" for m in messages)
+
+    def test_updates_message_at_index(self, pg_conn):
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "u-update-at"
+        repo = ConversationsRepository(pg_conn)
+        conv = repo.create(user, name="edit")
+        conv_id = str(conv["id"])
+        repo.append_message(conv_id, {"prompt": "old", "response": "old"})
+
+        with _patch_db(pg_conn):
+            got = ConversationService().save_conversation(
+                conversation_id=conv_id,
+                question="updated", response="reply", thought="",
+                sources=[], tool_calls=[],
+                llm=MagicMock(), model_id="gpt-4",
+                decoded_token={"sub": user},
+                index=0,
+            )
+        assert got == conv_id
+        messages = repo.get_messages(conv_id)
+        assert messages[0]["prompt"] == "updated"
+
+    def test_raises_when_conversation_missing(self, pg_conn):
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        with _patch_db(pg_conn), pytest.raises(ValueError):
+            ConversationService().save_conversation(
+                conversation_id="00000000-0000-0000-0000-000000000000",
+                question="q", response="r", thought="",
+                sources=[], tool_calls=[],
+                llm=MagicMock(), model_id="gpt",
+                decoded_token={"sub": "u"},
+            )
+
+    def test_save_with_empty_llm_title_falls_back(self, pg_conn):
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "u-empty-title"
+        mock_llm = MagicMock()
+        mock_llm.gen.return_value = ""
+
+        with _patch_db(pg_conn):
+            conv_id = ConversationService().save_conversation(
+                conversation_id=None,
+                question="q-fallback", response="r", thought="",
+                sources=[], tool_calls=[],
+                llm=mock_llm, model_id="gpt-4",
+                decoded_token={"sub": user},
+            )
+        got = ConversationsRepository(pg_conn).get_any(conv_id, user)
+        assert got["name"] == "q-fallback"
+
+
+class TestCompressionMetadata:
+    def test_update_compression_metadata(self, pg_conn):
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "u-compress"
+        repo = ConversationsRepository(pg_conn)
+        conv = repo.create(user, name="c")
+        conv_id = str(conv["id"])
+
+        with _patch_db(pg_conn):
+            ConversationService().update_compression_metadata(
+                conv_id,
+                {
+                    "timestamp": datetime.now(timezone.utc),
+                    "compressed_summary": "summary",
+                    "model_used": "gpt",
+                },
+            )
+
+    def test_update_compression_raises_on_error(self):
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.answer.services.conversation_service.db_session",
+            _broken,
+        ), pytest.raises(RuntimeError):
+            ConversationService().update_compression_metadata("abc", {})
+
+    def test_append_compression_message_skips_empty_summary(self, pg_conn):
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        with _patch_db(pg_conn):
+            ConversationService().append_compression_message(
+                "any-id", {"compressed_summary": ""}
+            )
+
+    def test_append_compression_message_appends_summary(self, pg_conn):
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "u-append-cs"
+        repo = ConversationsRepository(pg_conn)
+        conv = repo.create(user, name="c")
+        conv_id = str(conv["id"])
+
+        with _patch_db(pg_conn):
+            ConversationService().append_compression_message(
+                conv_id,
+                {
+                    "compressed_summary": "A summary",
+                    "timestamp": datetime.now(timezone.utc),
+                    "model_used": "gpt-4",
+                },
+            )
+
+        messages = repo.get_messages(conv_id)
+        assert any(m["response"] == "A summary" for m in messages)
+
+    def test_append_compression_message_swallows_error(self):
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.answer.services.conversation_service.db_session",
+            _broken,
+        ):
+            ConversationService().append_compression_message(
+                "abc", {"compressed_summary": "x"}
+            )
+
+    def test_get_compression_metadata_returns_none_for_missing(
+        self, pg_conn,
+    ):
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        with _patch_db(pg_conn):
+            got = ConversationService().get_compression_metadata(
+                "00000000-0000-0000-0000-000000000000"
+            )
+        assert got is None
+
+    def test_get_compression_metadata_handles_exception(self):
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.answer.services.conversation_service.db_readonly",
+            _broken,
+        ):
+            got = ConversationService().get_compression_metadata("abc")
+        assert got is None

@@ -10,11 +10,6 @@ import pytest
 
 from application.storage.db.repositories.users import UsersRepository
 
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
-
 
 # ------------------------------------------------------------------
 # Helpers

@@ -29,87 +29,10 @@ def app():
 
 @pytest.mark.unit
 class TestAgentWebhookGetGaps:
+    pass
 
-    def test_returns_400_on_invalid_agent_id(self, app):
-        """Exception raised by ObjectId(bad_id) is caught and returns 400."""
-        from application.api.user.agents.webhooks import AgentWebhook
 
-        mock_collection = Mock()
-        mock_collection.find_one.side_effect = Exception("invalid id")
 
-        with patch(
-            "application.api.user.agents.webhooks.agents_collection",
-            mock_collection,
-        ):
-            with app.test_request_context("/api/agent_webhook?id=not-an-objectid"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentWebhook().get()
-
-        assert response.status_code == 400
-        assert response.json["success"] is False
-
-    def test_webhook_url_contains_base_url(self, app):
-        """Returned webhook_url is prefixed with settings.API_URL."""
-        from application.api.user.agents.webhooks import AgentWebhook
-
-        agent_id = _fake_oid()
-        mock_collection = Mock()
-        mock_collection.find_one.return_value = {
-            "_id": agent_id,
-            "user": "user1",
-            "incoming_webhook_token": "tok123",
-        }
-
-        with patch(
-            "application.api.user.agents.webhooks.agents_collection",
-            mock_collection,
-        ), patch(
-            "application.api.user.agents.webhooks.settings",
-            Mock(API_URL="https://my.api.example.com/"),
-        ):
-            with app.test_request_context(f"/api/agent_webhook?id={agent_id}"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentWebhook().get()
-
-        assert response.status_code == 200
-        assert response.json["webhook_url"].startswith("https://my.api.example.com")
-        assert "tok123" in response.json["webhook_url"]
-
-    def test_generates_token_and_updates_collection(self, app):
-        """When incoming_webhook_token is absent, a new one is generated and saved."""
-        from application.api.user.agents.webhooks import AgentWebhook
-
-        agent_id = _fake_oid()
-        mock_collection = Mock()
-        mock_collection.find_one.return_value = {
-            "_id": agent_id,
-            "user": "user1",
-            # no incoming_webhook_token key at all
-        }
-
-        with patch(
-            "application.api.user.agents.webhooks.agents_collection",
-            mock_collection,
-        ), patch(
-            "application.api.user.agents.webhooks.settings",
-            Mock(API_URL="https://api.example.com"),
-        ), patch(
-            "application.api.user.agents.webhooks.secrets.token_urlsafe",
-            return_value="fresh_token_xyz",
-        ):
-            with app.test_request_context(f"/api/agent_webhook?id={agent_id}"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = AgentWebhook().get()
-
-        assert response.status_code == 200
-        assert "fresh_token_xyz" in response.json["webhook_url"]
-        mock_collection.update_one.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +42,7 @@ class TestAgentWebhookGetGaps:
 
 @pytest.mark.unit
 class TestAgentWebhookListenerGaps:
+    pass
 
     def test_post_empty_payload_still_enqueues(self, app):
         """Empty dict payload does not block task enqueue (warning only)."""

@@ -8,11 +8,6 @@ from application.storage.db.repositories.workflows import WorkflowsRepository
 from application.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
 from application.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
 
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
-
 
 def _setup(conn) -> tuple[dict, dict, dict]:
     """Create a workflow with two nodes and return (workflow, node1, node2)."""

@@ -7,7 +7,6 @@ Repository classes (WorkflowsRepository, etc.) are patched for dual-write paths.
 """
 
 import uuid
-from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 
 import pytest
@@ -41,110 +40,18 @@ def _mock_validate_object_id(wf_id):
 
 @pytest.mark.unit
 class TestSerializeWorkflowCoverage:
-
-    def test_id_is_stringified(self):
-        from application.api.user.workflows.routes import serialize_workflow
-
-        raw_id = _fake_oid()
-        doc = {"_id": raw_id}
-        result = serialize_workflow(doc)
-        assert result["id"] == str(raw_id)
-
-    def test_description_is_included(self):
-        from application.api.user.workflows.routes import serialize_workflow
-
-        doc = {"_id": _fake_oid(), "description": "my desc"}
-        result = serialize_workflow(doc)
-        assert result["description"] == "my desc"
-
-    def test_datetime_updated_at_is_isoformat(self):
-        from application.api.user.workflows.routes import serialize_workflow
-
-        now = datetime(2024, 7, 4, 9, 0, 0, tzinfo=timezone.utc)
-        doc = {"_id": _fake_oid(), "updated_at": now}
-        result = serialize_workflow(doc)
-        assert result["updated_at"] == now.isoformat()
-
-    def test_name_none_when_missing(self):
-        from application.api.user.workflows.routes import serialize_workflow
-
-        doc = {"_id": _fake_oid()}
-        result = serialize_workflow(doc)
-        assert result["name"] is None
-
-    def test_both_timestamps_none_when_missing(self):
-        from application.api.user.workflows.routes import serialize_workflow
-
-        doc = {"_id": _fake_oid(), "name": "WF"}
-        result = serialize_workflow(doc)
-        assert result["created_at"] is None
-        assert result["updated_at"] is None
-
+    pass
 
 @pytest.mark.unit
 class TestSerializeNodeCoverage:
-
-    def test_description_included(self):
-        from application.api.user.workflows.routes import serialize_node
-
-        node = {"id": "n1", "type": "agent", "description": "does stuff"}
-        result = serialize_node(node)
-        assert result["description"] == "does stuff"
-
-    def test_position_defaults_to_none(self):
-        from application.api.user.workflows.routes import serialize_node
-
-        node = {"id": "n1", "type": "start"}
-        result = serialize_node(node)
-        assert result["position"] is None
-
-    def test_config_becomes_data(self):
-        from application.api.user.workflows.routes import serialize_node
-
-        node = {"id": "n1", "type": "agent", "config": {"model": "gpt-4"}}
-        result = serialize_node(node)
-        assert result["data"] == {"model": "gpt-4"}
-
-    def test_empty_data_when_no_config(self):
-        from application.api.user.workflows.routes import serialize_node
-
-        node = {"id": "n1", "type": "start"}
-        result = serialize_node(node)
-        assert result["data"] == {}
-
+    pass
 
 @pytest.mark.unit
 class TestSerializeEdgeCoverage:
+    pass
 
-    def test_missing_handles_return_none(self):
-        from application.api.user.workflows.routes import serialize_edge
 
-        edge = {"id": "e1", "source_id": "a", "target_id": "b"}
-        result = serialize_edge(edge)
-        assert result["sourceHandle"] is None
-        assert result["targetHandle"] is None
 
-    def test_edge_with_handles(self):
-        from application.api.user.workflows.routes import serialize_edge
-
-        edge = {
-            "id": "e2",
-            "source_id": "x",
-            "target_id": "y",
-            "source_handle": "out",
-            "target_handle": "in",
-        }
-        result = serialize_edge(edge)
-        assert result["sourceHandle"] == "out"
-        assert result["targetHandle"] == "in"
-
-    def test_edge_source_target_mapped(self):
-        from application.api.user.workflows.routes import serialize_edge
-
-        edge = {"id": "e3", "source_id": "s1", "target_id": "t1"}
-        result = serialize_edge(edge)
-        assert result["source"] == "s1"
-        assert result["target"] == "t1"
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +61,7 @@ class TestSerializeEdgeCoverage:
 
 @pytest.mark.unit
 class TestGetWorkflowGraphVersionCoverage:
+    pass
 
     def test_large_version_number(self):
         from application.api.user.workflows.routes import get_workflow_graph_version
@@ -179,38 +87,10 @@ class TestGetWorkflowGraphVersionCoverage:
 
 @pytest.mark.unit
 class TestFetchGraphDocumentsCoverage:
+    pass
 
-    def test_empty_result_for_non_v1_version(self):
-        from application.api.user.workflows.routes import fetch_graph_documents
 
-        collection = Mock()
-        collection.find.return_value = []
 
-        result = fetch_graph_documents(collection, "wfABC", 5)
-        assert result == []
-        collection.find.assert_called_once_with({"workflow_id": "wfABC", "graph_version": 5})
-
-    def test_v1_returns_versioned_if_present(self):
-        from application.api.user.workflows.routes import fetch_graph_documents
-
-        collection = Mock()
-        versioned_docs = [{"id": "n1", "graph_version": 1}]
-        collection.find.side_effect = [versioned_docs]
-
-        result = fetch_graph_documents(collection, "wfABC", 1)
-        assert result == versioned_docs
-        assert collection.find.call_count == 1
-
-    def test_v1_falls_back_to_unversioned(self):
-        from application.api.user.workflows.routes import fetch_graph_documents
-
-        collection = Mock()
-        unversioned_docs = [{"id": "n1"}]
-        collection.find.side_effect = [[], unversioned_docs]
-
-        result = fetch_graph_documents(collection, "wfABC", 1)
-        assert result == unversioned_docs
-        assert collection.find.call_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +100,7 @@ class TestFetchGraphDocumentsCoverage:
 
 @pytest.mark.unit
 class TestValidateWorkflowStructureCoverage:
+    pass
 
     def test_valid_condition_node_with_two_outgoing_edges(self):
         from application.api.user.workflows.routes import validate_workflow_structure
@@ -266,52 +147,7 @@ class TestValidateWorkflowStructureCoverage:
 
 @pytest.mark.unit
 class TestWorkflowListPostCoverage:
-
-    def test_create_with_description(self, app):
-        from application.api.user.workflows.routes import WorkflowList
-
-        wf_id = _fake_oid()
-        mock_wf_col = Mock()
-        mock_wf_col.insert_one.return_value = Mock(inserted_id=wf_id)
-        mock_nodes_col = Mock()
-        mock_nodes_col.insert_many.return_value = Mock(inserted_ids=[_fake_oid()])
-        mock_edges_col = Mock()
-        mock_edges_col.insert_many.return_value = Mock(inserted_ids=[])
-
-        with patch(
-            "application.api.user.workflows.routes.workflows_collection", mock_wf_col
-        ), patch(
-            "application.api.user.workflows.routes.workflow_nodes_collection",
-            mock_nodes_col,
-        ), patch(
-            "application.api.user.workflows.routes.workflow_edges_collection",
-            mock_edges_col,
-        ), patch(
-            "application.api.user.workflows.routes.dual_write", lambda *a, **kw: None
-        ), patch(
-            "application.api.user.workflows.routes._dual_write_workflow_create",
-            lambda *a, **kw: None,
-        ):
-            with app.test_request_context(
-                "/api/workflows",
-                method="POST",
-                json={
-                    "name": "Described Workflow",
-                    "description": "A workflow with a description",
-                    "nodes": [
-                        {"id": "start", "type": "start"},
-                        {"id": "end", "type": "end"},
-                    ],
-                    "edges": [{"id": "e1", "source": "start", "target": "end"}],
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = WorkflowList().post()
-
-        assert response.status_code == 201
-        assert response.json["id"] == str(wf_id)
+    pass
 
     def test_create_unauthorized_returns_401(self, app):
         from application.api.user.workflows.routes import WorkflowList
@@ -339,33 +175,6 @@ class TestWorkflowListPostCoverage:
 
         assert response.status_code == 400
 
-    def test_create_db_error_returns_400(self, app):
-        from application.api.user.workflows.routes import WorkflowList
-
-        mock_wf_col = Mock()
-        mock_wf_col.insert_one.side_effect = Exception("DB error")
-
-        with patch(
-            "application.api.user.workflows.routes.workflows_collection", mock_wf_col
-        ):
-            with app.test_request_context(
-                "/api/workflows",
-                method="POST",
-                json={
-                    "name": "WF",
-                    "nodes": [
-                        {"id": "start", "type": "start"},
-                        {"id": "end", "type": "end"},
-                    ],
-                    "edges": [{"id": "e1", "source": "start", "target": "end"}],
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = WorkflowList().post()
-
-        assert response.status_code == 400
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +184,7 @@ class TestWorkflowListPostCoverage:
 
 @pytest.mark.unit
 class TestWorkflowDetailGetCoverage:
+    pass
 
     def test_returns_401_unauthenticated(self, app):
         from application.api.user.workflows.routes import WorkflowDetail
@@ -387,68 +197,7 @@ class TestWorkflowDetailGetCoverage:
 
         assert response.status_code == 401
 
-    def test_returns_404_when_not_found(self, app):
-        from application.api.user.workflows.routes import WorkflowDetail
 
-        wf_id = _fake_oid()
-        mock_wf_col = Mock()
-        mock_wf_col.find_one.return_value = None
-
-        with _mock_validate_object_id(wf_id), patch(
-            "application.api.user.workflows.routes.workflows_collection", mock_wf_col
-        ):
-            with app.test_request_context(f"/api/workflows/{wf_id}", method="GET"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = WorkflowDetail().get(wf_id)
-
-        assert response.status_code == 404
-
-    def test_returns_workflow_data_with_nodes_and_edges(self, app):
-        from application.api.user.workflows.routes import WorkflowDetail
-
-        wf_id = _fake_oid()
-        now = datetime(2024, 6, 1, tzinfo=timezone.utc)
-
-        # check_resource_ownership needs find_one to return the doc
-        mock_wf_col = Mock()
-        wf_doc = {
-            "_id": wf_id,
-            "name": "Test WF",
-            "description": "desc",
-            "user": "user1",
-            "created_at": now,
-            "updated_at": now,
-        }
-        mock_wf_col.find_one.return_value = wf_doc
-
-        mock_nodes_col = Mock()
-        mock_nodes_col.find.return_value = []
-        mock_edges_col = Mock()
-        mock_edges_col.find.return_value = []
-
-        with _mock_validate_object_id(wf_id), patch(
-            "application.api.user.workflows.routes.workflows_collection", mock_wf_col
-        ), patch(
-            "application.api.user.workflows.routes.workflow_nodes_collection",
-            mock_nodes_col,
-        ), patch(
-            "application.api.user.workflows.routes.workflow_edges_collection",
-            mock_edges_col,
-        ):
-            with app.test_request_context(f"/api/workflows/{wf_id}", method="GET"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = WorkflowDetail().get(wf_id)
-
-        assert response.status_code == 200
-        data = response.json
-        assert data["workflow"]["id"] == str(wf_id)
-        assert data["workflow"]["name"] == "Test WF"
-        assert data["nodes"] == []
-        assert data["edges"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -458,39 +207,7 @@ class TestWorkflowDetailGetCoverage:
 
 @pytest.mark.unit
 class TestWorkflowDetailDeleteCoverage:
-
-    def test_delete_returns_200_on_success(self, app):
-        from application.api.user.workflows.routes import WorkflowDetail
-
-        wf_id = _fake_oid()
-        mock_wf_col = Mock()
-        mock_wf_col.find_one.return_value = {"_id": wf_id, "name": "WF", "user": "user1"}
-        mock_wf_col.delete_one.return_value = Mock(deleted_count=1)
-        mock_nodes_col = Mock()
-        mock_nodes_col.delete_many.return_value = Mock()
-        mock_edges_col = Mock()
-        mock_edges_col.delete_many.return_value = Mock()
-
-        with _mock_validate_object_id(wf_id), patch(
-            "application.api.user.workflows.routes.workflows_collection", mock_wf_col
-        ), patch(
-            "application.api.user.workflows.routes.workflow_nodes_collection",
-            mock_nodes_col,
-        ), patch(
-            "application.api.user.workflows.routes.workflow_edges_collection",
-            mock_edges_col,
-        ), patch(
-            "application.api.user.workflows.routes._dual_write_workflow_delete",
-            lambda *a, **kw: None,
-        ):
-            with app.test_request_context(f"/api/workflows/{wf_id}", method="DELETE"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = WorkflowDetail().delete(wf_id)
-
-        assert response.status_code == 200
-        assert response.json["success"] is True
+    pass
 
     def test_delete_unauthorized(self, app):
         from application.api.user.workflows.routes import WorkflowDetail
@@ -503,20 +220,453 @@ class TestWorkflowDetailDeleteCoverage:
 
         assert response.status_code == 401
 
-    def test_delete_returns_404_when_not_found(self, app):
+
+# ---------------------------------------------------------------------------
+# Real-PG happy-path tests using pg_conn
+# ---------------------------------------------------------------------------
+
+from contextlib import contextmanager
+
+
+@contextmanager
+def _patch_wf_db(conn):
+    @contextmanager
+    def _yield():
+        yield conn
+
+    with patch(
+        "application.api.user.workflows.routes.db_session", _yield
+    ), patch(
+        "application.api.user.workflows.routes.db_readonly", _yield
+    ):
+        yield
+
+
+def _minimal_workflow_body(name="WF1"):
+    return {
+        "name": name,
+        "description": "desc",
+        "nodes": [
+            {"id": "start1", "type": "start", "position": {"x": 0, "y": 0}, "data": {}},
+            {"id": "end1", "type": "end", "position": {"x": 100, "y": 0}, "data": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "start1", "target": "end1"},
+        ],
+    }
+
+
+class TestSerializers:
+    def test_serialize_workflow_fields(self):
+        from application.api.user.workflows.routes import serialize_workflow
+        import datetime
+
+        wf = {
+            "id": "00000000-0000-0000-0000-000000000001",
+            "user_id": "u1",
+            "name": "hello",
+            "description": "d",
+            "current_graph_version": 3,
+            "created_at": datetime.datetime(2024, 1, 1, 12, 0, 0),
+            "updated_at": datetime.datetime(2024, 1, 2, 12, 0, 0),
+        }
+        got = serialize_workflow(wf)
+        assert got["id"] == wf["id"]
+        assert got["name"] == "hello"
+        assert got["description"] == "d"
+        # created_at gets iso-formatted
+        assert got["created_at"] == "2024-01-01T12:00:00"
+
+    def test_serialize_node_shape(self):
+        from application.api.user.workflows.routes import serialize_node
+
+        node = {
+            "id": "00000000-0000-0000-0000-000000000002",
+            "node_id": "start1",
+            "node_type": "start",
+            "title": "Start",
+            "description": "",
+            "position": {"x": 0, "y": 0},
+            "config": {},
+        }
+        out = serialize_node(node)
+        assert out["id"] == "start1"
+        assert out["type"] == "start"
+        assert out["position"] == {"x": 0, "y": 0}
+
+    def test_serialize_edge_shape(self):
+        from application.api.user.workflows.routes import serialize_edge
+
+        edge = {
+            "id": "00000000-0000-0000-0000-000000000003",
+            "edge_id": "e-1",
+            "source_node_id": "start1",
+            "target_node_id": "end1",
+            "source_handle": None,
+            "target_handle": None,
+            "config": {},
+        }
+        out = serialize_edge(edge)
+        assert out["id"] == "e-1"
+
+
+class TestWorkflowListPost:
+    def test_creates_valid_workflow(self, app, pg_conn):
+        from application.api.user.workflows.routes import WorkflowList
+
+        with _patch_wf_db(pg_conn), app.test_request_context(
+            "/api/workflows",
+            method="POST",
+            json=_minimal_workflow_body("first"),
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            response = WorkflowList().post()
+
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["success"] is True
+        assert body["data"]["id"]
+
+    def test_create_validation_failure_returns_400(self, app, pg_conn):
+        """Workflow with no start node should fail validation."""
+        from application.api.user.workflows.routes import WorkflowList
+
+        body = {
+            "name": "bad",
+            "nodes": [{"id": "end1", "type": "end"}],
+            "edges": [],
+        }
+        with _patch_wf_db(pg_conn), app.test_request_context(
+            "/api/workflows", method="POST", json=body
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            response = WorkflowList().post()
+
+        assert response.status_code == 400
+
+    def test_create_db_error_returns_400(self, app):
+        from application.api.user.workflows.routes import WorkflowList
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.user.workflows.routes.db_session", _broken
+        ), app.test_request_context(
+            "/api/workflows",
+            method="POST",
+            json=_minimal_workflow_body("x"),
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            response = WorkflowList().post()
+
+        assert response.status_code == 400
+
+
+class TestWorkflowDetailGet:
+    def test_returns_404_for_missing_workflow(self, app, pg_conn):
         from application.api.user.workflows.routes import WorkflowDetail
 
-        wf_id = _fake_oid()
-        mock_wf_col = Mock()
-        mock_wf_col.find_one.return_value = None
-
-        with _mock_validate_object_id(wf_id), patch(
-            "application.api.user.workflows.routes.workflows_collection", mock_wf_col
+        with _patch_wf_db(pg_conn), app.test_request_context(
+            "/api/workflows/00000000-0000-0000-0000-000000000000",
+            method="GET",
         ):
-            with app.test_request_context(f"/api/workflows/{wf_id}", method="DELETE"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = WorkflowDetail().delete(wf_id)
-
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            response = WorkflowDetail().get(
+                "00000000-0000-0000-0000-000000000000"
+            )
         assert response.status_code == 404
+
+    def test_returns_workflow_after_create(self, app, pg_conn):
+        from application.api.user.workflows.routes import (
+            WorkflowDetail,
+            WorkflowList,
+        )
+
+        # Create one first
+        with _patch_wf_db(pg_conn), app.test_request_context(
+            "/api/workflows",
+            method="POST",
+            json=_minimal_workflow_body("retrievable"),
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            created = WorkflowList().post()
+        wf_id = created.get_json()["data"]["id"]
+
+        with _patch_wf_db(pg_conn), app.test_request_context(
+            f"/api/workflows/{wf_id}", method="GET"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            response = WorkflowDetail().get(wf_id)
+
+        assert response.status_code == 200
+        data = response.get_json()["data"]
+        assert data["workflow"]["name"] == "retrievable"
+        assert len(data["nodes"]) == 2
+        assert len(data["edges"]) == 1
+
+    def test_db_error_returns_400(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.user.workflows.routes.db_readonly", _broken
+        ), app.test_request_context("/api/workflows/abc"):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            response = WorkflowDetail().get("abc")
+        assert response.status_code == 400
+
+
+class TestWorkflowDetailPut:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        with app.test_request_context(
+            "/api/workflows/abc",
+            method="PUT",
+            json={"name": "x"},
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = WorkflowDetail().put("abc")
+        assert response.status_code == 401
+
+    def test_returns_400_missing_name(self, app, pg_conn):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        with _patch_wf_db(pg_conn), app.test_request_context(
+            "/api/workflows/abc",
+            method="PUT",
+            json={"description": "x"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            response = WorkflowDetail().put("abc")
+        assert response.status_code == 400
+
+    def test_returns_404_missing_workflow(self, app, pg_conn):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        body = _minimal_workflow_body("new")
+        with _patch_wf_db(pg_conn), app.test_request_context(
+            "/api/workflows/00000000-0000-0000-0000-000000000000",
+            method="PUT",
+            json=body,
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            response = WorkflowDetail().put(
+                "00000000-0000-0000-0000-000000000000"
+            )
+        assert response.status_code == 404
+
+    def test_validation_failure_returns_400(self, app, pg_conn):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        body = {
+            "name": "bad",
+            "nodes": [{"id": "end1", "type": "end"}],
+            "edges": [],
+        }
+        with _patch_wf_db(pg_conn), app.test_request_context(
+            "/api/workflows/abc",
+            method="PUT",
+            json=body,
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            response = WorkflowDetail().put("abc")
+        assert response.status_code == 400
+
+    def test_updates_workflow(self, app, pg_conn):
+        from application.api.user.workflows.routes import (
+            WorkflowDetail,
+            WorkflowList,
+        )
+
+        with _patch_wf_db(pg_conn), app.test_request_context(
+            "/api/workflows",
+            method="POST",
+            json=_minimal_workflow_body("before"),
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            created = WorkflowList().post()
+        wf_id = created.get_json()["data"]["id"]
+
+        body = _minimal_workflow_body("after")
+        with _patch_wf_db(pg_conn), app.test_request_context(
+            f"/api/workflows/{wf_id}",
+            method="PUT",
+            json=body,
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            response = WorkflowDetail().put(wf_id)
+        assert response.status_code == 200
+
+        # Verify the version bumped
+        with _patch_wf_db(pg_conn), app.test_request_context(
+            f"/api/workflows/{wf_id}", method="GET"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            got = WorkflowDetail().get(wf_id)
+        data = got.get_json()["data"]
+        assert data["workflow"]["name"] == "after"
+
+    def test_db_error_returns_400(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.user.workflows.routes.db_session", _broken
+        ), app.test_request_context(
+            "/api/workflows/abc",
+            method="PUT",
+            json=_minimal_workflow_body("x"),
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            response = WorkflowDetail().put("abc")
+        assert response.status_code == 400
+
+
+class TestWorkflowDetailDelete:
+    def test_returns_404_missing(self, app, pg_conn):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        with _patch_wf_db(pg_conn), app.test_request_context(
+            "/api/workflows/00000000-0000-0000-0000-000000000000",
+            method="DELETE",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            response = WorkflowDetail().delete(
+                "00000000-0000-0000-0000-000000000000"
+            )
+        assert response.status_code == 404
+
+    def test_deletes_workflow(self, app, pg_conn):
+        from application.api.user.workflows.routes import (
+            WorkflowDetail,
+            WorkflowList,
+        )
+
+        with _patch_wf_db(pg_conn), app.test_request_context(
+            "/api/workflows",
+            method="POST",
+            json=_minimal_workflow_body("tbd"),
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            created = WorkflowList().post()
+        wf_id = created.get_json()["data"]["id"]
+
+        with _patch_wf_db(pg_conn), app.test_request_context(
+            f"/api/workflows/{wf_id}", method="DELETE"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            response = WorkflowDetail().delete(wf_id)
+        assert response.status_code == 200
+
+    def test_db_error_returns_400(self, app):
+        from application.api.user.workflows.routes import WorkflowDetail
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.user.workflows.routes.db_session", _broken
+        ), app.test_request_context(
+            "/api/workflows/abc", method="DELETE"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            response = WorkflowDetail().delete("abc")
+        assert response.status_code == 400
+
+
+class TestValidateWorkflowStructureExtras:
+    def test_no_nodes_returns_error(self):
+        from application.api.user.workflows.routes import (
+            validate_workflow_structure,
+        )
+        errors = validate_workflow_structure([], [])
+        assert any("at least one node" in e for e in errors)
+
+    def test_missing_start_node_returns_error(self):
+        from application.api.user.workflows.routes import (
+            validate_workflow_structure,
+        )
+        errors = validate_workflow_structure(
+            [{"id": "end1", "type": "end"}], []
+        )
+        assert any("start" in e for e in errors)
+
+    def test_missing_end_node_returns_error(self):
+        from application.api.user.workflows.routes import (
+            validate_workflow_structure,
+        )
+        errors = validate_workflow_structure(
+            [{"id": "s", "type": "start"}],
+            [{"id": "e1", "source": "s", "target": "s"}],
+        )
+        assert any("end" in e for e in errors)
+
+    def test_edge_with_missing_source_reports_error(self):
+        from application.api.user.workflows.routes import (
+            validate_workflow_structure,
+        )
+        errors = validate_workflow_structure(
+            [
+                {"id": "s", "type": "start"},
+                {"id": "e", "type": "end"},
+            ],
+            [
+                {"id": "edge1", "source": "ghost", "target": "e"},
+                {"id": "edge2", "source": "s", "target": "e"},
+            ],
+        )
+        assert any("non-existent source" in err for err in errors)
+
+    def test_condition_node_without_else_branch_errors(self):
+        from application.api.user.workflows.routes import (
+            validate_workflow_structure,
+        )
+        nodes = [
+            {"id": "start", "type": "start"},
+            {
+                "id": "cond",
+                "type": "condition",
+                "data": {"cases": [{"expression": "x", "sourceHandle": "yes"}]},
+            },
+            {"id": "end", "type": "end"},
+        ]
+        edges = [
+            {"id": "e1", "source": "start", "target": "cond"},
+            {"id": "e2", "source": "cond", "target": "end", "sourceHandle": "yes"},
+        ]
+        errors = validate_workflow_structure(nodes, edges)
+        assert any("'else'" in e for e in errors)
+

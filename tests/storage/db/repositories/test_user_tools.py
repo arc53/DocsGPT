@@ -6,11 +6,6 @@ import pytest
 
 from application.storage.db.repositories.user_tools import UserToolsRepository
 
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
-
 
 def _repo(conn) -> UserToolsRepository:
     return UserToolsRepository(conn)

@@ -6,11 +6,6 @@ import pytest
 
 from application.storage.db.repositories.agents import AgentsRepository
 
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
-
 
 def _repo(conn) -> AgentsRepository:
     return AgentsRepository(conn)

@@ -1,904 +1,408 @@
+"""Tests for application/api/user/analytics/routes.py.
+
+Uses the ephemeral ``pg_conn`` fixture so analytics SQL runs against a real
+(in-memory) Postgres schema.
+"""
+
 import datetime
-import uuid
-from unittest.mock import Mock, patch
+from contextlib import contextmanager
+from unittest.mock import patch
 
 import pytest
 from flask import Flask
 
-pytestmark = pytest.mark.skip(
-    reason="Asserts Mongo-era *_collection call shapes; needs PG repository-based rewrite. "
-    "Tracked as migration debt."
-)
-
 
 @pytest.fixture
 def app():
-    app = Flask(__name__)
-    return app
+    return Flask(__name__)
 
 
-@pytest.mark.unit
+@contextmanager
+def _patch_analytics_db(conn):
+    @contextmanager
+    def _yield_conn():
+        yield conn
+
+    with patch(
+        "application.api.user.analytics.routes.db_readonly", _yield_conn
+    ):
+        yield
+
+
+def _seed_conversation_with_messages(
+    pg_conn, user_id, *, count=3, api_key=None, feedback_text=None,
+):
+    from application.storage.db.repositories.conversations import (
+        ConversationsRepository,
+    )
+    repo = ConversationsRepository(pg_conn)
+    conv = repo.create(user_id, name="t", api_key=api_key)
+    conv_id = str(conv["id"])
+    for i in range(count):
+        repo.append_message(conv_id, {"prompt": f"p{i}", "response": f"r{i}"})
+        if feedback_text is not None:
+            repo.set_feedback(
+                conv_id,
+                i,
+                {
+                    "text": feedback_text if i % 2 == 0 else "dislike",
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat(),
+                },
+            )
+    return conv_id
+
+
+class TestRangeForFilter:
+    def test_returns_none_for_invalid_filter(self):
+        from application.api.user.analytics.routes import _range_for_filter
+
+        assert _range_for_filter("bogus") is None
+
+    @pytest.mark.parametrize(
+        "option",
+        ["last_hour", "last_24_hour", "last_7_days", "last_15_days", "last_30_days"],
+    )
+    def test_returns_start_end_for_supported(self, option):
+        from application.api.user.analytics.routes import _range_for_filter
+
+        got = _range_for_filter(option)
+        assert got is not None
+        start, end, bucket_unit, pg_fmt = got
+        assert start < end
+        assert bucket_unit in {"minute", "hour", "day"}
+
+
+class TestResolveApiKey:
+    def test_none_when_no_id(self, pg_conn):
+        from application.api.user.analytics.routes import _resolve_api_key
+
+        assert _resolve_api_key(pg_conn, None, "u") is None
+        assert _resolve_api_key(pg_conn, "", "u") is None
+
+    def test_returns_key_for_owned_agent(self, pg_conn):
+        from application.api.user.analytics.routes import _resolve_api_key
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        agent = AgentsRepository(pg_conn).create(
+            "owner", "test-agent", "published", key="secret-api-key",
+        )
+        assert (
+            _resolve_api_key(pg_conn, str(agent["id"]), "owner")
+            == "secret-api-key"
+        )
+
+    def test_none_for_other_users_agent(self, pg_conn):
+        from application.api.user.analytics.routes import _resolve_api_key
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        agent = AgentsRepository(pg_conn).create(
+            "owner", "test-agent", "published", key="secret"
+        )
+        assert _resolve_api_key(pg_conn, str(agent["id"]), "other-user") is None
+
+
 class TestGetMessageAnalytics:
-
-    def test_returns_message_analytics_last_30_days(self, app):
+    def test_returns_401_unauthenticated(self, app):
         from application.api.user.analytics.routes import GetMessageAnalytics
 
-        mock_conversations = Mock()
-        mock_conversations.aggregate.return_value = [
-            {"_id": "2024-06-01", "count": 5},
-            {"_id": "2024-06-02", "count": 3},
-        ]
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-
-        with patch(
-            "application.api.user.analytics.routes.conversations_collection",
-            mock_conversations,
-        ), patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
+        with app.test_request_context(
+            "/api/get_message_analytics", method="POST", json={}
         ):
-            with app.test_request_context(
-                "/api/get_message_analytics",
-                method="POST",
-                json={"filter_option": "last_30_days"},
-            ):
-                from flask import request
+            from flask import request
+            request.decoded_token = None
+            response = GetMessageAnalytics().post()
+        assert response.status_code == 401
 
-                request.decoded_token = {"sub": "user1"}
-                response = GetMessageAnalytics().post()
-
-        assert response.status_code == 200
-        assert response.json["success"] is True
-        assert "messages" in response.json
-
-    def test_returns_401_unauthenticated(self, app):
+    def test_invalid_filter_returns_400(self, app):
         from application.api.user.analytics.routes import GetMessageAnalytics
 
         with app.test_request_context(
             "/api/get_message_analytics",
             method="POST",
+            json={"filter_option": "nope"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = GetMessageAnalytics().post()
+        assert response.status_code == 400
+
+    def test_returns_bucketed_counts(self, app, pg_conn):
+        from application.api.user.analytics.routes import GetMessageAnalytics
+
+        user = "u-msg"
+        _seed_conversation_with_messages(pg_conn, user, count=3)
+
+        with _patch_analytics_db(pg_conn), app.test_request_context(
+            "/api/get_message_analytics",
+            method="POST",
             json={"filter_option": "last_30_days"},
         ):
             from flask import request
-
-            request.decoded_token = None
+            request.decoded_token = {"sub": user}
             response = GetMessageAnalytics().post()
-
-        assert response.status_code == 401
-
-    def test_returns_400_invalid_filter_option(self, app):
-        from application.api.user.analytics.routes import GetMessageAnalytics
-
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-
-        with patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_message_analytics",
-                method="POST",
-                json={"filter_option": "invalid_option"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetMessageAnalytics().post()
-
-        assert response.status_code == 400
-
-    def test_filters_by_api_key(self, app):
-        from application.api.user.analytics.routes import GetMessageAnalytics
-
-        agent_id = uuid.uuid4().hex
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = {
-            "_id": agent_id,
-            "key": "api_key_value",
-        }
-        mock_conversations = Mock()
-        mock_conversations.aggregate.return_value = []
-
-        with patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ), patch(
-            "application.api.user.analytics.routes.conversations_collection",
-            mock_conversations,
-        ):
-            with app.test_request_context(
-                "/api/get_message_analytics",
-                method="POST",
-                json={
-                    "filter_option": "last_7_days",
-                    "api_key_id": str(agent_id),
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetMessageAnalytics().post()
-
-        assert response.status_code == 200
-        pipeline = mock_conversations.aggregate.call_args[0][0]
-        assert pipeline[0]["$match"].get("api_key") == "api_key_value"
-
-    def test_last_hour_filter(self, app):
-        from application.api.user.analytics.routes import GetMessageAnalytics
-
-        mock_conversations = Mock()
-        mock_conversations.aggregate.return_value = []
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-
-        with patch(
-            "application.api.user.analytics.routes.conversations_collection",
-            mock_conversations,
-        ), patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_message_analytics",
-                method="POST",
-                json={"filter_option": "last_hour"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetMessageAnalytics().post()
-
-        assert response.status_code == 200
-
-    def test_last_24_hour_filter(self, app):
-        from application.api.user.analytics.routes import GetMessageAnalytics
-
-        mock_conversations = Mock()
-        mock_conversations.aggregate.return_value = []
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-
-        with patch(
-            "application.api.user.analytics.routes.conversations_collection",
-            mock_conversations,
-        ), patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_message_analytics",
-                method="POST",
-                json={"filter_option": "last_24_hour"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetMessageAnalytics().post()
-
-        assert response.status_code == 200
-
-
-@pytest.mark.unit
-class TestGetTokenAnalytics:
-
-    def test_returns_token_analytics(self, app):
-        from application.api.user.analytics.routes import GetTokenAnalytics
-
-        mock_token_usage = Mock()
-        mock_token_usage.aggregate.return_value = [
-            {"_id": {"day": "2024-06-01"}, "total_tokens": 1000}
-        ]
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-
-        with patch(
-            "application.api.user.analytics.routes.token_usage_collection",
-            mock_token_usage,
-        ), patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_token_analytics",
-                method="POST",
-                json={"filter_option": "last_30_days"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetTokenAnalytics().post()
-
         assert response.status_code == 200
         assert response.json["success"] is True
-        assert "token_usage" in response.json
+        messages = response.json["messages"]
+        assert isinstance(messages, dict)
+        assert sum(messages.values()) == 3
 
-    def test_returns_400_invalid_filter(self, app):
-        from application.api.user.analytics.routes import GetTokenAnalytics
+    def test_filters_by_api_key(self, app, pg_conn):
+        from application.api.user.analytics.routes import GetMessageAnalytics
+        from application.storage.db.repositories.agents import AgentsRepository
 
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
+        user = "u-msg-key"
+        agent = AgentsRepository(pg_conn).create(
+            user, "a", "published", key="k1",
+        )
+        _seed_conversation_with_messages(pg_conn, user, count=4, api_key="k1")
+        _seed_conversation_with_messages(pg_conn, user, count=2)
 
-        with patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_token_analytics",
-                method="POST",
-                json={"filter_option": "invalid"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetTokenAnalytics().post()
-
-        assert response.status_code == 400
-
-
-@pytest.mark.unit
-class TestGetFeedbackAnalytics:
-
-    def test_returns_feedback_analytics(self, app):
-        from application.api.user.analytics.routes import GetFeedbackAnalytics
-
-        mock_conversations = Mock()
-        mock_conversations.aggregate.return_value = [
-            {"_id": "2024-06-01", "positive": 10, "negative": 2}
-        ]
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-
-        with patch(
-            "application.api.user.analytics.routes.conversations_collection",
-            mock_conversations,
-        ), patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_feedback_analytics",
-                method="POST",
-                json={"filter_option": "last_30_days"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetFeedbackAnalytics().post()
-
-        assert response.status_code == 200
-        assert response.json["success"] is True
-        assert "feedback" in response.json
-
-    def test_returns_400_invalid_filter(self, app):
-        from application.api.user.analytics.routes import GetFeedbackAnalytics
-
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-
-        with patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_feedback_analytics",
-                method="POST",
-                json={"filter_option": "bad"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetFeedbackAnalytics().post()
-
-        assert response.status_code == 400
-
-
-@pytest.mark.unit
-class TestGetUserLogs:
-
-    def test_returns_paginated_logs(self, app):
-        from application.api.user.analytics.routes import GetUserLogs
-
-        log_id = uuid.uuid4().hex
-        mock_cursor = Mock()
-        mock_cursor.sort.return_value.skip.return_value.limit.return_value = [
-            {
-                "_id": log_id,
-                "action": "query",
-                "level": "info",
-                "user": "user1",
-                "question": "test?",
-                "sources": [],
-                "retriever_params": {},
-                "timestamp": datetime.datetime(2024, 6, 1),
-            }
-        ]
-        mock_user_logs = Mock()
-        mock_user_logs.find.return_value = mock_cursor
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-
-        with patch(
-            "application.api.user.analytics.routes.user_logs_collection",
-            mock_user_logs,
-        ), patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_user_logs",
-                method="POST",
-                json={"page": 1, "page_size": 10},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetUserLogs().post()
-
-        assert response.status_code == 200
-        assert response.json["success"] is True
-        assert response.json["page"] == 1
-        assert len(response.json["logs"]) == 1
-        assert response.json["has_more"] is False
-
-    def test_detects_has_more(self, app):
-        from application.api.user.analytics.routes import GetUserLogs
-
-        items = [
-            {"_id": uuid.uuid4().hex, "action": f"q{i}", "level": "info"}
-            for i in range(3)
-        ]
-        mock_cursor = Mock()
-        mock_cursor.sort.return_value.skip.return_value.limit.return_value = items
-        mock_user_logs = Mock()
-        mock_user_logs.find.return_value = mock_cursor
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-
-        with patch(
-            "application.api.user.analytics.routes.user_logs_collection",
-            mock_user_logs,
-        ), patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_user_logs",
-                method="POST",
-                json={"page": 1, "page_size": 2},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetUserLogs().post()
-
-        assert response.status_code == 200
-        assert response.json["has_more"] is True
-        assert len(response.json["logs"]) == 2
-
-    def test_returns_401_unauthenticated(self, app):
-        from application.api.user.analytics.routes import GetUserLogs
-
-        with app.test_request_context(
-            "/api/get_user_logs",
+        with _patch_analytics_db(pg_conn), app.test_request_context(
+            "/api/get_message_analytics",
             method="POST",
-            json={"page": 1},
+            json={"api_key_id": str(agent["id"]), "filter_option": "last_30_days"},
         ):
             from flask import request
+            request.decoded_token = {"sub": user}
+            response = GetMessageAnalytics().post()
+        assert response.status_code == 200
+        assert sum(response.json["messages"].values()) == 4
 
+    def test_db_error_returns_400(self, app):
+        from application.api.user.analytics.routes import GetMessageAnalytics
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.user.analytics.routes.db_readonly", _broken
+        ), app.test_request_context(
+            "/api/get_message_analytics", method="POST", json={}
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = GetMessageAnalytics().post()
+        assert response.status_code == 400
+
+
+class TestGetTokenAnalytics:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.analytics.routes import GetTokenAnalytics
+
+        with app.test_request_context(
+            "/api/get_token_analytics", method="POST", json={}
+        ):
+            from flask import request
             request.decoded_token = None
-            response = GetUserLogs().post()
-
+            response = GetTokenAnalytics().post()
         assert response.status_code == 401
 
-
-@pytest.mark.unit
-class TestGetTokenAnalyticsAdditional:
-    """Additional tests for GetTokenAnalytics covering missing lines."""
-
-    def test_returns_401_unauthenticated(self, app):
+    def test_invalid_filter_returns_400(self, app):
         from application.api.user.analytics.routes import GetTokenAnalytics
 
         with app.test_request_context(
             "/api/get_token_analytics",
             method="POST",
+            json={"filter_option": "bogus"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = GetTokenAnalytics().post()
+        assert response.status_code == 400
+
+    def test_returns_token_usage_shape(self, app, pg_conn):
+        from application.api.user.analytics.routes import GetTokenAnalytics
+
+        with _patch_analytics_db(pg_conn), app.test_request_context(
+            "/api/get_token_analytics",
+            method="POST",
             json={"filter_option": "last_30_days"},
         ):
             from flask import request
-
-            request.decoded_token = None
+            request.decoded_token = {"sub": "u-token"}
             response = GetTokenAnalytics().post()
+        assert response.status_code == 200
+        assert response.json["success"] is True
+        assert isinstance(response.json["token_usage"], dict)
 
+    def test_db_error_returns_400(self, app):
+        from application.api.user.analytics.routes import GetTokenAnalytics
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.user.analytics.routes.db_readonly", _broken
+        ), app.test_request_context(
+            "/api/get_token_analytics", method="POST", json={}
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = GetTokenAnalytics().post()
+        assert response.status_code == 400
+
+
+class TestGetFeedbackAnalytics:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.analytics.routes import GetFeedbackAnalytics
+
+        with app.test_request_context(
+            "/api/get_feedback_analytics", method="POST", json={}
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = GetFeedbackAnalytics().post()
         assert response.status_code == 401
 
-    def test_last_hour_filter(self, app):
-        from application.api.user.analytics.routes import GetTokenAnalytics
-
-        mock_token_usage = Mock()
-        mock_token_usage.aggregate.return_value = [
-            {"_id": {"minute": "2024-06-01 12:00:00"}, "total_tokens": 500}
-        ]
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-
-        with patch(
-            "application.api.user.analytics.routes.token_usage_collection",
-            mock_token_usage,
-        ), patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_token_analytics",
-                method="POST",
-                json={"filter_option": "last_hour"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetTokenAnalytics().post()
-
-        assert response.status_code == 200
-        assert response.json["success"] is True
-        assert "token_usage" in response.json
-
-    def test_last_24_hour_filter(self, app):
-        from application.api.user.analytics.routes import GetTokenAnalytics
-
-        mock_token_usage = Mock()
-        mock_token_usage.aggregate.return_value = [
-            {"_id": {"hour": "2024-06-01 12:00"}, "total_tokens": 800}
-        ]
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-
-        with patch(
-            "application.api.user.analytics.routes.token_usage_collection",
-            mock_token_usage,
-        ), patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_token_analytics",
-                method="POST",
-                json={"filter_option": "last_24_hour"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetTokenAnalytics().post()
-
-        assert response.status_code == 200
-        assert response.json["success"] is True
-
-    def test_filters_by_api_key(self, app):
-        from application.api.user.analytics.routes import GetTokenAnalytics
-
-        agent_id = uuid.uuid4().hex
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = {
-            "_id": agent_id,
-            "key": "token_api_key",
-        }
-        mock_token_usage = Mock()
-        mock_token_usage.aggregate.return_value = []
-
-        with patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ), patch(
-            "application.api.user.analytics.routes.token_usage_collection",
-            mock_token_usage,
-        ):
-            with app.test_request_context(
-                "/api/get_token_analytics",
-                method="POST",
-                json={
-                    "filter_option": "last_7_days",
-                    "api_key_id": str(agent_id),
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetTokenAnalytics().post()
-
-        assert response.status_code == 200
-        pipeline = mock_token_usage.aggregate.call_args[0][0]
-        assert pipeline[0]["$match"].get("api_key") == "token_api_key"
-
-    def test_api_key_error_returns_400(self, app):
-        from application.api.user.analytics.routes import GetTokenAnalytics
-
-        mock_agents = Mock()
-        mock_agents.find_one.side_effect = Exception("db error")
-
-        with patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_token_analytics",
-                method="POST",
-                json={
-                    "filter_option": "last_30_days",
-                    "api_key_id": str(uuid.uuid4().hex),
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetTokenAnalytics().post()
-
-        assert response.status_code == 400
-
-    def test_aggregate_error_returns_400(self, app):
-        from application.api.user.analytics.routes import GetTokenAnalytics
-
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-        mock_token_usage = Mock()
-        mock_token_usage.aggregate.side_effect = Exception("aggregate error")
-
-        with patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ), patch(
-            "application.api.user.analytics.routes.token_usage_collection",
-            mock_token_usage,
-        ):
-            with app.test_request_context(
-                "/api/get_token_analytics",
-                method="POST",
-                json={"filter_option": "last_30_days"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetTokenAnalytics().post()
-
-        assert response.status_code == 400
-
-    def test_last_15_days_filter(self, app):
-        from application.api.user.analytics.routes import GetTokenAnalytics
-
-        mock_token_usage = Mock()
-        mock_token_usage.aggregate.return_value = []
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-
-        with patch(
-            "application.api.user.analytics.routes.token_usage_collection",
-            mock_token_usage,
-        ), patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_token_analytics",
-                method="POST",
-                json={"filter_option": "last_15_days"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetTokenAnalytics().post()
-
-        assert response.status_code == 200
-
-
-@pytest.mark.unit
-class TestGetFeedbackAnalyticsAdditional:
-    """Additional tests for GetFeedbackAnalytics covering missing lines."""
-
-    def test_returns_401_unauthenticated(self, app):
+    def test_invalid_filter_returns_400(self, app):
         from application.api.user.analytics.routes import GetFeedbackAnalytics
 
         with app.test_request_context(
             "/api/get_feedback_analytics",
             method="POST",
+            json={"filter_option": "nope"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = GetFeedbackAnalytics().post()
+        assert response.status_code == 400
+
+    def test_returns_positive_and_negative_counts(self, app, pg_conn):
+        from application.api.user.analytics.routes import GetFeedbackAnalytics
+
+        user = "u-fb"
+        _seed_conversation_with_messages(
+            pg_conn, user, count=4, feedback_text="like",
+        )
+
+        with _patch_analytics_db(pg_conn), app.test_request_context(
+            "/api/get_feedback_analytics",
+            method="POST",
             json={"filter_option": "last_30_days"},
         ):
             from flask import request
-
-            request.decoded_token = None
+            request.decoded_token = {"sub": user}
             response = GetFeedbackAnalytics().post()
+        assert response.status_code == 200
+        fb = response.json["feedback"]
+        total_pos = sum(b["positive"] for b in fb.values())
+        total_neg = sum(b["negative"] for b in fb.values())
+        assert total_pos == 2
+        assert total_neg == 2
 
+    def test_db_error_returns_400(self, app):
+        from application.api.user.analytics.routes import GetFeedbackAnalytics
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.user.analytics.routes.db_readonly", _broken
+        ), app.test_request_context(
+            "/api/get_feedback_analytics", method="POST", json={}
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = GetFeedbackAnalytics().post()
+        assert response.status_code == 400
+
+
+class TestGetUserLogs:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.analytics.routes import GetUserLogs
+
+        with app.test_request_context(
+            "/api/get_user_logs", method="POST", json={}
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = GetUserLogs().post()
         assert response.status_code == 401
 
-    def test_last_hour_filter(self, app):
-        from application.api.user.analytics.routes import GetFeedbackAnalytics
+    def test_returns_logs_list_paginated(self, app, pg_conn):
+        from application.api.user.analytics.routes import GetUserLogs
+        from application.storage.db.repositories.user_logs import (
+            UserLogsRepository,
+        )
 
-        mock_conversations = Mock()
-        mock_conversations.aggregate.return_value = []
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
+        user = "u-logs"
+        logs_repo = UserLogsRepository(pg_conn)
+        for i in range(3):
+            logs_repo.insert(
+                user_id=user,
+                endpoint="info",
+                data={"action": "chat", "question": f"q{i}"},
+            )
 
-        with patch(
-            "application.api.user.analytics.routes.conversations_collection",
-            mock_conversations,
-        ), patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
+        with _patch_analytics_db(pg_conn), app.test_request_context(
+            "/api/get_user_logs",
+            method="POST",
+            json={"page": 1, "page_size": 10},
         ):
-            with app.test_request_context(
-                "/api/get_feedback_analytics",
-                method="POST",
-                json={"filter_option": "last_hour"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetFeedbackAnalytics().post()
-
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = GetUserLogs().post()
         assert response.status_code == 200
+        data = response.json
+        assert data["success"] is True
+        assert len(data["logs"]) == 3
+        assert data["page"] == 1
+        assert data["page_size"] == 10
 
-    def test_last_24_hour_filter(self, app):
-        from application.api.user.analytics.routes import GetFeedbackAnalytics
+    def test_filters_logs_by_api_key(self, app, pg_conn):
+        from application.api.user.analytics.routes import GetUserLogs
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.user_logs import (
+            UserLogsRepository,
+        )
 
-        mock_conversations = Mock()
-        mock_conversations.aggregate.return_value = []
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
+        user = "u-logs-key"
+        agent = AgentsRepository(pg_conn).create(
+            user, "a", "published", key="myk",
+        )
+        logs_repo = UserLogsRepository(pg_conn)
+        logs_repo.insert(
+            user_id=user, endpoint="info",
+            data={"action": "a", "api_key": "myk"},
+        )
+        logs_repo.insert(
+            user_id=user, endpoint="info",
+            data={"action": "a", "api_key": "other"},
+        )
 
-        with patch(
-            "application.api.user.analytics.routes.conversations_collection",
-            mock_conversations,
-        ), patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
+        with _patch_analytics_db(pg_conn), app.test_request_context(
+            "/api/get_user_logs",
+            method="POST",
+            json={"api_key_id": str(agent["id"])},
         ):
-            with app.test_request_context(
-                "/api/get_feedback_analytics",
-                method="POST",
-                json={"filter_option": "last_24_hour"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetFeedbackAnalytics().post()
-
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = GetUserLogs().post()
         assert response.status_code == 200
+        assert len(response.json["logs"]) == 1
 
-    def test_filters_by_api_key(self, app):
-        from application.api.user.analytics.routes import GetFeedbackAnalytics
-
-        agent_id = uuid.uuid4().hex
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = {
-            "_id": agent_id,
-            "key": "fb_api_key",
-        }
-        mock_conversations = Mock()
-        mock_conversations.aggregate.return_value = []
-
-        with patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ), patch(
-            "application.api.user.analytics.routes.conversations_collection",
-            mock_conversations,
-        ):
-            with app.test_request_context(
-                "/api/get_feedback_analytics",
-                method="POST",
-                json={
-                    "filter_option": "last_7_days",
-                    "api_key_id": str(agent_id),
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetFeedbackAnalytics().post()
-
-        assert response.status_code == 200
-        pipeline = mock_conversations.aggregate.call_args[0][0]
-        assert pipeline[0]["$match"].get("api_key") == "fb_api_key"
-
-    def test_api_key_error_returns_400(self, app):
-        from application.api.user.analytics.routes import GetFeedbackAnalytics
-
-        mock_agents = Mock()
-        mock_agents.find_one.side_effect = Exception("db error")
-
-        with patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_feedback_analytics",
-                method="POST",
-                json={
-                    "filter_option": "last_30_days",
-                    "api_key_id": str(uuid.uuid4().hex),
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetFeedbackAnalytics().post()
-
-        assert response.status_code == 400
-
-    def test_aggregate_error_returns_400(self, app):
-        from application.api.user.analytics.routes import GetFeedbackAnalytics
-
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-        mock_conversations = Mock()
-        mock_conversations.aggregate.side_effect = Exception("aggregate error")
-
-        with patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ), patch(
-            "application.api.user.analytics.routes.conversations_collection",
-            mock_conversations,
-        ):
-            with app.test_request_context(
-                "/api/get_feedback_analytics",
-                method="POST",
-                json={"filter_option": "last_30_days"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetFeedbackAnalytics().post()
-
-        assert response.status_code == 400
-
-
-@pytest.mark.unit
-class TestGetMessageAnalyticsAdditional:
-    """Additional tests for GetMessageAnalytics covering error paths."""
-
-    def test_api_key_error_returns_400(self, app):
-        from application.api.user.analytics.routes import GetMessageAnalytics
-
-        mock_agents = Mock()
-        mock_agents.find_one.side_effect = Exception("db error")
-
-        with patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_message_analytics",
-                method="POST",
-                json={
-                    "filter_option": "last_30_days",
-                    "api_key_id": str(uuid.uuid4().hex),
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetMessageAnalytics().post()
-
-        assert response.status_code == 400
-
-    def test_aggregate_error_returns_400(self, app):
-        from application.api.user.analytics.routes import GetMessageAnalytics
-
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-        mock_conversations = Mock()
-        mock_conversations.aggregate.side_effect = Exception("aggregate error")
-
-        with patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ), patch(
-            "application.api.user.analytics.routes.conversations_collection",
-            mock_conversations,
-        ):
-            with app.test_request_context(
-                "/api/get_message_analytics",
-                method="POST",
-                json={"filter_option": "last_30_days"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetMessageAnalytics().post()
-
-        assert response.status_code == 400
-
-    def test_last_15_days_filter(self, app):
-        from application.api.user.analytics.routes import GetMessageAnalytics
-
-        mock_conversations = Mock()
-        mock_conversations.aggregate.return_value = []
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = None
-
-        with patch(
-            "application.api.user.analytics.routes.conversations_collection",
-            mock_conversations,
-        ), patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_message_analytics",
-                method="POST",
-                json={"filter_option": "last_15_days"},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetMessageAnalytics().post()
-
-        assert response.status_code == 200
-
-
-@pytest.mark.unit
-class TestGetUserLogsAdditional:
-    """Additional tests for GetUserLogs covering api_key filtering and errors."""
-
-    def test_filters_by_api_key(self, app):
+    def test_db_error_returns_400(self, app):
         from application.api.user.analytics.routes import GetUserLogs
 
-        agent_id = uuid.uuid4().hex
-        mock_agents = Mock()
-        mock_agents.find_one.return_value = {
-            "_id": agent_id,
-            "key": "logs_api_key",
-        }
-        mock_cursor = Mock()
-        mock_cursor.sort.return_value.skip.return_value.limit.return_value = []
-        mock_user_logs = Mock()
-        mock_user_logs.find.return_value = mock_cursor
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
 
         with patch(
-            "application.api.user.analytics.routes.user_logs_collection",
-            mock_user_logs,
-        ), patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
+            "application.api.user.analytics.routes.db_readonly", _broken
+        ), app.test_request_context(
+            "/api/get_user_logs", method="POST", json={}
         ):
-            with app.test_request_context(
-                "/api/get_user_logs",
-                method="POST",
-                json={
-                    "page": 1,
-                    "page_size": 10,
-                    "api_key_id": str(agent_id),
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetUserLogs().post()
-
-        assert response.status_code == 200
-        query_arg = mock_user_logs.find.call_args[0][0]
-        assert query_arg == {"api_key": "logs_api_key"}
-
-    def test_api_key_error_returns_400(self, app):
-        from application.api.user.analytics.routes import GetUserLogs
-
-        mock_agents = Mock()
-        mock_agents.find_one.side_effect = Exception("db error")
-
-        with patch(
-            "application.api.user.analytics.routes.agents_collection",
-            mock_agents,
-        ):
-            with app.test_request_context(
-                "/api/get_user_logs",
-                method="POST",
-                json={
-                    "page": 1,
-                    "api_key_id": str(uuid.uuid4().hex),
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetUserLogs().post()
-
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = GetUserLogs().post()
         assert response.status_code == 400

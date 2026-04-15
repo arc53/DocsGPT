@@ -11,8 +11,6 @@ Covers:
   - /v1/models: missing auth, mongo exception path, with createdAt timestamp
 """
 
-import json
-from unittest.mock import MagicMock
 
 import pytest
 from flask import Flask
@@ -20,7 +18,6 @@ from flask import Flask
 from application.api.v1.routes import (
     _extract_bearer_token,
     _get_model_name,
-    _lookup_agent,
     v1_bp,
 )
 
@@ -31,6 +28,8 @@ from application.api.v1.routes import (
 
 
 class _FakeCollection:
+    pass
+
     def __init__(self, docs):
         self.docs = list(docs)
 
@@ -57,6 +56,8 @@ def _build_app():
 
 @pytest.mark.unit
 class TestExtractBearerToken:
+    pass
+
     def test_returns_token_from_bearer_header(self):
         app = _build_app()
         with app.test_request_context(headers={"Authorization": "Bearer my-api-key"}):
@@ -85,38 +86,9 @@ class TestExtractBearerToken:
 
 @pytest.mark.unit
 class TestLookupAgent:
-    def test_returns_agent_doc(self, monkeypatch):
-        app = _build_app()
-        agent = {"_id": "agent-1", "key": "key-1", "user": "user-1"}
-        fake_col = _FakeCollection([agent])
-        fake_mongo = {"testdb": {"agents": fake_col}}
+    pass
 
-        monkeypatch.setattr("application.api.v1.routes.MongoDB.get_client", lambda: fake_mongo)
-        monkeypatch.setattr("application.api.v1.routes.settings.MONGO_DB_NAME", "testdb")
 
-        with app.test_request_context():
-            result = _lookup_agent("key-1")
-        assert result == agent
-
-    def test_returns_none_when_not_found(self, monkeypatch):
-        app = _build_app()
-        fake_mongo = {"testdb": {"agents": _FakeCollection([])}}
-        monkeypatch.setattr("application.api.v1.routes.MongoDB.get_client", lambda: fake_mongo)
-        monkeypatch.setattr("application.api.v1.routes.settings.MONGO_DB_NAME", "testdb")
-
-        with app.test_request_context():
-            assert _lookup_agent("missing-key") is None
-
-    def test_returns_none_on_exception(self, monkeypatch):
-        app = _build_app()
-
-        def _raise():
-            raise RuntimeError("db down")
-
-        monkeypatch.setattr("application.api.v1.routes.MongoDB.get_client", _raise)
-
-        with app.test_request_context():
-            assert _lookup_agent("key-1") is None
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +98,8 @@ class TestLookupAgent:
 
 @pytest.mark.unit
 class TestGetModelName:
+    pass
+
     def test_returns_agent_name_when_agent_has_name(self):
         assert _get_model_name({"name": "My Agent"}, "api-key") == "My Agent"
 
@@ -143,6 +117,8 @@ class TestGetModelName:
 
 @pytest.mark.unit
 class TestChatCompletions:
+    pass
+
     def _make_mongo(self, key="key-1", user="user-1"):
         agent = {"_id": "agent-1", "key": key, "user": user}
         fake_col = _FakeCollection([agent])
@@ -164,495 +140,18 @@ class TestChatCompletions:
         assert resp.status_code == 401
         assert resp.get_json()["error"]["type"] == "auth_error"
 
-    def test_missing_messages_returns_400(self, monkeypatch):
-        self._patch_mongo(monkeypatch)
-        app = _build_app()
-        with app.test_client() as client:
-            resp = client.post(
-                "/v1/chat/completions",
-                json={"model": "test"},
-                headers={"Authorization": "Bearer key-1"},
-            )
-        assert resp.status_code == 400
-        assert resp.get_json()["error"]["type"] == "invalid_request"
 
-    def test_empty_body_returns_400(self, monkeypatch):
-        self._patch_mongo(monkeypatch)
-        app = _build_app()
-        with app.test_client() as client:
-            resp = client.post(
-                "/v1/chat/completions",
-                data="",
-                content_type="application/json",
-                headers={"Authorization": "Bearer key-1"},
-            )
-        assert resp.status_code == 400
 
-    def test_translate_request_exception_returns_400(self, monkeypatch):
-        self._patch_mongo(monkeypatch)
-        monkeypatch.setattr(
-            "application.api.v1.routes.translate_request",
-            lambda data, key: (_ for _ in ()).throw(ValueError("bad")),
-        )
-        app = _build_app()
-        with app.test_client() as client:
-            resp = client.post(
-                "/v1/chat/completions",
-                json={"messages": [{"role": "user", "content": "Hi"}]},
-                headers={"Authorization": "Bearer key-1"},
-            )
-        assert resp.status_code == 400
 
-    def test_non_stream_success(self, monkeypatch):
-        """Happy path: non-streaming response."""
-        self._patch_mongo(monkeypatch)
 
-        internal_data = {"question": "What is Python?", "agent_id": "agent-1"}
-        monkeypatch.setattr(
-            "application.api.v1.routes.translate_request",
-            lambda data, key: internal_data,
-        )
 
-        mock_processor = MagicMock()
-        mock_processor.decoded_token = {"sub": "user-1"}
-        mock_processor.agent_config = {"user_api_key": None}
-        mock_processor.conversation_id = "conv-1"
-        mock_processor.agent_id = "agent-1"
-        mock_processor.model_id = None
-        mock_processor.build_agent.return_value = MagicMock()
 
-        monkeypatch.setattr(
-            "application.api.v1.routes.StreamProcessor",
-            lambda data, token: mock_processor,
-        )
 
-        mock_helper = MagicMock()
-        mock_helper.check_usage.return_value = None
-        mock_helper.process_response_stream.return_value = {
-            "conversation_id": "conv-1",
-            "answer": "Python is great",
-            "sources": [],
-            "tool_calls": [],
-            "thought": "",
-            "error": None,
-            "extra": None,
-        }
-        monkeypatch.setattr(
-            "application.api.v1.routes._V1AnswerHelper",
-            lambda: mock_helper,
-        )
 
-        translated_response = {
-            "id": "chatcmpl-conv-1",
-            "object": "chat.completion",
-            "choices": [{"message": {"role": "assistant", "content": "Python is great"}}],
-        }
-        monkeypatch.setattr(
-            "application.api.v1.routes.translate_response",
-            lambda **kwargs: translated_response,
-        )
 
-        app = _build_app()
-        with app.test_client() as client:
-            resp = client.post(
-                "/v1/chat/completions",
-                json={"messages": [{"role": "user", "content": "What is Python?"}]},
-                headers={"Authorization": "Bearer key-1"},
-            )
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["object"] == "chat.completion"
 
-    def test_usage_error_returns_usage_response(self, monkeypatch):
-        """When check_usage returns a response, that response is returned."""
-        self._patch_mongo(monkeypatch)
 
-        internal_data = {"question": "Hi"}
-        monkeypatch.setattr(
-            "application.api.v1.routes.translate_request",
-            lambda data, key: internal_data,
-        )
 
-        mock_processor = MagicMock()
-        mock_processor.decoded_token = {"sub": "user-1"}
-        mock_processor.agent_config = {"user_api_key": "key"}
-        mock_processor.build_agent.return_value = MagicMock()
-
-        monkeypatch.setattr(
-            "application.api.v1.routes.StreamProcessor",
-            lambda data, token: mock_processor,
-        )
-
-        app = _build_app()
-
-        # Build the limit_resp inside an app context so Flask is available
-        with app.app_context():
-            from flask import make_response, jsonify
-            limit_resp = make_response(
-                jsonify({"success": False, "message": "Usage limit exceeded"}), 429
-            )
-
-        mock_helper = MagicMock()
-        mock_helper.check_usage.return_value = limit_resp
-        monkeypatch.setattr(
-            "application.api.v1.routes._V1AnswerHelper",
-            lambda: mock_helper,
-        )
-
-        with app.test_client() as client:
-            resp = client.post(
-                "/v1/chat/completions",
-                json={"messages": [{"role": "user", "content": "Hi"}]},
-                headers={"Authorization": "Bearer key-1"},
-            )
-        assert resp.status_code == 429
-
-    def test_value_error_returns_400(self, monkeypatch):
-        """ValueError during processing returns 400."""
-        self._patch_mongo(monkeypatch)
-
-        internal_data = {"question": "Hi"}
-        monkeypatch.setattr(
-            "application.api.v1.routes.translate_request",
-            lambda data, key: internal_data,
-        )
-
-        def _raise(data, token):
-            raise ValueError("bad input")
-
-        monkeypatch.setattr(
-            "application.api.v1.routes.StreamProcessor",
-            _raise,
-        )
-
-        app = _build_app()
-        with app.test_client() as client:
-            resp = client.post(
-                "/v1/chat/completions",
-                json={"messages": [{"role": "user", "content": "Hi"}]},
-                headers={"Authorization": "Bearer key-1"},
-            )
-        assert resp.status_code == 400
-        assert resp.get_json()["error"]["type"] == "invalid_request"
-
-    def test_generic_exception_returns_500(self, monkeypatch):
-        """Unexpected Exception returns 500."""
-        self._patch_mongo(monkeypatch)
-
-        internal_data = {"question": "Hi"}
-        monkeypatch.setattr(
-            "application.api.v1.routes.translate_request",
-            lambda data, key: internal_data,
-        )
-
-        def _raise(data, token):
-            raise RuntimeError("db exploded")
-
-        monkeypatch.setattr(
-            "application.api.v1.routes.StreamProcessor",
-            _raise,
-        )
-
-        app = _build_app()
-        with app.test_client() as client:
-            resp = client.post(
-                "/v1/chat/completions",
-                json={"messages": [{"role": "user", "content": "Hi"}]},
-                headers={"Authorization": "Bearer key-1"},
-            )
-        assert resp.status_code == 500
-        assert resp.get_json()["error"]["type"] == "server_error"
-
-    def test_tool_actions_missing_conversation_id_returns_400(self, monkeypatch):
-        """Continuation mode without conversation_id returns 400."""
-        self._patch_mongo(monkeypatch)
-
-        internal_data = {"tool_actions": [{"id": "t1", "result": "ok"}]}
-        monkeypatch.setattr(
-            "application.api.v1.routes.translate_request",
-            lambda data, key: internal_data,
-        )
-
-        mock_processor = MagicMock()
-        mock_processor.decoded_token = {"sub": "user-1"}
-        mock_processor.agent_config = {"user_api_key": None}
-
-        monkeypatch.setattr(
-            "application.api.v1.routes.StreamProcessor",
-            lambda data, token: mock_processor,
-        )
-
-        mock_helper = MagicMock()
-        mock_helper.check_usage.return_value = None
-        monkeypatch.setattr(
-            "application.api.v1.routes._V1AnswerHelper",
-            lambda: mock_helper,
-        )
-
-        app = _build_app()
-        with app.test_client() as client:
-            resp = client.post(
-                "/v1/chat/completions",
-                json={"messages": [{"role": "user", "content": "continue"}]},
-                headers={"Authorization": "Bearer key-1"},
-            )
-        assert resp.status_code == 400
-
-    def test_non_stream_error_response(self, monkeypatch):
-        """When process_response_stream returns an error, return 500."""
-        self._patch_mongo(monkeypatch)
-
-        internal_data = {"question": "Hi"}
-        monkeypatch.setattr(
-            "application.api.v1.routes.translate_request",
-            lambda data, key: internal_data,
-        )
-
-        mock_processor = MagicMock()
-        mock_processor.decoded_token = {"sub": "user-1"}
-        mock_processor.agent_config = {"user_api_key": None}
-        mock_processor.conversation_id = None
-        mock_processor.agent_id = "a"
-        mock_processor.model_id = None
-        mock_processor.build_agent.return_value = MagicMock()
-
-        monkeypatch.setattr(
-            "application.api.v1.routes.StreamProcessor",
-            lambda data, token: mock_processor,
-        )
-
-        mock_helper = MagicMock()
-        mock_helper.check_usage.return_value = None
-        mock_helper.process_response_stream.return_value = {
-            "conversation_id": None,
-            "answer": None,
-            "sources": None,
-            "tool_calls": [],
-            "thought": None,
-            "error": "Something went wrong",
-            "extra": None,
-        }
-        monkeypatch.setattr(
-            "application.api.v1.routes._V1AnswerHelper",
-            lambda: mock_helper,
-        )
-
-        app = _build_app()
-        with app.test_client() as client:
-            resp = client.post(
-                "/v1/chat/completions",
-                json={"messages": [{"role": "user", "content": "Hi"}]},
-                headers={"Authorization": "Bearer key-1"},
-            )
-        assert resp.status_code == 500
-
-    def test_stream_response_returns_event_stream(self, monkeypatch):
-        """Streaming request returns text/event-stream content type."""
-        self._patch_mongo(monkeypatch)
-
-        internal_data = {"question": "Hi", "stream": True}
-        monkeypatch.setattr(
-            "application.api.v1.routes.translate_request",
-            lambda data, key: internal_data,
-        )
-
-        mock_processor = MagicMock()
-        mock_processor.decoded_token = {"sub": "user-1"}
-        mock_processor.agent_config = {"user_api_key": None}
-        mock_processor.conversation_id = None
-        mock_processor.agent_id = "a"
-        mock_processor.model_id = None
-        mock_processor.build_agent.return_value = MagicMock()
-
-        monkeypatch.setattr(
-            "application.api.v1.routes.StreamProcessor",
-            lambda data, token: mock_processor,
-        )
-
-        mock_helper = MagicMock()
-        mock_helper.check_usage.return_value = None
-        mock_helper.complete_stream.return_value = iter([
-            'data: {"type": "id", "id": "conv-1"}',
-            'data: {"type": "answer", "answer": "Hello"}',
-        ])
-        monkeypatch.setattr(
-            "application.api.v1.routes._V1AnswerHelper",
-            lambda: mock_helper,
-        )
-
-        monkeypatch.setattr(
-            "application.api.v1.routes.translate_stream_event",
-            lambda event, cid, model: [f"data: {json.dumps({'delta': event})}\n\n"],
-        )
-
-        app = _build_app()
-        with app.test_client() as client:
-            resp = client.post(
-                "/v1/chat/completions",
-                json={"messages": [{"role": "user", "content": "Hi"}], "stream": True},
-                headers={"Authorization": "Bearer key-1"},
-            )
-        assert resp.status_code == 200
-        assert "text/event-stream" in resp.content_type
-
-    def test_no_decoded_token_returns_401(self, monkeypatch):
-        """When processor.decoded_token is None/falsy, return 401."""
-        self._patch_mongo(monkeypatch)
-
-        internal_data = {"question": "Hi"}
-        monkeypatch.setattr(
-            "application.api.v1.routes.translate_request",
-            lambda data, key: internal_data,
-        )
-
-        mock_processor = MagicMock()
-        mock_processor.decoded_token = None  # No token
-        mock_processor.agent_config = {"user_api_key": None}
-        mock_processor.build_agent.return_value = MagicMock()
-
-        monkeypatch.setattr(
-            "application.api.v1.routes.StreamProcessor",
-            lambda data, token: mock_processor,
-        )
-
-        mock_helper = MagicMock()
-        mock_helper.check_usage.return_value = None
-        monkeypatch.setattr(
-            "application.api.v1.routes._V1AnswerHelper",
-            lambda: mock_helper,
-        )
-
-        app = _build_app()
-        with app.test_client() as client:
-            resp = client.post(
-                "/v1/chat/completions",
-                json={"messages": [{"role": "user", "content": "Hi"}]},
-                headers={"Authorization": "Bearer key-1"},
-            )
-        assert resp.status_code == 401
-
-    def test_tool_actions_continuation_with_conversation_id(self, monkeypatch):
-        """Cover lines 108-123: tool_actions continuation path with conversation_id."""
-        self._patch_mongo(monkeypatch)
-
-        tool_actions = [{"id": "t1", "result": "done"}]
-        internal_data = {
-            "tool_actions": tool_actions,
-            "conversation_id": "conv-existing",
-        }
-        monkeypatch.setattr(
-            "application.api.v1.routes.translate_request",
-            lambda data, key: internal_data,
-        )
-
-        mock_processor = MagicMock()
-        mock_processor.decoded_token = {"sub": "user-1"}
-        mock_processor.agent_config = {"user_api_key": None}
-        mock_processor.conversation_id = "conv-existing"
-        mock_processor.agent_id = "agent-1"
-        mock_processor.model_id = None
-        # resume_from_tool_actions returns 5-tuple
-        mock_agent = MagicMock()
-        mock_processor.resume_from_tool_actions.return_value = (
-            mock_agent,
-            [],      # messages
-            {},      # tools_dict
-            [],      # pending_tool_calls
-            tool_actions,  # tool_actions
-        )
-
-        monkeypatch.setattr(
-            "application.api.v1.routes.StreamProcessor",
-            lambda data, token: mock_processor,
-        )
-
-        mock_helper = MagicMock()
-        mock_helper.check_usage.return_value = None
-        mock_helper.process_response_stream.return_value = {
-            "conversation_id": "conv-existing",
-            "answer": "Continuation answer",
-            "sources": [],
-            "tool_calls": [],
-            "thought": "",
-            "error": None,
-            "extra": None,
-        }
-        monkeypatch.setattr(
-            "application.api.v1.routes._V1AnswerHelper",
-            lambda: mock_helper,
-        )
-
-        monkeypatch.setattr(
-            "application.api.v1.routes.translate_response",
-            lambda **kwargs: {"id": "chatcmpl-cont", "object": "chat.completion"},
-        )
-
-        app = _build_app()
-        with app.test_client() as client:
-            resp = client.post(
-                "/v1/chat/completions",
-                json={"messages": [{"role": "user", "content": "continue"}]},
-                headers={"Authorization": "Bearer key-1"},
-            )
-        assert resp.status_code == 200
-
-    def test_stream_response_skips_empty_lines_and_bad_json(self, monkeypatch):
-        """Cover lines 217, 222-223: _stream_response skips blank lines and bad JSON."""
-        self._patch_mongo(monkeypatch)
-
-        internal_data = {"question": "Hi"}
-        monkeypatch.setattr(
-            "application.api.v1.routes.translate_request",
-            lambda data, key: internal_data,
-        )
-
-        mock_processor = MagicMock()
-        mock_processor.decoded_token = {"sub": "user-1"}
-        mock_processor.agent_config = {"user_api_key": None}
-        mock_processor.conversation_id = None
-        mock_processor.agent_id = "a"
-        mock_processor.model_id = None
-        mock_processor.build_agent.return_value = MagicMock()
-
-        monkeypatch.setattr(
-            "application.api.v1.routes.StreamProcessor",
-            lambda data, token: mock_processor,
-        )
-
-        mock_helper = MagicMock()
-        mock_helper.check_usage.return_value = None
-        mock_helper.complete_stream.return_value = iter([
-            "",                               # empty line — should be skipped
-            "   ",                            # whitespace-only — should be skipped
-            "data: not valid json{{{",        # bad JSON — should be skipped
-            'data: {"type": "answer", "answer": "Hi"}',  # valid
-        ])
-        monkeypatch.setattr(
-            "application.api.v1.routes._V1AnswerHelper",
-            lambda: mock_helper,
-        )
-
-        call_count = {"n": 0}
-
-        def fake_translate(event, cid, model):
-            call_count["n"] += 1
-            return [f"data: {json.dumps(event)}\n\n"]
-
-        monkeypatch.setattr(
-            "application.api.v1.routes.translate_stream_event",
-            fake_translate,
-        )
-
-        app = _build_app()
-        with app.test_client() as client:
-            resp = client.post(
-                "/v1/chat/completions",
-                json={"messages": [{"role": "user", "content": "Hi"}], "stream": True},
-                headers={"Authorization": "Bearer key-1"},
-            )
-        assert resp.status_code == 200
-        # Only 1 valid event should have been translated
-        assert call_count["n"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -662,6 +161,8 @@ class TestChatCompletions:
 
 @pytest.mark.unit
 class TestListModelsExtra:
+    pass
+
     def test_missing_auth_header_returns_401(self):
         app = _build_app()
         with app.test_client() as client:
@@ -669,40 +170,348 @@ class TestListModelsExtra:
         assert resp.status_code == 401
         assert resp.get_json()["error"]["type"] == "auth_error"
 
-    def test_mongo_exception_returns_500(self, monkeypatch):
-        def _raise():
-            raise RuntimeError("mongo down")
 
-        monkeypatch.setattr("application.api.v1.routes.MongoDB.get_client", _raise)
-        monkeypatch.setattr("application.api.v1.routes.settings.MONGO_DB_NAME", "testdb")
+# ---------------------------------------------------------------------------
+# Tests using the ephemeral pg_conn fixture against real PG
+# ---------------------------------------------------------------------------
+
+from contextlib import contextmanager
+from unittest.mock import patch, MagicMock
+
+
+@contextmanager
+def _patch_v1_db(conn):
+    @contextmanager
+    def _yield():
+        yield conn
+
+    with patch("application.api.v1.routes.db_readonly", _yield):
+        yield
+
+
+@pytest.mark.unit
+class TestLookupAgentHappy:
+    def test_returns_agent_for_valid_key(self, pg_conn):
+        from application.api.v1.routes import _lookup_agent
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        AgentsRepository(pg_conn).create("u1", "Test", "published", key="k-ok")
+
+        with _patch_v1_db(pg_conn):
+            got = _lookup_agent("k-ok")
+        assert got is not None
+        assert got["key"] == "k-ok"
+
+    def test_returns_none_when_not_found(self, pg_conn):
+        from application.api.v1.routes import _lookup_agent
+
+        with _patch_v1_db(pg_conn):
+            got = _lookup_agent("nope")
+        assert got is None
+
+    def test_returns_none_on_exception(self):
+        from application.api.v1.routes import _lookup_agent
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("db down")
+            yield
+
+        with patch("application.api.v1.routes.db_readonly", _broken):
+            got = _lookup_agent("k")
+        assert got is None
+
+
+@pytest.mark.unit
+class TestListModelsPgConn:
+    def test_invalid_key_returns_401(self, pg_conn):
+        app = _build_app()
+        with _patch_v1_db(pg_conn):
+            with app.test_client() as c:
+                resp = c.get(
+                    "/v1/models", headers={"Authorization": "Bearer bad"}
+                )
+        assert resp.status_code == 401
+
+    def test_returns_user_agents_for_valid_key(self, pg_conn):
+        from application.storage.db.repositories.agents import AgentsRepository
 
         app = _build_app()
-        with app.test_client() as client:
-            resp = client.get("/v1/models", headers={"Authorization": "Bearer key-1"})
-        assert resp.status_code == 500
-        assert resp.get_json()["error"]["type"] == "server_error"
+        repo = AgentsRepository(pg_conn)
+        repo.create("u-m", "A1", "published", key="models-key")
+        repo.create("u-m", "A2", "published", key="models-key-2")
 
-    def test_models_include_created_timestamp_from_date(self, monkeypatch):
-        """Cover the branch where createdAt is set."""
-        import datetime
-
-        created_dt = datetime.datetime(2024, 1, 15, 12, 0, 0)
-        docs = [
-            {
-                "_id": "agent-1",
-                "key": "key-1",
-                "user": "user-1",
-                "name": "Agent One",
-                "createdAt": created_dt,
-            }
-        ]
-        fake_mongo = {"testdb": {"agents": _FakeCollection(docs)}}
-        monkeypatch.setattr("application.api.v1.routes.MongoDB.get_client", lambda: fake_mongo)
-        monkeypatch.setattr("application.api.v1.routes.settings.MONGO_DB_NAME", "testdb")
-
-        app = _build_app()
-        with app.test_client() as client:
-            resp = client.get("/v1/models", headers={"Authorization": "Bearer key-1"})
+        with _patch_v1_db(pg_conn):
+            with app.test_client() as c:
+                resp = c.get(
+                    "/v1/models",
+                    headers={"Authorization": "Bearer models-key"},
+                )
         assert resp.status_code == 200
         data = resp.get_json()
-        assert data["data"][0]["created"] == int(created_dt.timestamp())
+        assert data["object"] == "list"
+        # Both agents for user u-m should be listed
+        names = {m["name"] for m in data["data"]}
+        assert "A1" in names and "A2" in names
+
+    def test_db_error_returns_500(self):
+        app = _build_app()
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch("application.api.v1.routes.db_readonly", _broken):
+            with app.test_client() as c:
+                resp = c.get(
+                    "/v1/models",
+                    headers={"Authorization": "Bearer any"},
+                )
+        assert resp.status_code == 500
+
+
+@pytest.mark.unit
+class TestChatCompletionsHappyPath:
+    """Tests that reach the request-translate / processor code paths."""
+
+    def test_missing_messages_returns_400(self, pg_conn):
+        app = _build_app()
+        with _patch_v1_db(pg_conn):
+            with app.test_client() as c:
+                resp = c.post(
+                    "/v1/chat/completions",
+                    headers={"Authorization": "Bearer x"},
+                    json={},
+                )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"]["type"] == "invalid_request"
+
+    def test_translate_error_returns_400(self, pg_conn):
+        app = _build_app()
+        with _patch_v1_db(pg_conn), patch(
+            "application.api.v1.routes.translate_request",
+            side_effect=ValueError("bad"),
+        ):
+            with app.test_client() as c:
+                resp = c.post(
+                    "/v1/chat/completions",
+                    headers={"Authorization": "Bearer x"},
+                    json={"messages": [{"role": "user", "content": "Hi"}]},
+                )
+        assert resp.status_code == 400
+
+    def test_tool_actions_missing_conversation_id_returns_400(self, pg_conn):
+        app = _build_app()
+
+        def _fake_translate(data, api_key):
+            return {
+                "question": "",
+                "tool_actions": [{"id": "t1", "result": "r"}],
+                # missing conversation_id
+            }
+
+        with _patch_v1_db(pg_conn), patch(
+            "application.api.v1.routes.translate_request",
+            side_effect=_fake_translate,
+        ), patch(
+            "application.api.v1.routes.StreamProcessor",
+            return_value=MagicMock(decoded_token={"sub": "u"}),
+        ):
+            with app.test_client() as c:
+                resp = c.post(
+                    "/v1/chat/completions",
+                    headers={"Authorization": "Bearer x"},
+                    json={"messages": [{"role": "user", "content": "Hi"}]},
+                )
+        assert resp.status_code == 400
+
+    def test_processor_value_error_returns_400(self, pg_conn):
+        app = _build_app()
+
+        def _fake_translate(data, api_key):
+            return {"question": "q"}
+
+        fake_processor = MagicMock()
+        fake_processor.build_agent.side_effect = ValueError("boom")
+
+        with _patch_v1_db(pg_conn), patch(
+            "application.api.v1.routes.translate_request",
+            side_effect=_fake_translate,
+        ), patch(
+            "application.api.v1.routes.StreamProcessor",
+            return_value=fake_processor,
+        ):
+            with app.test_client() as c:
+                resp = c.post(
+                    "/v1/chat/completions",
+                    headers={"Authorization": "Bearer x"},
+                    json={"messages": [{"role": "user", "content": "Hi"}]},
+                )
+        assert resp.status_code == 400
+
+    def test_processor_generic_exception_returns_500(self, pg_conn):
+        app = _build_app()
+
+        def _fake_translate(data, api_key):
+            return {"question": "q"}
+
+        fake_processor = MagicMock()
+        fake_processor.build_agent.side_effect = RuntimeError("boom")
+
+        with _patch_v1_db(pg_conn), patch(
+            "application.api.v1.routes.translate_request",
+            side_effect=_fake_translate,
+        ), patch(
+            "application.api.v1.routes.StreamProcessor",
+            return_value=fake_processor,
+        ):
+            with app.test_client() as c:
+                resp = c.post(
+                    "/v1/chat/completions",
+                    headers={"Authorization": "Bearer x"},
+                    json={"messages": [{"role": "user", "content": "Hi"}]},
+                )
+        assert resp.status_code == 500
+
+    def test_non_stream_success_path(self, pg_conn):
+        app = _build_app()
+
+        def _fake_translate(data, api_key):
+            return {"question": "hi", "save_conversation": False}
+
+        fake_processor = MagicMock()
+        fake_processor.decoded_token = {"sub": "u"}
+        fake_processor.conversation_id = None
+        fake_processor.agent_config = {"user_api_key": "k"}
+        fake_processor.agent_id = None
+        fake_processor.model_id = "m"
+        fake_processor.build_agent.return_value = MagicMock()
+
+        def _fake_stream(*a, **kw):
+            yield 'data: {"type": "end"}'
+
+        fake_helper = MagicMock()
+        fake_helper.check_usage.return_value = None
+        fake_helper.complete_stream.side_effect = _fake_stream
+        fake_helper.process_response_stream.return_value = {
+            "error": None,
+            "conversation_id": "conv-1",
+            "answer": "hello",
+            "sources": [],
+            "tool_calls": [],
+            "thought": "",
+            "extra": {},
+        }
+
+        with _patch_v1_db(pg_conn), patch(
+            "application.api.v1.routes.translate_request",
+            side_effect=_fake_translate,
+        ), patch(
+            "application.api.v1.routes.StreamProcessor",
+            return_value=fake_processor,
+        ), patch(
+            "application.api.v1.routes._V1AnswerHelper",
+            return_value=fake_helper,
+        ), patch(
+            "application.api.v1.routes.translate_response",
+            return_value={"id": "x", "choices": []},
+        ):
+            with app.test_client() as c:
+                resp = c.post(
+                    "/v1/chat/completions",
+                    headers={"Authorization": "Bearer x"},
+                    json={"messages": [{"role": "user", "content": "Hi"}]},
+                )
+        assert resp.status_code == 200
+
+    def test_non_stream_error_in_result_returns_500(self, pg_conn):
+        app = _build_app()
+
+        def _fake_translate(data, api_key):
+            return {"question": "hi"}
+
+        fake_processor = MagicMock()
+        fake_processor.decoded_token = {"sub": "u"}
+        fake_processor.conversation_id = None
+        fake_processor.agent_config = {}
+        fake_processor.agent_id = None
+        fake_processor.model_id = "m"
+        fake_helper = MagicMock()
+        fake_helper.check_usage.return_value = None
+        fake_helper.complete_stream.return_value = iter([])
+        fake_helper.process_response_stream.return_value = {
+            "error": "something went wrong",
+            "conversation_id": None,
+            "answer": None,
+            "sources": None,
+            "tool_calls": None,
+            "thought": None,
+            "extra": None,
+        }
+
+        with _patch_v1_db(pg_conn), patch(
+            "application.api.v1.routes.translate_request",
+            side_effect=_fake_translate,
+        ), patch(
+            "application.api.v1.routes.StreamProcessor",
+            return_value=fake_processor,
+        ), patch(
+            "application.api.v1.routes._V1AnswerHelper",
+            return_value=fake_helper,
+        ):
+            with app.test_client() as c:
+                resp = c.post(
+                    "/v1/chat/completions",
+                    headers={"Authorization": "Bearer x"},
+                    json={"messages": [{"role": "user", "content": "Hi"}]},
+                )
+        assert resp.status_code == 500
+
+    def test_stream_success_returns_sse(self, pg_conn):
+        app = _build_app()
+
+        def _fake_translate(data, api_key):
+            return {"question": "hi"}
+
+        fake_processor = MagicMock()
+        fake_processor.decoded_token = {"sub": "u"}
+        fake_processor.conversation_id = "conv-1"
+        fake_processor.agent_config = {}
+        fake_processor.agent_id = None
+        fake_processor.model_id = "m"
+
+        def _fake_helper_complete_stream(**kw):
+            yield 'data: {"type": "id", "id": "conv-1"}'
+            yield 'data: {"type": "answer", "answer": "hi"}'
+
+        fake_helper = MagicMock()
+        fake_helper.check_usage.return_value = None
+        fake_helper.complete_stream.side_effect = _fake_helper_complete_stream
+
+        with _patch_v1_db(pg_conn), patch(
+            "application.api.v1.routes.translate_request",
+            side_effect=_fake_translate,
+        ), patch(
+            "application.api.v1.routes.StreamProcessor",
+            return_value=fake_processor,
+        ), patch(
+            "application.api.v1.routes._V1AnswerHelper",
+            return_value=fake_helper,
+        ), patch(
+            "application.api.v1.routes.translate_stream_event",
+            return_value=["data: chunk\n\n"],
+        ):
+            with app.test_client() as c:
+                resp = c.post(
+                    "/v1/chat/completions",
+                    headers={"Authorization": "Bearer x"},
+                    json={
+                        "messages": [{"role": "user", "content": "Hi"}],
+                        "stream": True,
+                    },
+                )
+        assert resp.status_code == 200
+        assert resp.mimetype == "text/event-stream"
+
+

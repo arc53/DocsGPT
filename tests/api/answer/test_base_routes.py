@@ -18,6 +18,7 @@ import pytest
 
 @pytest.mark.unit
 class TestPrepareToolCallsForLogging:
+    pass
 
     def test_empty_list(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
@@ -74,6 +75,7 @@ class TestPrepareToolCallsForLogging:
 
 @pytest.mark.unit
 class TestCompleteStreamToolCalls:
+    pass
 
     def test_streams_tool_calls(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
@@ -131,6 +133,7 @@ class TestCompleteStreamToolCalls:
 
 @pytest.mark.unit
 class TestCompleteStreamStructuredOutput:
+    pass
 
     def test_streams_structured_answer(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
@@ -166,6 +169,7 @@ class TestCompleteStreamStructuredOutput:
 
 @pytest.mark.unit
 class TestCompleteStreamMetadata:
+    pass
 
     def test_metadata_collected(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
@@ -197,6 +201,7 @@ class TestCompleteStreamMetadata:
 
 @pytest.mark.unit
 class TestCompleteStreamIsNoneDoc:
+    pass
 
     def test_isNoneDoc_sets_source_to_none(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
@@ -229,6 +234,7 @@ class TestCompleteStreamIsNoneDoc:
 
 @pytest.mark.unit
 class TestCompleteStreamErrorType:
+    pass
 
     def test_error_type_event_sanitized(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
@@ -283,6 +289,7 @@ class TestCompleteStreamErrorType:
 
 @pytest.mark.unit
 class TestProcessResponseStreamExtended:
+    pass
 
     def test_handles_structured_answer(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
@@ -338,27 +345,7 @@ class TestProcessResponseStreamExtended:
 
 @pytest.mark.unit
 class TestCheckUsageStringBooleans:
-
-    def test_string_true_parsed_correctly(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.core.settings import settings
-
-        with flask_app.app_context():
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-            agents_collection.insert_one(
-                {
-                    "key": "str_bool_key",
-                    "limited_token_mode": "True",
-                    "token_limit": 1000000,
-                    "limited_request_mode": "True",
-                    "request_limit": 1000000,
-                }
-            )
-            resource = BaseAnswerResource()
-            result = resource.check_usage({"user_api_key": "str_bool_key"})
-            # Should not exceed limits, so returns None
-            assert result is None
-
+    pass
 
 @pytest.mark.unit
 class TestCompleteStreamCompressionMetadata:

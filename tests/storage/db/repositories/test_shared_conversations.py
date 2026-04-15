@@ -7,11 +7,6 @@ import pytest
 from application.storage.db.repositories.conversations import ConversationsRepository
 from application.storage.db.repositories.shared_conversations import SharedConversationsRepository
 
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
-
 
 def _conv(conn) -> dict:
     return ConversationsRepository(conn).create("user-1", "test conv")

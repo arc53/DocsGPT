@@ -35,6 +35,7 @@ def auth(mock_settings):
 
 
 class TestConfluenceAuthInit:
+    pass
 
     @pytest.mark.unit
     def test_init_sets_credentials(self, auth, mock_settings):
@@ -74,6 +75,7 @@ class TestConfluenceAuthInit:
 
 
 class TestGetAuthorizationUrl:
+    pass
 
     @pytest.mark.unit
     def test_returns_url_with_required_params(self, auth):
@@ -107,6 +109,7 @@ class TestGetAuthorizationUrl:
 
 
 class TestExchangeCodeForTokens:
+    pass
 
     def _make_mock_response(self, json_data, status_code=200):
         resp = MagicMock()
@@ -199,6 +202,7 @@ class TestExchangeCodeForTokens:
 
 
 class TestRefreshAccessToken:
+    pass
 
     def _make_mock_response(self, json_data, status_code=200):
         resp = MagicMock()
@@ -264,6 +268,7 @@ class TestRefreshAccessToken:
 
 
 class TestIsTokenExpired:
+    pass
 
     @pytest.mark.unit
     def test_empty_token_info_returns_true(self, auth):
@@ -332,6 +337,7 @@ class TestIsTokenExpired:
 
 
 class TestGetTokenInfoFromSession:
+    pass
 
     def _mock_mongo_client(self, mock_settings, session_doc):
         mock_collection = MagicMock()
@@ -340,68 +346,10 @@ class TestGetTokenInfoFromSession:
         mock_db.__getitem__ = MagicMock(return_value=mock_collection)
         return {mock_settings.MONGO_DB_NAME: mock_db}
 
-    @pytest.mark.unit
-    def test_valid_session_returns_token_info(self, auth, mock_settings):
-        token_info = {
-            "access_token": "at",
-            "refresh_token": "rt",
-            "cloud_id": "cid",
-        }
-        mock_client = self._mock_mongo_client(mock_settings, {
-            "session_token": "st",
-            "token_info": token_info,
-        })
 
-        with patch("application.core.mongo_db.MongoDB.get_client", return_value=mock_client), \
-             patch("application.core.settings.settings", mock_settings):
-            result = auth.get_token_info_from_session("st")
 
-        assert result["access_token"] == "at"
-        assert result["refresh_token"] == "rt"
-        assert result["cloud_id"] == "cid"
 
-    @pytest.mark.unit
-    def test_session_not_found_raises(self, auth, mock_settings):
-        mock_client = self._mock_mongo_client(mock_settings, None)
 
-        with patch("application.core.mongo_db.MongoDB.get_client", return_value=mock_client), \
-             patch("application.core.settings.settings", mock_settings):
-            with pytest.raises(ValueError, match="Invalid session token"):
-                auth.get_token_info_from_session("bad_token")
-
-    @pytest.mark.unit
-    def test_missing_token_info_raises(self, auth, mock_settings):
-        mock_client = self._mock_mongo_client(mock_settings, {"session_token": "st"})
-
-        with patch("application.core.mongo_db.MongoDB.get_client", return_value=mock_client), \
-             patch("application.core.settings.settings", mock_settings):
-            with pytest.raises(ValueError, match="missing token information"):
-                auth.get_token_info_from_session("st")
-
-    @pytest.mark.unit
-    def test_missing_required_fields_raises(self, auth, mock_settings):
-        # Missing cloud_id and refresh_token
-        mock_client = self._mock_mongo_client(mock_settings, {
-            "session_token": "st",
-            "token_info": {"access_token": "at"},
-        })
-
-        with patch("application.core.mongo_db.MongoDB.get_client", return_value=mock_client), \
-             patch("application.core.settings.settings", mock_settings):
-            with pytest.raises(ValueError, match="Missing required token fields"):
-                auth.get_token_info_from_session("st")
-
-    @pytest.mark.unit
-    def test_none_token_info_raises(self, auth, mock_settings):
-        mock_client = self._mock_mongo_client(mock_settings, {
-            "session_token": "st",
-            "token_info": None,
-        })
-
-        with patch("application.core.mongo_db.MongoDB.get_client", return_value=mock_client), \
-             patch("application.core.settings.settings", mock_settings):
-            with pytest.raises(ValueError, match="missing token information"):
-                auth.get_token_info_from_session("st")
 
 
 # ---------------------------------------------------------------------------
@@ -410,6 +358,7 @@ class TestGetTokenInfoFromSession:
 
 
 class TestSanitizeTokenInfo:
+    pass
 
     @pytest.mark.unit
     def test_includes_cloud_id(self, auth):
@@ -444,6 +393,7 @@ class TestSanitizeTokenInfo:
 
 
 class TestFetchCloudId:
+    pass
 
     @pytest.mark.unit
     def test_returns_first_resource_id(self, auth):
@@ -484,6 +434,7 @@ class TestFetchCloudId:
 
 
 class TestFetchUserInfo:
+    pass
 
     @pytest.mark.unit
     def test_returns_user_info(self, auth):

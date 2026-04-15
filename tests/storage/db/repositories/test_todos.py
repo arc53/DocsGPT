@@ -10,11 +10,6 @@ from sqlalchemy import text
 
 from application.storage.db.repositories.todos import TodosRepository
 
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
-
 
 def _repo(conn) -> TodosRepository:
     return TodosRepository(conn)

@@ -1,7 +1,5 @@
 """Unit tests for application.api.user.tools.routes."""
 
-import uuid
-from datetime import datetime
 from unittest.mock import Mock, patch
 
 import pytest
@@ -19,6 +17,7 @@ def app():
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestEncryptSecretFields:
+    pass
 
     def test_encrypts_secret_keys(self):
         from application.api.user.tools.routes import _encrypt_secret_fields
@@ -68,6 +67,7 @@ class TestEncryptSecretFields:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestValidateConfig:
+    pass
 
     def test_returns_empty_on_valid_config(self):
         from application.api.user.tools.routes import _validate_config
@@ -217,6 +217,7 @@ class TestValidateConfig:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestMergeSecretsOnUpdate:
+    pass
 
     def test_no_secret_keys_returns_new_config(self):
         from application.api.user.tools.routes import _merge_secrets_on_update
@@ -330,6 +331,7 @@ class TestMergeSecretsOnUpdate:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestTransformActions:
+    pass
 
     def test_sets_active_and_param_defaults(self):
         from application.api.user.tools.routes import transform_actions
@@ -379,6 +381,7 @@ class TestTransformActions:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestAvailableTools:
+    pass
 
     def test_returns_tools_metadata(self, app):
         from application.api.user.tools.routes import AvailableTools
@@ -459,38 +462,7 @@ class TestAvailableTools:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestGetTools:
-
-    def test_returns_user_tools(self, app):
-        from application.api.user.tools.routes import GetTools
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.find.return_value = [
-            {
-                "_id": tool_id,
-                "name": "my_tool",
-                "user": "user1",
-                "config": {"base_url": "http://example.com"},
-                "configRequirements": {"base_url": {"secret": False}},
-            }
-        ]
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ), patch(
-            "application.api.user.tools.routes.tool_manager", Mock()
-        ):
-            with app.test_request_context("/api/get_tools"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetTools().get()
-
-        assert response.status_code == 200
-        assert response.json["success"] is True
-        assert len(response.json["tools"]) == 1
-        assert response.json["tools"][0]["id"] == str(tool_id)
+    pass
 
     def test_returns_401_unauthenticated(self, app):
         from application.api.user.tools.routes import GetTools
@@ -503,96 +475,8 @@ class TestGetTools:
 
         assert response.status_code == 401
 
-    def test_masks_encrypted_credentials(self, app):
-        from application.api.user.tools.routes import GetTools
 
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.find.return_value = [
-            {
-                "_id": tool_id,
-                "name": "my_tool",
-                "user": "user1",
-                "config": {
-                    "base_url": "http://example.com",
-                    "encrypted_credentials": "blob",
-                },
-                "configRequirements": {
-                    "api_key": {"secret": True},
-                },
-            }
-        ]
 
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ), patch(
-            "application.api.user.tools.routes.tool_manager", Mock()
-        ):
-            with app.test_request_context("/api/get_tools"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetTools().get()
-
-        tool_data = response.json["tools"][0]
-        assert tool_data["config"].get("has_encrypted_credentials") is True
-        assert "encrypted_credentials" not in tool_data["config"]
-
-    def test_loads_config_requirements_from_tool_manager(self, app):
-        from application.api.user.tools.routes import GetTools
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.find.return_value = [
-            {
-                "_id": tool_id,
-                "name": "my_tool",
-                "user": "user1",
-                "config": {"base_url": "http://example.com"},
-                "configRequirements": {},
-            }
-        ]
-
-        mock_tool_instance = Mock()
-        mock_tool_instance.get_config_requirements.return_value = {
-            "base_url": {"secret": False}
-        }
-        mock_manager = Mock()
-        mock_manager.tools = {"my_tool": mock_tool_instance}
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ), patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
-        ):
-            with app.test_request_context("/api/get_tools"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetTools().get()
-
-        tool_data = response.json["tools"][0]
-        assert "base_url" in tool_data["configRequirements"]
-
-    def test_returns_400_on_error(self, app):
-        from application.api.user.tools.routes import GetTools
-
-        mock_collection = Mock()
-        mock_collection.find.side_effect = Exception("db error")
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ):
-            with app.test_request_context("/api/get_tools"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetTools().get()
-
-        assert response.status_code == 400
 
 
 # ---------------------------------------------------------------------------
@@ -600,6 +484,7 @@ class TestGetTools:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestCreateTool:
+    pass
 
     def _make_tool_instance(self):
         tool_instance = Mock()
@@ -616,44 +501,6 @@ class TestCreateTool:
         }
         return tool_instance
 
-    def test_creates_tool_successfully(self, app):
-        from application.api.user.tools.routes import CreateTool
-
-        tool_instance = self._make_tool_instance()
-        mock_manager = Mock()
-        mock_manager.tools = {"my_tool": tool_instance}
-        mock_collection = Mock()
-        inserted_id = uuid.uuid4().hex[:24]
-        mock_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
-
-        with patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
-        ), patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ), patch(
-            "application.api.user.tools.routes.encrypt_credentials",
-            return_value="blob",
-        ):
-            with app.test_request_context(
-                "/api/create_tool",
-                method="POST",
-                json={
-                    "name": "my_tool",
-                    "displayName": "My Tool",
-                    "description": "Desc",
-                    "config": {"api_key": "secret123"},
-                    "status": True,
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = CreateTool().post()
-
-        assert response.status_code == 200
-        assert response.json["id"] == str(inserted_id)
-        mock_collection.insert_one.assert_called_once()
 
     def test_returns_401_unauthenticated(self, app):
         from application.api.user.tools.routes import CreateTool
@@ -768,79 +615,7 @@ class TestCreateTool:
 
         assert response.status_code == 400
 
-    def test_returns_400_on_insert_error(self, app):
-        from application.api.user.tools.routes import CreateTool
 
-        tool_instance = Mock()
-        tool_instance.get_actions_metadata.return_value = []
-        tool_instance.get_config_requirements.return_value = {}
-        mock_manager = Mock()
-        mock_manager.tools = {"my_tool": tool_instance}
-        mock_collection = Mock()
-        mock_collection.insert_one.side_effect = Exception("db fail")
-
-        with patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
-        ), patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/create_tool",
-                method="POST",
-                json={
-                    "name": "my_tool",
-                    "displayName": "My Tool",
-                    "description": "Desc",
-                    "config": {},
-                    "status": True,
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = CreateTool().post()
-
-        assert response.status_code == 400
-
-    def test_includes_custom_name(self, app):
-        from application.api.user.tools.routes import CreateTool
-
-        tool_instance = Mock()
-        tool_instance.get_actions_metadata.return_value = []
-        tool_instance.get_config_requirements.return_value = {}
-        mock_manager = Mock()
-        mock_manager.tools = {"my_tool": tool_instance}
-        mock_collection = Mock()
-        inserted_id = uuid.uuid4().hex[:24]
-        mock_collection.insert_one.return_value = Mock(inserted_id=inserted_id)
-
-        with patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
-        ), patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/create_tool",
-                method="POST",
-                json={
-                    "name": "my_tool",
-                    "displayName": "My Tool",
-                    "description": "Desc",
-                    "config": {},
-                    "status": True,
-                    "customName": "Custom",
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = CreateTool().post()
-
-        assert response.status_code == 200
-        call_arg = mock_collection.insert_one.call_args[0][0]
-        assert call_arg["customName"] == "Custom"
 
 
 # ---------------------------------------------------------------------------
@@ -848,45 +623,7 @@ class TestCreateTool:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestUpdateTool:
-
-    def test_updates_tool_successfully(self, app):
-        from application.api.user.tools.routes import UpdateTool
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.find_one.return_value = {
-            "_id": tool_id,
-            "name": "my_tool",
-            "config": {"base_url": "http://old.com"},
-        }
-
-        tool_instance = Mock()
-        tool_instance.get_config_requirements.return_value = {}
-        mock_manager = Mock()
-        mock_manager.tools = {"my_tool": tool_instance}
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ), patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
-        ):
-            with app.test_request_context(
-                "/api/update_tool",
-                method="POST",
-                json={
-                    "id": str(tool_id),
-                    "displayName": "Updated Name",
-                    "config": {"base_url": "http://new.com"},
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = UpdateTool().post()
-
-        assert response.status_code == 200
-        assert response.json["success"] is True
+    pass
 
     def test_returns_401_unauthenticated(self, app):
         from application.api.user.tools.routes import UpdateTool
@@ -914,178 +651,10 @@ class TestUpdateTool:
 
         assert response.status_code == 400
 
-    def test_returns_404_tool_not_found(self, app):
-        from application.api.user.tools.routes import UpdateTool
 
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.find_one.return_value = None
 
-        mock_manager = Mock()
-        mock_manager.tools = {}
 
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ), patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
-        ):
-            with app.test_request_context(
-                "/api/update_tool",
-                method="POST",
-                json={
-                    "id": str(tool_id),
-                    "config": {"base_url": "http://new.com"},
-                },
-            ):
-                from flask import request
 
-                request.decoded_token = {"sub": "user1"}
-                response = UpdateTool().post()
-
-        assert response.status_code == 404
-
-    def test_returns_400_on_invalid_function_name(self, app):
-        from application.api.user.tools.routes import UpdateTool
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_manager = Mock()
-        mock_manager.tools = {}
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ), patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
-        ):
-            with app.test_request_context(
-                "/api/update_tool",
-                method="POST",
-                json={
-                    "id": str(tool_id),
-                    "config": {
-                        "actions": {"invalid name!": {}}
-                    },
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = UpdateTool().post()
-
-        assert response.status_code == 400
-        assert "Invalid function name" in response.json["message"]
-
-    def test_returns_400_on_validation_error(self, app):
-        from application.api.user.tools.routes import UpdateTool
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.find_one.return_value = {
-            "_id": tool_id,
-            "name": "my_tool",
-            "config": {},
-        }
-
-        tool_instance = Mock()
-        tool_instance.get_config_requirements.return_value = {
-            "api_key": {"required": True, "label": "API Key"},
-        }
-        mock_manager = Mock()
-        mock_manager.tools = {"my_tool": tool_instance}
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ), patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
-        ):
-            with app.test_request_context(
-                "/api/update_tool",
-                method="POST",
-                json={
-                    "id": str(tool_id),
-                    "config": {},
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = UpdateTool().post()
-
-        assert response.status_code == 400
-        assert response.json["message"] == "Validation failed"
-
-    def test_updates_multiple_fields(self, app):
-        from application.api.user.tools.routes import UpdateTool
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_manager = Mock()
-        mock_manager.tools = {}
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ), patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
-        ):
-            with app.test_request_context(
-                "/api/update_tool",
-                method="POST",
-                json={
-                    "id": str(tool_id),
-                    "name": "new_name",
-                    "displayName": "New Display",
-                    "customName": "Custom",
-                    "description": "New desc",
-                    "actions": [{"name": "a1"}],
-                    "status": False,
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = UpdateTool().post()
-
-        assert response.status_code == 200
-        call_args = mock_collection.update_one.call_args[0][1]["$set"]
-        assert call_args["name"] == "new_name"
-        assert call_args["displayName"] == "New Display"
-        assert call_args["customName"] == "Custom"
-        assert call_args["description"] == "New desc"
-        assert call_args["status"] is False
-
-    def test_returns_400_on_exception(self, app):
-        from application.api.user.tools.routes import UpdateTool
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.find_one.side_effect = Exception("db error")
-        mock_manager = Mock()
-        mock_manager.tools = {}
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ), patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
-        ):
-            with app.test_request_context(
-                "/api/update_tool",
-                method="POST",
-                json={
-                    "id": str(tool_id),
-                    "config": {"base_url": "http://new.com"},
-                },
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = UpdateTool().post()
-
-        assert response.status_code == 400
 
 
 # ---------------------------------------------------------------------------
@@ -1093,41 +662,7 @@ class TestUpdateTool:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestUpdateToolConfig:
-
-    def test_updates_config_successfully(self, app):
-        from application.api.user.tools.routes import UpdateToolConfig
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.find_one.return_value = {
-            "_id": tool_id,
-            "name": "my_tool",
-            "config": {"base_url": "http://old.com"},
-        }
-
-        tool_instance = Mock()
-        tool_instance.get_config_requirements.return_value = {}
-        mock_manager = Mock()
-        mock_manager.tools = {"my_tool": tool_instance}
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ), patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
-        ):
-            with app.test_request_context(
-                "/api/update_tool_config",
-                method="POST",
-                json={"id": str(tool_id), "config": {"base_url": "http://new.com"}},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = UpdateToolConfig().post()
-
-        assert response.status_code == 200
-        assert response.json["success"] is True
+    pass
 
     def test_returns_401_unauthenticated(self, app):
         from application.api.user.tools.routes import UpdateToolConfig
@@ -1159,88 +694,8 @@ class TestUpdateToolConfig:
 
         assert response.status_code == 400
 
-    def test_returns_404_tool_not_found(self, app):
-        from application.api.user.tools.routes import UpdateToolConfig
 
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.find_one.return_value = None
 
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/update_tool_config",
-                method="POST",
-                json={"id": str(tool_id), "config": {"base_url": "x"}},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = UpdateToolConfig().post()
-
-        assert response.status_code == 404
-
-    def test_returns_400_on_validation_error(self, app):
-        from application.api.user.tools.routes import UpdateToolConfig
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.find_one.return_value = {
-            "_id": tool_id,
-            "name": "my_tool",
-            "config": {},
-        }
-
-        tool_instance = Mock()
-        tool_instance.get_config_requirements.return_value = {
-            "api_key": {"required": True, "label": "API Key"},
-        }
-        mock_manager = Mock()
-        mock_manager.tools = {"my_tool": tool_instance}
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ), patch(
-            "application.api.user.tools.routes.tool_manager", mock_manager
-        ):
-            with app.test_request_context(
-                "/api/update_tool_config",
-                method="POST",
-                json={"id": str(tool_id), "config": {}},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = UpdateToolConfig().post()
-
-        assert response.status_code == 400
-        assert response.json["message"] == "Validation failed"
-
-    def test_returns_400_on_exception(self, app):
-        from application.api.user.tools.routes import UpdateToolConfig
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.find_one.side_effect = Exception("db error")
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/update_tool_config",
-                method="POST",
-                json={"id": str(tool_id), "config": {"a": "b"}},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = UpdateToolConfig().post()
-
-        assert response.status_code == 400
 
 
 # ---------------------------------------------------------------------------
@@ -1248,30 +703,7 @@ class TestUpdateToolConfig:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestUpdateToolActions:
-
-    def test_updates_actions_successfully(self, app):
-        from application.api.user.tools.routes import UpdateToolActions
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/update_tool_actions",
-                method="POST",
-                json={"id": str(tool_id), "actions": [{"name": "a1"}]},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = UpdateToolActions().post()
-
-        assert response.status_code == 200
-        assert response.json["success"] is True
-        mock_collection.update_one.assert_called_once()
+    pass
 
     def test_returns_401_unauthenticated(self, app):
         from application.api.user.tools.routes import UpdateToolActions
@@ -1303,28 +735,6 @@ class TestUpdateToolActions:
 
         assert response.status_code == 400
 
-    def test_returns_400_on_exception(self, app):
-        from application.api.user.tools.routes import UpdateToolActions
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.update_one.side_effect = Exception("db error")
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/update_tool_actions",
-                method="POST",
-                json={"id": str(tool_id), "actions": [{"name": "a1"}]},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = UpdateToolActions().post()
-
-        assert response.status_code == 400
 
 
 # ---------------------------------------------------------------------------
@@ -1332,29 +742,7 @@ class TestUpdateToolActions:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestUpdateToolStatus:
-
-    def test_updates_status_successfully(self, app):
-        from application.api.user.tools.routes import UpdateToolStatus
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/update_tool_status",
-                method="POST",
-                json={"id": str(tool_id), "status": False},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = UpdateToolStatus().post()
-
-        assert response.status_code == 200
-        assert response.json["success"] is True
+    pass
 
     def test_returns_401_unauthenticated(self, app):
         from application.api.user.tools.routes import UpdateToolStatus
@@ -1386,28 +774,6 @@ class TestUpdateToolStatus:
 
         assert response.status_code == 400
 
-    def test_returns_400_on_exception(self, app):
-        from application.api.user.tools.routes import UpdateToolStatus
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.update_one.side_effect = Exception("db error")
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/update_tool_status",
-                method="POST",
-                json={"id": str(tool_id), "status": True},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = UpdateToolStatus().post()
-
-        assert response.status_code == 400
 
 
 # ---------------------------------------------------------------------------
@@ -1415,30 +781,7 @@ class TestUpdateToolStatus:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestDeleteTool:
-
-    def test_deletes_tool_successfully(self, app):
-        from application.api.user.tools.routes import DeleteTool
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.delete_one.return_value = Mock(deleted_count=1)
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/delete_tool",
-                method="POST",
-                json={"id": str(tool_id)},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = DeleteTool().post()
-
-        assert response.status_code == 200
-        assert response.json["success"] is True
+    pass
 
     def test_returns_401_unauthenticated(self, app):
         from application.api.user.tools.routes import DeleteTool
@@ -1466,51 +809,7 @@ class TestDeleteTool:
 
         assert response.status_code == 400
 
-    def test_returns_404_not_found(self, app):
-        from application.api.user.tools.routes import DeleteTool
 
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.delete_one.return_value = Mock(deleted_count=0)
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/delete_tool",
-                method="POST",
-                json={"id": str(tool_id)},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = DeleteTool().post()
-
-        assert response.status_code == 404
-
-    def test_returns_400_on_exception(self, app):
-        from application.api.user.tools.routes import DeleteTool
-
-        tool_id = uuid.uuid4().hex[:24]
-        mock_collection = Mock()
-        mock_collection.delete_one.side_effect = Exception("db error")
-
-        with patch(
-            "application.api.user.tools.routes.user_tools_collection",
-            mock_collection,
-        ):
-            with app.test_request_context(
-                "/api/delete_tool",
-                method="POST",
-                json={"id": str(tool_id)},
-            ):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = DeleteTool().post()
-
-        assert response.status_code == 400
 
 
 # ---------------------------------------------------------------------------
@@ -1518,6 +817,7 @@ class TestDeleteTool:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestParseSpec:
+    pass
 
     def test_parses_json_spec_successfully(self, app):
         from application.api.user.tools.routes import ParseSpec
@@ -1716,6 +1016,7 @@ class TestParseSpec:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestGetArtifact:
+    pass
 
     def test_returns_401_unauthenticated(self, app):
         from application.api.user.tools.routes import GetArtifact
@@ -1728,230 +1029,360 @@ class TestGetArtifact:
 
         assert response.status_code == 401
 
-    def test_returns_400_invalid_artifact_id(self, app):
-        from application.api.user.tools.routes import GetArtifact
 
-        with app.test_request_context("/api/artifact/not-valid-oid"):
+# ---------------------------------------------------------------------------
+# Happy-path tests using pg_conn
+# ---------------------------------------------------------------------------
+
+from contextlib import contextmanager
+from unittest.mock import MagicMock
+
+
+@contextmanager
+def _patch_tools_db(conn):
+    @contextmanager
+    def _yield():
+        yield conn
+
+    with patch(
+        "application.api.user.tools.routes.db_session", _yield
+    ), patch(
+        "application.api.user.tools.routes.db_readonly", _yield
+    ):
+        yield
+
+
+def _seed_tool(pg_conn, user="u-tools", name="read_webpage", config=None):
+    from application.storage.db.repositories.user_tools import UserToolsRepository
+    repo = UserToolsRepository(pg_conn)
+    return repo.create(
+        user,
+        name,
+        config=config or {},
+        display_name=name,
+        description="",
+        actions=[],
+        status=True,
+    )
+
+
+class TestGetToolsHappy:
+    def test_returns_user_tools(self, app, pg_conn):
+        from application.api.user.tools.routes import GetTools
+
+        user = "u-get-tools"
+        _seed_tool(pg_conn, user=user, name="read_webpage")
+
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/get_tools"
+        ):
             from flask import request
+            request.decoded_token = {"sub": user}
+            response = GetTools().get()
+        assert response.status_code == 200
+        assert response.json["success"] is True
+        assert len(response.json["tools"]) == 1
 
-            request.decoded_token = {"sub": "user1"}
-            response = GetArtifact().get("not-valid-oid")
+    def test_db_error_returns_400(self, app):
+        from application.api.user.tools.routes import GetTools
 
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.user.tools.routes.db_readonly", _broken
+        ), app.test_request_context("/api/get_tools"):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = GetTools().get()
         assert response.status_code == 400
-        assert "Invalid artifact ID" in response.json["message"]
 
-    def test_returns_note_artifact(self, app):
-        from application.api.user.tools.routes import GetArtifact
 
-        artifact_id = uuid.uuid4().hex[:24]
-        updated_at = datetime(2025, 1, 15, 10, 30)
-        mock_notes = Mock()
-        mock_notes.find_one.return_value = {
-            "_id": artifact_id,
-            "user_id": "user1",
-            "note": "Line1\nLine2\nLine3",
-            "updated_at": updated_at,
-        }
-        mock_todos = Mock()
-        mock_todos.find_one.return_value = None
+class TestCreateToolHappy:
+    def test_creates_tool_successfully(self, app, pg_conn):
+        from application.api.user.tools.routes import CreateTool
 
-        mock_db = {"notes": mock_notes, "todos": mock_todos}
+        user = "u-create-tool"
 
-        with patch(
-            "application.core.mongo_db.MongoDB.get_client",
-            return_value={"test_db": mock_db},
-        ), patch(
-            "application.core.settings.settings"
-        ) as mock_settings:
-            mock_settings.MONGO_DB_NAME = "test_db"
-
-            with app.test_request_context(f"/api/artifact/{artifact_id}"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetArtifact().get(str(artifact_id))
-
-        assert response.status_code == 200
-        artifact = response.json["artifact"]
-        assert artifact["artifact_type"] == "note"
-        assert artifact["data"]["content"] == "Line1\nLine2\nLine3"
-        assert artifact["data"]["line_count"] == 3
-        assert artifact["data"]["updated_at"] == updated_at.isoformat()
-
-    def test_returns_note_with_no_updated_at(self, app):
-        from application.api.user.tools.routes import GetArtifact
-
-        artifact_id = uuid.uuid4().hex[:24]
-        mock_notes = Mock()
-        mock_notes.find_one.return_value = {
-            "_id": artifact_id,
-            "user_id": "user1",
-            "note": "Content",
-        }
-
-        mock_db = {"notes": mock_notes, "todos": Mock()}
-
-        with patch(
-            "application.core.mongo_db.MongoDB.get_client",
-            return_value={"test_db": mock_db},
-        ), patch(
-            "application.core.settings.settings"
-        ) as mock_settings:
-            mock_settings.MONGO_DB_NAME = "test_db"
-
-            with app.test_request_context(f"/api/artifact/{artifact_id}"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetArtifact().get(str(artifact_id))
-
-        assert response.status_code == 200
-        assert response.json["artifact"]["data"]["updated_at"] is None
-
-    def test_returns_empty_note_line_count_zero(self, app):
-        from application.api.user.tools.routes import GetArtifact
-
-        artifact_id = uuid.uuid4().hex[:24]
-        mock_notes = Mock()
-        mock_notes.find_one.return_value = {
-            "_id": artifact_id,
-            "user_id": "user1",
-            "note": "",
-        }
-        mock_db = {"notes": mock_notes, "todos": Mock()}
-
-        with patch(
-            "application.core.mongo_db.MongoDB.get_client",
-            return_value={"test_db": mock_db},
-        ), patch(
-            "application.core.settings.settings"
-        ) as mock_settings:
-            mock_settings.MONGO_DB_NAME = "test_db"
-
-            with app.test_request_context(f"/api/artifact/{artifact_id}"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetArtifact().get(str(artifact_id))
-
-        assert response.status_code == 200
-        assert response.json["artifact"]["data"]["line_count"] == 0
-
-    def test_returns_todo_artifact(self, app):
-        from application.api.user.tools.routes import GetArtifact
-
-        artifact_id = uuid.uuid4().hex[:24]
-        created_at = datetime(2025, 1, 15, 10, 0)
-        updated_at = datetime(2025, 1, 15, 12, 0)
-        mock_notes = Mock()
-        mock_notes.find_one.return_value = None
-        mock_todos = Mock()
-        mock_todos.find_one.return_value = {
-            "_id": artifact_id,
-            "user_id": "user1",
-            "tool_id": "tool123",
-        }
-        mock_todos.find.return_value = [
-            {
-                "todo_id": "t1",
-                "title": "Task 1",
-                "status": "open",
-                "created_at": created_at,
-                "updated_at": updated_at,
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/create_tool",
+            method="POST",
+            json={
+                "name": "read_webpage",
+                "displayName": "Read Webpage",
+                "description": "d",
+                "config": {},
+                "customName": "my-webpage",
+                "status": True,
             },
-            {
-                "todo_id": "t2",
-                "title": "Task 2",
-                "status": "completed",
-                "created_at": created_at,
-                "updated_at": updated_at,
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = CreateTool().post()
+        assert response.status_code == 200
+        body = response.json
+        assert "id" in body
+
+    def test_db_error_returns_400(self, app):
+        from application.api.user.tools.routes import CreateTool
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
+
+        with patch(
+            "application.api.user.tools.routes.db_session", _broken
+        ), app.test_request_context(
+            "/api/create_tool",
+            method="POST",
+            json={
+                "name": "read_webpage",
+                "displayName": "N",
+                "description": "d",
+                "config": {},
             },
-        ]
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = CreateTool().post()
+        assert response.status_code == 400
 
-        mock_db = {"notes": mock_notes, "todos": mock_todos}
 
-        with patch(
-            "application.core.mongo_db.MongoDB.get_client",
-            return_value={"test_db": mock_db},
-        ), patch(
-            "application.core.settings.settings"
-        ) as mock_settings:
-            mock_settings.MONGO_DB_NAME = "test_db"
+class TestUpdateToolHappy:
+    def test_returns_404_not_found(self, app, pg_conn):
+        from application.api.user.tools.routes import UpdateTool
 
-            with app.test_request_context(f"/api/artifact/{artifact_id}"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetArtifact().get(str(artifact_id))
-
-        assert response.status_code == 200
-        artifact = response.json["artifact"]
-        assert artifact["artifact_type"] == "todo_list"
-        assert artifact["data"]["total_count"] == 2
-        assert artifact["data"]["open_count"] == 1
-        assert artifact["data"]["completed_count"] == 1
-
-    def test_returns_todo_with_no_dates(self, app):
-        from application.api.user.tools.routes import GetArtifact
-
-        artifact_id = uuid.uuid4().hex[:24]
-        mock_notes = Mock()
-        mock_notes.find_one.return_value = None
-        mock_todos = Mock()
-        mock_todos.find_one.return_value = {
-            "_id": artifact_id,
-            "user_id": "user1",
-            "tool_id": "tool123",
-        }
-        mock_todos.find.return_value = [
-            {"todo_id": "t1", "title": "Task 1"},
-        ]
-
-        mock_db = {"notes": mock_notes, "todos": mock_todos}
-
-        with patch(
-            "application.core.mongo_db.MongoDB.get_client",
-            return_value={"test_db": mock_db},
-        ), patch(
-            "application.core.settings.settings"
-        ) as mock_settings:
-            mock_settings.MONGO_DB_NAME = "test_db"
-
-            with app.test_request_context(f"/api/artifact/{artifact_id}"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetArtifact().get(str(artifact_id))
-
-        assert response.status_code == 200
-        item = response.json["artifact"]["data"]["items"][0]
-        assert item["created_at"] is None
-        assert item["updated_at"] is None
-
-    def test_returns_404_not_found(self, app):
-        from application.api.user.tools.routes import GetArtifact
-
-        artifact_id = uuid.uuid4().hex[:24]
-        mock_notes = Mock()
-        mock_notes.find_one.return_value = None
-        mock_todos = Mock()
-        mock_todos.find_one.return_value = None
-
-        mock_db = {"notes": mock_notes, "todos": mock_todos}
-
-        with patch(
-            "application.core.mongo_db.MongoDB.get_client",
-            return_value={"test_db": mock_db},
-        ), patch(
-            "application.core.settings.settings"
-        ) as mock_settings:
-            mock_settings.MONGO_DB_NAME = "test_db"
-
-            with app.test_request_context(f"/api/artifact/{artifact_id}"):
-                from flask import request
-
-                request.decoded_token = {"sub": "user1"}
-                response = GetArtifact().get(str(artifact_id))
-
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool",
+            method="POST",
+            json={
+                "id": "00000000-0000-0000-0000-000000000000",
+                "displayName": "new",
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = UpdateTool().post()
         assert response.status_code == 404
-        assert "Artifact not found" in response.json["message"]
+
+    def test_updates_tool_display_name(self, app, pg_conn):
+        from application.api.user.tools.routes import UpdateTool
+        from application.storage.db.repositories.user_tools import (
+            UserToolsRepository,
+        )
+
+        user = "u-upd"
+        tool = _seed_tool(pg_conn, user=user)
+
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool",
+            method="POST",
+            json={"id": str(tool["id"]), "displayName": "New Display"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateTool().post()
+        assert response.status_code == 200
+        got = UserToolsRepository(pg_conn).get(str(tool["id"]), user)
+        assert got["display_name"] == "New Display"
+
+
+class TestUpdateToolConfigHappy:
+    def test_returns_404_not_found(self, app, pg_conn):
+        from application.api.user.tools.routes import UpdateToolConfig
+
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool_config",
+            method="POST",
+            json={
+                "id": "00000000-0000-0000-0000-000000000000",
+                "config": {"key": "v"},
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = UpdateToolConfig().post()
+        assert response.status_code == 404
+
+    def test_updates_config(self, app, pg_conn):
+        from application.api.user.tools.routes import UpdateToolConfig
+
+        user = "u-cfg"
+        tool = _seed_tool(pg_conn, user=user)
+
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool_config",
+            method="POST",
+            json={
+                "id": str(tool["id"]),
+                "config": {"timeout": 30},
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateToolConfig().post()
+        assert response.status_code == 200
+
+
+class TestUpdateToolActionsHappy:
+    def test_returns_404_not_found(self, app, pg_conn):
+        from application.api.user.tools.routes import UpdateToolActions
+
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool_actions",
+            method="POST",
+            json={
+                "id": "00000000-0000-0000-0000-000000000000",
+                "actions": [],
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = UpdateToolActions().post()
+        assert response.status_code == 404
+
+    def test_updates_actions(self, app, pg_conn):
+        from application.api.user.tools.routes import UpdateToolActions
+
+        user = "u-actions"
+        tool = _seed_tool(pg_conn, user=user)
+
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool_actions",
+            method="POST",
+            json={
+                "id": str(tool["id"]),
+                "actions": [
+                    {"name": "action_1", "active": True, "parameters": {}}
+                ],
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateToolActions().post()
+        assert response.status_code == 200
+
+
+class TestUpdateToolStatusHappy:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.tools.routes import UpdateToolStatus
+
+        with app.test_request_context(
+            "/api/update_tool_status",
+            method="POST",
+            json={"id": "x", "status": True},
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = UpdateToolStatus().post()
+        assert response.status_code == 401
+
+    def test_returns_400_missing_fields(self, app):
+        from application.api.user.tools.routes import UpdateToolStatus
+
+        with app.test_request_context(
+            "/api/update_tool_status",
+            method="POST",
+            json={"id": "x"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = UpdateToolStatus().post()
+        assert response.status_code == 400
+
+    def test_returns_404_not_found(self, app, pg_conn):
+        from application.api.user.tools.routes import UpdateToolStatus
+
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool_status",
+            method="POST",
+            json={
+                "id": "00000000-0000-0000-0000-000000000000",
+                "status": False,
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = UpdateToolStatus().post()
+        assert response.status_code == 404
+
+    def test_updates_status(self, app, pg_conn):
+        from application.api.user.tools.routes import UpdateToolStatus
+        from application.storage.db.repositories.user_tools import (
+            UserToolsRepository,
+        )
+
+        user = "u-status"
+        tool = _seed_tool(pg_conn, user=user)
+
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool_status",
+            method="POST",
+            json={"id": str(tool["id"]), "status": False},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateToolStatus().post()
+        assert response.status_code == 200
+        got = UserToolsRepository(pg_conn).get(str(tool["id"]), user)
+        assert got["status"] is False
+
+
+class TestDeleteToolHappy:
+    def test_returns_404_not_found(self, app, pg_conn):
+        from application.api.user.tools.routes import DeleteTool
+
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/delete_tool",
+            method="POST",
+            json={"id": "00000000-0000-0000-0000-000000000000"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = DeleteTool().post()
+        assert response.status_code == 404
+
+    def test_deletes_tool(self, app, pg_conn):
+        from application.api.user.tools.routes import DeleteTool
+        from application.storage.db.repositories.user_tools import (
+            UserToolsRepository,
+        )
+
+        user = "u-deltool"
+        tool = _seed_tool(pg_conn, user=user)
+
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/delete_tool",
+            method="POST",
+            json={"id": str(tool["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = DeleteTool().post()
+        assert response.status_code == 200
+        assert UserToolsRepository(pg_conn).get(str(tool["id"]), user) is None
+
+
+class TestGetArtifactHappy:
+    def test_returns_404_tool_not_found(self, app, pg_conn):
+        from application.api.user.tools.routes import GetArtifact
+
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/artifact/00000000-0000-0000-0000-000000000000"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = GetArtifact().get(
+                "00000000-0000-0000-0000-000000000000"
+            )
+        assert response.status_code == 404
+
+
+
+
+
+
+

@@ -10,11 +10,6 @@ from sqlalchemy import text
 
 from application.storage.db.repositories.memories import MemoriesRepository
 
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
-
 
 def _repo(conn) -> MemoriesRepository:
     return MemoriesRepository(conn)

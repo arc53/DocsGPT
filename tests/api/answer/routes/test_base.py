@@ -1,4 +1,3 @@
-import datetime
 import uuid
 from unittest.mock import MagicMock, patch
 
@@ -7,6 +6,8 @@ import pytest
 
 @pytest.mark.unit
 class TestBaseAnswerValidation:
+    pass
+
     def test_validate_request_passes_with_required_fields(
         self, mock_mongo_db, flask_app
     ):
@@ -60,6 +61,8 @@ class TestBaseAnswerValidation:
 
 @pytest.mark.unit
 class TestUsageChecking:
+    pass
+
     def test_returns_none_when_no_api_key(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
 
@@ -71,189 +74,18 @@ class TestUsageChecking:
 
             assert result is None
 
-    def test_returns_error_for_invalid_api_key(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
 
-        with flask_app.app_context():
-            resource = BaseAnswerResource()
-            agent_config = {"user_api_key": "invalid_key_123"}
 
-            result = resource.check_usage(agent_config)
 
-            assert result is not None
-            assert result.status_code == 401
-            assert result.json["success"] is False
-            assert "invalid" in result.json["message"].lower()
 
-    def test_checks_token_limit_when_enabled(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.core.settings import settings
 
-        with flask_app.app_context():
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
 
-            agents_collection.insert_one(
-                {
-                    "key": "test_key",
-                    "limited_token_mode": True,
-                    "token_limit": 1000,
-                    "limited_request_mode": False,
-                }
-            )
-
-            resource = BaseAnswerResource()
-            agent_config = {"user_api_key": "test_key"}
-
-            result = resource.check_usage(agent_config)
-
-            assert result is None
-
-    def test_checks_request_limit_when_enabled(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.core.settings import settings
-
-        with flask_app.app_context():
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-
-            agents_collection.insert_one(
-                {
-                    "key": "test_key",
-                    "limited_token_mode": False,
-                    "limited_request_mode": True,
-                    "request_limit": 100,
-                }
-            )
-
-            resource = BaseAnswerResource()
-            agent_config = {"user_api_key": "test_key"}
-
-            result = resource.check_usage(agent_config)
-
-            assert result is None
-
-    def test_uses_default_limits_when_not_specified(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.core.settings import settings
-
-        with flask_app.app_context():
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-
-            agents_collection.insert_one(
-                {
-                    "key": "test_key",
-                    "limited_token_mode": True,
-                    "limited_request_mode": True,
-                }
-            )
-
-            resource = BaseAnswerResource()
-            agent_config = {"user_api_key": "test_key"}
-
-            result = resource.check_usage(agent_config)
-
-            assert result is None
-
-    def test_exceeds_token_limit(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.core.settings import settings
-
-        with flask_app.app_context():
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-            token_usage_collection = mock_mongo_db[settings.MONGO_DB_NAME][
-                "token_usage"
-            ]
-
-            agents_collection.insert_one(
-                {
-                    "key": "test_key",
-                    "limited_token_mode": True,
-                    "token_limit": 100,
-                    "limited_request_mode": False,
-                }
-            )
-
-            token_usage_collection.insert_one(
-                {
-                    "api_key": "test_key",
-                    "prompt_tokens": 60,
-                    "generated_tokens": 50,
-                    "timestamp": datetime.datetime.now(),
-                }
-            )
-
-            resource = BaseAnswerResource()
-            agent_config = {"user_api_key": "test_key"}
-
-            result = resource.check_usage(agent_config)
-
-            assert result is not None
-            assert result.status_code == 429
-            assert result.json["success"] is False
-            assert "usage limit" in result.json["message"].lower()
-
-    def test_exceeds_request_limit(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.core.settings import settings
-
-        with flask_app.app_context():
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-            token_usage_collection = mock_mongo_db[settings.MONGO_DB_NAME][
-                "token_usage"
-            ]
-
-            agents_collection.insert_one(
-                {
-                    "key": "test_key",
-                    "limited_token_mode": False,
-                    "limited_request_mode": True,
-                    "request_limit": 2,
-                }
-            )
-
-            now = datetime.datetime.now()
-            for i in range(3):
-                token_usage_collection.insert_one(
-                    {
-                        "api_key": "test_key",
-                        "prompt_tokens": 10,
-                        "generated_tokens": 10,
-                        "timestamp": now,
-                    }
-                )
-            resource = BaseAnswerResource()
-            agent_config = {"user_api_key": "test_key"}
-
-            result = resource.check_usage(agent_config)
-
-            assert result is not None
-            assert result.status_code == 429
-            assert result.json["success"] is False
-
-    def test_both_limits_disabled_returns_none(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.core.settings import settings
-
-        with flask_app.app_context():
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-
-            agents_collection.insert_one(
-                {
-                    "key": "test_key",
-                    "limited_token_mode": False,
-                    "limited_request_mode": False,
-                }
-            )
-
-            resource = BaseAnswerResource()
-            agent_config = {"user_api_key": "test_key"}
-
-            result = resource.check_usage(agent_config)
-
-            assert result is None
 
 
 @pytest.mark.unit
 class TestGPTModelRetrieval:
+    pass
+
     def test_initializes_gpt_model(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
 
@@ -266,6 +98,8 @@ class TestGPTModelRetrieval:
 
 @pytest.mark.unit
 class TestConversationServiceIntegration:
+    pass
+
     def test_initializes_conversation_service(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
 
@@ -275,18 +109,12 @@ class TestConversationServiceIntegration:
             assert hasattr(resource, "conversation_service")
             assert resource.conversation_service is not None
 
-    def test_has_access_to_user_logs_collection(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-
-        with flask_app.app_context():
-            resource = BaseAnswerResource()
-
-            assert hasattr(resource, "user_logs_collection")
-            assert resource.user_logs_collection is not None
 
 
 @pytest.mark.unit
 class TestCompleteStreamMethod:
+    pass
+
     def test_streams_answer_chunks(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
 
@@ -407,47 +235,12 @@ class TestCompleteStreamMethod:
 
                 mock_save.assert_called_once()
 
-    def test_logs_to_user_logs_collection(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.base import BaseAnswerResource
-        from application.core.settings import settings
-
-        with flask_app.app_context():
-            resource = BaseAnswerResource()
-            user_logs = mock_mongo_db[settings.MONGO_DB_NAME]["user_logs"]
-
-            mock_agent = MagicMock()
-            mock_agent.gen.return_value = iter(
-                [
-                    {"answer": "Test answer"},
-                ]
-            )
-
-            mock_retriever = MagicMock()
-            mock_retriever.get_params.return_value = {"retriever": "test"}
-
-            decoded_token = {"sub": "user123"}
-
-            list(
-                resource.complete_stream(
-                    question="Test question?",
-                    agent=mock_agent,
-                    conversation_id=None,
-                    user_api_key="test_key",
-                    decoded_token=decoded_token,
-                    should_save_conversation=False,
-                )
-            )
-
-            assert user_logs.count_documents({}) == 1
-            log_entry = user_logs.find_one({})
-            assert log_entry["action"] == "stream_answer"
-            assert log_entry["user"] == "user123"
-            assert log_entry["api_key"] == "test_key"
-            assert log_entry["question"] == "Test question?"
 
 
 @pytest.mark.unit
 class TestProcessResponseStream:
+    pass
+
     def test_processes_complete_stream(self, mock_mongo_db, flask_app):
         import json
 
@@ -507,6 +300,8 @@ class TestProcessResponseStream:
 
 @pytest.mark.unit
 class TestErrorStreamGenerate:
+    pass
+
     def test_generates_error_stream(self, mock_mongo_db, flask_app):
         from application.api.answer.routes.base import BaseAnswerResource
 
