@@ -4,6 +4,18 @@ import pytest
 from application.agents.classic_agent import ClassicAgent
 
 
+@pytest.fixture
+def _no_tools(monkeypatch):
+    """Stub ToolExecutor.get_tools to avoid DB hits for most tests."""
+
+    def _fake_get_tools(self):
+        return {}
+
+    monkeypatch.setattr(
+        "application.agents.tool_executor.ToolExecutor.get_tools", _fake_get_tools
+    )
+
+
 @pytest.mark.unit
 class TestClassicAgent:
 
@@ -23,7 +35,7 @@ class TestClassicAgent:
         mock_llm_handler,
         mock_llm_creator,
         mock_llm_handler_creator,
-        mock_mongo_db,
+        _no_tools,
         log_context,
     ):
         def mock_gen_stream(*args, **kwargs):
@@ -55,7 +67,7 @@ class TestClassicAgent:
         mock_llm_handler,
         mock_llm_creator,
         mock_llm_handler_creator,
-        mock_mongo_db,
+        _no_tools,
         log_context,
     ):
         mock_llm.gen_stream = Mock(return_value=iter(["Answer"]))
@@ -67,41 +79,6 @@ class TestClassicAgent:
 
         agent = ClassicAgent(**agent_base_params)
         list(agent._gen_inner("Test query", log_context))
-
-    def test_gen_inner_uses_user_api_key_tools(
-        self,
-        agent_base_params,
-        mock_llm,
-        mock_llm_handler,
-        mock_llm_creator,
-        mock_llm_handler_creator,
-        mock_mongo_db,
-        log_context,
-    ):
-        from application.core.settings import settings
-        from bson.objectid import ObjectId
-
-        tool_id = str(ObjectId())
-        mock_mongo_db[settings.MONGO_DB_NAME]["agents"].docs = {
-            "api_key_123": {"key": "api_key_123", "tools": [tool_id]}
-        }
-        mock_mongo_db[settings.MONGO_DB_NAME]["user_tools"].docs = {
-            tool_id: {"_id": ObjectId(tool_id), "name": "test_tool"}
-        }
-
-        mock_llm.gen_stream = Mock(return_value=iter(["Answer"]))
-
-        def mock_handler(*args, **kwargs):
-            yield "Processed"
-
-        mock_llm_handler.process_message_flow = Mock(side_effect=mock_handler)
-
-        agent_base_params["user_api_key"] = "api_key_123"
-        agent = ClassicAgent(**agent_base_params)
-
-        list(agent._gen_inner("Test query", log_context))
-
-        assert len(agent.tools) >= 0
 
     def test_gen_inner_uses_user_tools(
         self,
@@ -110,14 +87,29 @@ class TestClassicAgent:
         mock_llm_handler,
         mock_llm_creator,
         mock_llm_handler_creator,
-        mock_mongo_db,
+        monkeypatch,
         log_context,
     ):
-        from application.core.settings import settings
-
-        mock_mongo_db[settings.MONGO_DB_NAME]["user_tools"].docs = {
-            "1": {"_id": "1", "user": "test_user", "name": "tool1", "status": True}
+        # Inject a fake user tool dict via get_tools rather than touching DB.
+        fake_tools = {
+            "t1": {
+                "id": "t1",
+                "name": "test_tool",
+                "config": {},
+                "actions": [
+                    {
+                        "name": "do_thing",
+                        "description": "",
+                        "active": True,
+                        "parameters": {"properties": {}},
+                    }
+                ],
+            }
         }
+        monkeypatch.setattr(
+            "application.agents.tool_executor.ToolExecutor.get_tools",
+            lambda self: fake_tools,
+        )
 
         mock_llm.gen_stream = Mock(return_value=iter(["Answer"]))
 
@@ -129,7 +121,10 @@ class TestClassicAgent:
         agent = ClassicAgent(**agent_base_params)
         list(agent._gen_inner("Test query", log_context))
 
-        assert len(agent.tools) >= 0
+        # After _prepare_tools, the fake user tool should have become an llm tool schema.
+        assert any(
+            t["function"]["name"] == "do_thing" for t in agent.tools
+        )
 
     def test_gen_inner_builds_correct_messages(
         self,
@@ -138,7 +133,7 @@ class TestClassicAgent:
         mock_llm_handler,
         mock_llm_creator,
         mock_llm_handler_creator,
-        mock_mongo_db,
+        _no_tools,
         log_context,
     ):
         mock_llm.gen_stream = Mock(return_value=iter(["Answer"]))
@@ -166,7 +161,7 @@ class TestClassicAgent:
         mock_llm_handler,
         mock_llm_creator,
         mock_llm_handler_creator,
-        mock_mongo_db,
+        _no_tools,
         log_context,
     ):
         mock_llm.gen_stream = Mock(return_value=iter(["Answer"]))
@@ -196,7 +191,7 @@ class TestClassicAgentIntegration:
         mock_llm_handler,
         mock_llm_creator,
         mock_llm_handler_creator,
-        mock_mongo_db,
+        _no_tools,
     ):
         mock_llm.gen_stream = Mock(return_value=iter(["Answer"]))
 
@@ -218,7 +213,7 @@ class TestClassicAgentIntegration:
         mock_llm_handler,
         mock_llm_creator,
         mock_llm_handler_creator,
-        mock_mongo_db,
+        _no_tools,
     ):
         mock_llm.gen_stream = Mock(return_value=iter(["Answer"]))
 

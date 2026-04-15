@@ -1010,7 +1010,7 @@ Decorators are essential for writing clean, maintainable Python code with separa
 5. Async Libraries:
    - aiohttp: Async HTTP client/server
    - asyncpg: Async PostgreSQL driver
-   - motor: Async MongoDB driver
+   - asyncio: Async I/O framework
    - aioredis: Async Redis client
 
 6. Error Handling:

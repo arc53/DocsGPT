@@ -1,8 +1,8 @@
+from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
 import pytest
 from application.agents.classic_agent import ClassicAgent
-from application.core.settings import settings
 
 
 @pytest.mark.unit
@@ -217,16 +217,23 @@ class TestBaseAgentTools:
     def test_get_user_tools(
         self,
         agent_base_params,
-        mock_mongo_db,
+        pg_conn,
+        monkeypatch,
         mock_llm_creator,
         mock_llm_handler_creator,
     ):
-        user_tools = mock_mongo_db[settings.MONGO_DB_NAME]["user_tools"]
-        user_tools.insert_one(
-            {"_id": "1", "user": "test_user", "name": "tool1", "status": True}
-        )
-        user_tools.insert_one(
-            {"_id": "2", "user": "test_user", "name": "tool2", "status": True}
+        from application.storage.db.repositories.user_tools import UserToolsRepository
+
+        repo = UserToolsRepository(pg_conn)
+        repo.create(user_id="test_user", name="tool1", status=True)
+        repo.create(user_id="test_user", name="tool2", status=True)
+
+        @contextmanager
+        def _use_pg_conn():
+            yield pg_conn
+
+        monkeypatch.setattr(
+            "application.agents.tool_executor.db_readonly", _use_pg_conn
         )
 
         agent = ClassicAgent(**agent_base_params)
@@ -239,16 +246,23 @@ class TestBaseAgentTools:
     def test_get_user_tools_filters_by_status(
         self,
         agent_base_params,
-        mock_mongo_db,
+        pg_conn,
+        monkeypatch,
         mock_llm_creator,
         mock_llm_handler_creator,
     ):
-        user_tools = mock_mongo_db[settings.MONGO_DB_NAME]["user_tools"]
-        user_tools.insert_one(
-            {"_id": "1", "user": "test_user", "name": "tool1", "status": True}
-        )
-        user_tools.insert_one(
-            {"_id": "2", "user": "test_user", "name": "tool2", "status": False}
+        from application.storage.db.repositories.user_tools import UserToolsRepository
+
+        repo = UserToolsRepository(pg_conn)
+        repo.create(user_id="test_user", name="tool1", status=True)
+        repo.create(user_id="test_user", name="tool2", status=False)
+
+        @contextmanager
+        def _use_pg_conn():
+            yield pg_conn
+
+        monkeypatch.setattr(
+            "application.agents.tool_executor.db_readonly", _use_pg_conn
         )
 
         agent = ClassicAgent(**agent_base_params)
@@ -259,25 +273,34 @@ class TestBaseAgentTools:
     def test_get_tools_by_api_key(
         self,
         agent_base_params,
-        mock_mongo_db,
+        pg_conn,
+        monkeypatch,
         mock_llm_creator,
         mock_llm_handler_creator,
     ):
-        from bson.objectid import ObjectId
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.user_tools import UserToolsRepository
 
-        tool_id = str(ObjectId())
-        tool_obj_id = ObjectId(tool_id)
+        tool_row = UserToolsRepository(pg_conn).create(
+            user_id="alice", name="api_tool"
+        )
+        tool_id = str(tool_row["id"])
 
-        agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-        agents_collection.insert_one(
-            {
-                "key": "api_key_123",
-                "tools": [tool_id],
-            }
+        AgentsRepository(pg_conn).create(
+            user_id="alice",
+            name="my-agent",
+            status="active",
+            key="api_key_123",
+            tools=[tool_id],
         )
 
-        tools_collection = mock_mongo_db[settings.MONGO_DB_NAME]["user_tools"]
-        tools_collection.insert_one({"_id": tool_obj_id, "name": "api_tool"})
+        @contextmanager
+        def _use_pg_conn():
+            yield pg_conn
+
+        monkeypatch.setattr(
+            "application.agents.tool_executor.db_readonly", _use_pg_conn
+        )
 
         agent = ClassicAgent(**agent_base_params)
         tools = agent._get_tools("api_key_123")

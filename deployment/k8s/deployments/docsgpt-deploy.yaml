@@ -12,6 +12,19 @@ spec:
       labels:
         app: docsgpt-api
     spec:
+      initContainers:
+      # Block pod start until Postgres accepts connections. The `postgres-init`
+      # Job is responsible for running alembic migrations; this container only
+      # waits for the server to be reachable.
+      - name: wait-for-postgres
+        image: postgres:16-alpine
+        command:
+          - sh
+          - -c
+          - |
+            until pg_isready -h postgres -p 5432 -U docsgpt -d docsgpt; do
+              echo "Waiting for postgres..."; sleep 2;
+            done
       containers:
       - name: docsgpt-api
         image: arc53/docsgpt
@@ -32,6 +45,11 @@ spec:
           value: "application/app.py"
         - name: DEPLOYMENT_TYPE
           value: "cloud"
+        - name: POSTGRES_URI
+          valueFrom:
+            secretKeyRef:
+              name: docsgpt-secrets
+              key: POSTGRES_URI
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -47,6 +65,16 @@ spec:
       labels:
         app: docsgpt-worker
     spec:
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:16-alpine
+        command:
+          - sh
+          - -c
+          - |
+            until pg_isready -h postgres -p 5432 -U docsgpt -d docsgpt; do
+              echo "Waiting for postgres..."; sleep 2;
+            done
       containers:
       - name: docsgpt-worker
         image: arc53/docsgpt
@@ -64,6 +92,11 @@ spec:
         env:
         - name: API_URL
           value: "http://<your-api-endpoint>"
+        - name: POSTGRES_URI
+          valueFrom:
+            secretKeyRef:
+              name: docsgpt-secrets
+              key: POSTGRES_URI
 ---
 apiVersion: apps/v1
 kind: Deployment

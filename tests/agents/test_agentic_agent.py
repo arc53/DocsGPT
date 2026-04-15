@@ -6,6 +6,14 @@ import pytest
 from application.agents.agentic_agent import AgenticAgent
 
 
+@pytest.fixture
+def _no_tools(monkeypatch):
+    monkeypatch.setattr(
+        "application.agents.tool_executor.ToolExecutor.get_tools",
+        lambda self: {},
+    )
+
+
 @pytest.mark.unit
 class TestAgenticAgentInit:
 
@@ -42,7 +50,7 @@ class TestAgenticAgentGenInner:
         mock_llm_handler,
         mock_llm_creator,
         mock_llm_handler_creator,
-        mock_mongo_db,
+        _no_tools,
         log_context,
     ):
         mock_llm.gen_stream = Mock(return_value=iter(["Answer"]))
@@ -67,7 +75,7 @@ class TestAgenticAgentGenInner:
         mock_llm_handler,
         mock_llm_creator,
         mock_llm_handler_creator,
-        mock_mongo_db,
+        _no_tools,
         log_context,
     ):
         mock_llm.gen_stream = Mock(return_value=iter(["Answer"]))
@@ -91,7 +99,7 @@ class TestAgenticAgentGenInner:
         mock_llm_handler,
         mock_llm_creator,
         mock_llm_handler_creator,
-        mock_mongo_db,
+        _no_tools,
         log_context,
     ):
         mock_llm.gen_stream = Mock(return_value=iter(["Answer"]))

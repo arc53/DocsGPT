@@ -131,7 +131,7 @@ class TestLogActivity:
             yield "chunk1"
             yield "chunk2"
 
-        with patch("application.logging._log_to_mongodb"):
+        with patch("application.logging._log_activity_to_db"):
             result = list(my_gen(FakeAgent()))
         assert result == ["chunk1", "chunk2"]
 
@@ -148,7 +148,7 @@ class TestLogActivity:
             yield "ok"
             raise RuntimeError("boom")
 
-        with patch("application.logging._log_to_mongodb"), pytest.raises(
+        with patch("application.logging._log_activity_to_db"), pytest.raises(
             RuntimeError, match="boom"
         ):
             list(failing_gen(FakeAgent()))
