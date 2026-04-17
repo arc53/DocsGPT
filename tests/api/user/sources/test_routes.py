@@ -160,6 +160,105 @@ class TestPaginatedSources:
         assert data["total"] == 1
         assert data["paginated"][0]["name"] == "Alpha doc"
 
+    def test_pagination_across_multiple_pages(self, app, pg_conn):
+        """Every seeded doc surfaces exactly once across paginated windows."""
+        from application.api.user.sources.routes import PaginatedSources
+
+        user = "u-multi-page"
+        expected = {f"doc-{i}" for i in range(7)}
+        for name in expected:
+            _seed_source(pg_conn, user, name=name)
+
+        seen: set[str] = set()
+        for page in (1, 2, 3):
+            with _patch_db(pg_conn), app.test_request_context(
+                f"/api/sources/paginated?page={page}&rows=3"
+            ):
+                from flask import request
+                request.decoded_token = {"sub": user}
+                response = PaginatedSources().get()
+            assert response.status_code == 200
+            for doc in response.json["paginated"]:
+                seen.add(doc["name"])
+        assert seen == expected
+
+    def test_out_of_range_page_returns_empty_window(self, app, pg_conn):
+        from application.api.user.sources.routes import PaginatedSources
+
+        user = "u-oor"
+        _seed_source(pg_conn, user, name="only-one")
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/paginated?page=99&rows=10"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        assert response.status_code == 200
+        data = response.json
+        assert data["total"] == 1
+        # Prior behavior clamps ``currentPage`` back into range.
+        assert data["currentPage"] == 1
+        assert len(data["paginated"]) == 1
+
+    def test_empty_result_set_shape(self, app, pg_conn):
+        from application.api.user.sources.routes import PaginatedSources
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/paginated?page=1&rows=10"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u-empty"}
+            response = PaginatedSources().get()
+        assert response.status_code == 200
+        data = response.json
+        assert data["total"] == 0
+        # Legacy route returned ``max(1, ceil(0/rows)) == 1`` for empties.
+        assert data["totalPages"] == 1
+        assert data["paginated"] == []
+
+    def test_search_hits_sql_not_post_filter(self, app, pg_conn):
+        """Search must narrow ``total`` at the DB level, not in Python."""
+        from application.api.user.sources.routes import PaginatedSources
+
+        user = "u-sql-search"
+        _seed_source(pg_conn, user, name="needle in a haystack")
+        _seed_source(pg_conn, user, name="plain")
+        _seed_source(pg_conn, user, name="another plain")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/paginated?search=NEEDLE"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        data = response.json
+        # ``total`` reflects the filtered count — would be 3 if filtering
+        # happened after an unbounded fetch.
+        assert data["total"] == 1
+        assert data["paginated"][0]["name"] == "needle in a haystack"
+
+    def test_response_shape_preserved(self, app, pg_conn):
+        from application.api.user.sources.routes import PaginatedSources
+
+        user = "u-shape"
+        _seed_source(pg_conn, user, name="shape-doc")
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/paginated?page=1&rows=10"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        data = response.json
+        # Top-level contract the frontend relies on.
+        assert set(data.keys()) >= {"total", "totalPages", "currentPage", "paginated"}
+        # Each paginated entry exposes the legacy per-row keys.
+        row = data["paginated"][0]
+        for key in (
+            "id", "name", "date", "model", "location", "tokens",
+            "retriever", "syncFrequency", "provider", "isNested", "type",
+        ):
+            assert key in row
+
 
 class TestDeleteOldIndexes:
     def test_returns_401_unauthenticated(self, app):

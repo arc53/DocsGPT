@@ -891,14 +891,21 @@ class DBTokenStorage(TokenStorage):
             return None
 
     def _merge(self, patch: dict) -> None:
+        """Shallow-merge ``patch`` into this row's ``session_data``.
+
+        Threads ``server_url`` through to the repository so it lands in
+        the scalar column — ``get_by_user_and_server_url`` needs that to
+        resolve the row (``NULL = 'https://...'`` is UNKNOWN in SQL).
+        """
         from application.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
         from application.storage.db.session import db_session
 
+        base_url = self.get_base_url(self.server_url)
         with db_session() as conn:
             ConnectorSessionsRepository(conn).merge_session_data(
-                self.user_id, self._pg_provider(), patch,
+                self.user_id, self._pg_provider(), base_url, patch,
             )
 
     def _delete(self) -> None:
@@ -915,9 +922,7 @@ class DBTokenStorage(TokenStorage):
     async def set_tokens(self, tokens: OAuthToken) -> None:
         base_url = self.get_base_url(self.server_url)
         token_dump = tokens.model_dump()
-        await asyncio.to_thread(
-            self._merge, {"server_url": base_url, "tokens": token_dump},
-        )
+        await asyncio.to_thread(self._merge, {"tokens": token_dump})
         logger.info("Saved tokens for %s", base_url)
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
@@ -945,11 +950,7 @@ class DBTokenStorage(TokenStorage):
                     # semantics — preserves the row + any other keys.
                     await asyncio.to_thread(
                         self._merge,
-                        {
-                            "server_url": base_url,
-                            "tokens": None,
-                            "client_info": None,
-                        },
+                        {"tokens": None, "client_info": None},
                     )
                     return None
             return client_info
@@ -966,8 +967,7 @@ class DBTokenStorage(TokenStorage):
         serialized_info = self._serialize_client_info(client_info.model_dump())
         base_url = self.get_base_url(self.server_url)
         await asyncio.to_thread(
-            self._merge,
-            {"server_url": base_url, "client_info": serialized_info},
+            self._merge, {"client_info": serialized_info},
         )
         logger.info("Saved client info for %s", base_url)
 

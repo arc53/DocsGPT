@@ -223,40 +223,69 @@ class ConnectorSessionsRepository:
         return result.rowcount > 0
 
     def merge_session_data(
-        self, user_id: str, provider: str, patch: dict,
+        self,
+        user_id: str,
+        provider: str,
+        server_url: Optional[str],
+        patch: dict,
     ) -> dict:
-        """Upsert by shallow-merging ``patch`` into the existing ``session_data``.
+        """Upsert by shallow-merging ``patch`` into ``session_data``.
 
-        Used by the MCP DBTokenStorage path: writers want to update a
-        subset of nested keys (``tokens``, ``client_info``) without
-        clobbering the rest of the JSONB blob. ``None`` values in
-        ``patch`` are *removed* from the stored doc rather than written
-        as JSON null — that's how the MCP redirect-URI-mismatch branch
-        clears its tokens cleanly.
+        Writes ``server_url`` to the scalar column so downstream
+        ``get_by_user_and_server_url`` lookups can find the row. If
+        ``patch`` still carries a ``"server_url"`` key (legacy callers)
+        it is stripped before merging so the scalar column stays the
+        single source of truth and we don't duplicate it inside the
+        JSONB blob.
 
-        The conflict target matches the table's composite unique
-        constraint ``(user_id, COALESCE(server_url, ''), provider)`` so
-        MCP's per-URL ``provider="mcp:<url>"`` rows don't collide with
-        the OAuth providers' single-row-per-user shape.
+        Args:
+            user_id: Owner of the session.
+            provider: Provider tag (e.g. ``"mcp:<base_url>"`` for MCP).
+            server_url: Endpoint to pin the row to. ``None`` is valid
+                for single-row-per-user OAuth providers.
+            patch: Shallow-merge payload for ``session_data``. Keys
+                mapped to ``None`` are *dropped* from the stored doc
+                (used by the redirect-URI-mismatch clear path).
+
+        Returns:
+            The upserted row as a dict.
+
+        Notes:
+            The conflict target matches the table's composite unique
+            constraint ``(user_id, COALESCE(server_url, ''), provider)``
+            so MCP's per-URL rows and OAuth's single-row-per-user rows
+            both upsert idempotently.
         """
+        # Defensively strip ``server_url`` from ``patch`` — the scalar
+        # column is authoritative now. Callers still pass it for
+        # backwards compatibility during the transition.
+        patch = {k: v for k, v in patch.items() if k != "server_url"}
         set_entries = {k: v for k, v in patch.items() if v is not None}
         drop_keys = [k for k, v in patch.items() if v is None]
 
         result = self._conn.execute(
             text(
                 """
-                INSERT INTO connector_sessions (user_id, provider, session_data)
-                VALUES (:user_id, :provider, CAST(:patch AS jsonb))
+                INSERT INTO connector_sessions (
+                    user_id, provider, server_url, session_data
+                )
+                VALUES (
+                    :user_id, :provider, :server_url,
+                    CAST(:patch AS jsonb)
+                )
                 ON CONFLICT (user_id, COALESCE(server_url, ''), provider)
-                DO UPDATE SET session_data =
-                    (connector_sessions.session_data || EXCLUDED.session_data)
-                    - CAST(:drop_keys AS text[])
+                DO UPDATE SET
+                    server_url   = COALESCE(EXCLUDED.server_url, connector_sessions.server_url),
+                    session_data =
+                        (connector_sessions.session_data || EXCLUDED.session_data)
+                        - CAST(:drop_keys AS text[])
                 RETURNING *
                 """
             ),
             {
                 "user_id": user_id,
                 "provider": provider,
+                "server_url": server_url,
                 "patch": json.dumps(set_entries),
                 "drop_keys": "{" + ",".join(f'"{k}"' for k in drop_keys) + "}",
             },

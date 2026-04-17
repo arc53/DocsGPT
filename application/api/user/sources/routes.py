@@ -98,33 +98,30 @@ class PaginatedSources(Resource):
         user = decoded_token.get("sub")
         sort_field = request.args.get("sort", "date")
         sort_order = request.args.get("order", "desc")
-        page = int(request.args.get("page", 1))
-        rows_per_page = int(request.args.get("rows", 10))
-        search_term = request.args.get("search", "").strip()
+        page = max(1, int(request.args.get("page", 1)))
+        rows_per_page = max(1, int(request.args.get("rows", 10)))
+        search_term = request.args.get("search", "").strip() or None
 
         try:
             with db_readonly() as conn:
-                all_docs = SourcesRepository(conn).list_for_user(user)
-            # Case-insensitive substring filter on name (matches legacy
-            # Mongo $regex with $options:"i" for typical search UX).
-            if search_term:
-                needle = search_term.lower()
-                all_docs = [
-                    d for d in all_docs
-                    if needle in (d.get("name") or "").lower()
-                ]
-
-            reverse = sort_order != "asc"
-            all_docs.sort(
-                key=lambda d: (d.get(sort_field) is None, d.get(sort_field)),
-                reverse=reverse,
-            )
-
-            total_documents = len(all_docs)
-            total_pages = max(1, math.ceil(total_documents / rows_per_page))
-            page = min(max(1, page), total_pages)
-            skip = (page - 1) * rows_per_page
-            window = all_docs[skip : skip + rows_per_page]
+                repo = SourcesRepository(conn)
+                total_documents = repo.count_for_user(
+                    user, search_term=search_term,
+                )
+                # Prior in-Python implementation returned ``totalPages = 1``
+                # for empty result sets (``max(1, ceil(0/rows))``); we
+                # preserve that contract so the frontend pager stays stable.
+                total_pages = max(1, math.ceil(total_documents / rows_per_page))
+                effective_page = min(page, total_pages)
+                offset = (effective_page - 1) * rows_per_page
+                window = repo.list_for_user(
+                    user,
+                    limit=rows_per_page,
+                    offset=offset,
+                    search_term=search_term,
+                    sort_field=sort_field,
+                    sort_order=sort_order,
+                )
 
             paginated_docs = []
             for doc in window:
@@ -147,7 +144,7 @@ class PaginatedSources(Resource):
             response = {
                 "total": total_documents,
                 "totalPages": total_pages,
-                "currentPage": page,
+                "currentPage": effective_page,
                 "paginated": paginated_docs,
             }
             return make_response(jsonify(response), 200)

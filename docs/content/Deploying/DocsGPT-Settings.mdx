@@ -269,7 +269,7 @@ The default Docker Compose file bundles a `postgres` service plus a one-shot `po
   MongoDB Atlas vector-store backend (`VECTOR_STORE=mongodb`) or when
   running the one-shot `scripts/db/backfill.py` migration from a legacy
   Mongo-based install. Installing the optional Mongo client libraries
-  requires `pip install -r application/requirements-mongo.txt`. See
+  requires `pip install 'pymongo>=4.6'`. See
   [PostgreSQL for User Data](/Deploying/Postgres-Migration) for the
   migration path.
 </Callout>

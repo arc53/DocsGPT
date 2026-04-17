@@ -14,10 +14,10 @@ only knobs operators need. This script discovers what's available from
 the :data:`BACKFILLERS` registry and runs whichever tables were asked for.
 
 This script imports ``pymongo`` directly. ``pymongo`` is not part of the
-base ``application/requirements.txt`` post-migration — install the optional
-Mongo extras before running::
+base ``application/requirements.txt`` post-migration — install it
+directly before running::
 
-    pip install -r application/requirements-mongo.txt
+    pip install 'pymongo>=4.6'
 
 Usage::
 
@@ -2453,8 +2453,8 @@ def main() -> int:
         from pymongo import MongoClient
     except ImportError:
         logger.error(
-            "pymongo is not installed. Install the Mongo extras to run the "
-            "backfill: pip install -r application/requirements-mongo.txt"
+            "pymongo is not installed. Install it to run the "
+            "backfill: pip install 'pymongo>=4.6'"
         )
         return 1
 

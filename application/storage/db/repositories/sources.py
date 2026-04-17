@@ -18,6 +18,25 @@ _SCALAR_COLUMNS = {
 _JSONB_COLUMNS = {"metadata", "remote_data", "directory_structure", "file_name_map"}
 _ALLOWED_COLUMNS = _SCALAR_COLUMNS | _JSONB_COLUMNS
 
+# Whitelist for sort columns exposed via ``list_for_user``. Anything not in
+# this set falls back to ``date`` so user-supplied sort params can't be
+# interpolated into SQL unchecked.
+_SORTABLE_COLUMNS = {"date", "name", "tokens", "type", "created_at", "updated_at"}
+
+
+def _escape_like(pattern: str) -> str:
+    """Escape wildcards so a user-supplied substring is matched literally.
+
+    We use ``LIKE ESCAPE '\\'`` on the query side so backslash, percent, and
+    underscore in the input don't accidentally turn into regex-like wildcards.
+    """
+    return (
+        pattern
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+
 
 def _coerce_jsonb(value: Any) -> Any:
     """Normalize incoming JSONB values for the Core ``Table.update()`` path.
@@ -140,12 +159,93 @@ class SourcesRepository:
                 return row
         return self.get_by_legacy_id(source_id, user_id)
 
-    def list_for_user(self, user_id: str) -> list[dict]:
-        result = self._conn.execute(
-            text("SELECT * FROM sources WHERE user_id = :user_id ORDER BY created_at DESC"),
-            {"user_id": user_id},
-        )
+    def list_for_user(
+        self,
+        user_id: str,
+        *,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        search_term: Optional[str] = None,
+        sort_field: str = "created_at",
+        sort_order: str = "desc",
+    ) -> list[dict]:
+        """Return sources owned by ``user_id``, paginated and optionally filtered.
+
+        All pagination, filtering, and sorting are pushed into SQL so large
+        accounts don't materialize their full source list in Python for every
+        page. See ``PaginatedSources`` in the sources routes for the matching
+        call site.
+
+        Args:
+            user_id: Scope rows to this owner.
+            limit: Page size. ``None`` returns every matching row (legacy
+                full-list path used by ``CombinedJson``).
+            offset: Rows to skip before collecting ``limit`` results.
+            search_term: Case-insensitive substring filter on ``name``.
+                ``%`` and ``_`` in the input are escaped so they match
+                literally rather than as LIKE wildcards.
+            sort_field: Column to sort by. Unknown values fall back to
+                ``date`` — the whitelist prevents SQL injection via a raw
+                query-string value.
+            sort_order: ``"asc"`` or ``"desc"``; anything else is treated
+                as ``"desc"``.
+
+        Returns:
+            A list of source rows as plain dicts (via ``row_to_dict``).
+        """
+        direction = "ASC" if sort_order.lower() == "asc" else "DESC"
+        column = sort_field if sort_field in _SORTABLE_COLUMNS else "date"
+        # ``id`` is appended as a stable tiebreaker so paginated windows
+        # are deterministic across equal sort keys.
+        order_clause = f"ORDER BY {column} {direction}, id {direction}"
+
+        clauses = ["user_id = :user_id"]
+        params: dict[str, Any] = {"user_id": user_id}
+        if search_term:
+            clauses.append("name ILIKE :search_pattern ESCAPE '\\'")
+            params["search_pattern"] = f"%{_escape_like(search_term)}%"
+        where = " AND ".join(clauses)
+
+        sql = f"SELECT * FROM sources WHERE {where} {order_clause}"
+        if limit is not None:
+            sql += " LIMIT :limit OFFSET :offset"
+            params["limit"] = limit
+            params["offset"] = offset
+
+        result = self._conn.execute(text(sql), params)
         return [row_to_dict(r) for r in result.fetchall()]
+
+    def count_for_user(
+        self,
+        user_id: str,
+        *,
+        search_term: Optional[str] = None,
+    ) -> int:
+        """Return the count of rows that ``list_for_user`` would produce.
+
+        The filter mirrors ``list_for_user`` exactly so ``total`` and the
+        paginated window stay consistent page-to-page.
+
+        Args:
+            user_id: Scope rows to this owner.
+            search_term: Same substring filter semantics as
+                ``list_for_user``; ``None``/empty disables the filter.
+
+        Returns:
+            The total number of matching rows.
+        """
+        clauses = ["user_id = :user_id"]
+        params: dict[str, Any] = {"user_id": user_id}
+        if search_term:
+            clauses.append("name ILIKE :search_pattern ESCAPE '\\'")
+            params["search_pattern"] = f"%{_escape_like(search_term)}%"
+        where = " AND ".join(clauses)
+        result = self._conn.execute(
+            text(f"SELECT COUNT(*) FROM sources WHERE {where}"),
+            params,
+        )
+        row = result.fetchone()
+        return int(row[0]) if row is not None else 0
 
     def update(self, source_id: str, user_id: str, fields: dict) -> None:
         filtered = {k: v for k, v in fields.items() if k in _ALLOWED_COLUMNS}

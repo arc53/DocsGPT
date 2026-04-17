@@ -225,3 +225,43 @@ class TestGetArtifact:
         assert resp.status_code == 200
         assert resp.json["artifact"]["artifact_type"] == "note"
         assert resp.json["artifact"]["data"]["content"] == "legacy body"
+
+    def test_todo_artifact_by_legacy_mongo_id(
+        self, pg_conn, _patch_db_readonly, flask_app, decoded_token
+    ):
+        """Pre-cutover todo artifact ids (Mongo ObjectIds) must resolve via
+        ``TodosRepository.get_any`` — that dispatch keeps the 24-hex
+        ObjectId out of the bare ``CAST(:id AS uuid)`` path that would
+        otherwise poison the readonly transaction."""
+        from application.api.user.tools.routes import GetArtifact
+        from application.storage.db.repositories.todos import TodosRepository
+        from application.storage.db.repositories.user_tools import UserToolsRepository
+
+        tool_row = UserToolsRepository(pg_conn).create(
+            user_id=decoded_token["sub"], name="todo_tool"
+        )
+        tool_id = str(tool_row["id"])
+
+        legacy_id = "507f1f77bcf86cd799439020"
+        todos = TodosRepository(pg_conn)
+        todos.create(
+            user_id=decoded_token["sub"],
+            tool_id=tool_id,
+            title="legacy todo",
+            legacy_mongo_id=legacy_id,
+        )
+        todos.create(
+            user_id=decoded_token["sub"], tool_id=tool_id, title="sibling"
+        )
+
+        with flask_app.app_context():
+            with flask_app.test_request_context():
+                request.decoded_token = decoded_token
+                resource = GetArtifact()
+                resp = resource.get(legacy_id)
+
+        assert resp.status_code == 200
+        assert resp.json["artifact"]["artifact_type"] == "todo_list"
+        # Both todos under the resolved tool_id are returned, proving the
+        # legacy lookup surfaced the correct ``tool_id`` for ``list_for_tool``.
+        assert resp.json["artifact"]["data"]["total_count"] == 2

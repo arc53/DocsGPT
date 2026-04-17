@@ -266,3 +266,40 @@ class TestLegacyMongoIdLookup:
     def test_get_by_legacy_id_missing(self, pg_conn):
         repo = _repo(pg_conn)
         assert repo.get_by_legacy_id("nope") is None
+
+    def test_get_any_resolves_uuid(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        created = repo.create("u", tool_id, "t")
+        fetched = repo.get_any(created["id"], "u")
+        assert fetched is not None
+        assert fetched["id"] == created["id"]
+
+    def test_get_any_resolves_legacy_id(self, pg_conn):
+        """A 24-char Mongo ObjectId must resolve via the legacy-id fallback
+        without the UUID cast raising ``DataError`` and poisoning the
+        transaction."""
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        legacy_id = "507f1f77bcf86cd799439011"
+        created = repo.create("u", tool_id, "t", legacy_mongo_id=legacy_id)
+        fetched = repo.get_any(legacy_id, "u")
+        assert fetched is not None
+        assert fetched["id"] == created["id"]
+
+    def test_get_any_wrong_user_returns_none(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn, user_id="owner")
+        legacy_id = "507f1f77bcf86cd799439012"
+        repo.create("owner", tool_id, "t", legacy_mongo_id=legacy_id)
+        assert repo.get_any(legacy_id, "intruder") is None
+
+    def test_get_any_non_uuid_non_legacy_returns_none(self, pg_conn):
+        """Non-UUID ids skip the UUID cast and fall through to the legacy
+        lookup; unknown ids must return None without poisoning the
+        connection — subsequent queries on the same connection must still
+        succeed."""
+        repo = _repo(pg_conn)
+        assert repo.get_any("not_a_uuid_or_legacy_id", "u") is None
+        # Connection stays usable — no failed CAST poisoning the txn.
+        assert repo.get_by_legacy_id("still-works") is None

@@ -127,6 +127,102 @@ class TestListForUser:
         assert len(results) == 2
         assert all(r["user_id"] == "alice" for r in results)
 
+    def test_limit_and_offset_paginate_at_sql_level(self, pg_conn):
+        repo = _repo(pg_conn)
+        for i in range(5):
+            repo.create(f"s{i}", user_id="u")
+        first = repo.list_for_user("u", limit=2, offset=0)
+        second = repo.list_for_user("u", limit=2, offset=2)
+        third = repo.list_for_user("u", limit=2, offset=4)
+        assert len(first) == 2
+        assert len(second) == 2
+        assert len(third) == 1
+        # All ids should be distinct across the three windows (stable order).
+        seen = {r["id"] for r in (first + second + third)}
+        assert len(seen) == 5
+
+    def test_search_filter_pushed_into_sql(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("Alpha doc", user_id="u")
+        repo.create("Beta doc", user_id="u")
+        repo.create("Gamma alpha", user_id="u")
+        # Case-insensitive substring on name.
+        results = repo.list_for_user("u", search_term="alpha")
+        names = sorted(r["name"] for r in results)
+        assert names == ["Alpha doc", "Gamma alpha"]
+
+    def test_search_filter_escapes_like_wildcards(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("100% coverage", user_id="u")
+        repo.create("anything else", user_id="u")
+        # ``%`` in input must not match everything.
+        results = repo.list_for_user("u", search_term="100%")
+        assert len(results) == 1
+        assert results[0]["name"] == "100% coverage"
+
+    def test_search_filter_escapes_underscore(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("foo_bar", user_id="u")
+        repo.create("fooXbar", user_id="u")
+        results = repo.list_for_user("u", search_term="foo_bar")
+        assert len(results) == 1
+        assert results[0]["name"] == "foo_bar"
+
+    def test_unknown_sort_field_falls_back_safely(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("a", user_id="u")
+        repo.create("b", user_id="u")
+        # Passing a non-whitelisted column must not raise or execute as SQL.
+        results = repo.list_for_user(
+            "u", sort_field="nonexistent; DROP TABLE sources--",
+        )
+        assert len(results) == 2
+
+    def test_sort_by_name_asc(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("charlie", user_id="u")
+        repo.create("alpha", user_id="u")
+        repo.create("bravo", user_id="u")
+        results = repo.list_for_user("u", sort_field="name", sort_order="asc")
+        assert [r["name"] for r in results] == ["alpha", "bravo", "charlie"]
+
+    def test_stable_order_with_id_tiebreaker(self, pg_conn):
+        """Rows with identical sort keys still paginate deterministically."""
+        repo = _repo(pg_conn)
+        import datetime
+        same_date = datetime.datetime(2025, 1, 1, tzinfo=datetime.timezone.utc)
+        for i in range(6):
+            repo.create(f"dup-{i}", user_id="u", date=same_date)
+
+        # Union of two adjacent windows must be distinct (no row overlap,
+        # no row missed) — this fails without an id tiebreaker.
+        first = repo.list_for_user("u", limit=3, offset=0)
+        second = repo.list_for_user("u", limit=3, offset=3)
+        ids = {r["id"] for r in first} | {r["id"] for r in second}
+        assert len(ids) == 6
+
+
+class TestCountForUser:
+    def test_returns_zero_for_no_rows(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.count_for_user("nobody") == 0
+
+    def test_counts_only_own_rows(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("x", user_id="alice")
+        repo.create("y", user_id="alice")
+        repo.create("z", user_id="bob")
+        assert repo.count_for_user("alice") == 2
+        assert repo.count_for_user("bob") == 1
+
+    def test_count_matches_filtered_list(self, pg_conn):
+        repo = _repo(pg_conn)
+        for name in ("alpha-1", "alpha-2", "beta-3"):
+            repo.create(name, user_id="u")
+        listed = repo.list_for_user("u", search_term="alpha")
+        count = repo.count_for_user("u", search_term="alpha")
+        assert count == len(listed) == 2
+
 
 class TestUpdate:
     def test_updates_name(self, pg_conn):

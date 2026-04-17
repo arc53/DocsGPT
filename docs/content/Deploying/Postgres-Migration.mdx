@@ -63,11 +63,12 @@ data in MongoDB, a one-shot migration tool copies every collection into
 Postgres. The tool is run **once**, offline, with the app stopped.
 
 1. **Install the optional Mongo client libraries.** `pymongo` and
-   `dnspython` are no longer part of the default backend install; they
-   live in an optional requirements file:
+   `dnspython` are no longer part of the default backend install;
+   install them directly alongside the base requirements:
 
    ```bash
-   pip install -r application/requirements.txt -r application/requirements-mongo.txt
+   pip install -r application/requirements.txt
+   pip install 'pymongo>=4.6'
    ```
 
 2. **Provision Postgres** following the [Fresh install](#fresh-install)
@@ -121,5 +122,5 @@ Postgres. The tool is run **once**, offline, with the app stopped.
 - **SSL errors on a managed provider** — append `?sslmode=require` to
   `POSTGRES_URI`.
 - **`ModuleNotFoundError: pymongo` when running `backfill.py`** —
-  install the optional Mongo requirements:
-  `pip install -r application/requirements-mongo.txt`.
+  install the Mongo client directly:
+  `pip install 'pymongo>=4.6'`.
