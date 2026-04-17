@@ -214,17 +214,23 @@ def _backfill_users(
 ) -> dict:
     """Sync the ``users`` table from Mongo ``users`` collection.
 
-    Overwrites each Postgres row's ``agent_preferences`` with the Mongo
-    state (Mongo is source of truth during the cutover window). Missing
-    ``pinned`` / ``shared_with_me`` keys are filled with empty arrays so
-    the Postgres row always has the full shape the application expects.
+    Merges each Postgres row's ``agent_preferences`` with the Mongo state
+    rather than overwriting: on a re-run after cutover, any keys the app
+    has written to Postgres are preserved unless Mongo has a value for
+    the same key (Mongo wins on collision, which is what we want during
+    a re-backfill). Missing ``pinned`` / ``shared_with_me`` keys are
+    filled with empty arrays so the Postgres row always has the full
+    shape the application expects.
+
+    Merge semantics: we use the PG ``||`` JSONB concatenation, which is a
+    shallow top-level merge — nested objects are replaced, not deep-merged.
     """
     upsert_sql = text(
         """
         INSERT INTO users (user_id, agent_preferences)
         VALUES (:user_id, CAST(:prefs AS jsonb))
         ON CONFLICT (user_id) DO UPDATE
-            SET agent_preferences = EXCLUDED.agent_preferences,
+            SET agent_preferences = users.agent_preferences || EXCLUDED.agent_preferences,
                 updated_at = now()
         """
     )
@@ -362,9 +368,9 @@ def _backfill_user_tools(
                 "custom_name": doc.get("customName"),
                 "display_name": doc.get("displayName"),
                 "description": doc.get("description"),
-                "config": json.dumps(doc.get("config") or {}),
-                "config_requirements": json.dumps(doc.get("configRequirements") or {}),
-                "actions": json.dumps(doc.get("actions") or []),
+                "config": json.dumps(doc.get("config") or {}, default=str),
+                "config_requirements": json.dumps(doc.get("configRequirements") or {}, default=str),
+                "actions": json.dumps(doc.get("actions") or [], default=str),
                 "status": bool(doc.get("status", True)),
                 "created_at": doc.get("created_at"),
                 "updated_at": doc.get("updated_at"),
@@ -389,8 +395,9 @@ def _backfill_stack_logs(
 ) -> dict:
     insert_sql = text(
         """
-        INSERT INTO stack_logs (activity_id, endpoint, level, user_id, api_key, query, stacks, timestamp)
-        VALUES (:activity_id, :endpoint, :level, :user_id, :api_key, :query, CAST(:stacks AS jsonb), :timestamp)
+        INSERT INTO stack_logs (activity_id, endpoint, level, user_id, api_key, query, stacks, timestamp, mongo_id)
+        VALUES (:activity_id, :endpoint, :level, :user_id, :api_key, :query, CAST(:stacks AS jsonb), :timestamp, :mongo_id)
+        ON CONFLICT (mongo_id) WHERE mongo_id IS NOT NULL DO NOTHING
         """
     )
     cursor = mongo_db["stack_logs"].find({}, no_cursor_timeout=True).batch_size(batch_size)
@@ -410,8 +417,9 @@ def _backfill_stack_logs(
                 "user_id": doc.get("user"),
                 "api_key": doc.get("api_key"),
                 "query": doc.get("query"),
-                "stacks": json.dumps(doc.get("stacks") or []),
+                "stacks": json.dumps(doc.get("stacks") or [], default=str),
                 "timestamp": doc.get("timestamp"),
+                "mongo_id": str(doc["_id"]),
             })
             if len(batch) >= batch_size:
                 if not dry_run:
@@ -432,8 +440,9 @@ def _backfill_user_logs(
 ) -> dict:
     insert_sql = text(
         """
-        INSERT INTO user_logs (user_id, endpoint, data, timestamp)
-        VALUES (:user_id, :endpoint, CAST(:data AS jsonb), :timestamp)
+        INSERT INTO user_logs (user_id, endpoint, data, timestamp, mongo_id)
+        VALUES (:user_id, :endpoint, CAST(:data AS jsonb), :timestamp, :mongo_id)
+        ON CONFLICT (mongo_id) WHERE mongo_id IS NOT NULL DO NOTHING
         """
     )
     cursor = mongo_db["user_logs"].find({}, no_cursor_timeout=True).batch_size(batch_size)
@@ -451,6 +460,7 @@ def _backfill_user_logs(
                 "endpoint": doc.get("action") or doc.get("endpoint"),
                 "data": json.dumps(data_payload, default=str),
                 "timestamp": doc.get("timestamp"),
+                "mongo_id": str(doc["_id"]),
             })
             if len(batch) >= batch_size:
                 if not dry_run:
@@ -471,12 +481,13 @@ def _backfill_token_usage(
 ) -> dict:
     insert_sql = text(
         """
-        INSERT INTO token_usage (user_id, api_key, agent_id, prompt_tokens, generated_tokens, timestamp)
+        INSERT INTO token_usage (user_id, api_key, agent_id, prompt_tokens, generated_tokens, timestamp, mongo_id)
         VALUES (
             :user_id, :api_key,
             CAST(:agent_id AS uuid),
-            :prompt_tokens, :generated_tokens, :timestamp
+            :prompt_tokens, :generated_tokens, :timestamp, :mongo_id
         )
+        ON CONFLICT (mongo_id) WHERE mongo_id IS NOT NULL DO NOTHING
         """
     )
     cursor = mongo_db["token_usage"].find({}, no_cursor_timeout=True).batch_size(batch_size)
@@ -497,10 +508,10 @@ def _backfill_token_usage(
             user_id = doc.get("user_id") or doc.get("user")
             api_key = doc.get("api_key")
             # token_usage_attribution_chk requires at least one of
-            # (user_id, api_key, agent_id) to be non-null. Rows missing all
-            # three carry no usable attribution — skip them rather than fail
-            # the batch.
-            if not user_id and not api_key and not agent_id_str:
+            # (user_id, api_key) to be non-null (agent_id alone is not
+            # sufficient per the PG CHECK). Rows missing both carry no
+            # usable attribution — skip them rather than fail the batch.
+            if not user_id and not api_key:
                 skipped += 1
                 continue
             batch.append({
@@ -510,6 +521,7 @@ def _backfill_token_usage(
                 "prompt_tokens": doc.get("prompt_tokens", 0),
                 "generated_tokens": doc.get("generated_tokens", 0),
                 "timestamp": doc.get("timestamp"),
+                "mongo_id": str(doc["_id"]),
             })
             if len(batch) >= batch_size:
                 if not dry_run:
@@ -1119,9 +1131,9 @@ def _backfill_agents(
                 "prompt_id": prompt_pg,
                 "folder_id": folder_pg,
                 "workflow_id": workflow_pg,
-                "tools": json.dumps(doc.get("tools") or []),
-                "json_schema": json.dumps(doc.get("json_schema")) if doc.get("json_schema") else None,
-                "models": json.dumps(doc.get("models")) if doc.get("models") else None,
+                "tools": json.dumps(doc.get("tools") or [], default=str),
+                "json_schema": json.dumps(doc.get("json_schema"), default=str) if doc.get("json_schema") else None,
+                "models": json.dumps(doc.get("models"), default=str) if doc.get("models") else None,
                 "limited_token_mode": bool(doc.get("limited_token_mode", False)),
                 "token_limit": doc.get("token_limit"),
                 "limited_request_mode": bool(doc.get("limited_request_mode", False)),
@@ -1285,6 +1297,22 @@ def _resolve_tool_id(tool_id_raw: Any, tool_id_map: dict[str, str]) -> str | Non
 def _backfill_memories(
     *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
+    """Backfill ``memories``.
+
+    Mongo memory docs don't carry the body inline — ``content`` lives on
+    disk at ``doc["storage_path"]`` (e.g.
+    ``inputs/local/memories/<oid>/memory.txt``) and is accessed through
+    :class:`application.storage.storage_creator.StorageCreator`. We read
+    the file lazily here so the PG ``content`` column gets the actual
+    memory text rather than an empty string. Missing/unreadable files are
+    logged and fall back to an empty ``content`` so one bad row doesn't
+    abort the whole batch. Import is lazy (matches ``_rename_faiss_indexes``)
+    so ``storage`` / backend creds aren't required to import this module.
+    """
+    from application.storage.storage_creator import StorageCreator
+
+    storage = StorageCreator.get_storage()
+
     tool_id_map = _build_tool_id_map(conn, mongo_db)
     insert_sql = text(
         """
@@ -1308,11 +1336,41 @@ def _backfill_memories(
             if not user_id or not pg_tool_id:
                 skipped += 1
                 continue
+            content = doc.get("content")
+            if not content:
+                storage_path = doc.get("storage_path")
+                if storage_path:
+                    try:
+                        if storage.file_exists(storage_path):
+                            raw = storage.get_file(storage_path).read()
+                            if isinstance(raw, bytes):
+                                content = raw.decode("utf-8", errors="replace")
+                            else:
+                                content = str(raw)
+                        else:
+                            logger.warning(
+                                "memories backfill: storage_path missing, "
+                                "keeping empty content: user=%s mongo_id=%s "
+                                "path=%s",
+                                user_id,
+                                doc.get("_id"),
+                                storage_path,
+                            )
+                    except Exception:
+                        logger.warning(
+                            "memories backfill: failed to read storage_path, "
+                            "keeping empty content: user=%s mongo_id=%s "
+                            "path=%s",
+                            user_id,
+                            doc.get("_id"),
+                            storage_path,
+                            exc_info=True,
+                        )
             batch.append({
                 "user_id": user_id,
                 "tool_id": pg_tool_id,
                 "path": doc.get("path", "/"),
-                "content": doc.get("content", ""),
+                "content": content or "",
                 "created_at": doc.get("created_at"),
                 "updated_at": doc.get("updated_at") or doc.get("created_at"),
             })
@@ -1330,6 +1388,12 @@ def _backfill_memories(
     return {"seen": seen, "written": written, "skipped": skipped}
 
 
+_TODOS_KNOWN_TOP = {
+    "_id", "user_id", "tool_id", "todo_id", "title", "status",
+    "completed", "created_at", "updated_at",
+}
+
+
 def _backfill_todos(
     *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
@@ -1337,19 +1401,21 @@ def _backfill_todos(
 
     Preserves the Mongo ``todo_id`` (per-tool monotonic integer the LLM
     uses as a handle), maps Mongo ``status`` → PG ``completed``, and
-    carries ``created_at`` / ``updated_at``. Idempotent via
+    carries ``created_at`` / ``updated_at``. Any unmapped top-level Mongo
+    field (e.g. legacy ``conversation_id``) is stashed under
+    ``metadata.legacy_fields`` rather than dropped. Idempotent via
     ``legacy_mongo_id``.
     """
     tool_id_map = _build_tool_id_map(conn, mongo_db)
     upsert_sql = text(
         """
         INSERT INTO todos (
-            user_id, tool_id, todo_id, title, completed,
+            user_id, tool_id, todo_id, title, completed, metadata,
             legacy_mongo_id, created_at, updated_at
         )
         VALUES (
             :user_id, CAST(:tool_id AS uuid), :todo_id, :title, :completed,
-            :legacy_mongo_id,
+            CAST(:metadata AS jsonb), :legacy_mongo_id,
             COALESCE(:created_at, now()),
             COALESCE(:updated_at, now())
         )
@@ -1358,6 +1424,7 @@ def _backfill_todos(
             title      = EXCLUDED.title,
             completed  = EXCLUDED.completed,
             todo_id    = EXCLUDED.todo_id,
+            metadata   = EXCLUDED.metadata,
             updated_at = EXCLUDED.updated_at
         """
     )
@@ -1378,12 +1445,19 @@ def _backfill_todos(
                 todo_id_value = int(todo_id_raw) if todo_id_raw is not None else None
             except (TypeError, ValueError):
                 todo_id_value = None
+            extras = {
+                k: str(v) if type(v).__name__ == "ObjectId" else v
+                for k, v in doc.items()
+                if k not in _TODOS_KNOWN_TOP
+            }
+            metadata = {"legacy_fields": extras} if extras else {}
             batch.append({
                 "user_id": user_id,
                 "tool_id": pg_tool_id,
                 "todo_id": todo_id_value,
                 "title": doc.get("title", ""),
                 "completed": status == "completed",
+                "metadata": json.dumps(metadata, default=str),
                 "legacy_mongo_id": str(doc["_id"]),
                 "created_at": doc.get("created_at"),
                 "updated_at": doc.get("updated_at"),
@@ -1402,31 +1476,42 @@ def _backfill_todos(
     return {"seen": seen, "written": written, "skipped": skipped}
 
 
+_NOTES_KNOWN_TOP = {
+    "_id", "user_id", "tool_id", "title", "content", "note",
+    "created_at", "updated_at",
+}
+
+
 def _backfill_notes(
     *, conn: Connection, mongo_db: Any, batch_size: int, dry_run: bool,
 ) -> dict:
     """Backfill ``notes``. Body lives in Mongo's ``note`` field; PG splits
     it into ``content`` + a NOT NULL ``title``. When title is missing,
-    fall back through ``path`` → stable ``"note"`` constant. Timestamps
-    are preserved.
+    fall back through ``path`` → stable ``"note"`` constant. Any unmapped
+    Mongo top-level field (e.g. the raw legacy ``path``) is stashed under
+    ``metadata.legacy_fields`` rather than dropped. Timestamps are
+    preserved.
     """
     tool_id_map = _build_tool_id_map(conn, mongo_db)
     insert_sql = text(
         """
         INSERT INTO notes (
-            user_id, tool_id, title, content, created_at, updated_at, legacy_mongo_id
+            user_id, tool_id, title, content, metadata,
+            created_at, updated_at, legacy_mongo_id
         )
         VALUES (
             :user_id, CAST(:tool_id AS uuid), :title, :content,
+            CAST(:metadata AS jsonb),
             COALESCE(:created_at, now()),
             COALESCE(:updated_at, now()),
             :legacy_mongo_id
         )
-        ON CONFLICT (user_id, tool_id) DO UPDATE
-            SET content         = EXCLUDED.content,
-                title           = EXCLUDED.title,
-                updated_at      = EXCLUDED.updated_at,
-                legacy_mongo_id = EXCLUDED.legacy_mongo_id
+        ON CONFLICT (legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL
+        DO UPDATE SET
+            content    = EXCLUDED.content,
+            title      = EXCLUDED.title,
+            metadata   = EXCLUDED.metadata,
+            updated_at = EXCLUDED.updated_at
         """
     )
     cursor = mongo_db["notes"].find({}, no_cursor_timeout=True).batch_size(batch_size)
@@ -1442,11 +1527,18 @@ def _backfill_notes(
                 continue
             title = doc.get("title") or doc.get("path") or "note"
             content = doc.get("content") or doc.get("note") or ""
+            extras = {
+                k: str(v) if type(v).__name__ == "ObjectId" else v
+                for k, v in doc.items()
+                if k not in _NOTES_KNOWN_TOP
+            }
+            metadata = {"legacy_fields": extras} if extras else {}
             batch.append({
                 "user_id": user_id,
                 "tool_id": pg_tool_id,
                 "title": title,
                 "content": content,
+                "metadata": json.dumps(metadata, default=str),
                 "created_at": doc.get("created_at"),
                 "updated_at": doc.get("updated_at"),
                 "legacy_mongo_id": str(doc["_id"]),
@@ -1680,7 +1772,7 @@ def _backfill_conversations(
                 "is_shared_usage": bool(doc.get("is_shared_usage", False)),
                 "shared_token": doc.get("shared_token"),
                 "shared_with": list(shared_with),
-                "compression_metadata": json.dumps(comp_meta) if comp_meta else None,
+                "compression_metadata": json.dumps(comp_meta, default=str) if comp_meta else None,
                 "date": _coerce_document_timestamp(doc, "date", "created_at", "updated_at"),
                 "legacy_mongo_id": str(doc["_id"]),
             })
@@ -1736,11 +1828,11 @@ def _backfill_conversations(
                     "prompt": q.get("prompt"),
                     "response": q.get("response"),
                     "thought": q.get("thought"),
-                    "sources": json.dumps(q.get("sources") or []),
-                    "tool_calls": json.dumps(q.get("tool_calls") or []),
+                    "sources": json.dumps(q.get("sources") or [], default=str),
+                    "tool_calls": json.dumps(q.get("tool_calls") or [], default=str),
                     "attachments": resolved_attachments,
                     "model_id": q.get("model_id"),
-                    "metadata": json.dumps(q.get("metadata") or {}),
+                    "metadata": json.dumps(q.get("metadata") or {}, default=str),
                     "feedback": feedback_json,
                     "timestamp": (
                         q.get("timestamp")
@@ -2167,8 +2259,8 @@ def _backfill_workflow_nodes(
                 "node_type": doc.get("type", ""),
                 "title": doc.get("title"),
                 "description": doc.get("description"),
-                "position": json.dumps(position),
-                "config": json.dumps(doc.get("config") or {}),
+                "position": json.dumps(position, default=str),
+                "config": json.dumps(doc.get("config") or {}, default=str),
                 "legacy_mongo_id": str(doc["_id"]),
             })
             if len(batch) >= batch_size:
@@ -2259,7 +2351,7 @@ def _backfill_workflow_edges(
                 "to_node_id": to_uuid,
                 "source_handle": doc.get("source_handle"),
                 "target_handle": doc.get("target_handle"),
-                "config": json.dumps(doc.get("config") or {}),
+                "config": json.dumps(doc.get("config") or {}, default=str),
             })
             if len(batch) >= batch_size:
                 if not dry_run:
@@ -2319,7 +2411,7 @@ def _backfill_workflow_runs(
                 continue
             batch.append({
                 "workflow_id": pg_wf_id,
-                "user_id": doc.get("user_id") or doc.get("user") or "",
+                "user_id": doc.get("user_id") or doc.get("user") or SYSTEM_USER_ID,
                 "status": _coerce_workflow_run_status(doc.get("status")),
                 "inputs": json.dumps(doc.get("inputs") or {}, default=str),
                 "result": json.dumps(doc.get("outputs") or doc.get("result"), default=str),

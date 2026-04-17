@@ -193,7 +193,8 @@ def upgrade() -> None:
             agent_id         UUID,
             prompt_tokens    INTEGER NOT NULL DEFAULT 0,
             generated_tokens INTEGER NOT NULL DEFAULT 0,
-            timestamp        TIMESTAMPTZ NOT NULL DEFAULT now()
+            timestamp        TIMESTAMPTZ NOT NULL DEFAULT now(),
+            mongo_id         TEXT
         );
         """
     )
@@ -209,7 +210,8 @@ def upgrade() -> None:
             user_id   TEXT,
             endpoint  TEXT,
             timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
-            data      JSONB
+            data      JSONB,
+            mongo_id  TEXT
         );
         """
     )
@@ -225,7 +227,8 @@ def upgrade() -> None:
             api_key     TEXT,
             query       TEXT,
             stacks      JSONB NOT NULL DEFAULT '[]'::jsonb,
-            timestamp   TIMESTAMPTZ NOT NULL DEFAULT now()
+            timestamp   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            mongo_id    TEXT
         );
         """
     )
@@ -356,6 +359,7 @@ def upgrade() -> None:
             todo_id         INTEGER,
             title           TEXT NOT NULL,
             completed       BOOLEAN NOT NULL DEFAULT false,
+            metadata        JSONB NOT NULL DEFAULT '{}'::jsonb,
             created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
             legacy_mongo_id TEXT
@@ -371,6 +375,7 @@ def upgrade() -> None:
             tool_id         UUID REFERENCES user_tools(id) ON DELETE CASCADE,
             title           TEXT NOT NULL,
             content         TEXT NOT NULL,
+            metadata        JSONB NOT NULL DEFAULT '{}'::jsonb,
             created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
             legacy_mongo_id TEXT
@@ -698,6 +703,10 @@ def upgrade() -> None:
     op.execute('CREATE INDEX stack_logs_user_ts_idx   ON stack_logs (user_id, "timestamp" DESC);')
     op.execute('CREATE INDEX stack_logs_level_ts_idx  ON stack_logs (level, "timestamp" DESC);')
     op.execute("CREATE INDEX stack_logs_activity_idx  ON stack_logs (activity_id);")
+    op.execute(
+        "CREATE UNIQUE INDEX stack_logs_mongo_id_uidx "
+        "ON stack_logs (mongo_id) WHERE mongo_id IS NOT NULL;"
+    )
 
     op.execute("CREATE INDEX todos_user_tool_idx ON todos (user_id, tool_id);")
     op.execute("CREATE INDEX todos_tool_id_idx   ON todos (tool_id);")
@@ -713,8 +722,16 @@ def upgrade() -> None:
     op.execute('CREATE INDEX token_usage_user_ts_idx  ON token_usage (user_id, "timestamp" DESC);')
     op.execute('CREATE INDEX token_usage_key_ts_idx   ON token_usage (api_key, "timestamp" DESC);')
     op.execute('CREATE INDEX token_usage_agent_ts_idx ON token_usage (agent_id, "timestamp" DESC);')
+    op.execute(
+        "CREATE UNIQUE INDEX token_usage_mongo_id_uidx "
+        "ON token_usage (mongo_id) WHERE mongo_id IS NOT NULL;"
+    )
 
     op.execute('CREATE INDEX user_logs_user_ts_idx ON user_logs (user_id, "timestamp" DESC);')
+    op.execute(
+        "CREATE UNIQUE INDEX user_logs_mongo_id_uidx "
+        "ON user_logs (mongo_id) WHERE mongo_id IS NOT NULL;"
+    )
 
     op.execute("CREATE INDEX user_tools_user_id_idx ON user_tools (user_id);")
 
