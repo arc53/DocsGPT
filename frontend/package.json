@@ -44,7 +44,7 @@
     "react-i18next": "^17.0.2",
     "react-markdown": "^9.0.1",
     "react-redux": "^9.2.0",
-    "react-router-dom": "^7.6.1",
+    "react-router-dom": "^7.14.1",
     "react-syntax-highlighter": "^16.1.1",
     "reactflow": "^11.11.4",
     "rehype-katex": "^7.0.1",
