@@ -28,6 +28,7 @@ ANTHROPIC_ATTACHMENTS = IMAGE_ATTACHMENTS
 OPENROUTER_ATTACHMENTS = IMAGE_ATTACHMENTS
 
 NOVITA_ATTACHMENTS = IMAGE_ATTACHMENTS
+ASTRAFLOW_ATTACHMENTS = IMAGE_ATTACHMENTS
 
 
 OPENAI_MODELS = [
@@ -246,6 +247,61 @@ AZURE_OPENAI_MODELS = [
             supports_structured_output=True,
             supported_attachment_types=OPENAI_ATTACHMENTS,
             context_window=8192,
+        ),
+    ),
+]
+
+
+ASTRAFLOW_MODELS = [
+    AvailableModel(
+        id="deepseek-ai/DeepSeek-V3",
+        provider=ModelProvider.ASTRAFLOW,
+        display_name="DeepSeek V3",
+        description="DeepSeek V3 via Astraflow (UCloud ModelVerse)",
+        capabilities=ModelCapabilities(
+            supports_tools=True,
+            supports_structured_output=True,
+            supported_attachment_types=ASTRAFLOW_ATTACHMENTS,
+            context_window=131072,
+        ),
+    ),
+    AvailableModel(
+        id="deepseek-ai/DeepSeek-R1",
+        provider=ModelProvider.ASTRAFLOW,
+        display_name="DeepSeek R1",
+        description="DeepSeek R1 reasoning model via Astraflow (UCloud ModelVerse)",
+        capabilities=ModelCapabilities(
+            supports_tools=False,
+            supports_structured_output=False,
+            supported_attachment_types=[],
+            context_window=131072,
+        ),
+    ),
+]
+
+ASTRAFLOW_CN_MODELS = [
+    AvailableModel(
+        id="deepseek-ai/DeepSeek-V3",
+        provider=ModelProvider.ASTRAFLOW_CN,
+        display_name="DeepSeek V3 (China)",
+        description="DeepSeek V3 via Astraflow China (UCloud ModelVerse CN)",
+        capabilities=ModelCapabilities(
+            supports_tools=True,
+            supports_structured_output=True,
+            supported_attachment_types=ASTRAFLOW_ATTACHMENTS,
+            context_window=131072,
+        ),
+    ),
+    AvailableModel(
+        id="deepseek-ai/DeepSeek-R1",
+        provider=ModelProvider.ASTRAFLOW_CN,
+        display_name="DeepSeek R1 (China)",
+        description="DeepSeek R1 reasoning model via Astraflow China (UCloud ModelVerse CN)",
+        capabilities=ModelCapabilities(
+            supports_tools=False,
+            supports_structured_output=False,
+            supported_attachment_types=[],
+            context_window=131072,
         ),
     ),
 ]
