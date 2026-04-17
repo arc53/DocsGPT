@@ -27,8 +27,8 @@ services:
     depends_on:
       redis:
         condition: service_started
-      postgres-init:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
 
   worker:
     build: ../application
@@ -44,8 +44,8 @@ services:
     depends_on:
       redis:
         condition: service_started
-      postgres-init:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
 
   redis:
     image: redis:6-alpine
@@ -67,18 +67,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-
-  postgres-init:
-    build: ../application
-    command: python scripts/db/init_postgres.py
-    env_file:
-      - ../.env
-    environment:
-      - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: "no"
 
 volumes:
   postgres_data:

@@ -1,126 +1,151 @@
 ---
 title: PostgreSQL for User Data
-description: PostgreSQL is the user-data store for DocsGPT. This page covers fresh installs and the one-shot migration from legacy MongoDB deployments.
+description: PostgreSQL is the user-data store for DocsGPT. Covers auto-bootstrap, production hardening, and the one-shot migration from legacy MongoDB deployments.
 ---
 
 import { Callout } from 'nextra/components'
 
 # PostgreSQL for User Data
 
-DocsGPT uses **PostgreSQL** as the user-data store for conversations,
-agents, prompts, sources, attachments, workflows, logs, token usage,
-and the rest of the application's structured state. MongoDB is no
-longer required for a default install.
+DocsGPT stores conversations, agents, prompts, sources, attachments,
+workflows, logs, and token usage in **PostgreSQL**. MongoDB is no longer
+required.
 
 <Callout type="info" emoji="ℹ️">
-  Vector stores are independent from user-data storage. `VECTOR_STORE`
-  can still be `pgvector`, `faiss`, `qdrant`, `milvus`, `elasticsearch`,
-  or `mongodb` (Mongo Atlas Vector Search) — your choice there does not
-  affect this page.
+  Vector stores are independent — `VECTOR_STORE` can still be `pgvector`,
+  `faiss`, `qdrant`, `milvus`, `elasticsearch`, or `mongodb`.
 </Callout>
 
-## Fresh install
+## Quickstart
 
-1. **Run Postgres 13+.** Native install, Docker, or managed (Neon, RDS,
-   Supabase, Cloud SQL…) — all work. The default Docker Compose file
-   ships a `postgres` service plus a one-shot `postgres-init` migrator
-   that applies the schema automatically.
+Three common paths. Each assumes Postgres 13+ and the default env vars
+`AUTO_MIGRATE=true` / `AUTO_CREATE_DB=true` (both ship enabled).
 
-2. **Create a database and role** (skip if your managed provider gave
-   you these, or if you're using the bundled compose `postgres`
-   service):
+### Docker Compose
 
-   ```sql
-   CREATE ROLE docsgpt LOGIN PASSWORD 'docsgpt';
-   CREATE DATABASE docsgpt OWNER docsgpt;
-   ```
+The bundled compose file ships a `postgres` service. App boot handles the
+rest — no sidecar, no init job.
 
-3. **Set `POSTGRES_URI` in `.env`.** Any standard Postgres URI works —
-   DocsGPT normalizes it internally to the SQLAlchemy `psycopg` (v3)
-   dialect.
+```bash
+cd deployment && docker compose up
+```
 
-   ```bash
-   POSTGRES_URI=postgresql://docsgpt:docsgpt@localhost:5432/docsgpt
-   # Append ?sslmode=require for managed providers that enforce SSL.
-   ```
+### Managed Postgres (Neon, RDS, Supabase, Cloud SQL)
 
-4. **Apply the schema** (idempotent — safe to re-run). The bundled
-   `postgres-init` compose service does this for you; if you're running
-   the backend outside compose, run it manually:
+Point `POSTGRES_URI` at the provider-given URI. The app applies the
+schema on first boot.
 
-   ```bash
-   python scripts/db/init_postgres.py
-   # or equivalently:
-   alembic -c application/alembic.ini upgrade head
-   ```
+```bash
+export POSTGRES_URI="postgresql://user:pass@host/docsgpt?sslmode=require"
+flask --app application/app.py run --host=0.0.0.0 --port=7091
+```
 
-That's it — the backend will come up against Postgres.
+### Bare-metal Postgres
 
-## Migrating from a legacy MongoDB install
+Run Postgres locally and point `POSTGRES_URI` at the default superuser.
+First boot creates both the database and the schema.
 
-If you are upgrading from an older DocsGPT deployment that stored user
-data in MongoDB, a one-shot migration tool copies every collection into
-Postgres. The tool is run **once**, offline, with the app stopped.
+```bash
+export POSTGRES_URI="postgresql://postgres@localhost/docsgpt"
+flask --app application/app.py run --host=0.0.0.0 --port=7091
+```
 
-1. **Install the optional Mongo client libraries.** `pymongo` and
-   `dnspython` are no longer part of the default backend install;
-   install them directly alongside the base requirements:
+Prefer a dedicated non-superuser role? Create it once as superuser — the
+app never creates roles.
 
-   ```bash
-   pip install -r application/requirements.txt
-   pip install 'pymongo>=4.6'
-   ```
+```sql
+CREATE ROLE docsgpt LOGIN PASSWORD 'docsgpt' CREATEDB;
+-- Then: POSTGRES_URI=postgresql://docsgpt:docsgpt@localhost/docsgpt
+```
 
-2. **Provision Postgres** following the [Fresh install](#fresh-install)
-   steps above, so `POSTGRES_URI` is set and the schema is applied.
+## How auto-bootstrap works
 
-3. **Point the backfill at both databases.** Set `MONGO_URI` in the
-   environment alongside `POSTGRES_URI` for the duration of the
-   migration:
+Two env vars control startup behavior. Both default to `true` in the
+app and are idempotent.
 
-   ```bash
-   export MONGO_URI="mongodb://user:pass@host:27017/docsgpt"
-   export POSTGRES_URI="postgresql://docsgpt:docsgpt@localhost:5432/docsgpt"
-   ```
+| Setting | Effect | Requires |
+| --- | --- | --- |
+| `AUTO_CREATE_DB` | If the target database is missing, connects to the server's `postgres` maintenance DB and issues `CREATE DATABASE`. | `CREATEDB` privilege (or superuser) |
+| `AUTO_MIGRATE` | Runs `alembic upgrade head` against the target database. | Table-owner or superuser on the target DB |
 
-4. **Run the backfill.** Idempotent — re-run any time to re-sync
-   drifted rows. Without arguments, backfills every registered table;
-   pass `--tables` to limit.
+Concurrent workers serialize through `alembic_version`, so rolling
+restarts are safe. If the role lacks the required privilege, startup
+fails fast with a clear error rather than silently skipping.
 
-   ```bash
-   python scripts/db/backfill.py --dry-run        # preview everything
-   python scripts/db/backfill.py                   # real run, everything
-   python scripts/db/backfill.py --tables users    # only specific tables
-   ```
+<Callout type="info" emoji="ℹ️">
+  Convenient in dev. In production, disable both and run migrations as
+  an explicit step — see [Production hardening](#production-hardening).
+</Callout>
 
-5. **Restart the app against Postgres only.** Unset `MONGO_URI` (or
-   leave it unset — it is `Optional[str] = None` in settings) and start
-   the backend. Nothing in the default code path consults MongoDB
-   anymore.
+## Production hardening
+
+Set both flags to `false` in prod and run migrations as a gated,
+auditable step before rolling out the app.
+
+```env
+AUTO_MIGRATE=false
+AUTO_CREATE_DB=false
+```
+
+Run migrations from your CI/CD pipeline, a Kubernetes `Job`, or an
+init-container ahead of the app rollout:
+
+```bash
+python scripts/db/init_postgres.py
+# equivalently:
+alembic -c application/alembic.ini upgrade head
+```
+
+The reasoning: the app's runtime role shouldn't carry DDL privileges,
+migrations should gate each rollout, and an explicit step is
+auditable — implicit first-boot bootstrap is fine for dev but muddies
+prod deploys.
 
 <Callout type="warning" emoji="⚠️">
-  The backfill is a one-shot tool. There is no dual-write window and no
-  runtime feature flag — once you're on the current version, Postgres
-  is the only user-data store the backend reads from or writes to.
+  Migrations are not reversible by the app. Always back up production
+  Postgres before running `alembic upgrade head` on a new release.
 </Callout>
 
-<Callout type="info" emoji="ℹ️">
-  Keep your MongoDB instance online until you have verified the
-  Postgres data is complete. You can re-run `backfill.py` at any time
-  to re-sync. Once you're satisfied, decommission MongoDB — unless you
-  also use it as your vector store (`VECTOR_STORE=mongodb`), in which
-  case keep it for that purpose.
+## Migrating from MongoDB
+
+One-shot, offline, app stopped. The app itself will create the
+Postgres schema when it boots — you only need to run the data copy.
+
+```bash
+pip install -r application/requirements.txt
+pip install 'pymongo>=4.6'
+
+export POSTGRES_URI="postgresql://docsgpt:docsgpt@localhost:5432/docsgpt"
+export MONGO_URI="mongodb://user:pass@host:27017/docsgpt"
+
+python scripts/db/backfill.py --dry-run    # preview
+python scripts/db/backfill.py              # real run
+# or: python scripts/db/backfill.py --tables users,agents
+```
+
+Then unset `MONGO_URI` and start the backend — nothing consults Mongo
+in the default path anymore. The backfill is idempotent (per-table
+`ON CONFLICT` upserts, event-log tables deduped via `mongo_id`), so
+re-running is safe and re-syncs any drifted rows. Keep Mongo online
+until you've verified Postgres is complete; decommission afterwards
+unless you still use it as a vector store.
+
+<Callout type="warning" emoji="⚠️">
+  No dual-write window and no runtime flag — on the current version,
+  Postgres is the only user-data store the backend reads or writes.
 </Callout>
 
 ## Troubleshooting
 
-- **`relation "..." does not exist`** — run `python scripts/db/init_postgres.py`
-  (or `alembic -c application/alembic.ini upgrade head`).
-- **`FATAL: role "docsgpt" does not exist`** — run the `CREATE ROLE` /
-  `CREATE DATABASE` statements from step 2 of the fresh install as a
-  Postgres superuser.
+- **`relation "..." does not exist`** — schema not applied. Either let
+  the app bootstrap it (`AUTO_MIGRATE=true`) or run
+  `python scripts/db/init_postgres.py`.
+- **`permission denied to create database`** — the role lacks
+  `CREATEDB`. As superuser: `ALTER ROLE <name> CREATEDB;`. Or create
+  the database manually and set `AUTO_CREATE_DB=false`.
+- **`role "docsgpt" does not exist`** — roles are never auto-created.
+  As superuser: `CREATE ROLE docsgpt LOGIN PASSWORD '...';`.
 - **SSL errors on a managed provider** — append `?sslmode=require` to
   `POSTGRES_URI`.
-- **`ModuleNotFoundError: pymongo` when running `backfill.py`** —
-  install the Mongo client directly:
-  `pip install 'pymongo>=4.6'`.
+- **`ModuleNotFoundError: pymongo`** — `pip install 'pymongo>=4.6'`
+  (only needed for the one-shot Mongo backfill).

@@ -22,6 +22,21 @@ corresponding route handler is migrated to a repository read.
 
 from __future__ import annotations
 
+import os
+
+# Disable the app's self-bootstrap (AUTO_CREATE_DB / AUTO_MIGRATE) before
+# any ``application.*`` module is imported. ``application/app.py`` runs
+# ``ensure_database_ready`` at import time using whatever ``POSTGRES_URI``
+# is set in the environment — which in dev is the operator's local DB, not
+# the ephemeral ``pytest-postgresql`` cluster that the fixtures below spin
+# up. Tests manage their own schema via the ``pg_engine`` fixture
+# (subprocess ``alembic upgrade head`` against the per-test URI), so the
+# import-time bootstrap would at best be redundant and at worst would
+# mutate the operator's dev DB. ``setdefault`` so a test run can still
+# opt back in by setting the env var explicitly.
+os.environ.setdefault("AUTO_MIGRATE", "false")
+os.environ.setdefault("AUTO_CREATE_DB", "false")
+
 import subprocess
 import sys
 from pathlib import Path

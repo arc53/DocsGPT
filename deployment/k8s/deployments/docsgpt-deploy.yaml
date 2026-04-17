@@ -50,6 +50,13 @@ spec:
             secretKeyRef:
               name: docsgpt-secrets
               key: POSTGRES_URI
+        # Disable in-app auto-bootstrap. The `postgres-init` Job under
+        # deployment/k8s/jobs/ owns schema creation and Alembic migrations,
+        # so application pods must not race with it on rollout.
+        - name: AUTO_MIGRATE
+          value: "false"
+        - name: AUTO_CREATE_DB
+          value: "false"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -97,6 +104,13 @@ spec:
             secretKeyRef:
               name: docsgpt-secrets
               key: POSTGRES_URI
+        # Disable in-app auto-bootstrap. The `postgres-init` Job under
+        # deployment/k8s/jobs/ owns schema creation and Alembic migrations,
+        # so application pods must not race with it on rollout.
+        - name: AUTO_MIGRATE
+          value: "false"
+        - name: AUTO_CREATE_DB
+          value: "false"
 ---
 apiVersion: apps/v1
 kind: Deployment

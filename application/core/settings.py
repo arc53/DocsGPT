@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     MONGO_URI: Optional[str] = None
     # User-data Postgres DB.
     POSTGRES_URI: Optional[str] = None
+    # On app startup, apply pending Alembic migrations. Default ON for dev; disable in prod if you manage schema out-of-band.
+    AUTO_MIGRATE: bool = True
+    # On app startup, create the target Postgres database if it's missing (requires CREATEDB privilege). Dev-friendly default.
+    AUTO_CREATE_DB: bool = True
     LLM_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     DEFAULT_MAX_HISTORY: int = 150
     DEFAULT_LLM_TOKEN_LIMIT: int = 128000  # Fallback when model not found in registry

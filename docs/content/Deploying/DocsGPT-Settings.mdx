@@ -248,6 +248,8 @@ DocsGPT stores user data — conversations, agents, prompts, sources, attachment
 | Setting | Description | Default |
 | --- | --- | --- |
 | `POSTGRES_URI` | SQLAlchemy-compatible Postgres URI. Any standard `postgresql://` form works — DocsGPT normalizes it internally to the `psycopg` v3 dialect. | — |
+| `AUTO_CREATE_DB` | On startup, connect to the server's `postgres` maintenance DB and issue `CREATE DATABASE` if the target is missing. Requires `CREATEDB` or superuser. No-op when the database already exists. Disable in production. | `true` |
+| `AUTO_MIGRATE` | On startup, run `alembic upgrade head` against the target database. Idempotent and serialized across workers via `alembic_version`. Disable in production in favor of an explicit migration step. | `true` |
 
 Example:
 
@@ -256,13 +258,19 @@ POSTGRES_URI=postgresql://docsgpt:docsgpt@localhost:5432/docsgpt
 # Append ?sslmode=require for managed providers that enforce SSL.
 ```
 
-Apply the schema once (idempotent):
+With the defaults, the app applies the schema automatically on first
+boot. To run it explicitly instead (e.g., in CI/CD or a k8s `Job`):
 
 ```bash
 python scripts/db/init_postgres.py
 ```
 
-The default Docker Compose file bundles a `postgres` service plus a one-shot `postgres-init` migrator, so you don't have to run this by hand for containerized deployments.
+The default Docker Compose file bundles a `postgres` service, and the
+app auto-bootstraps the database on boot, so containerized deployments
+need no manual migration step. See
+[PostgreSQL for User Data](/Deploying/Postgres-Migration#production-hardening)
+for the recommended production flow (both flags `false`, migrations
+gated by CI/CD).
 
 <Callout type="info" emoji="ℹ️">
   `MONGO_URI` is **opt-in**. It is only consulted when you select the
