@@ -185,7 +185,7 @@ def _format_agent_output(agent: dict, *, pinned: bool = False, include_key_maske
         ),
         "source": source_value,
         "sources": sources_list,
-        "chunks": agent.get("chunks") if agent.get("chunks") is not None else "2",
+        "chunks": str(agent["chunks"]) if agent.get("chunks") is not None else "2",
         "retriever": agent.get("retriever", "") or "",
         "prompt_id": str(agent["prompt_id"]) if agent.get("prompt_id") else "",
         "tools": agent.get("tools", []) or [],
@@ -1181,7 +1181,7 @@ class PinnedAgents(Resource):
                             generate_image_url(agent["image"]) if agent.get("image") else ""
                         ),
                         "source": str(source_id) if source_id else "",
-                        "chunks": agent.get("chunks", ""),
+                        "chunks": str(agent["chunks"]) if agent.get("chunks") is not None else "",
                         "retriever": agent.get("retriever", "") or "",
                         "prompt_id": str(agent["prompt_id"]) if agent.get("prompt_id") else "",
                         "tools": agent.get("tools", []) or [],

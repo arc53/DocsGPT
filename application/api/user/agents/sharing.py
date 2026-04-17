@@ -33,7 +33,7 @@ def _serialize_agent_basic(agent: dict) -> dict:
         ),
         "description": agent.get("description", ""),
         "source": str(source_id) if source_id else "",
-        "chunks": agent.get("chunks", 0) if agent.get("chunks") is not None else "0",
+        "chunks": str(agent["chunks"]) if agent.get("chunks") is not None else "0",
         "retriever": agent.get("retriever", "classic") or "classic",
         "prompt_id": str(agent["prompt_id"]) if agent.get("prompt_id") else "default",
         "tools": agent.get("tools", []) or [],
