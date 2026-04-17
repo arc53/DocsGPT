@@ -1,0 +1,28 @@
+Notes on multilingual text handling.
+
+These notes illustrate a handful of typographic and script considerations
+that software dealing with international text must keep in mind. The
+examples intentionally mix several writing systems so that a parser can be
+exercised end to end.
+
+Latin script covers English, French, German, Spanish and many more. The
+em-dash — together with the en-dash – is used for pauses and
+ranges. Curly quotes such as “hello” and ‘world’ are
+preferred in polished prose, while straight quotes remain common in
+source code. An ellipsis character … compresses three dots into a
+single glyph.
+
+Cyrillic script is used for Russian, Ukrainian, Bulgarian and several
+other languages. A short sample: Привет,
+мир. Это простой
+тестовый текст.
+
+CJK ideographs cover written Chinese, Japanese and Korean. A short
+sample of each: 你好世界. こんにちは世界.
+안녕하세요 세계.
+
+Punctuation worth noting includes the middle dot ·, the section sign
+§, the pilcrow ¶ and the interrobang ‽. A well-behaved text
+pipeline preserves each of these exactly, normalises line endings to a
+single convention, and never silently replaces characters it does not
+understand.

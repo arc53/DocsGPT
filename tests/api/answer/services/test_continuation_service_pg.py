@@ -174,3 +174,83 @@ class TestContinuationServiceSaveLoad:
                 "00000000-0000-0000-0000-000000000000", "u",
             )
         assert got is False
+
+
+class TestContinuationServiceLegacyIdHandling:
+    """An unresolvable Mongo ObjectId must not reach ``CAST(:conv_id AS uuid)``
+    in ``PendingToolStateRepository`` — that cast raises and aborts the
+    enclosing transaction. This can happen when an OpenAI-compatible client
+    echoes back a ``chatcmpl-<legacy_objectid>`` id from before the PG
+    cutover and the conversation hasn't been backfilled."""
+
+    LEGACY_OBJECTID = "507f1f77bcf86cd799439011"
+
+    def test_load_state_unresolvable_legacy_id_returns_none(self, pg_conn):
+        from application.api.answer.services.continuation_service import (
+            ContinuationService,
+        )
+
+        service = ContinuationService()
+        with _patch_db(pg_conn):
+            got = service.load_state(self.LEGACY_OBJECTID, "u")
+        assert got is None
+
+    def test_delete_state_unresolvable_legacy_id_returns_false(self, pg_conn):
+        from application.api.answer.services.continuation_service import (
+            ContinuationService,
+        )
+
+        service = ContinuationService()
+        with _patch_db(pg_conn):
+            got = service.delete_state(self.LEGACY_OBJECTID, "u")
+        assert got is False
+
+    def test_save_state_unresolvable_legacy_id_raises(self, pg_conn):
+        import pytest
+
+        from application.api.answer.services.continuation_service import (
+            ContinuationService,
+        )
+
+        service = ContinuationService()
+        with _patch_db(pg_conn):
+            with pytest.raises(ValueError):
+                service.save_state(
+                    conversation_id=self.LEGACY_OBJECTID,
+                    user="u",
+                    messages=[],
+                    pending_tool_calls=[{"id": "c"}],
+                    tools_dict={},
+                    tool_schemas=[],
+                    agent_config={},
+                )
+
+    def test_load_state_resolves_backfilled_legacy_id(self, pg_conn):
+        from application.api.answer.services.continuation_service import (
+            ContinuationService,
+        )
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "legacy-cont"
+        ConversationsRepository(pg_conn).create(
+            user, name="c", legacy_mongo_id=self.LEGACY_OBJECTID,
+        )
+
+        service = ContinuationService()
+        with _patch_db(pg_conn):
+            # Save via the legacy id — should resolve to the PG UUID internally.
+            service.save_state(
+                conversation_id=self.LEGACY_OBJECTID,
+                user=user,
+                messages=[{"role": "user", "content": "hi"}],
+                pending_tool_calls=[{"id": "c"}],
+                tools_dict={},
+                tool_schemas=[],
+                agent_config={},
+            )
+            # And load via the legacy id — should round-trip.
+            loaded = service.load_state(self.LEGACY_OBJECTID, user)
+        assert loaded is not None
+        assert loaded["messages"] == [{"role": "user", "content": "hi"}]

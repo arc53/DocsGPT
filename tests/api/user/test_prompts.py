@@ -406,6 +406,84 @@ class TestDeletePromptHappyPath:
         assert response.status_code == 400
 
 
+class TestLegacyMongoIdResolution:
+    """Pre-cutover prompt ids (Mongo ObjectIds) must resolve on all three
+    mutating endpoints once the prompts.legacy_mongo_id column is populated
+    by backfill. Previously the route short-circuited on non-UUID input via
+    ``CAST(:id AS uuid)`` which raised and poisoned the transaction."""
+
+    LEGACY_ID = "507f1f77bcf86cd799439011"
+
+    def _seed_legacy(self, pg_conn, user: str, name: str, content: str):
+        from application.storage.db.repositories.prompts import PromptsRepository
+
+        return PromptsRepository(pg_conn).create(
+            user, name, content, legacy_mongo_id=self.LEGACY_ID,
+        )
+
+    def test_get_single_prompt_resolves_legacy_id(self, app, pg_conn):
+        from application.api.user.prompts.routes import GetSinglePrompt
+
+        user = "legacy-user"
+        self._seed_legacy(pg_conn, user, "orig", "legacy-body")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/get_single_prompt?id={self.LEGACY_ID}"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = GetSinglePrompt().get()
+
+        assert response.status_code == 200
+        assert response.json["content"] == "legacy-body"
+
+    def test_delete_prompt_resolves_legacy_id(self, app, pg_conn):
+        from application.api.user.prompts.routes import DeletePrompt
+        from application.storage.db.repositories.prompts import PromptsRepository
+
+        user = "legacy-user-del"
+        self._seed_legacy(pg_conn, user, "to-delete", "x")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/delete_prompt",
+            method="POST",
+            json={"id": self.LEGACY_ID},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = DeletePrompt().post()
+
+        assert response.status_code == 200
+        assert response.json["success"] is True
+        assert PromptsRepository(pg_conn).get_by_legacy_id(
+            self.LEGACY_ID, user,
+        ) is None
+
+    def test_update_prompt_resolves_legacy_id(self, app, pg_conn):
+        from application.api.user.prompts.routes import UpdatePrompt
+        from application.storage.db.repositories.prompts import PromptsRepository
+
+        user = "legacy-user-upd"
+        self._seed_legacy(pg_conn, user, "old-name", "old-content")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/update_prompt",
+            method="POST",
+            json={"id": self.LEGACY_ID, "name": "new-name", "content": "new-content"},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = UpdatePrompt().post()
+
+        assert response.status_code == 200
+        fetched = PromptsRepository(pg_conn).get_by_legacy_id(self.LEGACY_ID, user)
+        assert fetched["name"] == "new-name"
+        assert fetched["content"] == "new-content"
+
+
 class TestUpdatePromptHappyPath:
     def test_updates_prompt(self, app, pg_conn):
         from application.api.user.prompts.routes import (

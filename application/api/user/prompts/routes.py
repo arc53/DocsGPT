@@ -115,7 +115,7 @@ class GetSinglePrompt(Resource):
                     chat_reduce_strict = f.read()
                 return make_response(jsonify({"content": chat_reduce_strict}), 200)
             with db_readonly() as conn:
-                prompt = PromptsRepository(conn).get(prompt_id, user)
+                prompt = PromptsRepository(conn).get_any(prompt_id, user)
             if not prompt:
                 return make_response(
                     jsonify({"success": False, "message": "Prompt not found"}), 404
@@ -147,7 +147,14 @@ class DeletePrompt(Resource):
             return missing_fields
         try:
             with db_session() as conn:
-                PromptsRepository(conn).delete(data["id"], user)
+                repo = PromptsRepository(conn)
+                prompt = repo.get_any(data["id"], user)
+                if not prompt:
+                    return make_response(
+                        jsonify({"success": False, "message": "Prompt not found"}),
+                        404,
+                    )
+                repo.delete(str(prompt["id"]), user)
         except Exception as err:
             current_app.logger.error(f"Error deleting prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -181,7 +188,14 @@ class UpdatePrompt(Resource):
             return missing_fields
         try:
             with db_session() as conn:
-                PromptsRepository(conn).update(data["id"], user, data["name"], data["content"])
+                repo = PromptsRepository(conn)
+                prompt = repo.get_any(data["id"], user)
+                if not prompt:
+                    return make_response(
+                        jsonify({"success": False, "message": "Prompt not found"}),
+                        404,
+                    )
+                repo.update(str(prompt["id"]), user, data["name"], data["content"])
         except Exception as err:
             current_app.logger.error(f"Error updating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)

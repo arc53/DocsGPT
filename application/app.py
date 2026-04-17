@@ -120,6 +120,12 @@ def enforce_stt_request_size_limits():
 def authenticate_request():
     if request.method == "OPTIONS":
         return "", 200
+    # OpenAI-compatible routes authenticate via opaque agent API keys in the
+    # Authorization header, which the JWT decoder below would reject. Defer
+    # auth to the route handlers (see application/api/v1/routes.py).
+    if request.path.startswith("/v1/"):
+        request.decoded_token = None
+        return None
     decoded_token = handle_auth(request)
     if not decoded_token:
         request.decoded_token = None

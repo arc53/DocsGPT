@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text as sql_text
 
 from application.core.settings import settings
+from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.conversations import ConversationsRepository
 from application.storage.db.session import db_readonly, db_session
@@ -256,7 +257,12 @@ class ConversationService:
                 if conv is None:
                     # Fallback to UUID lookup without user scoping — the
                     # caller already holds an authenticated conversation
-                    # id from the streaming path.
+                    # id from the streaming path. Gate on id shape so a
+                    # non-UUID (legacy ObjectId that wasn't backfilled)
+                    # doesn't reach CAST — the cast raises and spams the
+                    # logs with a stack trace on every call.
+                    if not looks_like_uuid(conversation_id):
+                        return None
                     result = conn.execute(
                         sql_text(
                             "SELECT compression_metadata FROM conversations "

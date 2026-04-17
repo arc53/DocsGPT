@@ -142,6 +142,50 @@ class TestDelete:
         assert repo.get(created["id"], "user-1") is None
 
 
+class TestGetAny:
+    def test_resolves_by_uuid(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "p", "c")
+        fetched = repo.get_any(created["id"], "user-1")
+        assert fetched is not None
+        assert fetched["id"] == created["id"]
+
+    def test_resolves_by_legacy_mongo_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create(
+            "user-1",
+            "p",
+            "c",
+            legacy_mongo_id="507f1f77bcf86cd799439011",
+        )
+        fetched = repo.get_any("507f1f77bcf86cd799439011", "user-1")
+        assert fetched is not None
+        assert fetched["legacy_mongo_id"] == "507f1f77bcf86cd799439011"
+
+    def test_other_user_returns_none_for_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create(
+            "owner",
+            "p",
+            "c",
+            legacy_mongo_id="507f1f77bcf86cd799439011",
+        )
+        assert repo.get_any("507f1f77bcf86cd799439011", "intruder") is None
+
+    def test_non_uuid_non_legacy_does_not_raise(self, pg_conn):
+        """Garbage ids must return None cleanly without poisoning the txn.
+
+        Regression guard: the old ``get()`` path did a bare
+        ``CAST(:id AS uuid)`` which raises and leaves the enclosing
+        transaction in an aborted state for the rest of the request.
+        """
+        repo = _repo(pg_conn)
+        assert repo.get_any("not_a_uuid_or_objectid", "user-1") is None
+        # Follow-up query must still succeed on the same connection.
+        created = repo.create("user-1", "p", "c")
+        assert repo.get_any(created["id"], "user-1") is not None
+
+
 class TestFindOrCreate:
     def test_creates_when_missing(self, pg_conn):
         repo = _repo(pg_conn)

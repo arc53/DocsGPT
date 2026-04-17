@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from sqlalchemy import Connection, text
 
-from application.storage.db.base_repository import row_to_dict
+from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 
 
 class TodosRepository:
@@ -216,6 +216,23 @@ class TodosRepository:
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
+
+    def get_any(self, identifier: str, user_id: str) -> Optional[dict]:
+        """Resolve a todo by PG UUID or legacy Mongo ObjectId.
+
+        Picks the lookup path from the id shape so non-UUID input never
+        reaches ``CAST(:id AS uuid)`` — that cast raises on the server
+        and poisons the enclosing transaction, making any subsequent
+        query on the same connection fail.
+        """
+        if looks_like_uuid(identifier):
+            doc = self.get(identifier, user_id)
+            if doc is not None:
+                return doc
+        legacy = self.get_by_legacy_id(identifier)
+        if legacy and legacy.get("user_id") == user_id:
+            return legacy
+        return None
 
     def update_by_legacy_id(
         self,

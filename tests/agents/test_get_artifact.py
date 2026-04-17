@@ -3,6 +3,7 @@ from contextlib import contextmanager
 
 import pytest
 from flask import request
+from sqlalchemy import text
 
 
 @pytest.fixture
@@ -138,7 +139,9 @@ class TestGetArtifact:
     def test_invalid_artifact_id_returns_not_found(
         self, _patch_db_readonly, flask_app, decoded_token
     ):
-        """Post-cutover, a non-UUID id is rejected early with 400."""
+        """A non-UUID, non-legacy id falls through ``get_any`` on both
+        repos without raising (id-shape dispatch keeps the UUID cast out
+        of the path) and surfaces as a clean 404."""
         from application.api.user.tools.routes import GetArtifact
 
         with flask_app.app_context():
@@ -147,7 +150,7 @@ class TestGetArtifact:
                 resource = GetArtifact()
                 resp = resource.get("not_an_object_id")
 
-        assert resp.status_code == 400
+        assert resp.status_code == 404
 
     def test_artifact_not_found_returns_404(
         self, _patch_db_readonly, flask_app, decoded_token
@@ -188,3 +191,37 @@ class TestGetArtifact:
                 resp = resource.get(str(note["id"]))
 
         assert resp.status_code == 404
+
+    def test_note_artifact_by_legacy_mongo_id(
+        self, pg_conn, _patch_db_readonly, flask_app, decoded_token
+    ):
+        """Pre-cutover note artifact ids (Mongo ObjectIds) must resolve
+        once the notes.legacy_mongo_id column is populated by backfill."""
+        from application.api.user.tools.routes import GetArtifact
+        from application.storage.db.repositories.user_tools import UserToolsRepository
+
+        tool_row = UserToolsRepository(pg_conn).create(
+            user_id=decoded_token["sub"], name="notes_tool"
+        )
+        tool_id = str(tool_row["id"])
+
+        legacy_id = "507f1f77bcf86cd799439011"
+        pg_conn.execute(
+            text(
+                """
+                INSERT INTO notes (user_id, tool_id, title, content, legacy_mongo_id)
+                VALUES (:user_id, CAST(:tool_id AS uuid), 'note', 'legacy body', :legacy)
+                """
+            ),
+            {"user_id": decoded_token["sub"], "tool_id": tool_id, "legacy": legacy_id},
+        )
+
+        with flask_app.app_context():
+            with flask_app.test_request_context():
+                request.decoded_token = decoded_token
+                resource = GetArtifact()
+                resp = resource.get(legacy_id)
+
+        assert resp.status_code == 200
+        assert resp.json["artifact"]["artifact_type"] == "note"
+        assert resp.json["artifact"]["data"]["content"] == "legacy body"

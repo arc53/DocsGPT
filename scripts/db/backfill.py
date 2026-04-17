@@ -38,6 +38,7 @@ import argparse
 import io
 import json
 import logging
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -137,11 +138,21 @@ def _ensure_system_user(conn: Connection) -> None:
     )
 
 
-def _is_uuid_str(value: str) -> bool:
-    """Canonical UUID-string shape check (36 chars with dashes)."""
-    if not isinstance(value, str) or len(value) != 36:
-        return False
-    return value.count("-") == 4
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
+def _is_uuid_str(value: Any) -> bool:
+    """Canonical UUID-string shape check (8-4-4-4-12 hex with dashes).
+
+    Strict on purpose: any non-hex or mis-segmented string passed into a
+    raw ``CAST(:x AS uuid)`` inside a backfill batch would raise
+    ``invalid input syntax for type uuid`` and abort the whole batch,
+    losing all other rows in the current commit window.
+    """
+    return isinstance(value, str) and bool(_UUID_RE.match(value))
 
 
 def _is_object_id_str(value: str) -> bool:
@@ -478,7 +489,7 @@ def _backfill_token_usage(
             agent_id_str = None
             if agent_id:
                 s = str(agent_id)
-                if len(s) == 36 and "-" in s:
+                if _is_uuid_str(s):
                     agent_id_str = s
             # Legacy Mongo docs: sometimes stored under ``user``, sometimes
             # ``user_id``. Normalise so the attribution CHECK doesn't reject
@@ -1264,8 +1275,8 @@ def _resolve_tool_id(tool_id_raw: Any, tool_id_map: dict[str, str]) -> str | Non
     if not tool_id_raw:
         return None
     s = str(tool_id_raw)
-    # Already a UUID (36 chars with dashes) — pass through
-    if len(s) == 36 and "-" in s:
+    # Already a well-formed PG UUID — pass through
+    if _is_uuid_str(s):
         return s
     # Mongo ObjectId (24 hex chars) — look up in map
     return tool_id_map.get(s)
@@ -1402,16 +1413,20 @@ def _backfill_notes(
     tool_id_map = _build_tool_id_map(conn, mongo_db)
     insert_sql = text(
         """
-        INSERT INTO notes (user_id, tool_id, title, content, created_at, updated_at)
+        INSERT INTO notes (
+            user_id, tool_id, title, content, created_at, updated_at, legacy_mongo_id
+        )
         VALUES (
             :user_id, CAST(:tool_id AS uuid), :title, :content,
             COALESCE(:created_at, now()),
-            COALESCE(:updated_at, now())
+            COALESCE(:updated_at, now()),
+            :legacy_mongo_id
         )
         ON CONFLICT (user_id, tool_id) DO UPDATE
-            SET content    = EXCLUDED.content,
-                title      = EXCLUDED.title,
-                updated_at = EXCLUDED.updated_at
+            SET content         = EXCLUDED.content,
+                title           = EXCLUDED.title,
+                updated_at      = EXCLUDED.updated_at,
+                legacy_mongo_id = EXCLUDED.legacy_mongo_id
         """
     )
     cursor = mongo_db["notes"].find({}, no_cursor_timeout=True).batch_size(batch_size)
@@ -1434,6 +1449,7 @@ def _backfill_notes(
                 "content": content,
                 "created_at": doc.get("created_at"),
                 "updated_at": doc.get("updated_at"),
+                "legacy_mongo_id": str(doc["_id"]),
             })
             if len(batch) >= batch_size:
                 if not dry_run:
@@ -1698,7 +1714,7 @@ def _backfill_conversations(
                     if not a:
                         continue
                     s = str(a)
-                    if len(s) == 36 and "-" in s:
+                    if _is_uuid_str(s):
                         resolved_attachments.append(s)
                     else:
                         mapped = attachment_id_map.get(s)

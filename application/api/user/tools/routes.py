@@ -716,14 +716,11 @@ class GetArtifact(Resource):
 
                 # Artifact IDs may be PG UUIDs (post-cutover) or legacy
                 # Mongo ObjectIds embedded in older conversation history.
-                note_doc = None
-                try:
-                    note_doc = notes_repo.get(artifact_id, user_id)
-                except Exception:
-                    note_doc = None
-                # TODO(pg-cutover): NotesRepository needs get_any for legacy
-                # ObjectId fallback; until then, notes referenced by legacy
-                # artifact ids in old messages won't resolve.
+                # Both repos' ``get_any`` handles the id-shape branching
+                # internally so a non-UUID input never reaches
+                # ``CAST(:id AS uuid)`` (which would poison the readonly
+                # transaction and break the fallback below).
+                note_doc = notes_repo.get_any(artifact_id, user_id)
 
                 if note_doc:
                     content = note_doc.get("note", "") or note_doc.get("content", "")
@@ -745,15 +742,7 @@ class GetArtifact(Resource):
                         jsonify({"success": True, "artifact": artifact}), 200
                     )
 
-                todo_doc = None
-                try:
-                    todo_doc = todos_repo.get(artifact_id, user_id)
-                except Exception:
-                    todo_doc = None
-                if todo_doc is None:
-                    legacy = todos_repo.get_by_legacy_id(artifact_id)
-                    if legacy and legacy.get("user_id") == user_id:
-                        todo_doc = legacy
+                todo_doc = todos_repo.get_any(artifact_id, user_id)
                 if todo_doc:
                     tool_id = todo_doc.get("tool_id")
                     all_todos = todos_repo.list_for_tool(user_id, tool_id) if tool_id else []

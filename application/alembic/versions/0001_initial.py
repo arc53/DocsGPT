@@ -366,13 +366,14 @@ def upgrade() -> None:
     op.execute(
         """
         CREATE TABLE notes (
-            id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id    TEXT NOT NULL,
-            tool_id    UUID REFERENCES user_tools(id) ON DELETE CASCADE,
-            title      TEXT NOT NULL,
-            content    TEXT NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id         TEXT NOT NULL,
+            tool_id         UUID REFERENCES user_tools(id) ON DELETE CASCADE,
+            title           TEXT NOT NULL,
+            content         TEXT NOT NULL,
+            created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+            legacy_mongo_id TEXT
         );
         """
     )
@@ -645,6 +646,10 @@ def upgrade() -> None:
 
     op.execute("CREATE UNIQUE INDEX notes_user_tool_uidx ON notes (user_id, tool_id);")
     op.execute("CREATE INDEX notes_tool_id_idx ON notes (tool_id);")
+    op.execute(
+        "CREATE UNIQUE INDEX notes_legacy_mongo_id_uidx "
+        "ON notes (legacy_mongo_id) WHERE legacy_mongo_id IS NOT NULL;"
+    )
 
     op.execute(
         "CREATE UNIQUE INDEX pending_tool_state_conv_user_uidx "

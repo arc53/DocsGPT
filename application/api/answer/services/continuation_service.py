@@ -9,6 +9,7 @@ import logging
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
+from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.conversations import ConversationsRepository
 from application.storage.db.repositories.pending_tool_state import (
     PendingToolStateRepository,
@@ -80,7 +81,20 @@ class ContinuationService:
         """
         with db_session() as conn:
             conv = ConversationsRepository(conn).get_by_legacy_id(conversation_id)
-            pg_conv_id = conv["id"] if conv is not None else conversation_id
+            if conv is not None:
+                pg_conv_id = conv["id"]
+            elif looks_like_uuid(conversation_id):
+                pg_conv_id = conversation_id
+            else:
+                # Unresolvable legacy ObjectId — downstream ``CAST AS uuid``
+                # would raise and poison the save. Surface the mismatch so
+                # the caller can decide (the stream loop in routes/base.py
+                # already wraps this in try/except).
+                raise ValueError(
+                    f"Cannot save continuation state: conversation_id "
+                    f"{conversation_id!r} is neither a PG UUID nor a "
+                    f"backfilled legacy Mongo id."
+                )
             PendingToolStateRepository(conn).save_state(
                 pg_conv_id,
                 user,
@@ -108,7 +122,13 @@ class ContinuationService:
         """
         with db_readonly() as conn:
             conv = ConversationsRepository(conn).get_by_legacy_id(conversation_id)
-            pg_conv_id = conv["id"] if conv is not None else conversation_id
+            if conv is not None:
+                pg_conv_id = conv["id"]
+            elif looks_like_uuid(conversation_id):
+                pg_conv_id = conversation_id
+            else:
+                # Unresolvable legacy ObjectId → no state can exist for it.
+                return None
             doc = PendingToolStateRepository(conn).load_state(pg_conv_id, user)
         if not doc:
             return None
@@ -122,7 +142,13 @@ class ContinuationService:
         """
         with db_session() as conn:
             conv = ConversationsRepository(conn).get_by_legacy_id(conversation_id)
-            pg_conv_id = conv["id"] if conv is not None else conversation_id
+            if conv is not None:
+                pg_conv_id = conv["id"]
+            elif looks_like_uuid(conversation_id):
+                pg_conv_id = conversation_id
+            else:
+                # Unresolvable legacy ObjectId → nothing to delete.
+                return False
             deleted = PendingToolStateRepository(conn).delete_state(pg_conv_id, user)
         if deleted:
             logger.info(

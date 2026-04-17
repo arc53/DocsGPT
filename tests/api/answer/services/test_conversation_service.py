@@ -335,6 +335,28 @@ class TestCompressionMetadata:
             )
         assert got is None
 
+    def test_get_compression_metadata_non_uuid_does_not_raise(
+        self, pg_conn, caplog,
+    ):
+        """Non-UUID ids (legacy Mongo ObjectIds with no legacy_mongo_id row)
+        must return None without hitting ``CAST(:id AS uuid)`` — which
+        would raise and pollute logs with a stack trace every call."""
+        import logging
+
+        from application.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+
+        with caplog.at_level(logging.ERROR):
+            with _patch_db(pg_conn):
+                got = ConversationService().get_compression_metadata(
+                    "507f1f77bcf86cd799439011"
+                )
+        assert got is None
+        assert not any(
+            "Error getting compression metadata" in r.message for r in caplog.records
+        )
+
     def test_get_compression_metadata_handles_exception(self):
         from application.api.answer.services.conversation_service import (
             ConversationService,
