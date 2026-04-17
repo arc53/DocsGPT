@@ -119,7 +119,7 @@ class TestAttachmentsUpdate:
         )
         repo = AttachmentsRepository(pg_conn)
         repo.create("u", "f.txt", "/p", legacy_mongo_id="leg-1")
-        got = repo.update_by_legacy_id("leg-1", {"bogus": "x"})
+        got = repo.update_by_legacy_id("leg-1", "u", {"bogus": "x"})
         assert got is False
 
     def test_update_by_legacy_id_not_found(self, pg_conn):
@@ -127,6 +127,94 @@ class TestAttachmentsUpdate:
             AttachmentsRepository,
         )
         got = AttachmentsRepository(pg_conn).update_by_legacy_id(
-            "no-match", {"openai_file_id": "x"},
+            "no-match", "u", {"openai_file_id": "x"},
         )
         assert got is False
+
+    def test_update_by_legacy_id_wrong_user_leaves_row_untouched(self, pg_conn):
+        """IDOR regression: a caller with user B's id must not be able to
+        mutate user A's attachment by guessing/reusing its legacy id."""
+        from application.storage.db.repositories.attachments import (
+            AttachmentsRepository,
+        )
+        repo = AttachmentsRepository(pg_conn)
+        repo.create(
+            "user-a", "f.txt", "/p",
+            legacy_mongo_id="shared-legacy",
+            openai_file_id="original",
+        )
+        got = repo.update_any(
+            "shared-legacy", "user-b", {"openai_file_id": "hijacked"},
+        )
+        assert got is False
+        row = repo.get_by_legacy_id("shared-legacy", user_id="user-a")
+        assert row is not None
+        assert row["openai_file_id"] == "original"
+
+    def test_update_by_legacy_id_same_user_succeeds(self, pg_conn):
+        from application.storage.db.repositories.attachments import (
+            AttachmentsRepository,
+        )
+        repo = AttachmentsRepository(pg_conn)
+        repo.create(
+            "user-a", "f.txt", "/p",
+            legacy_mongo_id="shared-legacy-2",
+            openai_file_id="original",
+        )
+        got = repo.update_any(
+            "shared-legacy-2", "user-a", {"openai_file_id": "updated"},
+        )
+        assert got is True
+        row = repo.get_by_legacy_id("shared-legacy-2", user_id="user-a")
+        assert row is not None
+        assert row["openai_file_id"] == "updated"
+
+    def test_update_by_legacy_id_rejects_none_user(self, pg_conn):
+        from application.storage.db.repositories.attachments import (
+            AttachmentsRepository,
+        )
+        repo = AttachmentsRepository(pg_conn)
+        repo.create(
+            "user-a", "f.txt", "/p",
+            legacy_mongo_id="needs-user",
+            openai_file_id="original",
+        )
+        got = repo.update_by_legacy_id(
+            "needs-user", None, {"openai_file_id": "nope"},
+        )
+        assert got is False
+        row = repo.get_by_legacy_id("needs-user", user_id="user-a")
+        assert row is not None
+        assert row["openai_file_id"] == "original"
+
+
+class TestAttachmentsShapeGate:
+    """Regression: the UUID branch of ``update_any`` (via ``update``) and
+    ``get`` / ``get_any`` must never feed a non-UUID into
+    ``CAST(:id AS uuid)`` — the cast aborts the txn otherwise."""
+
+    @staticmethod
+    def _assert_txn_alive(conn) -> None:
+        from sqlalchemy import text as _text
+
+        assert conn.execute(_text("SELECT 1")).scalar() == 1
+
+    def test_get_any_legacy_shape_txn_survives(self, pg_conn):
+        from application.storage.db.repositories.attachments import (
+            AttachmentsRepository,
+        )
+        repo = AttachmentsRepository(pg_conn)
+        # ObjectId shape that no row exists for.
+        assert repo.get_any("507f1f77bcf86cd799439077", "user-a") is None
+        self._assert_txn_alive(pg_conn)
+
+    def test_update_any_unknown_legacy_id_txn_survives(self, pg_conn):
+        from application.storage.db.repositories.attachments import (
+            AttachmentsRepository,
+        )
+        repo = AttachmentsRepository(pg_conn)
+        assert repo.update_any(
+            "507f1f77bcf86cd799439088", "user-a",
+            {"openai_file_id": "x"},
+        ) is False
+        self._assert_txn_alive(pg_conn)

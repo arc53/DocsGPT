@@ -15,27 +15,13 @@ Covers every operation the legacy Mongo code performs on
 from __future__ import annotations
 
 import json
-import re
 from typing import Optional
 
 from sqlalchemy import Connection, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from application.storage.db.base_repository import row_to_dict
+from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.models import conversations_table, conversation_messages_table
-
-
-# Canonical UUID-string shape, e.g. "123e4567-e89b-12d3-a456-426614174000".
-# Legacy Mongo ObjectIds are 24-char lowercase hex strings, so the two
-# shapes are unambiguous and cheap to distinguish without a DB roundtrip.
-_UUID_RE = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
-
-
-def _looks_like_uuid(value: str) -> bool:
-    return bool(_UUID_RE.match(value))
 
 
 def _message_row_to_dict(row) -> dict:
@@ -77,7 +63,7 @@ class ConversationsRepository:
         if not agent_id_raw:
             return None
         value = str(agent_id_raw)
-        if _looks_like_uuid(value):
+        if looks_like_uuid(value):
             return value
         result = self._conn.execute(
             text("SELECT id FROM agents WHERE legacy_mongo_id = :lid LIMIT 1"),
@@ -224,7 +210,7 @@ class ConversationsRepository:
 
         Returns a conversation the user owns or has shared access to.
         """
-        if _looks_like_uuid(conversation_id):
+        if looks_like_uuid(conversation_id):
             row = self.get(conversation_id, user_id)
             if row is not None:
                 return row
@@ -259,6 +245,13 @@ class ConversationsRepository:
         return [row_to_dict(r) for r in result.fetchall()]
 
     def rename(self, conversation_id: str, user_id: str, name: str) -> bool:
+        # Shape-gate so a non-UUID id (legacy Mongo ObjectId still floating
+        # around in client-side state during the cutover) never reaches the
+        # ``CAST(:id AS uuid)`` — that cast raises on the server and poisons
+        # the enclosing transaction, making every subsequent query on the
+        # same connection fail.
+        if not looks_like_uuid(conversation_id):
+            return False
         result = self._conn.execute(
             text(
                 "UPDATE conversations SET name = :name, updated_at = now() "
@@ -277,7 +270,7 @@ class ConversationsRepository:
         """
         if not user_to_add:
             return False
-        if _looks_like_uuid(conversation_id):
+        if looks_like_uuid(conversation_id):
             sql = (
                 "UPDATE conversations "
                 "SET shared_with = array_append(shared_with, :user), "
@@ -302,7 +295,7 @@ class ConversationsRepository:
         """Remove ``user_to_remove`` from ``shared_with``. Mirror of Mongo ``$pull``."""
         if not user_to_remove:
             return False
-        if _looks_like_uuid(conversation_id):
+        if looks_like_uuid(conversation_id):
             sql = (
                 "UPDATE conversations "
                 "SET shared_with = array_remove(shared_with, :user), "
@@ -324,6 +317,10 @@ class ConversationsRepository:
         return result.rowcount > 0
 
     def set_shared_token(self, conversation_id: str, user_id: str, token: str) -> bool:
+        # Shape-gate: see ``rename`` — prevents transaction poisoning when
+        # a non-UUID id reaches this code path.
+        if not looks_like_uuid(conversation_id):
+            return False
         result = self._conn.execute(
             text(
                 "UPDATE conversations SET shared_token = :token, updated_at = now() "
@@ -343,6 +340,10 @@ class ConversationsRepository:
         ``$set`` + ``$push $slice``). This method is retained for callers
         that already compute the full merged blob client-side.
         """
+        # Shape-gate: see ``rename`` — prevents transaction poisoning when
+        # a non-UUID id reaches this code path.
+        if not looks_like_uuid(conversation_id):
+            return False
         result = self._conn.execute(
             text(
                 "UPDATE conversations "
@@ -369,6 +370,11 @@ class ConversationsRepository:
         the surrounding object when the row has no ``compression_metadata``
         yet.
         """
+        # Shape-gate: the streaming pipeline may pass through a legacy id
+        # that ``get_by_legacy_id`` couldn't resolve; in that case the id
+        # remains a non-UUID string and the CAST would poison the txn.
+        if not looks_like_uuid(conversation_id):
+            return False
         result = self._conn.execute(
             text(
                 """
@@ -409,6 +415,9 @@ class ConversationsRepository:
         on ``compression_metadata.compression_points``. Preserves the
         other top-level keys in ``compression_metadata``.
         """
+        # Shape-gate: see ``set_compression_flags``.
+        if not looks_like_uuid(conversation_id):
+            return False
         result = self._conn.execute(
             text(
                 """
@@ -450,6 +459,10 @@ class ConversationsRepository:
         return result.rowcount > 0
 
     def delete(self, conversation_id: str, user_id: str) -> bool:
+        # Shape-gate: see ``rename`` — prevents transaction poisoning when
+        # a non-UUID id reaches this code path.
+        if not looks_like_uuid(conversation_id):
+            return False
         result = self._conn.execute(
             text(
                 "DELETE FROM conversations "
@@ -482,6 +495,11 @@ class ConversationsRepository:
         return [_message_row_to_dict(r) for r in result.fetchall()]
 
     def get_message_at(self, conversation_id: str, position: int) -> Optional[dict]:
+        # Shape-gate: see ``rename``. Callers today always pass a resolved
+        # UUID (via ``get_any`` first), but the guard costs nothing and
+        # keeps future callers safe from txn-poisoning.
+        if not looks_like_uuid(conversation_id):
+            return None
         result = self._conn.execute(
             text(
                 "SELECT * FROM conversation_messages "
@@ -620,6 +638,10 @@ class ConversationsRepository:
         Mirrors Mongo's ``$push`` + ``$slice`` that trims queries after an
         index-based update.
         """
+        # Shape-gate: see ``rename`` — prevents transaction poisoning when
+        # a non-UUID id reaches this code path.
+        if not looks_like_uuid(conversation_id):
+            return 0
         result = self._conn.execute(
             text(
                 "DELETE FROM conversation_messages "
@@ -638,6 +660,10 @@ class ConversationsRepository:
         ``feedback`` is a JSONB value, e.g. ``{"text": "thumbs_up",
         "timestamp": "..."}`` or ``None`` to unset.
         """
+        # Shape-gate: see ``rename`` — prevents transaction poisoning when
+        # a non-UUID id reaches this code path.
+        if not looks_like_uuid(conversation_id):
+            return False
         fb_json = json.dumps(feedback) if feedback is not None else None
         result = self._conn.execute(
             text(

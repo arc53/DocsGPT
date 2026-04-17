@@ -8,6 +8,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from application.core.settings import settings
+from application.parser.connectors._auth_utils import session_token_fingerprint
 from application.parser.connectors.base import BaseConnectorAuth
 
 
@@ -219,7 +220,9 @@ class GoogleDriveAuth(BaseConnectorAuth):
                     session_token
                 )
             if not session:
-                raise ValueError(f"Invalid session token: {session_token}")
+                raise ValueError(
+                    f"Invalid session token ({session_token_fingerprint(session_token)})"
+                )
 
             token_info = session.get("token_info")
             if not token_info:

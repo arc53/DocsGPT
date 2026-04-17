@@ -553,3 +553,103 @@ class TestSharedWith:
         assert repo.remove_shared_user("507f1f77bcf86cd799439def", "bob") is True
         fetched = repo.get(conv["id"], "owner")
         assert fetched["shared_with"] == []
+
+
+class TestUuidShapeGate:
+    """Regression: a non-UUID conversation id (e.g. a legacy Mongo
+    ObjectId still embedded in old client-side state) must never reach
+    ``CAST(:id AS uuid)``. The cast raises ``InvalidTextRepresentation``
+    on the server and **aborts the enclosing Postgres transaction**,
+    making every subsequent query on the same connection fail. These
+    tests pin the conservative behaviour: return False/None/0 for
+    non-UUID input and leave the transaction usable."""
+
+    @staticmethod
+    def _assert_txn_alive(conn) -> None:
+        """Subsequent trivial query must succeed — proves the txn wasn't
+        poisoned. This is the load-bearing assertion; "returns False"
+        alone is insufficient since the old code did exactly that while
+        leaving the txn dead."""
+        from sqlalchemy import text as _text
+
+        assert conn.execute(_text("SELECT 1")).scalar() == 1
+
+    def test_rename_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.rename("507f1f77bcf86cd799439011", "user-1", "new") is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_rename_uuid_path_still_works(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "old")
+        assert repo.rename(created["id"], "user-1", "new") is True
+
+    def test_delete_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.delete("507f1f77bcf86cd799439011", "user-1") is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_delete_uuid_path_still_works(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "c")
+        assert repo.delete(created["id"], "user-1") is True
+
+    def test_set_feedback_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.set_feedback(
+            "507f1f77bcf86cd799439011", 0, {"text": "x"},
+        ) is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_truncate_after_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.truncate_after("507f1f77bcf86cd799439011", 0) == 0
+        self._assert_txn_alive(pg_conn)
+
+    def test_set_shared_token_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.set_shared_token(
+            "507f1f77bcf86cd799439011", "user-1", "tok",
+        ) is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_update_compression_metadata_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.update_compression_metadata(
+            "507f1f77bcf86cd799439011", "user-1", {"is_compressed": True},
+        ) is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_set_compression_flags_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.set_compression_flags(
+            "507f1f77bcf86cd799439011",
+            is_compressed=True,
+            last_compression_at="2026-01-01",
+        ) is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_append_compression_point_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.append_compression_point(
+            "507f1f77bcf86cd799439011", {"summary": "x"}, max_points=3,
+        ) is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_get_message_at_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.get_message_at("507f1f77bcf86cd799439011", 0) is None
+        self._assert_txn_alive(pg_conn)
+
+    def test_rename_rejects_garbage(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.rename("not-an-id", "user-1", "new") is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_get_message_at_uuid_path_still_works(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "q", "response": "a"})
+        msg = repo.get_message_at(conv["id"], 0)
+        assert msg is not None
+        assert msg["prompt"] == "q"

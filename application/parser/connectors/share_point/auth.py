@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any
 from msal import ConfidentialClientApplication
 
 from application.core.settings import settings
+from application.parser.connectors._auth_utils import session_token_fingerprint
 from application.parser.connectors.base import BaseConnectorAuth
 
 logger = logging.getLogger(__name__)
@@ -88,7 +89,9 @@ class SharePointAuth(BaseConnectorAuth):
                 )
 
             if not session:
-                raise ValueError(f"Invalid session token: {session_token}")
+                raise ValueError(
+                    f"Invalid session token ({session_token_fingerprint(session_token)})"
+                )
 
             token_info = session.get("token_info")
             if not token_info:

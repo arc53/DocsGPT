@@ -200,20 +200,28 @@ class AttachmentsRepository:
         the attachment dict in hand may carry a UUID (post-cutover shape)
         or an ObjectId-string ``_id`` (legacy). Try the UUID path first
         when the id looks like a UUID; otherwise fall back to the
-        ``legacy_mongo_id`` update.
+        ``legacy_mongo_id`` update. Both branches are user-scoped: the
+        caller must pass the authenticated ``user_id`` so cross-tenant
+        writes are prevented even when the fallback legacy path fires.
         """
         if looks_like_uuid(attachment_id):
             if self.update(attachment_id, user_id, fields):
                 return True
-        return self.update_by_legacy_id(attachment_id, fields)
+        return self.update_by_legacy_id(attachment_id, user_id, fields)
 
-    def update_by_legacy_id(self, legacy_mongo_id: str, fields: dict) -> bool:
+    def update_by_legacy_id(
+        self, legacy_mongo_id: str, user_id: str, fields: dict
+    ) -> bool:
         """Like ``update`` but addressed by the Mongo ObjectId string.
 
         Used by the LLM file-ID caching path which, at dual-write time,
         only has the Mongo ``_id`` in hand (the PG UUID hasn't been
-        looked up yet). No user scoping — the ObjectId is itself unique.
+        looked up yet). Scoped by ``user_id`` so a caller that happens to
+        pass an id matching another user's ``legacy_mongo_id`` cannot
+        mutate the wrong row (IDOR).
         """
+        if user_id is None:
+            return False
         legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         filtered = {
             k: v for k, v in fields.items()
@@ -222,7 +230,7 @@ class AttachmentsRepository:
         if not filtered:
             return False
         set_clauses: list[str] = []
-        params: dict = {"legacy_id": legacy_mongo_id}
+        params: dict = {"legacy_id": legacy_mongo_id, "user_id": user_id}
         for col, val in filtered.items():
             if col in _UPDATABLE_JSONB:
                 set_clauses.append(f"{col} = CAST(:{col} AS jsonb)")
@@ -233,7 +241,7 @@ class AttachmentsRepository:
         result = self._conn.execute(
             text(
                 f"UPDATE attachments SET {', '.join(set_clauses)} "
-                "WHERE legacy_mongo_id = :legacy_id"
+                "WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id"
             ),
             params,
         )

@@ -7,6 +7,7 @@ from flask_restx import fields, inputs, Namespace, Resource
 from sqlalchemy import text as _sql_text
 
 from application.api import api
+from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.attachments import AttachmentsRepository
 from application.storage.db.repositories.conversations import ConversationsRepository
@@ -32,8 +33,11 @@ def _resolve_prompt_pg_id(conn, prompt_id_raw, user_id):
     if not prompt_id_raw or prompt_id_raw == "default":
         return None
     value = str(prompt_id_raw)
-    # Already UUID — trust it but still require ownership.
-    if len(value) == 36 and "-" in value:
+    # Already UUID — trust it but still require ownership. A shape-gate
+    # (rather than a loose ``len == 36 and '-' in value`` check) keeps
+    # non-UUID input out of ``CAST(:pid AS uuid)``; the cast would raise
+    # and poison the readonly transaction otherwise.
+    if looks_like_uuid(value):
         row = conn.execute(
             _sql_text(
                 "SELECT id FROM prompts WHERE id = CAST(:pid AS uuid) "
@@ -58,7 +62,8 @@ def _resolve_source_pg_id(conn, source_raw):
     if not source_raw:
         return None
     value = str(source_raw)
-    if len(value) == 36 and "-" in value:
+    # See ``_resolve_prompt_pg_id`` for the shape-gate rationale.
+    if looks_like_uuid(value):
         row = conn.execute(
             _sql_text(
                 "SELECT id FROM sources WHERE id = CAST(:sid AS uuid)"

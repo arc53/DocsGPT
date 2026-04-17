@@ -28,7 +28,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Iterator
 
-from sqlalchemy import Connection
+from sqlalchemy import Connection, text
 
 from application.storage.db.engine import get_engine
 
@@ -42,6 +42,26 @@ def db_session() -> Iterator[Connection]:
 
 @contextmanager
 def db_readonly() -> Iterator[Connection]:
-    """Plain connection for read-only handlers — no commit overhead."""
+    """Read-only connection for handlers that never write.
+
+    The connection is placed into a Postgres ``READ ONLY`` transaction
+    before any caller statement runs, so an accidental ``INSERT`` /
+    ``UPDATE`` / ``DELETE`` from inside the block raises
+    ``InternalError: cannot execute ... in a read-only transaction``
+    instead of silently mutating data.
+
+    The transaction itself is rolled back on exit — a read-only
+    transaction has nothing meaningful to commit, and rolling back avoids
+    leaving the connection in an open-transaction state when it returns
+    to the pool.
+    """
     with get_engine().connect() as conn:
-        yield conn
+        trans = conn.begin()
+        try:
+            # Must be the first statement in the txn; psycopg3 + SA both
+            # honor this and Postgres rejects writes for the rest of the
+            # transaction's lifetime.
+            conn.execute(text("SET TRANSACTION READ ONLY"))
+            yield conn
+        finally:
+            trans.rollback()
