@@ -301,6 +301,15 @@ function createWorkflowPayload(
   };
 }
 
+const NODE_TYPES: NodeTypes = {
+  start: StartNode,
+  agent: AgentNode,
+  end: EndNode,
+  note: NoteNode,
+  state: SetStateNode,
+  condition: ConditionNode,
+};
+
 function WorkflowBuilderInner() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -362,17 +371,7 @@ function WorkflowBuilderInner() {
     Record<string, string | null>
   >({});
 
-  const nodeTypes = useMemo<NodeTypes>(
-    () => ({
-      start: StartNode,
-      agent: AgentNode,
-      end: EndNode,
-      note: NoteNode,
-      state: SetStateNode,
-      condition: ConditionNode,
-    }),
-    [],
-  );
+  const nodeTypes = NODE_TYPES;
 
   const initialNodes: Node[] = useMemo(
     () => [
@@ -812,7 +811,7 @@ function WorkflowBuilderInner() {
         const response = await userService.getWorkflow(workflowId, token);
         if (!response.ok) throw new Error('Failed to fetch workflow');
         const responseData = await response.json();
-        const { workflow, nodes: apiNodes, edges: apiEdges } = responseData;
+        const { workflow, nodes: apiNodes, edges: apiEdges } = responseData.data;
         const nextWorkflowName = workflow.name;
         const nextWorkflowDescription = workflow.description || '';
         const mappedNodes = apiNodes.map((n: WorkflowNode) => {
@@ -1194,7 +1193,7 @@ function WorkflowBuilderInner() {
           throw new Error(errorData.message || 'Failed to create workflow');
         }
         const responseData = await createResponse.json();
-        savedWorkflowId = responseData.id;
+        savedWorkflowId = responseData?.data?.id ?? responseData?.id;
         createdWorkflowId = savedWorkflowId || null;
         if (savedWorkflowId) {
           setWorkflowId(savedWorkflowId);

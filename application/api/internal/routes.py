@@ -138,6 +138,7 @@ def upload_index_files():
         else:
             repo.create(
                 job_name,
+                source_id=source_id if looks_like_uuid(source_id) else None,
                 user_id=user,
                 type=type,
                 tokens=tokens,

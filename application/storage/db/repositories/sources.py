@@ -50,6 +50,7 @@ class SourcesRepository:
         self,
         name: str,
         *,
+        source_id: Optional[str] = None,
         user_id: str,
         type: Optional[str] = None,
         metadata: Optional[dict] = None,
@@ -69,12 +70,13 @@ class SourcesRepository:
             text(
                 """
                 INSERT INTO sources (
-                    user_id, name, type, metadata,
+                    id, user_id, name, type, metadata,
                     retriever, sync_frequency, tokens, file_path,
                     remote_data, directory_structure, file_name_map,
                     language, model, date, legacy_mongo_id
                 )
                 VALUES (
+                    COALESCE(CAST(:source_id AS uuid), gen_random_uuid()),
                     :user_id, :name, :type, CAST(:metadata AS jsonb),
                     :retriever, :sync_frequency, :tokens, :file_path,
                     CAST(:remote_data AS jsonb),
@@ -88,6 +90,7 @@ class SourcesRepository:
                 """
             ),
             {
+                "source_id": source_id,
                 "user_id": user_id,
                 "name": name,
                 "type": type,
