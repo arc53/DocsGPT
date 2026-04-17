@@ -15,6 +15,7 @@ export function handleFetchAnswer(
   attachments?: string[],
   save_conversation = true,
   modelId?: string,
+  imageBase64?: string,
 ): Promise<
   | {
       result: any;
@@ -50,18 +51,19 @@ export function handleFetchAnswer(
     payload.model_id = modelId;
   }
 
-  // Add attachments to payload if they exist
+  if (imageBase64) {
+    payload.image_base64 = imageBase64; 
+  }
+
   if (attachments && attachments.length > 0) {
     payload.attachments = attachments;
   }
 
   if (selectedDocs.length > 0) {
     if (selectedDocs.length > 1) {
-      // Handle multiple documents
       payload.active_docs = selectedDocs.map((doc) => doc.id!);
       payload.retriever = selectedDocs[0]?.retriever as string;
     } else if (selectedDocs.length === 1 && 'id' in selectedDocs[0]) {
-      // Handle single document (backward compatibility)
       payload.active_docs = selectedDocs[0].id as string;
       payload.retriever = selectedDocs[0].retriever as string;
     }
@@ -104,6 +106,7 @@ export function handleFetchAnswerSteaming(
   attachments?: string[],
   save_conversation = true,
   modelId?: string,
+  imageBase64?: string,
 ): Promise<Answer> {
   const payload: RetrievalPayload = {
     question: question,
@@ -120,18 +123,19 @@ export function handleFetchAnswerSteaming(
     payload.model_id = modelId;
   }
 
-  // Add attachments to payload if they exist
+  if (imageBase64) {
+    payload.image_base64 = imageBase64;
+  }
+
   if (attachments && attachments.length > 0) {
     payload.attachments = attachments;
   }
 
   if (selectedDocs.length > 0) {
     if (selectedDocs.length > 1) {
-      // Handle multiple documents
       payload.active_docs = selectedDocs.map((doc) => doc.id!);
       payload.retriever = selectedDocs[0]?.retriever as string;
     } else if (selectedDocs.length === 1 && 'id' in selectedDocs[0]) {
-      // Handle single document (backward compatibility)
       payload.active_docs = selectedDocs[0].id as string;
       payload.retriever = selectedDocs[0].retriever as string;
     }
@@ -461,11 +465,9 @@ export function handleSearch(
   };
   if (selectedDocs.length > 0) {
     if (selectedDocs.length > 1) {
-      // Handle multiple documents
       payload.active_docs = selectedDocs.map((doc) => doc.id!);
       payload.retriever = selectedDocs[0]?.retriever as string;
     } else if (selectedDocs.length === 1 && 'id' in selectedDocs[0]) {
-      // Handle single document (backward compatibility)
       payload.active_docs = selectedDocs[0].id as string;
       payload.retriever = selectedDocs[0].retriever as string;
     }
@@ -541,6 +543,7 @@ export function handleFetchSharedAnswerStreaming(
   apiKey: string,
   history: Array<any> = [],
   attachments: string[] = [],
+  imageBase64: string | undefined,
   onEvent: (event: MessageEvent) => void,
 ): Promise<Answer> {
   history = history.map((item) => {
@@ -558,6 +561,7 @@ export function handleFetchSharedAnswerStreaming(
       api_key: apiKey,
       save_conversation: false,
       attachments: attachments.length > 0 ? attachments : undefined,
+      image_base64: imageBase64,
     };
     conversationService
       .answerStream(payload, null, signal)
@@ -594,7 +598,7 @@ export function handleFetchSharedAnswerStreaming(
               data: line,
             });
 
-            onEvent(messageEvent); // handle each message
+            onEvent(messageEvent);
           }
 
           reader.read().then(processStream).catch(reject);
@@ -614,6 +618,7 @@ export function handleFetchSharedAnswer(
   signal: AbortSignal,
   apiKey: string,
   attachments?: string[],
+  imageBase64?: string,
 ): Promise<
   | {
       result: any;
@@ -634,6 +639,7 @@ export function handleFetchSharedAnswer(
     api_key: apiKey,
     attachments:
       attachments && attachments.length > 0 ? attachments : undefined,
+    image_base64: imageBase64, 
   };
 
   return conversationService

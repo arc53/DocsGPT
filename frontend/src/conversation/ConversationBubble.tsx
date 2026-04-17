@@ -64,6 +64,7 @@ const ConversationBubble = forwardRef<
       index?: number,
     ) => void;
     filesAttached?: { id: string; fileName: string }[];
+    imageBase64?: string; // --- ADDED THIS LINE ---
     onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
     onToolAction?: (
       callId: string,
@@ -87,6 +88,7 @@ const ConversationBubble = forwardRef<
     isStreaming,
     handleUpdatedQuestionSubmission,
     filesAttached,
+    imageBase64, // --- DESTRUCTURED HERE ---
     onOpenArtifact,
     onToolAction,
   },
@@ -162,6 +164,19 @@ const ConversationBubble = forwardRef<
               ))}
             </div>
           )}
+
+          {/* --- NEW IMAGE RENDERING BLOCK --- */}
+          {imageBase64 && (
+            <div className="mr-12 mb-3 max-w-sm overflow-hidden rounded-2xl border border-gray-200 shadow-sm dark:border-gray-700">
+              <img
+                src={imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`}
+                alt="User input"
+                className="h-auto w-full max-h-64 object-cover"
+              />
+            </div>
+          )}
+          {/* ---------------------------------- */}
+
           <div
             ref={ref}
             className={`flex flex-row-reverse justify-items-start`}
@@ -912,6 +927,18 @@ function ToolCallApprovalBar({
     argPreview.length > 60 ? argPreview.slice(0, 57) + '...' : argPreview;
 
   return (
+    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+        <div className="my-2 flex flex-row items-center justify-center gap-3">
+          <Avatar
+            className="h-[26px] w-[30px] text-xl"
+            avatar={
+              <img
+                src={Sources}
+                alt={'ToolCalls'}
+                className="h-full w-full object-fill"
+              />
+            }
+          />
     <div className="border-border bg-muted dark:bg-card mb-2 w-full overflow-hidden rounded-2xl border">
       <div className="flex items-center gap-3 px-4 py-2.5">
         <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -1144,6 +1171,8 @@ function ToolCalls({
                 ))}
               </div>
             </div>
+          </div>
+        )}
           )}
         </>
       )}

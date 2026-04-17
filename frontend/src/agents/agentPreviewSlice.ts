@@ -34,7 +34,7 @@ export function handlePreviewAbort() {
 
 export const fetchPreviewAnswer = createAsyncThunk<
   Answer,
-  { question: string; indx?: number }
+  { question: string; indx?: number; imageBase64?: string }
 >(
   'agentPreview/fetchAnswer',
   async ({ question, indx }, { dispatch, getState }) => {
@@ -43,6 +43,10 @@ export const fetchPreviewAnswer = createAsyncThunk<
     const { signal } = abortController;
 
     const state = getState() as RootState;
+
+    const targetIndex = indx ?? state.agentPreview.queries.length - 1;
+    const imageBase64 = state.agentPreview.queries[targetIndex]?.imageBase64;
+
     const attachmentIds = selectCompletedAttachments(state)
       .filter((a) => a.id)
       .map((a) => a.id) as string[];
@@ -62,12 +66,11 @@ export const fetchPreviewAnswer = createAsyncThunk<
           signal,
           state.preference.token,
           state.preference.selectedDocs,
-          null, // No conversation ID for previews
+          null, 
           state.preference.prompt.id,
           state.preference.chunks,
           (event: MessageEvent) => {
             const data = JSON.parse(event.data);
-            const targetIndex = indx ?? state.agentPreview.queries.length - 1;
 
             if (data.type === 'end') {
               dispatch(agentPreviewSlice.actions.setStatus('idle'));
@@ -125,6 +128,7 @@ export const fetchPreviewAnswer = createAsyncThunk<
           attachmentIds,
           false,
           modelId,
+          imageBase64 
         );
       } else {
         const answer = await handleFetchAnswer(
@@ -139,6 +143,7 @@ export const fetchPreviewAnswer = createAsyncThunk<
           attachmentIds,
           false,
           modelId,
+          imageBase64 
         );
 
         if (answer) {
@@ -154,8 +159,6 @@ export const fetchPreviewAnswer = createAsyncThunk<
               return source;
             },
           );
-
-          const targetIndex = indx ?? state.agentPreview.queries.length - 1;
 
           dispatch(
             updateQuery({

@@ -283,12 +283,29 @@ const encodeWavFromFloat32 = (
 };
 
 type MessageInputProps = {
-  onSubmit: (text: string) => void;
+  // FIXED: Removed the duplicate onSubmit and cleaned up the payload
+  onSubmit: (payload: { text: string; imageBase64?: string }) => void;
   loading: boolean;
   showSourceButton?: boolean;
   showToolButton?: boolean;
   autoFocus?: boolean;
 };
+
+const IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+
+const convertImageToBase64 = (
+  file: File,
+): Promise<{ base64: string; dataUrl: string }> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result ?? '');
+      const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+      resolve({ base64, dataUrl });
+    };
+    reader.onerror = () => reject(new Error('Unable to read image file'));
+    reader.readAsDataURL(file);
+  });
 
 export default function MessageInput({
   onSubmit,
@@ -310,6 +327,10 @@ export default function MessageInput({
   const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [selectedImageBase64, setSelectedImageBase64] = useState<string | null>(null);
+  const [selectedImagePreview, setSelectedImagePreview] = useState<string | null>(null);
+  const [selectedImageName, setSelectedImageName] = useState<string | null>(null);
+  const [selectedImageMimeType, setSelectedImageMimeType] = useState<string | null>(null);
 
   const selectedDocs = useSelector(selectSelectedDocs);
   const token = useSelector(selectToken);
@@ -403,11 +424,28 @@ export default function MessageInput({
     };
   }, [browserOS]);
 
-  useEffect(() => {
-    return () => {
-      stopAudioProcessing();
-      resetLiveTranscriptionState();
-    };
+
+  const handleImageSelection = useCallback(async (file: File) => {
+    if (!IMAGE_MIME_TYPES.includes(file.type)) return false;
+
+    try {
+      const { base64, dataUrl } = await convertImageToBase64(file);
+      setSelectedImageBase64(base64);
+      setSelectedImagePreview(dataUrl);
+      setSelectedImageName(file.name);
+      setSelectedImageMimeType(file.type || null);
+      return true;
+    } catch (error) {
+      console.error('Failed to process image file', error);
+      return false;
+    }
+  }, []);
+
+  const clearSelectedImage = useCallback(() => {
+    setSelectedImageBase64(null);
+    setSelectedImagePreview(null);
+    setSelectedImageName(null);
+    setSelectedImageMimeType(null);
   }, []);
 
   const uploadFiles = useCallback(
@@ -784,21 +822,41 @@ export default function MessageInput({
     [dispatch, token],
   );
 
-  const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return;
     const files = Array.from(e.target.files);
-    uploadFiles(files);
+
+    const imageFiles = files.filter((file) => IMAGE_MIME_TYPES.includes(file.type));
+    if (imageFiles.length > 0) {
+      await handleImageSelection(imageFiles[0]);
+    }
+
+    const nonImageFiles = files.filter((file) => !IMAGE_MIME_TYPES.includes(file.type));
+    if (nonImageFiles.length > 0) {
+      uploadFiles(nonImageFiles);
+    }
+
     // clear input so same file can be selected again
     e.target.value = '';
   };
 
   // Drag & drop via react-dropzone
   const onDrop = useCallback(
-    (acceptedFiles: File[]) => {
-      uploadFiles(acceptedFiles);
+    async (acceptedFiles: File[]) => {
+      const imageFile = acceptedFiles.find((file) => IMAGE_MIME_TYPES.includes(file.type));
+      if (imageFile) {
+        await handleImageSelection(imageFile);
+      }
+
+      const nonImageFiles = acceptedFiles.filter(
+        (file) => !IMAGE_MIME_TYPES.includes(file.type),
+      );
+      if (nonImageFiles.length > 0) {
+        uploadFiles(nonImageFiles);
+      }
       setHandleDragActive(false);
     },
-    [uploadFiles],
+    [handleImageSelection, uploadFiles],
   );
 
   const { getRootProps, getInputProps } = useDropzone({
@@ -813,7 +871,28 @@ export default function MessageInput({
       setHandleDragActive(false);
     },
     maxSize: 25000000,
-    accept: FILE_UPLOAD_ACCEPT,
+    accept: {
+      'application/pdf': ['.pdf'],
+      'text/plain': ['.txt'],
+      'text/x-rst': ['.rst'],
+      'text/x-markdown': ['.md'],
+      'application/zip': ['.zip'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        ['.docx'],
+      'application/json': ['.json'],
+      'text/csv': ['.csv'],
+      'text/html': ['.html'],
+      'application/epub+zip': ['.epub'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
+        '.xlsx',
+      ],
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+        ['.pptx'],
+      'image/png': ['.png'],
+      'image/jpeg': ['.jpeg'],
+      'image/jpg': ['.jpg'],
+      'image/webp': ['.webp'],
+    },
   });
 
   useEffect(() => {
@@ -1355,14 +1434,16 @@ export default function MessageInput({
   };
 
   const handleSubmit = () => {
-    if (
-      value.trim() &&
-      !loading &&
-      recordingState !== 'recording' &&
-      recordingState !== 'transcribing'
-    ) {
-      onSubmit(value);
+    const trimmedValue = value.trim();
+    if ((trimmedValue || selectedImageBase64) && !loading) {
+      // FIXED: Safely passing ONLY text and imageBase64 (aligned with our parent updates)
+      onSubmit({
+        text: trimmedValue,
+        imageBase64: selectedImageBase64 ?? undefined,
+      });
       setValue('');
+      clearSelectedImage();
+      // Refocus input after submission if autoFocus is enabled
       if (isTouch) {
         inputRef.current?.blur();
       } else if (autoFocus) {
@@ -1372,7 +1453,6 @@ export default function MessageInput({
           }
         }, 0);
       }
-    }
   };
 
   const handleCancel = () => {
@@ -1530,9 +1610,23 @@ export default function MessageInput({
           })}
         </div>
 
-        {voiceError && (
-          <div className="px-2 pb-1 text-xs text-[#B42318] sm:px-3">
-            {voiceError}
+        {selectedImagePreview && (
+          <div className="px-2 pt-2 sm:px-3">
+            <div className="relative inline-flex items-center rounded-lg border border-[#D5D5D5] bg-white p-1 dark:border-[#4A4A4A] dark:bg-[#2C2E3C]">
+              <img
+                src={selectedImagePreview}
+                alt={selectedImageName || 'Selected image preview'}
+                className="h-14 w-14 rounded object-cover"
+              />
+              <button
+                type="button"
+                onClick={clearSelectedImage}
+                className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#7F54D6] text-xs text-white"
+                aria-label="Remove selected image"
+              >
+                ×
+              </button>
+            </div>
           </div>
         )}
 
@@ -1680,6 +1774,9 @@ export default function MessageInput({
               onClick={handleSubmit}
               aria-label={t('send')}
               className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ease-in-out sm:h-9 sm:w-9 ${
+                (value.trim() || selectedImageBase64) && !loading
+                  ? 'bg-purple-30 text-white'
+                  : 'bg-[#EDEDED] text-[#959595] dark:bg-[#37383D] dark:text-[#77787D]'
                 value.trim() &&
                 !loading &&
                 recordingState !== 'recording' &&
@@ -1687,12 +1784,7 @@ export default function MessageInput({
                   ? 'bg-primary text-white'
                   : 'bg-muted text-muted-foreground dark:bg-accent dark:text-muted-foreground'
               }`}
-              disabled={
-                !value.trim() ||
-                loading ||
-                recordingState === 'recording' ||
-                recordingState === 'transcribing'
-              }
+              disabled={(!value.trim() && !selectedImageBase64) || loading}
             >
               <SendArrowIcon
                 className="mx-auto my-auto block h-3.5 w-3.5 sm:h-4 sm:w-4"
