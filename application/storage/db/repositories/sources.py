@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
-from sqlalchemy import Connection, func, text
+from sqlalchemy import Connection, func, select, text
 
 from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.models import sources_table
@@ -185,34 +185,40 @@ class SourcesRepository:
                 ``%`` and ``_`` in the input are escaped so they match
                 literally rather than as LIKE wildcards.
             sort_field: Column to sort by. Unknown values fall back to
-                ``date`` — the whitelist prevents SQL injection via a raw
-                query-string value.
+                ``date``. Resolved against ``sources_table.c`` so the
+                column identity is bound by SQLAlchemy — user input never
+                reaches the emitted SQL as a string.
             sort_order: ``"asc"`` or ``"desc"``; anything else is treated
                 as ``"desc"``.
 
         Returns:
             A list of source rows as plain dicts (via ``row_to_dict``).
         """
-        direction = "ASC" if sort_order.lower() == "asc" else "DESC"
-        column = sort_field if sort_field in _SORTABLE_COLUMNS else "date"
+        column_name = sort_field if sort_field in _SORTABLE_COLUMNS else "date"
+        sort_column = sources_table.c[column_name]
+        ascending = sort_order.lower() == "asc"
+
+        stmt = select(sources_table).where(sources_table.c.user_id == user_id)
+        if search_term:
+            stmt = stmt.where(
+                sources_table.c.name.ilike(
+                    f"%{_escape_like(search_term)}%",
+                    escape="\\",
+                )
+            )
+
         # ``id`` is appended as a stable tiebreaker so paginated windows
         # are deterministic across equal sort keys.
-        order_clause = f"ORDER BY {column} {direction}, id {direction}"
+        id_column = sources_table.c.id
+        if ascending:
+            stmt = stmt.order_by(sort_column.asc(), id_column.asc())
+        else:
+            stmt = stmt.order_by(sort_column.desc(), id_column.desc())
 
-        clauses = ["user_id = :user_id"]
-        params: dict[str, Any] = {"user_id": user_id}
-        if search_term:
-            clauses.append("name ILIKE :search_pattern ESCAPE '\\'")
-            params["search_pattern"] = f"%{_escape_like(search_term)}%"
-        where = " AND ".join(clauses)
-
-        sql = f"SELECT * FROM sources WHERE {where} {order_clause}"
         if limit is not None:
-            sql += " LIMIT :limit OFFSET :offset"
-            params["limit"] = limit
-            params["offset"] = offset
+            stmt = stmt.limit(limit).offset(offset)
 
-        result = self._conn.execute(text(sql), params)
+        result = self._conn.execute(stmt)
         return [row_to_dict(r) for r in result.fetchall()]
 
     def count_for_user(
@@ -234,16 +240,19 @@ class SourcesRepository:
         Returns:
             The total number of matching rows.
         """
-        clauses = ["user_id = :user_id"]
-        params: dict[str, Any] = {"user_id": user_id}
-        if search_term:
-            clauses.append("name ILIKE :search_pattern ESCAPE '\\'")
-            params["search_pattern"] = f"%{_escape_like(search_term)}%"
-        where = " AND ".join(clauses)
-        result = self._conn.execute(
-            text(f"SELECT COUNT(*) FROM sources WHERE {where}"),
-            params,
+        stmt = (
+            select(func.count())
+            .select_from(sources_table)
+            .where(sources_table.c.user_id == user_id)
         )
+        if search_term:
+            stmt = stmt.where(
+                sources_table.c.name.ilike(
+                    f"%{_escape_like(search_term)}%",
+                    escape="\\",
+                )
+            )
+        result = self._conn.execute(stmt)
         row = result.fetchone()
         return int(row[0]) if row is not None else 0
 
