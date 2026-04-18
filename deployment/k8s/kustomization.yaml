@@ -1,0 +1,20 @@
+# Default DocsGPT Kubernetes stack.
+#
+# Uses Postgres as the user-data store (mirrors
+# deployment/docker-compose.yaml). MongoDB manifests are opt-in and live
+# under deployment/k8s/optional-mongo/ — they are NOT included here and
+# will not be applied by `kubectl apply -k deployment/k8s/`.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - docsgpt-secrets.yaml
+  - deployments/postgres-deploy.yaml
+  - deployments/qdrant-deploy.yaml
+  - deployments/redis-deploy.yaml
+  - deployments/docsgpt-deploy.yaml
+  - services/postgres-service.yaml
+  - services/qdrant-service.yaml
+  - services/redis-service.yaml
+  - services/docsgpt-service.yaml
+  - jobs/postgres-init-job.yaml

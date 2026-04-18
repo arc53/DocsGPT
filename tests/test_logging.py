@@ -1,4 +1,4 @@
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -131,7 +131,7 @@ class TestLogActivity:
             yield "chunk1"
             yield "chunk2"
 
-        with patch("application.logging._log_to_mongodb"):
+        with patch("application.logging._log_activity_to_db"):
             result = list(my_gen(FakeAgent()))
         assert result == ["chunk1", "chunk2"]
 
@@ -148,55 +148,9 @@ class TestLogActivity:
             yield "ok"
             raise RuntimeError("boom")
 
-        with patch("application.logging._log_to_mongodb"), pytest.raises(
+        with patch("application.logging._log_activity_to_db"), pytest.raises(
             RuntimeError, match="boom"
         ):
             list(failing_gen(FakeAgent()))
 
 
-@pytest.mark.unit
-class TestLogToMongoDB:
-
-    def test_logs_entry(self):
-        from application.logging import _log_to_mongodb
-
-        mock_collection = Mock()
-        mock_db = {"stack_logs": mock_collection}
-
-        with patch(
-            "application.logging.MongoDB.get_client",
-            return_value={"docsgpt": mock_db},
-        ), patch("application.logging.settings") as mock_settings:
-            mock_settings.MONGO_DB_NAME = "docsgpt"
-            _log_to_mongodb("ep", "aid", "user", "key", "q", [], "info")
-
-        mock_collection.insert_one.assert_called_once()
-        doc = mock_collection.insert_one.call_args[0][0]
-        assert doc["endpoint"] == "ep"
-        assert doc["level"] == "info"
-
-    def test_truncates_long_strings(self):
-        from application.logging import _log_to_mongodb
-
-        mock_collection = Mock()
-        mock_db = {"stack_logs": mock_collection}
-
-        with patch(
-            "application.logging.MongoDB.get_client",
-            return_value={"docsgpt": mock_db},
-        ), patch("application.logging.settings") as mock_settings:
-            mock_settings.MONGO_DB_NAME = "docsgpt"
-            _log_to_mongodb("ep", "aid", "user", "key", "x" * 20000, [], "info")
-
-        doc = mock_collection.insert_one.call_args[0][0]
-        assert len(doc["query"]) == 10000
-
-    def test_handles_mongo_error(self):
-        from application.logging import _log_to_mongodb
-
-        with patch(
-            "application.logging.MongoDB.get_client",
-            side_effect=Exception("DB down"),
-        ):
-            # Should not raise
-            _log_to_mongodb("ep", "aid", "user", "key", "q", [], "info")

@@ -2,87 +2,124 @@
 
 import uuid
 
-from bson.binary import Binary, UuidRepresentation
-from bson.dbref import DBRef
-from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, inputs, Namespace, Resource
+from sqlalchemy import text as _sql_text
 
 from application.api import api
-from application.api.user.base import (
-    agents_collection,
-    attachments_collection,
-    conversations_collection,
-    shared_conversations_collections,
-)
-from application.storage.db.dual_write import dual_write
+from application.storage.db.base_repository import looks_like_uuid
+from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.attachments import AttachmentsRepository
 from application.storage.db.repositories.conversations import ConversationsRepository
 from application.storage.db.repositories.shared_conversations import (
     SharedConversationsRepository,
 )
+from application.storage.db.session import db_readonly, db_session
 from application.utils import check_required_fields
 
-
-def _dual_write_share(
-    mongo_conv_id: str,
-    share_uuid: str,
-    user: str,
-    *,
-    is_promptable: bool,
-    first_n_queries: int,
-    api_key: str | None,
-    prompt_id: str | None = None,
-    chunks: int | None = None,
-) -> None:
-    """Mirror a Mongo share-record insert into Postgres.
-
-    Preserves the Mongo-generated UUID so public ``/shared/{uuid}`` URLs
-    resolve from both stores during cutover.
-    """
-    def _write(repo: SharedConversationsRepository) -> None:
-        conv = ConversationsRepository(repo._conn).get_by_legacy_id(
-            mongo_conv_id, user_id=user,
-        )
-        if conv is None:
-            return
-        # prompt_id / chunks are only meaningful for promptable shares;
-        # prompt_id is often the string "default" or an ObjectId that
-        # hasn't been migrated — pass as-is and let the repo drop
-        # non-UUID values. Scope the prompt lookup by user_id so an
-        # authenticated caller can't link another user's prompt into
-        # their share record.
-        resolved_prompt_id = None
-        if prompt_id and len(str(prompt_id)) == 24:
-            from sqlalchemy import text as _text
-            row = repo._conn.execute(
-                _text(
-                    "SELECT id FROM prompts "
-                    "WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id"
-                ),
-                {"legacy_id": str(prompt_id), "user_id": user},
-            ).fetchone()
-            if row:
-                resolved_prompt_id = str(row[0])
-        # get_or_create is race-free on the PG side thanks to the
-        # composite partial unique index on the dedup tuple
-        # (migration 0008). It converges concurrent share requests to
-        # a single row.
-        repo.get_or_create(
-            conv["id"],
-            user,
-            is_promptable=is_promptable,
-            first_n_queries=first_n_queries,
-            api_key=api_key,
-            prompt_id=resolved_prompt_id,
-            chunks=chunks,
-            share_uuid=share_uuid,
-        )
-
-    dual_write(SharedConversationsRepository, _write)
 
 sharing_ns = Namespace(
     "sharing", description="Conversation sharing operations", path="/api"
 )
+
+
+def _resolve_prompt_pg_id(conn, prompt_id_raw, user_id):
+    """Translate an incoming prompt id (UUID or legacy Mongo ObjectId) to a PG UUID.
+
+    Scoped by ``user_id`` so a caller can't link another user's prompt
+    into their share record. Returns ``None`` for sentinel values
+    (``"default"``) or unresolved ids.
+    """
+    if not prompt_id_raw or prompt_id_raw == "default":
+        return None
+    value = str(prompt_id_raw)
+    # Already UUID — trust it but still require ownership. A shape-gate
+    # (rather than a loose ``len == 36 and '-' in value`` check) keeps
+    # non-UUID input out of ``CAST(:pid AS uuid)``; the cast would raise
+    # and poison the readonly transaction otherwise.
+    if looks_like_uuid(value):
+        row = conn.execute(
+            _sql_text(
+                "SELECT id FROM prompts WHERE id = CAST(:pid AS uuid) "
+                "AND user_id = :uid"
+            ),
+            {"pid": value, "uid": user_id},
+        ).fetchone()
+        return str(row[0]) if row else None
+    # Legacy Mongo ObjectId fallback.
+    row = conn.execute(
+        _sql_text(
+            "SELECT id FROM prompts WHERE legacy_mongo_id = :pid "
+            "AND user_id = :uid"
+        ),
+        {"pid": value, "uid": user_id},
+    ).fetchone()
+    return str(row[0]) if row else None
+
+
+def _resolve_source_pg_id(conn, source_raw):
+    """Translate a source id (UUID or legacy Mongo ObjectId) to a PG UUID."""
+    if not source_raw:
+        return None
+    value = str(source_raw)
+    # See ``_resolve_prompt_pg_id`` for the shape-gate rationale.
+    if looks_like_uuid(value):
+        row = conn.execute(
+            _sql_text(
+                "SELECT id FROM sources WHERE id = CAST(:sid AS uuid)"
+            ),
+            {"sid": value},
+        ).fetchone()
+        return str(row[0]) if row else None
+    row = conn.execute(
+        _sql_text("SELECT id FROM sources WHERE legacy_mongo_id = :sid"),
+        {"sid": value},
+    ).fetchone()
+    return str(row[0]) if row else None
+
+
+def _find_reusable_share_agent(
+    conn, user_id, *, prompt_pg_id, chunks, source_pg_id, retriever,
+):
+    """Find an existing share-as-agent key row matching these parameters.
+
+    Mirrors the legacy Mongo ``agents_collection.find_one`` pre-existence
+    check. Used to reuse an api key across repeated shares of the same
+    conversation with the same prompt/chunks/source/retriever.
+    """
+    clauses = ["user_id = :uid", "key IS NOT NULL"]
+    params: dict = {"uid": user_id}
+    if prompt_pg_id is None:
+        clauses.append("prompt_id IS NULL")
+    else:
+        clauses.append("prompt_id = CAST(:pid AS uuid)")
+        params["pid"] = prompt_pg_id
+    if chunks is None:
+        clauses.append("chunks IS NULL")
+    else:
+        clauses.append("chunks = :chunks")
+        params["chunks"] = int(chunks)
+    if source_pg_id is None:
+        clauses.append("source_id IS NULL")
+    else:
+        clauses.append("source_id = CAST(:sid AS uuid)")
+        params["sid"] = source_pg_id
+    if retriever is None:
+        clauses.append("retriever IS NULL")
+    else:
+        clauses.append("retriever = :retr")
+        params["retr"] = retriever
+    sql = (
+        "SELECT * FROM agents WHERE "
+        + " AND ".join(clauses)
+        + " LIMIT 1"
+    )
+    row = conn.execute(_sql_text(sql), params).fetchone()
+    if row is None:
+        return None
+    mapping = dict(row._mapping)
+    mapping["id"] = str(mapping["id"]) if mapping.get("id") else None
+    return mapping
 
 
 @sharing_ns.route("/share")
@@ -119,173 +156,93 @@ class ShareConversation(Resource):
         conversation_id = data["conversation_id"]
 
         try:
-            conversation = conversations_collection.find_one(
-                {"_id": ObjectId(conversation_id), "user": user}
-            )
-            if conversation is None:
-                return make_response(
-                    jsonify(
-                        {
-                            "status": "error",
-                            "message": "Conversation does not exist",
-                        }
-                    ),
-                    404,
-                )
-            current_n_queries = len(conversation["queries"])
-            explicit_binary = Binary.from_uuid(
-                uuid.uuid4(), UuidRepresentation.STANDARD
-            )
+            with db_session() as conn:
+                conv_repo = ConversationsRepository(conn)
+                shared_repo = SharedConversationsRepository(conn)
+                agents_repo = AgentsRepository(conn)
 
-            if is_promptable:
-                prompt_id = data.get("prompt_id", "default")
-                chunks = data.get("chunks", "2")
-
-                name = conversation["name"] + "(shared)"
-                new_api_key_data = {
-                    "prompt_id": prompt_id,
-                    "chunks": chunks,
-                    "user": user,
-                }
-
-                if "source" in data and ObjectId.is_valid(data["source"]):
-                    new_api_key_data["source"] = DBRef(
-                        "sources", ObjectId(data["source"])
-                    )
-                if "retriever" in data:
-                    new_api_key_data["retriever"] = data["retriever"]
-                pre_existing_api_document = agents_collection.find_one(new_api_key_data)
-                if pre_existing_api_document:
-                    api_uuid = pre_existing_api_document["key"]
-                    pre_existing = shared_conversations_collections.find_one(
-                        {
-                            "conversation_id": ObjectId(conversation_id),
-                            "isPromptable": is_promptable,
-                            "first_n_queries": current_n_queries,
-                            "user": user,
-                            "api_key": api_uuid,
-                        }
-                    )
-                    if pre_existing is not None:
-                        return make_response(
-                            jsonify(
-                                {
-                                    "success": True,
-                                    "identifier": str(pre_existing["uuid"].as_uuid()),
-                                }
-                            ),
-                            200,
-                        )
-                    else:
-                        shared_conversations_collections.insert_one(
+                conversation = conv_repo.get_any(conversation_id, user)
+                if conversation is None:
+                    return make_response(
+                        jsonify(
                             {
-                                "uuid": explicit_binary,
-                                "conversation_id": ObjectId(conversation_id),
-                                "isPromptable": is_promptable,
-                                "first_n_queries": current_n_queries,
-                                "user": user,
-                                "api_key": api_uuid,
+                                "status": "error",
+                                "message": "Conversation does not exist",
                             }
-                        )
-                        _dual_write_share(
-                            conversation_id,
-                            str(explicit_binary.as_uuid()),
-                            user,
-                            is_promptable=is_promptable,
-                            first_n_queries=current_n_queries,
-                            api_key=api_uuid,
-                            prompt_id=prompt_id,
-                            chunks=int(chunks) if chunks else None,
-                        )
-                        return make_response(
-                            jsonify(
-                                {
-                                    "success": True,
-                                    "identifier": str(explicit_binary.as_uuid()),
-                                }
-                            ),
-                            201,
-                        )
-                else:
-                    api_uuid = str(uuid.uuid4())
-                    new_api_key_data["key"] = api_uuid
-                    new_api_key_data["name"] = name
-
-                    if "source" in data and ObjectId.is_valid(data["source"]):
-                        new_api_key_data["source"] = DBRef(
-                            "sources", ObjectId(data["source"])
-                        )
-                    if "retriever" in data:
-                        new_api_key_data["retriever"] = data["retriever"]
-                    agents_collection.insert_one(new_api_key_data)
-                    shared_conversations_collections.insert_one(
-                        {
-                            "uuid": explicit_binary,
-                            "conversation_id": ObjectId(conversation_id),
-                            "isPromptable": is_promptable,
-                            "first_n_queries": current_n_queries,
-                            "user": user,
-                            "api_key": api_uuid,
-                        }
+                        ),
+                        404,
                     )
-                    _dual_write_share(
-                        conversation_id,
-                        str(explicit_binary.as_uuid()),
+                conv_pg_id = str(conversation["id"])
+                current_n_queries = conv_repo.message_count(conv_pg_id)
+
+                if is_promptable:
+                    prompt_id_raw = data.get("prompt_id", "default")
+                    chunks_raw = data.get("chunks", "2")
+                    try:
+                        chunks_int = int(chunks_raw) if chunks_raw not in (None, "") else None
+                    except (TypeError, ValueError):
+                        chunks_int = None
+
+                    prompt_pg_id = _resolve_prompt_pg_id(conn, prompt_id_raw, user)
+                    source_pg_id = _resolve_source_pg_id(conn, data.get("source"))
+                    retriever = data.get("retriever")
+
+                    reusable = _find_reusable_share_agent(
+                        conn, user,
+                        prompt_pg_id=prompt_pg_id,
+                        chunks=chunks_int,
+                        source_pg_id=source_pg_id,
+                        retriever=retriever,
+                    )
+                    if reusable:
+                        api_uuid = reusable.get("key")
+                    else:
+                        api_uuid = str(uuid.uuid4())
+                        name = (conversation.get("name") or "") + "(shared)"
+                        agents_repo.create(
+                            user,
+                            name,
+                            "published",
+                            key=api_uuid,
+                            retriever=retriever,
+                            chunks=chunks_int,
+                            prompt_id=prompt_pg_id,
+                            source_id=source_pg_id,
+                        )
+
+                    share = shared_repo.get_or_create(
+                        conv_pg_id,
                         user,
-                        is_promptable=is_promptable,
+                        is_promptable=True,
                         first_n_queries=current_n_queries,
                         api_key=api_uuid,
-                        prompt_id=prompt_id,
-                        chunks=int(chunks) if chunks else None,
+                        prompt_id=prompt_pg_id,
+                        chunks=chunks_int,
                     )
                     return make_response(
                         jsonify(
                             {
                                 "success": True,
-                                "identifier": str(explicit_binary.as_uuid()),
+                                "identifier": str(share["uuid"]),
                             }
                         ),
-                        201,
+                        201 if reusable is None else 200,
                     )
-            pre_existing = shared_conversations_collections.find_one(
-                {
-                    "conversation_id": ObjectId(conversation_id),
-                    "isPromptable": is_promptable,
-                    "first_n_queries": current_n_queries,
-                    "user": user,
-                }
-            )
-            if pre_existing is not None:
-                return make_response(
-                    jsonify(
-                        {
-                            "success": True,
-                            "identifier": str(pre_existing["uuid"].as_uuid()),
-                        }
-                    ),
-                    200,
-                )
-            else:
-                shared_conversations_collections.insert_one(
-                    {
-                        "uuid": explicit_binary,
-                        "conversation_id": ObjectId(conversation_id),
-                        "isPromptable": is_promptable,
-                        "first_n_queries": current_n_queries,
-                        "user": user,
-                    }
-                )
-                _dual_write_share(
-                    conversation_id,
-                    str(explicit_binary.as_uuid()),
+
+                # Non-promptable share path.
+                share = shared_repo.get_or_create(
+                    conv_pg_id,
                     user,
-                    is_promptable=is_promptable,
+                    is_promptable=False,
                     first_n_queries=current_n_queries,
                     api_key=None,
                 )
                 return make_response(
                     jsonify(
-                        {"success": True, "identifier": str(explicit_binary.as_uuid())}
+                        {
+                            "success": True,
+                            "identifier": str(share["uuid"]),
+                        }
                     ),
                     201,
                 )
@@ -301,37 +258,13 @@ class GetPubliclySharedConversations(Resource):
     @api.doc(description="Get publicly shared conversations by identifier")
     def get(self, identifier: str):
         try:
-            query_uuid = Binary.from_uuid(
-                uuid.UUID(identifier), UuidRepresentation.STANDARD
-            )
-            shared = shared_conversations_collections.find_one({"uuid": query_uuid})
-            conversation_queries = []
+            with db_readonly() as conn:
+                shared_repo = SharedConversationsRepository(conn)
+                conv_repo = ConversationsRepository(conn)
+                attach_repo = AttachmentsRepository(conn)
 
-            if (
-                shared
-                and "conversation_id" in shared
-            ):
-                # Handle DBRef (legacy), ObjectId, dict, and string formats for conversation_id
-                conversation_id = shared["conversation_id"]
-                if isinstance(conversation_id, DBRef):
-                    conversation_id = conversation_id.id
-                elif isinstance(conversation_id, dict):
-                    # Handle dict representation of DBRef (e.g., {"$ref": "...", "$id": "..."})
-                    if "$id" in conversation_id:
-                        conv_id = conversation_id["$id"]
-                        # $id might be a dict like {"$oid": "..."} or a string
-                        if isinstance(conv_id, dict) and "$oid" in conv_id:
-                            conversation_id = ObjectId(conv_id["$oid"])
-                        else:
-                            conversation_id = ObjectId(conv_id)
-                    elif "_id" in conversation_id:
-                        conversation_id = ObjectId(conversation_id["_id"])
-                elif isinstance(conversation_id, str):
-                    conversation_id = ObjectId(conversation_id)
-                conversation = conversations_collection.find_one(
-                    {"_id": conversation_id}
-                )
-                if conversation is None:
+                shared = shared_repo.find_by_uuid(identifier)
+                if not shared or not shared.get("conversation_id"):
                     return make_response(
                         jsonify(
                             {
@@ -341,22 +274,60 @@ class GetPubliclySharedConversations(Resource):
                         ),
                         404,
                     )
-                conversation_queries = conversation["queries"][
-                    : (shared["first_n_queries"])
-                ]
+                conv_pg_id = str(shared["conversation_id"])
+                owner_user = shared.get("user_id")
 
-                for query in conversation_queries:
-                    if "attachments" in query and query["attachments"]:
+                conversation = conv_repo.get_owned(conv_pg_id, owner_user) if owner_user else None
+                if conversation is None:
+                    # Fall back to any-user lookup in case shared row's
+                    # user_id is missing — still keyed by PG UUID.
+                    row = conn.execute(
+                        _sql_text(
+                            "SELECT * FROM conversations WHERE id = CAST(:id AS uuid)"
+                        ),
+                        {"id": conv_pg_id},
+                    ).fetchone()
+                    if row is None:
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "error": "might have broken url or the conversation does not exist",
+                                }
+                            ),
+                            404,
+                        )
+                    conversation = dict(row._mapping)
+
+                messages = conv_repo.get_messages(conv_pg_id)
+                first_n = shared.get("first_n_queries") or 0
+                conversation_queries = []
+                for msg in messages[:first_n]:
+                    query = {
+                        "prompt": msg.get("prompt"),
+                        "response": msg.get("response"),
+                        "thought": msg.get("thought"),
+                        "sources": msg.get("sources") or [],
+                        "tool_calls": msg.get("tool_calls") or [],
+                        "timestamp": (
+                            msg["timestamp"].isoformat()
+                            if hasattr(msg.get("timestamp"), "isoformat")
+                            else msg.get("timestamp")
+                        ),
+                        "feedback": msg.get("feedback"),
+                    }
+                    attachments = msg.get("attachments") or []
+                    if attachments:
                         attachment_details = []
-                        for attachment_id in query["attachments"]:
+                        for attachment_id in attachments:
                             try:
-                                attachment = attachments_collection.find_one(
-                                    {"_id": ObjectId(attachment_id)}
-                                )
+                                attachment = attach_repo.get_any(
+                                    str(attachment_id), owner_user,
+                                ) if owner_user else None
                                 if attachment:
                                     attachment_details.append(
                                         {
-                                            "id": str(attachment["_id"]),
+                                            "id": str(attachment["id"]),
                                             "fileName": attachment.get(
                                                 "filename", "Unknown file"
                                             ),
@@ -368,26 +339,23 @@ class GetPubliclySharedConversations(Resource):
                                     exc_info=True,
                                 )
                         query["attachments"] = attachment_details
-            else:
-                return make_response(
-                    jsonify(
-                        {
-                            "success": False,
-                            "error": "might have broken url or the conversation does not exist",
-                        }
-                    ),
-                    404,
+                    conversation_queries.append(query)
+
+                created = conversation.get("created_at") or conversation.get("date")
+                date_iso = (
+                    created.isoformat()
+                    if hasattr(created, "isoformat")
+                    else (str(created) if created is not None else None)
                 )
-            date = conversation["_id"].generation_time.isoformat()
-            res = {
-                "success": True,
-                "queries": conversation_queries,
-                "title": conversation["name"],
-                "timestamp": date,
-            }
-            if shared["isPromptable"] and "api_key" in shared:
-                res["api_key"] = shared["api_key"]
-            return make_response(jsonify(res), 200)
+                res = {
+                    "success": True,
+                    "queries": conversation_queries,
+                    "title": conversation.get("name"),
+                    "timestamp": date_iso,
+                }
+                if shared.get("is_promptable") and shared.get("api_key"):
+                    res["api_key"] = shared["api_key"]
+                return make_response(jsonify(res), 200)
         except Exception as err:
             current_app.logger.error(
                 f"Error getting shared conversation: {err}", exc_info=True

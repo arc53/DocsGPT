@@ -17,7 +17,7 @@ from typing import Optional
 from sqlalchemy import Connection, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from application.storage.db.base_repository import row_to_dict
+from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.models import agents_table
 
 
@@ -38,16 +38,20 @@ class AgentsRepository:
         _ALLOWED = {
             "description", "agent_type", "key", "retriever",
             "default_model_id", "incoming_webhook_token",
-            "source_id", "prompt_id", "folder_id",
+            "source_id", "prompt_id", "folder_id", "workflow_id",
+            "extra_source_ids", "image",
             "chunks", "token_limit", "request_limit",
-            "limited_token_mode", "limited_request_mode", "shared",
+            "limited_token_mode", "limited_request_mode",
+            "allow_system_prompt_override",
+            "shared", "shared_token", "shared_metadata",
             "tools", "json_schema", "models", "legacy_mongo_id",
+            "created_at", "updated_at", "last_used_at",
         }
 
         for col, val in kwargs.items():
             if col not in _ALLOWED or val is None:
                 continue
-            if col in ("tools", "json_schema", "models"):
+            if col in ("tools", "json_schema", "models", "shared_metadata"):
                 # JSONB columns: pass the Python object directly. SQLAlchemy
                 # Core's JSONB type processor json.dumps it once during
                 # bind; pre-serialising would double-encode and the value
@@ -55,10 +59,16 @@ class AgentsRepository:
                 values[col] = val
             elif col in ("chunks", "token_limit", "request_limit"):
                 values[col] = int(val)
-            elif col in ("limited_token_mode", "limited_request_mode", "shared"):
+            elif col in (
+                "limited_token_mode", "limited_request_mode",
+                "shared", "allow_system_prompt_override",
+            ):
                 values[col] = bool(val)
-            elif col in ("source_id", "prompt_id", "folder_id"):
+            elif col in ("source_id", "prompt_id", "folder_id", "workflow_id"):
                 values[col] = str(val)
+            elif col == "extra_source_ids":
+                # ARRAY(UUID) — pass list of strings; psycopg adapts it.
+                values[col] = [str(x) for x in val] if val else []
             else:
                 values[col] = self._normalize_unique_text(col, val)
 
@@ -74,8 +84,23 @@ class AgentsRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def get_any(self, agent_id: str, user_id: str) -> Optional[dict]:
+        """Resolve an agent by either PG UUID or legacy Mongo ObjectId string.
+
+        Cutover helper: URLs / bookmarks / old client state may still hold
+        Mongo ObjectId-strings. Try the UUID path first (the post-cutover
+        shape) and fall back to ``legacy_mongo_id`` — both are scoped by
+        ``user_id`` so cross-user access is impossible.
+        """
+        if looks_like_uuid(agent_id):
+            row = self.get(agent_id, user_id)
+            if row is not None:
+                return row
+        return self.get_by_legacy_id(agent_id, user_id)
+
     def get_by_legacy_id(self, legacy_mongo_id: str, user_id: str | None = None) -> Optional[dict]:
         """Fetch an agent by the original Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         sql = "SELECT * FROM agents WHERE legacy_mongo_id = :legacy_id"
         params: dict[str, str] = {"legacy_id": legacy_mongo_id}
         if user_id is not None:
@@ -89,6 +114,23 @@ class AgentsRepository:
         result = self._conn.execute(
             text("SELECT * FROM agents WHERE key = :key"),
             {"key": key},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def find_by_shared_token(self, token: str) -> Optional[dict]:
+        """Resolve a publicly-shared agent by its rotating share token.
+
+        Only returns rows with ``shared = true`` so revoking a share
+        (setting ``shared = false``) immediately stops token access even
+        if the token value itself is still in the row.
+        """
+        result = self._conn.execute(
+            text(
+                "SELECT * FROM agents "
+                "WHERE shared_token = :token AND shared = true"
+            ),
+            {"token": token},
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
@@ -118,8 +160,12 @@ class AgentsRepository:
         allowed = {
             "name", "description", "agent_type", "status", "key", "source_id",
             "chunks", "retriever", "prompt_id", "tools", "json_schema", "models",
-            "default_model_id", "folder_id", "limited_token_mode", "token_limit",
-            "limited_request_mode", "request_limit", "shared",
+            "default_model_id", "folder_id", "workflow_id",
+            "extra_source_ids", "image",
+            "limited_token_mode", "token_limit",
+            "limited_request_mode", "request_limit",
+            "allow_system_prompt_override",
+            "shared", "shared_token", "shared_metadata",
             "incoming_webhook_token", "last_used_at",
         }
         filtered = {k: v for k, v in fields.items() if k in allowed}
@@ -128,12 +174,19 @@ class AgentsRepository:
 
         values: dict = {}
         for col, val in filtered.items():
-            if col in ("tools", "json_schema", "models"):
+            if col in ("tools", "json_schema", "models", "shared_metadata"):
                 # See note in create(): JSONB columns receive Python
                 # objects, the type processor handles serialisation.
                 values[col] = val
-            elif col in ("source_id", "prompt_id", "folder_id"):
+            elif col in ("source_id", "prompt_id", "folder_id", "workflow_id"):
                 values[col] = str(val) if val else None
+            elif col == "extra_source_ids":
+                values[col] = [str(x) for x in val] if val else []
+            elif col in (
+                "limited_token_mode", "limited_request_mode",
+                "shared", "allow_system_prompt_override",
+            ):
+                values[col] = bool(val)
             else:
                 values[col] = self._normalize_unique_text(col, val)
         values["updated_at"] = func.now()
@@ -150,6 +203,7 @@ class AgentsRepository:
 
     def update_by_legacy_id(self, legacy_mongo_id: str, user_id: str, fields: dict) -> bool:
         """Update an agent addressed by the Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         agent = self.get_by_legacy_id(legacy_mongo_id, user_id)
         if agent is None:
             return False
@@ -164,6 +218,7 @@ class AgentsRepository:
 
     def delete_by_legacy_id(self, legacy_mongo_id: str, user_id: str) -> bool:
         """Delete an agent addressed by the Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         result = self._conn.execute(
             text(
                 "DELETE FROM agents "

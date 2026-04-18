@@ -1,16 +1,26 @@
 """Source document management chunk management."""
 
-from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
 from application.api import api
-from application.api.user.base import get_vector_store, sources_collection
+from application.api.user.base import get_vector_store
+from application.storage.db.repositories.sources import SourcesRepository
+from application.storage.db.session import db_readonly
 from application.utils import check_required_fields, num_tokens_from_string
 
 sources_chunks_ns = Namespace(
     "sources", description="Source document management operations", path="/api"
 )
+
+
+def _resolve_source(doc_id: str, user: str):
+    """Resolve a source (UUID or legacy ObjectId) for the caller.
+
+    Returns the row dict (with PG UUID in ``id``) or ``None`` if missing.
+    """
+    with db_readonly() as conn:
+        return SourcesRepository(conn).get_any(doc_id, user)
 
 
 @sources_chunks_ns.route("/get_chunks")
@@ -36,36 +46,34 @@ class GetChunks(Resource):
         path = request.args.get("path")
         search_term = request.args.get("search", "").strip().lower()
 
-        if not ObjectId.is_valid(doc_id):
+        if not doc_id:
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
-        doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
+        try:
+            doc = _resolve_source(doc_id, user)
+        except Exception as e:
+            current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
+            return make_response(jsonify({"error": "Invalid doc_id"}), 400)
         if not doc:
             return make_response(
                 jsonify({"error": "Document not found or access denied"}), 404
             )
+        resolved_id = str(doc["id"])
         try:
-            store = get_vector_store(doc_id)
+            store = get_vector_store(resolved_id)
             chunks = store.get_chunks()
 
             filtered_chunks = []
             for chunk in chunks:
                 metadata = chunk.get("metadata", {})
 
-                # Filter by path if provided
-
                 if path:
                     chunk_source = metadata.get("source", "")
                     chunk_file_path = metadata.get("file_path", "")
-                    # Check if the chunk matches the requested path
-                    # For file uploads: source ends with path (e.g., "inputs/.../file.pdf" ends with "file.pdf")
-                    # For crawlers: file_path ends with path (e.g., "guides/setup.md" ends with "setup.md")
                     source_match = chunk_source and chunk_source.endswith(path)
                     file_path_match = chunk_file_path and chunk_file_path.endswith(path)
 
                     if not (source_match or file_path_match):
                         continue
-                # Filter by search term if provided
-
                 if search_term:
                     text_match = search_term in chunk.get("text", "").lower()
                     title_match = search_term in metadata.get("title", "").lower()
@@ -132,15 +140,17 @@ class AddChunk(Resource):
         token_count = num_tokens_from_string(text)
         metadata["token_count"] = token_count
 
-        if not ObjectId.is_valid(doc_id):
+        try:
+            doc = _resolve_source(doc_id, user)
+        except Exception as e:
+            current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
-        doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
         if not doc:
             return make_response(
                 jsonify({"error": "Document not found or access denied"}), 404
             )
         try:
-            store = get_vector_store(doc_id)
+            store = get_vector_store(str(doc["id"]))
             chunk_id = store.add_chunk(text, metadata)
             return make_response(
                 jsonify({"message": "Chunk added successfully", "chunk_id": chunk_id}),
@@ -165,15 +175,17 @@ class DeleteChunk(Resource):
         doc_id = request.args.get("id")
         chunk_id = request.args.get("chunk_id")
 
-        if not ObjectId.is_valid(doc_id):
+        try:
+            doc = _resolve_source(doc_id, user)
+        except Exception as e:
+            current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
-        doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
         if not doc:
             return make_response(
                 jsonify({"error": "Document not found or access denied"}), 404
             )
         try:
-            store = get_vector_store(doc_id)
+            store = get_vector_store(str(doc["id"]))
             deleted = store.delete_chunk(chunk_id)
             if deleted:
                 return make_response(
@@ -232,15 +244,17 @@ class UpdateChunk(Resource):
             if metadata is None:
                 metadata = {}
             metadata["token_count"] = token_count
-        if not ObjectId.is_valid(doc_id):
+        try:
+            doc = _resolve_source(doc_id, user)
+        except Exception as e:
+            current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
-        doc = sources_collection.find_one({"_id": ObjectId(doc_id), "user": user})
         if not doc:
             return make_response(
                 jsonify({"error": "Document not found or access denied"}), 404
             )
         try:
-            store = get_vector_store(doc_id)
+            store = get_vector_store(str(doc["id"]))
 
             chunks = store.get_chunks()
             existing_chunk = next((c for c in chunks if c["doc_id"] == chunk_id), None)

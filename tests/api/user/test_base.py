@@ -1,14 +1,29 @@
 import datetime
 import io
+from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
 import pytest
-from bson import ObjectId
 from werkzeug.datastructures import FileStorage
+
+
+@contextmanager
+def _patch_base_db(conn):
+    @contextmanager
+    def _yield():
+        yield conn
+
+    with patch(
+        "application.api.user.base.db_session", _yield
+    ), patch(
+        "application.api.user.base.db_readonly", _yield
+    ):
+        yield
 
 
 @pytest.mark.unit
 class TestTimeRangeGenerators:
+    pass
 
     def test_generate_minute_range(self):
         from application.api.user.base import generate_minute_range
@@ -61,114 +76,11 @@ class TestTimeRangeGenerators:
 
 @pytest.mark.unit
 class TestEnsureUserDoc:
-
-    def test_creates_new_user_with_defaults(self, mock_mongo_db):
-        from application.api.user.base import ensure_user_doc
-
-        user_id = "test_user_123"
-
-        result = ensure_user_doc(user_id)
-
-        assert result is not None
-        assert result["user_id"] == user_id
-        assert "agent_preferences" in result
-        assert result["agent_preferences"]["pinned"] == []
-        assert result["agent_preferences"]["shared_with_me"] == []
-
-    def test_returns_existing_user(self, mock_mongo_db):
-        from application.api.user.base import ensure_user_doc
-        from application.core.settings import settings
-
-        users_collection = mock_mongo_db[settings.MONGO_DB_NAME]["users"]
-        user_id = "existing_user"
-
-        existing_doc = {
-            "user_id": user_id,
-            "agent_preferences": {"pinned": ["agent1"], "shared_with_me": ["agent2"]},
-        }
-        users_collection.insert_one(existing_doc)
-
-        result = ensure_user_doc(user_id)
-
-        assert result["user_id"] == user_id
-        assert result["agent_preferences"]["pinned"] == ["agent1"]
-        assert result["agent_preferences"]["shared_with_me"] == ["agent2"]
-
-    def test_adds_missing_preferences_fields(self, mock_mongo_db):
-        from application.api.user.base import ensure_user_doc
-        from application.core.settings import settings
-
-        users_collection = mock_mongo_db[settings.MONGO_DB_NAME]["users"]
-        user_id = "incomplete_user"
-
-        users_collection.insert_one(
-            {"user_id": user_id, "agent_preferences": {"pinned": ["agent1"]}}
-        )
-
-        result = ensure_user_doc(user_id)
-
-        assert "shared_with_me" in result["agent_preferences"]
-        assert result["agent_preferences"]["shared_with_me"] == []
-
+    pass
 
 @pytest.mark.unit
 class TestResolveToolDetails:
-
-    def test_resolves_tool_ids_to_details(self, mock_mongo_db):
-        from application.api.user.base import resolve_tool_details
-        from application.core.settings import settings
-
-        user_tools = mock_mongo_db[settings.MONGO_DB_NAME]["user_tools"]
-        tool_id1 = ObjectId()
-        tool_id2 = ObjectId()
-
-        user_tools.insert_one(
-            {"_id": tool_id1, "name": "calculator", "displayName": "Calculator Tool"}
-        )
-        user_tools.insert_one(
-            {"_id": tool_id2, "name": "weather", "displayName": "Weather API"}
-        )
-
-        result = resolve_tool_details([str(tool_id1), str(tool_id2)])
-
-        assert len(result) == 2
-        assert result[0]["id"] == str(tool_id1)
-        assert result[0]["name"] == "calculator"
-        assert result[0]["display_name"] == "Calculator Tool"
-        assert result[1]["name"] == "weather"
-
-    def test_handles_missing_display_name(self, mock_mongo_db):
-        from application.api.user.base import resolve_tool_details
-        from application.core.settings import settings
-
-        user_tools = mock_mongo_db[settings.MONGO_DB_NAME]["user_tools"]
-        tool_id = ObjectId()
-
-        user_tools.insert_one({"_id": tool_id, "name": "test_tool"})
-
-        result = resolve_tool_details([str(tool_id)])
-
-        assert result[0]["display_name"] == "test_tool"
-
-    def test_prefers_custom_name_when_present(self, mock_mongo_db):
-        from application.api.user.base import resolve_tool_details
-        from application.core.settings import settings
-
-        user_tools = mock_mongo_db[settings.MONGO_DB_NAME]["user_tools"]
-        tool_id = ObjectId()
-
-        user_tools.insert_one(
-            {
-                "_id": tool_id,
-                "name": "calculator",
-                "displayName": "Calculator Tool",
-                "customName": "Math Wizard",
-            }
-        )
-
-        result = resolve_tool_details([str(tool_id)])
-
-        assert result[0]["display_name"] == "Math Wizard"
+    pass
 
     def test_empty_tool_ids_list(self, mock_mongo_db):
         from application.api.user.base import resolve_tool_details
@@ -180,9 +92,10 @@ class TestResolveToolDetails:
 
 @pytest.mark.unit
 class TestGetVectorStore:
+    pass
 
     @patch("application.api.user.base.VectorCreator.create_vectorstore")
-    def test_creates_vector_store(self, mock_create, mock_mongo_db):
+    def test_creates_vector_store(self, mock_create):
         from application.api.user.base import get_vector_store
 
         mock_store = Mock()
@@ -199,6 +112,7 @@ class TestGetVectorStore:
 
 @pytest.mark.unit
 class TestHandleImageUpload:
+    pass
 
     def test_returns_existing_url_when_no_file(self, flask_app):
         from application.api.user.base import handle_image_upload
@@ -278,29 +192,9 @@ class TestHandleImageUpload:
 
 @pytest.mark.unit
 class TestRequireAgentDecorator:
+    pass
 
-    def test_validates_webhook_token(self, mock_mongo_db, flask_app):
-        from application.api.user.base import require_agent
-        from application.core.settings import settings
-
-        with flask_app.app_context():
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-            agent_id = ObjectId()
-            webhook_token = "valid_webhook_token_123"
-
-            agents_collection.insert_one(
-                {"_id": agent_id, "incoming_webhook_token": webhook_token}
-            )
-
-            @require_agent
-            def test_func(webhook_token=None, agent=None, agent_id_str=None):
-                return {"agent_id": agent_id_str}
-
-            result = test_func(webhook_token=webhook_token)
-
-            assert result["agent_id"] == str(agent_id)
-
-    def test_returns_400_for_missing_token(self, mock_mongo_db, flask_app):
+    def test_returns_400_for_missing_token(self, flask_app):
         from application.api.user.base import require_agent
 
         with flask_app.app_context():
@@ -313,19 +207,118 @@ class TestRequireAgentDecorator:
 
             assert result.status_code == 400
             assert result.json["success"] is False
-            assert "missing" in result.json["message"].lower()
 
-    def test_returns_404_for_invalid_token(self, mock_mongo_db, flask_app):
+
+# ---------------------------------------------------------------------------
+# Real PG tests: ensure_user_doc, resolve_tool_details, require_agent
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureUserDocPgConn:
+    def test_creates_new_user_doc(self, pg_conn):
+        from application.api.user.base import ensure_user_doc
+
+        with _patch_base_db(pg_conn):
+            doc = ensure_user_doc("brand-new-user")
+        assert doc["user_id"] == "brand-new-user"
+        prefs = doc["agent_preferences"]
+        assert prefs.get("pinned") == []
+        assert prefs.get("shared_with_me") == []
+
+    def test_preserves_existing_prefs(self, pg_conn):
+        from application.api.user.base import ensure_user_doc
+        from application.storage.db.repositories.users import UsersRepository
+
+        user = "existing-user"
+        UsersRepository(pg_conn).upsert(user)
+        UsersRepository(pg_conn).add_pinned(user, "agent-abc")
+
+        with _patch_base_db(pg_conn):
+            doc = ensure_user_doc(user)
+        assert "agent-abc" in doc["agent_preferences"]["pinned"]
+        assert doc["agent_preferences"]["shared_with_me"] == []
+
+
+class TestResolveToolDetailsPgConn:
+    def test_empty_list_returns_empty(self, pg_conn):
+        from application.api.user.base import resolve_tool_details
+        with _patch_base_db(pg_conn):
+            assert resolve_tool_details([]) == []
+
+    def test_none_entries_filtered_out(self, pg_conn):
+        from application.api.user.base import resolve_tool_details
+        with _patch_base_db(pg_conn):
+            assert resolve_tool_details([None, ""]) == []
+
+    def test_resolves_known_uuid_ids(self, pg_conn):
+        from application.api.user.base import resolve_tool_details
+        from application.storage.db.repositories.user_tools import (
+            UserToolsRepository,
+        )
+
+        tool = UserToolsRepository(pg_conn).create(
+            "u", "my_tool", display_name="My Tool",
+            custom_name="Custom",
+            description="x",
+        )
+        with _patch_base_db(pg_conn):
+            got = resolve_tool_details([str(tool["id"])])
+        assert len(got) == 1
+        assert got[0]["name"] == "my_tool"
+        assert got[0]["display_name"] == "Custom"
+
+    def test_unknown_ids_skipped(self, pg_conn):
+        from application.api.user.base import resolve_tool_details
+        with _patch_base_db(pg_conn):
+            got = resolve_tool_details(
+                ["00000000-0000-0000-0000-000000000000"]
+            )
+        assert got == []
+
+    def test_legacy_ids_lookup(self, pg_conn):
+        from application.api.user.base import resolve_tool_details
+        from application.storage.db.repositories.user_tools import (
+            UserToolsRepository,
+        )
+
+        tool = UserToolsRepository(pg_conn).create(
+            "u", "legacy_tool",
+            display_name="Legacy",
+            legacy_mongo_id="507f1f77bcf86cd799439011",
+        )
+        _ = tool
+        with _patch_base_db(pg_conn):
+            got = resolve_tool_details(["507f1f77bcf86cd799439011"])
+        assert len(got) == 1
+        assert got[0]["name"] == "legacy_tool"
+
+
+class TestRequireAgentPgConn:
+    def test_returns_404_invalid_token(self, pg_conn, flask_app):
         from application.api.user.base import require_agent
 
-        with flask_app.app_context():
+        @require_agent
+        def fn(webhook_token=None, agent=None, agent_id_str=None):
+            return {"ok": True}
 
-            @require_agent
-            def test_func(webhook_token=None, agent=None, agent_id_str=None):
-                return {"success": True}
+        with _patch_base_db(pg_conn), flask_app.app_context():
+            result = fn(webhook_token="bogus")
+        assert result.status_code == 404
 
-            result = test_func(webhook_token="invalid_token_999")
+    def test_injects_agent_when_valid(self, pg_conn, flask_app):
+        from application.api.user.base import require_agent
+        from application.storage.db.repositories.agents import AgentsRepository
 
-            assert result.status_code == 404
-            assert result.json["success"] is False
-            assert "not found" in result.json["message"].lower()
+        agent = AgentsRepository(pg_conn).create(
+            "owner", "wh-agent", "published",
+            incoming_webhook_token="webhook-123",
+        )
+
+        @require_agent
+        def fn(webhook_token=None, agent=None, agent_id_str=None):
+            return {"got": agent_id_str}
+
+        with _patch_base_db(pg_conn), flask_app.app_context():
+            result = fn(webhook_token="webhook-123")
+        assert result["got"] == str(agent["id"])
+

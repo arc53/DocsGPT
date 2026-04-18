@@ -1,0 +1,45 @@
+# One-shot migrator: runs `python scripts/db/init_postgres.py` (alembic
+# upgrade head), then exits. The backend and worker Deployments rely on
+# an init container that blocks until Postgres is reachable, but this Job
+# ensures the schema is migrated before application pods start serving.
+#
+# Re-apply after upgrades to run new migrations. Safe to re-run: idempotent.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-init
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: postgres-init
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+      - name: wait-for-postgres
+        image: postgres:16-alpine
+        command:
+          - sh
+          - -c
+          - |
+            until pg_isready -h postgres -p 5432 -U docsgpt -d docsgpt; do
+              echo "Waiting for postgres..."; sleep 2;
+            done
+      containers:
+      - name: postgres-init
+        image: arc53/docsgpt
+        command: ["python", "scripts/db/init_postgres.py"]
+        envFrom:
+        - secretRef:
+            name: docsgpt-secrets
+        env:
+        - name: FLASK_APP
+          value: "application/app.py"
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+          requests:
+            memory: "256Mi"
+            cpu: "100m"

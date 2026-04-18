@@ -6,11 +6,6 @@ import pytest
 
 from application.storage.db.repositories.agents import AgentsRepository
 
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
-
 
 def _repo(conn) -> AgentsRepository:
     return AgentsRepository(conn)
@@ -98,6 +93,146 @@ class TestFindByKey:
     def test_find_by_key_nonexistent_returns_none(self, pg_conn):
         repo = _repo(pg_conn)
         assert repo.find_by_key("nonexistent-key") is None
+
+
+class TestSharing:
+    def test_create_with_share_fields(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create(
+            "u", "a", "published",
+            shared=True,
+            shared_token="share-abc",
+            shared_metadata={"name": "public demo", "avatar": "🤖"},
+        )
+        assert created["shared"] is True
+        assert created["shared_token"] == "share-abc"
+        assert created["shared_metadata"] == {"name": "public demo", "avatar": "🤖"}
+
+    def test_update_share_fields(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("u", "a", "draft")
+        repo.update(
+            created["id"], "u",
+            {"shared": True, "shared_token": "tok-xyz", "shared_metadata": {"k": 1}},
+        )
+        fetched = repo.get(created["id"], "u")
+        assert fetched["shared"] is True
+        assert fetched["shared_token"] == "tok-xyz"
+        assert fetched["shared_metadata"] == {"k": 1}
+
+    def test_find_by_shared_token_only_returns_shared_agents(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create(
+            "u", "a", "published",
+            shared=True, shared_token="tok-1",
+        )
+        found = repo.find_by_shared_token("tok-1")
+        assert found is not None
+        assert found["id"] == created["id"]
+
+    def test_find_by_shared_token_skips_revoked(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create(
+            "u", "a", "published",
+            shared=False, shared_token="tok-revoked",
+        )
+        assert repo.find_by_shared_token("tok-revoked") is None
+        # And revocation by flipping `shared` is immediately effective
+        repo.update(created["id"], "u", {"shared": True})
+        assert repo.find_by_shared_token("tok-revoked") is not None
+
+    def test_share_token_is_unique(self, pg_conn):
+        """CITEXT UNIQUE constraint blocks duplicate share tokens."""
+        import sqlalchemy.exc
+
+        repo = _repo(pg_conn)
+        repo.create("u", "a1", "published", shared=True, shared_token="dup")
+        with pytest.raises(sqlalchemy.exc.IntegrityError):
+            repo.create("u", "a2", "published", shared=True, shared_token="DUP")
+
+
+class TestPart1bFields:
+    """Coverage for image, workflow_id, allow_system_prompt_override,
+    and FK round-trip via create()."""
+
+    def test_create_with_image_and_override(self, pg_conn):
+        repo = _repo(pg_conn)
+        agent = repo.create(
+            "u", "a", "draft",
+            image="https://example.com/avatar.png",
+            allow_system_prompt_override=True,
+        )
+        assert agent["image"] == "https://example.com/avatar.png"
+        assert agent["allow_system_prompt_override"] is True
+
+    def test_default_allow_override_is_false(self, pg_conn):
+        repo = _repo(pg_conn)
+        agent = repo.create("u", "a", "draft")
+        assert agent["allow_system_prompt_override"] is False
+
+    def test_extra_source_ids_round_trip(self, pg_conn):
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        sources = SourcesRepository(pg_conn)
+        s1 = sources.create("s1", user_id="u")
+        s2 = sources.create("s2", user_id="u")
+        repo = _repo(pg_conn)
+        agent = repo.create(
+            "u", "a", "draft",
+            source_id=s1["id"],
+            extra_source_ids=[s2["id"]],
+        )
+        # ARRAY(UUID) returns list of UUID objects
+        assert [str(x) for x in agent["extra_source_ids"]] == [str(s2["id"])]
+        assert str(agent["source_id"]) == str(s1["id"])
+
+    def test_workflow_id_fk(self, pg_conn):
+        from application.storage.db.repositories.workflows import WorkflowsRepository
+
+        wf = WorkflowsRepository(pg_conn).create("u", "wf")
+        repo = _repo(pg_conn)
+        agent = repo.create(
+            "u", "a", "draft",
+            agent_type="workflow",
+            workflow_id=wf["id"],
+        )
+        assert str(agent["workflow_id"]) == str(wf["id"])
+
+    def test_workflow_id_set_null_on_workflow_delete(self, pg_conn):
+        """ON DELETE SET NULL on agents.workflow_id."""
+        from application.storage.db.repositories.workflows import WorkflowsRepository
+
+        wfr = WorkflowsRepository(pg_conn)
+        wf = wfr.create("u", "wf")
+        repo = _repo(pg_conn)
+        agent = repo.create("u", "a", "draft", workflow_id=wf["id"])
+        wfr.delete(wf["id"], "u")
+        survivor = repo.get(agent["id"], "u")
+        assert survivor is not None
+        assert survivor["workflow_id"] is None
+
+    def test_update_image_and_override(self, pg_conn):
+        repo = _repo(pg_conn)
+        agent = repo.create("u", "a", "draft")
+        repo.update(agent["id"], "u", {
+            "image": "/new.png",
+            "allow_system_prompt_override": True,
+        })
+        fetched = repo.get(agent["id"], "u")
+        assert fetched["image"] == "/new.png"
+        assert fetched["allow_system_prompt_override"] is True
+
+
+class TestUpdateLastUsedAt:
+    def test_update_last_used_at(self, pg_conn):
+        import datetime
+
+        repo = _repo(pg_conn)
+        created = repo.create("u", "a", "draft")
+        when = datetime.datetime(2026, 4, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+        assert repo.update(created["id"], "u", {"last_used_at": when}) is True
+        fetched = repo.get(created["id"], "u")
+        assert fetched["last_used_at"] == when
 
 
 class TestListForUser:

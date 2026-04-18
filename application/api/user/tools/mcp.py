@@ -3,26 +3,23 @@
 import json
 from urllib.parse import urlencode, urlparse
 
-from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, redirect, request
 from flask_restx import Namespace, Resource, fields
 
 from application.agents.tools.mcp_tool import MCPOAuthManager, MCPTool
 from application.api import api
-from application.api.user.base import user_tools_collection
 from application.api.user.tools.routes import transform_actions
 from application.cache import get_redis_instance
-from application.core.mongo_db import MongoDB
-from application.core.settings import settings
 from application.core.url_validation import SSRFError, validate_url
 from application.security.encryption import decrypt_credentials, encrypt_credentials
+from application.storage.db.repositories.connector_sessions import (
+    ConnectorSessionsRepository,
+)
+from application.storage.db.repositories.user_tools import UserToolsRepository
+from application.storage.db.session import db_readonly, db_session
 from application.utils import check_required_fields
 
 tools_mcp_ns = Namespace("tools", description="Tool management operations", path="/api")
-
-_mongo = MongoDB.get_client()
-_db = _mongo[settings.MONGO_DB_NAME]
-_connector_sessions = _db["connector_sessions"]
 
 _ALLOWED_TRANSPORTS = {"auto", "sse", "http"}
 
@@ -252,15 +249,18 @@ class MCPServerSave(Resource):
             storage_config = config.copy()
 
             tool_id = data.get("id")
+            existing_doc = None
             existing_encrypted = None
             if tool_id:
-                existing_doc = user_tools_collection.find_one(
-                    {"_id": ObjectId(tool_id), "user": user, "name": "mcp_tool"}
-                )
-                if existing_doc:
-                    existing_encrypted = existing_doc.get("config", {}).get(
+                with db_readonly() as conn:
+                    repo = UserToolsRepository(conn)
+                    existing_doc = repo.get_any(tool_id, user)
+                if existing_doc and existing_doc.get("name") == "mcp_tool":
+                    existing_encrypted = (existing_doc.get("config") or {}).get(
                         "encrypted_credentials"
                     )
+                else:
+                    existing_doc = None
 
             if auth_credentials:
                 if existing_encrypted:
@@ -283,47 +283,88 @@ class MCPServerSave(Resource):
             ]:
                 storage_config.pop(field, None)
             transformed_actions = transform_actions(actions_metadata)
-            tool_data = {
-                "name": "mcp_tool",
-                "displayName": data["displayName"],
-                "customName": data["displayName"],
-                "description": f"MCP Server: {storage_config.get('server_url', 'Unknown')}",
-                "config": storage_config,
-                "actions": transformed_actions,
-                "status": data.get("status", True),
-                "user": user,
-            }
 
-            if tool_id:
-                result = user_tools_collection.update_one(
-                    {"_id": ObjectId(tool_id), "user": user, "name": "mcp_tool"},
-                    {"$set": {k: v for k, v in tool_data.items() if k != "user"}},
-                )
-                if result.matched_count == 0:
-                    return make_response(
-                        jsonify(
-                            {
-                                "success": False,
-                                "error": "Tool not found or access denied",
-                            }
-                        ),
-                        404,
+            display_name = data["displayName"]
+            description = f"MCP Server: {storage_config.get('server_url', 'Unknown')}"
+            status_bool = bool(data.get("status", True))
+
+            with db_session() as conn:
+                repo = UserToolsRepository(conn)
+                if existing_doc:
+                    repo.update(
+                        str(existing_doc["id"]), user,
+                        {
+                            "display_name": display_name,
+                            "custom_name": display_name,
+                            "description": description,
+                            "config": storage_config,
+                            "actions": transformed_actions,
+                            "status": status_bool,
+                        },
                     )
-                response_data = {
-                    "success": True,
-                    "id": tool_id,
-                    "message": f"MCP server updated successfully! Discovered {len(transformed_actions)} tools.",
-                    "tools_count": len(transformed_actions),
-                }
-            else:
-                result = user_tools_collection.insert_one(tool_data)
-                tool_id = str(result.inserted_id)
-                response_data = {
-                    "success": True,
-                    "id": tool_id,
-                    "message": f"MCP server created successfully! Discovered {len(transformed_actions)} tools.",
-                    "tools_count": len(transformed_actions),
-                }
+                    saved_id = str(existing_doc["id"])
+                    response_data = {
+                        "success": True,
+                        "id": saved_id,
+                        "message": f"MCP server updated successfully! Discovered {len(transformed_actions)} tools.",
+                        "tools_count": len(transformed_actions),
+                    }
+                else:
+                    # Fall back to find_by_user_and_name — the original
+                    # dual-write path also ran an existence check before
+                    # deciding between insert and update.
+                    existing_by_name = repo.find_by_user_and_name(user, "mcp_tool")
+                    if tool_id is None and existing_by_name and (
+                        (existing_by_name.get("config") or {}).get("server_url")
+                        == storage_config.get("server_url")
+                    ):
+                        repo.update(
+                            str(existing_by_name["id"]), user,
+                            {
+                                "display_name": display_name,
+                                "custom_name": display_name,
+                                "description": description,
+                                "config": storage_config,
+                                "actions": transformed_actions,
+                                "status": status_bool,
+                            },
+                        )
+                        saved_id = str(existing_by_name["id"])
+                        response_data = {
+                            "success": True,
+                            "id": saved_id,
+                            "message": f"MCP server updated successfully! Discovered {len(transformed_actions)} tools.",
+                            "tools_count": len(transformed_actions),
+                        }
+                    else:
+                        created = repo.create(
+                            user, "mcp_tool",
+                            config=storage_config,
+                            custom_name=display_name,
+                            display_name=display_name,
+                            description=description,
+                            config_requirements={},
+                            actions=transformed_actions,
+                            status=status_bool,
+                        )
+                        saved_id = str(created["id"])
+                        response_data = {
+                            "success": True,
+                            "id": saved_id,
+                            "message": f"MCP server created successfully! Discovered {len(transformed_actions)} tools.",
+                            "tools_count": len(transformed_actions),
+                        }
+                    if tool_id and existing_doc is None:
+                        # Client requested update on a non-existent tool id.
+                        return make_response(
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "error": "Tool not found or access denied",
+                                }
+                            ),
+                            404,
+                        )
             return make_response(jsonify(response_data), 200)
         except ValueError as e:
             current_app.logger.warning(f"Invalid MCP server save request: {e}")
@@ -459,49 +500,59 @@ class MCPAuthStatus(Resource):
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
         try:
-            mcp_tools = list(
-                user_tools_collection.find(
-                    {"user": user, "name": "mcp_tool"},
-                    {"_id": 1, "config": 1},
-                )
-            )
-            if not mcp_tools:
-                return make_response(jsonify({"success": True, "statuses": {}}), 200)
-
-            oauth_server_urls = {}
-            statuses = {}
-            for tool in mcp_tools:
-                tool_id = str(tool["_id"])
-                config = tool.get("config", {})
-                auth_type = config.get("auth_type", "none")
-                if auth_type == "oauth":
-                    server_url = config.get("server_url", "")
-                    if server_url:
-                        parsed = urlparse(server_url)
-                        base_url = f"{parsed.scheme}://{parsed.netloc}"
-                        oauth_server_urls[tool_id] = base_url
-                    else:
-                        statuses[tool_id] = "needs_auth"
-                else:
-                    statuses[tool_id] = "configured"
-
-            if oauth_server_urls:
-                unique_urls = list(set(oauth_server_urls.values()))
-                sessions = list(
-                    _connector_sessions.find(
-                        {"user_id": user, "server_url": {"$in": unique_urls}},
-                        {"server_url": 1, "tokens": 1},
+            with db_readonly() as conn:
+                tools_repo = UserToolsRepository(conn)
+                sessions_repo = ConnectorSessionsRepository(conn)
+                all_tools = tools_repo.list_for_user(user)
+                mcp_tools = [t for t in all_tools if t.get("name") == "mcp_tool"]
+                if not mcp_tools:
+                    return make_response(
+                        jsonify({"success": True, "statuses": {}}), 200
                     )
-                )
-                url_has_tokens = {
-                    doc["server_url"]: bool(doc.get("tokens", {}).get("access_token"))
-                    for doc in sessions
-                }
-                for tool_id, base_url in oauth_server_urls.items():
-                    if url_has_tokens.get(base_url):
-                        statuses[tool_id] = "connected"
+
+                oauth_server_urls: dict = {}
+                statuses: dict = {}
+                for tool in mcp_tools:
+                    tool_id = str(tool["id"])
+                    config = tool.get("config") or {}
+                    auth_type = config.get("auth_type", "none")
+                    if auth_type == "oauth":
+                        server_url = config.get("server_url", "")
+                        if server_url:
+                            parsed = urlparse(server_url)
+                            base_url = f"{parsed.scheme}://{parsed.netloc}"
+                            oauth_server_urls[tool_id] = base_url
+                        else:
+                            statuses[tool_id] = "needs_auth"
                     else:
-                        statuses[tool_id] = "needs_auth"
+                        statuses[tool_id] = "configured"
+
+                if oauth_server_urls:
+                    # Look up a session per distinct base URL. MCP sessions
+                    # are stored with ``provider = "mcp:<server_url>"``
+                    # and the URL in ``server_url``; reuse the repo's
+                    # per-URL accessor rather than an ad-hoc $in query.
+                    url_has_tokens: dict = {}
+                    for base_url in set(oauth_server_urls.values()):
+                        session = sessions_repo.get_by_user_and_server_url(
+                            user, base_url,
+                        )
+                        tokens = (
+                            (session or {}).get("session_data", {}) or {}
+                        ).get("tokens", {}) or {}
+                        # MCP code also stashes tokens into token_info on
+                        # the row; consider either present as "connected".
+                        token_info = (session or {}).get("token_info") or {}
+                        url_has_tokens[base_url] = bool(
+                            tokens.get("access_token")
+                            or token_info.get("access_token")
+                        )
+
+                    for tool_id, base_url in oauth_server_urls.items():
+                        if url_has_tokens.get(base_url):
+                            statuses[tool_id] = "connected"
+                        else:
+                            statuses[tool_id] = "needs_auth"
 
             return make_response(jsonify({"success": True, "statuses": statuses}), 200)
         except Exception as e:

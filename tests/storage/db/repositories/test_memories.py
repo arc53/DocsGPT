@@ -5,15 +5,9 @@ Memories have a FK to user_tools, so each test creates a tool row first.
 
 from __future__ import annotations
 
-import pytest
 from sqlalchemy import text
 
 from application.storage.db.repositories.memories import MemoriesRepository
-
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
 
 
 def _repo(conn) -> MemoriesRepository:

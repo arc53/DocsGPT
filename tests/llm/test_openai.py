@@ -1153,28 +1153,17 @@ class TestUploadFileToOpenai2:
         with pytest.raises(FileNotFoundError, match="File not found"):
             llm._upload_file_to_openai({"path": "/nonexistent.pdf"})
 
-    def test_upload_success_with_id_caching(self, llm, monkeypatch):
-        """Cover lines 498-514: successful upload with MongoDB caching."""
-        from unittest.mock import MagicMock
+    def test_upload_success_with_id_caching(self, llm):
+        """Successful upload returns the uploaded file id.
 
+        The attachment-id cache write goes through AttachmentsRepository;
+        failures there are swallowed with a logged warning, so this just
+        asserts the upload return value flows through.
+        """
         llm.storage = types.SimpleNamespace(
             file_exists=lambda p: True,
             process_file=lambda path, fn, **kw: "file-uploaded-id",
         )
-
-        mock_collection = MagicMock()
-        mock_db = MagicMock()
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-        mock_client = MagicMock()
-        mock_client.__getitem__ = MagicMock(return_value=mock_db)
-        mock_mongo_cls = MagicMock()
-        mock_mongo_cls.get_client.return_value = mock_client
-
-        monkeypatch.setattr(
-            "application.core.mongo_db.MongoDB",
-            mock_mongo_cls,
-        )
-
         result = llm._upload_file_to_openai(
             {"path": "/file.pdf", "_id": "attachment-id"}
         )
@@ -1400,38 +1389,21 @@ class TestUploadFileToOpenaiLine469:
 class TestUploadFileToOpenaiLines489To517:
     """Cover lines 489-517: full upload path."""
 
-    def test_full_upload_with_mongo_caching(self, llm, monkeypatch):
-        from unittest.mock import MagicMock
-
+    def test_full_upload_with_attachment_caching(self, llm):
+        # AttachmentsRepository cache-write errors are swallowed; verify
+        # the uploaded file id returns through.
         llm.storage = types.SimpleNamespace(
             file_exists=lambda p: True,
             process_file=lambda path, fn, **kw: "file-new-id",
         )
-
-        mock_collection = MagicMock()
-        mock_db = MagicMock()
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-        mock_client = MagicMock()
-        mock_client.__getitem__ = MagicMock(return_value=mock_db)
-        mock_mongo_cls = MagicMock()
-        mock_mongo_cls.get_client.return_value = mock_client
-
-        monkeypatch.setattr("application.core.mongo_db.MongoDB", mock_mongo_cls)
-
         result = llm._upload_file_to_openai({"path": "/doc.pdf", "_id": "att-1"})
         assert result == "file-new-id"
 
-    def test_upload_without_id_skips_caching(self, llm, monkeypatch):
-        from unittest.mock import MagicMock
-
+    def test_upload_without_id_skips_caching(self, llm):
         llm.storage = types.SimpleNamespace(
             file_exists=lambda p: True,
             process_file=lambda path, fn, **kw: "file-no-cache",
         )
-
-        mock_mongo_cls = MagicMock()
-        monkeypatch.setattr("application.core.mongo_db.MongoDB", mock_mongo_cls)
-
         result = llm._upload_file_to_openai({"path": "/doc.pdf"})
         assert result == "file-no-cache"
 

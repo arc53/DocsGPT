@@ -8,15 +8,15 @@ import uuid
 from functools import wraps
 from typing import Optional, Tuple
 
-from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, Response
-from pymongo import ReturnDocument
 from werkzeug.utils import secure_filename
 
-from application.core.mongo_db import MongoDB
+from sqlalchemy import text as _sql_text
+
 from application.core.settings import settings
-from application.storage.db.dual_write import dual_write
+from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.repositories.users import UsersRepository
+from application.storage.db.session import db_readonly, db_session
 from application.storage.storage_creator import StorageCreator
 from application.vectorstore.vector_creator import VectorCreator
 
@@ -24,56 +24,6 @@ from application.vectorstore.vector_creator import VectorCreator
 storage = StorageCreator.get_storage()
 
 
-mongo = MongoDB.get_client()
-db = mongo[settings.MONGO_DB_NAME]
-
-
-conversations_collection = db["conversations"]
-sources_collection = db["sources"]
-prompts_collection = db["prompts"]
-feedback_collection = db["feedback"]
-agents_collection = db["agents"]
-agent_folders_collection = db["agent_folders"]
-token_usage_collection = db["token_usage"]
-shared_conversations_collections = db["shared_conversations"]
-users_collection = db["users"]
-user_logs_collection = db["user_logs"]
-user_tools_collection = db["user_tools"]
-attachments_collection = db["attachments"]
-workflow_runs_collection = db["workflow_runs"]
-workflows_collection = db["workflows"]
-workflow_nodes_collection = db["workflow_nodes"]
-workflow_edges_collection = db["workflow_edges"]
-
-
-try:
-    agents_collection.create_index(
-        [("shared", 1)],
-        name="shared_index",
-        background=True,
-    )
-    users_collection.create_index("user_id", unique=True)
-    workflows_collection.create_index(
-        [("user", 1)], name="workflow_user_index", background=True
-    )
-    workflow_nodes_collection.create_index(
-        [("workflow_id", 1)], name="node_workflow_index", background=True
-    )
-    workflow_nodes_collection.create_index(
-        [("workflow_id", 1), ("graph_version", 1)],
-        name="node_workflow_graph_version_index",
-        background=True,
-    )
-    workflow_edges_collection.create_index(
-        [("workflow_id", 1)], name="edge_workflow_index", background=True
-    )
-    workflow_edges_collection.create_index(
-        [("workflow_id", 1), ("graph_version", 1)],
-        name="edge_workflow_graph_version_index",
-        background=True,
-    )
-except Exception as e:
-    print("Error creating indexes:", e)
 current_dir = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
@@ -105,69 +55,95 @@ def generate_date_range(start_date, end_date):
 
 def ensure_user_doc(user_id):
     """
-    Ensure user document exists with proper agent preferences structure.
+    Ensure a Postgres ``users`` row exists for ``user_id``.
+
+    Returns the row as a dict with the shape legacy callers expect — in
+    particular ``user_id`` and ``agent_preferences`` (with ``pinned`` and
+    ``shared_with_me`` list keys always present).
 
     Args:
         user_id: The user ID to ensure
 
     Returns:
-        The user document
+        The user document as a dict.
     """
-    default_prefs = {
-        "pinned": [],
-        "shared_with_me": [],
-    }
+    with db_session() as conn:
+        user_doc = UsersRepository(conn).upsert(user_id)
 
-    user_doc = users_collection.find_one_and_update(
-        {"user_id": user_id},
-        {"$setOnInsert": {"agent_preferences": default_prefs}},
-        upsert=True,
-        return_document=ReturnDocument.AFTER,
-    )
-
-    prefs = user_doc.get("agent_preferences", {})
-    updates = {}
-    if "pinned" not in prefs:
-        updates["agent_preferences.pinned"] = []
-    if "shared_with_me" not in prefs:
-        updates["agent_preferences.shared_with_me"] = []
-    if updates:
-        users_collection.update_one({"user_id": user_id}, {"$set": updates})
-        user_doc = users_collection.find_one({"user_id": user_id})
-
-    dual_write(UsersRepository, lambda repo: repo.upsert(user_id))
-
+    prefs = user_doc.get("agent_preferences") or {}
+    if not isinstance(prefs, dict):
+        prefs = {}
+    prefs.setdefault("pinned", [])
+    prefs.setdefault("shared_with_me", [])
+    user_doc["agent_preferences"] = prefs
     return user_doc
 
 
 def resolve_tool_details(tool_ids):
     """
-    Resolve tool IDs to their details.
+    Resolve tool IDs to their display details.
+
+    Accepts either Postgres UUIDs or legacy Mongo ObjectId strings (mixed
+    lists are supported — each id is looked up via ``get_any``, which
+    resolves to whichever column matches). Unknown ids are silently
+    skipped.
 
     Args:
-        tool_ids: List of tool IDs
+        tool_ids: List of tool IDs (UUIDs or legacy Mongo ObjectId strings).
 
     Returns:
-        List of tool details with id, name, and display_name
+        List of tool details with ``id``, ``name``, and ``display_name``.
     """
-    valid_ids = []
+    if not tool_ids:
+        return []
+
+    uuid_ids: list[str] = []
+    legacy_ids: list[str] = []
     for tid in tool_ids:
-        try:
-            valid_ids.append(ObjectId(tid))
-        except Exception:
+        if not tid:
             continue
-    tools = user_tools_collection.find(
-        {"_id": {"$in": valid_ids}}
-    ) if valid_ids else []
+        tid_str = str(tid)
+        if looks_like_uuid(tid_str):
+            uuid_ids.append(tid_str)
+        else:
+            legacy_ids.append(tid_str)
+
+    if not uuid_ids and not legacy_ids:
+        return []
+
+    rows: list[dict] = []
+    with db_readonly() as conn:
+        if uuid_ids:
+            result = conn.execute(
+                _sql_text(
+                    "SELECT * FROM user_tools "
+                    "WHERE id = ANY(CAST(:ids AS uuid[]))"
+                ),
+                {"ids": uuid_ids},
+            )
+            rows.extend(row_to_dict(r) for r in result.fetchall())
+        if legacy_ids:
+            result = conn.execute(
+                _sql_text(
+                    "SELECT * FROM user_tools "
+                    "WHERE legacy_mongo_id = ANY(:ids)"
+                ),
+                {"ids": legacy_ids},
+            )
+            rows.extend(row_to_dict(r) for r in result.fetchall())
+
     return [
         {
-            "id": str(tool["_id"]),
-            "name": tool.get("name", ""),
-            "display_name": tool.get("customName")
-            or tool.get("displayName")
-            or tool.get("name", ""),
+            "id": str(tool.get("id") or tool.get("legacy_mongo_id") or ""),
+            "name": tool.get("name", "") or "",
+            "display_name": (
+                tool.get("custom_name")
+                or tool.get("display_name")
+                or tool.get("name", "")
+                or ""
+            ),
         }
-        for tool in tools
+        for tool in rows
     ]
 
 
@@ -237,14 +213,15 @@ def require_agent(func):
 
     @wraps(func)
     def wrapper(*args, **kwargs):
+        from application.storage.db.repositories.agents import AgentsRepository
+
         webhook_token = kwargs.get("webhook_token")
         if not webhook_token:
             return make_response(
                 jsonify({"success": False, "message": "Webhook token missing"}), 400
             )
-        agent = agents_collection.find_one(
-            {"incoming_webhook_token": webhook_token}, {"_id": 1}
-        )
+        with db_readonly() as conn:
+            agent = AgentsRepository(conn).find_by_webhook_token(webhook_token)
         if not agent:
             current_app.logger.warning(
                 f"Webhook attempt with invalid token: {webhook_token}"
@@ -253,7 +230,7 @@ def require_agent(func):
                 jsonify({"success": False, "message": "Agent not found"}), 404
             )
         kwargs["agent"] = agent
-        kwargs["agent_id_str"] = str(agent["_id"])
+        kwargs["agent_id_str"] = str(agent["id"])
         return func(*args, **kwargs)
 
     return wrapper

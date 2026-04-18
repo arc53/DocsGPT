@@ -2,15 +2,11 @@ import sys
 import logging
 from datetime import datetime
 
-from application.core.mongo_db import MongoDB
-from application.core.settings import settings
+from application.storage.db.repositories.token_usage import TokenUsageRepository
+from application.storage.db.session import db_session
 from application.utils import num_tokens_from_object_or_list, num_tokens_from_string
 
 logger = logging.getLogger(__name__)
-
-mongo = MongoDB.get_client()
-db = mongo[settings.MONGO_DB_NAME]
-usage_collection = db["token_usage"]
 
 
 def _serialize_for_token_count(value):
@@ -99,30 +95,18 @@ def update_token_usage(decoded_token, user_api_key, token_usage, agent_id=None):
         )
         return
 
-    usage_data = {
-        "user_id": user_id,
-        "api_key": user_api_key,
-        "prompt_tokens": token_usage["prompt_tokens"],
-        "generated_tokens": token_usage["generated_tokens"],
-        "timestamp": datetime.now(),
-    }
-    if normalized_agent_id:
-        usage_data["agent_id"] = normalized_agent_id
-    usage_collection.insert_one(usage_data)
-
-    from application.storage.db.dual_write import dual_write
-    from application.storage.db.repositories.token_usage import TokenUsageRepository
-
-    dual_write(
-        TokenUsageRepository,
-        lambda repo, d=usage_data: repo.insert(
-            user_id=d.get("user_id"),
-            api_key=d.get("api_key"),
-            agent_id=d.get("agent_id"),
-            prompt_tokens=d["prompt_tokens"],
-            generated_tokens=d["generated_tokens"],
-        ),
-    )
+    try:
+        with db_session() as conn:
+            TokenUsageRepository(conn).insert(
+                user_id=user_id,
+                api_key=user_api_key,
+                agent_id=normalized_agent_id,
+                prompt_tokens=token_usage["prompt_tokens"],
+                generated_tokens=token_usage["generated_tokens"],
+                timestamp=datetime.now(),
+            )
+    except Exception as e:
+        logger.error(f"Failed to record token usage: {e}", exc_info=True)
 
 
 def gen_token_usage(func):

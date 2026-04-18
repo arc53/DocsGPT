@@ -17,7 +17,7 @@ services:
       # Override URLs to use docker service names
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
-      - MONGO_URI=mongodb://mongo:27017/docsgpt
+      - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     ports:
       - "7091:7091"
     volumes:
@@ -25,8 +25,10 @@ services:
       - ../application/inputs:/app/application/inputs
       - ../application/vectors:/app/application/vectors
     depends_on:
-        - redis
-        - mongo
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   worker:
     build: ../application
@@ -37,25 +39,34 @@ services:
       # Override URLs to use docker service names
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
-      - MONGO_URI=mongodb://mongo:27017/docsgpt
       - API_URL=http://backend:7091
+      - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     depends_on:
-        - redis
-        - mongo
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   redis:
     image: redis:6-alpine
     ports:
       - 6379:6379
 
-  mongo:
-    image: mongo:6
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=docsgpt
+      - POSTGRES_PASSWORD=docsgpt
+      - POSTGRES_DB=docsgpt
     ports:
-      - 27017:27017
+      - "5432:5432"
     volumes:
-      - mongodb_data_container:/data/db
-
-
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docsgpt -d docsgpt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
-  mongodb_data_container:
+  postgres_data:

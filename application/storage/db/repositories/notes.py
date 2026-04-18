@@ -12,7 +12,7 @@ from typing import Optional
 
 from sqlalchemy import Connection, text
 
-from application.storage.db.base_repository import row_to_dict
+from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 
 
 class NotesRepository:
@@ -60,3 +60,29 @@ class NotesRepository:
             {"user_id": user_id, "tool_id": tool_id},
         )
         return result.rowcount > 0
+
+    def get_by_legacy_id(self, legacy_mongo_id: str) -> Optional[dict]:
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
+        result = self._conn.execute(
+            text("SELECT * FROM notes WHERE legacy_mongo_id = :legacy"),
+            {"legacy": legacy_mongo_id},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def get_any(self, identifier: str, user_id: str) -> Optional[dict]:
+        """Resolve a note by PG UUID or legacy Mongo ObjectId.
+
+        Picks the lookup path from the id shape so non-UUID input never
+        reaches ``CAST(:id AS uuid)`` — that cast raises on the server
+        and poisons the enclosing transaction, making any subsequent
+        query on the same connection fail.
+        """
+        if looks_like_uuid(identifier):
+            doc = self.get(identifier, user_id)
+            if doc is not None:
+                return doc
+        legacy = self.get_by_legacy_id(identifier)
+        if legacy and legacy.get("user_id") == user_id:
+            return legacy
+        return None

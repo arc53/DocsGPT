@@ -186,3 +186,11 @@ node_modules/
 .vscode/sftp.json
 /models/
 model/
+
+# E2E test artifacts
+.e2e-tmp/
+/tmp/docsgpt-e2e/
+tests/e2e/node_modules/
+tests/e2e/playwright-report/
+tests/e2e/test-results/
+tests/e2e/.e2e-last-run.json

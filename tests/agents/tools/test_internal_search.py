@@ -5,8 +5,7 @@ directory structure loading), build helpers, add_internal_search_tool,
 sources_have_directory_structure.
 """
 
-import json
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -298,29 +297,6 @@ class TestCountFiles:
 @pytest.mark.unit
 class TestGetDirectoryStructure:
 
-    def test_loads_from_mongo(self):
-        tool = InternalSearchTool({
-            "source": {"active_docs": ["507f1f77bcf86cd799439011"]},
-        })
-
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = {
-            "_id": "507f1f77bcf86cd799439011",
-            "name": "test_source",
-            "directory_structure": {"src": {"main.py": {}}},
-        }
-
-        with patch("application.core.mongo_db.MongoDB") as mock_mongo:
-            mock_db = MagicMock()
-            mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-            mock_client = MagicMock()
-            mock_client.__getitem__ = MagicMock(return_value=mock_db)
-            mock_mongo.get_client.return_value = mock_client
-
-            result = tool._get_directory_structure()
-            assert result is not None
-            assert "src" in result
-
     def test_returns_none_without_active_docs(self):
         tool = InternalSearchTool({"source": {}})
         result = tool._get_directory_structure()
@@ -334,78 +310,6 @@ class TestGetDirectoryStructure:
 
         result = tool._get_directory_structure()
         assert result == {"cached": True}
-
-    def test_handles_json_string_structure(self):
-        tool = InternalSearchTool({
-            "source": {"active_docs": ["507f1f77bcf86cd799439011"]},
-        })
-
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = {
-            "_id": "507f1f77bcf86cd799439011",
-            "name": "test_source",
-            "directory_structure": json.dumps({"src": {"app.py": {}}}),
-        }
-
-        with patch("application.core.mongo_db.MongoDB") as mock_mongo:
-            mock_db = MagicMock()
-            mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-            mock_client = MagicMock()
-            mock_client.__getitem__ = MagicMock(return_value=mock_db)
-            mock_mongo.get_client.return_value = mock_client
-
-            result = tool._get_directory_structure()
-            assert result is not None
-            assert "src" in result
-
-    def test_handles_string_active_docs(self):
-        tool = InternalSearchTool({
-            "source": {"active_docs": "507f1f77bcf86cd799439011"},
-        })
-
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = {
-            "_id": "507f1f77bcf86cd799439011",
-            "directory_structure": {"dir": {}},
-        }
-
-        with patch("application.core.mongo_db.MongoDB") as mock_mongo:
-            mock_db = MagicMock()
-            mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-            mock_client = MagicMock()
-            mock_client.__getitem__ = MagicMock(return_value=mock_db)
-            mock_mongo.get_client.return_value = mock_client
-
-            result = tool._get_directory_structure()
-            assert result is not None
-
-    def test_merges_multiple_sources(self):
-        tool = InternalSearchTool({
-            "source": {
-                "active_docs": [
-                    "507f1f77bcf86cd799439011",
-                    "507f1f77bcf86cd799439012",
-                ],
-            },
-        })
-
-        mock_collection = MagicMock()
-        mock_collection.find_one.side_effect = [
-            {"name": "src1", "directory_structure": {"a": {}}},
-            {"name": "src2", "directory_structure": {"b": {}}},
-        ]
-
-        with patch("application.core.mongo_db.MongoDB") as mock_mongo:
-            mock_db = MagicMock()
-            mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-            mock_client = MagicMock()
-            mock_client.__getitem__ = MagicMock(return_value=mock_db)
-            mock_mongo.get_client.return_value = mock_client
-
-            result = tool._get_directory_structure()
-            assert "src1" in result
-            assert "src2" in result
-
 
 # =====================================================================
 # Metadata
@@ -532,65 +436,3 @@ class TestSourcesHaveDirectoryStructure:
 
     def test_no_active_docs(self):
         assert sources_have_directory_structure({}) is False
-
-    def test_with_directory_structure(self):
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = {
-            "directory_structure": {"src": {}},
-        }
-
-        with patch("application.core.mongo_db.MongoDB") as mock_mongo:
-            mock_db = MagicMock()
-            mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-            mock_client = MagicMock()
-            mock_client.__getitem__ = MagicMock(return_value=mock_db)
-            mock_mongo.get_client.return_value = mock_client
-
-            result = sources_have_directory_structure(
-                {"active_docs": ["507f1f77bcf86cd799439011"]}
-            )
-            assert result is True
-
-    def test_without_directory_structure(self):
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = {"directory_structure": None}
-
-        with patch("application.core.mongo_db.MongoDB") as mock_mongo:
-            mock_db = MagicMock()
-            mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-            mock_client = MagicMock()
-            mock_client.__getitem__ = MagicMock(return_value=mock_db)
-            mock_mongo.get_client.return_value = mock_client
-
-            result = sources_have_directory_structure(
-                {"active_docs": ["507f1f77bcf86cd799439011"]}
-            )
-            assert result is False
-
-    def test_handles_exception_gracefully(self):
-        with patch(
-            "application.core.mongo_db.MongoDB.get_client",
-            side_effect=Exception("DB down"),
-        ):
-            result = sources_have_directory_structure(
-                {"active_docs": ["507f1f77bcf86cd799439011"]}
-            )
-            assert result is False
-
-    def test_string_active_docs(self):
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = {
-            "directory_structure": {"a": {}},
-        }
-
-        with patch("application.core.mongo_db.MongoDB") as mock_mongo:
-            mock_db = MagicMock()
-            mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-            mock_client = MagicMock()
-            mock_client.__getitem__ = MagicMock(return_value=mock_db)
-            mock_mongo.get_client.return_value = mock_client
-
-            result = sources_have_directory_structure(
-                {"active_docs": "507f1f77bcf86cd799439011"}
-            )
-            assert result is True

@@ -126,13 +126,17 @@ class TestInitClient:
 
     def test_init_client_with_custom_endpoint(self, s3_loader, mock_boto3):
         """Should configure path-style addressing for custom endpoints."""
-        s3_loader._init_client(
-            aws_access_key_id="test-key",
-            aws_secret_access_key="test-secret",
-            region_name="us-east-1",
-            endpoint_url="https://nyc3.digitaloceanspaces.com",
-            bucket="my-bucket",
-        )
+        with patch(
+            "application.parser.remote.s3_loader.validate_url",
+            side_effect=lambda u: u,
+        ):
+            s3_loader._init_client(
+                aws_access_key_id="test-key",
+                aws_secret_access_key="test-secret",
+                region_name="us-east-1",
+                endpoint_url="https://nyc3.digitaloceanspaces.com",
+                bucket="my-bucket",
+            )
 
         call_kwargs = mock_boto3.client.call_args[1]
         assert call_kwargs["endpoint_url"] == "https://nyc3.digitaloceanspaces.com"
@@ -140,13 +144,17 @@ class TestInitClient:
 
     def test_init_client_normalizes_do_endpoint(self, s3_loader, mock_boto3):
         """Should normalize DigitalOcean Spaces bucket-prefixed URLs."""
-        corrected_bucket = s3_loader._init_client(
-            aws_access_key_id="test-key",
-            aws_secret_access_key="test-secret",
-            region_name="us-east-1",
-            endpoint_url="https://mybucket.nyc3.digitaloceanspaces.com",
-            bucket="",
-        )
+        with patch(
+            "application.parser.remote.s3_loader.validate_url",
+            side_effect=lambda u: u,
+        ):
+            corrected_bucket = s3_loader._init_client(
+                aws_access_key_id="test-key",
+                aws_secret_access_key="test-secret",
+                region_name="us-east-1",
+                endpoint_url="https://mybucket.nyc3.digitaloceanspaces.com",
+                bucket="",
+            )
 
         assert corrected_bucket == "mybucket"
         call_kwargs = mock_boto3.client.call_args[1]
@@ -555,7 +563,11 @@ class TestLoadData:
             "endpoint_url": "https://nyc3.digitaloceanspaces.com",
         }
 
-        s3_loader.load_data(input_data)
+        with patch(
+            "application.parser.remote.s3_loader.validate_url",
+            side_effect=lambda u: u,
+        ):
+            s3_loader.load_data(input_data)
 
         call_kwargs = mock_boto3.client.call_args[1]
         assert call_kwargs["endpoint_url"] == "https://nyc3.digitaloceanspaces.com"
@@ -631,7 +643,11 @@ class TestLoadData:
             "endpoint_url": "https://mybucket.nyc3.digitaloceanspaces.com",
         }
 
-        docs = s3_loader.load_data(input_data)
+        with patch(
+            "application.parser.remote.s3_loader.validate_url",
+            side_effect=lambda u: u,
+        ):
+            docs = s3_loader.load_data(input_data)
 
         # Verify bucket name was corrected
         paginator.paginate.assert_called_once_with(Bucket="mybucket", Prefix="")
@@ -835,3 +851,55 @@ class TestProcessDocumentAdditional:
                         )
 
         assert result is None
+
+
+class TestSSRFValidation:
+    """Ensure user-supplied endpoint_url values cannot target internal networks."""
+
+    def test_init_client_rejects_loopback_endpoint(self, s3_loader, mock_boto3):
+        """Should refuse to initialize boto3 when endpoint points at localhost."""
+        with pytest.raises(ValueError, match="Invalid S3 endpoint_url"):
+            s3_loader._init_client(
+                aws_access_key_id="k",
+                aws_secret_access_key="s",
+                region_name="us-east-1",
+                endpoint_url="http://127.0.0.1:9000",
+                bucket="b",
+            )
+        mock_boto3.client.assert_not_called()
+
+    def test_init_client_rejects_metadata_ip(self, s3_loader, mock_boto3):
+        """Should refuse to initialize boto3 when endpoint targets cloud metadata."""
+        with pytest.raises(ValueError, match="Invalid S3 endpoint_url"):
+            s3_loader._init_client(
+                aws_access_key_id="k",
+                aws_secret_access_key="s",
+                region_name="us-east-1",
+                endpoint_url="http://169.254.169.254/",
+                bucket="b",
+            )
+        mock_boto3.client.assert_not_called()
+
+    def test_init_client_rejects_private_ip(self, s3_loader, mock_boto3):
+        """Should refuse to initialize boto3 when endpoint targets an RFC1918 host."""
+        with pytest.raises(ValueError, match="Invalid S3 endpoint_url"):
+            s3_loader._init_client(
+                aws_access_key_id="k",
+                aws_secret_access_key="s",
+                region_name="us-east-1",
+                endpoint_url="http://10.0.0.5:9000",
+                bucket="b",
+            )
+        mock_boto3.client.assert_not_called()
+
+    def test_load_data_rejects_ssrf_endpoint(self, s3_loader, mock_boto3):
+        """load_data should surface a ValueError without hitting boto3 for blocked endpoints."""
+        input_data = {
+            "aws_access_key_id": "k",
+            "aws_secret_access_key": "s",
+            "bucket": "b",
+            "endpoint_url": "http://localhost:9000",
+        }
+        with pytest.raises(ValueError, match="Invalid S3 endpoint_url"):
+            s3_loader.load_data(input_data)
+        mock_boto3.client.assert_not_called()

@@ -1,63 +1,13 @@
-"""Fixtures for repository tests against a real Postgres instance.
+"""Fixtures for repository tests.
 
-These tests hit the local dev Postgres (the DBngin instance on this machine,
-or CI's service container). Each test runs inside a transaction that is
-rolled back at the end, so tests never leak state into each other and the
-database stays clean without needing per-test CREATE/DROP overhead.
+These tests exercise real SQL against a real Postgres schema. They used
+to require a long-running Postgres (via ``POSTGRES_URI``) — that is no
+longer the case. They now piggy-back on the ephemeral ``pg_conn`` fixture
+defined in the root ``tests/conftest.py`` (backed by pytest-postgresql),
+so CI and local runs don't need any external Postgres service.
 
-Required env:
-    POSTGRES_URI  — e.g. postgresql+psycopg://docsgpt:docsgpt@localhost:5432/docsgpt
-
-Tests are skipped automatically when POSTGRES_URI is unset so that
-contributors without a local Postgres can still run the rest of the suite.
+Each test still runs inside a transaction that rolls back on teardown,
+keeping tests hermetic.
 """
 
 from __future__ import annotations
-
-import subprocess
-import sys
-from pathlib import Path
-
-import pytest
-from sqlalchemy import create_engine
-
-from application.core.settings import settings
-
-
-def _run_alembic_upgrade(engine):
-    """Run ``alembic upgrade head`` to ensure the full schema is present.
-
-    Non-zero exit is re-raised so genuine schema-drift bugs surface as
-    test failures. If alembic reports the schema is already at head,
-    the subprocess still exits zero.
-    """
-    alembic_ini = Path(__file__).resolve().parents[3] / "application" / "alembic.ini"
-    subprocess.check_call(
-        [sys.executable, "-m", "alembic", "-c", str(alembic_ini), "upgrade", "head"],
-        timeout=60,
-    )
-
-
-@pytest.fixture(scope="session")
-def pg_engine():
-    """Session-scoped engine pointing at the test Postgres."""
-    if not settings.POSTGRES_URI:
-        pytest.skip("POSTGRES_URI not set")
-    engine = create_engine(settings.POSTGRES_URI)
-    _run_alembic_upgrade(engine)
-    yield engine
-    engine.dispose()
-
-
-@pytest.fixture()
-def pg_conn(pg_engine):
-    """Per-test connection wrapped in a transaction that always rolls back.
-
-    Repositories receive this connection and operate normally. At teardown
-    the outer transaction is rolled back so no data persists between tests.
-    """
-    conn = pg_engine.connect()
-    txn = conn.begin()
-    yield conn
-    txn.rollback()
-    conn.close()

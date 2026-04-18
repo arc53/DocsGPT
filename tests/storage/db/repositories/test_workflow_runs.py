@@ -4,15 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
 
 from application.storage.db.repositories.workflows import WorkflowsRepository
 from application.storage.db.repositories.workflow_runs import WorkflowRunsRepository
-
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
 
 
 def _wf(conn) -> dict:

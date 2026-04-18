@@ -3,17 +3,19 @@ title: Setting Up a Development Environment
 description: Guide to setting up a development environment for DocsGPT, including backend and frontend setup.
 ---
 
+import { Callout } from 'nextra/components'
+
 # Setting Up a Development Environment
 
 This guide will walk you through setting up a development environment for DocsGPT. This setup allows you to modify and test the application's backend and frontend components.
 
-## 1. Spin Up MongoDB and Redis
+## 1. Spin Up Postgres and Redis
 
-For development purposes, you can quickly start MongoDB and Redis containers, which are the primary database and caching systems used by DocsGPT. We provide a dedicated Docker Compose file, `docker-compose-dev.yaml`, located in the `deployment` directory, that includes only these essential services.
+For development purposes, you can quickly start Postgres and Redis containers. Postgres is the user-data store for DocsGPT (conversations, agents, prompts, sources, attachments, workflows, logs, and token usage), and Redis is used as the cache and Celery broker. We provide a dedicated Docker Compose file, `docker-compose-dev.yaml`, located in the `deployment` directory, that includes only these essential services. The backend applies the Alembic schema automatically on first boot (`AUTO_MIGRATE=true` / `AUTO_CREATE_DB=true` ship enabled), so no separate migration step is required. You can still run `python scripts/db/init_postgres.py` explicitly if you prefer.
 
 You can find the `docker-compose-dev.yaml` file [here](https://github.com/arc53/DocsGPT/blob/main/deployment/docker-compose-dev.yaml).
 
-**Steps to start MongoDB and Redis:**
+**Steps to start Postgres and Redis:**
 
 1.  Navigate to the root directory of your DocsGPT repository in your terminal.
 
@@ -24,7 +26,16 @@ You can find the `docker-compose-dev.yaml` file [here](https://github.com/arc53/
     docker compose -f deployment/docker-compose-dev.yaml up -d
     ```
 
-    These commands will start MongoDB and Redis in detached mode, running in the background.
+    These commands will start Postgres and Redis in detached mode, running in the background. When the Flask backend boots against the fresh Postgres instance, it will automatically create the database (if missing) and apply the current Alembic schema.
+
+<Callout type="info" emoji="ℹ️">
+  MongoDB is no longer required for a default DocsGPT install. If you
+  specifically want to use MongoDB Atlas as the vector store
+  (`VECTOR_STORE=mongodb`), start it on the side via
+  `deployment/docker-compose.mongo.yaml`. For migrating an existing
+  Mongo-based install to Postgres, see
+  [PostgreSQL for User Data](/Deploying/Postgres-Migration).
+</Callout>
 
 ## 2. Run the Backend
 

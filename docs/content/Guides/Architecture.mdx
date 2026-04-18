@@ -15,7 +15,7 @@ This diagram provides a bird's-eye view of the DocsGPT architecture, illustratin
 flowchart LR
     User["User"] --> Frontend["Frontend (React/Vite)"]
     Frontend --> Backend["Backend API (Flask)"]
-    Backend --> LLM["LLM Integration Layer"] & VectorStore["Vector Stores"] & TaskQueue["Task Queue (Celery)"] & Databases["Databases (MongoDB, Redis)"]
+    Backend --> LLM["LLM Integration Layer"] & VectorStore["Vector Stores"] & TaskQueue["Task Queue (Celery)"] & Databases["Databases (Postgres, Redis)"]
     LLM -- Cloud APIs / Local Engines --> InferenceEngine["Inference Engine"]
     VectorStore -- Document Embeddings --> Indexes[("Indexes")]
     TaskQueue -- Asynchronous Tasks --> DocumentIngestion["Document Ingestion"]
@@ -86,10 +86,11 @@ flowchart LR
     *   Improves application responsiveness by offloading heavy tasks.
     *   Enhances scalability and reliability through distributed task processing.
 
-### 7. Databases (MongoDB, Redis)
+### 7. Databases (Postgres, Redis)
 
-*   **Technology:** MongoDB and Redis.
-*   **Responsibility:** Databases are used for persistent data storage and caching. MongoDB stores structured data such as conversations, documents, user settings, and API keys. Redis is used as a cache, as well as a message broker for Celery.
+*   **Technology:** PostgreSQL and Redis.
+*   **Responsibility:** Databases are used for persistent data storage and caching. PostgreSQL stores structured user data such as conversations, agents, prompts, sources, attachments, workflows, logs, token usage, user settings, and API keys. Redis is used as a cache and as the message broker/result backend for Celery.
+*   **Note:** MongoDB is no longer used for user data. It remains an **optional** backend for the vector store (`VECTOR_STORE=mongodb`, i.e. Mongo Atlas Vector Search) and as the source database for the one-shot `scripts/db/backfill.py` migration from legacy installs.
 
 ## Request Flow Diagram
 
@@ -135,7 +136,7 @@ graph LR
                 RedisPod[Redis Pod]
             end
             subgraph Node 3
-                MongoDBPod[MongoDB Pod]
+                PostgresPod[Postgres Pod]
                 VectorStorePod[Vector Store Pod]
             end
         end
@@ -145,12 +146,12 @@ graph LR
         docsgpt-api-service --> BackendAPIPod
         BackendAPIPod --> CeleryWorkerPod
         BackendAPIPod --> RedisPod
-        BackendAPIPod --> MongoDBPod
+        BackendAPIPod --> PostgresPod
         BackendAPIPod --> VectorStorePod
         CeleryWorkerPod --> RedisPod
         BackendAPIPod --> InferenceEngine[(Inference Engine)]
         VectorStorePod --> Indexes[(Indexes)]
-        MongoDBPod --> Data[(Data)]
+        PostgresPod --> Data[(Data)]
         RedisPod --> Cache[(Cache)]
     end
     User[User] --> LoadBalancer

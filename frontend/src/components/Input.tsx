@@ -21,6 +21,7 @@ const Input = ({
   onPaste,
   onKeyDown,
   edgeRoundness = 'rounded-full',
+  'data-testid': dataTestId,
 }: InputProps) => {
   const colorStyles = {
     silver: 'border-border dark:border-border',
@@ -56,6 +57,7 @@ const Input = ({
         onPaste={onPaste}
         onKeyDown={onKeyDown}
         required={required}
+        data-testid={dataTestId}
       >
         {children}
       </input>

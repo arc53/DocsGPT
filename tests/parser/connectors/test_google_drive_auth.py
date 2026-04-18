@@ -342,67 +342,89 @@ class TestIsTokenExpired:
         assert auth.is_token_expired({"expiry": None, "access_token": "at"}) is False
 
 
+class _FakeRepo:
+    """Fake ConnectorSessionsRepository returning a preset session dict."""
+
+    _session = None
+
+    def __init__(self, conn):
+        self.conn = conn
+
+    def get_by_session_token(self, session_token):
+        return self._session
+
+
+class _FakeReadonlyCtx:
+    """Fake db_readonly context manager yielding a dummy connection."""
+
+    def __enter__(self):
+        return MagicMock()
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
 class TestGetTokenInfoFromSession:
 
-    def _mock_mongo(self, mock_settings, find_one_return):
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = find_one_return
-        mock_db = MagicMock()
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-        return {mock_settings.MONGO_DB_NAME: mock_db}
+    def _patches(self, session_return):
+        fake_repo_cls = type(
+            "FakeRepo",
+            (_FakeRepo,),
+            {"_session": session_return},
+        )
+        return (
+            patch(
+                "application.storage.db.repositories.connector_sessions.ConnectorSessionsRepository",
+                fake_repo_cls,
+            ),
+            patch(
+                "application.storage.db.session.db_readonly",
+                lambda: _FakeReadonlyCtx(),
+            ),
+        )
 
     @pytest.mark.unit
     def test_valid_session(self, auth, mock_settings):
-        mock_client = self._mock_mongo(mock_settings, {
+        repo_patch, ctx_patch = self._patches({
             "session_token": "st",
             "token_info": {"access_token": "at", "refresh_token": "rt"},
         })
-
-        with patch("application.core.mongo_db.MongoDB.get_client", return_value=mock_client), \
-             patch("application.core.settings.settings", mock_settings):
+        with repo_patch, ctx_patch:
             result = auth.get_token_info_from_session("st")
             assert result["access_token"] == "at"
             assert result["token_uri"] == "https://oauth2.googleapis.com/token"
 
     @pytest.mark.unit
     def test_session_not_found_raises(self, auth, mock_settings):
-        mock_client = self._mock_mongo(mock_settings, None)
-
-        with patch("application.core.mongo_db.MongoDB.get_client", return_value=mock_client), \
-             patch("application.core.settings.settings", mock_settings):
+        repo_patch, ctx_patch = self._patches(None)
+        with repo_patch, ctx_patch:
             with pytest.raises(ValueError, match="Failed to retrieve Google Drive token"):
                 auth.get_token_info_from_session("bad_token")
 
     @pytest.mark.unit
     def test_session_missing_token_info_raises(self, auth, mock_settings):
-        mock_client = self._mock_mongo(mock_settings, {"session_token": "st"})
-
-        with patch("application.core.mongo_db.MongoDB.get_client", return_value=mock_client), \
-             patch("application.core.settings.settings", mock_settings):
+        repo_patch, ctx_patch = self._patches({"session_token": "st"})
+        with repo_patch, ctx_patch:
             with pytest.raises(ValueError, match="Failed to retrieve Google Drive token"):
                 auth.get_token_info_from_session("st")
 
     @pytest.mark.unit
     def test_missing_required_fields_raises(self, auth, mock_settings):
-        mock_client = self._mock_mongo(mock_settings, {
+        repo_patch, ctx_patch = self._patches({
             "session_token": "st",
             "token_info": {"access_token": "at"},
         })
-
-        with patch("application.core.mongo_db.MongoDB.get_client", return_value=mock_client), \
-             patch("application.core.settings.settings", mock_settings):
+        with repo_patch, ctx_patch:
             with pytest.raises(ValueError, match="Failed to retrieve Google Drive token"):
                 auth.get_token_info_from_session("st")
 
     @pytest.mark.unit
     def test_empty_token_info_raises(self, auth, mock_settings):
-        mock_client = self._mock_mongo(mock_settings, {
+        repo_patch, ctx_patch = self._patches({
             "session_token": "st",
             "token_info": None,
         })
-
-        with patch("application.core.mongo_db.MongoDB.get_client", return_value=mock_client), \
-             patch("application.core.settings.settings", mock_settings):
+        with repo_patch, ctx_patch:
             with pytest.raises(ValueError, match="Failed to retrieve Google Drive token"):
                 auth.get_token_info_from_session("st")
 

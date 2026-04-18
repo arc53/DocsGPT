@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
 
 from application.storage.db.repositories.workflows import WorkflowsRepository
 from application.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
 from application.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
-
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
 
 
 def _setup(conn) -> tuple[dict, dict, dict]:
@@ -57,6 +51,33 @@ class TestBulkCreate:
         wf, _, _ = _setup(pg_conn)
         repo = _repo(pg_conn)
         assert repo.bulk_create(wf["id"], 1, []) == []
+
+
+class TestBulkCreateOnConflict:
+    """Overlapping graph PUTs at the same ``graph_version`` must not
+    drift on edges either."""
+
+    def test_bulk_create_overwrites_same_edge_id(self, pg_conn):
+        wf, n1, n2 = _setup(pg_conn)
+        repo = _repo(pg_conn)
+        repo.bulk_create(wf["id"], 1, [
+            {
+                "edge_id": "e1", "from_node_id": n1["id"],
+                "to_node_id": n2["id"], "source_handle": "first",
+            },
+        ])
+        # Rewriting the same edge_id at the same version overwrites.
+        repo.bulk_create(wf["id"], 1, [
+            {
+                "edge_id": "e1", "from_node_id": n1["id"],
+                "to_node_id": n2["id"], "source_handle": "second",
+                "config": {"weight": 2},
+            },
+        ])
+        edges = repo.find_by_version(wf["id"], 1)
+        assert len(edges) == 1
+        assert edges[0]["source_handle"] == "second"
+        assert edges[0]["config"] == {"weight": 2}
 
 
 class TestFindByVersion:

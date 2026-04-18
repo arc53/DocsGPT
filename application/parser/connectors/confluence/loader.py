@@ -83,16 +83,17 @@ class ConfluenceLoader(BaseConnectorLoader):
 
     def _persist_refreshed_tokens(self, token_info: Dict[str, Any]) -> None:
         try:
-            from application.core.mongo_db import MongoDB
-            from application.core.settings import settings as app_settings
+            from application.storage.db.repositories.connector_sessions import (
+                ConnectorSessionsRepository,
+            )
+            from application.storage.db.session import db_session
 
             sanitized = self.auth.sanitize_token_info(token_info)
-            mongo = MongoDB.get_client()
-            db = mongo[app_settings.MONGO_DB_NAME]
-            db["connector_sessions"].update_one(
-                {"session_token": self.session_token},
-                {"$set": {"token_info": sanitized}},
-            )
+            with db_session() as conn:
+                repo = ConnectorSessionsRepository(conn)
+                session = repo.get_by_session_token(self.session_token)
+                if session:
+                    repo.update(str(session["id"]), {"token_info": sanitized})
         except Exception as e:
             logger.warning("Failed to persist refreshed tokens: %s", e)
 

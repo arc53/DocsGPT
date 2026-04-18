@@ -200,6 +200,9 @@ class WorkflowEngine:
 
         node_config = AgentNodeConfig(**node.config.get("config", node.config))
 
+        if node_config.sources:
+            self._retrieve_node_sources(node_config)
+
         if node_config.prompt_template:
             formatted_prompt = self._format_template(node_config.prompt_template)
         else:
@@ -454,6 +457,29 @@ class WorkflowEngine:
 
         docs_together = "\n\n".join(docs_together_parts) if docs_together_parts else None
         return docs, docs_together
+
+    def _retrieve_node_sources(self, node_config: AgentNodeConfig) -> None:
+        """Retrieve documents from the node's sources for template resolution."""
+        from application.retriever.retriever_creator import RetrieverCreator
+
+        query = self.state.get("query", "")
+        if not query:
+            return
+
+        try:
+            retriever = RetrieverCreator.create_retriever(
+                node_config.retriever or "classic",
+                source={"active_docs": node_config.sources},
+                chat_history=[],
+                prompt="",
+                chunks=int(node_config.chunks) if node_config.chunks else 2,
+                decoded_token=self.agent.decoded_token,
+            )
+            docs = retriever.search(query)
+            if docs:
+                self.agent.retrieved_docs = docs
+        except Exception:
+            logger.exception("Failed to retrieve docs for workflow node")
 
     def get_execution_summary(self) -> List[NodeExecutionLog]:
         return [

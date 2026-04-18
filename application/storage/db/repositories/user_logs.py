@@ -82,3 +82,34 @@ class UserLogsRepository:
         rows = [row_to_dict(r) for r in result.fetchall()]
         has_more = len(rows) > page_size
         return rows[:page_size], has_more
+
+    def find_by_api_key(
+        self,
+        api_key: str,
+        *,
+        timestamp_gte: Optional[datetime] = None,
+        timestamp_lt: Optional[datetime] = None,
+        limit: Optional[int] = None,
+    ) -> list[dict]:
+        """Return user_logs rows whose ``data->>'api_key'`` matches ``api_key``.
+
+        Replacement for the legacy Mongo filter by top-level ``api_key``;
+        on the PG side the per-request payload lives in ``data`` JSONB,
+        so the filter reaches in via ``data->>'api_key'``. Rows are
+        ordered by ``timestamp DESC`` to match the Mongo sort.
+        """
+        clauses = ["data->>'api_key' = :api_key"]
+        params: dict = {"api_key": api_key}
+        if timestamp_gte is not None:
+            clauses.append("timestamp >= :timestamp_gte")
+            params["timestamp_gte"] = timestamp_gte
+        if timestamp_lt is not None:
+            clauses.append("timestamp < :timestamp_lt")
+            params["timestamp_lt"] = timestamp_lt
+        where = " AND ".join(clauses)
+        sql = f"SELECT * FROM user_logs WHERE {where} ORDER BY timestamp DESC"
+        if limit is not None:
+            sql += " LIMIT :limit"
+            params["limit"] = limit
+        result = self._conn.execute(text(sql), params)
+        return [row_to_dict(r) for r in result.fetchall()]

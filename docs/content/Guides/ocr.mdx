@@ -31,7 +31,7 @@ DOCLING_OCR_ATTACHMENTS_ENABLED=false
 ### Attachment flow (Chat-only file context)
 
 1. Files are uploaded through `/api/store_attachment`.
-2. Celery task `attachment_worker` parses and stores the attachment in MongoDB (`attachments` collection).
+2. Celery task `attachment_worker` parses and stores the attachment in Postgres (`attachments` table).
 3. OCR in this path is controlled by `DOCLING_OCR_ATTACHMENTS_ENABLED`.
 4. Attachments are not vectorized and are not added to the source index.
 5. During answer generation, selected attachment IDs are loaded and passed directly to the LLM pipeline.

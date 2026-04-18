@@ -63,6 +63,7 @@ class WorkflowsRepository:
         self, legacy_mongo_id: str, user_id: str | None = None,
     ) -> Optional[dict]:
         """Fetch a workflow by its original Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         sql = "SELECT * FROM workflows WHERE legacy_mongo_id = :legacy_id"
         params: dict[str, str] = {"legacy_id": legacy_mongo_id}
         if user_id is not None:
@@ -121,5 +122,21 @@ class WorkflowsRepository:
                 "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
             ),
             {"id": workflow_id, "user_id": user_id},
+        )
+        return result.rowcount > 0
+
+    def delete_by_legacy_id(self, legacy_mongo_id: str, user_id: str) -> bool:
+        """Delete a workflow addressed by the Mongo ObjectId string.
+
+        The ``workflow_nodes`` and ``workflow_edges`` rows are removed
+        automatically via ``ON DELETE CASCADE``.
+        """
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
+        result = self._conn.execute(
+            text(
+                "DELETE FROM workflows "
+                "WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id"
+            ),
+            {"legacy_id": legacy_mongo_id, "user_id": user_id},
         )
         return result.rowcount > 0

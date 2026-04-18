@@ -9,18 +9,16 @@ import tempfile
 from typing import Any, Dict
 import zipfile
 
+import uuid
 from collections import Counter
 from urllib.parse import urljoin
 
 import requests
-from bson.dbref import DBRef
-from bson.objectid import ObjectId
 
 from application.agents.agent_creator import AgentCreator
 from application.api.answer.services.stream_processor import get_prompt
 
 from application.cache import get_redis_instance
-from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.parser.chunking import Chunker
 from application.parser.connectors.connector_creator import ConnectorCreator
@@ -31,12 +29,13 @@ from application.parser.remote.remote_creator import RemoteCreator
 from application.parser.schema.base import Document
 from application.retriever.retriever_creator import RetrieverCreator
 
+from application.storage.db.base_repository import looks_like_uuid
+from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.attachments import AttachmentsRepository
+from application.storage.db.repositories.sources import SourcesRepository
+from application.storage.db.session import db_readonly, db_session
 from application.storage.storage_creator import StorageCreator
-from application.utils import count_tokens_docs, num_tokens_from_string
-
-mongo = MongoDB.get_client()
-db = mongo[settings.MONGO_DB_NAME]
-sources_collection = db["sources"]
+from application.utils import count_tokens_docs, num_tokens_from_string, safe_filename
 
 # Constants
 
@@ -313,23 +312,35 @@ def run_agent_logic(agent_config, input_data):
         )
         from application.utils import calculate_doc_token_budget
 
-        source = agent_config.get("source")
         retriever = agent_config.get("retriever", "classic")
-        if isinstance(source, DBRef):
-            source_doc = db.dereference(source)
-            source = str(source_doc["_id"])
-            retriever = source_doc.get("retriever", agent_config.get("retriever"))
-        else:
-            source = {}
-        source = {"active_docs": source}
-        chunks = int(agent_config.get("chunks", 2))
+        # agent_config is a PG row dict: ``source_id`` is a UUID, and the
+        # retriever/chunks live on the source row. Resolve source row for
+        # its retriever/chunks if the agent points at one.
+        source_id = agent_config.get("source_id") or agent_config.get("source")
+        source_active = {}
+        if source_id:
+            with db_readonly() as conn:
+                src_row = SourcesRepository(conn).get(
+                    str(source_id),
+                    agent_config.get("user_id") or agent_config.get("user"),
+                )
+            if src_row:
+                source_active = str(src_row["id"])
+                retriever = src_row.get("retriever", retriever)
+        source = {"active_docs": source_active}
+        chunks = int(agent_config.get("chunks", 2) or 2)
         prompt_id = agent_config.get("prompt_id", "default")
         user_api_key = agent_config["key"]
-        agent_id = str(agent_config.get("_id")) if agent_config.get("_id") else None
+        agent_id = (
+            str(agent_config.get("id"))
+            if agent_config.get("id")
+            else (str(agent_config.get("_id")) if agent_config.get("_id") else None)
+        )
         agent_type = agent_config.get("agent_type", "classic")
-        decoded_token = {"sub": agent_config.get("user")}
+        owner = agent_config.get("user_id") or agent_config.get("user")
+        decoded_token = {"sub": owner}
         json_schema = agent_config.get("json_schema")
-        prompt = get_prompt(prompt_id, db["prompts"])
+        prompt = get_prompt(prompt_id)
 
         # Determine model_id: check agent's default_model_id, fallback to system default
         agent_default_model = agent_config.get("default_model_id", "")
@@ -545,7 +556,7 @@ def ingest_worker(
 
             docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
 
-            id = ObjectId()
+            id = uuid.uuid4()
 
             vector_store_path = os.path.join(temp_dir, "vector_store")
             os.makedirs(vector_store_path, exist_ok=True)
@@ -609,9 +620,11 @@ def reingest_source_worker(self, source_id, user):
             meta={"current": 10, "status": "Initializing re-ingestion scan"},
         )
 
-        source = sources_collection.find_one({"_id": ObjectId(source_id), "user": user})
+        with db_readonly() as conn:
+            source = SourcesRepository(conn).get_any(source_id, user)
         if not source:
             raise ValueError(f"Source {source_id} not found or access denied")
+        source_id = str(source["id"])
 
         storage = StorageCreator.get_storage()
         source_file_path = source.get("file_path", "")
@@ -860,16 +873,16 @@ def reingest_source_worker(self, source_id, user):
                         directory_structure, file_name_map
                     )
 
-                    sources_collection.update_one(
-                        {"_id": ObjectId(source_id)},
-                        {
-                            "$set": {
+                    now = datetime.datetime.now()
+                    with db_session() as conn:
+                        SourcesRepository(conn).update(
+                            source_id, user,
+                            {
                                 "directory_structure": directory_structure,
-                                "date": datetime.datetime.now(),
+                                "date": now,
                                 "tokens": total_tokens,
-                            }
-                        },
-                    )
+                            },
+                        )
                 except Exception as e:
                     logging.error(
                         f"Error updating directory_structure in DB: {e}", exc_info=True
@@ -912,9 +925,9 @@ def remote_worker(
     operation_mode="upload",
     doc_id=None,
 ):
-    full_path = os.path.join(directory, user, name_job)
-    if not os.path.exists(full_path):
-        os.makedirs(full_path)
+    safe_user = safe_filename(user)
+    full_path = os.path.join(directory, safe_user, uuid.uuid4().hex)
+    os.makedirs(full_path, exist_ok=True)
     self.update_state(state="PROGRESS", meta={"current": 1})
     try:
         logging.info("Initializing remote loader with type: %s", loader)
@@ -1003,13 +1016,13 @@ def remote_worker(
         )
 
         if operation_mode == "upload":
-            id = ObjectId()
+            id = uuid.uuid4()
             embed_and_store_documents(docs, full_path, id, self)
         elif operation_mode == "sync":
-            if not doc_id or not ObjectId.is_valid(doc_id):
+            if not doc_id:
                 logging.error("Invalid doc_id provided for sync operation: %s", doc_id)
                 raise ValueError("doc_id must be provided for sync operation.")
-            id = ObjectId(doc_id)
+            id = str(doc_id)
             embed_and_store_documents(docs, full_path, id, self)
         self.update_state(state="PROGRESS", meta={"current": 100})
 
@@ -1030,7 +1043,19 @@ def remote_worker(
         }
 
         if operation_mode == "sync":
-            file_data["last_sync"] = datetime.datetime.now()
+            last_sync_now = datetime.datetime.now()
+            file_data["last_sync"] = last_sync_now
+
+            try:
+                with db_session() as conn:
+                    repo = SourcesRepository(conn)
+                    src = repo.get_any(str(id), user)
+                    if src is not None:
+                        repo.update(str(src["id"]), user, {"date": last_sync_now})
+            except Exception as upd_err:
+                logging.warning(
+                    f"Failed to update last_sync for source {id}: {upd_err}"
+                )
         upload_index(full_path, file_data)
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
@@ -1079,23 +1104,34 @@ def sync(
 
 
 def sync_worker(self, frequency):
+    from sqlalchemy import text as sql_text
+
     sync_counts = Counter()
-    sources = sources_collection.find()
-    for doc in sources:
-        if doc.get("sync_frequency") == frequency:
-            name = doc.get("name")
-            user = doc.get("user")
-            source_type = doc.get("type")
-            source_data = doc.get("remote_data")
-            retriever = doc.get("retriever")
-            doc_id = str(doc.get("_id"))
-            resp = sync(
-                self, source_data, name, user, source_type, frequency, retriever, doc_id
-            )
-            sync_counts["total_sync_count"] += 1
-            sync_counts[
-                "sync_success" if resp["status"] == "success" else "sync_failure"
-            ] += 1
+    with db_readonly() as conn:
+        result = conn.execute(
+            sql_text(
+                "SELECT id, name, user_id, type, remote_data, retriever "
+                "FROM sources WHERE sync_frequency = :freq"
+            ),
+            {"freq": frequency},
+        )
+        rows = result.fetchall()
+
+    for row in rows:
+        doc = dict(row._mapping)
+        name = doc.get("name")
+        user = doc.get("user_id")
+        source_type = doc.get("type")
+        source_data = doc.get("remote_data")
+        retriever = doc.get("retriever")
+        doc_id = str(doc.get("id"))
+        resp = sync(
+            self, source_data, name, user, source_type, frequency, retriever, doc_id
+        )
+        sync_counts["total_sync_count"] += 1
+        sync_counts[
+            "sync_success" if resp["status"] == "success" else "sync_failure"
+        ] += 1
     return {
         key: sync_counts[key]
         for key in ["total_sync_count", "sync_success", "sync_failure"]
@@ -1106,10 +1142,6 @@ def attachment_worker(self, file_info, user):
     """
     Process and store a single attachment without vectorization.
     """
-
-    mongo = MongoDB.get_client()
-    db = mongo[settings.MONGO_DB_NAME]
-    attachments_collection = db["attachments"]
 
     filename = file_info["filename"]
     attachment_id = file_info["attachment_id"]
@@ -1158,30 +1190,20 @@ def attachment_worker(self, file_info, user):
 
         mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
-        doc_id = ObjectId(attachment_id)
-        attachments_collection.insert_one(
-            {
-                "_id": doc_id,
-                "user": user,
-                "path": relative_path,
-                "filename": filename,
-                "content": content,
-                "token_count": token_count,
-                "mime_type": mime_type,
-                "date": datetime.datetime.now(),
-                "metadata": metadata,
-            }
-        )
-
-        from application.storage.db.dual_write import dual_write
-        from application.storage.db.repositories.attachments import AttachmentsRepository
-
-        dual_write(
-            AttachmentsRepository,
-            lambda repo, u=user, fn=filename, p=relative_path, mt=mime_type, mid=attachment_id: repo.create(
-                u, fn, p, mime_type=mt, legacy_mongo_id=mid,
-            ),
-        )
+        # The upload route produces a UUID-shaped ``attachment_id`` (stored
+        # in the storage path) but the PG ``attachments.id`` is generated
+        # by the DB. Keep ``attachment_id`` as the caller-visible handle
+        # used for the storage path, and stash it in ``legacy_mongo_id``
+        # so the attachment row is resolvable via that handle too.
+        with db_session() as conn:
+            AttachmentsRepository(conn).create(
+                user, filename, relative_path,
+                mime_type=mime_type,
+                content=content,
+                token_count=token_count,
+                metadata=metadata,
+                legacy_mongo_id=str(attachment_id),
+            )
 
         logging.info(
             f"Stored attachment with ID: {attachment_id}", extra={"user": user}
@@ -1218,14 +1240,25 @@ def agent_webhook_worker(self, agent_id, payload):
     Returns:
         dict: Information about the processed webhook.
     """
-    mongo = MongoDB.get_client()
-    db = mongo["docsgpt"]
-    agents_collection = db["agents"]
-
     self.update_state(state="PROGRESS", meta={"current": 1})
     try:
-        agent_oid = ObjectId(agent_id)
-        agent_config = agents_collection.find_one({"_id": agent_oid})
+        with db_readonly() as conn:
+            repo = AgentsRepository(conn)
+            agent_config = None
+            if looks_like_uuid(str(agent_id)):
+                # Access without user scoping — webhooks authenticate via
+                # the incoming token, not a user context.
+                from sqlalchemy import text as sql_text
+                from application.storage.db.base_repository import row_to_dict
+                result = conn.execute(
+                    sql_text("SELECT * FROM agents WHERE id = CAST(:id AS uuid)"),
+                    {"id": str(agent_id)},
+                )
+                row = result.fetchone()
+                if row is not None:
+                    agent_config = row_to_dict(row)
+            if agent_config is None:
+                agent_config = repo.get_by_legacy_id(str(agent_id))
         if not agent_config:
             raise ValueError(f"Agent with ID {agent_id} not found.")
         input_data = json.dumps(payload)
@@ -1371,14 +1404,14 @@ def ingest_connector(
             docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
 
             if operation_mode == "upload":
-                id = ObjectId()
+                id = uuid.uuid4()
             elif operation_mode == "sync":
-                if not doc_id or not ObjectId.is_valid(doc_id):
+                if not doc_id:
                     logging.error(
                         "Invalid doc_id provided for sync operation: %s", doc_id
                     )
                     raise ValueError("doc_id must be provided for sync operation.")
-                id = ObjectId(doc_id)
+                id = str(doc_id)
             else:
                 raise ValueError(f"Invalid operation_mode: {operation_mode}")
 
@@ -1411,6 +1444,21 @@ def ingest_connector(
                 file_data["last_sync"] = datetime.datetime.now()
             else:
                 file_data["last_sync"] = datetime.datetime.now()
+
+            if operation_mode == "sync":
+                try:
+                    with db_session() as conn:
+                        repo = SourcesRepository(conn)
+                        src = repo.get_any(str(id), user)
+                        if src is not None:
+                            repo.update(
+                                str(src["id"]), user,
+                                {"date": file_data["last_sync"]},
+                            )
+                except Exception as upd_err:
+                    logging.warning(
+                        f"Failed to update last_sync for source {id}: {upd_err}"
+                    )
 
             upload_index(vector_store_path, file_data)
 

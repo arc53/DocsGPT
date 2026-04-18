@@ -4,11 +4,10 @@ from typing import Any, Dict, List
 from flask import make_response, request
 from flask_restx import fields, Resource
 
-from bson.dbref import DBRef
-
 from application.api.answer.routes.base import answer_ns
-from application.core.mongo_db import MongoDB
 from application.core.settings import settings
+from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.session import db_readonly
 from application.vectorstore.vector_creator import VectorCreator
 
 logger = logging.getLogger(__name__)
@@ -17,12 +16,6 @@ logger = logging.getLogger(__name__)
 @answer_ns.route("/api/search")
 class SearchResource(Resource):
     """Fast search endpoint for retrieving relevant documents"""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        mongo = MongoDB.get_client()
-        self.db = mongo[settings.MONGO_DB_NAME]
-        self.agents_collection = self.db["agents"]
 
     search_model = answer_ns.model(
         "SearchModel",
@@ -40,37 +33,23 @@ class SearchResource(Resource):
     )
 
     def _get_sources_from_api_key(self, api_key: str) -> List[str]:
-        """Get source IDs connected to the API key/agent.
-
-        """
-        agent_data = self.agents_collection.find_one({"key": api_key})
+        """Get source IDs connected to the API key/agent."""
+        with db_readonly() as conn:
+            agent_data = AgentsRepository(conn).find_by_key(api_key)
         if not agent_data:
             return []
 
-        source_ids = []
+        source_ids: List[str] = []
+        # extra_source_ids is a PG ARRAY(UUID) of source UUIDs.
+        extra = agent_data.get("extra_source_ids") or []
+        for src in extra:
+            if src:
+                source_ids.append(str(src))
 
-        # Handle multiple sources (only if non-empty)
-        sources = agent_data.get("sources", [])
-        if sources and isinstance(sources, list) and len(sources) > 0:
-            for source_ref in sources:
-                # Skip "default" - it's a placeholder, not an actual vectorstore
-                if source_ref == "default":
-                    continue
-                elif isinstance(source_ref, DBRef):
-                    source_doc = self.db.dereference(source_ref)
-                    if source_doc:
-                        source_ids.append(str(source_doc["_id"]))
-
-        # Handle single source (legacy) - check if sources was empty or didn't yield results
         if not source_ids:
-            source = agent_data.get("source")
-            if isinstance(source, DBRef):
-                source_doc = self.db.dereference(source)
-                if source_doc:
-                    source_ids.append(str(source_doc["_id"]))
-            # Skip "default" - it's a placeholder, not an actual vectorstore
-            elif source and source != "default":
-                source_ids.append(source)
+            single = agent_data.get("source_id")
+            if single:
+                source_ids.append(str(single))
 
         return source_ids
 
@@ -161,7 +140,8 @@ class SearchResource(Resource):
             return make_response({"error": "api_key is required"}, 400)
 
         # Validate API key
-        agent = self.agents_collection.find_one({"key": api_key})
+        with db_readonly() as conn:
+            agent = AgentsRepository(conn).find_by_key(api_key)
         if not agent:
             return make_response({"error": "Invalid API key"}, 401)
 

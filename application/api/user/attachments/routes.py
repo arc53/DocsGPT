@@ -4,13 +4,16 @@ import os
 import tempfile
 from pathlib import Path
 
-from bson.objectid import ObjectId
+import uuid
+
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
 from application.api import api
 from application.cache import get_redis_instance
 from application.core.settings import settings
+from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.session import db_readonly
 from application.stt.constants import (
     SUPPORTED_AUDIO_EXTENSIONS,
     SUPPORTED_AUDIO_MIME_TYPES,
@@ -48,14 +51,13 @@ def _resolve_authenticated_user():
         return safe_filename(decoded_token.get("sub"))
 
     if api_key:
-        from application.api.user.base import agents_collection
-
-        agent = agents_collection.find_one({"key": api_key})
+        with db_readonly() as conn:
+            agent = AgentsRepository(conn).find_by_key(api_key)
         if not agent:
             return make_response(
                 jsonify({"success": False, "message": "Invalid API key"}), 401
             )
-        return safe_filename(agent.get("user"))
+        return safe_filename(agent.get("user_id"))
 
     return None
 
@@ -157,7 +159,7 @@ class StoreAttachment(Resource):
             
             for idx, file in enumerate(files):
                 try:
-                    attachment_id = ObjectId()
+                    attachment_id = uuid.uuid4()
                     original_filename = safe_filename(os.path.basename(file.filename))
                     _enforce_uploaded_audio_size_limit(file, original_filename)
                     relative_path = f"{settings.UPLOAD_FOLDER}/{user}/attachments/{str(attachment_id)}/{original_filename}"

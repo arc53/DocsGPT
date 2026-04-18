@@ -16,7 +16,7 @@ from typing import Optional
 from sqlalchemy import Connection, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from application.storage.db.base_repository import row_to_dict
+from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.models import shared_conversations_table
 
 
@@ -131,6 +131,14 @@ class SharedConversationsRepository:
         return row_to_dict(result.fetchone())
 
     def find_by_uuid(self, share_uuid: str) -> Optional[dict]:
+        # Shape-gate: the public ``/api/shared_conversation/<identifier>``
+        # endpoint threads the URL path segment straight here. A non-UUID
+        # (e.g. a legacy Mongo ObjectId still embedded in an old link or
+        # an outright garbage path) must resolve to ``None`` rather than
+        # raise — the CAST would otherwise poison the txn and mask the
+        # real "not found" response behind a generic 400.
+        if not looks_like_uuid(share_uuid):
+            return None
         result = self._conn.execute(
             text(
                 "SELECT * FROM shared_conversations "

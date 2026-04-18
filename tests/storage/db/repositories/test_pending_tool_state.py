@@ -2,15 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 
 from application.storage.db.repositories.conversations import ConversationsRepository
 from application.storage.db.repositories.pending_tool_state import PendingToolStateRepository
-
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
 
 
 def _conv(conn) -> dict:

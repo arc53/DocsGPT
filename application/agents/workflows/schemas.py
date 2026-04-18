@@ -2,7 +2,6 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from bson import ObjectId
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -81,24 +80,7 @@ class WorkflowEdgeCreate(BaseModel):
 
 
 class WorkflowEdge(WorkflowEdgeCreate):
-    mongo_id: Optional[str] = Field(None, alias="_id")
-
-    @field_validator("mongo_id", mode="before")
-    @classmethod
-    def convert_objectid(cls, v: Any) -> Optional[str]:
-        if isinstance(v, ObjectId):
-            return str(v)
-        return v
-
-    def to_mongo_doc(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "workflow_id": self.workflow_id,
-            "source_id": self.source_id,
-            "target_id": self.target_id,
-            "source_handle": self.source_handle,
-            "target_handle": self.target_handle,
-        }
+    pass
 
 
 class WorkflowNodeCreate(BaseModel):
@@ -120,25 +102,7 @@ class WorkflowNodeCreate(BaseModel):
 
 
 class WorkflowNode(WorkflowNodeCreate):
-    mongo_id: Optional[str] = Field(None, alias="_id")
-
-    @field_validator("mongo_id", mode="before")
-    @classmethod
-    def convert_objectid(cls, v: Any) -> Optional[str]:
-        if isinstance(v, ObjectId):
-            return str(v)
-        return v
-
-    def to_mongo_doc(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "workflow_id": self.workflow_id,
-            "type": self.type.value,
-            "title": self.title,
-            "description": self.description,
-            "position": self.position.model_dump(),
-            "config": self.config,
-        }
+    pass
 
 
 class WorkflowCreate(BaseModel):
@@ -149,25 +113,9 @@ class WorkflowCreate(BaseModel):
 
 
 class Workflow(WorkflowCreate):
-    id: Optional[str] = Field(None, alias="_id")
+    id: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @field_validator("id", mode="before")
-    @classmethod
-    def convert_objectid(cls, v: Any) -> Optional[str]:
-        if isinstance(v, ObjectId):
-            return str(v)
-        return v
-
-    def to_mongo_doc(self) -> Dict[str, Any]:
-        return {
-            "name": self.name,
-            "description": self.description,
-            "user": self.user,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-        }
 
 
 class WorkflowGraph(BaseModel):
@@ -209,7 +157,7 @@ class WorkflowRunCreate(BaseModel):
 
 class WorkflowRun(BaseModel):
     model_config = ConfigDict(extra="allow")
-    id: Optional[str] = Field(None, alias="_id")
+    id: Optional[str] = None
     workflow_id: str
     user: Optional[str] = None
     status: ExecutionStatus = ExecutionStatus.PENDING
@@ -218,25 +166,3 @@ class WorkflowRun(BaseModel):
     steps: List[NodeExecutionLog] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
-
-    @field_validator("id", mode="before")
-    @classmethod
-    def convert_objectid(cls, v: Any) -> Optional[str]:
-        if isinstance(v, ObjectId):
-            return str(v)
-        return v
-
-    def to_mongo_doc(self) -> Dict[str, Any]:
-        doc = {
-            "workflow_id": self.workflow_id,
-            "status": self.status.value,
-            "inputs": self.inputs,
-            "outputs": self.outputs,
-            "steps": [step.model_dump() for step in self.steps],
-            "created_at": self.created_at,
-            "completed_at": self.completed_at,
-        }
-        if self.user:
-            doc["user"] = self.user
-            doc["user_id"] = self.user
-        return doc

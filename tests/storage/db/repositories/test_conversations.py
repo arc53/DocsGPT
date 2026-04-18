@@ -4,14 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
 
 from application.storage.db.repositories.conversations import ConversationsRepository
-
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
 
 
 def _repo(conn) -> ConversationsRepository:
@@ -321,6 +315,133 @@ class TestCompressionMetadata:
         assert [p["summary"] for p in points] == ["p2", "p3", "p4"]
 
 
+class TestResolveAgentRef:
+    """The repo must translate Mongo ObjectId-shaped ``agent_id`` values
+    to Postgres UUIDs on ``create`` so that dual-write from the
+    ObjectId-era conversation service doesn't silently lose rows."""
+
+    def test_create_translates_objectid_agent_id(self, pg_conn):
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        agent_repo = AgentsRepository(pg_conn)
+        legacy_oid = "507f1f77bcf86cd799439099"
+        agent = agent_repo.create(
+            "user-1", "a", "active", legacy_mongo_id=legacy_oid,
+        )
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "chat", agent_id=legacy_oid)
+        assert str(conv["agent_id"]) == agent["id"]
+
+    def test_create_passes_through_uuid_agent_id(self, pg_conn):
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        agent_repo = AgentsRepository(pg_conn)
+        agent = agent_repo.create("user-1", "a", "active")
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "chat", agent_id=agent["id"])
+        assert str(conv["agent_id"]) == agent["id"]
+
+    def test_create_drops_unknown_objectid_agent_id(self, pg_conn):
+        # Unknown legacy id resolves to None — the conversation row still
+        # inserts (dual_write stays quiet) but without an agent FK.
+        repo = _repo(pg_conn)
+        conv = repo.create(
+            "user-1", "chat", agent_id="507f1f77bcf86cd7994390aa",
+        )
+        assert conv["agent_id"] is None
+
+
+class TestResolveAttachmentRefs:
+    """``append_message`` and ``update_message_at`` must translate Mongo
+    ObjectId attachment ids to PG UUIDs via ``attachments.legacy_mongo_id``.
+    Without this, the ``uuid[]`` cast raises and dual_write drops the
+    whole message."""
+
+    def _create_attachment(self, pg_conn, legacy: str) -> str:
+        from application.storage.db.repositories.attachments import (
+            AttachmentsRepository,
+        )
+
+        att = AttachmentsRepository(pg_conn).create(
+            "user-1", "a.txt", "/tmp/a.txt", legacy_mongo_id=legacy,
+        )
+        return att["id"]
+
+    def test_append_translates_objectid_attachments(self, pg_conn):
+        att_uuid = self._create_attachment(
+            pg_conn, "507f1f77bcf86cd799439011",
+        )
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        msg = repo.append_message(conv["id"], {
+            "prompt": "q", "response": "a",
+            "attachments": ["507f1f77bcf86cd799439011"],
+        })
+        assert [str(a) for a in msg["attachments"]] == [att_uuid]
+
+    def test_append_passes_through_uuid_attachments(self, pg_conn):
+        att_uuid = self._create_attachment(
+            pg_conn, "507f1f77bcf86cd799439022",
+        )
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        msg = repo.append_message(conv["id"], {
+            "prompt": "q", "response": "a",
+            "attachments": [att_uuid],
+        })
+        assert [str(a) for a in msg["attachments"]] == [att_uuid]
+
+    def test_append_drops_unknown_objectid_attachments(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        # Unknown legacy id is silently dropped; message still inserts.
+        msg = repo.append_message(conv["id"], {
+            "prompt": "q", "response": "a",
+            "attachments": ["507f1f77bcf86cd7994390bb"],
+        })
+        assert list(msg["attachments"] or []) == []
+
+    def test_update_translates_objectid_attachments(self, pg_conn):
+        att_uuid = self._create_attachment(
+            pg_conn, "507f1f77bcf86cd799439033",
+        )
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "q", "response": "a"})
+        assert repo.update_message_at(
+            conv["id"], 0,
+            {"attachments": ["507f1f77bcf86cd799439033"]},
+        ) is True
+        msg = repo.get_message_at(conv["id"], 0)
+        assert [str(a) for a in msg["attachments"]] == [att_uuid]
+
+
+class TestUpdateMessageFeedback:
+    """``feedback`` / ``feedback_timestamp`` must be in the update whitelist
+    so continuation-flow re-appends don't silently strip them."""
+
+    def test_update_sets_feedback(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "q", "response": "a"})
+        assert repo.update_message_at(
+            conv["id"], 0, {"feedback": {"text": "thumbs_up"}},
+        ) is True
+        msg = repo.get_message_at(conv["id"], 0)
+        assert msg["feedback"] == {"text": "thumbs_up"}
+
+    def test_update_clears_feedback(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "q", "response": "a"})
+        repo.set_feedback(conv["id"], 0, {"text": "thumbs_up"})
+        assert repo.update_message_at(
+            conv["id"], 0, {"feedback": None},
+        ) is True
+        msg = repo.get_message_at(conv["id"], 0)
+        assert msg["feedback"] is None
+
+
 class TestConcurrentAppend:
     """Two threads appending to the same conversation must not race on
     ``position``. The plan (migration-postgres.md §Phase 3) explicitly
@@ -372,3 +493,163 @@ class TestConcurrentAppend:
                 ConversationsRepository(cleanup_conn).delete(
                     conv["id"], "user-concurrent"
                 )
+                ConversationsRepository(cleanup_conn).delete(
+                    conv["id"], "user-concurrent"
+                )
+
+
+class TestSharedWith:
+    def test_add_shared_user_by_uuid(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("owner", "c")
+        assert repo.add_shared_user(conv["id"], "bob") is True
+        fetched = repo.get(conv["id"], "bob")
+        assert fetched is not None
+        assert "bob" in fetched["shared_with"]
+
+    def test_add_shared_user_is_idempotent(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("owner", "c")
+        assert repo.add_shared_user(conv["id"], "bob") is True
+        # Second call is a no-op (mirrors Mongo $addToSet semantics).
+        assert repo.add_shared_user(conv["id"], "bob") is False
+        fetched = repo.get(conv["id"], "bob")
+        assert fetched["shared_with"].count("bob") == 1
+
+    def test_add_shared_user_by_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create(
+            "owner", "c", legacy_mongo_id="507f1f77bcf86cd799439abc"
+        )
+        assert repo.add_shared_user("507f1f77bcf86cd799439abc", "bob") is True
+        fetched = repo.get(conv["id"], "bob")
+        assert "bob" in fetched["shared_with"]
+
+    def test_add_shared_user_empty_user_returns_false(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("owner", "c")
+        assert repo.add_shared_user(conv["id"], "") is False
+
+    def test_remove_shared_user(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("owner", "c")
+        repo.add_shared_user(conv["id"], "bob")
+        repo.add_shared_user(conv["id"], "carol")
+        assert repo.remove_shared_user(conv["id"], "bob") is True
+        fetched = repo.get(conv["id"], "carol")
+        assert fetched["shared_with"] == ["carol"]
+
+    def test_remove_missing_user_returns_false(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("owner", "c")
+        assert repo.remove_shared_user(conv["id"], "bob") is False
+
+    def test_remove_shared_user_by_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create(
+            "owner", "c", legacy_mongo_id="507f1f77bcf86cd799439def"
+        )
+        repo.add_shared_user("507f1f77bcf86cd799439def", "bob")
+        assert repo.remove_shared_user("507f1f77bcf86cd799439def", "bob") is True
+        fetched = repo.get(conv["id"], "owner")
+        assert fetched["shared_with"] == []
+
+
+class TestUuidShapeGate:
+    """Regression: a non-UUID conversation id (e.g. a legacy Mongo
+    ObjectId still embedded in old client-side state) must never reach
+    ``CAST(:id AS uuid)``. The cast raises ``InvalidTextRepresentation``
+    on the server and **aborts the enclosing Postgres transaction**,
+    making every subsequent query on the same connection fail. These
+    tests pin the conservative behaviour: return False/None/0 for
+    non-UUID input and leave the transaction usable."""
+
+    @staticmethod
+    def _assert_txn_alive(conn) -> None:
+        """Subsequent trivial query must succeed — proves the txn wasn't
+        poisoned. This is the load-bearing assertion; "returns False"
+        alone is insufficient since the old code did exactly that while
+        leaving the txn dead."""
+        from sqlalchemy import text as _text
+
+        assert conn.execute(_text("SELECT 1")).scalar() == 1
+
+    def test_rename_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.rename("507f1f77bcf86cd799439011", "user-1", "new") is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_rename_uuid_path_still_works(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "old")
+        assert repo.rename(created["id"], "user-1", "new") is True
+
+    def test_delete_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.delete("507f1f77bcf86cd799439011", "user-1") is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_delete_uuid_path_still_works(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("user-1", "c")
+        assert repo.delete(created["id"], "user-1") is True
+
+    def test_set_feedback_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.set_feedback(
+            "507f1f77bcf86cd799439011", 0, {"text": "x"},
+        ) is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_truncate_after_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.truncate_after("507f1f77bcf86cd799439011", 0) == 0
+        self._assert_txn_alive(pg_conn)
+
+    def test_set_shared_token_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.set_shared_token(
+            "507f1f77bcf86cd799439011", "user-1", "tok",
+        ) is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_update_compression_metadata_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.update_compression_metadata(
+            "507f1f77bcf86cd799439011", "user-1", {"is_compressed": True},
+        ) is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_set_compression_flags_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.set_compression_flags(
+            "507f1f77bcf86cd799439011",
+            is_compressed=True,
+            last_compression_at="2026-01-01",
+        ) is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_append_compression_point_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.append_compression_point(
+            "507f1f77bcf86cd799439011", {"summary": "x"}, max_points=3,
+        ) is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_get_message_at_rejects_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.get_message_at("507f1f77bcf86cd799439011", 0) is None
+        self._assert_txn_alive(pg_conn)
+
+    def test_rename_rejects_garbage(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.rename("not-an-id", "user-1", "new") is False
+        self._assert_txn_alive(pg_conn)
+
+    def test_get_message_at_uuid_path_still_works(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        repo.append_message(conv["id"], {"prompt": "q", "response": "a"})
+        msg = repo.get_message_at(conv["id"], 0)
+        assert msg is not None
+        assert msg["prompt"] == "q"

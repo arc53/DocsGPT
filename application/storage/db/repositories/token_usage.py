@@ -33,6 +33,24 @@ class TokenUsageRepository:
         generated_tokens: int = 0,
         timestamp: Optional[datetime] = None,
     ) -> None:
+        # Attribution guard: the ``token_usage_attribution_chk`` CHECK
+        # constraint requires at least one of ``user_id`` / ``api_key``
+        # to be non-null. Raise here for a clear error rather than
+        # relying on the DB to reject the row.
+        if not user_id and not api_key:
+            raise ValueError("token_usage insert requires user_id or api_key")
+
+        # ``agent_id`` is a UUID column. Legacy callers occasionally pass
+        # a Mongo ObjectId string (24 hex chars) — those would make
+        # psycopg raise at CAST time. Coerce anything that isn't shaped
+        # like a UUID (36 chars with hyphens) to NULL so a stray legacy
+        # id never breaks token accounting.
+        agent_id_uuid: Optional[str] = None
+        if agent_id:
+            s = str(agent_id)
+            if len(s) == 36 and "-" in s:
+                agent_id_uuid = s
+
         self._conn.execute(
             text(
                 """
@@ -48,7 +66,7 @@ class TokenUsageRepository:
             {
                 "user_id": user_id,
                 "api_key": api_key,
-                "agent_id": agent_id,
+                "agent_id": agent_id_uuid,
                 "prompt_tokens": prompt_tokens,
                 "generated_tokens": generated_tokens,
                 "timestamp": timestamp,
@@ -78,6 +96,74 @@ class TokenUsageRepository:
             params,
         )
         return result.scalar()
+
+    def bucketed_totals(
+        self,
+        *,
+        bucket_unit: str,
+        user_id: Optional[str] = None,
+        api_key: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        timestamp_gte: Optional[datetime] = None,
+        timestamp_lt: Optional[datetime] = None,
+    ) -> list[dict]:
+        """Sum ``prompt_tokens`` / ``generated_tokens`` bucketed by time.
+
+        Replacement for the legacy Mongo ``$dateToString`` aggregation
+        used by the analytics dashboard. The ``bucket`` format string
+        mirrors Mongo's output so the route layer doesn't reshape:
+        ``"YYYY-MM-DD HH:MM:00"`` (minute), ``"YYYY-MM-DD HH:00"``
+        (hour), ``"YYYY-MM-DD"`` (day). Rows are ordered by bucket ASC.
+        """
+        formats = {
+            "minute": "YYYY-MM-DD HH24:MI:00",
+            "hour": "YYYY-MM-DD HH24:00",
+            "day": "YYYY-MM-DD",
+        }
+        if bucket_unit not in formats:
+            raise ValueError(f"unsupported bucket_unit: {bucket_unit!r}")
+        fmt = formats[bucket_unit]
+
+        clauses: list[str] = []
+        params: dict = {"fmt": fmt}
+        if user_id is not None:
+            clauses.append("user_id = :user_id")
+            params["user_id"] = user_id
+        if api_key is not None:
+            clauses.append("api_key = :api_key")
+            params["api_key"] = api_key
+        if agent_id is not None:
+            clauses.append("agent_id = CAST(:agent_id AS uuid)")
+            params["agent_id"] = agent_id
+        if timestamp_gte is not None:
+            clauses.append("timestamp >= :timestamp_gte")
+            params["timestamp_gte"] = timestamp_gte
+        if timestamp_lt is not None:
+            clauses.append("timestamp < :timestamp_lt")
+            params["timestamp_lt"] = timestamp_lt
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT to_char(timestamp AT TIME ZONE 'UTC', :fmt) AS bucket,
+                       COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+                       COALESCE(SUM(generated_tokens), 0) AS generated_tokens
+                FROM token_usage
+                {where}
+                GROUP BY bucket
+                ORDER BY bucket ASC
+                """
+            ),
+            params,
+        )
+        return [
+            {
+                "bucket": row._mapping["bucket"],
+                "prompt_tokens": int(row._mapping["prompt_tokens"]),
+                "generated_tokens": int(row._mapping["generated_tokens"]),
+            }
+            for row in result.fetchall()
+        ]
 
     def count_in_range(
         self,

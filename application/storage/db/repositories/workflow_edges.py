@@ -82,7 +82,20 @@ class WorkflowEdgesRepository:
                 "config": e.get("config", {}),
             })
 
-        stmt = pg_insert(workflow_edges_table).values(rows).returning(workflow_edges_table)
+        # See ``WorkflowNodesRepository.bulk_create`` for the race
+        # rationale — same pattern for edges, keyed on the unique
+        # index ``workflow_edges_wf_ver_eid_uidx``.
+        stmt = pg_insert(workflow_edges_table).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["workflow_id", "graph_version", "edge_id"],
+            set_={
+                "from_node_id": stmt.excluded.from_node_id,
+                "to_node_id": stmt.excluded.to_node_id,
+                "source_handle": stmt.excluded.source_handle,
+                "target_handle": stmt.excluded.target_handle,
+                "config": stmt.excluded.config,
+            },
+        ).returning(workflow_edges_table)
         result = self._conn.execute(stmt)
         return [row_to_dict(r) for r in result.fetchall()]
 
