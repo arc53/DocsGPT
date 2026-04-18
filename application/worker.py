@@ -35,7 +35,7 @@ from application.storage.db.repositories.attachments import AttachmentsRepositor
 from application.storage.db.repositories.sources import SourcesRepository
 from application.storage.db.session import db_readonly, db_session
 from application.storage.storage_creator import StorageCreator
-from application.utils import count_tokens_docs, num_tokens_from_string
+from application.utils import count_tokens_docs, num_tokens_from_string, safe_filename
 
 # Constants
 
@@ -925,9 +925,9 @@ def remote_worker(
     operation_mode="upload",
     doc_id=None,
 ):
-    full_path = os.path.join(directory, user, name_job)
-    if not os.path.exists(full_path):
-        os.makedirs(full_path)
+    safe_user = safe_filename(user)
+    full_path = os.path.join(directory, safe_user, uuid.uuid4().hex)
+    os.makedirs(full_path, exist_ok=True)
     self.update_state(state="PROGRESS", meta={"current": 1})
     try:
         logging.info("Initializing remote loader with type: %s", loader)

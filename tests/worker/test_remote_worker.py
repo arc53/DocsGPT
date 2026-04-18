@@ -13,6 +13,7 @@ assert one seeded row is discovered and forwarded.
 
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -143,3 +144,69 @@ class TestSyncWorker:
         assert captured[0]["user"] == "carol"
         assert captured[0]["loader"] == "url"
         assert captured[0]["doc_id"] == str(src["id"])
+
+
+@pytest.mark.unit
+class TestRemoteWorkerPathTraversal:
+    """Regression: ``name_job`` must not be usable as a path segment.
+
+    Historically ``remote_worker`` built its workspace from
+    ``os.path.join(directory, user, name_job)`` and cleaned it up with
+    ``shutil.rmtree`` in a ``finally``. A ``name_job`` like
+    ``../../evil`` would therefore let an authenticated caller delete
+    directories outside the intended ``<directory>/<user>/`` root.
+    The fix uses a random uuid leaf; ``name_job`` is metadata only.
+    """
+
+    def test_traversal_name_job_does_not_escape_user_workspace(
+        self,
+        tmp_path,
+        task_self,
+        monkeypatch,
+        _mock_remote_pipeline,
+    ):
+        from application import worker
+
+        created_paths: list[str] = []
+        deleted_paths: list[str] = []
+        real_makedirs = os.makedirs
+        real_rmtree = worker.shutil.rmtree
+
+        def _spy_makedirs(path, *args, **kwargs):
+            created_paths.append(path)
+            return real_makedirs(path, *args, **kwargs)
+
+        def _spy_rmtree(path, *args, **kwargs):
+            deleted_paths.append(path)
+            return real_rmtree(path, *args, **kwargs)
+
+        monkeypatch.setattr(worker.os, "makedirs", _spy_makedirs)
+        monkeypatch.setattr(worker.shutil, "rmtree", _spy_rmtree)
+
+        directory = str(tmp_path / "temp")
+        user = "bob"
+        malicious_name = "../../evil"
+
+        worker.remote_worker(
+            task_self,
+            {"urls": ["http://example.com"]},
+            malicious_name,
+            user,
+            "crawler",
+            directory=directory,
+            operation_mode="upload",
+        )
+
+        directory_real = os.path.realpath(directory)
+        user_root = os.path.realpath(os.path.join(directory, user))
+
+        rmtree_targets = [
+            os.path.realpath(p)
+            for p in deleted_paths
+            if os.path.realpath(p).startswith(directory_real)
+        ]
+        assert len(rmtree_targets) == 1, rmtree_targets
+        assert rmtree_targets[0].startswith(user_root + os.sep), (
+            f"rmtree target {rmtree_targets[0]} escaped {user_root}"
+        )
+        assert malicious_name not in "".join(created_paths + deleted_paths)
