@@ -303,28 +303,24 @@ def list_models():
                     jsonify({"error": {"message": "Invalid API key", "type": "auth_error"}}),
                     401,
                 )
-            user = agent.get("user_id") or agent.get("user")
-            user_agents = agents_repo.list_for_user(user) if user else []
 
-        models = []
-        for ag in user_agents:
-            created = ag.get("created_at") or ag.get("createdAt")
-            created_ts = (
-                int(created.timestamp()) if hasattr(created, "timestamp")
-                else int(time.time())
-            )
-            model_id = str(ag.get("id") or ag.get("_id") or "")
-            models.append({
-                "id": model_id,
-                "object": "model",
-                "created": created_ts,
-                "owned_by": "docsgpt",
-                "name": ag.get("name", ""),
-                "description": ag.get("description", ""),
-            })
+        created = agent.get("created_at") or agent.get("createdAt")
+        created_ts = (
+            int(created.timestamp()) if hasattr(created, "timestamp")
+            else int(time.time())
+        )
+        model_id = str(agent.get("id") or agent.get("_id") or "")
+        model = {
+            "id": model_id,
+            "object": "model",
+            "created": created_ts,
+            "owned_by": "docsgpt",
+            "name": agent.get("name", ""),
+            "description": agent.get("description", ""),
+        }
 
         return make_response(
-            jsonify({"object": "list", "data": models}),
+            jsonify({"object": "list", "data": [model]}),
             200,
         )
     except Exception as e:

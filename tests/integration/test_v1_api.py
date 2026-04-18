@@ -430,7 +430,7 @@ class V1ApiTests(DocsGPTTestBase):
             checks = [
                 (data.get("object") == "list", "object is list"),
                 ("data" in data, "has data array"),
-                (len(data.get("data", [])) > 0, f"has {len(data.get('data', []))} model(s)"),
+                (len(data.get("data", [])) == 1, f"has exactly 1 model (got {len(data.get('data', []))})"),
             ]
 
             all_passed = True
