@@ -1,10 +1,19 @@
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 import uuid
 
 from .base import Tool
-from application.core.mongo_db import MongoDB
-from application.core.settings import settings
+from application.storage.db.repositories.todos import TodosRepository
+from application.storage.db.session import db_readonly, db_session
+
+
+def _status_from_completed(completed: Any) -> str:
+    """Translate the PG ``completed`` boolean to the legacy status string.
+
+    The frontend (and prior LLM-facing tool output) expects
+    ``"open"`` / ``"completed"``. Keeping that contract at the tool
+    boundary insulates callers from the schema change.
+    """
+    return "completed" if bool(completed) else "open"
 
 
 class TodoListTool(Tool):
@@ -25,7 +34,6 @@ class TodoListTool(Tool):
         self.user_id: Optional[str] = user_id
 
         # Get tool_id from configuration (passed from user_tools._id in production)
-        # In production, tool_id is the MongoDB ObjectId string from user_tools collection
         if tool_config and "tool_id" in tool_config:
             self.tool_id = tool_config["tool_id"]
         elif user_id:
@@ -35,10 +43,26 @@ class TodoListTool(Tool):
             # Last resort fallback (shouldn't happen in normal use)
             self.tool_id = str(uuid.uuid4())
 
-        db = MongoDB.get_client()[settings.MONGO_DB_NAME]
-        self.collection = db["todos"]
-
         self._last_artifact_id: Optional[str] = None
+
+    def _pg_enabled(self) -> bool:
+        """Return True only when ``tool_id`` is a real ``user_tools.id`` UUID.
+
+        The ``todos`` PG table has a UUID foreign key to ``user_tools`` and
+        the repo queries ``CAST(:tool_id AS uuid)``. The sentinel
+        ``default_{uid}`` fallback is neither a UUID nor a row in
+        ``user_tools`` — binding it would crash ``invalid input syntax for
+        type uuid`` and even if it didn't the FK would reject it. Mirror
+        the MemoryTool guard and no-op in that case.
+        """
+        tool_id = getattr(self, "tool_id", None)
+        if not tool_id or not isinstance(tool_id, str):
+            return False
+        if tool_id.startswith("default_"):
+            return False
+        from application.storage.db.base_repository import looks_like_uuid
+
+        return looks_like_uuid(tool_id)
 
     # -----------------------------
     # Action implementations
@@ -55,6 +79,12 @@ class TodoListTool(Tool):
         """
         if not self.user_id:
             return "Error: TodoListTool requires a valid user_id."
+
+        if not self._pg_enabled():
+            return (
+                "Error: TodoListTool is not configured with a persistent "
+                "tool_id; todo storage is unavailable for this session."
+            )
 
         self._last_artifact_id = None
 
@@ -191,28 +221,10 @@ class TodoListTool(Tool):
 
         return None
 
-    def _get_next_todo_id(self) -> int:
-        """Get the next sequential todo_id for this user and tool.
-
-        Returns a simple integer (1, 2, 3, ...) scoped to this user/tool.
-        With 5-10 todos max, scanning is negligible.
-        """
-        query = {"user_id": self.user_id, "tool_id": self.tool_id}
-        todos = list(self.collection.find(query, {"todo_id": 1}))
-
-        # Find the maximum todo_id
-        max_id = 0
-        for todo in todos:
-            todo_id = self._coerce_todo_id(todo.get("todo_id"))
-            if todo_id is not None:
-                max_id = max(max_id, todo_id)
-
-        return max_id + 1
-
     def _list(self) -> str:
         """List all todos for the user."""
-        query = {"user_id": self.user_id, "tool_id": self.tool_id}
-        todos = list(self.collection.find(query))
+        with db_readonly() as conn:
+            todos = TodosRepository(conn).list_for_tool(self.user_id, self.tool_id)
 
         if not todos:
             return "No todos found."
@@ -221,7 +233,7 @@ class TodoListTool(Tool):
         for doc in todos:
             todo_id = doc.get("todo_id")
             title = doc.get("title", "Untitled")
-            status = doc.get("status", "open")
+            status = _status_from_completed(doc.get("completed"))
 
             line = f"[{todo_id}] {title} ({status})"
             result_lines.append(line)
@@ -229,27 +241,23 @@ class TodoListTool(Tool):
         return "\n".join(result_lines)
 
     def _create(self, title: str) -> str:
-        """Create a new todo item."""
+        """Create a new todo item.
+
+        ``TodosRepository.create`` allocates the per-tool monotonic
+        ``todo_id`` inside the same transaction (``COALESCE(MAX(todo_id),0)+1``
+        scoped to ``tool_id``), so we no longer need a separate read-then-
+        write step here.
+        """
         title = (title or "").strip()
         if not title:
             return "Error: Title is required."
 
-        now = datetime.now()
-        todo_id = self._get_next_todo_id()
+        with db_session() as conn:
+            row = TodosRepository(conn).create(self.user_id, self.tool_id, title)
 
-        doc = {
-            "todo_id": todo_id,
-            "user_id": self.user_id,
-            "tool_id": self.tool_id,
-            "title": title,
-            "status": "open",
-            "created_at": now,
-            "updated_at": now,
-        }
-        insert_result = self.collection.insert_one(doc)
-        inserted_id = getattr(insert_result, "inserted_id", None) or doc.get("_id")
-        if inserted_id is not None:
-            self._last_artifact_id = str(inserted_id)
+        todo_id = row.get("todo_id")
+        if row.get("id") is not None:
+            self._last_artifact_id = str(row.get("id"))
         return f"Todo created with ID {todo_id}: {title}"
 
     def _get(self, todo_id: Optional[Any]) -> str:
@@ -258,21 +266,21 @@ class TodoListTool(Tool):
         if parsed_todo_id is None:
             return "Error: todo_id must be a positive integer."
 
-        query = {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": parsed_todo_id}
-        doc = self.collection.find_one(query)
+        with db_readonly() as conn:
+            doc = TodosRepository(conn).get_by_tool_and_todo_id(
+                self.user_id, self.tool_id, parsed_todo_id
+            )
 
         if not doc:
             return f"Error: Todo with ID {parsed_todo_id} not found."
 
-        if doc.get("_id") is not None:
-            self._last_artifact_id = str(doc.get("_id"))
+        if doc.get("id") is not None:
+            self._last_artifact_id = str(doc.get("id"))
 
         title = doc.get("title", "Untitled")
-        status = doc.get("status", "open")
+        status = _status_from_completed(doc.get("completed"))
 
-        result = f"Todo [{parsed_todo_id}]:\nTitle: {title}\nStatus: {status}"
-
-        return result
+        return f"Todo [{parsed_todo_id}]:\nTitle: {title}\nStatus: {status}"
 
     def _update(self, todo_id: Optional[Any], title: str) -> str:
         """Update a todo's title by ID."""
@@ -284,16 +292,19 @@ class TodoListTool(Tool):
         if not title:
             return "Error: Title is required."
 
-        query = {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": parsed_todo_id}
-        doc = self.collection.find_one_and_update(
-            query,
-            {"$set": {"title": title, "updated_at": datetime.now()}},
-        )
-        if not doc:
-            return f"Error: Todo with ID {parsed_todo_id} not found."
+        with db_session() as conn:
+            repo = TodosRepository(conn)
+            existing = repo.get_by_tool_and_todo_id(
+                self.user_id, self.tool_id, parsed_todo_id
+            )
+            if not existing:
+                return f"Error: Todo with ID {parsed_todo_id} not found."
+            repo.update_title_by_tool_and_todo_id(
+                self.user_id, self.tool_id, parsed_todo_id, title
+            )
 
-        if doc.get("_id") is not None:
-            self._last_artifact_id = str(doc.get("_id"))
+        if existing.get("id") is not None:
+            self._last_artifact_id = str(existing.get("id"))
 
         return f"Todo {parsed_todo_id} updated to: {title}"
 
@@ -303,16 +314,17 @@ class TodoListTool(Tool):
         if parsed_todo_id is None:
             return "Error: todo_id must be a positive integer."
 
-        query = {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": parsed_todo_id}
-        doc = self.collection.find_one_and_update(
-            query,
-            {"$set": {"status": "completed", "updated_at": datetime.now()}},
-        )
-        if not doc:
-            return f"Error: Todo with ID {parsed_todo_id} not found."
+        with db_session() as conn:
+            repo = TodosRepository(conn)
+            existing = repo.get_by_tool_and_todo_id(
+                self.user_id, self.tool_id, parsed_todo_id
+            )
+            if not existing:
+                return f"Error: Todo with ID {parsed_todo_id} not found."
+            repo.set_completed(self.user_id, self.tool_id, parsed_todo_id, True)
 
-        if doc.get("_id") is not None:
-            self._last_artifact_id = str(doc.get("_id"))
+        if existing.get("id") is not None:
+            self._last_artifact_id = str(existing.get("id"))
 
         return f"Todo {parsed_todo_id} marked as completed."
 
@@ -322,12 +334,18 @@ class TodoListTool(Tool):
         if parsed_todo_id is None:
             return "Error: todo_id must be a positive integer."
 
-        query = {"user_id": self.user_id, "tool_id": self.tool_id, "todo_id": parsed_todo_id}
-        doc = self.collection.find_one_and_delete(query)
-        if not doc:
-            return f"Error: Todo with ID {parsed_todo_id} not found."
+        with db_session() as conn:
+            repo = TodosRepository(conn)
+            existing = repo.get_by_tool_and_todo_id(
+                self.user_id, self.tool_id, parsed_todo_id
+            )
+            if not existing:
+                return f"Error: Todo with ID {parsed_todo_id} not found."
+            repo.delete_by_tool_and_todo_id(
+                self.user_id, self.tool_id, parsed_todo_id
+            )
 
-        if doc.get("_id") is not None:
-            self._last_artifact_id = str(doc.get("_id"))
+        if existing.get("id") is not None:
+            self._last_artifact_id = str(existing.get("id"))
 
         return f"Todo {parsed_todo_id} deleted."

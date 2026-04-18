@@ -2,14 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
 
 from application.storage.db.repositories.agent_folders import AgentFoldersRepository
-
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
 
 
 def _repo(conn) -> AgentFoldersRepository:
@@ -28,6 +22,55 @@ class TestCreate:
         repo = _repo(pg_conn)
         doc = repo.create("user-1", "f")
         assert doc["_id"] == doc["id"]
+
+
+class TestNesting:
+    def test_create_with_parent(self, pg_conn):
+        repo = _repo(pg_conn)
+        parent = repo.create("u", "Parent")
+        child = repo.create("u", "Child", parent_id=parent["id"])
+        assert str(child["parent_id"]) == str(parent["id"])
+
+    def test_list_children(self, pg_conn):
+        repo = _repo(pg_conn)
+        parent = repo.create("u", "Parent")
+        repo.create("u", "Child A", parent_id=parent["id"])
+        repo.create("u", "Child B", parent_id=parent["id"])
+        repo.create("u", "Top-level — not a child")
+        children = repo.list_children(parent["id"], "u")
+        assert {c["name"] for c in children} == {"Child A", "Child B"}
+
+    def test_update_reparents(self, pg_conn):
+        repo = _repo(pg_conn)
+        a = repo.create("u", "A")
+        b = repo.create("u", "B")
+        c = repo.create("u", "C", parent_id=a["id"])
+        repo.update(c["id"], "u", {"parent_id": b["id"]})
+        assert str(repo.get(c["id"], "u")["parent_id"]) == str(b["id"])
+
+    def test_update_clears_parent(self, pg_conn):
+        repo = _repo(pg_conn)
+        parent = repo.create("u", "P")
+        child = repo.create("u", "C", parent_id=parent["id"])
+        repo.update(child["id"], "u", {"parent_id": None})
+        assert repo.get(child["id"], "u")["parent_id"] is None
+
+    def test_delete_parent_unparents_children(self, pg_conn):
+        """ON DELETE SET NULL on the self-FK keeps children alive."""
+        repo = _repo(pg_conn)
+        parent = repo.create("u", "P")
+        child = repo.create("u", "C", parent_id=parent["id"])
+        repo.delete(parent["id"], "u")
+        survivor = repo.get(child["id"], "u")
+        assert survivor is not None
+        assert survivor["parent_id"] is None
+
+    def test_get_by_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create("u", "F", legacy_mongo_id="abc123")
+        found = repo.get_by_legacy_id("abc123", "u")
+        assert found is not None
+        assert found["name"] == "F"
 
 
 class TestGet:

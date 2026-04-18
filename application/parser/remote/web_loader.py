@@ -1,7 +1,7 @@
 import logging
+from application.core.url_validation import SSRFError, validate_url
 from application.parser.remote.base import BaseRemote
 from application.parser.schema.base import Document
-from application.core.url_validation import validate_url, SSRFError
 from langchain_community.document_loaders import WebBaseLoader
 
 headers = {
@@ -29,7 +29,9 @@ class WebLoader(BaseRemote):
             try:
                 url = validate_url(url)
             except SSRFError as e:
-                logging.error(f"URL validation failed for {url}: {e}")
+                logging.warning(
+                    f"Skipping URL due to SSRF validation failure: {url} - {e}"
+                )
                 continue
             try:
                 loader = self.loader([url], header_template=headers)

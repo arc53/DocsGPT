@@ -2,15 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 
 from application.storage.db.repositories.conversations import ConversationsRepository
 from application.storage.db.repositories.shared_conversations import SharedConversationsRepository
-
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
 
 
 def _conv(conn) -> dict:
@@ -89,3 +83,35 @@ class TestListForConversation:
         repo.create(conv["id"], "user-1", first_n_queries=2)
         results = repo.list_for_conversation(conv["id"])
         assert len(results) == 2
+
+
+class TestFindByUuidShapeGate:
+    """Regression: the public ``/api/shared_conversation/<identifier>``
+    route pipes its URL path segment straight into ``find_by_uuid``. A
+    non-UUID input (legacy ObjectId, garbage) must resolve to ``None``
+    rather than raise ``InvalidTextRepresentation`` and poison the
+    transaction — otherwise the 404 ``might have broken url`` response
+    is masked by a blanket 400."""
+
+    @staticmethod
+    def _assert_txn_alive(conn) -> None:
+        from sqlalchemy import text as _text
+
+        assert conn.execute(_text("SELECT 1")).scalar() == 1
+
+    def test_legacy_mongo_id_returns_none(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.find_by_uuid("507f1f77bcf86cd799439011") is None
+        self._assert_txn_alive(pg_conn)
+
+    def test_garbage_returns_none(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.find_by_uuid("../../etc/passwd") is None
+        self._assert_txn_alive(pg_conn)
+
+    def test_uuid_happy_path_still_works(self, pg_conn):
+        conv = _conv(pg_conn)
+        repo = _repo(pg_conn)
+        share = repo.create(conv["id"], "user-1", first_n_queries=1)
+        found = repo.find_by_uuid(str(share["uuid"]))
+        assert found is not None

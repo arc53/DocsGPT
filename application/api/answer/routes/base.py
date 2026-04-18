@@ -14,10 +14,13 @@ from application.core.model_utils import (
     get_provider_from_model_id,
 )
 
-from application.core.mongo_db import MongoDB
 from application.core.settings import settings
 from application.error import sanitize_api_error
 from application.llm.llm_creator import LLMCreator
+from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.token_usage import TokenUsageRepository
+from application.storage.db.repositories.user_logs import UserLogsRepository
+from application.storage.db.session import db_readonly, db_session
 from application.utils import check_required_fields
 
 logger = logging.getLogger(__name__)
@@ -30,10 +33,6 @@ class BaseAnswerResource:
     """Shared base class for answer endpoints"""
 
     def __init__(self):
-        mongo = MongoDB.get_client()
-        db = mongo[settings.MONGO_DB_NAME]
-        self.db = db
-        self.user_logs_collection = db["user_logs"]
         self.default_model_id = get_default_model_id()
         self.conversation_service = ConversationService()
 
@@ -91,8 +90,8 @@ class BaseAnswerResource:
         api_key = agent_config.get("user_api_key")
         if not api_key:
             return None
-        agents_collection = self.db["agents"]
-        agent = agents_collection.find_one({"key": api_key})
+        with db_readonly() as conn:
+            agent = AgentsRepository(conn).find_by_key(api_key)
 
         if not agent:
             return make_response(
@@ -113,41 +112,32 @@ class BaseAnswerResource:
         )
 
         token_limit = int(
-            agent.get("token_limit", settings.DEFAULT_AGENT_LIMITS["token_limit"])
+            agent.get("token_limit") or settings.DEFAULT_AGENT_LIMITS["token_limit"]
         )
         request_limit = int(
-            agent.get("request_limit", settings.DEFAULT_AGENT_LIMITS["request_limit"])
+            agent.get("request_limit") or settings.DEFAULT_AGENT_LIMITS["request_limit"]
         )
 
-        token_usage_collection = self.db["token_usage"]
-
-        end_date = datetime.datetime.now()
+        end_date = datetime.datetime.now(datetime.timezone.utc)
         start_date = end_date - datetime.timedelta(hours=24)
 
-        match_query = {
-            "timestamp": {"$gte": start_date, "$lte": end_date},
-            "api_key": api_key,
-        }
-
-        if limited_token_mode:
-            token_pipeline = [
-                {"$match": match_query},
-                {
-                    "$group": {
-                        "_id": None,
-                        "total_tokens": {
-                            "$sum": {"$add": ["$prompt_tokens", "$generated_tokens"]}
-                        },
-                    }
-                },
-            ]
-            token_result = list(token_usage_collection.aggregate(token_pipeline))
-            daily_token_usage = token_result[0]["total_tokens"] if token_result else 0
+        if limited_token_mode or limited_request_mode:
+            with db_readonly() as conn:
+                token_repo = TokenUsageRepository(conn)
+                if limited_token_mode:
+                    daily_token_usage = token_repo.sum_tokens_in_range(
+                        start=start_date, end=end_date, api_key=api_key,
+                    )
+                else:
+                    daily_token_usage = 0
+                if limited_request_mode:
+                    daily_request_usage = token_repo.count_in_range(
+                        start=start_date, end=end_date, api_key=api_key,
+                    )
+                else:
+                    daily_request_usage = 0
         else:
             daily_token_usage = 0
-        if limited_request_mode:
-            daily_request_usage = token_usage_collection.count_documents(match_query)
-        else:
             daily_request_usage = 0
         if not limited_token_mode and not limited_request_mode:
             return None
@@ -467,19 +457,18 @@ class BaseAnswerResource:
             for key, value in log_data.items():
                 if isinstance(value, str) and len(value) > 10000:
                     log_data[key] = value[:10000]
-            self.user_logs_collection.insert_one(log_data)
-
-            from application.storage.db.dual_write import dual_write
-            from application.storage.db.repositories.user_logs import UserLogsRepository
-
-            dual_write(
-                UserLogsRepository,
-                lambda repo, d=log_data: repo.insert(
-                    user_id=d.get("user"),
-                    endpoint="stream_answer",
-                    data=d,
-                ),
-            )
+            try:
+                with db_session() as conn:
+                    UserLogsRepository(conn).insert(
+                        user_id=log_data.get("user"),
+                        endpoint="stream_answer",
+                        data=log_data,
+                    )
+            except Exception as log_err:
+                logger.error(
+                    f"Failed to persist stream_answer user log: {log_err}",
+                    exc_info=True,
+                )
 
             data = json.dumps({"type": "end"})
             yield f"data: {data}\n\n"

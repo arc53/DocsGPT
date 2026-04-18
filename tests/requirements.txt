@@ -1,5 +1,6 @@
 pytest>=8.0.0
 pytest-cov>=4.1.0
 coverage>=7.4.0
-mongomock>=4.3.0
+pytest-postgresql>=6.0.0
+psycopg[binary]>=3.1
 cryptography>=46.0.0

@@ -1,7 +1,7 @@
+import uuid
 from datetime import datetime, timezone
 
 import pytest
-from bson import ObjectId
 from pydantic import ValidationError
 
 from application.agents.workflows.schemas import (
@@ -219,35 +219,28 @@ class TestWorkflowEdgeCreate:
 
 class TestWorkflowEdge:
     @pytest.mark.unit
-    def test_objectid_conversion(self):
-        oid = ObjectId()
+    def test_uuid_id(self):
+        oid = str(uuid.uuid4())
         e = WorkflowEdge(
-            _id=oid,
-            id="e1",
+            id=oid,
             workflow_id="w1",
             source="n1",
             target="n2",
         )
-        assert e.mongo_id == str(oid)
+        assert e.id == oid
 
     @pytest.mark.unit
     def test_string_id_passthrough(self):
         e = WorkflowEdge(
-            _id="string-id",
-            id="e1",
+            id="string-id",
             workflow_id="w1",
             source="n1",
             target="n2",
         )
-        assert e.mongo_id == "string-id"
+        assert e.id == "string-id"
 
     @pytest.mark.unit
-    def test_none_id(self):
-        e = WorkflowEdge(id="e1", workflow_id="w1", source="n1", target="n2")
-        assert e.mongo_id is None
-
-    @pytest.mark.unit
-    def test_to_mongo_doc(self):
+    def test_model_dump(self):
         e = WorkflowEdge(
             id="e1",
             workflow_id="w1",
@@ -256,7 +249,7 @@ class TestWorkflowEdge:
             sourceHandle="sh",
             targetHandle="th",
         )
-        doc = e.to_mongo_doc()
+        doc = e.model_dump()
         assert doc == {
             "id": "e1",
             "workflow_id": "w1",
@@ -303,15 +296,15 @@ class TestWorkflowNodeCreate:
 
 class TestWorkflowNode:
     @pytest.mark.unit
-    def test_objectid_conversion(self):
-        oid = ObjectId()
+    def test_uuid_id(self):
+        oid = str(uuid.uuid4())
         n = WorkflowNode(
-            _id=oid, id="n1", workflow_id="w1", type=NodeType.AGENT
+            id=oid, workflow_id="w1", type=NodeType.AGENT
         )
-        assert n.mongo_id == str(oid)
+        assert n.id == oid
 
     @pytest.mark.unit
-    def test_to_mongo_doc(self):
+    def test_model_dump(self):
         n = WorkflowNode(
             id="n1",
             workflow_id="w1",
@@ -321,11 +314,11 @@ class TestWorkflowNode:
             position={"x": 10, "y": 20},
             config={"key": "val"},
         )
-        doc = n.to_mongo_doc()
+        doc = n.model_dump()
         assert doc == {
             "id": "n1",
             "workflow_id": "w1",
-            "type": "agent",
+            "type": NodeType.AGENT,
             "title": "My Node",
             "description": "desc",
             "position": {"x": 10.0, "y": 20.0},
@@ -354,14 +347,14 @@ class TestWorkflowCreate:
 
 class TestWorkflow:
     @pytest.mark.unit
-    def test_objectid_conversion(self):
-        oid = ObjectId()
-        w = Workflow(_id=oid)
-        assert w.id == str(oid)
+    def test_uuid_id(self):
+        oid = str(uuid.uuid4())
+        w = Workflow(id=oid)
+        assert w.id == oid
 
     @pytest.mark.unit
     def test_string_id(self):
-        w = Workflow(_id="abc")
+        w = Workflow(id="abc")
         assert w.id == "abc"
 
     @pytest.mark.unit
@@ -378,9 +371,9 @@ class TestWorkflow:
         assert before <= w.updated_at <= after
 
     @pytest.mark.unit
-    def test_to_mongo_doc(self):
+    def test_model_dump(self):
         w = Workflow(name="W", description="d", user="u1")
-        doc = w.to_mongo_doc()
+        doc = w.model_dump()
         assert doc["name"] == "W"
         assert doc["description"] == "d"
         assert doc["user"] == "u1"
@@ -525,13 +518,13 @@ class TestWorkflowRun:
         assert r.completed_at is None
 
     @pytest.mark.unit
-    def test_objectid_conversion(self):
-        oid = ObjectId()
-        r = WorkflowRun(_id=oid, workflow_id="w1")
-        assert r.id == str(oid)
+    def test_uuid_id(self):
+        oid = str(uuid.uuid4())
+        r = WorkflowRun(id=oid, workflow_id="w1")
+        assert r.id == oid
 
     @pytest.mark.unit
-    def test_to_mongo_doc(self):
+    def test_model_dump(self):
         now = datetime.now(timezone.utc)
         log = NodeExecutionLog(
             node_id="n1",
@@ -546,9 +539,9 @@ class TestWorkflowRun:
             outputs={"a": "world"},
             steps=[log],
         )
-        doc = r.to_mongo_doc()
+        doc = r.model_dump()
         assert doc["workflow_id"] == "w1"
-        assert doc["status"] == "running"
+        assert doc["status"] == ExecutionStatus.RUNNING
         assert doc["inputs"] == {"q": "hello"}
         assert doc["outputs"] == {"a": "world"}
         assert len(doc["steps"]) == 1

@@ -3,13 +3,12 @@ import uuid
 from collections import Counter
 from typing import Dict, List, Optional, Tuple
 
-from bson.objectid import ObjectId
-
 from application.agents.tools.tool_action_parser import ToolActionParser
 from application.agents.tools.tool_manager import ToolManager
-from application.core.mongo_db import MongoDB
-from application.core.settings import settings
 from application.security.encryption import decrypt_credentials
+from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.user_tools import UserToolsRepository
+from application.storage.db.session import db_readonly
 
 logger = logging.getLogger(__name__)
 
@@ -51,30 +50,28 @@ class ToolExecutor:
         return tools
 
     def _get_tools_by_api_key(self, api_key: str) -> Dict[str, Dict]:
-        mongo = MongoDB.get_client()
-        db = mongo[settings.MONGO_DB_NAME]
-        agents_collection = db["agents"]
-        tools_collection = db["user_tools"]
-
-        agent_data = agents_collection.find_one({"key": api_key})
-        tool_ids = agent_data.get("tools", []) if agent_data else []
-
-        tools = (
-            tools_collection.find(
-                {"_id": {"$in": [ObjectId(tool_id) for tool_id in tool_ids]}}
-            )
-            if tool_ids
-            else []
-        )
-        tools = list(tools)
-        return {str(tool["_id"]): tool for tool in tools} if tools else {}
+        # Per-operation session: the answer pipeline spans a long-lived
+        # generator; wrapping it in a single connection would pin a PG
+        # conn for the whole stream. Open, fetch, close.
+        with db_readonly() as conn:
+            agent_data = AgentsRepository(conn).find_by_key(api_key)
+            tool_ids = agent_data.get("tools", []) if agent_data else []
+            if not tool_ids:
+                return {}
+            tools_repo = UserToolsRepository(conn)
+            tools: List[Dict] = []
+            owner = (agent_data.get("user_id") or agent_data.get("user")) if agent_data else None
+            for tid in tool_ids:
+                row = None
+                if owner:
+                    row = tools_repo.get_any(str(tid), owner)
+                if row is not None:
+                    tools.append(row)
+        return {str(tool["id"]): tool for tool in tools} if tools else {}
 
     def _get_user_tools(self, user: str = "local") -> Dict[str, Dict]:
-        mongo = MongoDB.get_client()
-        db = mongo[settings.MONGO_DB_NAME]
-        user_tools_collection = db["user_tools"]
-        user_tools = user_tools_collection.find({"user": user, "status": True})
-        user_tools = list(user_tools)
+        with db_readonly() as conn:
+            user_tools = UserToolsRepository(conn).list_active_for_user(user)
         return {str(i): tool for i, tool in enumerate(user_tools)}
 
     def merge_client_tools(
@@ -354,6 +351,17 @@ class ToolExecutor:
             headers=headers, query_params=query_params,
         )
 
+        if tool is None:
+            error_message = (
+                f"Failed to load tool '{tool_data.get('name')}' (tool_id key={tool_id}): "
+                "missing 'id' on tool row."
+            )
+            logger.error(error_message)
+            tool_call_data["result"] = error_message
+            yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
+            self.tool_calls.append(tool_call_data)
+            return error_message, call_id
+
         resolved_arguments = (
             {"query_params": query_params, "headers": headers, "body": body}
             if tool_data["name"] == "api_tool"
@@ -440,7 +448,16 @@ class ToolExecutor:
                 tool_config.update(decrypted)
                 tool_config["auth_credentials"] = decrypted
                 tool_config.pop("encrypted_credentials", None)
-            tool_config["tool_id"] = str(tool_data.get("_id", tool_id))
+            row_id = tool_data.get("id")
+            if not row_id:
+                logger.error(
+                    "Tool data missing 'id' for tool name=%s (enumerate-key tool_id=%s); "
+                    "skipping load to avoid binding a non-UUID downstream.",
+                    tool_data.get("name"),
+                    tool_id,
+                )
+                return None
+            tool_config["tool_id"] = str(row_id)
             if self.conversation_id:
                 tool_config["conversation_id"] = self.conversation_id
             if tool_data["name"] == "mcp_tool":

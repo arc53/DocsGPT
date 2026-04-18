@@ -20,8 +20,8 @@ from application.api.v1.translator import (
     translate_response,
     translate_stream_event,
 )
-from application.core.mongo_db import MongoDB
-from application.core.settings import settings
+from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.session import db_readonly
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +39,8 @@ def _extract_bearer_token() -> Optional[str]:
 def _lookup_agent(api_key: str) -> Optional[Dict]:
     """Look up the agent document for this API key."""
     try:
-        mongo = MongoDB.get_client()
-        db = mongo[settings.MONGO_DB_NAME]
-        return db["agents"].find_one({"key": api_key})
+        with db_readonly() as conn:
+            return AgentsRepository(conn).find_by_key(api_key)
     except Exception:
         logger.warning("Failed to look up agent for API key", exc_info=True)
         return None
@@ -90,8 +89,14 @@ def chat_completions():
         )
 
     # Link decoded_token to the agent's owner so continuation state,
-    # logs, and tool execution use the correct user identity.
-    agent_user = agent_doc.get("user") if agent_doc else None
+    # logs, and tool execution use the correct user identity. The PG
+    # ``agents`` row exposes the owner via ``user_id`` (``user`` is the
+    # legacy Mongo field name kept in ``row_to_dict`` only for the
+    # mapping ``id``/``_id``).
+    agent_user = (
+        (agent_doc.get("user_id") or agent_doc.get("user"))
+        if agent_doc else None
+    )
     decoded_token = {"sub": agent_user or "api_key_user"}
 
     try:
@@ -290,39 +295,32 @@ def list_models():
         )
 
     try:
-        mongo = MongoDB.get_client()
-        db = mongo[settings.MONGO_DB_NAME]
-        agents_collection = db["agents"]
+        with db_readonly() as conn:
+            agents_repo = AgentsRepository(conn)
+            agent = agents_repo.find_by_key(api_key)
+            if not agent:
+                return make_response(
+                    jsonify({"error": {"message": "Invalid API key", "type": "auth_error"}}),
+                    401,
+                )
 
-        # Find the agent for this api_key
-        agent = agents_collection.find_one({"key": api_key})
-        if not agent:
-            return make_response(
-                jsonify({"error": {"message": "Invalid API key", "type": "auth_error"}}),
-                401,
-            )
-
-        user = agent.get("user")
-
-        # Return all agents belonging to this user
-        user_agents = list(agents_collection.find({"user": user}))
-
-        models = []
-        for ag in user_agents:
-            created = ag.get("createdAt")
-            created_ts = int(created.timestamp()) if created else int(time.time())
-            model_id = str(ag.get("_id") or ag.get("id") or "")
-            models.append({
-                "id": model_id,
-                "object": "model",
-                "created": created_ts,
-                "owned_by": "docsgpt",
-                "name": ag.get("name", ""),
-                "description": ag.get("description", ""),
-            })
+        created = agent.get("created_at") or agent.get("createdAt")
+        created_ts = (
+            int(created.timestamp()) if hasattr(created, "timestamp")
+            else int(time.time())
+        )
+        model_id = str(agent.get("id") or agent.get("_id") or "")
+        model = {
+            "id": model_id,
+            "object": "model",
+            "created": created_ts,
+            "owned_by": "docsgpt",
+            "name": agent.get("name", ""),
+            "description": agent.get("description", ""),
+        }
 
         return make_response(
-            jsonify({"object": "list", "data": models}),
+            jsonify({"object": "list", "data": [model]}),
             200,
         )
     except Exception as e:

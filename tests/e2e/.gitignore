@@ -1,0 +1,4 @@
+node_modules/
+playwright-report/
+test-results/
+.e2e-last-run.json

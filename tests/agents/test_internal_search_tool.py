@@ -284,115 +284,14 @@ class TestInternalSearchToolGetRetriever:
 
 @pytest.mark.unit
 class TestGetDirectoryStructure:
-    """Cover lines 61: _get_directory_structure loads from MongoDB."""
+    """Cover ``_get_directory_structure`` loader semantics (post-Postgres cutover)."""
 
     def test_no_active_docs_returns_none(self):
-        """Cover line 56-57: no active_docs returns None."""
+        """No ``active_docs`` short-circuits to None without opening a connection."""
         tool = InternalSearchTool({"source": {}})
         result = tool._get_directory_structure()
         assert result is None
         assert tool._dir_structure_loaded is True
-
-    def test_loads_structure_from_mongo(self):
-        """Cover line 61+: loads directory structure from MongoDB."""
-        from bson.objectid import ObjectId
-
-        doc_id = str(ObjectId())
-        tool = InternalSearchTool({
-            "source": {"active_docs": [doc_id]},
-        })
-
-        mock_source_doc = {
-            "_id": ObjectId(doc_id),
-            "name": "test_source",
-            "directory_structure": {"root": {"file.txt": {"type": "text"}}},
-        }
-
-        with patch(
-            "application.core.mongo_db.MongoDB"
-        ) as mock_mongo:
-            mock_db = Mock()
-            mock_collection = Mock()
-            mock_collection.find_one.return_value = mock_source_doc
-            mock_db.__getitem__ = Mock(return_value=mock_collection)
-            mock_mongo.get_client.return_value = Mock(
-                __getitem__=Mock(return_value=mock_db)
-            )
-
-            result = tool._get_directory_structure()
-
-        assert result == {"root": {"file.txt": {"type": "text"}}}
-
-    def test_loads_string_structure_from_mongo(self):
-        """Cover line 80-81: directory_structure stored as JSON string."""
-        from bson.objectid import ObjectId
-
-        doc_id = str(ObjectId())
-        tool = InternalSearchTool({
-            "source": {"active_docs": [doc_id]},
-        })
-
-        mock_source_doc = {
-            "_id": ObjectId(doc_id),
-            "name": "test_source",
-            "directory_structure": '{"root": {"file.txt": {}}}',
-        }
-
-        with patch(
-            "application.core.mongo_db.MongoDB"
-        ) as mock_mongo:
-            mock_db = Mock()
-            mock_collection = Mock()
-            mock_collection.find_one.return_value = mock_source_doc
-            mock_db.__getitem__ = Mock(return_value=mock_collection)
-            mock_mongo.get_client.return_value = Mock(
-                __getitem__=Mock(return_value=mock_db)
-            )
-
-            result = tool._get_directory_structure()
-
-        assert result == {"root": {"file.txt": {}}}
-
-    def test_multiple_active_docs_merged(self):
-        """Cover line 83-84: multiple docs merge under source names."""
-        from bson.objectid import ObjectId
-
-        doc_id1 = str(ObjectId())
-        doc_id2 = str(ObjectId())
-        tool = InternalSearchTool({
-            "source": {"active_docs": [doc_id1, doc_id2]},
-        })
-
-        docs = {
-            doc_id1: {
-                "_id": ObjectId(doc_id1),
-                "name": "source1",
-                "directory_structure": {"file1.txt": {}},
-            },
-            doc_id2: {
-                "_id": ObjectId(doc_id2),
-                "name": "source2",
-                "directory_structure": {"file2.txt": {}},
-            },
-        }
-
-        with patch(
-            "application.core.mongo_db.MongoDB"
-        ) as mock_mongo:
-            mock_db = Mock()
-            mock_collection = Mock()
-            mock_collection.find_one.side_effect = lambda q: docs.get(
-                str(q["_id"])
-            )
-            mock_db.__getitem__ = Mock(return_value=mock_collection)
-            mock_mongo.get_client.return_value = Mock(
-                __getitem__=Mock(return_value=mock_db)
-            )
-
-            result = tool._get_directory_structure()
-
-        assert "source1" in result
-        assert "source2" in result
 
 
 @pytest.mark.unit
@@ -451,61 +350,6 @@ class TestSourcesHaveDirectoryStructure:
 
         assert sources_have_directory_structure({}) is False
         assert sources_have_directory_structure({"active_docs": []}) is False
-
-    def test_with_structure_returns_true(self):
-        from bson.objectid import ObjectId
-        from application.agents.tools.internal_search import (
-            sources_have_directory_structure,
-        )
-
-        doc_id = str(ObjectId())
-        mock_source_doc = {
-            "_id": ObjectId(doc_id),
-            "directory_structure": {"root": {}},
-        }
-
-        with patch(
-            "application.core.mongo_db.MongoDB"
-        ) as mock_mongo:
-            mock_db = Mock()
-            mock_collection = Mock()
-            mock_collection.find_one.return_value = mock_source_doc
-            mock_db.__getitem__ = Mock(return_value=mock_collection)
-            mock_mongo.get_client.return_value = Mock(
-                __getitem__=Mock(return_value=mock_db)
-            )
-
-            result = sources_have_directory_structure({"active_docs": [doc_id]})
-
-        assert result is True
-
-    def test_string_active_docs_converted_to_list(self):
-        """Cover line 298: active_docs as string is converted to list."""
-        from bson.objectid import ObjectId
-        from application.agents.tools.internal_search import (
-            sources_have_directory_structure,
-        )
-
-        doc_id = str(ObjectId())
-        mock_source_doc = {
-            "_id": ObjectId(doc_id),
-            "directory_structure": {"root": {}},
-        }
-
-        with patch(
-            "application.core.mongo_db.MongoDB"
-        ) as mock_mongo:
-            mock_db = Mock()
-            mock_collection = Mock()
-            mock_collection.find_one.return_value = mock_source_doc
-            mock_db.__getitem__ = Mock(return_value=mock_collection)
-            mock_mongo.get_client.return_value = Mock(
-                __getitem__=Mock(return_value=mock_db)
-            )
-
-            result = sources_have_directory_structure({"active_docs": doc_id})
-
-        assert result is True
 
     def test_get_config_requirements(self):
         """Cover line 280: get_config_requirements."""

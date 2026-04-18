@@ -756,24 +756,12 @@ class TestUploadFileToGoogle:
             llm._upload_file_to_google({"path": "/nonexistent"})
 
     def test_upload_and_caches_uri(self, llm, monkeypatch):
-        from unittest.mock import MagicMock
-
-        mock_attachments = MagicMock()
-        mock_db = MagicMock()
-        mock_db.__getitem__ = MagicMock(return_value=mock_attachments)
-        mock_mongo_client = {"docsgpt": mock_db}
-        mock_mongodb = MagicMock()
-        mock_mongodb.get_client.return_value = mock_mongo_client
-
-        monkeypatch.setattr(
-            "application.core.mongo_db.MongoDB.get_client",
-            mock_mongodb.get_client,
-        )
+        # The attachment-id cache write goes through AttachmentsRepository
+        # now; failures there are swallowed with a logged warning, so the
+        # test just verifies the upload URI is returned end-to-end.
         monkeypatch.setattr(
             "application.llm.google_ai.settings",
-            types.SimpleNamespace(
-                GOOGLE_API_KEY="k", API_KEY="k", MONGO_DB_NAME="docsgpt"
-            ),
+            types.SimpleNamespace(GOOGLE_API_KEY="k", API_KEY="k"),
         )
         result = llm._upload_file_to_google({"path": "/tmp/file.pdf", "_id": "abc"})
         # process_file returns fn(path) which calls client.files.upload -> "gs://fake-uri"

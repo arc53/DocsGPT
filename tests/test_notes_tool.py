@@ -1,168 +1,115 @@
+"""Unit tests for NotesTool.
+
+Same approach as ``test_todo_tool.py``: patch ``NotesRepository`` with
+an in-memory fake and replace ``db_session`` / ``db_readonly`` with a
+no-op context manager.
+"""
+
+from __future__ import annotations
+
+import uuid
+from contextlib import contextmanager
+
 import pytest
+
 from application.agents.tools.notes import NotesTool
-from application.core.settings import settings
+
+
+class _FakeNotesRepo:
+    _store: dict[tuple[str, str], dict] = {}
+
+    def __init__(self, conn=None) -> None:
+        self._conn = conn
+
+    @classmethod
+    def reset(cls) -> None:
+        cls._store = {}
+
+    def upsert(self, user_id, tool_id, title, content):
+        key = (user_id, tool_id)
+        if key in self._store:
+            self._store[key].update({"title": title, "content": content})
+        else:
+            self._store[key] = {
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "tool_id": tool_id,
+                "title": title,
+                "content": content,
+            }
+        return self._store[key]
+
+    def get_for_user_tool(self, user_id, tool_id):
+        return self._store.get((user_id, tool_id))
+
+    def delete(self, user_id, tool_id):
+        return self._store.pop((user_id, tool_id), None) is not None
+
+
+@contextmanager
+def _noop_conn():
+    yield None
 
 
 @pytest.fixture
-def notes_tool(monkeypatch) -> NotesTool:
-    """Provide a NotesTool with a fake Mongo collection and fixed user_id."""
-
-    class FakeCollection:
-        def __init__(self) -> None:
-            self.docs = {}  # key: user_id:tool_id -> doc
-            self._id_counter = 0
-
-        def _generate_id(self):
-            self._id_counter += 1
-            return f"fake_id_{self._id_counter}"
-
-        def update_one(self, q, u, upsert=False):
-            user_id = q.get("user_id")
-            tool_id = q.get("tool_id")
-            key = f"{user_id}:{tool_id}"
-
-            if key not in self.docs and not upsert:
-                return type("res", (), {"modified_count": 0})
-            if key not in self.docs and upsert:
-                self.docs[key] = {"user_id": user_id, "tool_id": tool_id, "note": "", "_id": self._generate_id()}
-            if "$set" in u:
-                self.docs[key].update(u["$set"])
-            return type("res", (), {"modified_count": 1})
-
-        def find_one(self, q):
-            user_id = q.get("user_id")
-            tool_id = q.get("tool_id")
-            key = f"{user_id}:{tool_id}"
-            return self.docs.get(key)
-
-        def find_one_and_update(self, q, u, upsert=False, return_document=None):
-            user_id = q.get("user_id")
-            tool_id = q.get("tool_id")
-            key = f"{user_id}:{tool_id}"
-
-            if key not in self.docs and not upsert:
-                return None
-            if key not in self.docs and upsert:
-                self.docs[key] = {"user_id": user_id, "tool_id": tool_id, "note": "", "_id": self._generate_id()}
-            if "$set" in u:
-                self.docs[key].update(u["$set"])
-            return self.docs[key]
-
-        def find_one_and_delete(self, q):
-            user_id = q.get("user_id")
-            tool_id = q.get("tool_id")
-            key = f"{user_id}:{tool_id}"
-            if key in self.docs:
-                doc = self.docs.pop(key)
-                return doc
-            return None
-
-        def delete_one(self, q):
-            user_id = q.get("user_id")
-            tool_id = q.get("tool_id")
-            key = f"{user_id}:{tool_id}"
-            if key in self.docs:
-                del self.docs[key]
-                return type("res", (), {"deleted_count": 1})
-            return type("res", (), {"deleted_count": 0})
-
-    fake_collection = FakeCollection()
-    fake_db = {"notes": fake_collection}
-    fake_client = {settings.MONGO_DB_NAME: fake_db}
-
-    # Patch MongoDB client globally for the tool
-
+def notes_tool(monkeypatch):
+    _FakeNotesRepo.reset()
     monkeypatch.setattr(
-        "application.core.mongo_db.MongoDB.get_client", lambda: fake_client
+        "application.agents.tools.notes.NotesRepository", _FakeNotesRepo
     )
-
-    # Return tool with a fixed tool_id for consistency in tests
-
-    return NotesTool({"tool_id": "test_tool_id"}, user_id="test_user")
+    monkeypatch.setattr(
+        "application.agents.tools.notes.db_session", _noop_conn
+    )
+    monkeypatch.setattr(
+        "application.agents.tools.notes.db_readonly", _noop_conn
+    )
+    return NotesTool({"tool_id": str(uuid.uuid4())}, user_id="test_user")
 
 
 @pytest.mark.unit
-def test_view(notes_tool: NotesTool) -> None:
-    # Manually insert a note to test retrieval
-
-    notes_tool.collection.update_one(
-        {"user_id": "test_user", "tool_id": "test_tool_id"},
-        {"$set": {"note": "hello"}},
-        upsert=True,
-    )
-    assert "hello" in notes_tool.execute_action("view")
-
-
-@pytest.mark.unit
-def test_overwrite_and_delete(notes_tool: NotesTool) -> None:
-    # Overwrite creates a new note
-
+def test_overwrite_and_view(notes_tool):
     assert "saved" in notes_tool.execute_action("overwrite", text="first").lower()
     assert "first" in notes_tool.execute_action("view")
-
-    # Overwrite replaces existing note
 
     assert "saved" in notes_tool.execute_action("overwrite", text="second").lower()
     assert "second" in notes_tool.execute_action("view")
 
+
+@pytest.mark.unit
+def test_delete_note(notes_tool):
+    notes_tool.execute_action("overwrite", text="hello")
     assert "deleted" in notes_tool.execute_action("delete").lower()
     assert "no note" in notes_tool.execute_action("view").lower()
 
 
 @pytest.mark.unit
-def test_init_without_user_id(monkeypatch):
-    """Should fail gracefully if no user_id is provided."""
-    notes_tool = NotesTool(tool_config={})
-    result = notes_tool.execute_action("view")
-    assert "user_id" in str(result).lower()
-
-
-@pytest.mark.unit
-def test_view_not_found(notes_tool: NotesTool) -> None:
-    """Should return 'No note found.' when no note exists"""
+def test_view_not_found(notes_tool):
     result = notes_tool.execute_action("view")
     assert "no note found" in result.lower()
 
 
 @pytest.mark.unit
-def test_str_replace(notes_tool: NotesTool) -> None:
-    """Test string replacement in note"""
-    # Create a note
-
+def test_str_replace(notes_tool):
     notes_tool.execute_action("overwrite", text="Hello world, hello universe")
-
-    # Replace text
-
     result = notes_tool.execute_action("str_replace", old_str="hello", new_str="hi")
     assert "updated" in result.lower()
-
-    # Verify replacement
 
     note = notes_tool.execute_action("view")
     assert "hi world, hi universe" in note.lower()
 
 
 @pytest.mark.unit
-def test_str_replace_not_found(notes_tool: NotesTool) -> None:
-    """Test string replacement when string not found"""
+def test_str_replace_not_found(notes_tool):
     notes_tool.execute_action("overwrite", text="Hello world")
     result = notes_tool.execute_action("str_replace", old_str="goodbye", new_str="hi")
     assert "not found" in result.lower()
 
 
 @pytest.mark.unit
-def test_insert_line(notes_tool: NotesTool) -> None:
-    """Test inserting text at a line number"""
-    # Create a multiline note
-
+def test_insert_line(notes_tool):
     notes_tool.execute_action("overwrite", text="Line 1\nLine 2\nLine 3")
-
-    # Insert at line 2
-
     result = notes_tool.execute_action("insert", line_number=2, text="Inserted line")
     assert "inserted" in result.lower()
-
-    # Verify insertion
 
     note = notes_tool.execute_action("view")
     lines = note.split("\n")
@@ -171,130 +118,62 @@ def test_insert_line(notes_tool: NotesTool) -> None:
 
 
 @pytest.mark.unit
-def test_delete_nonexistent_note(monkeypatch):
-    class FakeCollection:
-        def find_one_and_delete(self, q):
-            return None
-
-    monkeypatch.setattr(
-        "application.core.mongo_db.MongoDB.get_client",
-        lambda: {"docsgpt": {"notes": FakeCollection()}},
-    )
-
-    notes_tool = NotesTool(tool_config={}, user_id="user123")
+def test_delete_nonexistent_note(notes_tool):
     result = notes_tool.execute_action("delete")
     assert "no note found" in result.lower()
 
 
 @pytest.mark.unit
-def test_notes_tool_isolation(monkeypatch) -> None:
-    """Test that different notes tool instances have isolated notes."""
-
-    class FakeCollection:
-        def __init__(self) -> None:
-            self.docs = {}
-            self._id_counter = 0
-
-        def _generate_id(self):
-            self._id_counter += 1
-            return f"fake_id_{self._id_counter}"
-
-        def update_one(self, q, u, upsert=False):
-            user_id = q.get("user_id")
-            tool_id = q.get("tool_id")
-            key = f"{user_id}:{tool_id}"
-
-            if key not in self.docs and not upsert:
-                return type("res", (), {"modified_count": 0})
-            if key not in self.docs and upsert:
-                self.docs[key] = {"user_id": user_id, "tool_id": tool_id, "note": "", "_id": self._generate_id()}
-            if "$set" in u:
-                self.docs[key].update(u["$set"])
-            return type("res", (), {"modified_count": 1})
-
-        def find_one(self, q):
-            user_id = q.get("user_id")
-            tool_id = q.get("tool_id")
-            key = f"{user_id}:{tool_id}"
-            return self.docs.get(key)
-
-        def find_one_and_update(self, q, u, upsert=False, return_document=None):
-            user_id = q.get("user_id")
-            tool_id = q.get("tool_id")
-            key = f"{user_id}:{tool_id}"
-
-            if key not in self.docs and not upsert:
-                return None
-            if key not in self.docs and upsert:
-                self.docs[key] = {"user_id": user_id, "tool_id": tool_id, "note": "", "_id": self._generate_id()}
-            if "$set" in u:
-                self.docs[key].update(u["$set"])
-            return self.docs[key]
-
-    fake_collection = FakeCollection()
-    fake_db = {"notes": fake_collection}
-    fake_client = {settings.MONGO_DB_NAME: fake_db}
-
+def test_isolation_per_tool_id(monkeypatch):
+    _FakeNotesRepo.reset()
     monkeypatch.setattr(
-        "application.core.mongo_db.MongoDB.get_client", lambda: fake_client
+        "application.agents.tools.notes.NotesRepository", _FakeNotesRepo
+    )
+    monkeypatch.setattr(
+        "application.agents.tools.notes.db_session", _noop_conn
+    )
+    monkeypatch.setattr(
+        "application.agents.tools.notes.db_readonly", _noop_conn
     )
 
-    # Create two notes tools with different tool_ids for the same user
-
-    tool1 = NotesTool({"tool_id": "tool_1"}, user_id="test_user")
-    tool2 = NotesTool({"tool_id": "tool_2"}, user_id="test_user")
-
-    # Create a note in tool1
+    tool1 = NotesTool({"tool_id": str(uuid.uuid4())}, user_id="test_user")
+    tool2 = NotesTool({"tool_id": str(uuid.uuid4())}, user_id="test_user")
 
     tool1.execute_action("overwrite", text="Content from tool 1")
-
-    # Create a note in tool2
-
     tool2.execute_action("overwrite", text="Content from tool 2")
 
-    # Verify that each tool sees only its own content
+    assert "Content from tool 1" in tool1.execute_action("view")
+    assert "Content from tool 2" not in tool1.execute_action("view")
 
-    result1 = tool1.execute_action("view")
-    result2 = tool2.execute_action("view")
-
-    assert "Content from tool 1" in result1
-    assert "Content from tool 2" not in result1
-
-    assert "Content from tool 2" in result2
-    assert "Content from tool 1" not in result2
+    assert "Content from tool 2" in tool2.execute_action("view")
+    assert "Content from tool 1" not in tool2.execute_action("view")
 
 
 @pytest.mark.unit
-def test_notes_tool_auto_generates_tool_id(monkeypatch) -> None:
-    """Test that tool_id defaults to 'default_{user_id}' for persistence."""
+def test_init_without_user_id():
+    """Should fail gracefully if no user_id is provided."""
+    notes_tool = NotesTool(tool_config={})
+    result = notes_tool.execute_action("view")
+    assert "user_id" in str(result).lower()
 
-    class FakeCollection:
-        def __init__(self) -> None:
-            self.docs = {}
 
-        def update_one(self, q, u, upsert=False):
-            return type("res", (), {"modified_count": 1})
+@pytest.mark.unit
+def test_sentinel_tool_id_short_circuits():
+    """A ``default_{user_id}`` tool_id must no-op with a polite error."""
+    tool = NotesTool({}, user_id="test_user")
+    assert tool.tool_id == "default_test_user"
+    result = tool.execute_action("view")
+    assert "Error" in result
+    assert "not configured" in result.lower() or "unavailable" in result.lower()
 
-    fake_collection = FakeCollection()
-    fake_db = {"notes": fake_collection}
-    fake_client = {settings.MONGO_DB_NAME: fake_db}
 
-    monkeypatch.setattr(
-        "application.core.mongo_db.MongoDB.get_client", lambda: fake_client
-    )
-
-    # Create two tools without providing tool_id for the same user
-
+@pytest.mark.unit
+def test_notes_tool_auto_generates_default_tool_id():
+    """Without ``tool_id``, tool_id defaults to ``default_{user_id}``."""
     tool1 = NotesTool({}, user_id="test_user")
     tool2 = NotesTool({}, user_id="test_user")
-
-    # Both should have the same default tool_id for persistence
-
     assert tool1.tool_id == "default_test_user"
     assert tool2.tool_id == "default_test_user"
-    assert tool1.tool_id == tool2.tool_id
-
-    # Different users should have different tool_ids
 
     tool3 = NotesTool({}, user_id="another_user")
     assert tool3.tool_id == "default_another_user"

@@ -71,9 +71,14 @@ user_tools_table = Table(
     Column("name", Text, nullable=False),
     Column("custom_name", Text),
     Column("display_name", Text),
+    Column("description", Text),
     Column("config", JSONB, nullable=False, server_default="{}"),
+    Column("config_requirements", JSONB, nullable=False, server_default="{}"),
+    Column("actions", JSONB, nullable=False, server_default="[]"),
+    Column("status", Boolean, nullable=False, server_default="true"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("legacy_mongo_id", Text),
 )
 
 token_usage_table = Table(
@@ -122,8 +127,10 @@ agent_folders_table = Table(
     Column("user_id", Text, nullable=False),
     Column("name", Text, nullable=False),
     Column("description", Text),
+    Column("parent_id", UUID(as_uuid=True), ForeignKey("agent_folders.id", ondelete="SET NULL")),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("legacy_mongo_id", Text),
 )
 
 sources_table = Table(
@@ -132,10 +139,21 @@ sources_table = Table(
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
     Column("user_id", Text, nullable=False),
     Column("name", Text, nullable=False),
+    Column("language", Text),
+    Column("date", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("model", Text),
     Column("type", Text),
     Column("metadata", JSONB, nullable=False, server_default="{}"),
+    Column("retriever", Text),
+    Column("sync_frequency", Text),
+    Column("tokens", Text),
+    Column("file_path", Text),
+    Column("remote_data", JSONB),
+    Column("directory_structure", JSONB),
+    Column("file_name_map", JSONB),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("legacy_mongo_id", Text),
 )
 
 agents_table = Table(
@@ -148,6 +166,7 @@ agents_table = Table(
     Column("agent_type", Text),
     Column("status", Text, nullable=False),
     Column("key", CITEXT, unique=True),
+    Column("image", Text),
     Column("source_id", UUID(as_uuid=True), ForeignKey("sources.id", ondelete="SET NULL")),
     Column("extra_source_ids", ARRAY(UUID(as_uuid=True)), nullable=False, server_default="{}"),
     Column("chunks", Integer),
@@ -158,11 +177,15 @@ agents_table = Table(
     Column("models", JSONB),
     Column("default_model_id", Text),
     Column("folder_id", UUID(as_uuid=True), ForeignKey("agent_folders.id", ondelete="SET NULL")),
+    Column("workflow_id", UUID(as_uuid=True), ForeignKey("workflows.id", ondelete="SET NULL")),
     Column("limited_token_mode", Boolean, nullable=False, server_default="false"),
     Column("token_limit", Integer),
     Column("limited_request_mode", Boolean, nullable=False, server_default="false"),
     Column("request_limit", Integer),
+    Column("allow_system_prompt_override", Boolean, nullable=False, server_default="false"),
     Column("shared", Boolean, nullable=False, server_default="false"),
+    Column("shared_token", CITEXT, unique=True),
+    Column("shared_metadata", JSONB),
     Column("incoming_webhook_token", CITEXT, unique=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
@@ -179,6 +202,11 @@ attachments_table = Table(
     Column("upload_path", Text, nullable=False),
     Column("mime_type", Text),
     Column("size", BigInteger),
+    Column("content", Text),
+    Column("token_count", Integer),
+    Column("openai_file_id", Text),
+    Column("google_file_uri", Text),
+    Column("metadata", JSONB),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
 )
@@ -191,6 +219,7 @@ memories_table = Table(
     Column("tool_id", UUID(as_uuid=True), ForeignKey("user_tools.id", ondelete="CASCADE")),
     Column("path", Text, nullable=False),
     Column("content", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     UniqueConstraint("user_id", "tool_id", "path", name="memories_user_tool_path_uidx"),
 )
@@ -201,10 +230,12 @@ todos_table = Table(
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
     Column("user_id", Text, nullable=False),
     Column("tool_id", UUID(as_uuid=True), ForeignKey("user_tools.id", ondelete="CASCADE")),
+    Column("todo_id", Integer),
     Column("title", Text, nullable=False),
     Column("completed", Boolean, nullable=False, server_default="false"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("legacy_mongo_id", Text),
 )
 
 notes_table = Table(
@@ -226,10 +257,15 @@ connector_sessions_table = Table(
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
     Column("user_id", Text, nullable=False),
     Column("provider", Text, nullable=False),
-    Column("session_data", JSONB, nullable=False),
+    Column("server_url", Text),
+    Column("session_token", Text, unique=True),
+    Column("user_email", Text),
+    Column("status", Text),
+    Column("token_info", JSONB),
+    Column("session_data", JSONB, nullable=False, server_default="{}"),
     Column("expires_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    UniqueConstraint("user_id", "provider", name="connector_sessions_user_provider_uidx"),
+    Column("legacy_mongo_id", Text),
 )
 
 

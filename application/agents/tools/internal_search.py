@@ -48,7 +48,7 @@ class InternalSearchTool(Tool):
         return self._retriever
 
     def _get_directory_structure(self) -> Optional[Dict]:
-        """Load directory structure from MongoDB for the configured sources."""
+        """Load directory structure from Postgres for the configured sources."""
         if self._dir_structure_loaded:
             return self._directory_structure
 
@@ -59,35 +59,39 @@ class InternalSearchTool(Tool):
             return None
 
         try:
-            from bson.objectid import ObjectId
-            from application.core.mongo_db import MongoDB
-
-            mongo = MongoDB.get_client()
-            db = mongo[settings.MONGO_DB_NAME]
-            sources_collection = db["sources"]
+            # Per-operation session: this tool runs inside the answer
+            # generator hot path, so we open a short-lived read
+            # connection for the batch lookup and release immediately.
+            from application.storage.db.repositories.sources import (
+                SourcesRepository,
+            )
+            from application.storage.db.session import db_readonly
 
             if isinstance(active_docs, str):
                 active_docs = [active_docs]
 
+            decoded_token = self.config.get("decoded_token") or {}
+            user_id = decoded_token.get("sub") if decoded_token else None
+
             merged_structure = {}
-            for doc_id in active_docs:
-                try:
-                    source_doc = sources_collection.find_one(
-                        {"_id": ObjectId(doc_id)}
-                    )
-                    if not source_doc:
-                        continue
-                    dir_str = source_doc.get("directory_structure")
-                    if dir_str:
-                        if isinstance(dir_str, str):
-                            dir_str = json.loads(dir_str)
-                        source_name = source_doc.get("name", doc_id)
-                        if len(active_docs) > 1:
-                            merged_structure[source_name] = dir_str
-                        else:
-                            merged_structure = dir_str
-                except Exception as e:
-                    logger.debug(f"Could not load dir structure for {doc_id}: {e}")
+            with db_readonly() as conn:
+                repo = SourcesRepository(conn)
+                for doc_id in active_docs:
+                    try:
+                        source_doc = repo.get_any(str(doc_id), user_id) if user_id else None
+                        if not source_doc:
+                            continue
+                        dir_str = source_doc.get("directory_structure")
+                        if dir_str:
+                            if isinstance(dir_str, str):
+                                dir_str = json.loads(dir_str)
+                            source_name = source_doc.get("name", doc_id)
+                            if len(active_docs) > 1:
+                                merged_structure[source_name] = dir_str
+                            else:
+                                merged_structure = dir_str
+                    except Exception as e:
+                        logger.debug(f"Could not load dir structure for {doc_id}: {e}")
 
             self._directory_structure = merged_structure if merged_structure else None
         except Exception as e:
@@ -357,32 +361,48 @@ INTERNAL_TOOL_ENTRY = build_internal_tool_entry(has_directory_structure=False)
 
 
 def sources_have_directory_structure(source: Dict) -> bool:
-    """Check if any of the active sources have directory_structure in MongoDB."""
+    """Check if any of the active sources have a ``directory_structure`` row."""
     active_docs = source.get("active_docs", [])
     if not active_docs:
         return False
 
     try:
-        from bson.objectid import ObjectId
-        from application.core.mongo_db import MongoDB
+        # TODO(pg-cutover): SourcesRepository.get_any requires ``user_id``
+        # scoping, but callers in the agent build path don't always
+        # thread the decoded token through here. Use a direct
+        # short-lived SQL lookup instead of the repo until the call
+        # sites are updated to propagate user context.
+        from sqlalchemy import text as _text
 
-        mongo = MongoDB.get_client()
-        db = mongo[settings.MONGO_DB_NAME]
-        sources_collection = db["sources"]
+        from application.storage.db.session import db_readonly
 
         if isinstance(active_docs, str):
             active_docs = [active_docs]
 
-        for doc_id in active_docs:
-            try:
-                source_doc = sources_collection.find_one(
-                    {"_id": ObjectId(doc_id)},
-                    {"directory_structure": 1},
-                )
-                if source_doc and source_doc.get("directory_structure"):
-                    return True
-            except Exception:
-                continue
+        with db_readonly() as conn:
+            for doc_id in active_docs:
+                try:
+                    value = str(doc_id)
+                    if len(value) == 36 and "-" in value:
+                        row = conn.execute(
+                            _text(
+                                "SELECT directory_structure FROM sources "
+                                "WHERE id = CAST(:id AS uuid)"
+                            ),
+                            {"id": value},
+                        ).fetchone()
+                    else:
+                        row = conn.execute(
+                            _text(
+                                "SELECT directory_structure FROM sources "
+                                "WHERE legacy_mongo_id = :lid"
+                            ),
+                            {"lid": value},
+                        ).fetchone()
+                    if row is not None and row[0]:
+                        return True
+                except Exception:
+                    continue
     except Exception as e:
         logger.debug(f"Could not check directory structure: {e}")
 

@@ -28,20 +28,59 @@ class TestToolExecutorInit:
 @pytest.mark.unit
 class TestToolExecutorGetTools:
 
-    def test_get_tools_uses_api_key_when_present(self, mock_mongo_db):
+    @staticmethod
+    def _patch_conn(monkeypatch, pg_conn):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _use_pg_conn():
+            yield pg_conn
+
+        monkeypatch.setattr(
+            "application.agents.tool_executor.db_readonly", _use_pg_conn
+        )
+
+    def test_get_tools_uses_api_key_when_present(self, pg_conn, monkeypatch):
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.user_tools import UserToolsRepository
+
+        tool = UserToolsRepository(pg_conn).create(user_id="alice", name="tool1")
+        AgentsRepository(pg_conn).create(
+            user_id="alice",
+            name="a",
+            status="active",
+            key="test_key",
+            tools=[str(tool["id"])],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
         executor = ToolExecutor(user_api_key="test_key", user="alice")
         tools = executor.get_tools()
         assert isinstance(tools, dict)
+        # The tool id should appear as key; tool_data['id'] is set
+        assert str(tool["id"]) in tools
+        assert tools[str(tool["id"])]["id"] == tool["id"]
 
-    def test_get_tools_uses_user_when_no_api_key(self, mock_mongo_db):
+    def test_get_tools_uses_user_when_no_api_key(self, pg_conn, monkeypatch):
+        from application.storage.db.repositories.user_tools import UserToolsRepository
+
+        UserToolsRepository(pg_conn).create(
+            user_id="alice", name="tool1", status=True
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
         executor = ToolExecutor(user="alice")
         tools = executor.get_tools()
         assert isinstance(tools, dict)
+        assert len(tools) == 1
 
-    def test_get_tools_defaults_to_local(self, mock_mongo_db):
+    def test_get_tools_defaults_to_local(self, pg_conn, monkeypatch):
+        self._patch_conn(monkeypatch, pg_conn)
+
         executor = ToolExecutor()
         tools = executor.get_tools()
         assert isinstance(tools, dict)
+        assert tools == {}
 
 
 @pytest.mark.unit
@@ -346,6 +385,7 @@ class TestToolExecutorExecute:
 
         tools_dict = {
             "t1": {
+                "id": "00000000-0000-0000-0000-000000000001",
                 "name": "test_tool",
                 "config": {"key": "val"},
                 "actions": [
@@ -400,6 +440,7 @@ class TestToolExecutorExecute:
 
         tools_dict = {
             "t1": {
+                "id": "00000000-0000-0000-0000-000000000001",
                 "name": "test_tool",
                 "config": {"key": "val"},
                 "actions": [
@@ -489,6 +530,7 @@ class TestToolExecutorExecute:
 
         tools_dict = {
             "t1": {
+                "id": "00000000-0000-0000-0000-000000000001",
                 "name": "test_tool",
                 "config": {"key": "val"},
                 "actions": [
@@ -537,6 +579,7 @@ class TestToolExecutorExecute:
 
         tools_dict = {
             "t1": {
+                "id": "00000000-0000-0000-0000-000000000001",
                 "name": "test_tool",
                 "config": {"key": "val"},
                 "actions": [
@@ -582,6 +625,7 @@ class TestToolExecutorExecute:
         )
 
         tool_data = {
+            "id": "00000000-0000-0000-0000-000000000001",
             "name": "custom_tool",
             "config": {"encrypted_credentials": "encrypted_blob"},
         }
@@ -605,6 +649,7 @@ class TestToolExecutorExecute:
         )
 
         tool_data = {
+            "id": "00000000-0000-0000-0000-000000000002",
             "name": "mcp_tool",
             "config": {},
         }
@@ -642,6 +687,7 @@ class TestToolExecutorAdditionalCoverage:
 
         tools_dict = {
             "t1": {
+                "id": "00000000-0000-0000-0000-000000000001",
                 "name": "custom_tool",
                 "config": {"key": "val"},
                 "actions": [

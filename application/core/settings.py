@@ -26,13 +26,14 @@ class Settings(BaseSettings):
 
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
-    MONGO_URI: str = "mongodb://localhost:27017/docsgpt"
-    MONGO_DB_NAME: str = "docsgpt"
+    # Only consulted when VECTOR_STORE=mongodb or when running scripts/db/backfill.py; user data lives in Postgres.
+    MONGO_URI: Optional[str] = None
     # User-data Postgres DB.
     POSTGRES_URI: Optional[str] = None
-
-    # MongoDB→Postgres migration: dual-write to Postgres (Mongo stays source of truth)
-    USE_POSTGRES: bool = False
+    # On app startup, apply pending Alembic migrations. Default ON for dev; disable in prod if you manage schema out-of-band.
+    AUTO_MIGRATE: bool = True
+    # On app startup, create the target Postgres database if it's missing (requires CREATEDB privilege). Dev-friendly default.
+    AUTO_CREATE_DB: bool = True
     LLM_PATH: str = os.path.join(current_dir, "models/docsgpt-7b-f16.gguf")
     DEFAULT_MAX_HISTORY: int = 150
     DEFAULT_LLM_TOKEN_LIMIT: int = 128000  # Fallback when model not found in registry

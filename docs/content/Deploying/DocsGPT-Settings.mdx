@@ -3,6 +3,8 @@ title: DocsGPT Settings
 description: Configure your DocsGPT application by understanding the basic settings.
 ---
 
+import { Callout } from 'nextra/components'
+
 # DocsGPT Settings
 
 DocsGPT is highly configurable, allowing you to tailor it to your specific needs and preferences. You can control various aspects of the application, from choosing the Large Language Model (LLM) provider to selecting embedding models and vector stores.
@@ -238,6 +240,47 @@ SAGEMAKER_REGION=us-east-1
 ```
 
 Your IAM user needs these permissions on the bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`, `s3:HeadObject`.
+
+## User-Data Storage (Postgres)
+
+DocsGPT stores user data — conversations, agents, prompts, sources, attachments, workflows, logs, and token usage — in **PostgreSQL**. The backend connects via a single setting:
+
+| Setting | Description | Default |
+| --- | --- | --- |
+| `POSTGRES_URI` | SQLAlchemy-compatible Postgres URI. Any standard `postgresql://` form works — DocsGPT normalizes it internally to the `psycopg` v3 dialect. | — |
+| `AUTO_CREATE_DB` | On startup, connect to the server's `postgres` maintenance DB and issue `CREATE DATABASE` if the target is missing. Requires `CREATEDB` or superuser. No-op when the database already exists. Disable in production. | `true` |
+| `AUTO_MIGRATE` | On startup, run `alembic upgrade head` against the target database. Idempotent and serialized across workers via `alembic_version`. Disable in production in favor of an explicit migration step. | `true` |
+
+Example:
+
+```env
+POSTGRES_URI=postgresql://docsgpt:docsgpt@localhost:5432/docsgpt
+# Append ?sslmode=require for managed providers that enforce SSL.
+```
+
+With the defaults, the app applies the schema automatically on first
+boot. To run it explicitly instead (e.g., in CI/CD or a k8s `Job`):
+
+```bash
+python scripts/db/init_postgres.py
+```
+
+The default Docker Compose file bundles a `postgres` service, and the
+app auto-bootstraps the database on boot, so containerized deployments
+need no manual migration step. See
+[PostgreSQL for User Data](/Deploying/Postgres-Migration#production-hardening)
+for the recommended production flow (both flags `false`, migrations
+gated by CI/CD).
+
+<Callout type="info" emoji="ℹ️">
+  `MONGO_URI` is **opt-in**. It is only consulted when you select the
+  MongoDB Atlas vector-store backend (`VECTOR_STORE=mongodb`) or when
+  running the one-shot `scripts/db/backfill.py` migration from a legacy
+  Mongo-based install. Installing the optional Mongo client libraries
+  requires `pip install 'pymongo>=4.6'`. See
+  [PostgreSQL for User Data](/Deploying/Postgres-Migration) for the
+  migration path.
+</Callout>
 
 ## Exploring More Settings
 

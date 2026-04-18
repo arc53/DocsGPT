@@ -2,14 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
 
 from application.storage.db.repositories.user_logs import UserLogsRepository
-
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
 
 
 def _repo(conn) -> UserLogsRepository:
@@ -62,3 +56,48 @@ class TestListPaginated:
         repo.insert(user_id="u1", data={"order": "second"}, timestamp=later)
         rows, _ = repo.list_paginated(user_id="u1")
         assert rows[0]["data"]["order"] == "second"
+
+
+class TestFindByApiKey:
+    def test_filters_by_api_key(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.insert(user_id="u1", data={"api_key": "k1", "note": "a"})
+        repo.insert(user_id="u1", data={"api_key": "k2", "note": "b"})
+        repo.insert(user_id="u1", data={"note": "c"})
+        rows = repo.find_by_api_key("k1")
+        assert len(rows) == 1
+        assert rows[0]["data"]["note"] == "a"
+
+    def test_respects_limit(self, pg_conn):
+        repo = _repo(pg_conn)
+        for i in range(5):
+            repo.insert(user_id="u1", data={"api_key": "k", "i": i})
+        rows = repo.find_by_api_key("k", limit=3)
+        assert len(rows) == 3
+
+    def test_ordered_by_timestamp_desc(self, pg_conn):
+        from datetime import datetime, timedelta, timezone
+
+        repo = _repo(pg_conn)
+        earlier = datetime.now(timezone.utc) - timedelta(minutes=5)
+        later = datetime.now(timezone.utc)
+        repo.insert(user_id="u1", data={"api_key": "k", "order": 1}, timestamp=earlier)
+        repo.insert(user_id="u1", data={"api_key": "k", "order": 2}, timestamp=later)
+        rows = repo.find_by_api_key("k")
+        assert rows[0]["data"]["order"] == 2
+
+    def test_respects_timestamp_range(self, pg_conn):
+        from datetime import datetime, timezone
+
+        repo = _repo(pg_conn)
+        inside = datetime(2026, 4, 10, 12, 0, tzinfo=timezone.utc)
+        outside = datetime(2026, 4, 9, 12, 0, tzinfo=timezone.utc)
+        repo.insert(user_id="u1", data={"api_key": "kt", "when": "in"}, timestamp=inside)
+        repo.insert(user_id="u1", data={"api_key": "kt", "when": "out"}, timestamp=outside)
+        rows = repo.find_by_api_key(
+            "kt",
+            timestamp_gte=datetime(2026, 4, 10, tzinfo=timezone.utc),
+            timestamp_lt=datetime(2026, 4, 11, tzinfo=timezone.utc),
+        )
+        assert len(rows) == 1
+        assert rows[0]["data"]["when"] == "in"

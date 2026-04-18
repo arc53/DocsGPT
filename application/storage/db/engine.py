@@ -40,8 +40,20 @@ def _resolve_uri() -> str:
     return settings.POSTGRES_URI
 
 
+#: Per-statement wall-clock cap applied to every connection handed out by
+#: the engine. 30s is generous for interactive hot paths (reads under a few
+#: hundred ms are normal) but still catches a runaway query before it
+#: stacks up on PgBouncer or holds locks indefinitely. Override by
+#: rebuilding the engine with a different ``connect_args`` in tests.
+STATEMENT_TIMEOUT_MS = 30_000
+
+
 def get_engine() -> Engine:
     """Return the process-wide SQLAlchemy Engine, creating it if needed.
+
+    The engine applies a server-side ``statement_timeout`` to every
+    connection it hands out, so both :func:`db_session` and
+    :func:`db_readonly` inherit the same guardrail.
 
     Returns:
         A SQLAlchemy ``Engine`` configured with a pooled connection to
@@ -56,6 +68,12 @@ def get_engine() -> Engine:
             pool_pre_ping=True,     # survive PgBouncer / idle-disconnect recycles
             pool_recycle=1800,
             future=True,
+            connect_args={
+                # ``-c`` passes a GUC to the backend at connect time. This
+                # covers *all* sessions — interactive, Celery, seeder — so
+                # no route-handler can opt out by accident.
+                "options": f"-c statement_timeout={STATEMENT_TIMEOUT_MS}",
+            },
         )
     return _engine
 

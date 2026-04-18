@@ -1,10 +1,14 @@
 """Tests for application/api/answer/routes/stream.py"""
 
 import json
+import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
-from bson import ObjectId
+
+# Static IDs — valid 24-hex-char strings
+_CONV_ID = "507f1f77bcf86cd799439011"
+_AGENT_ID = "507f1f77bcf86cd799439012"
 
 
 @pytest.fixture
@@ -15,9 +19,9 @@ def mock_stream_processor():
     ) as MockProcessor:
         processor = MagicMock()
         processor.decoded_token = {"sub": "test_user"}
-        processor.conversation_id = str(ObjectId())
+        processor.conversation_id = _CONV_ID
         processor.agent_config = {}
-        processor.agent_id = str(ObjectId())
+        processor.agent_id = _AGENT_ID
         processor.is_shared_usage = False
         processor.shared_token = None
         processor.model_id = "gpt-4"
@@ -167,7 +171,7 @@ class TestStreamResourcePost:
         def fake_stream(*args, **kwargs):
             yield f'data: {json.dumps({"type": "end"})}\n\n'
 
-        conv_id = str(ObjectId())
+        conv_id = str(uuid.uuid4())
         with patch(
             "application.api.answer.routes.stream.StreamResource.validate_request",
             return_value=None,

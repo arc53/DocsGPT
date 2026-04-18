@@ -1,3 +1,4 @@
+import logging
 import os
 import platform
 import uuid
@@ -20,6 +21,7 @@ from application.api.connector.routes import connector  # noqa: E402
 from application.api.v1 import v1_bp  # noqa: E402
 from application.celery_init import celery  # noqa: E402
 from application.core.settings import settings  # noqa: E402
+from application.storage.db.bootstrap import ensure_database_ready  # noqa: E402
 from application.stt.upload_limits import (  # noqa: E402
     build_stt_file_size_limit_message,
     should_reject_stt_request,
@@ -31,6 +33,17 @@ if platform.system() == "Windows":
 
     pathlib.PosixPath = pathlib.WindowsPath
 dotenv.load_dotenv()
+
+# Self-bootstrap the user-data Postgres DB. Runs before any blueprint or
+# repository touches the engine, so the first request can't race the
+# schema being created. Gated by AUTO_CREATE_DB / AUTO_MIGRATE settings
+# (default ON for dev; disable in prod if schema is managed out-of-band).
+ensure_database_ready(
+    settings.POSTGRES_URI,
+    create_db=settings.AUTO_CREATE_DB,
+    migrate=settings.AUTO_MIGRATE,
+    logger=logging.getLogger("application.app"),
+)
 
 app = Flask(__name__)
 app.register_blueprint(user)
@@ -120,6 +133,12 @@ def enforce_stt_request_size_limits():
 def authenticate_request():
     if request.method == "OPTIONS":
         return "", 200
+    # OpenAI-compatible routes authenticate via opaque agent API keys in the
+    # Authorization header, which the JWT decoder below would reject. Defer
+    # auth to the route handlers (see application/api/v1/routes.py).
+    if request.path.startswith("/v1/"):
+        request.decoded_token = None
+        return None
     decoded_token = handle_auth(request)
     if not decoded_token:
         request.decoded_token = None

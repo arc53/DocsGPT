@@ -3,18 +3,16 @@ import datetime
 import json
 from flask import Blueprint, request, send_from_directory, jsonify
 from werkzeug.utils import secure_filename
-from bson.objectid import ObjectId
 import logging
-from application.core.mongo_db import MongoDB
+
 from application.core.settings import settings
+from application.storage.db.base_repository import looks_like_uuid
+from application.storage.db.repositories.sources import SourcesRepository
+from application.storage.db.session import db_session
 from application.storage.storage_creator import StorageCreator
 
 
 logger = logging.getLogger(__name__)
-mongo = MongoDB.get_client()
-db = mongo[settings.MONGO_DB_NAME]
-conversations_collection = db["conversations"]
-sources_collection = db["sources"]
 
 current_dir = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -56,21 +54,21 @@ def upload_index_files():
     """Upload two files(index.faiss, index.pkl) to the user's folder."""
     if "user" not in request.form:
         return {"status": "no user"}
-    user = request.form["user"] 
+    user = request.form["user"]
     if "name" not in request.form:
         return {"status": "no name"}
     job_name = request.form["name"]
     tokens = request.form["tokens"]
     retriever = request.form["retriever"]
-    id = request.form["id"]
+    source_id = request.form["id"]
     type = request.form["type"]
     remote_data = request.form["remote_data"] if "remote_data" in request.form else None
     sync_frequency = request.form["sync_frequency"] if "sync_frequency" in request.form else None
-    
+
     file_path = request.form.get("file_path")
     directory_structure = request.form.get("directory_structure")
     file_name_map = request.form.get("file_name_map")
-    
+
     if directory_structure:
         try:
             directory_structure = json.loads(directory_structure)
@@ -89,8 +87,8 @@ def upload_index_files():
         file_name_map = None
 
     storage = StorageCreator.get_storage()
-    index_base_path = f"indexes/{id}"
-    
+    index_base_path = f"indexes/{source_id}"
+
     if settings.VECTOR_STORE == "faiss":
         if "file_faiss" not in request.files:
             logger.error("No file_faiss part")
@@ -111,46 +109,48 @@ def upload_index_files():
         storage.save_file(file_faiss, faiss_storage_path)
         storage.save_file(file_pkl, pkl_storage_path)
 
+    now = datetime.datetime.now(datetime.timezone.utc)
+    update_fields = {
+        "name": job_name,
+        "type": type,
+        "language": job_name,
+        "date": now,
+        "model": settings.EMBEDDINGS_NAME,
+        "tokens": tokens,
+        "retriever": retriever,
+        "remote_data": remote_data,
+        "sync_frequency": sync_frequency,
+        "file_path": file_path,
+        "directory_structure": directory_structure,
+    }
+    if file_name_map is not None:
+        update_fields["file_name_map"] = file_name_map
 
-    existing_entry = sources_collection.find_one({"_id": ObjectId(id)})
-    if existing_entry:
-        update_fields = {
-            "user": user,
-            "name": job_name,
-            "language": job_name,
-            "date": datetime.datetime.now(),
-            "model": settings.EMBEDDINGS_NAME,
-            "type": type,
-            "tokens": tokens,
-            "retriever": retriever,
-            "remote_data": remote_data,
-            "sync_frequency": sync_frequency,
-            "file_path": file_path,
-            "directory_structure": directory_structure,
-        }
-        if file_name_map is not None:
-            update_fields["file_name_map"] = file_name_map
-        sources_collection.update_one(
-            {"_id": ObjectId(id)},
-            {"$set": update_fields},
-        )
-    else:
-        insert_doc = {
-            "_id": ObjectId(id),
-            "user": user,
-            "name": job_name,
-            "language": job_name,
-            "date": datetime.datetime.now(),
-            "model": settings.EMBEDDINGS_NAME,
-            "type": type,
-            "tokens": tokens,
-            "retriever": retriever,
-            "remote_data": remote_data,
-            "sync_frequency": sync_frequency,
-            "file_path": file_path,
-            "directory_structure": directory_structure,
-        }
-        if file_name_map is not None:
-            insert_doc["file_name_map"] = file_name_map
-        sources_collection.insert_one(insert_doc)
+    with db_session() as conn:
+        repo = SourcesRepository(conn)
+        existing = None
+        if looks_like_uuid(source_id):
+            existing = repo.get(source_id, user)
+        if existing is None:
+            existing = repo.get_by_legacy_id(source_id, user)
+        if existing is not None:
+            repo.update(str(existing["id"]), user, update_fields)
+        else:
+            repo.create(
+                job_name,
+                source_id=source_id if looks_like_uuid(source_id) else None,
+                user_id=user,
+                type=type,
+                tokens=tokens,
+                retriever=retriever,
+                remote_data=remote_data,
+                sync_frequency=sync_frequency,
+                file_path=file_path,
+                directory_structure=directory_structure,
+                file_name_map=file_name_map,
+                language=job_name,
+                model=settings.EMBEDDINGS_NAME,
+                date=now,
+                legacy_mongo_id=None if looks_like_uuid(source_id) else str(source_id),
+            )
     return {"status": "ok"}

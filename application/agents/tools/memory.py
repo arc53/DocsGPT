@@ -1,12 +1,14 @@
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import re
+import logging
 import uuid
 
 from .base import Tool
-from application.core.mongo_db import MongoDB
-from application.core.settings import settings
+from application.storage.db.repositories.memories import MemoriesRepository
+from application.storage.db.session import db_readonly, db_session
+
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryTool(Tool):
@@ -27,7 +29,7 @@ class MemoryTool(Tool):
         self.user_id: Optional[str] = user_id
 
         # Get tool_id from configuration (passed from user_tools._id in production)
-        # In production, tool_id is the MongoDB ObjectId string from user_tools collection
+        # In production, tool_id is the UUID string from user_tools.id.
         if tool_config and "tool_id" in tool_config:
             self.tool_id = tool_config["tool_id"]
         elif user_id:
@@ -37,8 +39,35 @@ class MemoryTool(Tool):
             # Last resort fallback (shouldn't happen in normal use)
             self.tool_id = str(uuid.uuid4())
 
-        db = MongoDB.get_client()[settings.MONGO_DB_NAME]
-        self.collection = db["memories"]
+    def _pg_enabled(self) -> bool:
+        """Return True if this MemoryTool's tool_id is a real ``user_tools.id``.
+
+        The ``memories`` PG table has a UUID foreign key to ``user_tools``.
+        The sentinel ``default_{uid}`` fallback tool_id is not a UUID and
+        has no row in ``user_tools``, so any storage operation would fail
+        the foreign-key check. After the Postgres cutover Postgres is the
+        only store, so for the sentinel case there is nowhere to read or
+        write — operations become no-ops and the tool returns an
+        explanatory error to the caller.
+        """
+        tool_id = getattr(self, "tool_id", None)
+        if not tool_id or not isinstance(tool_id, str):
+            return False
+        if tool_id.startswith("default_"):
+            logger.debug(
+                "Skipping Postgres operation for MemoryTool with sentinel tool_id=%s",
+                tool_id,
+            )
+            return False
+        from application.storage.db.base_repository import looks_like_uuid
+
+        if not looks_like_uuid(tool_id):
+            logger.debug(
+                "Skipping Postgres operation for MemoryTool with non-UUID tool_id=%s",
+                tool_id,
+            )
+            return False
+        return True
 
     # -----------------------------
     # Action implementations
@@ -55,6 +84,12 @@ class MemoryTool(Tool):
         """
         if not self.user_id:
             return "Error: MemoryTool requires a valid user_id."
+
+        if not self._pg_enabled():
+            return (
+                "Error: MemoryTool is not configured with a persistent tool_id; "
+                "memory storage is unavailable for this session."
+            )
 
         if action_name == "view":
             return self._view(
@@ -282,14 +317,10 @@ class MemoryTool(Tool):
         # Ensure path ends with / for proper prefix matching
         search_path = path if path.endswith("/") else path + "/"
 
-        # Find all files that start with this directory path
-        query = {
-            "user_id": self.user_id,
-            "tool_id": self.tool_id,
-            "path": {"$regex": f"^{re.escape(search_path)}"}
-        }
-
-        docs = list(self.collection.find(query, {"path": 1}))
+        with db_readonly() as conn:
+            docs = MemoriesRepository(conn).list_by_prefix(
+                self.user_id, self.tool_id, search_path
+            )
 
         if not docs:
             return f"Directory: {path}\n(empty)"
@@ -310,7 +341,10 @@ class MemoryTool(Tool):
 
     def _view_file(self, path: str, view_range: Optional[List[int]] = None) -> str:
         """View file contents with optional line range."""
-        doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id, "path": path})
+        with db_readonly() as conn:
+            doc = MemoriesRepository(conn).get_by_path(
+                self.user_id, self.tool_id, path
+            )
 
         if not doc or not doc.get("content"):
             return f"Error: File not found: {path}"
@@ -344,16 +378,10 @@ class MemoryTool(Tool):
         if validated_path == "/" or validated_path.endswith("/"):
             return "Error: Cannot create a file at directory path."
 
-        self.collection.update_one(
-            {"user_id": self.user_id, "tool_id": self.tool_id, "path": validated_path},
-            {
-                "$set": {
-                    "content": file_text,
-                    "updated_at": datetime.now()
-                }
-            },
-            upsert=True
-        )
+        with db_session() as conn:
+            MemoriesRepository(conn).upsert(
+                self.user_id, self.tool_id, validated_path, file_text
+            )
 
         return f"File created: {validated_path}"
 
@@ -366,30 +394,29 @@ class MemoryTool(Tool):
         if not old_str:
             return "Error: old_str is required."
 
-        doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id, "path": validated_path})
+        with db_session() as conn:
+            repo = MemoriesRepository(conn)
+            doc = repo.get_by_path(self.user_id, self.tool_id, validated_path)
 
-        if not doc or not doc.get("content"):
-            return f"Error: File not found: {validated_path}"
+            if not doc or not doc.get("content"):
+                return f"Error: File not found: {validated_path}"
 
-        current_content = str(doc["content"])
+            current_content = str(doc["content"])
 
-        # Check if old_str exists (case-insensitive)
-        if old_str.lower() not in current_content.lower():
-            return f"Error: String '{old_str}' not found in file."
+            # Check if old_str exists (case-insensitive)
+            if old_str.lower() not in current_content.lower():
+                return f"Error: String '{old_str}' not found in file."
 
-        # Replace the string (case-insensitive)
-        import re as regex_module
-        updated_content = regex_module.sub(regex_module.escape(old_str), new_str, current_content, flags=regex_module.IGNORECASE)
+            # Case-insensitive replace
+            import re as regex_module
+            updated_content = regex_module.sub(
+                regex_module.escape(old_str),
+                new_str,
+                current_content,
+                flags=regex_module.IGNORECASE,
+            )
 
-        self.collection.update_one(
-            {"user_id": self.user_id, "tool_id": self.tool_id, "path": validated_path},
-            {
-                "$set": {
-                    "content": updated_content,
-                    "updated_at": datetime.now()
-                }
-            }
-        )
+            repo.upsert(self.user_id, self.tool_id, validated_path, updated_content)
 
         return f"File updated: {validated_path}"
 
@@ -402,31 +429,25 @@ class MemoryTool(Tool):
         if not insert_text:
             return "Error: insert_text is required."
 
-        doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id, "path": validated_path})
+        with db_session() as conn:
+            repo = MemoriesRepository(conn)
+            doc = repo.get_by_path(self.user_id, self.tool_id, validated_path)
 
-        if not doc or not doc.get("content"):
-            return f"Error: File not found: {validated_path}"
+            if not doc or not doc.get("content"):
+                return f"Error: File not found: {validated_path}"
 
-        current_content = str(doc["content"])
-        lines = current_content.split("\n")
+            current_content = str(doc["content"])
+            lines = current_content.split("\n")
 
-        # Convert to 0-indexed
-        index = insert_line - 1
-        if index < 0 or index > len(lines):
-            return f"Error: Invalid line number. File has {len(lines)} lines."
+            # Convert to 0-indexed
+            index = insert_line - 1
+            if index < 0 or index > len(lines):
+                return f"Error: Invalid line number. File has {len(lines)} lines."
 
-        lines.insert(index, insert_text)
-        updated_content = "\n".join(lines)
+            lines.insert(index, insert_text)
+            updated_content = "\n".join(lines)
 
-        self.collection.update_one(
-            {"user_id": self.user_id, "tool_id": self.tool_id, "path": validated_path},
-            {
-                "$set": {
-                    "content": updated_content,
-                    "updated_at": datetime.now()
-                }
-            }
-        )
+            repo.upsert(self.user_id, self.tool_id, validated_path, updated_content)
 
         return f"Text inserted at line {insert_line} in {validated_path}"
 
@@ -438,39 +459,36 @@ class MemoryTool(Tool):
 
         if validated_path == "/":
             # Delete all files for this user and tool
-            result = self.collection.delete_many({"user_id": self.user_id, "tool_id": self.tool_id})
-            return f"Deleted {result.deleted_count} file(s) from memory."
+            with db_session() as conn:
+                deleted = MemoriesRepository(conn).delete_all(
+                    self.user_id, self.tool_id
+                )
+            return f"Deleted {deleted} file(s) from memory."
 
         # Check if it's a directory (ends with /)
         if validated_path.endswith("/"):
-            # Delete all files in directory
-            result = self.collection.delete_many({
-                "user_id": self.user_id,
-                "tool_id": self.tool_id,
-                "path": {"$regex": f"^{re.escape(validated_path)}"}
-            })
-            return f"Deleted directory and {result.deleted_count} file(s)."
+            with db_session() as conn:
+                deleted = MemoriesRepository(conn).delete_by_prefix(
+                    self.user_id, self.tool_id, validated_path
+                )
+            return f"Deleted directory and {deleted} file(s)."
 
-        # Try to delete as directory first (without trailing slash)
-        # Check if any files start with this path + /
+        # Try as directory first (without trailing slash)
         search_path = validated_path + "/"
-        directory_result = self.collection.delete_many({
-            "user_id": self.user_id,
-            "tool_id": self.tool_id,
-            "path": {"$regex": f"^{re.escape(search_path)}"}
-        })
+        with db_session() as conn:
+            repo = MemoriesRepository(conn)
+            directory_deleted = repo.delete_by_prefix(
+                self.user_id, self.tool_id, search_path
+            )
+            if directory_deleted > 0:
+                return f"Deleted directory and {directory_deleted} file(s)."
 
-        if directory_result.deleted_count > 0:
-            return f"Deleted directory and {directory_result.deleted_count} file(s)."
+            # Otherwise delete a single file
+            file_deleted = repo.delete_by_path(
+                self.user_id, self.tool_id, validated_path
+            )
 
-        # Delete single file
-        result = self.collection.delete_one({
-            "user_id": self.user_id,
-            "tool_id": self.tool_id,
-            "path": validated_path
-        })
-
-        if result.deleted_count:
+        if file_deleted:
             return f"Deleted: {validated_path}"
         return f"Error: File not found: {validated_path}"
 
@@ -485,62 +503,46 @@ class MemoryTool(Tool):
         if validated_old == "/" or validated_new == "/":
             return "Error: Cannot rename root directory."
 
-        # Check if renaming a directory
+        # Directory rename: do all path updates inside one transaction so
+        # the rename is atomic from the caller's perspective.
         if validated_old.endswith("/"):
             # Ensure validated_new also ends with / for proper path replacement
             if not validated_new.endswith("/"):
                 validated_new = validated_new + "/"
 
-            # Find all files in the old directory
-            docs = list(self.collection.find({
-                "user_id": self.user_id,
-                "tool_id": self.tool_id,
-                "path": {"$regex": f"^{re.escape(validated_old)}"}
-            }))
-
-            if not docs:
-                return f"Error: Directory not found: {validated_old}"
-
-            # Update paths for all files
-            for doc in docs:
-                old_file_path = doc["path"]
-                new_file_path = old_file_path.replace(validated_old, validated_new, 1)
-
-                self.collection.update_one(
-                    {"_id": doc["_id"]},
-                    {"$set": {"path": new_file_path, "updated_at": datetime.now()}}
+            with db_session() as conn:
+                repo = MemoriesRepository(conn)
+                docs = repo.list_by_prefix(
+                    self.user_id, self.tool_id, validated_old
                 )
+
+                if not docs:
+                    return f"Error: Directory not found: {validated_old}"
+
+                for doc in docs:
+                    old_file_path = doc["path"]
+                    new_file_path = old_file_path.replace(
+                        validated_old, validated_new, 1
+                    )
+                    repo.update_path(
+                        self.user_id, self.tool_id, old_file_path, new_file_path
+                    )
 
             return f"Renamed directory: {validated_old} -> {validated_new} ({len(docs)} files)"
 
-        # Rename single file
-        doc = self.collection.find_one({
-            "user_id": self.user_id,
-            "tool_id": self.tool_id,
-            "path": validated_old
-        })
+        # Single-file rename: lookup, collision check, and update in one txn.
+        with db_session() as conn:
+            repo = MemoriesRepository(conn)
+            doc = repo.get_by_path(self.user_id, self.tool_id, validated_old)
+            if not doc:
+                return f"Error: File not found: {validated_old}"
 
-        if not doc:
-            return f"Error: File not found: {validated_old}"
+            existing = repo.get_by_path(self.user_id, self.tool_id, validated_new)
+            if existing:
+                return f"Error: File already exists at {validated_new}"
 
-        # Check if new path already exists
-        existing = self.collection.find_one({
-            "user_id": self.user_id,
-            "tool_id": self.tool_id,
-            "path": validated_new
-        })
-
-        if existing:
-            return f"Error: File already exists at {validated_new}"
-
-        # Delete the old document and create a new one with the new path
-        self.collection.delete_one({"user_id": self.user_id, "tool_id": self.tool_id, "path": validated_old})
-        self.collection.insert_one({
-            "user_id": self.user_id,
-            "tool_id": self.tool_id,
-            "path": validated_new,
-            "content": doc.get("content", ""),
-            "updated_at": datetime.now()
-        })
+            repo.update_path(
+                self.user_id, self.tool_id, validated_old, validated_new
+            )
 
         return f"Renamed: {validated_old} -> {validated_new}"

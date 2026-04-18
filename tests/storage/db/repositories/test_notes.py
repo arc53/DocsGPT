@@ -5,15 +5,9 @@ Notes have a FK to user_tools, so each test creates a tool row first.
 
 from __future__ import annotations
 
-import pytest
 from sqlalchemy import text
 
 from application.storage.db.repositories.notes import NotesRepository
-
-pytestmark = pytest.mark.skipif(
-    not __import__("application.core.settings", fromlist=["settings"]).settings.POSTGRES_URI,
-    reason="POSTGRES_URI not configured",
-)
 
 
 def _repo(conn) -> NotesRepository:
@@ -98,3 +92,68 @@ class TestDelete:
         tool_id = _make_tool(pg_conn)
         deleted = repo.delete("u", tool_id)
         assert deleted is False
+
+
+class TestLegacyMongoIdLookup:
+    """Legacy-id resolution for pre-cutover note artifact ids.
+
+    ``NotesRepository.upsert`` doesn't accept ``legacy_mongo_id`` — only
+    the Mongo→PG backfill writes it — so tests seed it via raw SQL to
+    mirror the backfill shape.
+    """
+
+    def _upsert_with_legacy_id(self, conn, user_id: str, tool_id: str, legacy_id: str) -> str:
+        return str(
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO notes (user_id, tool_id, title, content, legacy_mongo_id)
+                    VALUES (:user_id, CAST(:tool_id AS uuid), 'note', 'body', :legacy)
+                    RETURNING id
+                    """
+                ),
+                {"user_id": user_id, "tool_id": tool_id, "legacy": legacy_id},
+            ).scalar()
+        )
+
+    def test_get_by_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        pg_id = self._upsert_with_legacy_id(pg_conn, "u", tool_id, "abc123")
+        fetched = repo.get_by_legacy_id("abc123")
+        assert fetched is not None
+        assert fetched["id"] == pg_id
+
+    def test_get_by_legacy_id_missing(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.get_by_legacy_id("nope") is None
+
+    def test_get_any_resolves_uuid(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        created = repo.upsert("u", tool_id, "t", "c")
+        fetched = repo.get_any(created["id"], "u")
+        assert fetched["id"] == created["id"]
+
+    def test_get_any_resolves_legacy_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        pg_id = self._upsert_with_legacy_id(pg_conn, "u", tool_id, "legacy-obj-1")
+        fetched = repo.get_any("legacy-obj-1", "u")
+        assert fetched is not None
+        assert fetched["id"] == pg_id
+
+    def test_get_any_wrong_user_returns_none(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn, user_id="owner")
+        self._upsert_with_legacy_id(pg_conn, "owner", tool_id, "legacy-obj-2")
+        assert repo.get_any("legacy-obj-2", "intruder") is None
+
+    def test_get_any_non_uuid_non_legacy_returns_none(self, pg_conn):
+        """Non-UUID ids skip the UUID cast and fall through to the
+        legacy lookup; unknown ids must return None without poisoning
+        the transaction."""
+        repo = _repo(pg_conn)
+        assert repo.get_any("not_a_uuid_or_legacy_id", "u") is None
+        # Connection is still usable after the failed lookup.
+        assert repo.get_by_legacy_id("still-works") is None

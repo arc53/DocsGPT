@@ -12,7 +12,6 @@ Endpoints tested:
 - /api/get_chunks (GET) - Get chunks from source
 - /api/update_chunk (PUT) - Update chunk
 - /api/delete_chunk (DELETE) - Delete chunk
-- /api/delete_by_ids (GET) - Delete sources by IDs
 - /api/delete_old (GET) - Delete old sources
 - /api/directory_structure (GET) - Get directory structure
 - /api/manage_source_files (POST) - Manage source files
@@ -85,8 +84,12 @@ See the API documentation for details.
                 result = response.json()
                 task_id = result.get("task_id")
                 if task_id:
-                    # Wait for processing
-                    time.sleep(5)
+                    # Wait for Celery ingestion (FAISS index build) to finish
+                    # before trying to query chunks. A fixed sleep is too
+                    # flaky on slower machines, so poll task_status instead.
+                    status = self._wait_for_task(task_id, max_wait=60)
+                    if status != "SUCCESS":
+                        return None
 
                     # Get source ID
                     source_id = self._get_source_id_by_name(test_name)
@@ -462,44 +465,6 @@ Created at: {int(time.time())}
     # Delete Tests
     # -------------------------------------------------------------------------
 
-    def test_delete_by_ids(self) -> bool:
-        """Test deleting documents by vector store IDs.
-
-        Note: This endpoint expects vector store document IDs (chunk IDs),
-        not MongoDB source IDs. Testing with non-existent IDs returns 400.
-        """
-        test_name = "Sources - Delete by IDs"
-        self.print_header(f"Testing {test_name}")
-
-        if not self.require_auth(test_name):
-            return True
-
-        try:
-            # Test endpoint accessibility with a test ID
-            # Note: This endpoint expects vector document IDs, not source IDs
-            test_id = "test-document-id-12345"
-            self.print_info(f"GET /api/delete_by_ids?path={test_id}")
-            response = self.get("/api/delete_by_ids", params={"path": test_id})
-
-            self.print_info(f"Status Code: {response.status_code}")
-
-            if response.status_code == 200:
-                self.print_success("Delete endpoint responded successfully")
-                self.record_result(test_name, True, "Success")
-                return True
-            elif response.status_code == 400:
-                # 400 is expected when document ID doesn't exist in vector store
-                self.print_warning("Expected 400 (ID not in vector store)")
-                self.record_result(test_name, True, "Endpoint works (ID not found)")
-                return True
-            else:
-                self.record_result(test_name, False, f"Status {response.status_code}")
-                return False
-
-        except Exception as e:
-            self.record_result(test_name, False, str(e))
-            return False
-
     # -------------------------------------------------------------------------
     # Directory Structure Tests
     # -------------------------------------------------------------------------
@@ -656,10 +621,6 @@ Created at: {int(time.time())}
 
         # Manage source files
         self.test_manage_source_files()
-        time.sleep(1)
-
-        # Delete test (last because it removes data)
-        self.test_delete_by_ids()
 
         return self.print_summary()
 

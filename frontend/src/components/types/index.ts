@@ -24,6 +24,7 @@ export type InputProps = {
   ) => void;
   leftIcon?: React.ReactNode;
   edgeRoundness?: string;
+  'data-testid'?: string;
 };
 
 export type MermaidRendererProps = {

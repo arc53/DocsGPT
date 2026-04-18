@@ -3,39 +3,106 @@
 Covers: MemoryTool initialization, path validation, all actions
 (view, create, str_replace, insert, delete, rename), directory operations,
 error handling, and metadata.
+
+Replaces an older mongomock-based suite. The fake repository mirrors the
+methods the tool calls; ``db_session`` / ``db_readonly`` are stubbed with
+a no-op context manager so no real connection is opened.
 """
 
-import mongomock
+from __future__ import annotations
+
+import uuid
+from contextlib import contextmanager
+
 import pytest
 
 
-def _get_settings():
-    from application.core.settings import settings
-    return settings
+class _FakeMemoriesRepo:
+    _store: dict[tuple[str, str, str], dict] = {}
+
+    def __init__(self, conn=None) -> None:
+        self._conn = conn
+
+    @classmethod
+    def reset(cls) -> None:
+        cls._store = {}
+
+    def upsert(self, user_id, tool_id, path, content):
+        key = (user_id, tool_id, path)
+        if key in self._store:
+            self._store[key].update({"content": content})
+        else:
+            self._store[key] = {
+                "id": str(uuid.uuid4()),
+                "user_id": user_id,
+                "tool_id": tool_id,
+                "path": path,
+                "content": content,
+            }
+        return self._store[key]
+
+    def get_by_path(self, user_id, tool_id, path):
+        return self._store.get((user_id, tool_id, path))
+
+    def list_by_prefix(self, user_id, tool_id, prefix):
+        return [
+            r for (u, t, p), r in self._store.items()
+            if u == user_id and t == tool_id and p.startswith(prefix)
+        ]
+
+    def delete_by_path(self, user_id, tool_id, path):
+        return 1 if self._store.pop((user_id, tool_id, path), None) else 0
+
+    def delete_by_prefix(self, user_id, tool_id, prefix):
+        keys = [
+            k for k in self._store
+            if k[0] == user_id and k[1] == tool_id and k[2].startswith(prefix)
+        ]
+        for k in keys:
+            del self._store[k]
+        return len(keys)
+
+    def delete_all(self, user_id, tool_id):
+        keys = [k for k in self._store if k[0] == user_id and k[1] == tool_id]
+        for k in keys:
+            del self._store[k]
+        return len(keys)
+
+    def update_path(self, user_id, tool_id, old_path, new_path):
+        row = self._store.pop((user_id, tool_id, old_path), None)
+        if row is None:
+            return False
+        row["path"] = new_path
+        self._store[(user_id, tool_id, new_path)] = row
+        return True
+
+
+@contextmanager
+def _noop_conn():
+    yield None
 
 
 @pytest.fixture
-def mock_memory_db(monkeypatch):
-    """Set up a mongomock-based memory collection."""
-    settings = _get_settings()
-    mock_client = mongomock.MongoClient()
-    mock_db = mock_client[settings.MONGO_DB_NAME]
-
-    def get_mock_client():
-        return {settings.MONGO_DB_NAME: mock_db}
-
+def patched_memory(monkeypatch):
+    """Patch the memory tool to use the in-memory fake repo."""
+    _FakeMemoriesRepo.reset()
     monkeypatch.setattr(
-        "application.core.mongo_db.MongoDB.get_client", get_mock_client
+        "application.agents.tools.memory.MemoriesRepository", _FakeMemoriesRepo
     )
-    return mock_db
+    monkeypatch.setattr(
+        "application.agents.tools.memory.db_session", _noop_conn
+    )
+    monkeypatch.setattr(
+        "application.agents.tools.memory.db_readonly", _noop_conn
+    )
 
 
 @pytest.fixture
-def memory_tool(mock_memory_db):
+def memory_tool(patched_memory):
     from application.agents.tools.memory import MemoryTool
-
+    # Real UUID so ``_pg_enabled()`` returns True.
     return MemoryTool(
-        tool_config={"tool_id": "test_tool_001"},
+        tool_config={"tool_id": str(uuid.uuid4())},
         user_id="test_user",
     )
 
@@ -48,22 +115,21 @@ def memory_tool(mock_memory_db):
 @pytest.mark.unit
 class TestMemoryToolInit:
 
-    def test_init_with_config(self, mock_memory_db):
+    def test_init_with_config(self, patched_memory):
         from application.agents.tools.memory import MemoryTool
 
-        tool = MemoryTool(
-            tool_config={"tool_id": "custom_id"}, user_id="user1"
-        )
-        assert tool.tool_id == "custom_id"
+        tid = str(uuid.uuid4())
+        tool = MemoryTool(tool_config={"tool_id": tid}, user_id="user1")
+        assert tool.tool_id == tid
         assert tool.user_id == "user1"
 
-    def test_init_fallback_to_user_id(self, mock_memory_db):
+    def test_init_fallback_to_user_id(self, patched_memory):
         from application.agents.tools.memory import MemoryTool
 
         tool = MemoryTool(tool_config={}, user_id="user1")
         assert tool.tool_id == "default_user1"
 
-    def test_init_no_user_no_config(self, mock_memory_db):
+    def test_init_no_user_no_config(self, patched_memory):
         from application.agents.tools.memory import MemoryTool
 
         tool = MemoryTool()
@@ -114,10 +180,10 @@ class TestPathValidation:
 @pytest.mark.unit
 class TestNoUser:
 
-    def test_requires_user_id(self, mock_memory_db):
+    def test_requires_user_id(self, patched_memory):
         from application.agents.tools.memory import MemoryTool
 
-        tool = MemoryTool(tool_config={"tool_id": "t"}, user_id=None)
+        tool = MemoryTool(tool_config={"tool_id": str(uuid.uuid4())}, user_id=None)
         result = tool.execute_action("view", path="/")
         assert "Error" in result
         assert "user_id" in result
@@ -450,7 +516,7 @@ class TestMemoryToolMetadata:
 
 
 # =====================================================================
-# Coverage gap tests  (lines 254, 257, 271, 275, 279)
+# _validate_path coverage
 # =====================================================================
 
 
@@ -458,91 +524,71 @@ class TestMemoryToolMetadata:
 class TestMemoryToolValidatePath:
 
     def test_validate_path_with_traversal_returns_none(self, memory_tool):
-        """Cover line 244-245: path with .. returns None."""
         result = memory_tool._validate_path("/some/../etc/passwd")
         assert result is None
 
     def test_validate_path_with_directory_trailing_slash(self, memory_tool):
-        """Cover line 257-258: trailing slash is preserved."""
         result = memory_tool._validate_path("/some/dir/")
         assert result is not None
         assert result.endswith("/")
 
     def test_validate_path_empty_returns_none(self, memory_tool):
-        """Cover: empty path returns None."""
-        result = memory_tool._validate_path("")
-        assert result is None
+        assert memory_tool._validate_path("") is None
 
     def test_validate_path_none_returns_none(self, memory_tool):
-        """Cover: None path returns None."""
-        result = memory_tool._validate_path(None)
-        assert result is None
+        assert memory_tool._validate_path(None) is None
 
     def test_validate_path_relative_gets_prefixed(self, memory_tool):
-        """Cover line 241: relative path gets / prepended."""
         result = memory_tool._validate_path("relative/path")
         assert result == "/relative/path"
 
     def test_validate_path_double_slash_returns_none(self, memory_tool):
-        """Cover line 244: double slash returns None."""
-        result = memory_tool._validate_path("//etc/passwd")
-        assert result is None
+        assert memory_tool._validate_path("//etc/passwd") is None
+
+
+# =====================================================================
+# _view coverage
+# =====================================================================
 
 
 @pytest.mark.unit
 class TestMemoryToolViewDirectory:
 
     def test_view_with_directory_path(self, memory_tool):
-        """Cover line 271-275: _view with directory path delegates to _view_directory."""
         result = memory_tool._view("/")
         assert isinstance(result, str)
 
     def test_view_with_file_path(self, memory_tool):
-        """Cover line 279: _view with non-directory path delegates to _view_file."""
-        # _view on a non-existent file path still exercises the _view_file path
         result = memory_tool._view("/nonexistent.txt")
         assert "Error" in result or "not found" in result.lower()
 
-
-# ---------------------------------------------------------------------------
-# Coverage — additional uncovered lines: 254, 257, 271, 275, 279
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestMemoryToolValidatePathCoverage:
-
-    def test_validate_path_traversal_returns_none(self, memory_tool):
-        """Cover line 244: path with directory traversal returns None."""
-        result = memory_tool._validate_path("/etc/../passwd")
-        assert result is None
-
-    def test_validate_path_directory_appends_slash(self, memory_tool):
-        """Cover line 257: path ending with / preserves trailing slash."""
-        result = memory_tool._validate_path("/some/dir/")
-        assert result is not None
-        assert result.endswith("/")
-
-    def test_validate_path_root_directory(self, memory_tool):
-        """Cover line 257: root directory preserved as-is."""
-        result = memory_tool._validate_path("/")
-        assert result == "/"
-
-
-@pytest.mark.unit
-class TestMemoryToolViewCoverage:
-
     def test_view_invalid_path_returns_error(self, memory_tool):
-        """Cover line 271: _view with invalid path returns error."""
         result = memory_tool._view("//bad//path")
         assert "Error" in result
 
-    def test_view_root_directory(self, memory_tool):
-        """Cover line 275: _view with root directory."""
-        result = memory_tool._view("/")
-        assert isinstance(result, str)
 
-    def test_view_file_path(self, memory_tool):
-        """Cover line 279: _view with file path delegates to _view_file."""
-        result = memory_tool._view("/some/file.txt")
-        assert isinstance(result, str)
+# =====================================================================
+# Sentinel tool_id short-circuit
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestSentinelShortCircuit:
+
+    def test_default_tool_id_short_circuits(self, patched_memory):
+        """A ``default_{user_id}`` sentinel tool_id must no-op."""
+        from application.agents.tools.memory import MemoryTool
+
+        tool = MemoryTool(tool_config={}, user_id="user1")
+        assert tool.tool_id == "default_user1"
+        result = tool.execute_action("view", path="/")
+        assert "Error" in result
+        # The in-memory repo should never have been called.
+        assert _FakeMemoriesRepo._store == {}
+
+    def test_non_uuid_tool_id_short_circuits(self, patched_memory):
+        from application.agents.tools.memory import MemoryTool
+
+        tool = MemoryTool(tool_config={"tool_id": "not-a-uuid"}, user_id="user1")
+        result = tool.execute_action("create", path="/x.txt", file_text="y")
+        assert "Error" in result

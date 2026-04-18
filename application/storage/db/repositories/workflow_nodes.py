@@ -82,7 +82,25 @@ class WorkflowNodesRepository:
                 "legacy_mongo_id": n.get("legacy_mongo_id"),
             })
 
-        stmt = pg_insert(workflow_nodes_table).values(rows).returning(workflow_nodes_table)
+        # Two concurrent ``PUT /workflows/{id}/graph`` calls at the same
+        # ``next_graph_version`` would race here. Without ON CONFLICT the
+        # unique index ``workflow_nodes_wf_ver_nid_uidx`` would reject the
+        # loser outright; we prefer last-writer-wins semantics so that
+        # "overwrite the whole graph at version N" is idempotent and
+        # resilient. The ON CONFLICT target matches the existing unique
+        # index on (workflow_id, graph_version, node_id).
+        stmt = pg_insert(workflow_nodes_table).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["workflow_id", "graph_version", "node_id"],
+            set_={
+                "node_type": stmt.excluded.node_type,
+                "title": stmt.excluded.title,
+                "description": stmt.excluded.description,
+                "position": stmt.excluded.position,
+                "config": stmt.excluded.config,
+                "legacy_mongo_id": stmt.excluded.legacy_mongo_id,
+            },
+        ).returning(workflow_nodes_table)
         result = self._conn.execute(stmt)
         return [row_to_dict(r) for r in result.fetchall()]
 
@@ -117,6 +135,7 @@ class WorkflowNodesRepository:
 
     def get_by_legacy_id(self, legacy_mongo_id: str) -> Optional[dict]:
         """Find a node by the original Mongo ObjectId string."""
+        legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
         result = self._conn.execute(
             text("SELECT * FROM workflow_nodes WHERE legacy_mongo_id = :legacy_id"),
             {"legacy_id": legacy_mongo_id},

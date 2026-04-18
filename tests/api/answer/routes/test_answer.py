@@ -1,10 +1,14 @@
 """Tests for application/api/answer/routes/answer.py"""
 
 import json
+import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
-from bson import ObjectId
+
+# Static IDs
+_CONV_ID = "507f1f77bcf86cd799439011"
+_AGENT_ID = "507f1f77bcf86cd799439012"
 
 
 @pytest.fixture
@@ -15,9 +19,9 @@ def mock_stream_processor():
     ) as MockProcessor:
         processor = MagicMock()
         processor.decoded_token = {"sub": "test_user"}
-        processor.conversation_id = str(ObjectId())
+        processor.conversation_id = _CONV_ID
         processor.agent_config = {}
-        processor.agent_id = str(ObjectId())
+        processor.agent_id = _AGENT_ID
         processor.is_shared_usage = False
         processor.shared_token = None
         processor.model_id = "gpt-4"
@@ -53,7 +57,7 @@ class TestAnswerResourcePost:
         assert resp.status_code == 400
 
     def test_successful_answer(self, answer_client, mock_stream_processor):
-        conv_id = str(ObjectId())
+        conv_id = str(uuid.uuid4())
         with patch.object(
             mock_stream_processor.build_agent.return_value,
             "gen",
@@ -164,7 +168,7 @@ class TestAnswerResourcePost:
     def test_structured_info_merged_into_result(
         self, answer_client, mock_stream_processor
     ):
-        conv_id = str(ObjectId())
+        conv_id = str(uuid.uuid4())
         with patch(
             "application.api.answer.routes.answer.AnswerResource.validate_request",
             return_value=None,
@@ -191,7 +195,7 @@ class TestAnswerResourcePost:
     def test_result_contains_all_expected_fields(
         self, answer_client, mock_stream_processor
     ):
-        conv_id = str(ObjectId())
+        conv_id = str(uuid.uuid4())
         with patch(
             "application.api.answer.routes.answer.AnswerResource.validate_request",
             return_value=None,

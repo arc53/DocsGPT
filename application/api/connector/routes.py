@@ -1,12 +1,10 @@
 import base64
-import datetime
 import html
 import json
 import uuid
 from urllib.parse import urlencode
 
 
-from bson.objectid import ObjectId
 from flask import (
     Blueprint,
     current_app,
@@ -17,21 +15,17 @@ from flask import (
 from flask_restx import fields, Namespace, Resource
 
 
+from application.api import api
 from application.api.user.tasks import (
     ingest_connector_task,
 )
-from application.core.mongo_db import MongoDB
-from application.core.settings import settings
-from application.api import api
-
-
 from application.parser.connectors.connector_creator import ConnectorCreator
+from application.storage.db.repositories.connector_sessions import (
+    ConnectorSessionsRepository,
+)
+from application.storage.db.repositories.sources import SourcesRepository
+from application.storage.db.session import db_readonly, db_session
 
-
-mongo = MongoDB.get_client()
-db = mongo[settings.MONGO_DB_NAME]
-sources_collection = db["sources"]
-sessions_collection = db["connector_sessions"]
 
 connector = Blueprint("connector", __name__)
 connectors_ns = Namespace("connectors", description="Connector operations", path="/")
@@ -68,16 +62,14 @@ class ConnectorAuth(Resource):
                 return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
             user_id = decoded_token.get('sub')
 
-            now = datetime.datetime.now(datetime.timezone.utc)
-            result = sessions_collection.insert_one({
-                "provider": provider,
-                "user": user_id,
-                "status": "pending",
-                "created_at": now
-            })
+            with db_session() as conn:
+                session_row = ConnectorSessionsRepository(conn).upsert(
+                    user_id, provider, status="pending",
+                )
+            session_pg_id = str(session_row["id"])
             state_dict = {
                 "provider": provider,
-                "object_id": str(result.inserted_id)
+                "object_id": session_pg_id,
             }
             state = base64.urlsafe_b64encode(json.dumps(state_dict).encode()).decode()
 
@@ -160,17 +152,25 @@ class ConnectorsCallback(Resource):
 
                 sanitized_token_info = auth.sanitize_token_info(token_info)
 
-                sessions_collection.find_one_and_update(
-                    {"_id": ObjectId(state_object_id), "provider": provider},
-                    {
-                        "$set": {
-                            "session_token": session_token,
-                            "token_info": sanitized_token_info,
-                            "user_email": user_email,
-                            "status": "authorized"
-                        }
-                    }
-                )
+                # ``object_id`` in the OAuth state is the PG session row
+                # UUID (new flow) or a legacy Mongo ObjectId (pre-cutover
+                # issued state). Try UUID update first; fall back to
+                # legacy id path.
+                patch = {
+                    "session_token": session_token,
+                    "token_info": sanitized_token_info,
+                    "user_email": user_email,
+                    "status": "authorized",
+                }
+                with db_session() as conn:
+                    repo = ConnectorSessionsRepository(conn)
+                    if state_object_id:
+                        value = str(state_object_id)
+                        updated = False
+                        if len(value) == 36 and "-" in value:
+                            updated = repo.update(value, patch)
+                        if not updated:
+                            repo.update_by_legacy_id(value, patch)
 
                 # Redirect to success page with session token and user email
                 return redirect(build_callback_redirect({
@@ -222,8 +222,11 @@ class ConnectorFiles(Resource):
             if not decoded_token:
                 return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
             user = decoded_token.get('sub')
-            session = sessions_collection.find_one({"session_token": session_token, "user": user})
-            if not session:
+            with db_readonly() as conn:
+                session = ConnectorSessionsRepository(conn).get_by_session_token(
+                    session_token,
+                )
+            if not session or session.get("user_id") != user:
                 return make_response(jsonify({"success": False, "error": "Invalid or unauthorized session"}), 401)
 
             loader = ConnectorCreator.create_connector(provider, session_token)
@@ -288,8 +291,11 @@ class ConnectorValidateSession(Resource):
                 return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
             user = decoded_token.get('sub')
 
-            session = sessions_collection.find_one({"session_token": session_token, "user": user})
-            if not session or "token_info" not in session:
+            with db_readonly() as conn:
+                session = ConnectorSessionsRepository(conn).get_by_session_token(
+                    session_token,
+                )
+            if not session or session.get("user_id") != user or not session.get("token_info"):
                 return make_response(jsonify({"success": False, "error": "Invalid or expired session"}), 401)
 
             token_info = session["token_info"]
@@ -300,10 +306,11 @@ class ConnectorValidateSession(Resource):
                 try:
                     refreshed_token_info = auth.refresh_access_token(token_info.get('refresh_token'))
                     sanitized_token_info = auth.sanitize_token_info(refreshed_token_info)
-                    sessions_collection.update_one(
-                        {"session_token": session_token},
-                        {"$set": {"token_info": sanitized_token_info}}
-                    )
+                    with db_session() as conn:
+                        repo = ConnectorSessionsRepository(conn)
+                        row = repo.get_by_session_token(session_token)
+                        if row:
+                            repo.update(str(row["id"]), {"token_info": sanitized_token_info})
                     token_info = sanitized_token_info
                     is_expired = False
                 except Exception as refresh_error:
@@ -347,8 +354,11 @@ class ConnectorDisconnect(Resource):
 
 
             if session_token:
-                sessions_collection.delete_one({"session_token": session_token})
-            
+                with db_session() as conn:
+                    ConnectorSessionsRepository(conn).delete_by_session_token(
+                        session_token,
+                    )
+
             return make_response(jsonify({"success": True}), 200)
         except Exception as e:
             current_app.logger.error(f"Error disconnecting connector session: {e}", exc_info=True)
@@ -385,32 +395,28 @@ class ConnectorSync(Resource):
                     }), 
                     400
                 )
-            source = sources_collection.find_one({"_id": ObjectId(source_id)})
+            user_id = decoded_token.get('sub')
+            with db_readonly() as conn:
+                source = SourcesRepository(conn).get_any(source_id, user_id)
             if not source:
                 return make_response(
                     jsonify({
                         "success": False,
                         "error": "Source not found"
-                    }), 
+                    }),
                     404
                 )
 
-            if source.get('user') != decoded_token.get('sub'):
-                return make_response(
-                    jsonify({
-                        "success": False,
-                        "error": "Unauthorized access to source"
-                    }), 
-                    403
-                )
+            # ``get_any`` already scopes by ``user_id``; an extra guard
+            # here would be dead code.
 
-            remote_data = {}
-            try:
-                if source.get('remote_data'):
-                    remote_data = json.loads(source.get('remote_data'))
-            except json.JSONDecodeError:
-                current_app.logger.error(f"Invalid remote_data format for source {source_id}")
-                remote_data = {}
+            remote_data = source.get('remote_data') or {}
+            if isinstance(remote_data, str):
+                try:
+                    remote_data = json.loads(remote_data)
+                except json.JSONDecodeError:
+                    current_app.logger.error(f"Invalid remote_data format for source {source_id}")
+                    remote_data = {}
 
             source_type = remote_data.get('provider')
             if not source_type:
@@ -438,7 +444,7 @@ class ConnectorSync(Resource):
                 recursive=recursive,
                 retriever=source.get('retriever', 'classic'),
                 operation_mode="sync",
-                doc_id=source_id,
+                doc_id=str(source.get('id') or source_id),
                 sync_frequency=source.get('sync_frequency', 'never')
             )
 

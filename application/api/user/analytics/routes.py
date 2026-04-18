@@ -2,24 +2,82 @@
 
 import datetime
 
-from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
+from sqlalchemy import text as _sql_text
 
 from application.api import api
 from application.api.user.base import (
-    agents_collection,
-    conversations_collection,
     generate_date_range,
     generate_hourly_range,
     generate_minute_range,
-    token_usage_collection,
-    user_logs_collection,
 )
+from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.token_usage import TokenUsageRepository
+from application.storage.db.repositories.user_logs import UserLogsRepository
+from application.storage.db.session import db_readonly
+
 
 analytics_ns = Namespace(
     "analytics", description="Analytics and reporting operations", path="/api"
 )
+
+
+_FILTER_BUCKETS = {
+    "last_hour": ("minute", "%Y-%m-%d %H:%M:00", "YYYY-MM-DD HH24:MI:00"),
+    "last_24_hour": ("hour", "%Y-%m-%d %H:00", "YYYY-MM-DD HH24:00"),
+    "last_7_days": ("day", "%Y-%m-%d", "YYYY-MM-DD"),
+    "last_15_days": ("day", "%Y-%m-%d", "YYYY-MM-DD"),
+    "last_30_days": ("day", "%Y-%m-%d", "YYYY-MM-DD"),
+}
+
+
+def _range_for_filter(filter_option: str):
+    """Return ``(start_date, end_date, bucket_unit, pg_fmt)`` for the filter.
+
+    Returns ``None`` on invalid filter.
+    """
+    if filter_option not in _FILTER_BUCKETS:
+        return None
+    end_date = datetime.datetime.now(datetime.timezone.utc)
+    bucket_unit, _py_fmt, pg_fmt = _FILTER_BUCKETS[filter_option]
+
+    if filter_option == "last_hour":
+        start_date = end_date - datetime.timedelta(hours=1)
+    elif filter_option == "last_24_hour":
+        start_date = end_date - datetime.timedelta(hours=24)
+    else:
+        days = {
+            "last_7_days": 6,
+            "last_15_days": 14,
+            "last_30_days": 29,
+        }[filter_option]
+        start_date = end_date - datetime.timedelta(days=days)
+        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = end_date.replace(
+            hour=23, minute=59, second=59, microsecond=999999
+        )
+    return start_date, end_date, bucket_unit, pg_fmt
+
+
+def _intervals_for_filter(filter_option, start_date, end_date):
+    if filter_option == "last_hour":
+        return generate_minute_range(start_date, end_date)
+    if filter_option == "last_24_hour":
+        return generate_hourly_range(start_date, end_date)
+    return generate_date_range(start_date, end_date)
+
+
+def _resolve_api_key(conn, api_key_id, user_id):
+    """Look up the ``agents.key`` value for a given agent id.
+
+    Scoped by ``user_id`` so an authenticated caller can't probe another
+    user's agents. Accepts either UUID or legacy Mongo ObjectId shape.
+    """
+    if not api_key_id:
+        return None
+    agent = AgentsRepository(conn).get_any(api_key_id, user_id)
+    return (agent or {}).get("key") if agent else None
 
 
 @analytics_ns.route("/get_message_analytics")
@@ -32,13 +90,7 @@ class GetMessageAnalytics(Resource):
                 required=False,
                 description="Filter option for analytics",
                 default="last_30_days",
-                enum=[
-                    "last_hour",
-                    "last_24_hour",
-                    "last_7_days",
-                    "last_15_days",
-                    "last_30_days",
-                ],
+                enum=list(_FILTER_BUCKETS.keys()),
             ),
         },
     )
@@ -50,88 +102,54 @@ class GetMessageAnalytics(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
-        data = request.get_json()
+        data = request.get_json() or {}
         api_key_id = data.get("api_key_id")
         filter_option = data.get("filter_option", "last_30_days")
 
+        window = _range_for_filter(filter_option)
+        if window is None:
+            return make_response(
+                jsonify({"success": False, "message": "Invalid option"}), 400
+            )
+        start_date, end_date, _bucket_unit, pg_fmt = window
+
         try:
-            api_key = (
-                agents_collection.find_one({"_id": ObjectId(api_key_id), "user": user})[
-                    "key"
+            with db_readonly() as conn:
+                api_key = _resolve_api_key(conn, api_key_id, user)
+
+                # Count messages per bucket, filtered by the conversation's
+                # owner (user_id) and optionally the agent api_key. The
+                # ``user_id`` filter is always applied post-cutover to
+                # prevent cross-tenant leakage on admin dashboards.
+                clauses = [
+                    "c.user_id = :user_id",
+                    "m.timestamp >= :start",
+                    "m.timestamp <= :end",
                 ]
-                if api_key_id
-                else None
-            )
-        except Exception as err:
-            current_app.logger.error(f"Error getting API key: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 400)
-        end_date = datetime.datetime.now(datetime.timezone.utc)
-
-        if filter_option == "last_hour":
-            start_date = end_date - datetime.timedelta(hours=1)
-            group_format = "%Y-%m-%d %H:%M:00"
-        elif filter_option == "last_24_hour":
-            start_date = end_date - datetime.timedelta(hours=24)
-            group_format = "%Y-%m-%d %H:00"
-        else:
-            if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
-                filter_days = (
-                    6
-                    if filter_option == "last_7_days"
-                    else 14 if filter_option == "last_15_days" else 29
-                )
-            else:
-                return make_response(
-                    jsonify({"success": False, "message": "Invalid option"}), 400
-                )
-            start_date = end_date - datetime.timedelta(days=filter_days)
-            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = end_date.replace(
-                hour=23, minute=59, second=59, microsecond=999999
-            )
-            group_format = "%Y-%m-%d"
-        try:
-            match_stage = {
-                "$match": {
-                    "user": user,
+                params: dict = {
+                    "user_id": user,
+                    "start": start_date,
+                    "end": end_date,
+                    "fmt": pg_fmt,
                 }
-            }
-            if api_key:
-                match_stage["$match"]["api_key"] = api_key
-            pipeline = [
-                match_stage,
-                {"$unwind": "$queries"},
-                {
-                    "$match": {
-                        "queries.timestamp": {"$gte": start_date, "$lte": end_date}
-                    }
-                },
-                {
-                    "$group": {
-                        "_id": {
-                            "$dateToString": {
-                                "format": group_format,
-                                "date": "$queries.timestamp",
-                            }
-                        },
-                        "count": {"$sum": 1},
-                    }
-                },
-                {"$sort": {"_id": 1}},
-            ]
+                if api_key:
+                    clauses.append("c.api_key = :api_key")
+                    params["api_key"] = api_key
+                where = " AND ".join(clauses)
+                sql = (
+                    "SELECT to_char(m.timestamp AT TIME ZONE 'UTC', :fmt) AS bucket, "
+                    "COUNT(*) AS count "
+                    "FROM conversation_messages m "
+                    "JOIN conversations c ON c.id = m.conversation_id "
+                    f"WHERE {where} "
+                    "GROUP BY bucket ORDER BY bucket ASC"
+                )
+                rows = conn.execute(_sql_text(sql), params).fetchall()
 
-            message_data = conversations_collection.aggregate(pipeline)
-
-            if filter_option == "last_hour":
-                intervals = generate_minute_range(start_date, end_date)
-            elif filter_option == "last_24_hour":
-                intervals = generate_hourly_range(start_date, end_date)
-            else:
-                intervals = generate_date_range(start_date, end_date)
+            intervals = _intervals_for_filter(filter_option, start_date, end_date)
             daily_messages = {interval: 0 for interval in intervals}
-
-            for entry in message_data:
-                daily_messages[entry["_id"]] = entry["count"]
+            for row in rows:
+                daily_messages[row._mapping["bucket"]] = int(row._mapping["count"])
         except Exception as err:
             current_app.logger.error(
                 f"Error getting message analytics: {err}", exc_info=True
@@ -152,13 +170,7 @@ class GetTokenAnalytics(Resource):
                 required=False,
                 description="Filter option for analytics",
                 default="last_30_days",
-                enum=[
-                    "last_hour",
-                    "last_24_hour",
-                    "last_7_days",
-                    "last_15_days",
-                    "last_30_days",
-                ],
+                enum=list(_FILTER_BUCKETS.keys()),
             ),
         },
     )
@@ -170,123 +182,36 @@ class GetTokenAnalytics(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
-        data = request.get_json()
+        data = request.get_json() or {}
         api_key_id = data.get("api_key_id")
         filter_option = data.get("filter_option", "last_30_days")
 
-        try:
-            api_key = (
-                agents_collection.find_one({"_id": ObjectId(api_key_id), "user": user})[
-                    "key"
-                ]
-                if api_key_id
-                else None
+        window = _range_for_filter(filter_option)
+        if window is None:
+            return make_response(
+                jsonify({"success": False, "message": "Invalid option"}), 400
             )
-        except Exception as err:
-            current_app.logger.error(f"Error getting API key: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 400)
-        end_date = datetime.datetime.now(datetime.timezone.utc)
+        start_date, end_date, bucket_unit, _pg_fmt = window
 
-        if filter_option == "last_hour":
-            start_date = end_date - datetime.timedelta(hours=1)
-            group_format = "%Y-%m-%d %H:%M:00"
-            group_stage = {
-                "$group": {
-                    "_id": {
-                        "minute": {
-                            "$dateToString": {
-                                "format": group_format,
-                                "date": "$timestamp",
-                            }
-                        }
-                    },
-                    "total_tokens": {
-                        "$sum": {"$add": ["$prompt_tokens", "$generated_tokens"]}
-                    },
-                }
-            }
-        elif filter_option == "last_24_hour":
-            start_date = end_date - datetime.timedelta(hours=24)
-            group_format = "%Y-%m-%d %H:00"
-            group_stage = {
-                "$group": {
-                    "_id": {
-                        "hour": {
-                            "$dateToString": {
-                                "format": group_format,
-                                "date": "$timestamp",
-                            }
-                        }
-                    },
-                    "total_tokens": {
-                        "$sum": {"$add": ["$prompt_tokens", "$generated_tokens"]}
-                    },
-                }
-            }
-        else:
-            if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
-                filter_days = (
-                    6
-                    if filter_option == "last_7_days"
-                    else (14 if filter_option == "last_15_days" else 29)
-                )
-            else:
-                return make_response(
-                    jsonify({"success": False, "message": "Invalid option"}), 400
-                )
-            start_date = end_date - datetime.timedelta(days=filter_days)
-            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = end_date.replace(
-                hour=23, minute=59, second=59, microsecond=999999
-            )
-            group_format = "%Y-%m-%d"
-            group_stage = {
-                "$group": {
-                    "_id": {
-                        "day": {
-                            "$dateToString": {
-                                "format": group_format,
-                                "date": "$timestamp",
-                            }
-                        }
-                    },
-                    "total_tokens": {
-                        "$sum": {"$add": ["$prompt_tokens", "$generated_tokens"]}
-                    },
-                }
-            }
         try:
-            match_stage = {
-                "$match": {
-                    "user_id": user,
-                    "timestamp": {"$gte": start_date, "$lte": end_date},
-                }
-            }
-            if api_key:
-                match_stage["$match"]["api_key"] = api_key
-            token_usage_data = token_usage_collection.aggregate(
-                [
-                    match_stage,
-                    group_stage,
-                    {"$sort": {"_id": 1}},
-                ]
-            )
+            with db_readonly() as conn:
+                api_key = _resolve_api_key(conn, api_key_id, user)
+                # ``bucketed_totals`` applies user_id / api_key filters
+                # directly — no need to reshape a Mongo pipeline.
+                rows = TokenUsageRepository(conn).bucketed_totals(
+                    bucket_unit=bucket_unit,
+                    user_id=user,
+                    api_key=api_key,
+                    timestamp_gte=start_date,
+                    timestamp_lt=end_date,
+                )
 
-            if filter_option == "last_hour":
-                intervals = generate_minute_range(start_date, end_date)
-            elif filter_option == "last_24_hour":
-                intervals = generate_hourly_range(start_date, end_date)
-            else:
-                intervals = generate_date_range(start_date, end_date)
+            intervals = _intervals_for_filter(filter_option, start_date, end_date)
             daily_token_usage = {interval: 0 for interval in intervals}
-
-            for entry in token_usage_data:
-                if filter_option == "last_hour":
-                    daily_token_usage[entry["_id"]["minute"]] = entry["total_tokens"]
-                elif filter_option == "last_24_hour":
-                    daily_token_usage[entry["_id"]["hour"]] = entry["total_tokens"]
-                else:
-                    daily_token_usage[entry["_id"]["day"]] = entry["total_tokens"]
+            for entry in rows:
+                daily_token_usage[entry["bucket"]] = int(
+                    entry["prompt_tokens"] + entry["generated_tokens"]
+                )
         except Exception as err:
             current_app.logger.error(
                 f"Error getting token analytics: {err}", exc_info=True
@@ -307,13 +232,7 @@ class GetFeedbackAnalytics(Resource):
                 required=False,
                 description="Filter option for analytics",
                 default="last_30_days",
-                enum=[
-                    "last_hour",
-                    "last_24_hour",
-                    "last_7_days",
-                    "last_15_days",
-                    "last_30_days",
-                ],
+                enum=list(_FILTER_BUCKETS.keys()),
             ),
         },
     )
@@ -325,128 +244,64 @@ class GetFeedbackAnalytics(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
-        data = request.get_json()
+        data = request.get_json() or {}
         api_key_id = data.get("api_key_id")
         filter_option = data.get("filter_option", "last_30_days")
 
+        window = _range_for_filter(filter_option)
+        if window is None:
+            return make_response(
+                jsonify({"success": False, "message": "Invalid option"}), 400
+            )
+        start_date, end_date, _bucket_unit, pg_fmt = window
+
         try:
-            api_key = (
-                agents_collection.find_one({"_id": ObjectId(api_key_id), "user": user})[
-                    "key"
+            with db_readonly() as conn:
+                api_key = _resolve_api_key(conn, api_key_id, user)
+
+                # Feedback lives inside the ``conversation_messages.feedback``
+                # JSONB as ``{"text": "like"|"dislike", "timestamp": "..."}``.
+                # There is no scalar ``feedback_timestamp`` column — extract
+                # the timestamp from the JSONB and cast it to timestamptz for
+                # the range filter + bucket grouping.
+                clauses = [
+                    "c.user_id = :user_id",
+                    "m.feedback IS NOT NULL",
+                    "(m.feedback->>'timestamp')::timestamptz >= :start",
+                    "(m.feedback->>'timestamp')::timestamptz <= :end",
                 ]
-                if api_key_id
-                else None
-            )
-        except Exception as err:
-            current_app.logger.error(f"Error getting API key: {err}", exc_info=True)
-            return make_response(jsonify({"success": False}), 400)
-        end_date = datetime.datetime.now(datetime.timezone.utc)
-
-        if filter_option == "last_hour":
-            start_date = end_date - datetime.timedelta(hours=1)
-            group_format = "%Y-%m-%d %H:%M:00"
-            date_field = {
-                "$dateToString": {
-                    "format": group_format,
-                    "date": "$queries.feedback_timestamp",
+                params: dict = {
+                    "user_id": user,
+                    "start": start_date,
+                    "end": end_date,
+                    "fmt": pg_fmt,
                 }
-            }
-        elif filter_option == "last_24_hour":
-            start_date = end_date - datetime.timedelta(hours=24)
-            group_format = "%Y-%m-%d %H:00"
-            date_field = {
-                "$dateToString": {
-                    "format": group_format,
-                    "date": "$queries.feedback_timestamp",
-                }
-            }
-        else:
-            if filter_option in ["last_7_days", "last_15_days", "last_30_days"]:
-                filter_days = (
-                    6
-                    if filter_option == "last_7_days"
-                    else (14 if filter_option == "last_15_days" else 29)
+                if api_key:
+                    clauses.append("c.api_key = :api_key")
+                    params["api_key"] = api_key
+                where = " AND ".join(clauses)
+                sql = (
+                    "SELECT to_char("
+                    "(m.feedback->>'timestamp')::timestamptz AT TIME ZONE 'UTC', :fmt"
+                    ") AS bucket, "
+                    "SUM(CASE WHEN m.feedback->>'text' = 'like' THEN 1 ELSE 0 END) AS positive, "
+                    "SUM(CASE WHEN m.feedback->>'text' = 'dislike' THEN 1 ELSE 0 END) AS negative "
+                    "FROM conversation_messages m "
+                    "JOIN conversations c ON c.id = m.conversation_id "
+                    f"WHERE {where} "
+                    "GROUP BY bucket ORDER BY bucket ASC"
                 )
-            else:
-                return make_response(
-                    jsonify({"success": False, "message": "Invalid option"}), 400
-                )
-            start_date = end_date - datetime.timedelta(days=filter_days)
-            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = end_date.replace(
-                hour=23, minute=59, second=59, microsecond=999999
-            )
-            group_format = "%Y-%m-%d"
-            date_field = {
-                "$dateToString": {
-                    "format": group_format,
-                    "date": "$queries.feedback_timestamp",
-                }
-            }
-        try:
-            match_stage = {
-                "$match": {
-                    "queries.feedback_timestamp": {
-                        "$gte": start_date,
-                        "$lte": end_date,
-                    },
-                    "queries.feedback": {"$exists": True},
-                }
-            }
-            if api_key:
-                match_stage["$match"]["api_key"] = api_key
-            pipeline = [
-                match_stage,
-                {"$unwind": "$queries"},
-                {"$match": {"queries.feedback": {"$exists": True}}},
-                {
-                    "$group": {
-                        "_id": {"time": date_field, "feedback": "$queries.feedback"},
-                        "count": {"$sum": 1},
-                    }
-                },
-                {
-                    "$group": {
-                        "_id": "$_id.time",
-                        "positive": {
-                            "$sum": {
-                                "$cond": [
-                                    {"$eq": ["$_id.feedback", "LIKE"]},
-                                    "$count",
-                                    0,
-                                ]
-                            }
-                        },
-                        "negative": {
-                            "$sum": {
-                                "$cond": [
-                                    {"$eq": ["$_id.feedback", "DISLIKE"]},
-                                    "$count",
-                                    0,
-                                ]
-                            }
-                        },
-                    }
-                },
-                {"$sort": {"_id": 1}},
-            ]
+                rows = conn.execute(_sql_text(sql), params).fetchall()
 
-            feedback_data = conversations_collection.aggregate(pipeline)
-
-            if filter_option == "last_hour":
-                intervals = generate_minute_range(start_date, end_date)
-            elif filter_option == "last_24_hour":
-                intervals = generate_hourly_range(start_date, end_date)
-            else:
-                intervals = generate_date_range(start_date, end_date)
+            intervals = _intervals_for_filter(filter_option, start_date, end_date)
             daily_feedback = {
                 interval: {"positive": 0, "negative": 0} for interval in intervals
             }
-
-            for entry in feedback_data:
-                daily_feedback[entry["_id"]] = {
-                    "positive": entry["positive"],
-                    "negative": entry["negative"],
+            for row in rows:
+                bucket = row._mapping["bucket"]
+                daily_feedback[bucket] = {
+                    "positive": int(row._mapping["positive"] or 0),
+                    "negative": int(row._mapping["negative"] or 0),
                 }
         except Exception as err:
             current_app.logger.error(
@@ -484,47 +339,89 @@ class GetUserLogs(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
-        data = request.get_json()
+        data = request.get_json() or {}
         page = int(data.get("page", 1))
         api_key_id = data.get("api_key_id")
         page_size = int(data.get("page_size", 10))
-        skip = (page - 1) * page_size
 
         try:
-            api_key = (
-                agents_collection.find_one({"_id": ObjectId(api_key_id)})["key"]
-                if api_key_id
-                else None
-            )
+            with db_readonly() as conn:
+                api_key = _resolve_api_key(conn, api_key_id, user)
+                logs_repo = UserLogsRepository(conn)
+                if api_key:
+                    # ``find_by_api_key`` filters on ``data->>'api_key'``
+                    # — the PG shape of the legacy top-level ``api_key``
+                    # filter. Paginate client-side using offset/limit.
+                    all_rows = logs_repo.find_by_api_key(api_key)
+                    offset = (page - 1) * page_size
+                    window = all_rows[offset: offset + page_size + 1]
+                    items = window
+                else:
+                    items, has_more_flag = logs_repo.list_paginated(
+                        user_id=user,
+                        page=page,
+                        page_size=page_size,
+                    )
+                    # list_paginated already trims to page_size and
+                    # returns has_more separately.
+                    results = [
+                        {
+                            "id": str(item.get("id") or item.get("_id")),
+                            "action": (item.get("data") or {}).get("action"),
+                            "level": (item.get("data") or {}).get("level"),
+                            "user": item.get("user_id"),
+                            "question": (item.get("data") or {}).get("question"),
+                            "sources": (item.get("data") or {}).get("sources"),
+                            "retriever_params": (item.get("data") or {}).get(
+                                "retriever_params"
+                            ),
+                            "timestamp": (
+                                item["timestamp"].isoformat()
+                                if hasattr(item.get("timestamp"), "isoformat")
+                                else item.get("timestamp")
+                            ),
+                        }
+                        for item in items
+                    ]
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": True,
+                                "logs": results,
+                                "page": page,
+                                "page_size": page_size,
+                                "has_more": has_more_flag,
+                            }
+                        ),
+                        200,
+                    )
+
+            has_more = len(items) > page_size
+            items = items[:page_size]
+            results = [
+                {
+                    "id": str(item.get("id") or item.get("_id")),
+                    "action": (item.get("data") or {}).get("action"),
+                    "level": (item.get("data") or {}).get("level"),
+                    "user": item.get("user_id"),
+                    "question": (item.get("data") or {}).get("question"),
+                    "sources": (item.get("data") or {}).get("sources"),
+                    "retriever_params": (item.get("data") or {}).get(
+                        "retriever_params"
+                    ),
+                    "timestamp": (
+                        item["timestamp"].isoformat()
+                        if hasattr(item.get("timestamp"), "isoformat")
+                        else item.get("timestamp")
+                    ),
+                }
+                for item in items
+            ]
         except Exception as err:
-            current_app.logger.error(f"Error getting API key: {err}", exc_info=True)
+            current_app.logger.error(
+                f"Error getting user logs: {err}", exc_info=True
+            )
             return make_response(jsonify({"success": False}), 400)
-        query = {"user": user}
-        if api_key:
-            query = {"api_key": api_key}
-        items_cursor = (
-            user_logs_collection.find(query)
-            .sort("timestamp", -1)
-            .skip(skip)
-            .limit(page_size + 1)
-        )
-        items = list(items_cursor)
-
-        results = [
-            {
-                "id": str(item.get("_id")),
-                "action": item.get("action"),
-                "level": item.get("level"),
-                "user": item.get("user"),
-                "question": item.get("question"),
-                "sources": item.get("sources"),
-                "retriever_params": item.get("retriever_params"),
-                "timestamp": item.get("timestamp"),
-            }
-            for item in items[:page_size]
-        ]
-
-        has_more = len(items) > page_size
 
         return make_response(
             jsonify(

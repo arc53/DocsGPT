@@ -2,7 +2,7 @@
 """
 Integration tests for DocsGPT workflow management endpoints.
 
-Uses Flask test client with real MongoDB (must be running).
+Uses Flask test client with a real Postgres instance (must be running).
 
 Endpoints tested:
 - /api/workflows (POST) - Create workflow
@@ -26,7 +26,7 @@ from jose import jwt
 
 @pytest.fixture(scope="module")
 def app():
-    """Create the real Flask app (connects to real MongoDB)."""
+    """Create the real Flask app (connects to real Postgres)."""
     from application.app import app as flask_app
     flask_app.config["TESTING"] = True
     return flask_app
