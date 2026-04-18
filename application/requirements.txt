@@ -47,7 +47,7 @@ msal==1.35.1
 mypy-extensions==1.1.0
 networkx==3.6.1
 numpy==2.4.4
-openai==2.30.0
+openai==2.31.0
 openapi3-parser==1.1.22
 orjson==3.11.7
 packaging==26.0
