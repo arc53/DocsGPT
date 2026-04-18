@@ -2,7 +2,6 @@ import logging
 from application.core.url_validation import SSRFError, validate_url
 from application.parser.remote.base import BaseRemote
 from application.parser.schema.base import Document
-from application.core.url_validation import validate_url, SSRFError
 from langchain_community.document_loaders import WebBaseLoader
 
 headers = {

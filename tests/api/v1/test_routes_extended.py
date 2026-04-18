@@ -233,7 +233,7 @@ class TestListModelsPgConn:
                 )
         assert resp.status_code == 401
 
-    def test_returns_user_agents_for_valid_key(self, pg_conn):
+    def test_returns_agent_for_valid_key(self, pg_conn):
         from application.storage.db.repositories.agents import AgentsRepository
 
         app = _build_app()
@@ -250,9 +250,8 @@ class TestListModelsPgConn:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["object"] == "list"
-        # Both agents for user u-m should be listed
         names = {m["name"] for m in data["data"]}
-        assert "A1" in names and "A2" in names
+        assert names == {"A1"}
 
     def test_db_error_returns_500(self):
         app = _build_app()
