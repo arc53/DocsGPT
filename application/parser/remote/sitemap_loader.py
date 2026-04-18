@@ -37,6 +37,11 @@ class SitemapLoader(BaseRemote):
                 break  # Stop processing if the limit is reached
 
             try:
+                url = validate_url(url)
+            except SSRFError as e:
+                logging.error(f"URL validation failed for sitemap entry {url}: {e}")
+                continue
+            try:
                 loader = self.loader([url])
                 documents.extend(loader.load())
                 processed_urls += 1  # Increment the counter after processing each URL
@@ -90,6 +95,15 @@ class SitemapLoader(BaseRemote):
         # Check for nested sitemaps
         for sitemap in root.findall('.//sitemap/loc'):
             nested_sitemap_url = sitemap.text
+            if not nested_sitemap_url:
+                continue
+            try:
+                nested_sitemap_url = validate_url(nested_sitemap_url)
+            except SSRFError as e:
+                logging.error(
+                    f"URL validation failed for nested sitemap {nested_sitemap_url}: {e}"
+                )
+                continue
             urls.extend(self._extract_urls(nested_sitemap_url))
 
         return urls

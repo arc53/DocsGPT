@@ -4,7 +4,7 @@ boto3==1.42.83
 beautifulsoup4==4.14.3
 cel-python==0.5.0
 celery==5.6.3
-cryptography==46.0.6
+cryptography==46.0.7
 dataclasses-json==0.6.7
 defusedxml==0.7.1
 docling>=2.16.0
@@ -29,14 +29,14 @@ jiter==0.13.0
 jmespath==1.1.0
 joblib==1.5.3
 jsonpatch==1.33
-jsonpointer==3.0.0
+jsonpointer==3.1.1
 kombu==5.6.2
 langchain==1.2.3
 langchain-community==0.4.1
-langchain-core==1.2.23
+langchain-core==1.2.29
 langchain-openai==1.1.12
 langchain-text-splitters==1.1.1
-langsmith==0.7.23
+langsmith==0.7.31
 lazy-object-proxy==1.12.0
 lxml==6.0.2
 markupsafe==3.0.3
@@ -83,7 +83,7 @@ tqdm==4.67.3
 transformers==5.4.0
 typing-extensions==4.15.0
 typing-inspect==0.9.0
-tzdata==2025.3
+tzdata==2026.1
 urllib3==2.6.3
 vine==5.1.0
 wcwidth==0.6.0
