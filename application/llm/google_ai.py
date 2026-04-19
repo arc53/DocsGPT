@@ -128,15 +128,33 @@ class GoogleLLM(BaseLLM):
                 ).uri,
             )
 
-            from application.core.mongo_db import MongoDB
-
-            mongo = MongoDB.get_client()
-            db = mongo[settings.MONGO_DB_NAME]
-            attachments_collection = db["attachments"]
-            if "_id" in attachment:
-                attachments_collection.update_one(
-                    {"_id": attachment["_id"]}, {"$set": {"google_file_uri": file_uri}}
+            # Cache the Google file URI on the attachment row so we don't
+            # re-upload on the next LLM call. Accept either a PG UUID
+            # (``id``) or a legacy Mongo ObjectId (``_id``). Opened per
+            # write — this runs mid-LLM-call, so we don't wrap the
+            # surrounding generator in a long-lived session.
+            attachment_id = attachment.get("id") or attachment.get("_id")
+            if attachment_id:
+                user_id = None
+                decoded = getattr(self, "decoded_token", None)
+                if isinstance(decoded, dict):
+                    user_id = decoded.get("sub")
+                from application.storage.db.repositories.attachments import (
+                    AttachmentsRepository,
                 )
+                from application.storage.db.session import db_session
+
+                try:
+                    with db_session() as conn:
+                        AttachmentsRepository(conn).update_any(
+                            str(attachment_id),
+                            user_id,
+                            {"google_file_uri": file_uri},
+                        )
+                except Exception as cache_err:
+                    logging.warning(
+                        f"Failed to cache google_file_uri on attachment {attachment_id}: {cache_err}"
+                    )
             return file_uri
         except Exception as e:
             logging.error(f"Error uploading file to Google AI: {e}", exc_info=True)
