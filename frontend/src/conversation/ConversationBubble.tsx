@@ -64,7 +64,7 @@ const ConversationBubble = forwardRef<
       index?: number,
     ) => void;
     filesAttached?: { id: string; fileName: string }[];
-    imageBase64?: string; // --- ADDED THIS LINE ---
+    imageBase64?: string;
     onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
     onToolAction?: (
       callId: string,
@@ -88,7 +88,7 @@ const ConversationBubble = forwardRef<
     isStreaming,
     handleUpdatedQuestionSubmission,
     filesAttached,
-    imageBase64, // --- DESTRUCTURED HERE ---
+    imageBase64,
     onOpenArtifact,
     onToolAction,
   },
@@ -96,7 +96,6 @@ const ConversationBubble = forwardRef<
 ) {
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
-  // const bubbleRef = useRef<HTMLDivElement | null>(null);
   const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
   const [isEditClicked, setIsEditClicked] = useState(false);
@@ -137,6 +136,7 @@ const ConversationBubble = forwardRef<
     setIsEditClicked(false);
     handleUpdatedQuestionSubmission?.(editInputBox, true, questionNumber);
   };
+
   let bubble;
   if (type === 'QUESTION') {
     bubble = (
@@ -165,7 +165,6 @@ const ConversationBubble = forwardRef<
             </div>
           )}
 
-          {/* --- NEW IMAGE RENDERING BLOCK --- */}
           {imageBase64 && (
             <div className="mr-12 mb-3 max-w-sm overflow-hidden rounded-2xl border border-gray-200 shadow-sm dark:border-gray-700">
               <img
@@ -175,7 +174,6 @@ const ConversationBubble = forwardRef<
               />
             </div>
           )}
-          {/* ---------------------------------- */}
 
           <div
             ref={ref}
@@ -270,26 +268,19 @@ const ConversationBubble = forwardRef<
     );
   } else {
     const preprocessLaTeX = (content: string) => {
-      // Replace block-level LaTeX delimiters \[ \] with $$ $$
       const blockProcessedContent = content.replace(
         /\\\[(.*?)\\\]/gs,
         (_, equation) => `$$${equation}$$`,
       );
-
-      // Replace inline LaTeX delimiters \( \) with $ $
       const inlineProcessedContent = blockProcessedContent.replace(
         /\\\((.*?)\\\)/gs,
         (_, equation) => `$${equation}$`,
       );
-
       return inlineProcessedContent;
     };
+
     const processMarkdownContent = (content: string) => {
       let processedContent = preprocessLaTeX(content);
-
-      // Convert citation references [N] into markdown links [N](#cite-N)
-      // so ReactMarkdown renders them as <a> tags we can style.
-      // Avoid matching inside code blocks or existing links.
       processedContent = processedContent.replace(
         /(?<!\[)\[(\d+)\](?!\()/g,
         (_, num) => `[${num}](#cite-${num})`,
@@ -309,9 +300,7 @@ const ConversationBubble = forwardRef<
         if (textBefore) {
           contentSegments.push({ type: 'text', content: textBefore });
         }
-
         contentSegments.push({ type: 'mermaid', content: match[1].trim() });
-
         lastIndex = match.index + match[0].length;
       }
 
@@ -446,24 +435,9 @@ const ConversationBubble = forwardRef<
               }
               className="flex items-center gap-2 rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
             >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                />
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
               </svg>
               {primaryArtifactCall.tool_name
                 ? formatToolName(primaryArtifactCall.tool_name)
@@ -520,26 +494,11 @@ const ConversationBubble = forwardRef<
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        const el = document.getElementById(
-                                          `source-${sourceIdx}`,
-                                        );
+                                        const el = document.getElementById(`source-${sourceIdx}`);
                                         if (el) {
-                                          el.scrollIntoView({
-                                            behavior: 'smooth',
-                                            block: 'center',
-                                          });
-                                          el.classList.add(
-                                            'ring-2',
-                                            'ring-purple-500',
-                                          );
-                                          setTimeout(
-                                            () =>
-                                              el.classList.remove(
-                                                'ring-2',
-                                                'ring-purple-500',
-                                              ),
-                                            2000,
-                                          );
+                                          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                          el.classList.add('ring-2', 'ring-purple-500');
+                                          setTimeout(() => el.classList.remove('ring-2', 'ring-purple-500'), 2000);
                                         }
                                       }}
                                       className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-purple-100 px-1.5 text-xs font-semibold text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
@@ -550,53 +509,28 @@ const ConversationBubble = forwardRef<
                                   );
                                 }
                                 return (
-                                  <a
-                                    href={href}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  >
+                                  <a href={href} target="_blank" rel="noopener noreferrer">
                                     {children}
                                   </a>
                                 );
                               },
                               code(props) {
-                                const {
-                                  children,
-                                  className,
-                                  node,
-                                  ref,
-                                  ...rest
-                                } = props;
-                                const match = /language-(\w+)/.exec(
-                                  className || '',
-                                );
+                                const { children, className, node, ref, ...rest } = props;
+                                const match = /language-(\w+)/.exec(className || '');
                                 const language = match ? match[1] : '';
-
                                 return match ? (
                                   <div className="group border-border relative overflow-hidden rounded-[14px] border">
                                     <div className="bg-platinum dark:bg-muted flex items-center justify-between px-2 py-1">
-                                      <span className="text-foreground dark:text-foreground text-xs font-medium">
-                                        {language}
-                                      </span>
-                                      <CopyButton
-                                        textToCopy={String(children).replace(
-                                          /\n$/,
-                                          '',
-                                        )}
-                                      />
+                                      <span className="text-foreground dark:text-foreground text-xs font-medium">{language}</span>
+                                      <CopyButton textToCopy={String(children).replace(/\n$/, '')} />
                                     </div>
                                     <SyntaxHighlighter
                                       {...rest}
                                       PreTag="div"
                                       language={language}
-                                      style={
-                                        isDarkTheme ? vscDarkPlus : oneLight
-                                      }
+                                      style={isDarkTheme ? vscDarkPlus : oneLight}
                                       className="mt-0!"
-                                      customStyle={{
-                                        margin: 0,
-                                        borderRadius: 0,
-                                      }}
+                                      customStyle={{ margin: 0, borderRadius: 0 }}
                                     >
                                       {String(children).replace(/\n$/, '')}
                                     </SyntaxHighlighter>
@@ -607,70 +541,26 @@ const ConversationBubble = forwardRef<
                                   </code>
                                 );
                               },
-                              ul({ children }) {
-                                return (
-                                  <ul
-                                    className={`list-inside list-disc pl-4 whitespace-normal ${classes.list}`}
-                                  >
-                                    {children}
-                                  </ul>
-                                );
-                              },
-                              ol({ children }) {
-                                return (
-                                  <ol
-                                    className={`list-inside list-decimal pl-4 whitespace-normal ${classes.list}`}
-                                  >
-                                    {children}
-                                  </ol>
-                                );
-                              },
+                              ul({ children }) { return <ul className={`list-inside list-disc pl-4 whitespace-normal ${classes.list}`}>{children}</ul>; },
+                              ol({ children }) { return <ol className={`list-inside list-decimal pl-4 whitespace-normal ${classes.list}`}>{children}</ol>; },
                               table({ children }) {
                                 return (
                                   <div className="border-border relative overflow-x-auto rounded-lg border">
-                                    <table className="dark:text-foreground w-full text-left text-gray-700">
-                                      {children}
-                                    </table>
+                                    <table className="dark:text-foreground w-full text-left text-gray-700">{children}</table>
                                   </div>
                                 );
                               },
-                              thead({ children }) {
-                                return (
-                                  <thead className="bg-muted text-foreground text-xs uppercase">
-                                    {children}
-                                  </thead>
-                                );
-                              },
-                              tr({ children }) {
-                                return (
-                                  <tr className="border-border odd:bg-card even:bg-muted border-b">
-                                    {children}
-                                  </tr>
-                                );
-                              },
-                              th({ children }) {
-                                return (
-                                  <th className="px-6 py-3">{children}</th>
-                                );
-                              },
-                              td({ children }) {
-                                return (
-                                  <td className="px-6 py-3">{children}</td>
-                                );
-                              },
+                              thead({ children }) { return <thead className="bg-muted text-foreground text-xs uppercase">{children}</thead>; },
+                              tr({ children }) { return <tr className="border-border odd:bg-card even:bg-muted border-b">{children}</tr>; },
+                              th({ children }) { return <th className="px-6 py-3">{children}</th>; },
+                              td({ children }) { return <td className="px-6 py-3">{children}</td>; },
                             }}
                           >
                             {segment.content}
                           </ReactMarkdown>
                         ) : (
-                          <div
-                            className="my-4 w-full"
-                            style={{ minWidth: '100%' }}
-                          >
-                            <MermaidRenderer
-                              code={segment.content}
-                              isLoading={isStreaming}
-                            />
+                          <div className="my-4 w-full" style={{ minWidth: '100%' }}>
+                            <MermaidRenderer code={segment.content} isLoading={isStreaming} />
                           </div>
                         )}
                       </Fragment>
@@ -702,24 +592,9 @@ const ConversationBubble = forwardRef<
                       className="flex items-center gap-2 rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
                       aria-label="View artifacts"
                     >
-                      <svg
-                        className="h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                        />
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
                       {primaryArtifactCall.tool_name
                         ? formatToolName(primaryArtifactCall.tool_name)
@@ -739,9 +614,7 @@ const ConversationBubble = forwardRef<
                         <button
                           type="button"
                           onClick={() => {
-                            const blob = new Blob([message], {
-                              type: 'text/markdown',
-                            });
+                            const blob = new Blob([message], { type: 'text/markdown' });
                             const url = URL.createObjectURL(blob);
                             const link = document.createElement('a');
                             link.href = url;
@@ -753,17 +626,8 @@ const ConversationBubble = forwardRef<
                           aria-label="Export as Markdown"
                           title="Export as Markdown"
                         >
-                          <svg
-                            className="stroke-muted-foreground h-5 w-5"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            strokeWidth={1.5}
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
-                            />
+                          <svg className="stroke-muted-foreground h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
                           </svg>
                         </button>
                       </div>
@@ -777,43 +641,20 @@ const ConversationBubble = forwardRef<
                           <button
                             type="button"
                             className="hover:bg-accent flex cursor-pointer items-center justify-center rounded-full bg-transparent p-2"
-                            onClick={() => {
-                              if (feedback === 'LIKE') {
-                                handleFeedback?.(null);
-                              } else {
-                                handleFeedback?.('LIKE');
-                              }
-                            }}
-                            aria-label={
-                              feedback === 'LIKE' ? 'Remove like' : 'Like'
-                            }
+                            onClick={() => handleFeedback?.(feedback === 'LIKE' ? null : 'LIKE')}
+                            aria-label={feedback === 'LIKE' ? 'Remove like' : 'Like'}
                           >
-                            <Like
-                              className={`${feedback === 'LIKE' ? 'stroke-primary fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`}
-                            ></Like>
+                            <Like className={`${feedback === 'LIKE' ? 'stroke-primary fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`} />
                           </button>
                         </div>
-
                         <div className="relative mr-2 flex items-center justify-center">
                           <button
                             type="button"
                             className="hover:bg-accent flex cursor-pointer items-center justify-center rounded-full bg-transparent p-2"
-                            onClick={() => {
-                              if (feedback === 'DISLIKE') {
-                                handleFeedback?.(null);
-                              } else {
-                                handleFeedback?.('DISLIKE');
-                              }
-                            }}
-                            aria-label={
-                              feedback === 'DISLIKE'
-                                ? 'Remove dislike'
-                                : 'Dislike'
-                            }
+                            onClick={() => handleFeedback?.(feedback === 'DISLIKE' ? null : 'DISLIKE')}
+                            aria-label={feedback === 'DISLIKE' ? 'Remove dislike' : 'Dislike'}
                           >
-                            <Dislike
-                              className={`${feedback === 'DISLIKE' ? 'stroke-destructive fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`}
-                            ></Dislike>
+                            <Dislike className={`${feedback === 'DISLIKE' ? 'stroke-destructive fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`} />
                           </button>
                         </div>
                       </>
@@ -825,12 +666,7 @@ const ConversationBubble = forwardRef<
           </div>
         )}
         {sources && (
-          <Sidebar
-            isOpen={isSidebarOpen}
-            toggleState={(state: boolean) => {
-              setIsSidebarOpen(state);
-            }}
-          >
+          <Sidebar isOpen={isSidebarOpen} toggleState={(state: boolean) => setIsSidebarOpen(state)}>
             <AllSources sources={sources} />
           </Sidebar>
         )}
@@ -846,13 +682,9 @@ type AllSourcesProps = {
 
 function AllSources(sources: AllSourcesProps) {
   const { t } = useTranslation();
-
   const handleCardClick = (link: string) => {
-    if (link && link !== 'local') {
-      window.open(link, '_blank', 'noopener,noreferrer');
-    }
+    if (link && link !== 'local') { window.open(link, '_blank', 'noopener,noreferrer'); }
   };
-
   return (
     <div className="h-full w-full">
       <div className="w-full">
@@ -865,37 +697,17 @@ function AllSources(sources: AllSourcesProps) {
           return (
             <div
               key={index}
-              className={`group/card bg-muted hover:bg-accent dark:bg-card dark:hover:bg-muted relative w-full rounded-4xl p-4 transition-colors ${
-                isExternalSource ? 'cursor-pointer' : ''
-              }`}
-              onClick={() =>
-                isExternalSource && source.link && handleCardClick(source.link)
-              }
+              className={`group/card bg-muted hover:bg-accent dark:bg-card dark:hover:bg-muted relative w-full rounded-4xl p-4 transition-colors ${isExternalSource ? 'cursor-pointer' : ''}`}
+              onClick={() => isExternalSource && source.link && handleCardClick(source.link)}
             >
               <p
                 title={source.title}
-                className={`ellipsis-text text-left text-sm font-semibold wrap-break-word ${
-                  isExternalSource
-                    ? 'group-hover/card:text-primary dark:group-hover/card:text-[#8C67D7]'
-                    : ''
-                }`}
+                className={`ellipsis-text text-left text-sm font-semibold wrap-break-word ${isExternalSource ? 'group-hover/card:text-primary dark:group-hover/card:text-[#8C67D7]' : ''}`}
               >
                 {`${index + 1}. ${source.title}`}
-                {isExternalSource && (
-                  <img
-                    src={Link}
-                    alt="External Link"
-                    className={`ml-1 inline h-3 w-3 object-fill dark:invert ${
-                      isExternalSource
-                        ? 'group-hover/card:contrast-50 group-hover/card:hue-rotate-235 group-hover/card:invert-31 group-hover/card:saturate-752 group-hover/card:sepia-80 group-hover/card:filter'
-                        : ''
-                    }`}
-                  />
-                )}
+                {isExternalSource && <img src={Link} alt="External Link" className="ml-1 inline h-3 w-3 object-fill dark:invert" />}
               </p>
-              <p className="dark:text-foreground mt-3 line-clamp-4 rounded-md text-left text-xs wrap-break-word text-black">
-                {source.text}
-              </p>
+              <p className="dark:text-foreground mt-3 line-clamp-4 rounded-md text-left text-xs wrap-break-word text-black">{source.text}</p>
             </div>
           );
         })}
@@ -903,122 +715,74 @@ function AllSources(sources: AllSourcesProps) {
     </div>
   );
 }
-export default ConversationBubble;
 
 function ToolCallApprovalBar({
   toolCall,
   onToolAction,
 }: {
   toolCall: ToolCallsType;
-  onToolAction?: (
-    callId: string,
-    decision: 'approved' | 'denied',
-    comment?: string,
-  ) => void;
+  onToolAction?: (callId: string, decision: 'approved' | 'denied', comment?: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState('');
-  const actionLabel = toolCall.action_name.substring(
-    0,
-    toolCall.action_name.lastIndexOf('_'),
-  );
+  const actionLabel = toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'));
   const argPreview = JSON.stringify(toolCall.arguments);
-  const truncated =
-    argPreview.length > 60 ? argPreview.slice(0, 57) + '...' : argPreview;
+  const truncated = argPreview.length > 60 ? argPreview.slice(0, 57) + '...' : argPreview;
 
   return (
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-        <div className="my-2 flex flex-row items-center justify-center gap-3">
-          <Avatar
-            className="h-[26px] w-[30px] text-xl"
-            avatar={
-              <img
-                src={Sources}
-                alt={'ToolCalls'}
-                className="h-full w-full object-fill"
-              />
-            }
-          />
-    <div className="border-border bg-muted dark:bg-card mb-2 w-full overflow-hidden rounded-2xl border">
-      <div className="flex items-center gap-3 px-4 py-2.5">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="text-sm font-semibold whitespace-nowrap">
-            {toolCall.tool_name}
-          </span>
-          <span className="text-muted-foreground text-xs">{actionLabel}</span>
-          <span
-            className="text-muted-foreground hidden min-w-0 truncate font-mono text-xs md:block"
-            title={argPreview}
-          >
-            {truncated}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            className={`rounded-full px-4 py-1 text-xs font-medium transition-colors ${
-              comment
-                ? 'bg-muted text-muted-foreground cursor-default opacity-50'
-                : 'bg-primary hover:bg-primary/90 text-white'
-            }`}
-            onClick={() => {
-              if (!comment) onToolAction?.(toolCall.call_id, 'approved');
-            }}
-          >
-            Approve
-          </button>
-          <button
-            className={`rounded-full border px-4 py-1 text-xs font-medium transition-colors ${
-              comment
-                ? 'border-destructive bg-destructive/10 text-destructive font-semibold'
-                : 'hover:bg-accent text-muted-foreground'
-            }`}
-            onClick={() => {
-              if (expanded && comment) {
-                onToolAction?.(toolCall.call_id, 'denied', comment);
-              } else if (expanded) {
-                onToolAction?.(toolCall.call_id, 'denied');
-              } else {
-                setExpanded(true);
-              }
-            }}
-          >
-            Deny
-          </button>
-          <button
-            className="text-muted-foreground hover:text-foreground flex h-6 w-6 items-center justify-center rounded-full transition-colors"
-            onClick={() => setExpanded(!expanded)}
-            title="Details"
-          >
-            <img
-              src={ChevronDown}
-              alt="expand"
-              className={`h-3.5 w-3.5 transition-transform duration-200 dark:invert ${expanded ? 'rotate-180' : ''}`}
-            />
-          </button>
-        </div>
+      <div className="my-2 flex flex-row items-center justify-center gap-3">
+        <Avatar
+          className="h-[26px] w-[30px] text-xl"
+          avatar={<img src={Sources} alt={'ToolCalls'} className="h-full w-full object-fill" />}
+        />
       </div>
-      {expanded && (
-        <div className="border-border border-t px-4 py-3">
-          <p className="text-muted-foreground mb-1 text-xs font-medium">
-            Arguments
-          </p>
-          <pre className="bg-background dark:bg-background/50 mb-2 max-h-40 overflow-auto rounded-lg p-2 font-mono text-xs">
-            {JSON.stringify(toolCall.arguments, null, 2)}
-          </pre>
-          <input
-            type="text"
-            placeholder="Optional reason for denying..."
-            className="border-border bg-background w-full rounded-lg border px-3 py-1.5 text-sm"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && comment) {
-                onToolAction?.(toolCall.call_id, 'denied', comment);
-              }
-            }}
-          />
+      <div className="border-border bg-muted dark:bg-card mb-2 w-full overflow-hidden rounded-2xl border">
+        <div className="flex items-center gap-3 px-4 py-2.5">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="text-sm font-semibold whitespace-nowrap">{toolCall.tool_name}</span>
+            <span className="text-muted-foreground text-xs">{actionLabel}</span>
+            <span className="text-muted-foreground hidden min-w-0 truncate font-mono text-xs md:block" title={argPreview}>{truncated}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              className={`rounded-full px-4 py-1 text-xs font-medium transition-colors ${comment ? 'bg-muted text-muted-foreground cursor-default opacity-50' : 'bg-primary hover:bg-primary/90 text-white'}`}
+              onClick={() => { if (!comment) onToolAction?.(toolCall.call_id, 'approved'); }}
+            >
+              Approve
+            </button>
+            <button
+              className={`rounded-full border px-4 py-1 text-xs font-medium transition-colors ${comment ? 'border-destructive bg-destructive/10 text-destructive font-semibold' : 'hover:bg-accent text-muted-foreground'}`}
+              onClick={() => {
+                if (expanded && comment) { onToolAction?.(toolCall.call_id, 'denied', comment); }
+                else if (expanded) { onToolAction?.(toolCall.call_id, 'denied'); }
+                else { setExpanded(true); }
+              }}
+            >
+              Deny
+            </button>
+            <button className="text-muted-foreground hover:text-foreground flex h-6 w-6 items-center justify-center rounded-full transition-colors" onClick={() => setExpanded(!expanded)}>
+              <img src={ChevronDown} alt="expand" className={`h-3.5 w-3.5 transition-transform duration-200 dark:invert ${expanded ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
         </div>
-      )}
+        {expanded && (
+          <div className="border-border border-t px-4 py-3">
+            <p className="text-muted-foreground mb-1 text-xs font-medium">Arguments</p>
+            <pre className="bg-background dark:bg-background/50 mb-2 max-h-40 overflow-auto rounded-lg p-2 font-mono text-xs">
+              {JSON.stringify(toolCall.arguments, null, 2)}
+            </pre>
+            <input
+              type="text"
+              placeholder="Optional reason for denying..."
+              className="border-border bg-background w-full rounded-lg border px-3 py-1.5 text-sm"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && comment) { onToolAction?.(toolCall.call_id, 'denied', comment); } }}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1028,60 +792,29 @@ function ToolCalls({
   onToolAction,
 }: {
   toolCalls: ToolCallsType[];
-  onToolAction?: (
-    callId: string,
-    decision: 'approved' | 'denied',
-    comment?: string,
-  ) => void;
+  onToolAction?: (callId: string, decision: 'approved' | 'denied', comment?: string) => void;
 }) {
   const [isToolCallsOpen, setIsToolCallsOpen] = useState(false);
-
-  const awaitingCalls = toolCalls.filter(
-    (tc) => tc.status === 'awaiting_approval',
-  );
-  const resolvedCalls = toolCalls.filter(
-    (tc) => tc.status !== 'awaiting_approval',
-  );
+  const awaitingCalls = toolCalls.filter((tc) => tc.status === 'awaiting_approval');
+  const resolvedCalls = toolCalls.filter((tc) => tc.status !== 'awaiting_approval');
 
   return (
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-      {/* Approval bars — always visible, compact inline */}
       {awaitingCalls.length > 0 && (
         <div className="fade-in mt-4 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
           {awaitingCalls.map((tc) => (
-            <ToolCallApprovalBar
-              key={`approval-${tc.call_id}`}
-              toolCall={tc}
-              onToolAction={onToolAction}
-            />
+            <ToolCallApprovalBar key={`approval-${tc.call_id}`} toolCall={tc} onToolAction={onToolAction} />
           ))}
         </div>
       )}
 
-      {/* Regular tool calls accordion */}
       {resolvedCalls.length > 0 && (
         <>
           <div className="my-2 flex flex-row items-center justify-center gap-3">
-            <Avatar
-              className="h-[26px] w-[30px] text-xl"
-              avatar={
-                <img
-                  src={Sources}
-                  alt={'ToolCalls'}
-                  className="h-full w-full object-fill"
-                />
-              }
-            />
-            <button
-              className="flex flex-row items-center gap-2"
-              onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}
-            >
+            <Avatar className="h-[26px] w-[30px] text-xl" avatar={<img src={Sources} alt={'ToolCalls'} className="h-full w-full object-fill" />} />
+            <button className="flex flex-row items-center gap-2" onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}>
               <p className="text-base font-semibold">Tool Calls</p>
-              <img
-                src={ChevronDown}
-                alt="ChevronDown"
-                className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen ? 'rotate-180' : ''}`}
-              />
+              <img src={ChevronDown} alt="ChevronDown" className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen ? 'rotate-180' : ''}`} />
             </button>
           </div>
           {isToolCallsOpen && (
@@ -1097,72 +830,31 @@ function ToolCalls({
                     <div className="flex flex-col gap-1">
                       <div className="border-border flex flex-col rounded-2xl border">
                         <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
-                          <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                            Arguments
-                          </span>{' '}
-                          <CopyButton
-                            textToCopy={JSON.stringify(
-                              toolCall.arguments,
-                              null,
-                              2,
-                            )}
-                          />
+                          <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>Arguments</span>
+                          <CopyButton textToCopy={JSON.stringify(toolCall.arguments, null, 2)} />
                         </p>
                         <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                          <span
-                            className="dark:text-muted-foreground leading-[23px] text-black"
-                            style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                          >
+                          <span className="dark:text-muted-foreground leading-[23px] text-black" style={{ fontFamily: 'IBMPlexMono-Medium' }}>
                             {JSON.stringify(toolCall.arguments, null, 2)}
                           </span>
                         </p>
                       </div>
                       <div className="border-border flex flex-col rounded-2xl border">
                         <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
-                          <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                            Response
-                          </span>{' '}
-                          <CopyButton
-                            textToCopy={
-                              toolCall.status === 'error'
-                                ? toolCall.error || 'Unknown error'
-                                : JSON.stringify(toolCall.result, null, 2)
-                            }
-                          />
+                          <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>Response</span>
+                          <CopyButton textToCopy={toolCall.status === 'error' ? toolCall.error || 'Unknown error' : JSON.stringify(toolCall.result, null, 2)} />
                         </p>
-                        {toolCall.status === 'pending' && (
-                          <span className="dark:bg-card flex w-full items-center justify-center rounded-b-2xl p-2">
-                            <Spinner size="small" />
-                          </span>
-                        )}
+                        {toolCall.status === 'pending' && <span className="dark:bg-card flex w-full items-center justify-center rounded-b-2xl p-2"><Spinner size="small" /></span>}
                         {toolCall.status === 'completed' && (
                           <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                            <span
-                              className="dark:text-muted-foreground leading-[23px] text-black"
-                              style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                            >
+                            <span className="dark:text-muted-foreground leading-[23px] text-black" style={{ fontFamily: 'IBMPlexMono-Medium' }}>
                               {JSON.stringify(toolCall.result, null, 2)}
                             </span>
                           </p>
                         )}
                         {toolCall.status === 'error' && (
                           <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                            <span
-                              className="text-destructive leading-[23px]"
-                              style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                            >
-                              {toolCall.error}
-                            </span>
-                          </p>
-                        )}
-                        {toolCall.status === 'denied' && (
-                          <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                            <span
-                              className="text-muted-foreground leading-[23px]"
-                              style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                            >
-                              Denied by user
-                            </span>
+                            <span className="text-destructive leading-[23px]" style={{ fontFamily: 'IBMPlexMono-Medium' }}>{toolCall.error}</span>
                           </p>
                         )}
                       </div>
@@ -1171,8 +863,6 @@ function ToolCalls({
                 ))}
               </div>
             </div>
-          </div>
-        )}
           )}
         </>
       )}
@@ -1190,32 +880,13 @@ function Thought({
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
   const [isThoughtOpen, setIsThoughtOpen] = useState(false);
-
   return (
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
       <div className="my-2 flex flex-row items-center justify-center gap-3">
-        <Avatar
-          className="h-[26px] w-[30px] text-xl"
-          avatar={
-            <img
-              src={Cloud}
-              alt={'Thought'}
-              className="h-full w-full object-fill"
-            />
-          }
-        />
-        <button
-          className="flex flex-row items-center gap-2"
-          onClick={() => setIsThoughtOpen(!isThoughtOpen)}
-        >
-          <p className="text-base font-semibold">
-            {t('conversation.reasoning')}
-          </p>
-          <img
-            src={ChevronDown}
-            alt="ChevronDown"
-            className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isThoughtOpen ? 'rotate-180' : ''}`}
-          />
+        <Avatar className="h-[26px] w-[30px] text-xl" avatar={<img src={Cloud} alt={'Thought'} className="h-full w-full object-fill" />} />
+        <button className="flex flex-row items-center gap-2" onClick={() => setIsThoughtOpen(!isThoughtOpen)}>
+          <p className="text-base font-semibold">{t('conversation.reasoning')}</p>
+          <img src={ChevronDown} alt="ChevronDown" className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isThoughtOpen ? 'rotate-180' : ''}`} />
         </button>
       </div>
       {isThoughtOpen && (
@@ -1230,80 +901,33 @@ function Thought({
                   const { children, className, node, ref, ...rest } = props;
                   const match = /language-(\w+)/.exec(className || '');
                   const language = match ? match[1] : '';
-
                   return match ? (
                     <div className="group border-border relative overflow-hidden rounded-[14px] border">
                       <div className="bg-platinum dark:bg-muted flex items-center justify-between px-2 py-1">
-                        <span className="text-foreground dark:text-foreground text-xs font-medium">
-                          {language}
-                        </span>
-                        <CopyButton
-                          textToCopy={String(children).replace(/\n$/, '')}
-                        />
+                        <span className="text-foreground dark:text-foreground text-xs font-medium">{language}</span>
+                        <CopyButton textToCopy={String(children).replace(/\n$/, '')} />
                       </div>
-                      <SyntaxHighlighter
-                        {...rest}
-                        PreTag="div"
-                        language={language}
-                        style={isDarkTheme ? vscDarkPlus : oneLight}
-                        className="mt-0!"
-                        customStyle={{
-                          margin: 0,
-                          borderRadius: 0,
-                        }}
-                      >
+                      <SyntaxHighlighter {...rest} PreTag="div" language={language} style={isDarkTheme ? vscDarkPlus : oneLight} className="mt-0!" customStyle={{ margin: 0, borderRadius: 0 }}>
                         {String(children).replace(/\n$/, '')}
                       </SyntaxHighlighter>
                     </div>
                   ) : (
-                    <code className="dark:bg-accent dark:text-foreground rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
-                      {children}
-                    </code>
+                    <code className="dark:bg-accent dark:text-foreground rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">{children}</code>
                   );
                 },
-                ul({ children }) {
-                  return (
-                    <ul className="list-inside list-disc pl-4 whitespace-normal">
-                      {children}
-                    </ul>
-                  );
-                },
-                ol({ children }) {
-                  return (
-                    <ol className="list-inside list-decimal pl-4 whitespace-normal">
-                      {children}
-                    </ol>
-                  );
-                },
+                ul({ children }) { return <ul className="list-inside list-disc pl-4 whitespace-normal">{children}</ul>; },
+                ol({ children }) { return <ol className="list-inside list-decimal pl-4 whitespace-normal">{children}</ol>; },
                 table({ children }) {
                   return (
                     <div className="border-border relative overflow-x-auto rounded-lg border">
-                      <table className="dark:text-foreground w-full text-left text-gray-700">
-                        {children}
-                      </table>
+                      <table className="dark:text-foreground w-full text-left text-gray-700">{children}</table>
                     </div>
                   );
                 },
-                thead({ children }) {
-                  return (
-                    <thead className="bg-muted text-foreground text-xs uppercase">
-                      {children}
-                    </thead>
-                  );
-                },
-                tr({ children }) {
-                  return (
-                    <tr className="border-border odd:bg-card even:bg-muted border-b">
-                      {children}
-                    </tr>
-                  );
-                },
-                th({ children }) {
-                  return <th className="px-6 py-3">{children}</th>;
-                },
-                td({ children }) {
-                  return <td className="px-6 py-3">{children}</td>;
-                },
+                thead({ children }) { return <thead className="bg-muted text-foreground text-xs uppercase">{children}</thead>; },
+                tr({ children }) { return <tr className="border-border odd:bg-card even:bg-muted border-b">{children}</tr>; },
+                th({ children }) { return <th className="px-6 py-3">{children}</th>; },
+                td({ children }) { return <td className="px-6 py-3">{children}</td>; },
               }}
             >
               {preprocessLaTeX(thought ?? '')}
@@ -1314,3 +938,5 @@ function Thought({
     </div>
   );
 }
+
+export default ConversationBubble;

@@ -1453,6 +1453,7 @@ export default function MessageInput({
           }
         }, 0);
       }
+    }
   };
 
   const handleCancel = () => {
@@ -1774,11 +1775,11 @@ export default function MessageInput({
               onClick={handleSubmit}
               aria-label={t('send')}
               className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ease-in-out sm:h-9 sm:w-9 ${
-                (value.trim() || selectedImageBase64) && !loading
-                  ? 'bg-purple-30 text-white'
-                  : 'bg-[#EDEDED] text-[#959595] dark:bg-[#37383D] dark:text-[#77787D]'
-                value.trim() &&
-                !loading &&
+                (value.trim() || selectedImageBase64) && !loading &&
+                //   ? 'bg-purple-30 text-white'
+                //   : 'bg-[#EDEDED] text-[#959595] dark:bg-[#37383D] dark:text-[#77787D]'
+                // value.trim() &&
+                // !loading &&
                 recordingState !== 'recording' &&
                 recordingState !== 'transcribing'
                   ? 'bg-primary text-white'
