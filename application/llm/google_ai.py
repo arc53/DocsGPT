@@ -1,3 +1,4 @@
+# from curses import raw
 import logging
 
 from google import genai
@@ -446,9 +447,22 @@ class GoogleLLM(BaseLLM):
         """Get text from both SDK objects and dict-shaped test doubles."""
         if isinstance(part, dict):
             value = part.get("text")
-            return value if isinstance(value, str) else ""
-        value = getattr(part, "text", None)
-        return value if isinstance(value, str) else ""
+        else:
+            value = getattr(part, "text", None)
+
+        if isinstance(value, str):
+            return value
+
+        if isinstance(value, list) and len(value) > 0:
+            texts = []
+            for item in value:
+                if isinstance(item, dict):
+                    item_text = item.get("text")
+                    if isinstance(item_text, str) and item_text:
+                        texts.append(item_text)
+            return "\n".join(texts) if texts else ""
+
+        return ""
 
     @staticmethod
     def _is_thought_part(part):
@@ -476,6 +490,7 @@ class GoogleLLM(BaseLLM):
         config = types.GenerateContentConfig()
         if system_instruction:
             config.system_instruction = system_instruction
+        config.thinking_config = types.ThinkingConfig(thinking_budget=0)
         if tools:
             cleaned_tools = self._clean_tools_format(tools)
             config.tools = cleaned_tools
@@ -493,7 +508,23 @@ class GoogleLLM(BaseLLM):
         if tools:
             return response
         else:
-            return response.text
+            try:
+                text_parts = []
+                for part in response.candidates[0].content.parts:
+                    if getattr(part, "thought", False):
+                        continue
+                    text = getattr(part, "text", None)
+                    if isinstance(text, str) and text:
+                        text_parts.append(text)
+                    elif isinstance(text, list):
+                        for item in text:
+                            if isinstance(item, dict):
+                                item_text = item.get("text")
+                                if isinstance(item_text, str) and item_text:
+                                    text_parts.append(item_text)
+                return "\n".join(text_parts) if text_parts else ""
+            except Exception:
+                return response.text
 
     def _raw_gen_stream(
         self,
@@ -514,6 +545,7 @@ class GoogleLLM(BaseLLM):
         config = types.GenerateContentConfig()
         if system_instruction:
             config.system_instruction = system_instruction
+        config.thinking_config = types.ThinkingConfig(thinking_budget=0)
         if tools:
             cleaned_tools = self._clean_tools_format(tools)
             config.tools = cleaned_tools
@@ -555,21 +587,16 @@ class GoogleLLM(BaseLLM):
                                     yield part
                                     continue
 
-                                part_text = self._get_text_value(part)
-                                if not part_text:
+                                if self._is_thought_part(part):  
                                     continue
 
-                                if self._is_thought_part(part):
-                                    yield {"type": "thought", "thought": part_text}
-                                else:
+                                part_text = self._get_text_value(part) 
+                                if part_text:                            
                                     yield part_text
                 elif hasattr(chunk, "text"):
-                    chunk_text = self._get_text_value(chunk)
-                    if chunk_text:
-                        if self._is_thought_part(chunk):
-                            yield {"type": "thought", "thought": chunk_text}
-                        else:
-                            yield chunk_text
+                    raw = getattr(chunk, "text", None)
+                    if isinstance(raw, str) and raw and "'extras'" not in raw and '"extras"' not in raw:
+                        yield raw
         except Exception as e:
             logging.error(f"GoogleLLM: Stream error: {e}", exc_info=True)
             raise

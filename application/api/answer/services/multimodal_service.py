@@ -2,6 +2,7 @@ import json
 import re
 import logging
 from typing import Any, Dict, List, Optional
+from urllib import response
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from application.core.settings import settings
@@ -120,6 +121,7 @@ def run_multimodal_completion(
                 api_key=openai_key,
                 base_url=settings.OPENAI_BASE_URL,
                 temperature=0,
+                thinking_budget=0,
             )
 
         # Execute completion
@@ -133,7 +135,21 @@ def run_multimodal_completion(
             ))
         ])
         
-        return response.content if isinstance(response.content, str) else str(response.content)
+        content = response.content
+        if isinstance(content, str):
+            return content
+        elif isinstance(content, list):
+            text_parts = []
+            for item in content:
+                if isinstance(item, dict):
+                    # Skip signature/thought parts, extract only text
+                    if item.get("type") == "text" and item.get("text"):
+                        text_parts.append(item["text"])
+                elif isinstance(item, str):
+                    text_parts.append(item)
+            return "\n".join(text_parts) if text_parts else ""
+        else:
+            return str(content)
     
     except Exception as e:
         logger.error(f"Multimodal completion error: {str(e)}")
