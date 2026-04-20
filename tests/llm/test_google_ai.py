@@ -33,7 +33,7 @@ class _FakePart:
         self.function_call = function_call or kwargs.get("functionCall")
         self.file_data = file_data
         self.thought = thought
-        self.thoughtSignature = kwargs.get("thoughtSignature")
+        # self.thought_signature = kwargs.get("thought_signature") or kwargs.get("thoughtSignature")
 
     @staticmethod
     def from_text(text):
@@ -64,13 +64,24 @@ class FakeTypesModule:
     Part = _FakePart
     Content = _FakeContent
 
+    class ThinkingConfig:
+        def __init__(
+            self,
+            include_thoughts=None,
+            thinking_budget=0,
+            thinking_level=None,
+        ):
+            self.include_thoughts = include_thoughts
+            self.thinking_budget = thinking_budget
+            self.thinking_level = thinking_level
+
     class GenerateContentConfig:
-        def __init__(self):
-            self.system_instruction = None
-            self.tools = None
-            self.thinking_config = None
-            self.response_schema = None
-            self.response_mime_type = None
+        def __init__(self, **kwargs):
+            self.system_instruction = kwargs.get("system_instruction")
+            self.tools = kwargs.get("tools")
+            self.thinking_config = kwargs.get("thinking_config")
+            self.response_schema = kwargs.get("response_schema")
+            self.response_mime_type = kwargs.get("response_mime_type")
 
     class Tool:
         def __init__(self, function_declarations=None):
@@ -504,22 +515,11 @@ class TestRawGen:
 class TestRawGenStream:
 
     def test_yields_text_from_candidates(self, llm, monkeypatch):
-        part = types.SimpleNamespace(
-            text="chunk1", function_call=None, thought=False
-        )
-        candidate = types.SimpleNamespace(
-            content=types.SimpleNamespace(parts=[part])
-        )
+        part = FakeTypesModule.Part(text="chunk1", thought=False)
+        candidate = types.SimpleNamespace(content=types.SimpleNamespace(parts=[part]))
         chunk = types.SimpleNamespace(candidates=[candidate])
-
-        monkeypatch.setattr(
-            FakeModels,
-            "generate_content_stream",
-            lambda self, *a, **kw: [chunk],
-        )
-
-        msgs = [{"role": "user", "content": "hi"}]
-        result = list(llm._raw_gen_stream(llm, model="gemini", messages=msgs))
+        monkeypatch.setattr(FakeModels, "generate_content_stream", lambda self, *a, **kw: [chunk])
+        result = list(llm._raw_gen_stream(llm, model="gemini", messages=[{"role": "user", "content": "hi"}]))
         assert "chunk1" in result
 
     def test_yields_function_call_part(self, llm, monkeypatch):
@@ -543,22 +543,12 @@ class TestRawGenStream:
         assert any(hasattr(r, "function_call") for r in result)
 
     def test_yields_thought_event(self, llm, monkeypatch):
-        part = types.SimpleNamespace(
-            text="thinking", function_call=None, thought=True
-        )
-        candidate = types.SimpleNamespace(
-            content=types.SimpleNamespace(parts=[part])
-        )
+        part = _FakePart(text="thinking", thought=True)
+        candidate = types.SimpleNamespace(content=types.SimpleNamespace(parts=[part]))
         chunk = types.SimpleNamespace(candidates=[candidate])
-
-        monkeypatch.setattr(
-            FakeModels,
-            "generate_content_stream",
-            lambda self, *a, **kw: [chunk],
-        )
-
-        msgs = [{"role": "user", "content": "hi"}]
-        result = list(llm._raw_gen_stream(llm, model="gemini", messages=msgs))
+        monkeypatch.setattr(FakeModels, "generate_content_stream", lambda self, *a, **kw: [chunk])
+        
+        result = list(llm._raw_gen_stream(llm, model="gemini", messages=[{"role": "user", "content": "hi"}]))
         assert {"type": "thought", "thought": "thinking"} in result
 
     def test_text_only_chunk_via_hasattr(self, llm, monkeypatch):
@@ -975,19 +965,9 @@ class TestRawGenStreamAdditional:
         assert closed["called"]
 
     def test_text_chunk_via_hasattr_thought(self, llm, monkeypatch):
-        """Cover lines 517: thought part via hasattr text path."""
-        chunk = types.SimpleNamespace(
-            text="thought text", candidates=None, thought=True
-        )
-
-        monkeypatch.setattr(
-            FakeModels,
-            "generate_content_stream",
-            lambda self, *a, **kw: [chunk],
-        )
-
-        msgs = [{"role": "user", "content": "hi"}]
-        result = list(llm._raw_gen_stream(llm, model="gemini", messages=msgs))
+        chunk = _FakePart(text="thought text", thought=True)
+        monkeypatch.setattr(FakeModels, "generate_content_stream", lambda self, *a, **kw: [chunk])
+        result = list(llm._raw_gen_stream(llm, model="gemini", messages=[{"role": "user", "content": "hi"}]))
         assert {"type": "thought", "thought": "thought text"} in result
 
     def test_empty_text_chunk_via_hasattr_skipped(self, llm, monkeypatch):
@@ -1256,21 +1236,9 @@ class TestRawGenStreamAdditional2:
         assert "chunk1" in result
 
     def test_stream_thought_chunk_via_text_attr(self, llm, monkeypatch):
-        """Cover lines 528, 536-537: chunk with text attr but thought=True."""
-        from tests.llm.test_google_ai import FakeModels
-
-        chunk = types.SimpleNamespace(
-            text="thinking text", candidates=None, thought=True
-        )
-
-        monkeypatch.setattr(
-            FakeModels,
-            "generate_content_stream",
-            lambda self, *a, **kw: [chunk],
-        )
-
-        msgs = [{"role": "user", "content": "hi"}]
-        result = list(llm._raw_gen_stream(llm, model="gemini", messages=msgs))
+        chunk = FakeTypesModule.Part(text="thinking text", thought=True)
+        monkeypatch.setattr(FakeModels, "generate_content_stream", lambda self, *a, **kw: [chunk])
+        result = list(llm._raw_gen_stream(llm, model="gemini", messages=[{"role": "user", "content": "hi"}]))
         assert {"type": "thought", "thought": "thinking text"} in result
 
 

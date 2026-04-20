@@ -4,11 +4,13 @@ import pytest
 from application.llm.google_ai import GoogleLLM
 
 class _FakePart:
-    def __init__(self, text=None, function_call=None, file_data=None, thought=False):
+    def __init__(self, text=None, function_call=None, file_data=None, thought=False, **kwargs):
         self.text = text
         self.function_call = function_call
         self.file_data = file_data
         self.thought = thought
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
     @staticmethod
     def from_text(text):
@@ -40,21 +42,16 @@ class FakeTypesModule:
     Content = _FakeContent
 
     class ThinkingConfig:
-        def __init__(
-            self,
-            include_thoughts=None,
-            thinking_budget=None,
-            thinking_level=None,
-        ):
-            self.include_thoughts = include_thoughts
+        def __init__(self, thinking_budget=0, **kwargs):
             self.thinking_budget = thinking_budget
-            self.thinking_level = thinking_level
+            for k, v in kwargs.items():
+                setattr(self, k, v)
 
     class GenerateContentConfig:
         def __init__(self):
             self.system_instruction = None
             self.tools = None
-            self.thinking_config = None
+            self.thinking_config = None 
             self.response_schema = None
             self.response_mime_type = None
 
@@ -75,10 +72,12 @@ class FakeModels:
 
     def generate_content_stream(self, *args, **kwargs):
         self.last_args, self.last_kwargs = args, kwargs
-        # Simulate stream of text parts
-        part1 = types.SimpleNamespace(text="a", candidates=None)
-        part2 = types.SimpleNamespace(text="b", candidates=None)
-        return [part1, part2]
+        part1 = _FakePart(text="a")
+        part2 = _FakePart(text="b")
+        chunk = types.SimpleNamespace(
+            candidates=[types.SimpleNamespace(content=types.SimpleNamespace(parts=[part1, part2]))]
+        )
+        return [chunk]
 
 
 class FakeClient:
@@ -130,7 +129,8 @@ def test_raw_gen_stream_does_not_set_thinking_config_by_default(monkeypatch):
 
     def fake_stream(self, *args, **kwargs):
         captured["config"] = kwargs.get("config")
-        return [types.SimpleNamespace(text="a", candidates=None)]
+        part = _FakePart(text="a")
+        return [types.SimpleNamespace(candidates=[types.SimpleNamespace(content=types.SimpleNamespace(parts=[part]))])]
 
     monkeypatch.setattr(FakeModels, "generate_content_stream", fake_stream)
 
@@ -138,21 +138,19 @@ def test_raw_gen_stream_does_not_set_thinking_config_by_default(monkeypatch):
     msgs = [{"role": "user", "content": "hello"}]
     list(llm._raw_gen_stream(llm, model="gemini", messages=msgs, stream=True))
 
-    assert captured["config"].thinking_config is None
+    assert captured["config"].thinking_config.thinking_budget == 0
 
 
 def test_raw_gen_stream_emits_thought_events(monkeypatch):
     llm = GoogleLLM(api_key="key")
     msgs = [{"role": "user", "content": "hello"}]
 
-    thought_part = types.SimpleNamespace(
+    thought_part = _FakePart(
         text="thinking token",
-        function_call=None,
         thought=True,
     )
-    answer_part = types.SimpleNamespace(
+    answer_part = _FakePart(
         text="answer token",
-        function_call=None,
         thought=False,
     )
     chunk = types.SimpleNamespace(
@@ -163,12 +161,7 @@ def test_raw_gen_stream_emits_thought_events(monkeypatch):
         ]
     )
 
-    monkeypatch.setattr(
-        FakeModels,
-        "generate_content_stream",
-        lambda self, *args, **kwargs: [chunk],
-    )
-
+    monkeypatch.setattr(FakeModels, "generate_content_stream", lambda self, *a, **kw: [chunk])
     out = list(llm._raw_gen_stream(llm, model="gemini", messages=msgs, stream=True))
 
     assert {"type": "thought", "thought": "thinking token"} in out
