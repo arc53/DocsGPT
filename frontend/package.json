@@ -41,7 +41,7 @@
     "react-dom": "^19.2.5",
     "react-dropzone": "^14.3.8",
     "react-google-drive-picker": "^1.2.2",
-    "react-i18next": "^17.0.2",
+    "react-i18next": "^17.0.4",
     "react-markdown": "^9.0.1",
     "react-redux": "^9.2.0",
     "react-router-dom": "^7.14.1",
