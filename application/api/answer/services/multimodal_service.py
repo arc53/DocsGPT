@@ -2,7 +2,6 @@ import json
 import re
 import logging
 from typing import Any, Dict, List, Optional
-from urllib import response
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from application.core.settings import settings
