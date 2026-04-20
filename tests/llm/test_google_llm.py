@@ -157,6 +157,7 @@ def test_raw_gen_stream_emits_thought_events(monkeypatch):
         )
         monkeypatch.setattr(FakeModels, "generate_content_stream", lambda self, *a, **kw: [chunk])
         out = list(llm._raw_gen_stream(llm, model="gemini", messages=msgs, stream=True))
+
         assert "answer token" in out
         if len(out) > 1:
             assert {"type": "thought", "thought": "thinking token"} in out
