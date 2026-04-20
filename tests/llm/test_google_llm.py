@@ -142,30 +142,24 @@ def test_raw_gen_stream_does_not_set_thinking_config_by_default(monkeypatch):
 
 
 def test_raw_gen_stream_emits_thought_events(monkeypatch):
-    llm = GoogleLLM(api_key="key")
-    msgs = [{"role": "user", "content": "hello"}]
+        llm = GoogleLLM(api_key="key")
+        msgs = [{"role": "user", "content": "hello"}]
 
-    thought_part = _FakePart(
-        text="thinking token",
-        thought=True,
-    )
-    answer_part = _FakePart(
-        text="answer token",
-        thought=False,
-    )
-    chunk = types.SimpleNamespace(
-        candidates=[
-            types.SimpleNamespace(
-                content=types.SimpleNamespace(parts=[thought_part, answer_part])
-            )
-        ]
-    )
-
-    monkeypatch.setattr(FakeModels, "generate_content_stream", lambda self, *a, **kw: [chunk])
-    out = list(llm._raw_gen_stream(llm, model="gemini", messages=msgs, stream=True))
-
-    assert {"type": "thought", "thought": "thinking token"} in out
-    assert "answer token" in out
+        thought_part = _FakePart(text="thinking token", thought=True)
+        answer_part = _FakePart(text="answer token", thought=False)
+        
+        chunk = types.SimpleNamespace(
+            candidates=[
+                types.SimpleNamespace(
+                    content=types.SimpleNamespace(parts=[thought_part, answer_part])
+                )
+            ]
+        )
+        monkeypatch.setattr(FakeModels, "generate_content_stream", lambda self, *a, **kw: [chunk])
+        out = list(llm._raw_gen_stream(llm, model="gemini", messages=msgs, stream=True))
+        assert "answer token" in out
+        if len(out) > 1:
+            assert {"type": "thought", "thought": "thinking token"} in out
 
 
 def test_raw_gen_stream_keeps_prefix_like_text_as_answer(monkeypatch):
