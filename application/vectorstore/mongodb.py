@@ -1,7 +1,21 @@
 import logging
+from functools import cached_property
+
 from application.core.settings import settings
 from application.vectorstore.base import BaseVectorStore
 from application.vectorstore.document_class import Document
+
+
+def _lazy_import_pymongo():
+    """Lazy import of pymongo so installations that don't use the MongoDB vectorstore don't need it."""
+    try:
+        import pymongo
+    except ImportError as exc:
+        raise ImportError(
+            "Could not import pymongo python package. "
+            "Please install it with `pip install pymongo`."
+        ) from exc
+    return pymongo
 
 
 class MongoDBVectorStore(BaseVectorStore):
@@ -20,20 +34,23 @@ class MongoDBVectorStore(BaseVectorStore):
         self._embedding_key = embedding_key
         self._embeddings_key = embeddings_key
         self._mongo_uri = settings.MONGO_URI
+        self._database_name = database
+        self._collection_name = collection
         self._source_id = source_id.replace("application/indexes/", "").rstrip("/")
         self._embedding = self._get_embeddings(settings.EMBEDDINGS_NAME, embeddings_key)
 
-        try:
-            import pymongo
-        except ImportError:
-            raise ImportError(
-                "Could not import pymongo python package. "
-                "Please install it with `pip install pymongo`."
-            )
+    @cached_property
+    def _client(self):
+        pymongo = _lazy_import_pymongo()
+        return pymongo.MongoClient(self._mongo_uri)
 
-        self._client = pymongo.MongoClient(self._mongo_uri)
-        self._database = self._client[database]
-        self._collection = self._database[collection]
+    @cached_property
+    def _database(self):
+        return self._client[self._database_name]
+
+    @cached_property
+    def _collection(self):
+        return self._database[self._collection_name]
 
     def search(self, question, k=2, *args, **kwargs):
         query_vector = self._embedding.embed_query(question)

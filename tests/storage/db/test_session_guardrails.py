@@ -10,7 +10,7 @@ Two invariants are covered here:
 
 These tests run against a real ephemeral Postgres (via ``pg_engine``)
 rather than mocks. They rebuild the module-level engine cache so the
-``statement_timeout`` ``connect_args`` is actually exercised.
+engine factory's ``statement_timeout`` setup is actually exercised.
 """
 
 from __future__ import annotations
@@ -35,9 +35,9 @@ def wired_engine(pg_engine, monkeypatch):
     """Rebuild the module-level engine against the ephemeral DB.
 
     ``pg_engine`` already creates its own SQLAlchemy engine, but that
-    engine does not carry our ``statement_timeout`` ``connect_args``. We
-    reconstruct one via :func:`get_engine` so the real production factory
-    code path is exercised.
+    engine does not install our ``statement_timeout`` connect-event
+    hook. We reconstruct one via :func:`get_engine` so the real
+    production factory code path is exercised.
     """
     # Reset the module-level cache so get_engine() re-reads the URL and
     # applies the production connect_args.
@@ -129,7 +129,8 @@ class TestDbReadonlyEnforcement:
 
 
 class TestStatementTimeout:
-    """The engine factory installs ``statement_timeout`` via connect_args.
+    """The engine factory installs ``statement_timeout`` on every new
+    connection.
 
     We verify two things:
 
