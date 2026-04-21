@@ -3,7 +3,13 @@ title: Upgrading DocsGPT
 description: Upgrade your DocsGPT deployment across Docker Compose, source builds, and Kubernetes.
 ---
 
+import { Callout } from 'nextra/components'
+
 # Upgrading DocsGPT
+
+<Callout type="warning">
+  **Upgrading from 0.16.x?** User data moved from MongoDB to Postgres in 0.17.0. Follow the [Postgres Migration guide](/Deploying/Postgres-Migration) before running `docker compose pull` or `git pull` — existing deployments will not start cleanly without it.
+</Callout>
 
 ## Check your version
 
