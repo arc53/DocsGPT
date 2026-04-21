@@ -1,6 +1,7 @@
 export default {
   "index": "Home",
   "quickstart": "Quickstart",
+  "upgrading": "Upgrading",
   "Deploying": "Deploying",
   "Models": "Models",
   "Tools": "Tools",
