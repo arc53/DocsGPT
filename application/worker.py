@@ -51,6 +51,92 @@ RECURSION_DEPTH = 2
 def metadata_from_filename(title):
     return {"title": title}
 
+IMAGE_MIME_TYPES = {
+    "image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"
+}
+
+def attachment_worker(self, file_info, user):
+    filename = file_info["filename"]
+    attachment_id = file_info["attachment_id"]
+    relative_path = file_info["path"]
+    metadata = file_info.get("metadata", {})
+
+    try:
+        self.update_state(state="PROGRESS", meta={"current": 10})
+        storage = StorageCreator.get_storage()
+        
+        mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+        self.update_state(
+            state="PROGRESS", meta={"current": 30, "status": "Processing content"}
+        )
+
+        if mime_type in IMAGE_MIME_TYPES:
+            content = ""
+            token_count = 0
+        else:
+            file_extractor = get_default_file_extractor(
+                ocr_enabled=settings.DOCLING_OCR_ATTACHMENTS_ENABLED
+            )
+            attachment_document = storage.process_file(
+                relative_path,
+                lambda local_path, **kwargs: SimpleDirectoryReader(
+                    input_files=[local_path],
+                    exclude_hidden=True,
+                    errors="ignore",
+                    file_extractor=file_extractor,
+                    file_metadata=metadata_from_filename,
+                )
+                .load_data()[0],
+            )
+            content = attachment_document.text
+            parser_metadata = {
+                key: value
+                for key, value in (attachment_document.extra_info or {}).items()
+                if key.startswith("transcript_")
+            }
+            if parser_metadata:
+                metadata = {**metadata, **parser_metadata}
+
+            token_count = num_tokens_from_string(content)
+            if token_count > 100000:
+                content = content[:250000]
+                token_count = num_tokens_from_string(content)
+
+        self.update_state(
+            state="PROGRESS", meta={"current": 80, "status": "Storing in database"}
+        )
+
+        with db_session() as conn:
+            AttachmentsRepository(conn).create(
+                user, filename, relative_path,
+                mime_type=mime_type,
+                content=content,
+                token_count=token_count,
+                metadata=metadata,
+                legacy_mongo_id=str(attachment_id),
+            )
+
+        logging.info(
+            f"Stored attachment with ID: {attachment_id}", extra={"user": user}
+        )
+        self.update_state(state="PROGRESS", meta={"current": 100, "status": "Complete"})
+
+        return {
+            "filename": filename,
+            "path": relative_path,
+            "token_count": token_count,
+            "attachment_id": attachment_id,
+            "mime_type": mime_type,
+            "metadata": metadata,
+        }
+    except Exception as e:
+        logging.error(
+            f"Error processing file {filename}: {e}",
+            extra={"user": user},
+            exc_info=True,
+        )
+        raise
 
 def _normalize_file_name_map(file_name_map):
     if not file_name_map:

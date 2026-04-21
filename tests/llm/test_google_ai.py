@@ -80,7 +80,10 @@ class FakeTypesModule:
         def __init__(self, name=None, args=None):
             self.name = name
             self.args = args
-
+            
+    class ThinkingConfig:
+        def __init__(self, thinking_budget=0):
+            self.thinking_budget = thinking_budget
 
 class FakeModels:
     def __init__(self):
