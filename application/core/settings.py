@@ -149,6 +149,9 @@ class Settings(BaseSettings):
 
     FLASK_DEBUG_MODE: bool = False
     STORAGE_TYPE: str = "local"  # local or s3
+
+    # Anonymous startup version check for security issues.
+    VERSION_CHECK: bool = True
     URL_STRATEGY: str = "backend"  # backend or s3
 
     JWT_SECRET_KEY: str = ""

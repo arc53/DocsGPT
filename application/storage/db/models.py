@@ -117,6 +117,16 @@ stack_logs_table = Table(
     Column("timestamp", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
+# Singleton key/value table for instance-wide state (e.g. anonymous
+# instance UUID, one-shot notice flags). Added in migration
+# ``0002_app_metadata``.
+app_metadata_table = Table(
+    "app_metadata",
+    metadata,
+    Column("key", Text, primary_key=True),
+    Column("value", Text, nullable=False),
+)
+
 
 # --- Phase 2, Tier 2 --------------------------------------------------------
 

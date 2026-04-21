@@ -1,6 +1,8 @@
+import threading
+
 from celery import Celery
 from application.core.settings import settings
-from celery.signals import setup_logging, worker_process_init
+from celery.signals import setup_logging, worker_process_init, worker_ready
 
 
 def make_celery(app_name=__name__):
@@ -37,6 +39,26 @@ def _dispose_db_engine_on_fork(*args, **kwargs):
     except Exception:
         return
     dispose_engine()
+
+
+@worker_ready.connect
+def _run_version_check(*args, **kwargs):
+    """Kick off the anonymous version check on worker startup.
+
+    Runs in a daemon thread so a slow endpoint or bad DNS never holds
+    up the worker becoming ready for tasks. The check itself is
+    fail-silent (see ``application.updates.version_check.run_check``);
+    this handler's only job is to launch it and get out of the way.
+
+    Import is lazy so the symbol resolution never fires at module
+    import time — consistent with the ``_dispose_db_engine_on_fork``
+    pattern above.
+    """
+    try:
+        from application.updates.version_check import run_check
+    except Exception:
+        return
+    threading.Thread(target=run_check, name="version-check", daemon=True).start()
 
 
 celery = make_celery()
