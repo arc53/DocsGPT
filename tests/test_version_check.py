@@ -296,6 +296,31 @@ def test_redis_unavailable_proceeds_uncached(monkeypatch, enable_check):
 
 
 @pytest.mark.unit
+def test_unknown_version_warns_and_skips(monkeypatch, enable_check):
+    """get_version() → "unknown" must not hit the endpoint silently."""
+    repo = _FakeRepo({"version_check_notice_shown": "1"})
+    _install_repo(monkeypatch, repo)
+    _install_db_session(monkeypatch)
+    redis_client = _make_redis_mock(get_return=None, set_return=True)
+    monkeypatch.setattr(vc_module, "get_redis_instance", lambda: redis_client)
+    monkeypatch.setattr(vc_module, "get_version", lambda: "unknown")
+
+    post_spy = MagicMock()
+    monkeypatch.setattr(vc_module.requests, "post", post_spy)
+
+    with patch.object(vc_module, "logger") as mock_logger:
+        vc_module.run_check()
+
+    post_spy.assert_not_called()
+    redis_client.setex.assert_not_called()
+    # Lock released so the next cycle can retry.
+    redis_client.delete.assert_called_once_with(vc_module.LOCK_KEY)
+    assert mock_logger.warning.called
+    assert "unknown" in mock_logger.warning.call_args.args[0].lower() \
+        or mock_logger.warning.call_args.args[1:] == ("unknown",)
+
+
+@pytest.mark.unit
 def test_http_5xx_swallowed(monkeypatch, enable_check):
     repo = _FakeRepo({"version_check_notice_shown": "1"})
     _install_repo(monkeypatch, repo)

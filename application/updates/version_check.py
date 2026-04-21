@@ -192,8 +192,22 @@ def _release_lock(redis_client) -> None:
 
 
 def _fetch(instance_id: str) -> Optional[Dict[str, Any]]:
+    version = get_version()
+    if version in ("", "unknown"):
+        # The endpoint rejects payloads without a valid semver, and the
+        # rejection is otherwise logged at DEBUG — invisible under the
+        # usual ``-l INFO`` Celery worker start. Surface it loudly so a
+        # misconfigured release (missing or unset ``__version__``) is
+        # obvious instead of silently disabling the check.
+        logger.warning(
+            "version check: skipping — get_version() returned %r. "
+            "Set __version__ in application/version.py to a valid "
+            "version string.",
+            version,
+        )
+        return None
     payload = {
-        "version": get_version(),
+        "version": version,
         "instance_id": instance_id,
         "python_version": platform.python_version(),
         "platform": sys.platform,
