@@ -1,5 +1,4 @@
 import logging
-from urllib import response
 
 from google import genai
 from google.genai import types
@@ -38,21 +37,6 @@ class GoogleLLM(BaseLLM):
         ]
 
     def prepare_messages_with_attachments(self, messages, attachments=None):
-        #For Debugging
-        for attachment in attachments:
-                mime_type = attachment.get("mime_type")
-                logging.warning(f"DEBUG attachment keys: {list(attachment.keys())}")
-                logging.warning(f"DEBUG path: {attachment.get('path')}")
-                logging.warning(f"DEBUG mime_type: {mime_type}")
-
-                if mime_type in self.get_supported_attachment_types():
-                    try:
-                        file_uri = self._upload_file_to_google(attachment)
-                        logging.warning(f"DEBUG uploaded to Google: {file_uri}")
-                    except Exception as e:
-                        logging.error(f"DEBUG Error uploading file: {e}")
-        #End of Debugging
-
         """
         Process attachments using Google AI's file API for more efficient handling.
 
