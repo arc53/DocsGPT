@@ -344,9 +344,13 @@ const ConversationBubble = forwardRef<
                         className="relative transition-all duration-300"
                       >
                         <div
-                          className="bg-muted hover:bg-accent dark:bg-answer-bubble dark:hover:bg-muted h-28 cursor-pointer rounded-4xl p-4"
+                          className="bg-muted hover:bg-accent dark:bg-answer-bubble dark:hover:bg-primary/15 h-28 cursor-pointer rounded-4xl p-4 transition-colors"
                           onMouseOver={() => setActiveTooltip(index)}
                           onMouseOut={() => setActiveTooltip(null)}
+                          onTouchStart={() => setActiveTooltip(index)}
+                          onTouchEnd={() =>
+                            setTimeout(() => setActiveTooltip(null), 1500)
+                          }
                         >
                           <p className="ellipsis-text h-12 text-xs wrap-break-word">
                             {source.text}
@@ -388,7 +392,7 @@ const ConversationBubble = forwardRef<
                         </div>
                         {activeTooltip === index && (
                           <div
-                            className={`dark:bg-card dark:text-foreground absolute left-1/2 z-50 max-h-48 w-40 translate-x-[-50%] translate-y-[3px] rounded-xl bg-[#FBFBFB] p-4 text-black shadow-xl sm:w-56`}
+                            className="bg-card text-foreground border-border absolute left-1/2 z-50 max-h-48 w-40 translate-x-[-50%] translate-y-[3px] rounded-2xl border p-4 shadow-xl sm:w-56"
                             onMouseOver={() => setActiveTooltip(index)}
                             onMouseOut={() => setActiveTooltip(null)}
                           >
@@ -401,7 +405,7 @@ const ConversationBubble = forwardRef<
                     ))}
                     {(sources?.length ?? 0) > 3 && (
                       <div
-                        className="bg-muted text-primary hover:bg-accent hover:text-primary dark:bg-answer-bubble dark:hover:bg-muted dark:hover:text-primary flex h-28 cursor-pointer flex-col-reverse rounded-4xl p-4"
+                        className="bg-muted text-primary hover:bg-accent hover:text-primary dark:bg-answer-bubble dark:hover:bg-primary/15 dark:hover:text-primary flex h-28 cursor-pointer flex-col-reverse rounded-4xl p-4 transition-colors"
                         onClick={() => setIsSidebarOpen(true)}
                       >
                         <p className="ellipsis-text h-22 text-xs">
@@ -461,7 +465,7 @@ const ConversationBubble = forwardRef<
         {thought && (
           <Thought thought={thought} preprocessLaTeX={preprocessLaTeX} />
         )}
-        {message && (
+        {(message || (isStreaming && type === 'ANSWER')) && (
           <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
             <div className="my-2 flex flex-row items-center justify-center gap-3">
               <Avatar
@@ -479,190 +483,206 @@ const ConversationBubble = forwardRef<
               </p>
             </div>
             <div
-              className={`fade-in-bubble bg-answer-bubble mr-5 flex max-w-full rounded-[18px] px-6 py-4.5 ${
+              className={`fade-in-bubble bg-answer-bubble mr-5 flex max-w-full px-6 py-4.5 ${
                 type === 'ERROR'
                   ? 'text-destructive/80 dark:border-destructive dark:bg-destructive/15 relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal dark:text-white'
-                  : 'flex-col rounded-3xl'
+                  : 'flex-col rounded-[28px]'
               }`}
             >
-              {(() => {
-                const contentSegments = processMarkdownContent(message);
-                return (
-                  <>
-                    {contentSegments.map((segment, index) => (
-                      <Fragment key={index}>
-                        {segment.type === 'text' ? (
-                          <ReactMarkdown
-                            className="fade-in flex flex-col gap-3 leading-normal wrap-break-word whitespace-pre-wrap"
-                            remarkPlugins={[remarkGfm, remarkMath]}
-                            rehypePlugins={[rehypeKatex]}
-                            components={{
-                              a({ href, children }) {
-                                if (href?.startsWith('#cite-')) {
-                                  const num = href.replace('#cite-', '');
-                                  const sourceIdx = parseInt(num, 10) - 1;
+              {message ? (
+                (() => {
+                  const contentSegments = processMarkdownContent(message);
+                  return (
+                    <>
+                      {contentSegments.map((segment, index) => (
+                        <Fragment key={index}>
+                          {segment.type === 'text' ? (
+                            <ReactMarkdown
+                              className="fade-in flex flex-col gap-3 leading-normal wrap-break-word whitespace-pre-wrap"
+                              remarkPlugins={[remarkGfm, remarkMath]}
+                              rehypePlugins={[rehypeKatex]}
+                              components={{
+                                a({ href, children }) {
+                                  if (href?.startsWith('#cite-')) {
+                                    const num = href.replace('#cite-', '');
+                                    const sourceIdx = parseInt(num, 10) - 1;
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const el = document.getElementById(
+                                            `source-${sourceIdx}`,
+                                          );
+                                          if (el) {
+                                            el.scrollIntoView({
+                                              behavior: 'smooth',
+                                              block: 'center',
+                                            });
+                                            el.classList.add(
+                                              'ring-2',
+                                              'ring-purple-500',
+                                            );
+                                            setTimeout(
+                                              () =>
+                                                el.classList.remove(
+                                                  'ring-2',
+                                                  'ring-purple-500',
+                                                ),
+                                              2000,
+                                            );
+                                          }
+                                        }}
+                                        className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-purple-100 px-1.5 text-xs font-semibold text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
+                                        title={`Jump to source ${num}`}
+                                      >
+                                        {num}
+                                      </button>
+                                    );
+                                  }
                                   return (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const el = document.getElementById(
-                                          `source-${sourceIdx}`,
-                                        );
-                                        if (el) {
-                                          el.scrollIntoView({
-                                            behavior: 'smooth',
-                                            block: 'center',
-                                          });
-                                          el.classList.add(
-                                            'ring-2',
-                                            'ring-purple-500',
-                                          );
-                                          setTimeout(
-                                            () =>
-                                              el.classList.remove(
-                                                'ring-2',
-                                                'ring-purple-500',
-                                              ),
-                                            2000,
-                                          );
-                                        }
-                                      }}
-                                      className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-purple-100 px-1.5 text-xs font-semibold text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
-                                      title={`Jump to source ${num}`}
+                                    <a
+                                      href={href}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
                                     >
-                                      {num}
-                                    </button>
-                                  );
-                                }
-                                return (
-                                  <a
-                                    href={href}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  >
-                                    {children}
-                                  </a>
-                                );
-                              },
-                              code(props) {
-                                const {
-                                  children,
-                                  className,
-                                  node,
-                                  ref,
-                                  ...rest
-                                } = props;
-                                const match = /language-(\w+)/.exec(
-                                  className || '',
-                                );
-                                const language = match ? match[1] : '';
-
-                                return match ? (
-                                  <div className="group border-border relative overflow-hidden rounded-[14px] border">
-                                    <div className="bg-platinum dark:bg-muted flex items-center justify-between px-2 py-1">
-                                      <span className="text-foreground dark:text-foreground text-xs font-medium">
-                                        {language}
-                                      </span>
-                                      <CopyButton
-                                        textToCopy={String(children).replace(
-                                          /\n$/,
-                                          '',
-                                        )}
-                                      />
-                                    </div>
-                                    <SyntaxHighlighter
-                                      {...rest}
-                                      PreTag="div"
-                                      language={language}
-                                      style={
-                                        isDarkTheme ? vscDarkPlus : oneLight
-                                      }
-                                      className="mt-0!"
-                                      customStyle={{
-                                        margin: 0,
-                                        borderRadius: 0,
-                                      }}
-                                    >
-                                      {String(children).replace(/\n$/, '')}
-                                    </SyntaxHighlighter>
-                                  </div>
-                                ) : (
-                                  <code className="dark:bg-accent dark:text-foreground rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
-                                    {children}
-                                  </code>
-                                );
-                              },
-                              ul({ children }) {
-                                return (
-                                  <ul
-                                    className={`list-inside list-disc pl-4 whitespace-normal ${classes.list}`}
-                                  >
-                                    {children}
-                                  </ul>
-                                );
-                              },
-                              ol({ children }) {
-                                return (
-                                  <ol
-                                    className={`list-inside list-decimal pl-4 whitespace-normal ${classes.list}`}
-                                  >
-                                    {children}
-                                  </ol>
-                                );
-                              },
-                              table({ children }) {
-                                return (
-                                  <div className="border-border relative overflow-x-auto rounded-lg border">
-                                    <table className="dark:text-foreground w-full text-left text-gray-700">
                                       {children}
-                                    </table>
-                                  </div>
-                                );
-                              },
-                              thead({ children }) {
-                                return (
-                                  <thead className="bg-muted text-foreground text-xs uppercase">
-                                    {children}
-                                  </thead>
-                                );
-                              },
-                              tr({ children }) {
-                                return (
-                                  <tr className="border-border odd:bg-card even:bg-muted border-b">
-                                    {children}
-                                  </tr>
-                                );
-                              },
-                              th({ children }) {
-                                return (
-                                  <th className="px-6 py-3">{children}</th>
-                                );
-                              },
-                              td({ children }) {
-                                return (
-                                  <td className="px-6 py-3">{children}</td>
-                                );
-                              },
-                            }}
-                          >
-                            {segment.content}
-                          </ReactMarkdown>
-                        ) : (
-                          <div
-                            className="my-4 w-full"
-                            style={{ minWidth: '100%' }}
-                          >
-                            <MermaidRenderer
-                              code={segment.content}
-                              isLoading={isStreaming}
-                            />
-                          </div>
-                        )}
-                      </Fragment>
-                    ))}
-                  </>
-                );
-              })()}
+                                    </a>
+                                  );
+                                },
+                                code(props) {
+                                  const {
+                                    children,
+                                    className,
+                                    node,
+                                    ref,
+                                    ...rest
+                                  } = props;
+                                  const match = /language-(\w+)/.exec(
+                                    className || '',
+                                  );
+                                  const language = match ? match[1] : '';
+
+                                  return match ? (
+                                    <div className="group border-border relative overflow-hidden rounded-[14px] border">
+                                      <div className="bg-platinum dark:bg-muted flex items-center justify-between px-2 py-1">
+                                        <span className="text-foreground dark:text-foreground text-xs font-medium">
+                                          {language}
+                                        </span>
+                                        <CopyButton
+                                          textToCopy={String(children).replace(
+                                            /\n$/,
+                                            '',
+                                          )}
+                                        />
+                                      </div>
+                                      <SyntaxHighlighter
+                                        {...rest}
+                                        PreTag="div"
+                                        language={language}
+                                        style={
+                                          isDarkTheme ? vscDarkPlus : oneLight
+                                        }
+                                        className="mt-0!"
+                                        customStyle={{
+                                          margin: 0,
+                                          borderRadius: 0,
+                                        }}
+                                      >
+                                        {String(children).replace(/\n$/, '')}
+                                      </SyntaxHighlighter>
+                                    </div>
+                                  ) : (
+                                    <code className="dark:bg-accent dark:text-foreground rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
+                                      {children}
+                                    </code>
+                                  );
+                                },
+                                ul({ children }) {
+                                  return (
+                                    <ul
+                                      className={`list-inside list-disc pl-4 whitespace-normal ${classes.list}`}
+                                    >
+                                      {children}
+                                    </ul>
+                                  );
+                                },
+                                ol({ children }) {
+                                  return (
+                                    <ol
+                                      className={`list-inside list-decimal pl-4 whitespace-normal ${classes.list}`}
+                                    >
+                                      {children}
+                                    </ol>
+                                  );
+                                },
+                                table({ children }) {
+                                  return (
+                                    <div className="border-border relative overflow-x-auto rounded-lg border">
+                                      <table className="dark:text-foreground w-full text-left text-gray-700">
+                                        {children}
+                                      </table>
+                                    </div>
+                                  );
+                                },
+                                thead({ children }) {
+                                  return (
+                                    <thead className="bg-muted text-foreground text-xs uppercase">
+                                      {children}
+                                    </thead>
+                                  );
+                                },
+                                tr({ children }) {
+                                  return (
+                                    <tr className="border-border odd:bg-card even:bg-muted border-b">
+                                      {children}
+                                    </tr>
+                                  );
+                                },
+                                th({ children }) {
+                                  return (
+                                    <th className="px-6 py-3">{children}</th>
+                                  );
+                                },
+                                td({ children }) {
+                                  return (
+                                    <td className="px-6 py-3">{children}</td>
+                                  );
+                                },
+                              }}
+                            >
+                              {segment.content}
+                            </ReactMarkdown>
+                          ) : (
+                            <div
+                              className="my-4 w-full"
+                              style={{ minWidth: '100%' }}
+                            >
+                              <MermaidRenderer
+                                code={segment.content}
+                                isLoading={isStreaming}
+                              />
+                            </div>
+                          )}
+                        </Fragment>
+                      ))}
+                      {isStreaming && (
+                        <span
+                          className="streaming-cursor self-start"
+                          aria-hidden="true"
+                        >
+                          ▍
+                        </span>
+                      )}
+                    </>
+                  );
+                })()
+              ) : (
+                <div className="thinking-dots">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -842,7 +862,7 @@ function AllSources(sources: AllSourcesProps) {
     <div className="h-full w-full">
       <div className="w-full">
         <p className="text-left text-xl">{`${sources.sources.length} ${t('conversation.sources.title')}`}</p>
-        <div className="mx-1 mt-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40 lg:w-[95%]"></div>
+        <div className="bg-border mx-1 mt-2 h-px w-full rounded-full lg:w-[95%]"></div>
       </div>
       <div className="mt-6 flex h-[90%] w-52 flex-col gap-4 overflow-y-auto pr-3 sm:w-64">
         {sources.sources.map((source, index) => {
@@ -850,7 +870,7 @@ function AllSources(sources: AllSourcesProps) {
           return (
             <div
               key={index}
-              className={`group/card bg-muted hover:bg-accent dark:bg-card dark:hover:bg-muted relative w-full rounded-4xl p-4 transition-colors ${
+              className={`group/card border-border bg-card hover:bg-muted dark:border-border dark:bg-muted dark:hover:bg-accent relative w-full rounded-2xl border p-4 transition-colors ${
                 isExternalSource ? 'cursor-pointer' : ''
               }`}
               onClick={() =>
@@ -859,26 +879,18 @@ function AllSources(sources: AllSourcesProps) {
             >
               <p
                 title={source.title}
-                className={`ellipsis-text text-left text-sm font-semibold wrap-break-word ${
-                  isExternalSource
-                    ? 'group-hover/card:text-primary dark:group-hover/card:text-[#8C67D7]'
-                    : ''
-                }`}
+                className={`text-foreground text-left text-sm font-semibold wrap-break-word ${isExternalSource ? 'group-hover/card:text-primary' : ''}`}
               >
                 {`${index + 1}. ${source.title}`}
                 {isExternalSource && (
                   <img
                     src={Link}
                     alt="External Link"
-                    className={`ml-1 inline h-3 w-3 object-fill dark:invert ${
-                      isExternalSource
-                        ? 'group-hover/card:contrast-50 group-hover/card:hue-rotate-235 group-hover/card:invert-31 group-hover/card:saturate-752 group-hover/card:sepia-80 group-hover/card:filter'
-                        : ''
-                    }`}
+                    className="ml-1 inline h-3 w-3 object-fill opacity-60 dark:invert"
                   />
                 )}
               </p>
-              <p className="dark:text-foreground mt-3 line-clamp-4 rounded-md text-left text-xs wrap-break-word text-black">
+              <p className="text-muted-foreground mt-3 line-clamp-4 text-left text-xs wrap-break-word">
                 {source.text}
               </p>
             </div>

@@ -34,33 +34,39 @@ export function useOutsideAlerter<T extends HTMLElement>(
 }
 
 export function useMediaQuery() {
-  const mobileQuery = '(max-width: 768px)';
-  const tabletQuery = '(max-width: 1023px)';
-  const desktopQuery = '(min-width: 1024px)';
-  const [isMobile, setIsMobile] = useState(false);
-  const [isTablet, setIsTablet] = useState(false);
-  const [isDesktop, setIsDesktop] = useState(false);
+  const [isMobile, setIsMobile] = useState(
+    () => window.matchMedia('(max-width: 768px)').matches,
+  );
+  const [isTablet, setIsTablet] = useState(
+    () =>
+      window.matchMedia('(max-width: 1023px)').matches &&
+      !window.matchMedia('(max-width: 768px)').matches,
+  );
+  const [isDesktop, setIsDesktop] = useState(
+    () => window.matchMedia('(min-width: 1024px)').matches,
+  );
 
   useEffect(() => {
-    const mobileMedia = window.matchMedia(mobileQuery);
-    const tabletMedia = window.matchMedia(tabletQuery);
-    const desktopMedia = window.matchMedia(desktopQuery);
+    const mobileMedia = window.matchMedia('(max-width: 768px)');
+    const tabletMedia = window.matchMedia('(max-width: 1023px)');
+    const desktopMedia = window.matchMedia('(min-width: 1024px)');
 
-    const updateMediaQueries = () => {
+    const update = () => {
       setIsMobile(mobileMedia.matches);
-      setIsTablet(tabletMedia.matches && !mobileMedia.matches); // Tablet but not mobile
+      setIsTablet(tabletMedia.matches && !mobileMedia.matches);
       setIsDesktop(desktopMedia.matches);
     };
 
-    updateMediaQueries();
-
-    const listener = () => updateMediaQueries();
-    window.addEventListener('resize', listener);
+    mobileMedia.addEventListener('change', update);
+    tabletMedia.addEventListener('change', update);
+    desktopMedia.addEventListener('change', update);
 
     return () => {
-      window.removeEventListener('resize', listener);
+      mobileMedia.removeEventListener('change', update);
+      tabletMedia.removeEventListener('change', update);
+      desktopMedia.removeEventListener('change', update);
     };
-  }, [mobileQuery, tabletQuery, desktopQuery]);
+  }, []);
 
   return { isMobile, isTablet, isDesktop };
 }

@@ -3,7 +3,7 @@ layer(base);
 
 @import 'tailwindcss';
 
-@import "tw-animate-css";
+@import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -112,12 +112,12 @@ layer(base);
 
   /* Light theme scrollbar */
   &::-webkit-scrollbar-thumb {
-    background: #E2E8F0;
+    background: #e2e8f0;
     border-radius: 9999px;
   }
 
   &::-webkit-scrollbar-thumb:hover {
-    background: #8C9198;
+    background: #8c9198;
   }
 
   /* Dark theme scrollbar */
@@ -127,11 +127,11 @@ layer(base);
   }
 
   .dark &::-webkit-scrollbar-thumb:hover {
-    background: #F0F0F0;
+    background: #f0f0f0;
   }
 
   scrollbar-width: thin;
-  scrollbar-color: #E2E8F0 transparent;
+  scrollbar-color: #e2e8f0 transparent;
 
   .dark & {
     scrollbar-color: #949494 transparent;
@@ -154,11 +154,11 @@ layer(base);
   }
 
   &:hover::-webkit-scrollbar-thumb {
-    background: #E2E8F0;
+    background: #e2e8f0;
   }
 
   &:hover::-webkit-scrollbar-thumb:hover {
-    background: #8C9198;
+    background: #8c9198;
   }
 
   .dark &::-webkit-scrollbar-thumb {
@@ -171,7 +171,7 @@ layer(base);
   }
 
   .dark &:hover::-webkit-scrollbar-thumb:hover {
-    background: #F0F0F0;
+    background: #f0f0f0;
   }
 
   /* Standard scrollbar properties (Chrome 121+, Firefox) */
@@ -179,7 +179,7 @@ layer(base);
   scrollbar-color: transparent transparent;
 
   &:hover {
-    scrollbar-color: #E2E8F0 transparent;
+    scrollbar-color: #e2e8f0 transparent;
   }
 
   .dark & {
@@ -230,7 +230,7 @@ layer(base);
     & th,
     & td {
       scrollbar-width: thin;
-      scrollbar-color: #E2E8F0 transparent;
+      scrollbar-color: #e2e8f0 transparent;
     }
 
     .dark & th,
@@ -263,24 +263,24 @@ layer(base);
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #E2E8F0;
+    background: #e2e8f0;
     border-radius: 9999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #8C9198;
+    background: #8c9198;
   }
   .dark ::-webkit-scrollbar-thumb {
     background: #949494;
   }
   .dark ::-webkit-scrollbar-thumb:hover {
-    background: #F0F0F0;
+    background: #f0f0f0;
   }
 
   /* Firefox: base scrollbar styles (Firefox ignores ::-webkit-scrollbar) */
   @supports (-moz-appearance: none) {
     * {
       scrollbar-width: thin;
-      scrollbar-color: #E2E8F0 transparent;
+      scrollbar-color: #e2e8f0 transparent;
     }
     .dark * {
       scrollbar-color: #949494 transparent;
@@ -749,7 +749,7 @@ Avoid over-scrolling in mobile browsers
   }
 
   .fade-in {
-    animation: fadeIn 0.5s ease-in-out;
+    animation: fadeIn 0.3s ease-in-out;
   }
 
   @keyframes fadeIn {
@@ -763,19 +763,28 @@ Avoid over-scrolling in mobile browsers
 
   .fade-in-bubble {
     opacity: 0;
-    transform: translateY(10px);
-    animation: fadeInUp 0.5s forwards;
+    transform: translateY(8px);
+    animation: fadeInUp 0.25s ease-out forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in,
+    .fade-in-bubble {
+      animation: none;
+      opacity: 1;
+      transform: none;
+    }
   }
 
   .thinking-dots {
     display: inline-flex;
-    gap: 4px;
+    gap: 5px;
     align-items: center;
   }
 
   .thinking-dots span {
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background-color: #7d54d1;
     animation: thinkingBounce 1.4s infinite ease-in-out both;
@@ -788,17 +797,17 @@ Avoid over-scrolling in mobile browsers
   .thinking-dots span:nth-child(1) {
     animation-delay: -0.32s;
   }
-
   .thinking-dots span:nth-child(2) {
     animation-delay: -0.16s;
   }
-
   .thinking-dots span:nth-child(3) {
     animation-delay: 0s;
   }
 
   @keyframes thinkingBounce {
-    0%, 80%, 100% {
+    0%,
+    80%,
+    100% {
       transform: scale(0.6);
       opacity: 0.4;
     }
@@ -808,10 +817,41 @@ Avoid over-scrolling in mobile browsers
     }
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    .thinking-dots span {
+      animation: none;
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
   @keyframes fadeInUp {
     to {
       opacity: 1;
       transform: translateY(0);
+    }
+  }
+
+  /* Block-character cursor shown at the end of a streaming AI response */
+  .streaming-cursor {
+    display: inline-block;
+    vertical-align: text-bottom;
+    margin-left: 1px;
+    color: #8d66dd;
+    animation: blink-cursor 0.8s step-end infinite;
+  }
+
+  .dark .streaming-cursor {
+    color: #976af3;
+  }
+
+  @keyframes blink-cursor {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
     }
   }
 }

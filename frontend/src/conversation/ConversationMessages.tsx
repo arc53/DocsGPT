@@ -17,7 +17,7 @@ import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
 
 const SCROLL_THRESHOLD = 10;
-const LAST_BUBBLE_MARGIN = 'mb-32';
+const LAST_BUBBLE_MARGIN = 'mb-40';
 const DEFAULT_BUBBLE_MARGIN = 'mb-7';
 const FIRST_QUESTION_BUBBLE_MARGIN_TOP = 'mt-5';
 
@@ -62,6 +62,7 @@ export default function ConversationMessages({
   const { t } = useTranslation();
 
   const conversationRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [scrollButtonVisible, setScrollButtonVisible] = useState(false);
   const userInterruptedRef = useRef(false);
   const [interrupted, setInterrupted] = useState(false);
@@ -69,51 +70,54 @@ export default function ConversationMessages({
   const isInitialLoad = useRef(true);
   const prevQueriesRef = useRef(queries);
   const isAutoScrollingRef = useRef(false);
-  const smoothScrollTimeoutRef =
-    useRef<ReturnType<typeof setTimeout>>(undefined);
   const showButtonTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    return () => {
-      clearTimeout(smoothScrollTimeoutRef.current);
-      clearTimeout(showButtonTimerRef.current);
-    };
+    return () => clearTimeout(showButtonTimerRef.current);
   }, []);
 
   const isAtBottom = useCallback(() => {
     const el = conversationRef.current;
     if (!el) return true;
-    return el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
+    return (
+      el.scrollHeight - Math.max(0, el.scrollTop) - el.clientHeight <
+      SCROLL_THRESHOLD
+    );
   }, []);
 
-  // Arm on upward scroll intent; requiring !isAtBottom() missed small nudges still inside SCROLL_THRESHOLD.
-  const markInterruptedIfLoading = useCallback(() => {
-    if (userInterruptedRef.current || status !== 'loading') return;
+  const markInterrupted = useCallback(() => {
+    if (userInterruptedRef.current) return;
     userInterruptedRef.current = true;
     setInterrupted(true);
-  }, [status]);
+  }, []);
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
-      if (e.deltaY < 0) markInterruptedIfLoading();
+      if (e.deltaY < 0) markInterrupted();
     },
-    [markInterruptedIfLoading],
+    [markInterrupted],
   );
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    lastTouchYRef.current = e.touches[0].clientY;
-  }, []);
-
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent) => {
+  useEffect(() => {
+    const el = conversationRef.current;
+    if (!el) return;
+    const onTouchStart = (e: TouchEvent) => {
+      lastTouchYRef.current = e.touches[0].clientY;
+    };
+    const onTouchMove = (e: TouchEvent) => {
       const y = e.touches[0].clientY;
       if (lastTouchYRef.current !== null && y > lastTouchYRef.current) {
-        markInterruptedIfLoading();
+        markInterrupted();
       }
       lastTouchYRef.current = y;
-    },
-    [markInterruptedIfLoading],
-  );
+    };
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+    };
+  }, [markInterrupted]);
 
   const setButtonHidden = useCallback(() => {
     clearTimeout(showButtonTimerRef.current);
@@ -129,61 +133,34 @@ export default function ConversationMessages({
     }, 300);
   }, []);
 
-  const scrollConversationToBottom = useCallback(
-    (instant?: boolean) => {
-      if (!conversationRef.current) return;
-
-      isAutoScrollingRef.current = true;
-      clearTimeout(smoothScrollTimeoutRef.current);
-
-      requestAnimationFrame(() => {
-        if (!conversationRef?.current) return;
-
-        if (instant) {
-          conversationRef.current.scrollTop =
-            conversationRef.current.scrollHeight;
-          if (isAtBottom()) {
-            setButtonHidden();
-          }
-          isAutoScrollingRef.current = false;
-        } else {
-          conversationRef.current.scrollTo({
-            behavior: 'smooth',
-            top: conversationRef.current.scrollHeight,
-          });
-          smoothScrollTimeoutRef.current = setTimeout(() => {
-            if (isAtBottom()) {
-              setButtonHidden();
-            }
-            isAutoScrollingRef.current = false;
-          }, 500);
-        }
-      });
-    },
-    [isAtBottom, setButtonHidden],
-  );
+  const scrollToBottom = useCallback((instant = true) => {
+    const el = conversationRef.current;
+    if (!el) return;
+    isAutoScrollingRef.current = true;
+    if (instant) {
+      el.scrollTop = el.scrollHeight;
+    } else {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    }
+    requestAnimationFrame(() => {
+      isAutoScrollingRef.current = false;
+    });
+  }, []);
 
   const handleScroll = useCallback(() => {
     const el = conversationRef.current;
     if (!el) return;
-
     const atBottom = isAtBottom();
-
-    if (atBottom && userInterruptedRef.current) {
-      userInterruptedRef.current = false;
-      setInterrupted(false);
-    }
-
     if (atBottom) {
+      if (userInterruptedRef.current) {
+        userInterruptedRef.current = false;
+        setInterrupted(false);
+      }
       setButtonHidden();
       isAutoScrollingRef.current = false;
       return;
     }
-
-    if (isAutoScrollingRef.current) {
-      return;
-    }
-
+    if (isAutoScrollingRef.current) return;
     setButtonVisibleDebounced();
   }, [isAtBottom, setButtonHidden, setButtonVisibleDebounced]);
 
@@ -193,45 +170,83 @@ export default function ConversationMessages({
   const lastQueryThought = lastQuery?.thought;
 
   useEffect(() => {
-    if (interrupted) return;
-
     const prevQueries = prevQueriesRef.current;
     const isConversationSwitch =
       prevQueries !== queries && prevQueries[0] !== queries[0];
 
     if (isInitialLoad.current || isConversationSwitch) {
       isInitialLoad.current = false;
-      scrollConversationToBottom(true);
+      userInterruptedRef.current = false;
       prevQueriesRef.current = queries;
+      scrollToBottom(true);
       return;
     }
 
     const isNewMessage = queries.length > prevQueries.length;
     prevQueriesRef.current = queries;
 
-    scrollConversationToBottom(isNewMessage ? false : true);
+    if (isNewMessage) {
+      userInterruptedRef.current = false;
+      setInterrupted(false);
+      scrollToBottom(true);
+      return;
+    }
+
+    if (interrupted) return;
+
+    scrollToBottom(true);
   }, [
     queries.length,
     lastQueryResponse,
     lastQueryError,
     lastQueryThought,
     interrupted,
-    scrollConversationToBottom,
+    scrollToBottom,
   ]);
 
   useEffect(() => {
     if (status === 'idle') {
       userInterruptedRef.current = false;
       setInterrupted(false);
+      scrollToBottom(true);
     }
-  }, [status]);
+  }, [status, scrollToBottom]);
 
   useEffect(() => {
-    const currentConversationRef = conversationRef.current;
-    currentConversationRef?.addEventListener('scroll', handleScroll);
-    return () => {
-      currentConversationRef?.removeEventListener('scroll', handleScroll);
-    };
+    const el = contentRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      if (!userInterruptedRef.current) {
+        requestAnimationFrame(() => scrollToBottom(true));
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [scrollToBottom]);
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const mo = new MutationObserver((mutations) => {
+      if (userInterruptedRef.current) return;
+      const hasSvg = mutations.some((m) =>
+        Array.from(m.addedNodes).some(
+          (n) =>
+            n.nodeType === Node.ELEMENT_NODE &&
+            ((n as Element).tagName.toLowerCase() === 'svg' ||
+              !!(n as Element).querySelector('svg')),
+        ),
+      );
+      if (hasSvg) requestAnimationFrame(() => scrollToBottom(true));
+    });
+    mo.observe(el, { subtree: true, childList: true });
+    return () => mo.disconnect();
+  }, [scrollToBottom]);
+
+  useEffect(() => {
+    const el = conversationRef.current;
+    el?.addEventListener('scroll', handleScroll);
+    return () => el?.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
   const retryIconProps = {
@@ -248,9 +263,16 @@ export default function ConversationMessages({
       ? LAST_BUBBLE_MARGIN
       : DEFAULT_BUBBLE_MARGIN;
 
-    if (query.thought || query.response || query.tool_calls || query.research) {
-      const isCurrentlyStreaming =
-        status === 'loading' && index === queries.length - 1;
+    const isCurrentlyStreaming =
+      status === 'loading' && index === queries.length - 1;
+
+    if (
+      query.thought ||
+      query.response ||
+      query.tool_calls ||
+      query.research ||
+      isCurrentlyStreaming
+    ) {
       return (
         <ConversationBubble
           className={bubbleMargin}
@@ -303,36 +325,6 @@ export default function ConversationMessages({
       );
     }
 
-    if (status === 'loading' && isLastMessage) {
-      return (
-        <div
-          className={`fade-in-bubble flex flex-wrap self-start ${bubbleMargin} group dark:text-foreground flex-col`}
-        >
-          <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-            <div className="my-2 flex flex-row items-center justify-center gap-3">
-              <div className="flex h-8.5 w-8.5 items-center justify-center overflow-hidden rounded-full">
-                <img
-                  src={DocsGPT3}
-                  alt={t('conversation.answer')}
-                  className="h-full w-full object-cover"
-                />
-              </div>
-              <p className="text-base font-semibold">
-                {t('conversation.answer')}
-              </p>
-            </div>
-            <div className="bg-gray-1000 dark:bg-gun-metal mr-5 flex rounded-3xl px-6 py-5">
-              <div className="thinking-dots">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
     return null;
   };
 
@@ -340,16 +332,14 @@ export default function ConversationMessages({
     <div
       ref={conversationRef}
       onWheel={handleWheel}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      className="flex h-full w-full justify-center overflow-y-auto will-change-scroll sm:pt-6 lg:pt-12"
+      className="flex h-full w-full justify-center overflow-y-auto overscroll-y-contain will-change-scroll sm:pt-6 lg:pt-12"
     >
       {queries.length > 0 && (
         <button
           onClick={() => {
             userInterruptedRef.current = false;
             setInterrupted(false);
-            scrollConversationToBottom();
+            scrollToBottom(false);
           }}
           aria-label={t('Scroll to bottom') || 'Scroll to bottom'}
           className={`border-border bg-card fixed bottom-40 left-1/2 z-10 flex h-7 w-7 -translate-x-1/2 items-center justify-center rounded-full border transition-all duration-300 ease-in-out md:right-14 md:left-auto md:h-9 md:w-9 md:translate-x-0 ${
@@ -367,6 +357,7 @@ export default function ConversationMessages({
       )}
 
       <div
+        ref={contentRef}
         className={
           isSplitView
             ? 'w-full max-w-325 px-2'

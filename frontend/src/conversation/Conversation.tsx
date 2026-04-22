@@ -8,6 +8,7 @@ import MessageInput from '../components/MessageInput';
 import { useMediaQuery } from '../hooks';
 import {
   selectConversationId,
+  selectAgentLoading,
   selectSelectedAgent,
   selectToken,
 } from '../preferences/preferenceSlice';
@@ -37,6 +38,7 @@ export default function Conversation() {
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
   const selectedAgent = useSelector(selectSelectedAgent);
+  const agentLoading = useSelector(selectAgentLoading);
   const completedAttachments = useSelector(selectCompletedAttachments);
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] =
@@ -236,7 +238,7 @@ export default function Conversation() {
           isSplitArtifactOpen ? 'w-[60%] px-6' : 'w-full'
         }`}
       >
-        <div className="relative min-h-0 flex-1 ">
+        <div className="relative min-h-0 flex-1">
           <ConversationMessages
             handleQuestion={handleQuestion}
             handleQuestionSubmission={handleQuestionSubmission}
@@ -249,17 +251,38 @@ export default function Conversation() {
             isSplitView={isSplitArtifactOpen}
             headerContent={
               selectedAgent ? (
-                <div className="flex w-full items-center justify-center py-4">
+                <div className="fade-in flex w-full items-center justify-center py-4">
                   <SharedAgentCard agent={selectedAgent} />
+                </div>
+              ) : agentLoading ? (
+                <div className="flex w-full items-center justify-center py-4">
+                  <div className="border-border flex w-full max-w-[720px] animate-pulse flex-col rounded-3xl border p-6 shadow-xs sm:w-fit sm:min-w-[480px]">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-muted h-12 w-12 rounded-full" />
+                      <div className="flex flex-1 flex-col gap-2">
+                        <div className="bg-muted h-4 w-32 rounded-full" />
+                        <div className="bg-muted h-3 w-52 rounded-full" />
+                      </div>
+                    </div>
+                    <div className="mt-8">
+                      <div className="bg-muted h-4 w-28 rounded-full" />
+                      <div className="mt-3 flex gap-2">
+                        <div className="bg-muted h-6 w-20 rounded-full" />
+                        <div className="bg-muted h-6 w-16 rounded-full" />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ) : undefined
             }
           />
-          <div className="from-background pointer-events-none absolute right-1.5 bottom-0 left-0 h-6 rounded-t-2xl bg-linear-to-t to-transparent" />
+          {status !== 'loading' && (
+            <div className="from-background pointer-events-none absolute right-1.5 bottom-0 left-0 h-12 rounded-t-2xl bg-linear-to-t to-transparent" />
+          )}
         </div>
 
         <div
-          className={`bg-opacity-0 z-3 flex h-auto w-full flex-col items-end self-center rounded-2xl py-1 ${
+          className={`bg-background z-10 flex h-auto w-full flex-col items-end self-center pt-2 pb-1 ${
             isSplitArtifactOpen
               ? 'max-w-[1300px]'
               : 'max-w-[1300px] md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12'

@@ -47,6 +47,7 @@ import {
   setAgents,
   setConversations,
   setModalStateDeleteConv,
+  setAgentLoading,
   setSelectedAgent,
   setSharedAgents,
 } from './preferences/preferenceSlice';
@@ -217,6 +218,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         return;
       }
 
+      dispatch(setAgentLoading(true));
       let agent: Agent;
       if (data.is_shared_usage) {
         const sharedResponse = await userService.getSharedAgent(
@@ -224,18 +226,22 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           token,
         );
         if (!sharedResponse.ok) {
+          dispatch(setAgentLoading(false));
           navigate('/');
           return;
         }
         agent = await sharedResponse.json();
+        dispatch(setAgentLoading(false));
         navigate(`/agents/shared/${agent.shared_token}`);
       } else {
         const agentResponse = await userService.getAgent(data.agent_id, token);
         if (!agentResponse.ok) {
+          dispatch(setAgentLoading(false));
           navigate('/');
           return;
         }
         agent = await agentResponse.json();
+        dispatch(setAgentLoading(false));
         if (agent.shared_token) {
           navigate(`/agents/shared/${agent.shared_token}`);
         } else {
@@ -244,6 +250,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         }
       }
     } catch (error) {
+      dispatch(setAgentLoading(false));
       console.error('Error handling conversation click:', error);
       navigate('/');
     }
@@ -258,6 +265,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       }),
     );
     dispatch(setSelectedAgent(null));
+    dispatch(setAgentLoading(false));
   };
 
   const newChat = () => {
