@@ -1,5 +1,7 @@
+a2wsgi==1.10.10
 alembic>=1.13,<2
 anthropic==0.88.0
+asgiref>=3.11.1
 boto3==1.42.83
 beautifulsoup4==4.14.3
 cel-python==0.5.0
@@ -76,6 +78,7 @@ requests==2.33.1
 retry==0.9.2
 sentence-transformers==5.3.0
 sqlalchemy>=2.0,<3
+starlette>=1.0,<2
 tiktoken==0.12.0
 tokenizers==0.22.2
 torch==2.11.0
@@ -85,6 +88,8 @@ typing-extensions==4.15.0
 typing-inspect==0.9.0
 tzdata==2026.1
 urllib3==2.6.3
+uvicorn[standard]>=0.30,<1
+uvicorn-worker>=0.4,<1
 vine==5.1.0
 wcwidth==0.6.0
 werkzeug>=3.1.0

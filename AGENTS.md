@@ -37,6 +37,22 @@ Run the Flask API (if needed):
 flask --app application/app.py run --host=0.0.0.0 --port=7091
 ```
 
+That's the fast inner-loop option — quick startup, the Werkzeug interactive
+debugger still works, and it hot-reloads on source changes. It serves the
+Flask routes only (`/api/*`, `/stream`, etc.).
+
+If you need to exercise the full ASGI stack — the `/mcp` FastMCP endpoint,
+or to match the production runtime exactly — run the ASGI composition under
+uvicorn instead:
+
+```bash
+uvicorn application.asgi:asgi_app --host 0.0.0.0 --port 7091 --reload
+```
+
+Production uses `gunicorn -k uvicorn_worker.UvicornWorker` against the same
+`application.asgi:asgi_app` target; see `application/Dockerfile` for the
+full flag set.
+
 Run the Celery worker in a separate terminal (if needed):
 
 ```bash

@@ -148,15 +148,5 @@ def authenticate_request():
         request.decoded_token = decoded_token
 
 
-@app.after_request
-def after_request(response):
-    response.headers.add("Access-Control-Allow-Origin", "*")
-    response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
-    response.headers.add(
-        "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"
-    )
-    return response
-
-
 if __name__ == "__main__":
     app.run(debug=settings.FLASK_DEBUG_MODE, port=7091)
