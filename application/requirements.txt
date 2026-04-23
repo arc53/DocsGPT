@@ -34,6 +34,7 @@ joblib==1.5.3
 jsonpatch==1.33
 jsonpointer==3.1.1
 kombu==5.6.2
+litellm>=1.60.0,<2.0.0
 langchain==1.2.3
 langchain-community==0.4.1
 langchain-core==1.2.29

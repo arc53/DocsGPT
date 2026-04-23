@@ -1,0 +1,9 @@
+provider: litellm
+api_key_env: LITELLM_API_KEY
+models:
+  - id: openai/gpt-4o
+    name: GPT-4o (via LiteLLM)
+    token_limit: 128000
+  - id: anthropic/claude-sonnet-4-20250514
+    name: Claude Sonnet 4 (via LiteLLM)
+    token_limit: 200000
