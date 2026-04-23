@@ -87,6 +87,16 @@ class TestSearchEmptyWhenNoSources:
         with _fake_db_readonly({"extra_source_ids": [], "source_id": None}):
             assert search("k", "q", 5) == []
 
+    def test_returns_empty_for_zero_chunks_without_db_lookup(self):
+        with patch("application.services.search_service.db_readonly") as mock_db:
+            assert search("k", "q", 0) == []
+        mock_db.assert_not_called()
+
+    def test_returns_empty_for_negative_chunks_without_db_lookup(self):
+        with patch("application.services.search_service.db_readonly") as mock_db:
+            assert search("k", "q", -1) == []
+        mock_db.assert_not_called()
+
 
 @pytest.mark.unit
 class TestSearchResults:

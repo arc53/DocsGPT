@@ -54,6 +54,7 @@ def test_mcp_endpoint_mounted_and_lifespan_runs():
         r = client.post(
             "/mcp/",
             headers={
+                "Origin": "http://example.com",
                 "Content-Type": "application/json",
                 "Accept": "application/json, text/event-stream",
             },
@@ -72,6 +73,7 @@ def test_mcp_endpoint_mounted_and_lifespan_runs():
     # A successful initialize returns 200 with a Mcp-Session-Id header.
     assert r.status_code == 200
     assert "mcp-session-id" in {k.lower() for k in r.headers.keys()}
+    assert r.headers.get("access-control-expose-headers") == "Mcp-Session-Id"
 
 
 @pytest.mark.unit
@@ -113,7 +115,7 @@ def test_cors_preflight_on_flask_route():
 
 @pytest.mark.unit
 def test_cors_preflight_on_mcp_route():
-    """Browser clients hitting /mcp should also get CORS preflight handled."""
+    """Browser clients hitting /mcp should be allowed to send session headers."""
     from starlette.testclient import TestClient
 
     from application.asgi import asgi_app
@@ -124,8 +126,11 @@ def test_cors_preflight_on_mcp_route():
             headers={
                 "Origin": "http://example.com",
                 "Access-Control-Request-Method": "POST",
-                "Access-Control-Request-Headers": "Authorization, Content-Type",
+                "Access-Control-Request-Headers": (
+                    "Authorization, Content-Type, Mcp-Session-Id"
+                ),
             },
         )
     assert r.status_code in (200, 204)
     assert r.headers.get("access-control-allow-origin") == "*"
+    assert "Mcp-Session-Id" in r.headers.get("access-control-allow-headers", "")

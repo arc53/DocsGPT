@@ -38,6 +38,17 @@ class TestSearchDocsTool:
                 await search_docs(query="hi")
 
     @pytest.mark.asyncio
+    async def test_blank_bearer_token_raises_permission_error(self):
+        from application.mcp_server import search_docs
+
+        with patch(
+            "application.mcp_server.get_http_headers",
+            return_value={"authorization": "Bearer    "},
+        ):
+            with pytest.raises(PermissionError):
+                await search_docs(query="hi")
+
+    @pytest.mark.asyncio
     async def test_invalid_api_key_raises_permission_error(self):
         from application.mcp_server import search_docs
         from application.services.search_service import InvalidAPIKey

@@ -32,9 +32,10 @@ mcp = FastMCP("docsgpt")
 
 def _extract_bearer_token() -> str | None:
     auth = get_http_headers(include={"authorization"}).get("authorization", "")
-    if not auth.lower().startswith("bearer "):
+    parts = auth.split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1]:
         return None
-    return auth.split(None, 1)[1]
+    return parts[1]
 
 
 @mcp.tool

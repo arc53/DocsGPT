@@ -52,7 +52,7 @@ def _search_sources(
     Per-source errors are logged and skipped so one broken index doesn't
     take down the whole search. Results are de-duplicated by content hash.
     """
-    if not source_ids:
+    if chunks <= 0 or not source_ids:
         return []
 
     results: List[Dict[str, Any]] = []
@@ -134,6 +134,9 @@ def search(api_key: str, query: str, chunks: int = 5) -> List[Dict[str, Any]]:
         InvalidAPIKey: if ``api_key`` does not resolve to an agent.
         SearchFailed: on unexpected DB / infrastructure errors.
     """
+    if chunks <= 0:
+        return []
+
     try:
         with db_readonly() as conn:
             agent = AgentsRepository(conn).find_by_key(api_key)

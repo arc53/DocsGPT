@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import logging.config
 
 # NCSA common log format:
 #   %(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"
