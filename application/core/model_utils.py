@@ -11,6 +11,8 @@ def get_api_key_for_provider(provider: str) -> Optional[str]:
         "openai": settings.OPENAI_API_KEY,
         "openrouter": settings.OPEN_ROUTER_API_KEY,
         "novita": settings.NOVITA_API_KEY,
+        "astraflow": settings.ASTRAFLOW_API_KEY,
+        "astraflow-cn": settings.ASTRAFLOW_CN_API_KEY,
         "anthropic": settings.ANTHROPIC_API_KEY,
         "google": settings.GOOGLE_API_KEY,
         "groq": settings.GROQ_API_KEY,
