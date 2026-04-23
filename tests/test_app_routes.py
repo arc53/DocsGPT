@@ -105,6 +105,26 @@ class TestAuthenticateRequest:
             assert response.status_code == 200
 
 
-# CORS is handled at the Starlette layer (application/asgi.py) so that
-# both the Flask mount and the /mcp mount get consistent headers. See
-# tests/test_asgi.py for the replacement coverage.
+class TestFlaskCors:
+
+    @pytest.mark.unit
+    def test_cors_headers_on_flask_route(self, client):
+        response = client.get("/api/health", headers={"Origin": "http://localhost:5173"})
+        assert response.headers["Access-Control-Allow-Origin"] == "*"
+        assert response.headers["Access-Control-Allow-Headers"] == "Content-Type, Authorization"
+        assert response.headers["Access-Control-Allow-Methods"] == "GET, POST, PUT, DELETE, OPTIONS"
+
+    @pytest.mark.unit
+    def test_cors_headers_on_flask_preflight(self, client):
+        response = client.options(
+            "/api/health",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "Content-Type",
+            },
+        )
+        assert response.status_code == 200
+        assert response.headers["Access-Control-Allow-Origin"] == "*"
+        assert response.headers["Access-Control-Allow-Headers"] == "Content-Type, Authorization"
+        assert response.headers["Access-Control-Allow-Methods"] == "GET, POST, PUT, DELETE, OPTIONS"
