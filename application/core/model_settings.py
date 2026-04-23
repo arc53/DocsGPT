@@ -123,9 +123,7 @@ class ModelRegistry:
             settings.LLM_PROVIDER == "huggingface" and settings.API_KEY
         ):
             self._add_huggingface_models(settings)
-        if settings.LITELLM_API_KEY or (
-            settings.LLM_PROVIDER == "litellm" and settings.API_KEY
-        ):
+        if settings.LLM_PROVIDER == "litellm":
             self._add_litellm_models(settings)
         # Default model selection
         if settings.LLM_NAME:
