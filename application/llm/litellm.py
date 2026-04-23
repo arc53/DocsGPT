@@ -8,8 +8,8 @@ Users configure ``LLM_PROVIDER=litellm`` and set ``LLM_NAME`` to any
 LiteLLM-supported model string (e.g. ``anthropic/claude-3-haiku``,
 ``azure/gpt-4o``, ``bedrock/anthropic.claude-v2``).  Provider-specific
 API keys are read from standard environment variables
-(``OPENAI_API_KEY``, ``ANTHROPIC_API_KEY``, etc.) or from the
-``LITELLM_API_KEY`` setting when using LiteLLM Proxy.
+(``OPENAI_API_KEY``, ``ANTHROPIC_API_KEY``, etc.) — LiteLLM picks
+them up automatically.
 """
 
 import json
@@ -25,12 +25,11 @@ class LiteLLM(BaseLLM):
     """LiteLLM provider — unified gateway to 100+ LLM providers.
 
     Args:
-        api_key: API key passed to ``litellm.completion``.  When using
-            LiteLLM Proxy this is the proxy key; otherwise the
-            provider-specific key (or ``None`` to let LiteLLM read
-            from environment variables).
+        api_key: API key forwarded to ``litellm.completion``.  Defaults
+            to ``settings.API_KEY``.  LiteLLM also reads provider-specific
+            keys from environment variables automatically.
         user_api_key: Optional user-provided API key override.
-        base_url: Optional base URL for LiteLLM Proxy.
+        base_url: Optional custom base URL.
     """
 
     def __init__(
@@ -42,7 +41,7 @@ class LiteLLM(BaseLLM):
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
-        self.api_key = api_key or settings.LITELLM_API_KEY or settings.API_KEY
+        self.api_key = api_key or settings.API_KEY
         self.user_api_key = user_api_key
         self.litellm_base_url = base_url
 

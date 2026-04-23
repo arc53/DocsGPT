@@ -85,8 +85,7 @@ class _Response:
 def llm():
     """Return a LiteLLM instance with settings stubbed."""
     with mock.patch("application.llm.litellm.settings") as mock_settings:
-        mock_settings.LITELLM_API_KEY = "test-key"
-        mock_settings.API_KEY = None
+        mock_settings.API_KEY = "test-key"
         return LiteLLM(api_key="test-key")
 
 
