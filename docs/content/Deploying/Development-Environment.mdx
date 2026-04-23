@@ -104,7 +104,15 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     flask --app application/app.py run --host=0.0.0.0 --port=7091
     ```
 
-    This command will launch the backend server, making it accessible on `http://localhost:7091`.
+    This command will launch the backend server, making it accessible on `http://localhost:7091`. It's the fastest inner-loop option for day-to-day development — the Werkzeug interactive debugger still works and it hot-reloads on source changes. It serves the Flask routes only.
+
+    If you need to exercise the full ASGI stack — the `/mcp` endpoint (FastMCP server), or to match the production runtime — run the ASGI composition under uvicorn instead:
+
+    ```bash
+    uvicorn application.asgi:asgi_app --host 0.0.0.0 --port 7091 --reload
+    ```
+
+    Production uses `gunicorn -k uvicorn_worker.UvicornWorker` against the same `application.asgi:asgi_app` target.
 
 6.  **Start the Celery Worker:**
 
