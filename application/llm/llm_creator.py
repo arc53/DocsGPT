@@ -10,6 +10,7 @@ from application.llm.openai import AzureOpenAILLM, OpenAILLM
 from application.llm.premai import PremAILLM
 from application.llm.sagemaker import SagemakerAPILLM
 from application.llm.open_router import OpenRouterLLM
+from application.llm.novita import AstraflowCNLLM, AstraflowLLM
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,15 @@ class LLMCreator:
         "google": GoogleLLM,
         "novita": NovitaLLM,
         "openrouter": OpenRouterLLM,
+        # Astraflow (UCloud ModelVerse) – global
+        "astraflow": AstraflowLLM,
+        "astra-flow": AstraflowLLM,
+        "astra_flow": AstraflowLLM,
+        "modelverse": AstraflowLLM,
+        # Astraflow – China region
+        "astraflow-cn": AstraflowCNLLM,
+        "astraflow-china": AstraflowCNLLM,
+        "astraflow_cn": AstraflowCNLLM,
     }
 
     @classmethod

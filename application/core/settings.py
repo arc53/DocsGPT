@@ -95,6 +95,8 @@ class Settings(BaseSettings):
     HUGGINGFACE_API_KEY: Optional[str] = None
     OPEN_ROUTER_API_KEY: Optional[str] = None
     NOVITA_API_KEY: Optional[str] = None
+    ASTRAFLOW_API_KEY: Optional[str] = None
+    ASTRAFLOW_CN_API_KEY: Optional[str] = None
 
     OPENAI_API_BASE: Optional[str] = None  # azure openai api base url
     OPENAI_API_VERSION: Optional[str] = None  # azure openai api version
@@ -196,6 +198,8 @@ class Settings(BaseSettings):
         "GROQ_API_KEY",
         "HUGGINGFACE_API_KEY",
         "NOVITA_API_KEY",
+        "ASTRAFLOW_API_KEY",
+        "ASTRAFLOW_CN_API_KEY",
         "EMBEDDINGS_KEY",
         "FALLBACK_LLM_API_KEY",
         "QDRANT_API_KEY",
