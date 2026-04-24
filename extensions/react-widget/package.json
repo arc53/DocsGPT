@@ -69,8 +69,8 @@
     "@types/markdown-it": "^14.1.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@typescript-eslint/eslint-plugin": "^8.57.2",
-    "@typescript-eslint/parser": "^8.57.2",
+    "@typescript-eslint/eslint-plugin": "^8.59.0",
+    "@typescript-eslint/parser": "^8.59.0",
     "babel-loader": "^10.1.1",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
@@ -82,7 +82,7 @@
     "prettier": "^3.8.1",
     "process": "^0.11.10",
     "svgo": "^4.0.1",
-    "typescript": "^5.3.3"
+    "typescript": "^6.0.3"
   },
   "publishConfig": {
     "access": "public"

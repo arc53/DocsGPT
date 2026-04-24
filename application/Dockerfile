@@ -88,5 +88,15 @@ EXPOSE 7091
 # Switch to non-root user
 USER appuser
 
-# Start Gunicorn
-CMD ["gunicorn", "-w", "1", "--timeout", "120", "--bind", "0.0.0.0:7091", "--preload", "application.wsgi:app"]
+CMD ["gunicorn", \
+     "-w", "1", \
+     "-k", "uvicorn_worker.UvicornWorker", \
+     "--bind", "0.0.0.0:7091", \
+     "--timeout", "180", \
+     "--graceful-timeout", "120", \
+     "--keep-alive", "5", \
+     "--worker-tmp-dir", "/dev/shm", \
+     "--max-requests", "1000", \
+     "--max-requests-jitter", "100", \
+     "--config", "application/gunicorn_conf.py", \
+     "application.asgi:asgi_app"]

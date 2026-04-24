@@ -4,7 +4,7 @@ import platform
 import uuid
 
 import dotenv
-from flask import Flask, jsonify, redirect, request
+from flask import Flask, Response, jsonify, redirect, request
 from jose import jwt
 
 from application.auth import handle_auth
@@ -149,12 +149,11 @@ def authenticate_request():
 
 
 @app.after_request
-def after_request(response):
-    response.headers.add("Access-Control-Allow-Origin", "*")
-    response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
-    response.headers.add(
-        "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"
-    )
+def after_request(response: Response) -> Response:
+    """Add CORS headers for the pure Flask development entrypoint."""
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
     return response
 
 

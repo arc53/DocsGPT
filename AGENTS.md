@@ -37,6 +37,22 @@ Run the Flask API (if needed):
 flask --app application/app.py run --host=0.0.0.0 --port=7091
 ```
 
+That's the fast inner-loop option — quick startup, the Werkzeug interactive
+debugger still works, and it hot-reloads on source changes. It serves the
+Flask routes only (`/api/*`, `/stream`, etc.).
+
+If you need to exercise the full ASGI stack — the `/mcp` FastMCP endpoint,
+or to match the production runtime exactly — run the ASGI composition under
+uvicorn instead:
+
+```bash
+uvicorn application.asgi:asgi_app --host 0.0.0.0 --port 7091 --reload
+```
+
+Production uses `gunicorn -k uvicorn_worker.UvicornWorker` against the same
+`application.asgi:asgi_app` target; see `application/Dockerfile` for the
+full flag set.
+
 Run the Celery worker in a separate terminal (if needed):
 
 ```bash
@@ -99,7 +115,7 @@ vale .
 - `frontend/`: Vite + React + TypeScript application.
 - `frontend/src/`: main UI code, including `components`, `conversation`, `hooks`, `locale`, `settings`, `upload`, and Redux store wiring in `store.ts`.
 - `docs/`: separate documentation site built with Next.js/Nextra.
-- `extensions/`: integrations and widgets such as Chatwoot, Chrome, Discord, React widget, Slack bot, and web widget.
+- `extensions/`: integrations and widgets — currently the Chatwoot webhook bridge and the React widget (published to npm as `docsgpt`). The Discord bot, Slack bot, and Chrome extension have been moved to their own repos under `arc53/`.
 - `deployment/`: Docker Compose variants and Kubernetes manifests.
 
 ## Coding rules

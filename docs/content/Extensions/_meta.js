@@ -11,10 +11,6 @@ export default {
     "title": "🔎 Search Widget",
     "href": "/Extensions/search-widget"
   },
-  "Chrome-extension": {
-    "title": "🌐 Chrome Extension",
-    "href": "/Extensions/Chrome-extension"
-  },
   "Chatwoot-extension": {
     "title": "🗣️ Chatwoot Extension",
     "href": "/Extensions/Chatwoot-extension"
