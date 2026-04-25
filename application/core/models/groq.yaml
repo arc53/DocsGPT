@@ -1,0 +1,16 @@
+provider: groq
+defaults:
+  supports_tools: true
+  context_window: 131072
+
+models:
+  - id: openai/gpt-oss-120b
+    display_name: GPT-OSS 120B
+    description: OpenAI's open-weight 120B flagship served on Groq's LPU hardware; strong general reasoning with strict structured output support
+    supports_structured_output: true
+  - id: llama-3.3-70b-versatile
+    display_name: Llama 3.3 70B Versatile
+    description: Meta's Llama 3.3 70B for general-purpose chat with parallel tool use
+  - id: llama-3.1-8b-instant
+    display_name: Llama 3.1 8B Instant
+    description: Small, very low-latency Llama model (~560 tok/s) with parallel tool use

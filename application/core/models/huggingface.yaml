@@ -1,0 +1,7 @@
+provider: huggingface
+
+models:
+  - id: huggingface-local
+    display_name: Hugging Face Model
+    description: Local Hugging Face model
+    supports_tools: false

@@ -1,6 +1,6 @@
 """Repository for the ``agents`` table.
 
-This is the most complex Phase 2 repository. Covers every write operation
+Covers every write operation
 the legacy Mongo code performs on ``agents_collection``:
 
 - create, update, delete

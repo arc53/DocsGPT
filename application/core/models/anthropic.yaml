@@ -1,0 +1,23 @@
+provider: anthropic
+defaults:
+  supports_tools: true
+  attachments: [image]
+  context_window: 200000
+
+models:
+  - id: claude-opus-4-7
+    display_name: Claude Opus 4.7
+    description: Most capable Claude model for complex reasoning and agentic coding
+    context_window: 1000000
+    supports_structured_output: true
+
+  - id: claude-sonnet-4-6
+    display_name: Claude Sonnet 4.6
+    description: Best balance of speed and intelligence with extended thinking
+    context_window: 1000000
+    supports_structured_output: true
+
+  - id: claude-haiku-4-5
+    display_name: Claude Haiku 4.5
+    description: Fastest Claude model with near-frontier intelligence
+    supports_structured_output: true

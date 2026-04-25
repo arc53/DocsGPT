@@ -348,6 +348,16 @@ def run_agent_logic(agent_config, input_data):
             model_id = agent_default_model
         else:
             model_id = get_default_model_id()
+            if agent_default_model:
+                # Stored model_id no longer resolves in the registry. Log so
+                # operators can detect bad YAML edits before users complain;
+                # behavior matches the historical silent fallback.
+                logging.warning(
+                    "Agent %s references unknown model_id %r; falling back to %r",
+                    agent_id,
+                    agent_default_model,
+                    model_id,
+                )
 
         # Get provider and API key for the selected model
         provider = get_provider_from_model_id(model_id) if model_id else settings.LLM_PROVIDER

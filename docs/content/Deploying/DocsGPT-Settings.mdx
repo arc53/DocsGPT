@@ -99,6 +99,82 @@ EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2 # You can al
 
 In this case, even though you are using Ollama locally, `LLM_PROVIDER` is set to `openai` because Ollama (and many other local inference engines) are designed to be API-compatible with OpenAI. `OPENAI_BASE_URL` points DocsGPT to the local Ollama server.
 
+## Adding Custom Models (`MODELS_CONFIG_DIR`)
+
+DocsGPT ships with a built-in catalog of models for the providers it
+supports out of the box (OpenAI, Anthropic, Google, Groq, OpenRouter,
+Novita, Azure OpenAI, Hugging Face, DocsGPT). To add **your own
+models** without forking the repo — for example, a Mistral or Together
+account, a self-hosted vLLM endpoint, or any other OpenAI-compatible
+API — point `MODELS_CONFIG_DIR` at a directory of YAML files.
+
+```
+MODELS_CONFIG_DIR=/etc/docsgpt/models
+MISTRAL_API_KEY=sk-...
+```
+
+A minimal YAML for one provider:
+
+```yaml
+# /etc/docsgpt/models/mistral.yaml
+provider: openai_compatible
+display_provider: mistral
+api_key_env: MISTRAL_API_KEY
+base_url: https://api.mistral.ai/v1
+defaults:
+  supports_tools: true
+  context_window: 128000
+models:
+  - id: mistral-large-latest
+    display_name: Mistral Large
+  - id: mistral-small-latest
+    display_name: Mistral Small
+```
+
+After restart, those models appear in `/api/models` and are selectable
+in the UI. A working template lives at
+`application/core/models/examples/mistral.yaml.example`.
+
+**What you can do:**
+
+- Add new `openai_compatible` providers (Mistral, Together, Fireworks,
+  Ollama, vLLM, ...) — one YAML per provider, each with its own
+  `api_key_env` and `base_url`.
+- Extend an existing provider's catalog by dropping a YAML with the
+  same `provider:` value as the built-in (e.g. `provider: anthropic`
+  with extra models).
+- Override a built-in model's capabilities by re-declaring the same
+  `id` — later wins, override is logged at `WARNING`.
+
+**What you cannot do via `MODELS_CONFIG_DIR`:** add a brand-new
+non-OpenAI provider. That requires a Python plugin under
+`application/llm/providers/`. See
+`application/core/models/README.md` for the full schema reference.
+
+### Docker
+
+Mount the directory and set the env var:
+
+```yaml
+# docker-compose.yml
+services:
+  app:
+    image: arc53/docsgpt
+    environment:
+      MODELS_CONFIG_DIR: /etc/docsgpt/models
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY}
+    volumes:
+      - ./my-models:/etc/docsgpt/models:ro
+```
+
+### Misconfiguration
+
+If `MODELS_CONFIG_DIR` is set but the path doesn't exist (or isn't a
+directory), the app logs a `WARNING` at boot and continues with just
+the built-in catalog — it does **not** fail to start. If a YAML
+declares an unknown provider name or has a schema error, the app
+**does** fail to start, with the offending file path in the message.
+
 ## Speech-to-Text Settings
 
 DocsGPT can transcribe audio in two places:
