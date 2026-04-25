@@ -7,16 +7,16 @@ import ArtifactSidebar from '../components/ArtifactSidebar';
 import MessageInput from '../components/MessageInput';
 import { useMediaQuery } from '../hooks';
 import {
-  selectConversationId,
   selectAgentLoading,
+  selectConversationId,
   selectSelectedAgent,
   selectToken,
 } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
+import { selectCompletedAttachments } from '../upload/uploadSlice';
 import { handleSendFeedback } from './conversationHandlers';
 import ConversationMessages from './ConversationMessages';
 import { FEEDBACK, Query } from './conversationModels';
-import { ToolCallsType } from './types';
 import {
   addQuery,
   fetchAnswer,
@@ -26,7 +26,7 @@ import {
   submitToolActions,
   updateQuery,
 } from './conversationSlice';
-import { selectCompletedAttachments } from '../upload/uploadSlice';
+import { ToolCallsType } from './types';
 
 export default function Conversation() {
   const { t } = useTranslation();
@@ -43,6 +43,7 @@ export default function Conversation() {
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] =
     useState<boolean>(false);
+  const [scrollDistFromBottom, setScrollDistFromBottom] = useState<number>(0);
 
   const handleToolAction = useCallback(
     (callId: string, decision: 'approved' | 'denied', comment?: string) => {
@@ -249,6 +250,7 @@ export default function Conversation() {
             onOpenArtifact={handleOpenArtifact}
             onToolAction={handleToolAction}
             isSplitView={isSplitArtifactOpen}
+            onScrolledFromBottom={setScrollDistFromBottom}
             headerContent={
               selectedAgent ? (
                 <div className="fade-in flex w-full items-center justify-center py-4">
@@ -256,7 +258,7 @@ export default function Conversation() {
                 </div>
               ) : agentLoading ? (
                 <div className="flex w-full items-center justify-center py-4">
-                  <div className="border-border flex w-full max-w-[720px] animate-pulse flex-col rounded-3xl border p-6 shadow-xs sm:w-fit sm:min-w-[480px]">
+                  <div className="border-border flex w-full max-w-180 animate-pulse flex-col rounded-3xl border p-6 shadow-xs sm:w-fit sm:min-w-120">
                     <div className="flex items-center gap-3">
                       <div className="bg-muted h-12 w-12 rounded-full" />
                       <div className="flex flex-1 flex-col gap-2">
@@ -276,16 +278,22 @@ export default function Conversation() {
               ) : undefined
             }
           />
-          {status !== 'loading' && (
-            <div className="from-background pointer-events-none absolute right-1.5 bottom-0 left-0 h-12 rounded-t-2xl bg-linear-to-t to-transparent" />
-          )}
+          <div
+            className="from-background pointer-events-none absolute right-1.5 bottom-0 left-0 h-12 rounded-t-2xl bg-linear-to-t to-transparent"
+            style={{
+              opacity:
+                status !== 'loading'
+                  ? Math.min(scrollDistFromBottom / 90, 1)
+                  : 0,
+            }}
+          />
         </div>
 
         <div
           className={`bg-background z-10 flex h-auto w-full flex-col items-end self-center pt-2 pb-1 ${
             isSplitArtifactOpen
-              ? 'max-w-[1300px]'
-              : 'max-w-[1300px] md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12'
+              ? 'max-w-325'
+              : 'max-w-325 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12'
           }`}
         >
           <div className="flex w-full items-center rounded-[40px] px-2">

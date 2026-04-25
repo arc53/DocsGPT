@@ -832,7 +832,23 @@ Avoid over-scrolling in mobile browsers
     }
   }
 
-  /* Block-character cursor shown at the end of a streaming AI response */
+  .prose-streaming > p:last-child::after,
+  .prose-streaming > ul:last-child > li:last-child::after,
+  .prose-streaming > ol:last-child > li:last-child::after {
+    content: '▎';
+    display: inline-block;
+    vertical-align: middle;
+    margin-left: 3px;
+    color: #8d66dd;
+    animation: blink-cursor 0.8s step-end infinite;
+  }
+
+  .dark .prose-streaming > p:last-child::after,
+  .dark .prose-streaming > ul:last-child > li:last-child::after,
+  .dark .prose-streaming > ol:last-child > li:last-child::after {
+    color: #976af3;
+  }
+
   .streaming-cursor {
     display: inline-block;
     vertical-align: text-bottom;

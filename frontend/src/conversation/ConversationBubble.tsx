@@ -492,13 +492,21 @@ const ConversationBubble = forwardRef<
               {message ? (
                 (() => {
                   const contentSegments = processMarkdownContent(message);
+                  const lastTextSegmentIndex = contentSegments.reduce(
+                    (last, seg, i) => (seg.type === 'text' ? i : last),
+                    -1,
+                  );
                   return (
                     <>
                       {contentSegments.map((segment, index) => (
                         <Fragment key={index}>
                           {segment.type === 'text' ? (
                             <ReactMarkdown
-                              className="fade-in flex flex-col gap-3 leading-normal wrap-break-word whitespace-pre-wrap"
+                              className={`fade-in flex flex-col gap-3 leading-normal wrap-break-word whitespace-pre-wrap${
+                                isStreaming && index === lastTextSegmentIndex
+                                  ? ' prose-streaming'
+                                  : ''
+                              }`}
                               remarkPlugins={[remarkGfm, remarkMath]}
                               rehypePlugins={[rehypeKatex]}
                               components={{
@@ -665,7 +673,7 @@ const ConversationBubble = forwardRef<
                           )}
                         </Fragment>
                       ))}
-                      {isStreaming && (
+                      {isStreaming && lastTextSegmentIndex === -1 && (
                         <span
                           className="streaming-cursor self-start"
                           aria-hidden="true"
