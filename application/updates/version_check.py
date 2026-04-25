@@ -1,9 +1,11 @@
-"""Anonymous startup version-check client.
+"""Anonymous version-check client.
 
-Called once per Celery worker boot (see ``application/celery_init.py``
-``worker_ready`` handler). Posts the running version + anonymous
-instance UUID to ``gptcloud.arc53.com/api/check``, caches the response
-in Redis, and surfaces any advisories to stdout + logs.
+Fired on every Celery worker boot (see ``application/celery_init.py``
+``worker_ready`` handler) and on a 7h periodic schedule (see the
+``version-check`` entry in ``application/api/user/tasks.py``). Posts
+the running version + anonymous instance UUID to
+``gptcloud.arc53.com/api/check``, caches the response in Redis, and
+surfaces any advisories to stdout + logs.
 
 Design invariants — all enforced by a broad ``try/except`` at the top
 of :func:`run_check`:
