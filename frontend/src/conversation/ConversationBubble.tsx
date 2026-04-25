@@ -152,10 +152,10 @@ const ConversationBubble = forwardRef<
                     <img
                       src={DocumentationDark}
                       alt="Attachment"
-                      className="h-[15px] w-[15px] object-fill"
+                      className="h-3.75 w-3.75 object-fill"
                     />
                   </div>
-                  <span className="max-w-[150px] truncate font-normal">
+                  <span className="max-w-37.5 truncate font-normal">
                     {file.fileName}
                   </span>
                 </div>
@@ -322,7 +322,7 @@ const ConversationBubble = forwardRef<
               <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
                 <div className="my-2 flex flex-row items-center justify-center gap-3">
                   <Avatar
-                    className="h-[26px] w-[30px] text-xl"
+                    className="h-6.5 w-7.5 text-xl"
                     avatar={
                       <img
                         src={Sources}
@@ -374,7 +374,7 @@ const ConversationBubble = forwardRef<
                             <img
                               src={Document}
                               alt="Document"
-                              className="h-[17px] w-[17px] object-fill"
+                              className="h-4.25 w-4.25 object-fill"
                             />
                             <p
                               className="mt-0.5 truncate text-xs"
@@ -392,11 +392,11 @@ const ConversationBubble = forwardRef<
                         </div>
                         {activeTooltip === index && (
                           <div
-                            className="bg-card text-foreground border-border absolute left-1/2 z-50 max-h-48 w-40 translate-x-[-50%] translate-y-[3px] rounded-2xl border p-4 shadow-xl sm:w-56"
+                            className="bg-card text-foreground border-border absolute left-1/2 z-50 max-h-48 w-40 translate-x-[-50%] translate-y-0.75 rounded-2xl border p-4 shadow-xl sm:w-56"
                             onMouseOver={() => setActiveTooltip(index)}
                             onMouseOut={() => setActiveTooltip(null)}
                           >
-                            <p className="line-clamp-6 max-h-[164px] overflow-hidden rounded-md text-sm wrap-break-word text-ellipsis">
+                            <p className="line-clamp-6 max-h-41 overflow-hidden rounded-md text-sm wrap-break-word text-ellipsis">
                               {source.text}
                             </p>
                           </div>
@@ -469,7 +469,7 @@ const ConversationBubble = forwardRef<
           <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
             <div className="my-2 flex flex-row items-center justify-center gap-3">
               <Avatar
-                className="h-[34px] w-[34px] text-2xl"
+                className="h-8.5 w-8.5 text-2xl"
                 avatar={
                   <img
                     src={DocsGPT3}
@@ -504,7 +504,7 @@ const ConversationBubble = forwardRef<
                             <ReactMarkdown
                               className={`fade-in flex flex-col gap-3 leading-normal wrap-break-word whitespace-pre-wrap${
                                 isStreaming && index === lastTextSegmentIndex
-                                  ? ' prose-streaming'
+                                  ? 'prose-streaming'
                                   : ''
                               }`}
                               remarkPlugins={[remarkGfm, remarkMath]}
@@ -867,12 +867,12 @@ function AllSources(sources: AllSourcesProps) {
   };
 
   return (
-    <div className="h-full w-full">
+    <div className="flex h-full w-full flex-col">
       <div className="w-full">
         <p className="text-left text-xl">{`${sources.sources.length} ${t('conversation.sources.title')}`}</p>
         <div className="bg-border mx-1 mt-2 h-px w-full rounded-full lg:w-[95%]"></div>
       </div>
-      <div className="mt-6 flex h-[90%] w-52 flex-col gap-4 overflow-y-auto pr-3 sm:w-64">
+      <div className="mt-6 flex w-52 flex-1 flex-col gap-4 overflow-y-auto pr-3 sm:w-64">
         {sources.sources.map((source, index) => {
           const isExternalSource = source.link && source.link !== 'local';
           return (
@@ -1056,7 +1056,7 @@ function ToolCalls({
         <>
           <div className="my-2 flex flex-row items-center justify-center gap-3">
             <Avatar
-              className="h-[26px] w-[30px] text-xl"
+              className="h-6.5 w-7.5 text-xl"
               avatar={
                 <img
                   src={Sources}
@@ -1103,7 +1103,7 @@ function ToolCalls({
                         </p>
                         <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
                           <span
-                            className="dark:text-muted-foreground leading-[23px] text-black"
+                            className="dark:text-muted-foreground leading-5.75 text-black"
                             style={{ fontFamily: 'IBMPlexMono-Medium' }}
                           >
                             {JSON.stringify(toolCall.arguments, null, 2)}
@@ -1131,7 +1131,7 @@ function ToolCalls({
                         {toolCall.status === 'completed' && (
                           <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
                             <span
-                              className="dark:text-muted-foreground leading-[23px] text-black"
+                              className="dark:text-muted-foreground leading-5.75 text-black"
                               style={{ fontFamily: 'IBMPlexMono-Medium' }}
                             >
                               {JSON.stringify(toolCall.result, null, 2)}
@@ -1141,7 +1141,7 @@ function ToolCalls({
                         {toolCall.status === 'error' && (
                           <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
                             <span
-                              className="text-destructive leading-[23px]"
+                              className="text-destructive leading-5.75"
                               style={{ fontFamily: 'IBMPlexMono-Medium' }}
                             >
                               {toolCall.error}
@@ -1151,7 +1151,7 @@ function ToolCalls({
                         {toolCall.status === 'denied' && (
                           <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
                             <span
-                              className="text-muted-foreground leading-[23px]"
+                              className="text-muted-foreground leading-5.75"
                               style={{ fontFamily: 'IBMPlexMono-Medium' }}
                             >
                               Denied by user
@@ -1186,7 +1186,7 @@ function Thought({
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
       <div className="my-2 flex flex-row items-center justify-center gap-3">
         <Avatar
-          className="h-[26px] w-[30px] text-xl"
+          className="h-6.5 w-7.5 text-xl"
           avatar={
             <img
               src={Cloud}
@@ -1211,7 +1211,7 @@ function Thought({
       </div>
       {isThoughtOpen && (
         <div className="fade-in mr-5 ml-2 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
-          <div className="bg-muted dark:bg-answer-bubble rounded-[28px] px-7 py-[18px]">
+          <div className="bg-muted dark:bg-answer-bubble rounded-[28px] px-7 py-4.5">
             <ReactMarkdown
               className="fade-in leading-normal wrap-break-word whitespace-pre-wrap"
               remarkPlugins={[remarkGfm, remarkMath]}

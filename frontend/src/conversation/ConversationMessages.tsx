@@ -75,6 +75,7 @@ export default function ConversationMessages({
   const scrollAnimFrameRef = useRef<number | null>(null);
   const settleAnimFrameRef = useRef<number | null>(null);
   const showButtonTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const shadowRafRef = useRef<number | null>(null);
 
   useEffect(() => {
     return () => {
@@ -194,7 +195,13 @@ export default function ConversationMessages({
     if (!el) return;
     const atBottom = isAtBottom();
     const dist = Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight);
-    onScrolledFromBottom?.(dist);
+    if (onScrolledFromBottom) {
+      if (shadowRafRef.current !== null) cancelAnimationFrame(shadowRafRef.current);
+      shadowRafRef.current = requestAnimationFrame(() => {
+        onScrolledFromBottom(dist);
+        shadowRafRef.current = null;
+      });
+    }
     if (atBottom) {
       isAutoScrollingRef.current = false;
       if (userInterruptedRef.current && wasNotAtBottomRef.current) {
