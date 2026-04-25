@@ -51,6 +51,16 @@ networkx==3.6.1
 numpy==2.4.4
 openai==2.32.0
 openapi3-parser==1.1.22
+opentelemetry-distro>=0.50b0,<1
+opentelemetry-exporter-otlp>=1.29.0,<2
+opentelemetry-instrumentation-celery>=0.50b0,<1
+opentelemetry-instrumentation-flask>=0.50b0,<1
+opentelemetry-instrumentation-logging>=0.50b0,<1
+opentelemetry-instrumentation-psycopg>=0.50b0,<1
+opentelemetry-instrumentation-redis>=0.50b0,<1
+opentelemetry-instrumentation-requests>=0.50b0,<1
+opentelemetry-instrumentation-sqlalchemy>=0.50b0,<1
+opentelemetry-instrumentation-starlette>=0.50b0,<1
 orjson==3.11.7
 packaging==26.0
 pandas==3.0.2
@@ -60,7 +70,7 @@ pdf2image>=1.17.0
 pillow
 portalocker>=2.7.0,<4.0.0
 prompt-toolkit==3.0.52
-protobuf==7.34.1
+protobuf==6.33.6
 psycopg[binary,pool]>=3.1,<4
 py==1.11.0
 pydantic
