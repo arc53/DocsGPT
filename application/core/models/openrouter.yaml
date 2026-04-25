@@ -1,0 +1,25 @@
+provider: openrouter
+defaults:
+  supports_tools: true
+  attachments: [image]
+  context_window: 128000
+
+models:
+  - id: qwen/qwen3-coder:free
+    display_name: Qwen3 Coder (free)
+    description: Free-tier 480B MoE coder model with strong agentic tool use; rate-limited
+    context_window: 262000
+    attachments: []
+
+  - id: deepseek/deepseek-v3.2
+    display_name: DeepSeek V3.2
+    description: Open-weights reasoning model, very low cost (~$0.25 in / $0.38 out per 1M)
+    context_window: 131072
+    attachments: []
+    supports_structured_output: true
+
+  - id: anthropic/claude-sonnet-4.6
+    display_name: Claude Sonnet 4.6 (via OpenRouter)
+    description: Frontier Sonnet-class model with 1M context, vision, and extended thinking
+    context_window: 1000000
+    supports_structured_output: true

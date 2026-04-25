@@ -1,34 +1,11 @@
 import logging
 
-from application.llm.anthropic import AnthropicLLM
-from application.llm.docsgpt_provider import DocsGPTAPILLM
-from application.llm.google_ai import GoogleLLM
-from application.llm.groq import GroqLLM
-from application.llm.llama_cpp import LlamaCpp
-from application.llm.novita import NovitaLLM
-from application.llm.openai import AzureOpenAILLM, OpenAILLM
-from application.llm.premai import PremAILLM
-from application.llm.sagemaker import SagemakerAPILLM
-from application.llm.open_router import OpenRouterLLM
+from application.llm.providers import PROVIDERS_BY_NAME
 
 logger = logging.getLogger(__name__)
 
 
 class LLMCreator:
-    llms = {
-        "openai": OpenAILLM,
-        "azure_openai": AzureOpenAILLM,
-        "sagemaker": SagemakerAPILLM,
-        "llama.cpp": LlamaCpp,
-        "anthropic": AnthropicLLM,
-        "docsgpt": DocsGPTAPILLM,
-        "premai": PremAILLM,
-        "groq": GroqLLM,
-        "google": GoogleLLM,
-        "novita": NovitaLLM,
-        "openrouter": OpenRouterLLM,
-    }
-
     @classmethod
     def create_llm(
         cls,
@@ -42,18 +19,27 @@ class LLMCreator:
         *args,
         **kwargs,
     ):
-        from application.core.model_utils import get_base_url_for_model
+        from application.core.model_registry import ModelRegistry
 
-        llm_class = cls.llms.get(type.lower())
-        if not llm_class:
+        plugin = PROVIDERS_BY_NAME.get(type.lower())
+        if plugin is None or plugin.llm_class is None:
             raise ValueError(f"No LLM class found for type {type}")
 
-        # Extract base_url from model configuration if model_id is provided
+        # Prefer per-model endpoint config from the registry. This is what
+        # makes openai_compatible (and the future end-user BYOM phase)
+        # work without changing every call site: if the registered
+        # AvailableModel carries its own api_key / base_url, they win
+        # over whatever the caller resolved via the provider plugin.
         base_url = None
         if model_id:
-            base_url = get_base_url_for_model(model_id)
+            model = ModelRegistry.get_instance().get_model(model_id)
+            if model is not None:
+                if model.api_key:
+                    api_key = model.api_key
+                if model.base_url:
+                    base_url = model.base_url
 
-        return llm_class(
+        return plugin.llm_class(
             api_key,
             user_api_key,
             decoded_token=decoded_token,

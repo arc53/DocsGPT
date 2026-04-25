@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     EMBEDDINGS_NAME: str = "huggingface_sentence-transformers/all-mpnet-base-v2"
     EMBEDDINGS_BASE_URL: Optional[str] = None  # Remote embeddings API URL (OpenAI-compatible)
     EMBEDDINGS_KEY: Optional[str] = None  # api key for embeddings (if using openai, just copy API_KEY)
+    # Optional directory of operator-supplied model YAMLs, loaded after the
+    # built-in catalog under application/core/models/. Later wins on
+    # duplicate model id. See application/core/models/README.md.
+    MODELS_CONFIG_DIR: Optional[str] = None
 
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"

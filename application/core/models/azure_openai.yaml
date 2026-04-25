@@ -1,0 +1,31 @@
+# Azure OpenAI catalog.
+#
+# IMPORTANT: For Azure OpenAI, the `id` field is the **deployment name**, not
+# a model name. Deployment names are arbitrary strings the operator chooses
+# in Azure portal (or via ARM/Bicep/Terraform) when they create a deployment
+# for a given underlying model + version.
+#
+# The IDs below are sensible defaults that mirror the underlying OpenAI
+# model name (prefixed with `azure-`). Operators almost always need to
+# override them via `MODELS_CONFIG_DIR` to match the deployment names that
+# actually exist in their Azure resource. The `display_name`, capability
+# flags, and `context_window` reflect the underlying OpenAI model.
+provider: azure_openai
+
+defaults:
+  supports_tools: true
+  supports_structured_output: true
+  attachments: [image]
+  context_window: 400000
+
+models:
+  - id: azure-gpt-5.5
+    display_name: Azure OpenAI GPT-5.5
+    description: Azure-hosted flagship frontier model for complex reasoning, coding, and agentic work with a 1M-token context window
+    context_window: 1050000
+  - id: azure-gpt-5.4-mini
+    display_name: Azure OpenAI GPT-5.4 Mini
+    description: Azure-hosted cost-efficient GPT-5.4-class model for high-volume coding, computer use, and subagent workloads
+  - id: azure-gpt-5.4-nano
+    display_name: Azure OpenAI GPT-5.4 Nano
+    description: Azure-hosted cheapest GPT-5.4-class model, optimized for simple high-volume tasks where speed and cost matter most

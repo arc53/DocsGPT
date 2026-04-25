@@ -82,6 +82,7 @@ python-dateutil==2.9.0.post0
 python-dotenv
 python-jose==3.5.0
 python-pptx==1.0.2
+PyYAML
 redis==7.4.0
 referencing>=0.28.0,<0.38.0
 regex==2026.4.4

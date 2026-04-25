@@ -389,8 +389,8 @@ class OpenAILLM(BaseLLM):
         Returns:
             list: List of supported MIME types
         """
-        from application.core.model_configs import OPENAI_ATTACHMENTS
-        return OPENAI_ATTACHMENTS
+        from application.core.model_yaml import resolve_attachment_alias
+        return resolve_attachment_alias("image")
 
     def prepare_messages_with_attachments(self, messages, attachments=None):
         """
