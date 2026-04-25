@@ -1,7 +1,6 @@
 """Repository for the ``agents`` table.
 
-Covers every write operation
-the legacy Mongo code performs on ``agents_collection``:
+Covers every write operation the legacy Mongo code performs on ``agents_collection``:
 
 - create, update, delete
 - find by key (API key lookup)

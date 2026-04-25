@@ -65,8 +65,12 @@ class OpenAICompatibleProvider(Provider):
     def _materialize_yaml_catalog(self, catalog) -> List[AvailableModel]:
         """Resolve one openai_compatible YAML into ready-to-dispatch models.
 
-        Skipped (with a warning) if ``api_key_env`` resolves to nothing —
-        no point publishing models the user can't actually call.
+        Skipped (with an INFO-level log) if ``api_key_env`` resolves to
+        nothing — no point publishing models the user can't actually
+        call. INFO rather than WARNING because operators may legitimately
+        drop multiple provider YAMLs as templates and only set the env
+        vars for the ones they actually use; a missing key is ambiguous,
+        not necessarily a misconfig.
         """
         if not catalog.base_url:
             raise ValueError(
