@@ -19,6 +19,7 @@ class ModelProvider(str, Enum):
     PREMAI = "premai"
     SAGEMAKER = "sagemaker"
     NOVITA = "novita"
+    LITELLM = "litellm"
 
 
 @dataclass
@@ -122,6 +123,8 @@ class ModelRegistry:
             settings.LLM_PROVIDER == "huggingface" and settings.API_KEY
         ):
             self._add_huggingface_models(settings)
+        if settings.LLM_PROVIDER == "litellm":
+            self._add_litellm_models(settings)
         # Default model selection
         if settings.LLM_NAME:
             # Parse LLM_NAME (may be comma-separated)
@@ -263,6 +266,30 @@ class ModelRegistry:
                     return
         for model in NOVITA_MODELS:
             self.models[model.id] = model
+
+    def _add_litellm_models(self, settings):
+        """Register LiteLLM models from LLM_NAME.
+
+        LiteLLM is a meta-provider — the user specifies any
+        LiteLLM-supported model string via ``LLM_NAME`` (e.g.
+        ``anthropic/claude-3-haiku``, ``azure/gpt-4o``).
+        """
+        if not settings.LLM_NAME:
+            return
+        model_names = self._parse_model_names(settings.LLM_NAME)
+        for model_name in model_names:
+            if model_name not in self.models:
+                self.models[model_name] = AvailableModel(
+                    id=model_name,
+                    provider=ModelProvider.LITELLM,
+                    display_name=model_name,
+                    description=f"LiteLLM: {model_name}",
+                    capabilities=ModelCapabilities(
+                        supports_tools=True,
+                        context_window=128000,
+                        supported_attachment_types=[],
+                    ),
+                )
 
     def _add_docsgpt_models(self, settings):
         model_id = "docsgpt-local"
