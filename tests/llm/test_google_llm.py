@@ -125,7 +125,8 @@ def test_raw_gen_stream_yields_chunks():
     assert list(gen) == ["a", "b"]
 
 
-def test_raw_gen_stream_does_not_set_thinking_config_by_default(monkeypatch):
+# New asserts thinking_budget=0 is always set
+def test_raw_gen_stream_sets_thinking_budget_zero_by_default(monkeypatch):
     captured = {}
 
     def fake_stream(self, *args, **kwargs):
@@ -138,10 +139,12 @@ def test_raw_gen_stream_does_not_set_thinking_config_by_default(monkeypatch):
     msgs = [{"role": "user", "content": "hello"}]
     list(llm._raw_gen_stream(llm, model="gemini", messages=msgs, stream=True))
 
-    assert captured["config"].thinking_config is None
+    assert captured["config"].thinking_config is not None
+    assert captured["config"].thinking_config.thinking_budget == 0
 
 
-def test_raw_gen_stream_emits_thought_events(monkeypatch):
+# New thought parts are skipped, only answer is yielded
+def test_raw_gen_stream_skips_thought_parts(monkeypatch):
     llm = GoogleLLM(api_key="key")
     msgs = [{"role": "user", "content": "hello"}]
 
@@ -171,7 +174,7 @@ def test_raw_gen_stream_emits_thought_events(monkeypatch):
 
     out = list(llm._raw_gen_stream(llm, model="gemini", messages=msgs, stream=True))
 
-    assert {"type": "thought", "thought": "thinking token"} in out
+    assert {"type": "thought", "thought": "thinking token"} not in out
     assert "answer token" in out
 
 

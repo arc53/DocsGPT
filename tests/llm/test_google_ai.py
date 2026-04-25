@@ -81,6 +81,9 @@ class FakeTypesModule:
             self.name = name
             self.args = args
 
+    class ThinkingConfig:
+        def __init__(self, thinking_budget=0):
+            self.thinking_budget = thinking_budget
 
 class FakeModels:
     def __init__(self):
@@ -542,12 +545,16 @@ class TestRawGenStream:
         result = list(llm._raw_gen_stream(llm, model="gemini", messages=msgs))
         assert any(hasattr(r, "function_call") for r in result)
 
-    def test_yields_thought_event(self, llm, monkeypatch):
-        part = types.SimpleNamespace(
+    # New thought parts are skipped entirely
+    def test_skips_thought_parts(self, llm, monkeypatch):
+        thought_part = types.SimpleNamespace(
             text="thinking", function_call=None, thought=True
         )
+        answer_part = types.SimpleNamespace(
+            text="answer", function_call=None, thought=False
+        )
         candidate = types.SimpleNamespace(
-            content=types.SimpleNamespace(parts=[part])
+            content=types.SimpleNamespace(parts=[thought_part, answer_part])
         )
         chunk = types.SimpleNamespace(candidates=[candidate])
 
@@ -559,20 +566,22 @@ class TestRawGenStream:
 
         msgs = [{"role": "user", "content": "hi"}]
         result = list(llm._raw_gen_stream(llm, model="gemini", messages=msgs))
-        assert {"type": "thought", "thought": "thinking"} in result
 
-    def test_text_only_chunk_via_hasattr(self, llm, monkeypatch):
-        chunk = types.SimpleNamespace(text="fallback", candidates=None, thought=False)
+        assert {"type": "thought", "thought": "thinking"} not in result
+        assert "answer" in result
 
-        monkeypatch.setattr(
-            FakeModels,
-            "generate_content_stream",
-            lambda self, *a, **kw: [chunk],
-        )
+        def test_text_only_chunk_via_hasattr(self, llm, monkeypatch):
+            chunk = types.SimpleNamespace(text="fallback", candidates=None, thought=False)
 
-        msgs = [{"role": "user", "content": "hi"}]
-        result = list(llm._raw_gen_stream(llm, model="gemini", messages=msgs))
-        assert "fallback" in result
+            monkeypatch.setattr(
+                FakeModels,
+                "generate_content_stream",
+                lambda self, *a, **kw: [chunk],
+            )
+
+            msgs = [{"role": "user", "content": "hi"}]
+            result = list(llm._raw_gen_stream(llm, model="gemini", messages=msgs))
+            assert "fallback" in result
 
     def test_stream_error_propagates(self, llm, monkeypatch):
         def error_stream(self, *a, **kw):
