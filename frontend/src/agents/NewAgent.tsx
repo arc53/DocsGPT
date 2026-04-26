@@ -565,8 +565,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           setJsonSchemaText(jsonText);
           setJsonSchemaValid(true);
         }
-        setAgent(data);
-        initialAgentRef.current = data;
+        setAgent({ ...data, chunks: data.chunks != null ? String(data.chunks) : '2' });
+        initialAgentRef.current = { ...data, chunks: data.chunks != null ? String(data.chunks) : '2' };
       };
       getAgent();
     }

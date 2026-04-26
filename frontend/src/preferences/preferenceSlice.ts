@@ -34,6 +34,7 @@ export interface Preference {
   agents: Agent[] | null;
   sharedAgents: Agent[] | null;
   selectedAgent: Agent | null;
+  agentLoading: boolean;
   selectedModel: Model | null;
   availableModels: Model[];
   modelsLoading: boolean;
@@ -71,6 +72,7 @@ const initialState: Preference = {
   agents: null,
   sharedAgents: null,
   selectedAgent: null,
+  agentLoading: false,
   selectedModel: null,
   availableModels: [],
   modelsLoading: false,
@@ -123,6 +125,9 @@ export const prefSlice = createSlice({
     setSelectedAgent: (state, action) => {
       state.selectedAgent = action.payload;
     },
+    setAgentLoading: (state, action: PayloadAction<boolean>) => {
+      state.agentLoading = action.payload;
+    },
     setSelectedModel: (state, action: PayloadAction<Model | null>) => {
       state.selectedModel = action.payload;
     },
@@ -153,6 +158,7 @@ export const {
   setAgents,
   setSharedAgents,
   setSelectedAgent,
+  setAgentLoading,
   setSelectedModel,
   setAvailableModels,
   setModelsLoading,
@@ -278,6 +284,8 @@ export const selectSharedAgents = (state: RootState) =>
   state.preference.sharedAgents;
 export const selectSelectedAgent = (state: RootState) =>
   state.preference.selectedAgent;
+export const selectAgentLoading = (state: RootState) =>
+  state.preference.agentLoading;
 export const selectSelectedModel = (state: RootState) =>
   state.preference.selectedModel;
 export const selectAvailableModels = (state: RootState) =>

@@ -7,15 +7,16 @@ import ArtifactSidebar from '../components/ArtifactSidebar';
 import MessageInput from '../components/MessageInput';
 import { useMediaQuery } from '../hooks';
 import {
+  selectAgentLoading,
   selectConversationId,
   selectSelectedAgent,
   selectToken,
 } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
+import { selectCompletedAttachments } from '../upload/uploadSlice';
 import { handleSendFeedback } from './conversationHandlers';
 import ConversationMessages from './ConversationMessages';
 import { FEEDBACK, Query } from './conversationModels';
-import { ToolCallsType } from './types';
 import {
   addQuery,
   fetchAnswer,
@@ -25,7 +26,7 @@ import {
   submitToolActions,
   updateQuery,
 } from './conversationSlice';
-import { selectCompletedAttachments } from '../upload/uploadSlice';
+import { ToolCallsType } from './types';
 
 export default function Conversation() {
   const { t } = useTranslation();
@@ -37,10 +38,12 @@ export default function Conversation() {
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
   const selectedAgent = useSelector(selectSelectedAgent);
+  const agentLoading = useSelector(selectAgentLoading);
   const completedAttachments = useSelector(selectCompletedAttachments);
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] =
     useState<boolean>(false);
+  const [scrollDistFromBottom, setScrollDistFromBottom] = useState<number>(0);
 
   const handleToolAction = useCallback(
     (callId: string, decision: 'approved' | 'denied', comment?: string) => {
@@ -236,7 +239,7 @@ export default function Conversation() {
           isSplitArtifactOpen ? 'w-[60%] px-6' : 'w-full'
         }`}
       >
-        <div className="relative min-h-0 flex-1 ">
+        <div className="relative min-h-0 flex-1">
           <ConversationMessages
             handleQuestion={handleQuestion}
             handleQuestionSubmission={handleQuestionSubmission}
@@ -247,22 +250,50 @@ export default function Conversation() {
             onOpenArtifact={handleOpenArtifact}
             onToolAction={handleToolAction}
             isSplitView={isSplitArtifactOpen}
+            onScrolledFromBottom={setScrollDistFromBottom}
             headerContent={
               selectedAgent ? (
-                <div className="flex w-full items-center justify-center py-4">
+                <div className="fade-in flex w-full items-center justify-center py-4">
                   <SharedAgentCard agent={selectedAgent} />
+                </div>
+              ) : agentLoading ? (
+                <div className="flex w-full items-center justify-center py-4">
+                  <div className="border-border flex w-full max-w-180 animate-pulse flex-col rounded-3xl border p-6 shadow-xs sm:w-fit sm:min-w-120">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-muted h-12 w-12 rounded-full" />
+                      <div className="flex flex-1 flex-col gap-2">
+                        <div className="bg-muted h-4 w-32 rounded-full" />
+                        <div className="bg-muted h-3 w-52 rounded-full" />
+                      </div>
+                    </div>
+                    <div className="mt-8">
+                      <div className="bg-muted h-4 w-28 rounded-full" />
+                      <div className="mt-3 flex gap-2">
+                        <div className="bg-muted h-6 w-20 rounded-full" />
+                        <div className="bg-muted h-6 w-16 rounded-full" />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ) : undefined
             }
           />
-          <div className="from-background pointer-events-none absolute right-1.5 bottom-0 left-0 h-6 rounded-t-2xl bg-linear-to-t to-transparent" />
+          <div
+            className="from-background pointer-events-none absolute right-1.5 bottom-0 left-0 h-12 rounded-t-2xl bg-linear-to-t to-transparent"
+            style={{
+              opacity:
+                status !== 'loading'
+                  ? Math.min(scrollDistFromBottom / 90, 1)
+                  : 0,
+            }}
+          />
         </div>
 
         <div
-          className={`bg-opacity-0 z-3 flex h-auto w-full flex-col items-end self-center rounded-2xl py-1 ${
+          className={`bg-background z-10 flex h-auto w-full flex-col items-end self-center pt-2 pb-1 ${
             isSplitArtifactOpen
-              ? 'max-w-[1300px]'
-              : 'max-w-[1300px] md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12'
+              ? 'max-w-325'
+              : 'max-w-325 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12'
           }`}
         >
           <div className="flex w-full items-center rounded-[40px] px-2">
