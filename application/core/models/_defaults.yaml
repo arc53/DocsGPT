@@ -1,0 +1,18 @@
+# Global defaults applied across every model YAML in this directory.
+# Keep this file sparse — per-provider `defaults:` blocks are clearer
+# than a deep global default chain. This file is for things that
+# genuinely never vary, like the meaning of "image".
+
+attachment_aliases:
+  image:
+    - image/png
+    - image/jpeg
+    - image/jpg
+    - image/webp
+    - image/gif
+  pdf:
+    - application/pdf
+  audio:
+    - audio/mpeg
+    - audio/wav
+    - audio/ogg

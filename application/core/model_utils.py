@@ -1,28 +1,22 @@
 from typing import Any, Dict, Optional
 
-from application.core.model_settings import ModelRegistry
+from application.core.model_registry import ModelRegistry
 
 
 def get_api_key_for_provider(provider: str) -> Optional[str]:
-    """Get the appropriate API key for a provider"""
+    """Get the appropriate API key for a provider.
+
+    Delegates to the provider plugin's ``get_api_key``. Falls back to the
+    generic ``settings.API_KEY`` for unknown providers.
+    """
     from application.core.settings import settings
+    from application.llm.providers import PROVIDERS_BY_NAME
 
-    provider_key_map = {
-        "openai": settings.OPENAI_API_KEY,
-        "openrouter": settings.OPEN_ROUTER_API_KEY,
-        "novita": settings.NOVITA_API_KEY,
-        "anthropic": settings.ANTHROPIC_API_KEY,
-        "google": settings.GOOGLE_API_KEY,
-        "groq": settings.GROQ_API_KEY,
-        "huggingface": settings.HUGGINGFACE_API_KEY,
-        "azure_openai": settings.API_KEY,
-        "docsgpt": None,
-        "llama.cpp": None,
-    }
-
-    provider_key = provider_key_map.get(provider)
-    if provider_key:
-        return provider_key
+    plugin = PROVIDERS_BY_NAME.get(provider)
+    if plugin is not None:
+        key = plugin.get_api_key(settings)
+        if key:
+            return key
     return settings.API_KEY
 
 
@@ -90,4 +84,22 @@ def get_base_url_for_model(model_id: str) -> Optional[str]:
     model = registry.get_model(model_id)
     if model:
         return model.base_url
+    return None
+
+
+def get_api_key_for_model(model_id: str) -> Optional[str]:
+    """
+    Resolve the API key to use when invoking ``model_id``.
+
+    Priority:
+      1. The model record's own ``api_key`` (reserved for future end-user
+         BYOM where credentials travel with the record).
+      2. The provider plugin's settings-based key.
+    """
+    registry = ModelRegistry.get_instance()
+    model = registry.get_model(model_id)
+    if model is not None and model.api_key:
+        return model.api_key
+    if model is not None:
+        return get_api_key_for_provider(model.provider.value)
     return None

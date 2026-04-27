@@ -200,7 +200,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 4
+        assert sender.add_periodic_task.call_count == 5
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -212,6 +212,8 @@ class TestSetupPeriodicTasks:
         assert calls[2][0][0] == timedelta(days=30)
         # pending_tool_state TTL cleanup (60s)
         assert calls[3][0][0] == timedelta(seconds=60)
+        # version-check (every 7h)
+        assert calls[4][0][0] == timedelta(hours=7)
 
 
 class TestMcpOauthTask:

@@ -1,0 +1,17 @@
+provider: google
+defaults:
+  supports_tools: true
+  supports_structured_output: true
+  attachments: [pdf, image]
+  context_window: 1048576
+
+models:
+  - id: gemini-3.1-pro-preview
+    display_name: Gemini 3.1 Pro
+    description: Most capable Gemini 3 model with advanced reasoning and agentic coding (preview)
+  - id: gemini-3-flash-preview
+    display_name: Gemini 3 Flash
+    description: Frontier-class performance for low-latency, high-volume tasks (preview)
+  - id: gemini-3.1-flash-lite-preview
+    display_name: Gemini 3.1 Flash-Lite
+    description: Cost-efficient frontier-class multimodal model for high-throughput workloads (preview)

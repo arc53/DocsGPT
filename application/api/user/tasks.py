@@ -140,6 +140,11 @@ def setup_periodic_tasks(sender, **kwargs):
         cleanup_pending_tool_state.s(),
         name="cleanup-pending-tool-state",
     )
+    sender.add_periodic_task(
+        timedelta(hours=7),
+        version_check_task.s(),
+        name="version-check",
+    )
 
 
 @celery.task(bind=True)
@@ -176,3 +181,16 @@ def cleanup_pending_tool_state(self):
     with engine.begin() as conn:
         deleted = PendingToolStateRepository(conn).cleanup_expired()
     return {"deleted": deleted}
+
+
+@celery.task(bind=True)
+def version_check_task(self):
+    """Periodic anonymous version check.
+
+    Complements the ``worker_ready`` boot trigger so long-running
+    deployments (>6h cache TTL) still refresh advisories. ``run_check``
+    is fail-silent and coordinates across replicas via Redis lock +
+    cache (see ``application.updates.version_check``).
+    """
+    from application.updates.version_check import run_check
+    run_check()
