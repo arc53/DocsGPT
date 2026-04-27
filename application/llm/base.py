@@ -123,6 +123,26 @@ class BaseLLM(ABC):
             return args_dict
         return {k: v for k, v in args_dict.items() if v is not None}
 
+    @staticmethod
+    def _is_non_retriable_client_error(exc: BaseException) -> bool:
+        """4xx errors mean the request itself is malformed — retrying with
+        a different model fails identically and doubles the work. Only
+        transient/5xx/connection errors should trigger fallback."""
+        try:
+            from google.genai.errors import ClientError as _GenaiClientError
+
+            if isinstance(exc, _GenaiClientError):
+                return True
+        except ImportError:
+            pass
+        for attr in ("status_code", "code", "http_status"):
+            v = getattr(exc, attr, None)
+            if isinstance(v, int) and 400 <= v < 500:
+                return True
+        resp = getattr(exc, "response", None)
+        v = getattr(resp, "status_code", None)
+        return isinstance(v, int) and 400 <= v < 500
+
     def _execute_with_fallback(
         self, method_name: str, decorators: list, *args, **kwargs
     ):
@@ -152,6 +172,12 @@ class BaseLLM(ABC):
         try:
             return decorated_method()
         except Exception as e:
+            if self._is_non_retriable_client_error(e):
+                logger.error(
+                    f"Primary LLM failed with non-retriable client error; "
+                    f"skipping fallback: {str(e)}"
+                )
+                raise
             if not self.fallback_llm:
                 logger.error(f"Primary LLM failed and no fallback configured: {str(e)}")
                 raise
@@ -181,6 +207,12 @@ class BaseLLM(ABC):
         try:
             yield from decorated_method()
         except Exception as e:
+            if self._is_non_retriable_client_error(e):
+                logger.error(
+                    f"Primary LLM failed mid-stream with non-retriable client "
+                    f"error; skipping fallback: {str(e)}"
+                )
+                raise
             if not self.fallback_llm:
                 logger.error(
                     f"Primary LLM failed and no fallback configured: {str(e)}"

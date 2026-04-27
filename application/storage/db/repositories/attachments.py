@@ -17,6 +17,21 @@ _UPDATABLE_SCALARS = {
 _UPDATABLE_JSONB = {"metadata"}
 
 
+def _attachment_to_dict(row: Any) -> dict:
+    """row_to_dict + ``upload_path``→``path`` alias.
+
+    Pre-Postgres, the Mongo attachment shape used ``path``. The PG column
+    is ``upload_path``; LLM provider code (google_ai/openai/anthropic and
+    handlers/base) still reads ``attachment.get("path")``. Mirroring the
+    ``id``/``_id`` dual-emit in row_to_dict so consumers don't need to
+    know which storage backend produced the dict.
+    """
+    out = row_to_dict(row)
+    if "upload_path" in out and out.get("path") is None:
+        out["path"] = out["upload_path"]
+    return out
+
+
 class AttachmentsRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
@@ -66,7 +81,7 @@ class AttachmentsRepository:
                 "legacy_mongo_id": legacy_mongo_id,
             },
         )
-        return row_to_dict(result.fetchone())
+        return _attachment_to_dict(result.fetchone())
 
     def get(self, attachment_id: str, user_id: str) -> Optional[dict]:
         result = self._conn.execute(
@@ -76,7 +91,7 @@ class AttachmentsRepository:
             {"id": attachment_id, "user_id": user_id},
         )
         row = result.fetchone()
-        return row_to_dict(row) if row is not None else None
+        return _attachment_to_dict(row) if row is not None else None
 
     def get_any(self, attachment_id: str, user_id: str) -> Optional[dict]:
         """Resolve an attachment by either PG UUID or legacy Mongo ObjectId string."""
@@ -155,14 +170,14 @@ class AttachmentsRepository:
             params["user_id"] = user_id
         result = self._conn.execute(text(sql), params)
         row = result.fetchone()
-        return row_to_dict(row) if row is not None else None
+        return _attachment_to_dict(row) if row is not None else None
 
     def list_for_user(self, user_id: str) -> list[dict]:
         result = self._conn.execute(
             text("SELECT * FROM attachments WHERE user_id = :user_id ORDER BY created_at DESC"),
             {"user_id": user_id},
         )
-        return [row_to_dict(r) for r in result.fetchall()]
+        return [_attachment_to_dict(r) for r in result.fetchall()]
 
     def update(self, attachment_id: str, user_id: str, fields: dict) -> bool:
         """Partial update. Used by the LLM providers to cache their

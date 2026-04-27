@@ -262,6 +262,93 @@ class TestStreamWithFallback:
 
 
 # ---------------------------------------------------------------------------
+# Non-retriable client error guard
+# ---------------------------------------------------------------------------
+
+
+class _StatusError(Exception):
+    """Mimics openai/anthropic-shaped client errors with a status_code."""
+
+    def __init__(self, status_code, message="bad request"):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class _ClientErrorLLM(BaseLLM):
+    def __init__(self, status_code, **kwargs):
+        super().__init__(**kwargs)
+        self._status = status_code
+
+    def _raw_gen(self, baseself, model, messages, stream=False, tools=None, **kw):
+        raise _StatusError(self._status)
+
+    def _raw_gen_stream(self, baseself, model, messages, stream=True, tools=None, **kw):
+        raise _StatusError(self._status)
+
+
+@pytest.mark.unit
+class TestNonRetriableClientError:
+
+    def test_helper_detects_4xx_status_code(self):
+        assert BaseLLM._is_non_retriable_client_error(_StatusError(400))
+        assert BaseLLM._is_non_retriable_client_error(_StatusError(404))
+        assert BaseLLM._is_non_retriable_client_error(_StatusError(429))
+
+    def test_helper_passes_5xx_through(self):
+        # 5xx and connection errors should still trigger fallback.
+        assert not BaseLLM._is_non_retriable_client_error(_StatusError(500))
+        assert not BaseLLM._is_non_retriable_client_error(_StatusError(503))
+        assert not BaseLLM._is_non_retriable_client_error(RuntimeError("oops"))
+
+    def test_helper_detects_genai_client_error(self):
+        try:
+            from google.genai.errors import ClientError
+        except ImportError:
+            pytest.skip("google-genai not installed")
+        # ClientError(code, response_json, response=None)
+        exc = ClientError(400, {"error": {"message": "bad", "code": 400}}, None)
+        assert BaseLLM._is_non_retriable_client_error(exc)
+
+    def test_helper_detects_response_status_code(self):
+        exc = RuntimeError("wrapped")
+        exc.response = type("R", (), {"status_code": 401})()
+        assert BaseLLM._is_non_retriable_client_error(exc)
+
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    def test_4xx_skips_fallback(self):
+        fallback = FallbackLLM(model_id="fallback-model")
+        llm = _ClientErrorLLM(status_code=400)
+        llm._fallback_llm = fallback
+
+        with pytest.raises(_StatusError):
+            llm.gen(model="m", messages=[])
+        assert not fallback.gen_called
+
+    @patch("application.llm.base.stream_cache", lambda f: f)
+    @patch("application.llm.base.stream_token_usage", lambda f: f)
+    def test_4xx_skips_stream_fallback(self):
+        fallback = FallbackLLM(model_id="fallback-model")
+        llm = _ClientErrorLLM(status_code=400)
+        llm._fallback_llm = fallback
+
+        with pytest.raises(_StatusError):
+            list(llm.gen_stream(model="m", messages=[]))
+        assert not fallback.gen_stream_called
+
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    def test_5xx_still_falls_back(self):
+        fallback = FallbackLLM(model_id="fallback-model")
+        llm = _ClientErrorLLM(status_code=503)
+        llm._fallback_llm = fallback
+
+        result = llm.gen(model="m", messages=[])
+        assert result == "fallback_gen_result"
+        assert fallback.gen_called
+
+
+# ---------------------------------------------------------------------------
 # fallback_llm property: backup model resolution
 # ---------------------------------------------------------------------------
 
