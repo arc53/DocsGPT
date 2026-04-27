@@ -19,6 +19,7 @@ const modelService = {
       supports_tools: model.supports_tools,
       supports_structured_output: model.supports_structured_output,
       supports_streaming: model.supports_streaming,
+      source: model.source,
     })),
 };
 

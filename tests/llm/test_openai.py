@@ -23,9 +23,7 @@ import pytest
 from application.llm.openai import OpenAILLM, _truncate_base64_for_logging
 
 
-# ---------------------------------------------------------------------------
 # Fake client helpers
-# ---------------------------------------------------------------------------
 
 class _Msg:
     def __init__(self, content=None, tool_calls=None):
@@ -116,9 +114,7 @@ def llm():
     return instance
 
 
-# ---------------------------------------------------------------------------
 # _truncate_base64_for_logging
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -170,9 +166,7 @@ class TestTruncateBase64ForLogging:
         assert "BASE64_DATA_TRUNCATED" in result[0]["content"]["nested"]
 
 
-# ---------------------------------------------------------------------------
 # _normalize_reasoning_value
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -212,9 +206,7 @@ class TestNormalizeReasoningValue:
         assert OpenAILLM._normalize_reasoning_value(val) == "ab"
 
 
-# ---------------------------------------------------------------------------
 # _extract_reasoning_text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -240,9 +232,7 @@ class TestExtractReasoningText:
         assert OpenAILLM._extract_reasoning_text(delta) == ""
 
 
-# ---------------------------------------------------------------------------
 # _clean_messages_openai
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -340,9 +330,7 @@ class TestCleanMessagesOpenai:
             llm._clean_messages_openai(msgs)
 
 
-# ---------------------------------------------------------------------------
 # _raw_gen
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -392,9 +380,7 @@ class TestRawGen:
         assert kwargs["tools"] == tools
 
 
-# ---------------------------------------------------------------------------
 # _raw_gen_stream
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -444,9 +430,7 @@ class TestRawGenStream:
         assert closed["called"]
 
 
-# ---------------------------------------------------------------------------
 # _supports_tools / _supports_structured_output
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -459,9 +443,104 @@ class TestSupports:
         assert llm._supports_structured_output() is True
 
 
-# ---------------------------------------------------------------------------
+# BYOM capability enforcement at dispatch
+
+
+@pytest.mark.unit
+class TestBYOMCapabilityEnforcement:
+    """LLMCreator threads ``capabilities`` from the registry into the LLM.
+    These tests verify that a BYOM with restrictive caps doesn't get tools,
+    structured output, or unsupported attachment types at dispatch — even
+    when the caller forwards them."""
+
+    @staticmethod
+    def _llm_with_caps(
+        supports_tools=False,
+        supports_structured_output=False,
+        attachments=None,
+    ):
+        from application.core.model_settings import ModelCapabilities
+        instance = OpenAILLM(
+            api_key="sk-test",
+            user_api_key=None,
+            capabilities=ModelCapabilities(
+                supports_tools=supports_tools,
+                supports_structured_output=supports_structured_output,
+                supported_attachment_types=attachments or [],
+            ),
+        )
+        instance.client = FakeClient()
+        return instance
+
+    def test_supports_tools_respects_disabled_caps(self):
+        llm = self._llm_with_caps(supports_tools=False)
+        assert llm._supports_tools() is False
+
+    def test_supports_tools_respects_enabled_caps(self):
+        llm = self._llm_with_caps(supports_tools=True)
+        assert llm._supports_tools() is True
+
+    def test_supports_structured_output_respects_caps(self):
+        llm_off = self._llm_with_caps(supports_structured_output=False)
+        llm_on = self._llm_with_caps(supports_structured_output=True)
+        assert llm_off._supports_structured_output() is False
+        assert llm_on._supports_structured_output() is True
+
+    def test_get_supported_attachment_types_respects_caps(self):
+        llm = self._llm_with_caps(attachments=[])
+        assert llm.get_supported_attachment_types() == []
+        llm2 = self._llm_with_caps(attachments=["image/png"])
+        assert llm2.get_supported_attachment_types() == ["image/png"]
+
+    def test_raw_gen_drops_tools_when_caps_deny(self):
+        llm = self._llm_with_caps(supports_tools=False)
+        tools = [{"type": "function", "function": {"name": "t"}}]
+        msgs = [{"role": "user", "content": "hi"}]
+        llm._raw_gen(
+            llm, model="gpt", messages=msgs, stream=False, tools=tools
+        )
+        kwargs = llm.client.chat.completions.last_kwargs
+        assert "tools" not in kwargs
+
+    def test_raw_gen_drops_response_format_when_caps_deny(self):
+        llm = self._llm_with_caps(supports_structured_output=False)
+        msgs = [{"role": "user", "content": "hi"}]
+        llm._raw_gen(
+            llm,
+            model="gpt",
+            messages=msgs,
+            stream=False,
+            response_format={"type": "json_object"},
+        )
+        kwargs = llm.client.chat.completions.last_kwargs
+        assert "response_format" not in kwargs
+
+    def test_raw_gen_stream_drops_tools_when_caps_deny(self):
+        llm = self._llm_with_caps(supports_tools=False)
+        tools = [{"type": "function", "function": {"name": "t"}}]
+        msgs = [{"role": "user", "content": "hi"}]
+        list(
+            llm._raw_gen_stream(
+                llm, model="gpt", messages=msgs, stream=True, tools=tools
+            )
+        )
+        kwargs = llm.client.chat.completions.last_kwargs
+        assert "tools" not in kwargs
+
+    def test_no_caps_keeps_provider_defaults(self, llm):
+        # ``llm`` fixture builds an OpenAILLM with capabilities=None,
+        # i.e. provider-class defaults. Tools/structured output should
+        # pass through unchanged.
+        tools = [{"type": "function", "function": {"name": "t"}}]
+        msgs = [{"role": "user", "content": "hi"}]
+        llm._raw_gen(
+            llm, model="gpt", messages=msgs, stream=False, tools=tools
+        )
+        kwargs = llm.client.chat.completions.last_kwargs
+        assert kwargs["tools"] == tools
+
+
 # prepare_structured_output_format
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -546,9 +625,7 @@ class TestPrepareStructuredOutputFormat:
         assert result["json_schema"]["description"] == "Structured response"
 
 
-# ---------------------------------------------------------------------------
 # get_supported_attachment_types
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -560,9 +637,7 @@ class TestGetSupportedAttachmentTypes:
         assert len(result) > 0
 
 
-# ---------------------------------------------------------------------------
 # prepare_messages_with_attachments
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -654,9 +729,7 @@ class TestPrepareMessagesWithAttachments:
         assert isinstance(user_msg["content"], list)
 
 
-# ---------------------------------------------------------------------------
 # _get_base64_image
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -678,9 +751,7 @@ class TestGetBase64Image:
             llm._get_base64_image({"path": "/nonexistent"})
 
 
-# ---------------------------------------------------------------------------
 # AzureOpenAILLM
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -718,9 +789,7 @@ class TestAzureOpenAILLM:
         assert issubclass(oai_mod.AzureOpenAILLM, oai_mod.OpenAILLM)
 
 
-# ---------------------------------------------------------------------------
 # _truncate_base64_for_logging — additional edges
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -744,9 +813,7 @@ class TestTruncateBase64ForLoggingAdditional:
         assert result[0]["content"] == "no base64 here"
 
 
-# ---------------------------------------------------------------------------
 # _clean_messages_openai — additional edges
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -835,9 +902,7 @@ class TestCleanMessagesOpenaiAdditional:
             llm._clean_messages_openai(msgs)
 
 
-# ---------------------------------------------------------------------------
 # _normalize_reasoning_value — additional edges
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -862,9 +927,7 @@ class TestNormalizeReasoningValueAdditional:
         assert OpenAILLM._normalize_reasoning_value(obj) == ""
 
 
-# ---------------------------------------------------------------------------
 # _extract_reasoning_text — additional edges
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -881,9 +944,7 @@ class TestExtractReasoningTextAdditional:
         assert OpenAILLM._extract_reasoning_text(delta) == "dict_thought"
 
 
-# ---------------------------------------------------------------------------
 # _raw_gen_stream — additional edges
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -933,9 +994,7 @@ class TestRawGenStreamAdditional:
         assert any(hasattr(c, "finish_reason") for c in chunks)
 
 
-# ---------------------------------------------------------------------------
 # prepare_structured_output_format — additional edges
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -968,9 +1027,7 @@ class TestPrepareStructuredOutputAdditional:
         assert one_of[0]["additionalProperties"] is False
 
 
-# ---------------------------------------------------------------------------
 # prepare_messages_with_attachments — additional edges
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1022,9 +1079,7 @@ class TestPrepareMessagesWithAttachmentsAdditional:
         assert len(text_parts) == 0
 
 
-# ---------------------------------------------------------------------------
 # _upload_file_to_openai — additional edges
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1053,9 +1108,7 @@ class TestUploadFileToOpenai:
             llm._upload_file_to_openai({"path": "/tmp/file.pdf"})
 
 
-# ---------------------------------------------------------------------------
 # OpenAILLM constructor — additional edges
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1134,9 +1187,7 @@ class TestOpenAILLMConstructor:
         )
 
 
-# ---------------------------------------------------------------------------
 # _upload_file_to_openai — coverage lines 489-517
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1181,9 +1232,7 @@ class TestUploadFileToOpenai2:
             llm._upload_file_to_openai({"path": "/file.pdf"})
 
 
-# ---------------------------------------------------------------------------
 # _normalize_reasoning_value — additional edges for line 155, 198
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1206,9 +1255,7 @@ class TestNormalizeReasoningAdditional:
         assert result == "ab"
 
 
-# ---------------------------------------------------------------------------
 # _extract_reasoning_text — additional edge for line 198
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1227,9 +1274,7 @@ class TestExtractReasoningTextAdditional2:
         assert result == ""
 
 
-# ---------------------------------------------------------------------------
 # prepare_structured_output_format — error path for line 348, 395
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1247,9 +1292,7 @@ class TestPrepareStructuredOutputAdditional2:
         assert result is None
 
 
-# ---------------------------------------------------------------------------
 # Coverage — remaining uncovered lines
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1408,13 +1451,11 @@ class TestUploadFileToOpenaiLines489To517:
         assert result == "file-no-cache"
 
 
-# ---------------------------------------------------------------------------
 # Additional coverage for openai.py
 # Lines: 49 (truncate_content v passthrough), 80-82 (default base_url),
 # 137 (function_response content), 198 (delta get fallback),
 # 304 (_supports_structured_output), 395 (no user_message append),
 # 469 (_get_base64_image missing path), 489-517 (_upload_file_to_openai)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

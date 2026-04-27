@@ -1239,6 +1239,131 @@ class TestPerformInMemoryCompression:
         assert messages is not None
         assert agent.compressed_summary == "summary"
 
+    def test_uses_agent_model_user_id_for_byom_owner_scope(self):
+        """Shared-agent BYOM dispatch: the agent's model_id is the owner's
+        BYOM UUID and ``decoded_token['sub']`` is a different (caller) user.
+        Provider lookup and LLMCreator must run under the OWNER scope so
+        the registry hits the owner's per-user layer instead of missing
+        and falling back to the deployment default."""
+        handler = ConcreteHandler()
+        agent = Mock()
+        agent.model_id = "byom-uuid-owner"
+        agent.model_user_id = "owner-id"
+        agent.user_api_key = None
+        agent.decoded_token = {"sub": "caller-id"}
+        agent.agent_id = None
+        agent.context_limit_reached = False
+        agent.current_token_count = 0
+
+        mock_metadata = Mock()
+        mock_metadata.compressed_token_count = 100
+        mock_metadata.original_token_count = 1000
+        mock_metadata.compression_ratio = 10.0
+        mock_metadata.to_dict.return_value = {"ratio": 10.0}
+
+        mock_service = Mock()
+        mock_service.compress_conversation.return_value = mock_metadata
+        mock_service.get_compressed_context.return_value = (
+            "summary",
+            [{"prompt": "q", "response": "a"}],
+        )
+
+        provider_lookup = MagicMock(return_value="openai_compatible")
+        create_llm_spy = MagicMock(return_value=Mock())
+
+        with patch.object(
+            handler,
+            "_build_conversation_from_messages",
+            return_value={"queries": [{"prompt": "q", "response": "a"}]},
+        ), patch(
+            "application.core.model_utils.get_provider_from_model_id",
+            provider_lookup,
+        ), patch(
+            "application.core.model_utils.get_api_key_for_provider",
+            return_value="key",
+        ), patch(
+            "application.llm.llm_creator.LLMCreator.create_llm",
+            create_llm_spy,
+        ), patch(
+            "application.api.answer.services.compression.service.CompressionService",
+            return_value=mock_service,
+        ), patch.object(
+            handler,
+            "_rebuild_messages_after_compression",
+            return_value=[{"role": "system", "content": "rebuilt"}],
+        ), patch(
+            "application.core.settings.settings",
+            MagicMock(COMPRESSION_MODEL_OVERRIDE=None),
+        ):
+            success, _ = handler._perform_in_memory_compression(
+                agent, [{"role": "user", "content": "hi"}]
+            )
+
+        assert success is True
+        # Provider lookup must use the owner scope, not the caller's sub.
+        assert provider_lookup.call_args.kwargs["user_id"] == "owner-id"
+        # LLMCreator must receive the owner scope as model_user_id;
+        # without this the BYOM UUID resolves under the caller and the
+        # owner's registered base_url + api_key are missed.
+        assert create_llm_spy.call_args.kwargs["model_user_id"] == "owner-id"
+
+    def test_falls_back_to_caller_sub_when_no_model_user_id(self):
+        """Built-in or caller-owned BYOM: ``agent.model_user_id`` is None.
+        Compression should resolve under the caller's sub, matching the
+        pre-fix behavior."""
+        handler = ConcreteHandler()
+        agent = Mock()
+        agent.model_id = "gpt-4"
+        agent.model_user_id = None
+        agent.user_api_key = None
+        agent.decoded_token = {"sub": "caller-id"}
+        agent.agent_id = None
+        agent.context_limit_reached = False
+        agent.current_token_count = 0
+
+        mock_metadata = Mock()
+        mock_metadata.compressed_token_count = 100
+        mock_metadata.original_token_count = 1000
+        mock_metadata.to_dict.return_value = {}
+
+        mock_service = Mock()
+        mock_service.compress_conversation.return_value = mock_metadata
+        mock_service.get_compressed_context.return_value = ("summary", [])
+
+        provider_lookup = MagicMock(return_value="openai")
+        create_llm_spy = MagicMock(return_value=Mock())
+
+        with patch.object(
+            handler,
+            "_build_conversation_from_messages",
+            return_value={"queries": [{"prompt": "q", "response": "a"}]},
+        ), patch(
+            "application.core.model_utils.get_provider_from_model_id",
+            provider_lookup,
+        ), patch(
+            "application.core.model_utils.get_api_key_for_provider",
+            return_value="key",
+        ), patch(
+            "application.llm.llm_creator.LLMCreator.create_llm",
+            create_llm_spy,
+        ), patch(
+            "application.api.answer.services.compression.service.CompressionService",
+            return_value=mock_service,
+        ), patch.object(
+            handler,
+            "_rebuild_messages_after_compression",
+            return_value=[],
+        ), patch(
+            "application.core.settings.settings",
+            MagicMock(COMPRESSION_MODEL_OVERRIDE=None),
+        ):
+            handler._perform_in_memory_compression(
+                agent, [{"role": "user", "content": "hi"}]
+            )
+
+        assert provider_lookup.call_args.kwargs["user_id"] == "caller-id"
+        assert create_llm_spy.call_args.kwargs["model_user_id"] == "caller-id"
+
 
 # ---------------------------------------------------------------------------
 # _perform_mid_execution_compression — additional edge cases

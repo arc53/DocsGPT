@@ -344,7 +344,9 @@ def run_agent_logic(agent_config, input_data):
 
         # Determine model_id: check agent's default_model_id, fallback to system default
         agent_default_model = agent_config.get("default_model_id", "")
-        if agent_default_model and validate_model_id(agent_default_model):
+        if agent_default_model and validate_model_id(
+            agent_default_model, user_id=owner
+        ):
             model_id = agent_default_model
         else:
             model_id = get_default_model_id()
@@ -360,12 +362,16 @@ def run_agent_logic(agent_config, input_data):
                 )
 
         # Get provider and API key for the selected model
-        provider = get_provider_from_model_id(model_id) if model_id else settings.LLM_PROVIDER
+        provider = (
+            get_provider_from_model_id(model_id, user_id=owner)
+            if model_id
+            else settings.LLM_PROVIDER
+        )
         system_api_key = get_api_key_for_provider(provider or settings.LLM_PROVIDER)
 
         # Calculate proper doc_token_limit based on model's context window
         doc_token_limit = calculate_doc_token_budget(
-            model_id=model_id
+            model_id=model_id, user_id=owner
         )
 
         retriever = RetrieverCreator.create_retriever(

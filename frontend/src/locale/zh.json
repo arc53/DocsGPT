@@ -244,6 +244,71 @@
         }
       }
     },
+    "customModels": {
+      "label": "自定义模型",
+      "subtitle": "接入你自己的 OpenAI 兼容模型。",
+      "addModel": "添加模型",
+      "empty": "未找到模型",
+      "searchPlaceholder": "搜索模型...",
+      "modalSubtitle": "可连接任何 OpenAI 兼容的接口(Mistral、Together、vLLM 等)。",
+      "addTitle": "添加自定义模型",
+      "editTitle": "编辑自定义模型",
+      "save": "保存",
+      "saving": "保存中",
+      "testConnection": "测试连接",
+      "testing": "测试中",
+      "testSuccess": "连接成功。",
+      "testHintNew": "请填写 Base URL、模型 ID 和 API 密钥以启用连接测试。",
+      "disabledBadge": "已禁用",
+      "deleteWarning": "确定要删除自定义模型「{{modelName}}」吗?",
+      "actionsMenuAria": "{{modelName}} 的操作",
+      "modelsGroup": {
+        "builtin": "DocsGPT 模型",
+        "user": "我的模型"
+      },
+      "actions": {
+        "edit": "编辑",
+        "delete": "删除"
+      },
+      "fields": {
+        "displayName": "显示名称",
+        "modelId": "模型 ID",
+        "description": "描述",
+        "baseUrl": "Base URL",
+        "apiKey": "API 密钥"
+      },
+      "placeholders": {
+        "displayName": "My Mistral",
+        "modelId": "如 mistral-large-latest",
+        "description": "可选描述",
+        "baseUrl": "https://api.mistral.ai/v1",
+        "apiKey": "sk-...",
+        "apiKeyEdit": "留空则保留原密钥"
+      },
+      "hints": {
+        "apiKeyEdit": "留空以保留现有密钥。"
+      },
+      "capabilities": {
+        "title": "功能",
+        "contextWindowShort": "上下文窗口",
+        "chips": {
+          "tools": "工具",
+          "structuredOutput": "结构化输出",
+          "images": "图片"
+        }
+      },
+      "errors": {
+        "displayNameRequired": "显示名称必填",
+        "modelIdRequired": "模型 ID 必填",
+        "baseUrlRequired": "Base URL 必填",
+        "baseUrlScheme": "Base URL 必须以 http:// 或 https:// 开头",
+        "baseUrlInvalid": "请输入有效的 URL",
+        "apiKeyRequired": "API 密钥必填",
+        "contextWindowRange": "上下文窗口必须在 1,000 至 10,000,000 之间",
+        "saveFailed": "保存自定义模型失败",
+        "testFailed": "连接测试失败"
+      }
+    },
     "scrollTabsLeft": "向左滚动标签",
     "tabsAriaLabel": "设置标签",
     "scrollTabsRight": "向右滚动标签"

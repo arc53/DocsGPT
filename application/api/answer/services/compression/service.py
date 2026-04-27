@@ -106,8 +106,13 @@ class CompressionService:
                 f"using model {self.model_id}"
             )
 
+            # See note in conversation_service.py: ``self.model_id`` is
+            # the registry id (UUID for BYOM); the LLM's own model_id is
+            # what the provider's API actually expects.
             response = self.llm.gen(
-                model=self.model_id, messages=messages, max_tokens=4000
+                model=getattr(self.llm, "model_id", None) or self.model_id,
+                messages=messages,
+                max_tokens=4000,
             )
 
             # Extract summary from response

@@ -448,7 +448,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       setUserTools(tools);
     };
     const getModels = async () => {
-      const response = await modelService.getModels(null);
+      const response = await modelService.getModels(token);
       if (!response.ok) throw new Error('Failed to fetch models');
       const data = await response.json();
       const transformed = modelService.transformModels(data.models || []);
@@ -1041,10 +1041,24 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 isOpen={isModelsPopupOpen}
                 onClose={() => setIsModelsPopupOpen(false)}
                 anchorRef={modelAnchorButtonRef}
-                options={availableModels.map((model) => ({
-                  id: model.id,
-                  label: model.display_name,
-                }))}
+                options={(() => {
+                  const builtinLabel = t(
+                    'settings.customModels.modelsGroup.builtin',
+                  );
+                  const userLabel = t('settings.customModels.modelsGroup.user');
+                  const builtin: OptionType[] = [];
+                  const user: OptionType[] = [];
+                  availableModels.forEach((model) => {
+                    const opt: OptionType = {
+                      id: model.id,
+                      label: model.display_name,
+                      group: model.source === 'user' ? userLabel : builtinLabel,
+                    };
+                    if (model.source === 'user') user.push(opt);
+                    else builtin.push(opt);
+                  });
+                  return [...builtin, ...user];
+                })()}
                 selectedIds={selectedModelIds}
                 onSelectionChange={(newSelectedIds: Set<string | number>) =>
                   setSelectedModelIds(

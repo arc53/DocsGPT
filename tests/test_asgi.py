@@ -114,6 +114,28 @@ def test_cors_preflight_on_flask_route():
 
 
 @pytest.mark.unit
+def test_cors_preflight_allows_patch():
+    """PATCH must be in Access-Control-Allow-Methods. The frontend's
+    apiClient.patch() (used to edit BYOM custom models via PATCH
+    /api/user/models/<id>) is otherwise blocked at preflight by browsers."""
+    from starlette.testclient import TestClient
+
+    from application.asgi import asgi_app
+
+    with TestClient(asgi_app) as client:
+        r = client.options(
+            "/api/health",
+            headers={
+                "Origin": "http://example.com",
+                "Access-Control-Request-Method": "PATCH",
+                "Access-Control-Request-Headers": "Content-Type, Authorization",
+            },
+        )
+    assert r.status_code in (200, 204)
+    assert "PATCH" in r.headers.get("access-control-allow-methods", "")
+
+
+@pytest.mark.unit
 def test_cors_preflight_on_mcp_route():
     """Browser clients hitting /mcp should be allowed to send session headers."""
     from starlette.testclient import TestClient

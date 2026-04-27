@@ -213,6 +213,44 @@ class TestClassicRAGRephraseQuery:
 
 
 @pytest.mark.unit
+class TestClassicRAGLLMCreatorWiring:
+    """ClassicRAG must forward model_id + model_user_id to LLMCreator so
+    the registry-resolution path runs (BYOM api_key/base_url overrides
+    and upstream_model_id translation). Without these the rephrase
+    client dispatches the registry UUID to the plugin's default endpoint
+    with the instance API key."""
+
+    def test_passes_model_id_and_user_id_to_llmcreator(self, mock_llm, monkeypatch):
+        captured = Mock(return_value=mock_llm)
+        monkeypatch.setattr(
+            "application.retriever.classic_rag.LLMCreator.create_llm", captured
+        )
+
+        _make_rag(
+            model_id="byom-uuid",
+            model_user_id="owner",
+            decoded_token={"sub": "caller"},
+        )
+
+        assert captured.call_count == 1
+        kwargs = captured.call_args.kwargs
+        assert kwargs["model_id"] == "byom-uuid"
+        assert kwargs["model_user_id"] == "owner"
+        # Caller identity still flows so non-BYOM paths keep working.
+        assert kwargs["decoded_token"] == {"sub": "caller"}
+
+    def test_default_model_user_id_is_none(self, mock_llm, monkeypatch):
+        captured = Mock(return_value=mock_llm)
+        monkeypatch.setattr(
+            "application.retriever.classic_rag.LLMCreator.create_llm", captured
+        )
+
+        _make_rag()  # no model_user_id override
+
+        assert captured.call_args.kwargs["model_user_id"] is None
+
+
+@pytest.mark.unit
 class TestClassicRAGGetData:
     def test_chunks_zero_returns_empty(self, _patch_llm_creator):
         rag = _make_rag(chunks=0)

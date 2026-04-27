@@ -197,7 +197,7 @@ class TestFallbackLLMResolution:
         mock_fallback = StubLLM()
         monkeypatch.setattr(
             "application.core.model_utils.get_provider_from_model_id",
-            lambda mid: "openai",
+            lambda mid, **_kwargs: "openai",
         )
         monkeypatch.setattr(
             "application.core.model_utils.get_api_key_for_provider",
@@ -223,7 +223,7 @@ class TestFallbackLLMResolution:
 
         monkeypatch.setattr(
             "application.core.model_utils.get_provider_from_model_id",
-            lambda mid: "openai",
+            lambda mid, **_kwargs: "openai",
         )
         monkeypatch.setattr(
             "application.core.model_utils.get_api_key_for_provider",
@@ -262,7 +262,7 @@ class TestFallbackLLMResolution:
     def test_backup_provider_not_found_skipped(self, monkeypatch):
         monkeypatch.setattr(
             "application.core.model_utils.get_provider_from_model_id",
-            lambda mid: None,
+            lambda mid, **_kwargs: None,
         )
         monkeypatch.setattr(
             "application.llm.base.settings",

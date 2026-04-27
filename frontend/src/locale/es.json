@@ -244,6 +244,71 @@
         }
       }
     },
+    "customModels": {
+      "label": "Modelos personalizados",
+      "subtitle": "Trae tu propio modelo compatible con OpenAI.",
+      "addModel": "Añadir modelo",
+      "empty": "No se encontraron modelos",
+      "searchPlaceholder": "Buscar modelos...",
+      "modalSubtitle": "Conecta cualquier endpoint compatible con OpenAI (Mistral, Together, vLLM, etc.).",
+      "addTitle": "Añadir modelo personalizado",
+      "editTitle": "Editar modelo personalizado",
+      "save": "Guardar",
+      "saving": "Guardando",
+      "testConnection": "Probar conexión",
+      "testing": "Probando",
+      "testSuccess": "Conexión correcta.",
+      "testHintNew": "Completa URL base, ID de modelo y clave API para habilitar las pruebas de conexión.",
+      "disabledBadge": "Deshabilitado",
+      "deleteWarning": "¿Seguro que quieres eliminar el modelo personalizado \"{{modelName}}\"?",
+      "actionsMenuAria": "Acciones para {{modelName}}",
+      "modelsGroup": {
+        "builtin": "Modelos de DocsGPT",
+        "user": "Mis modelos"
+      },
+      "actions": {
+        "edit": "Editar",
+        "delete": "Eliminar"
+      },
+      "fields": {
+        "displayName": "Nombre para mostrar",
+        "modelId": "ID del modelo",
+        "description": "Descripción",
+        "baseUrl": "URL base",
+        "apiKey": "Clave API"
+      },
+      "placeholders": {
+        "displayName": "Mi Mistral",
+        "modelId": "p. ej. mistral-large-latest",
+        "description": "Descripción opcional",
+        "baseUrl": "https://api.mistral.ai/v1",
+        "apiKey": "sk-...",
+        "apiKeyEdit": "Déjalo en blanco para mantener la actual"
+      },
+      "hints": {
+        "apiKeyEdit": "Déjalo en blanco para mantener la clave actual."
+      },
+      "capabilities": {
+        "title": "Capacidades",
+        "contextWindowShort": "Ventana de contexto",
+        "chips": {
+          "tools": "Herramientas",
+          "structuredOutput": "Salida estructurada",
+          "images": "Imágenes"
+        }
+      },
+      "errors": {
+        "displayNameRequired": "El nombre para mostrar es obligatorio",
+        "modelIdRequired": "El ID del modelo es obligatorio",
+        "baseUrlRequired": "La URL base es obligatoria",
+        "baseUrlScheme": "La URL base debe empezar por http:// o https://",
+        "baseUrlInvalid": "Introduce una URL válida",
+        "apiKeyRequired": "La clave API es obligatoria",
+        "contextWindowRange": "La ventana de contexto debe estar entre 1.000 y 10.000.000",
+        "saveFailed": "No se pudo guardar el modelo personalizado",
+        "testFailed": "La prueba de conexión falló"
+      }
+    },
     "scrollTabsLeft": "Desplazar pestañas a la izquierda",
     "tabsAriaLabel": "Pestañas de configuración",
     "scrollTabsRight": "Desplazar pestañas a la derecha"
