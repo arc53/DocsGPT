@@ -42,6 +42,7 @@ class BaseAgent(ABC):
         llm_handler=None,
         tool_executor: Optional[ToolExecutor] = None,
         backup_models: Optional[List[str]] = None,
+        model_user_id: Optional[str] = None,
     ):
         self.endpoint = endpoint
         self.llm_name = llm_name
@@ -52,10 +53,13 @@ class BaseAgent(ABC):
         self.prompt = prompt
         self.decoded_token = decoded_token or {}
         self.user: str = self.decoded_token.get("sub")
+        # BYOM-resolution scope: owner for shared agents, caller for
+        # caller-owned BYOM, None for built-ins. Falls back to self.user
+        # for worker/legacy callers that don't thread model_user_id.
+        self.model_user_id = model_user_id
         self.tools: List[Dict] = []
         self.chat_history: List[Dict] = chat_history if chat_history is not None else []
 
-        # Dependency injection for LLM — fall back to creating if not provided
         if llm is not None:
             self.llm = llm
         else:
@@ -67,7 +71,15 @@ class BaseAgent(ABC):
                 model_id=model_id,
                 agent_id=agent_id,
                 backup_models=backup_models,
+                model_user_id=model_user_id,
             )
+
+        # For BYOM, registry id (UUID) differs from upstream model id
+        # (e.g. ``mistral-large-latest``). LLMCreator resolved this onto
+        # the LLM instance; cache it for subsequent gen calls.
+        self.upstream_model_id = (
+            getattr(self.llm, "model_id", None) or model_id
+        )
 
         self.retrieved_docs = retrieved_docs or []
 
@@ -306,7 +318,9 @@ class BaseAgent(ABC):
         try:
             current_tokens = self._calculate_current_context_tokens(messages)
             self.current_token_count = current_tokens
-            context_limit = get_token_limit(self.model_id)
+            context_limit = get_token_limit(
+                self.model_id, user_id=self.model_user_id or self.user
+            )
             threshold = int(context_limit * settings.COMPRESSION_THRESHOLD_PERCENTAGE)
 
             if current_tokens >= threshold:
@@ -325,7 +339,9 @@ class BaseAgent(ABC):
 
         current_tokens = self._calculate_current_context_tokens(messages)
         self.current_token_count = current_tokens
-        context_limit = get_token_limit(self.model_id)
+        context_limit = get_token_limit(
+            self.model_id, user_id=self.model_user_id or self.user
+        )
         percentage = (current_tokens / context_limit) * 100
 
         if current_tokens >= context_limit:
@@ -387,7 +403,9 @@ class BaseAgent(ABC):
             )
             system_prompt = system_prompt + compression_context
 
-        context_limit = get_token_limit(self.model_id)
+        context_limit = get_token_limit(
+            self.model_id, user_id=self.model_user_id or self.user
+        )
         system_tokens = num_tokens_from_string(system_prompt)
 
         safety_buffer = int(context_limit * 0.1)
@@ -497,7 +515,10 @@ class BaseAgent(ABC):
     def _llm_gen(self, messages: List[Dict], log_context: Optional[LogContext] = None):
         self._validate_context_size(messages)
 
-        gen_kwargs = {"model": self.model_id, "messages": messages}
+        # Use the upstream id resolved by LLMCreator (see __init__).
+        # Built-in models: same as self.model_id. BYOM: the user's
+        # typed model name, not the internal UUID.
+        gen_kwargs = {"model": self.upstream_model_id, "messages": messages}
         if self.attachments:
             gen_kwargs["_usage_attachments"] = self.attachments
 

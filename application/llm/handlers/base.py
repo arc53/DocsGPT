@@ -470,10 +470,14 @@ class LLMHandler(ABC):
                 )
                 return self._perform_in_memory_compression(agent, messages)
 
-            # Use orchestrator to perform compression
+            # Use orchestrator to perform compression. ``model_user_id``
+            # keeps BYOM registry resolution scoped to the model owner
+            # (shared-agent dispatch) while ``user_id`` stays the caller
+            # for the conversation access check.
             result = orchestrator.compress_mid_execution(
                 conversation_id=agent.conversation_id,
                 user_id=agent.initial_user_id,
+                model_user_id=getattr(agent, "model_user_id", None),
                 model_id=agent.model_id,
                 decoded_token=getattr(agent, "decoded_token", {}),
                 current_conversation=conversation,
@@ -577,7 +581,20 @@ class LLMHandler(ABC):
                 if settings.COMPRESSION_MODEL_OVERRIDE
                 else agent.model_id
             )
-            provider = get_provider_from_model_id(compression_model)
+            agent_decoded = getattr(agent, "decoded_token", None)
+            caller_sub = (
+                agent_decoded.get("sub")
+                if isinstance(agent_decoded, dict)
+                else None
+            )
+            # Use model-owner scope (mirrors orchestrator path) so
+            # shared-agent owner-BYOM resolves under the owner's layer.
+            compression_user_id = (
+                getattr(agent, "model_user_id", None) or caller_sub
+            )
+            provider = get_provider_from_model_id(
+                compression_model, user_id=compression_user_id
+            )
             api_key = get_api_key_for_provider(provider)
             compression_llm = LLMCreator.create_llm(
                 provider,
@@ -586,6 +603,7 @@ class LLMHandler(ABC):
                 getattr(agent, "decoded_token", None),
                 model_id=compression_model,
                 agent_id=getattr(agent, "agent_id", None),
+                model_user_id=compression_user_id,
             )
 
             # Create service without DB persistence capability
@@ -921,8 +939,15 @@ class LLMHandler(ABC):
                 }
                 return ""
 
+            # ``agent.model_id`` is the registry id (a UUID for BYOM
+            # records). Use the LLM's own model_id, which LLMCreator
+            # already resolved to the upstream model name. Built-ins:
+            # the two are equal; BYOM: the upstream name like
+            # "mistral-large-latest" instead of the UUID.
             response = agent.llm.gen(
-                model=agent.model_id, messages=messages, tools=agent.tools
+                model=getattr(agent.llm, "model_id", None) or agent.model_id,
+                messages=messages,
+                tools=agent.tools,
             )
             parsed = self.parse_response(response)
             self.llm_calls.append(build_stack_data(agent.llm))
@@ -1011,8 +1036,11 @@ class LLMHandler(ABC):
                     })
                     logger.info("Context limit reached - instructing agent to wrap up")
 
+                # See note above on agent.model_id vs llm.model_id.
                 response = agent.llm.gen_stream(
-                    model=agent.model_id, messages=messages, tools=agent.tools if not agent.context_limit_reached else None
+                    model=getattr(agent.llm, "model_id", None) or agent.model_id,
+                    messages=messages,
+                    tools=agent.tools if not agent.context_limit_reached else None,
                 )
                 self.llm_calls.append(build_stack_data(agent.llm))
 

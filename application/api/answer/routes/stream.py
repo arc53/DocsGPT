@@ -109,6 +109,7 @@ class StreamResource(Resource, BaseAnswerResource):
                         decoded_token=processor.decoded_token,
                         agent_id=processor.agent_id,
                         model_id=processor.model_id,
+                        model_user_id=processor.model_user_id,
                         _continuation={
                             "messages": messages,
                             "tools_dict": tools_dict,
@@ -145,6 +146,7 @@ class StreamResource(Resource, BaseAnswerResource):
                     is_shared_usage=processor.is_shared_usage,
                     shared_token=processor.shared_token,
                     model_id=processor.model_id,
+                    model_user_id=processor.model_user_id,
                 ),
                 mimetype="text/event-stream",
             )

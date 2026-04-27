@@ -14,6 +14,7 @@ const useTabs = () => {
     t('settings.analytics.label'),
     t('settings.logs.label'),
     t('settings.tools.label'),
+    t('settings.customModels.label'),
   ];
   return tabs;
 };

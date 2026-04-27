@@ -162,8 +162,10 @@ class TestCompressIfNeeded:
             current_query_tokens=1000,
         )
 
+        # user_id flows through so BYOM custom-model UUIDs resolve to
+        # the user's declared context window in the threshold check.
         mock_threshold_checker.should_compress.assert_called_once_with(
-            sample_conversation, "gpt-4", 1000
+            sample_conversation, "gpt-4", 1000, user_id="user1"
         )
 
 
@@ -270,8 +272,12 @@ class TestPerformCompression:
             )
             orch._perform_compression("c1", conversation, "gpt-4", decoded_token)
 
-            # Verify the override model was used
-            mock_get_provider.assert_called_with("gpt-3.5-turbo")
+            # Verify the override model was used. user_id flows from
+            # decoded_token['sub'] so per-user BYOM custom-model UUIDs
+            # resolve.
+            mock_get_provider.assert_called_with(
+                "gpt-3.5-turbo", user_id=decoded_token["sub"]
+            )
 
     @patch(
         "application.api.answer.services.compression.orchestrator.get_provider_from_model_id"
@@ -362,7 +368,12 @@ class TestCompressMidExecution:
             )
 
             mock_perform.assert_called_once_with(
-                "conv1", sample_conversation, "gpt-4", decoded_token
+                "conv1",
+                sample_conversation,
+                "gpt-4",
+                decoded_token,
+                user_id="user1",
+                model_user_id=None,
             )
 
     def test_loads_conversation_when_not_provided(

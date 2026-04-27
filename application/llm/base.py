@@ -17,6 +17,8 @@ class BaseLLM(ABC):
         model_id=None,
         base_url=None,
         backup_models=None,
+        model_user_id=None,
+        capabilities=None,
     ):
         self.decoded_token = decoded_token
         self.agent_id = str(agent_id) if agent_id else None
@@ -25,6 +27,12 @@ class BaseLLM(ABC):
         self.token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
         self._backup_models = backup_models or []
         self._fallback_llm = None
+        # Registry-resolved per-model capability overrides (BYOM caps,
+        # operator YAML). None falls back to provider-class defaults.
+        self.capabilities = capabilities
+        # BYOM-resolution scope captured at LLM creation time so backup
+        # / fallback lookups hit the same per-user layer as the primary.
+        self.model_user_id = model_user_id
 
     @property
     def fallback_llm(self):
@@ -39,10 +47,19 @@ class BaseLLM(ABC):
             get_api_key_for_provider,
         )
 
-        # Try per-agent backup models first
+        # model_user_id (BYOM scope) takes precedence over the caller's
+        # sub so shared-agent backups resolve under the owner's layer.
+        caller_sub = (
+            self.decoded_token.get("sub")
+            if isinstance(self.decoded_token, dict)
+            else None
+        )
+        backup_user_id = self.model_user_id or caller_sub
         for backup_model_id in self._backup_models:
             try:
-                provider = get_provider_from_model_id(backup_model_id)
+                provider = get_provider_from_model_id(
+                    backup_model_id, user_id=backup_user_id
+                )
                 if not provider:
                     logger.warning(
                         f"Could not resolve provider for backup model: {backup_model_id}"
@@ -56,6 +73,7 @@ class BaseLLM(ABC):
                     decoded_token=self.decoded_token,
                     model_id=backup_model_id,
                     agent_id=self.agent_id,
+                    model_user_id=self.model_user_id,
                 )
                 logger.info(
                     f"Fallback LLM initialized from agent backup model: "
@@ -68,7 +86,10 @@ class BaseLLM(ABC):
                 )
                 continue
 
-        # Fall back to global FALLBACK_* settings
+        # Fall back to global FALLBACK_* settings. Forward
+        # ``model_user_id`` here too: deployments can configure
+        # ``FALLBACK_LLM_NAME`` to a BYOM UUID, and that UUID is owned
+        # by the same user the primary model was resolved under.
         if settings.FALLBACK_LLM_PROVIDER:
             try:
                 self._fallback_llm = LLMCreator.create_llm(
@@ -78,6 +99,7 @@ class BaseLLM(ABC):
                     decoded_token=self.decoded_token,
                     model_id=settings.FALLBACK_LLM_NAME,
                     agent_id=self.agent_id,
+                    model_user_id=self.model_user_id,
                 )
                 logger.info(
                     f"Fallback LLM initialized from global settings: "

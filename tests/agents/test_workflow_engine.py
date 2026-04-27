@@ -116,7 +116,7 @@ def test_execute_agent_node_normalizes_wrapped_schema_before_agent_create(monkey
     )
     monkeypatch.setattr(
         "application.core.model_utils.get_model_capabilities",
-        lambda _model_id: {"supports_structured_output": True},
+        lambda _model_id, **_kwargs: {"supports_structured_output": True},
     )
 
     list(engine._execute_agent_node(node))
@@ -242,7 +242,7 @@ def test_validate_workflow_structure_rejects_unsupported_structured_output_model
     monkeypatch.setattr(
         workflow_routes,
         "get_model_capabilities",
-        lambda _model_id: {"supports_structured_output": False},
+        lambda _model_id, **_kwargs: {"supports_structured_output": False},
     )
 
     nodes = [
@@ -296,7 +296,7 @@ def test_execute_agent_node_raises_when_structured_output_violates_schema(monkey
     )
     monkeypatch.setattr(
         "application.core.model_utils.get_model_capabilities",
-        lambda _model_id: {"supports_structured_output": True},
+        lambda _model_id, **_kwargs: {"supports_structured_output": True},
     )
 
     with pytest.raises(ValueError, match="Structured output did not match schema"):
@@ -322,7 +322,7 @@ def test_execute_agent_node_raises_when_schema_set_and_response_not_json(monkeyp
     )
     monkeypatch.setattr(
         "application.core.model_utils.get_model_capabilities",
-        lambda _model_id: {"supports_structured_output": True},
+        lambda _model_id, **_kwargs: {"supports_structured_output": True},
     )
 
     with pytest.raises(
@@ -360,11 +360,11 @@ class TestWorkflowEngineAdditionalCoverage:
         )
         monkeypatch.setattr(
             "application.core.model_utils.get_provider_from_model_id",
-            lambda _: None,
+            lambda _, **_kwargs: None,
         )
         monkeypatch.setattr(
             "application.core.model_utils.get_model_capabilities",
-            lambda _: None,
+            lambda _, **_kwargs: None,
         )
 
         list(engine._execute_agent_node(node))
@@ -390,11 +390,11 @@ class TestWorkflowEngineAdditionalCoverage:
         )
         monkeypatch.setattr(
             "application.core.model_utils.get_provider_from_model_id",
-            lambda _: "openai",
+            lambda _, **_kwargs: "openai",
         )
         monkeypatch.setattr(
             "application.core.model_utils.get_model_capabilities",
-            lambda _: None,
+            lambda _, **_kwargs: None,
         )
 
         list(engine._execute_agent_node(node))
@@ -416,11 +416,11 @@ class TestWorkflowEngineAdditionalCoverage:
         )
         monkeypatch.setattr(
             "application.core.model_utils.get_provider_from_model_id",
-            lambda _: "openai",
+            lambda _, **_kwargs: "openai",
         )
         monkeypatch.setattr(
             "application.core.model_utils.get_model_capabilities",
-            lambda _: {"supports_structured_output": False},
+            lambda _, **_kwargs: {"supports_structured_output": False},
         )
 
         with pytest.raises(ValueError, match="does not support structured output"):
@@ -450,11 +450,11 @@ class TestWorkflowEngineAdditionalCoverage:
         )
         monkeypatch.setattr(
             "application.core.model_utils.get_provider_from_model_id",
-            lambda _: None,
+            lambda _, **_kwargs: None,
         )
         monkeypatch.setattr(
             "application.core.model_utils.get_model_capabilities",
-            lambda _: {"supports_structured_output": True},
+            lambda _, **_kwargs: {"supports_structured_output": True},
         )
 
         list(engine._execute_agent_node(node))
@@ -481,11 +481,11 @@ class TestWorkflowEngineAdditionalCoverage:
         )
         monkeypatch.setattr(
             "application.core.model_utils.get_provider_from_model_id",
-            lambda _: None,
+            lambda _, **_kwargs: None,
         )
         monkeypatch.setattr(
             "application.core.model_utils.get_model_capabilities",
-            lambda _: {"supports_structured_output": True},
+            lambda _, **_kwargs: {"supports_structured_output": True},
         )
 
         with pytest.raises(

@@ -244,6 +244,71 @@
         }
       }
     },
+    "customModels": {
+      "label": "Свои модели",
+      "subtitle": "Подключите свою модель, совместимую с OpenAI.",
+      "addModel": "Добавить модель",
+      "empty": "Модели не найдены",
+      "searchPlaceholder": "Поиск моделей...",
+      "modalSubtitle": "Подключите любой OpenAI-совместимый эндпоинт (Mistral, Together, vLLM и т. п.).",
+      "addTitle": "Добавить свою модель",
+      "editTitle": "Изменить свою модель",
+      "save": "Сохранить",
+      "saving": "Сохранение",
+      "testConnection": "Проверить соединение",
+      "testing": "Проверка",
+      "testSuccess": "Соединение установлено.",
+      "testHintNew": "Заполните Base URL, ID модели и API-ключ, чтобы включить проверку соединения.",
+      "disabledBadge": "Отключено",
+      "deleteWarning": "Удалить свою модель «{{modelName}}»?",
+      "actionsMenuAria": "Действия для {{modelName}}",
+      "modelsGroup": {
+        "builtin": "Модели DocsGPT",
+        "user": "Мои модели"
+      },
+      "actions": {
+        "edit": "Изменить",
+        "delete": "Удалить"
+      },
+      "fields": {
+        "displayName": "Отображаемое имя",
+        "modelId": "ID модели",
+        "description": "Описание",
+        "baseUrl": "Base URL",
+        "apiKey": "API-ключ"
+      },
+      "placeholders": {
+        "displayName": "Мой Mistral",
+        "modelId": "напр. mistral-large-latest",
+        "description": "Необязательное описание",
+        "baseUrl": "https://api.mistral.ai/v1",
+        "apiKey": "sk-...",
+        "apiKeyEdit": "Оставьте пустым, чтобы сохранить текущий"
+      },
+      "hints": {
+        "apiKeyEdit": "Оставьте пустым, чтобы сохранить текущий ключ."
+      },
+      "capabilities": {
+        "title": "Возможности",
+        "contextWindowShort": "Контекстное окно",
+        "chips": {
+          "tools": "Инструменты",
+          "structuredOutput": "Структурированный вывод",
+          "images": "Изображения"
+        }
+      },
+      "errors": {
+        "displayNameRequired": "Укажите отображаемое имя",
+        "modelIdRequired": "Укажите ID модели",
+        "baseUrlRequired": "Укажите Base URL",
+        "baseUrlScheme": "Base URL должен начинаться с http:// или https://",
+        "baseUrlInvalid": "Введите корректный URL",
+        "apiKeyRequired": "Укажите API-ключ",
+        "contextWindowRange": "Контекстное окно должно быть от 1 000 до 10 000 000",
+        "saveFailed": "Не удалось сохранить свою модель",
+        "testFailed": "Проверка соединения не удалась"
+      }
+    },
     "scrollTabsLeft": "Прокрутить вкладки влево",
     "tabsAriaLabel": "Вкладки настроек",
     "scrollTabsRight": "Прокрутить вкладки вправо"

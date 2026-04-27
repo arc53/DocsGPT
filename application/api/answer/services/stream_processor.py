@@ -121,6 +121,8 @@ class StreamProcessor:
         self.agent_id = self.data.get("agent_id")
         self.agent_key = None
         self.model_id: Optional[str] = None
+        # BYOM-resolution scope, set by _validate_and_set_model.
+        self.model_user_id: Optional[str] = None
         self.conversation_service = ConversationService()
         self.compression_orchestrator = CompressionOrchestrator(
             self.conversation_service
@@ -191,16 +193,23 @@ class StreamProcessor:
                     for query in conversation.get("queries", [])
                 ]
         else:
+            # model_user_id keeps history trim aligned with the BYOM's
+            # actual context window instead of the default 128k.
             self.history = limit_chat_history(
-                json.loads(self.data.get("history", "[]")), model_id=self.model_id
+                json.loads(self.data.get("history", "[]")),
+                model_id=self.model_id,
+                user_id=self.model_user_id,
             )
 
     def _handle_compression(self, conversation: Dict[str, Any]):
         """Handle conversation compression logic using orchestrator."""
         try:
+            # initial_user_id for conversation access; model_user_id
+            # for BYOM context-window / provider lookups.
             result = self.compression_orchestrator.compress_if_needed(
                 conversation_id=self.conversation_id,
                 user_id=self.initial_user_id,
+                model_user_id=self.model_user_id,
                 model_id=self.model_id,
                 decoded_token=self.decoded_token,
             )
@@ -284,11 +293,18 @@ class StreamProcessor:
         from application.core.model_settings import ModelRegistry
 
         requested_model = self.data.get("model_id")
+        # Caller picks from their own BYOM layer; agent defaults resolve
+        # under the owner's layer (shared agents have caller != owner).
+        caller_user_id = self.initial_user_id
+        owner_user_id = self.agent_config.get("user_id") or caller_user_id
 
         if requested_model:
-            if not validate_model_id(requested_model):
+            if not validate_model_id(requested_model, user_id=caller_user_id):
                 registry = ModelRegistry.get_instance()
-                available_models = [m.id for m in registry.get_enabled_models()]
+                available_models = [
+                    m.id
+                    for m in registry.get_enabled_models(user_id=caller_user_id)
+                ]
                 raise ValueError(
                     f"Invalid model_id '{requested_model}'. "
                     f"Available models: {', '.join(available_models[:5])}"
@@ -299,12 +315,17 @@ class StreamProcessor:
                     )
                 )
             self.model_id = requested_model
+            self.model_user_id = caller_user_id
         else:
             agent_default_model = self.agent_config.get("default_model_id", "")
-            if agent_default_model and validate_model_id(agent_default_model):
+            if agent_default_model and validate_model_id(
+                agent_default_model, user_id=owner_user_id
+            ):
                 self.model_id = agent_default_model
+                self.model_user_id = owner_user_id
             else:
                 self.model_id = get_default_model_id()
+                self.model_user_id = None
 
     def _get_agent_key(self, agent_id: Optional[str], user_id: Optional[str]) -> tuple:
         """Get API key for agent with access control."""
@@ -514,6 +535,10 @@ class StreamProcessor:
                     "allow_system_prompt_override": self._agent_data.get(
                         "allow_system_prompt_override", False
                     ),
+                    # Owner identity — _validate_and_set_model reads this to
+                    # resolve owner-stored BYOM default_model_id against the
+                    # owner's per-user model layer rather than the caller's.
+                    "user_id": self._agent_data.get("user"),
                 }
             )
 
@@ -561,7 +586,13 @@ class StreamProcessor:
 
     def _configure_retriever(self):
         """Assemble retriever config with precedence: request > agent > default."""
-        doc_token_limit = calculate_doc_token_budget(model_id=self.model_id)
+        # BYOM scope: owner for shared-agent BYOM, caller for own BYOM,
+        # None for built-ins. Without ``user_id`` here, the doc budget
+        # falls back to settings.DEFAULT_LLM_TOKEN_LIMIT and overfills
+        # the upstream context window for any small (e.g. 8k/32k) BYOM.
+        doc_token_limit = calculate_doc_token_budget(
+            model_id=self.model_id, user_id=self.model_user_id
+        )
 
         # Start with defaults
         retriever_name = "classic"
@@ -612,6 +643,7 @@ class StreamProcessor:
             chunks=self.retriever_config["chunks"],
             doc_token_limit=self.retriever_config.get("doc_token_limit", 50000),
             model_id=self.model_id,
+            model_user_id=self.model_user_id,
             user_api_key=self.agent_config["user_api_key"],
             agent_id=self.agent_id,
             decoded_token=self.decoded_token,
@@ -903,6 +935,11 @@ class StreamProcessor:
         agent_config = state["agent_config"]
 
         model_id = agent_config.get("model_id")
+        # BYOM scope captured at initial dispatch. None for built-ins or
+        # caller-owned BYOM where decoded_token['sub'] is already the
+        # right scope; non-None for shared-agent owner BYOM where the
+        # caller's identity differs from the model owner's.
+        model_user_id = agent_config.get("model_user_id")
         llm_name = agent_config.get("llm_name", settings.LLM_PROVIDER)
         api_key = agent_config.get("api_key")
         user_api_key = agent_config.get("user_api_key")
@@ -920,6 +957,7 @@ class StreamProcessor:
             decoded_token=self.decoded_token,
             model_id=model_id,
             agent_id=agent_id,
+            model_user_id=model_user_id,
         )
         llm_handler = LLMHandlerCreator.create_handler(llm_name or "default")
         tool_executor = ToolExecutor(
@@ -949,6 +987,7 @@ class StreamProcessor:
             "endpoint": "stream",
             "llm_name": llm_name,
             "model_id": model_id,
+            "model_user_id": model_user_id,
             "api_key": system_api_key,
             "agent_id": agent_id,
             "user_api_key": user_api_key,
@@ -971,6 +1010,15 @@ class StreamProcessor:
 
         # Store config for the route layer
         self.model_id = model_id
+        # Mirror ``model_user_id`` back onto the processor so the route
+        # layer (StreamResource) reads the owner scope captured at
+        # initial dispatch. Without this, ``processor.model_user_id``
+        # stays at the __init__ default (None) and complete_stream
+        # falls back to the caller's sub: the post-resume title-LLM
+        # save misses the owner's BYOM layer, and any second tool
+        # pause persists ``model_user_id=None`` — losing owner scope
+        # for every subsequent resume of this conversation.
+        self.model_user_id = model_user_id
         self.agent_id = agent_id
         self.agent_config["user_api_key"] = user_api_key
         self.conversation_id = conversation_id
@@ -1022,8 +1070,11 @@ class StreamProcessor:
                 tools_data=tools_data,
             )
 
+        # Use the user_id that resolved the model so owner-scoped BYOM
+        # records dispatch correctly on shared-agent requests.
+        model_user_id = getattr(self, "model_user_id", self.initial_user_id)
         provider = (
-            get_provider_from_model_id(self.model_id)
+            get_provider_from_model_id(self.model_id, user_id=model_user_id)
             if self.model_id
             else settings.LLM_PROVIDER
         )
@@ -1048,6 +1099,8 @@ class StreamProcessor:
             model_id=self.model_id,
             agent_id=self.agent_id,
             backup_models=backup_models,
+            # Owner-scope on shared-agent BYOM dispatch.
+            model_user_id=model_user_id,
         )
         llm_handler = LLMHandlerCreator.create_handler(
             provider if provider else "default"
@@ -1070,6 +1123,7 @@ class StreamProcessor:
             "endpoint": "stream",
             "llm_name": provider or settings.LLM_PROVIDER,
             "model_id": self.model_id,
+            "model_user_id": self.model_user_id,
             "api_key": system_api_key,
             "agent_id": self.agent_id,
             "user_api_key": self.agent_config["user_api_key"],
@@ -1097,6 +1151,7 @@ class StreamProcessor:
                     "doc_token_limit", 50000
                 ),
                 "model_id": self.model_id,
+                "model_user_id": self.model_user_id,
                 "user_api_key": self.agent_config["user_api_key"],
                 "agent_id": self.agent_id,
                 "llm_name": provider or settings.LLM_PROVIDER,

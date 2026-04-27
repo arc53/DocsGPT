@@ -244,6 +244,71 @@
         }
       }
     },
+    "customModels": {
+      "label": "カスタムモデル",
+      "subtitle": "OpenAI 互換のモデルを自分で接続できます。",
+      "addModel": "モデルを追加",
+      "empty": "モデルが見つかりません",
+      "searchPlaceholder": "モデルを検索...",
+      "modalSubtitle": "OpenAI 互換のエンドポイントを接続できます (Mistral、Together、vLLM など)。",
+      "addTitle": "カスタムモデルを追加",
+      "editTitle": "カスタムモデルを編集",
+      "save": "保存",
+      "saving": "保存中",
+      "testConnection": "接続をテスト",
+      "testing": "テスト中",
+      "testSuccess": "接続に成功しました。",
+      "testHintNew": "接続テストを有効にするには、ベース URL、モデル ID、API キーを入力してください。",
+      "disabledBadge": "無効",
+      "deleteWarning": "カスタムモデル「{{modelName}}」を削除してもよろしいですか?",
+      "actionsMenuAria": "{{modelName}} のアクション",
+      "modelsGroup": {
+        "builtin": "DocsGPT モデル",
+        "user": "マイモデル"
+      },
+      "actions": {
+        "edit": "編集",
+        "delete": "削除"
+      },
+      "fields": {
+        "displayName": "表示名",
+        "modelId": "モデル ID",
+        "description": "説明",
+        "baseUrl": "ベース URL",
+        "apiKey": "API キー"
+      },
+      "placeholders": {
+        "displayName": "My Mistral",
+        "modelId": "例: mistral-large-latest",
+        "description": "説明 (任意)",
+        "baseUrl": "https://api.mistral.ai/v1",
+        "apiKey": "sk-...",
+        "apiKeyEdit": "既存のキーを保持する場合は空欄のまま"
+      },
+      "hints": {
+        "apiKeyEdit": "既存のキーを保持するには空欄のままにしてください。"
+      },
+      "capabilities": {
+        "title": "機能",
+        "contextWindowShort": "コンテキストウィンドウ",
+        "chips": {
+          "tools": "ツール",
+          "structuredOutput": "構造化出力",
+          "images": "画像"
+        }
+      },
+      "errors": {
+        "displayNameRequired": "表示名は必須です",
+        "modelIdRequired": "モデル ID は必須です",
+        "baseUrlRequired": "ベース URL は必須です",
+        "baseUrlScheme": "ベース URL は http:// または https:// で始まる必要があります",
+        "baseUrlInvalid": "有効な URL を入力してください",
+        "apiKeyRequired": "API キーは必須です",
+        "contextWindowRange": "コンテキストウィンドウは 1,000 から 10,000,000 の範囲で指定してください",
+        "saveFailed": "カスタムモデルの保存に失敗しました",
+        "testFailed": "接続テストに失敗しました"
+      }
+    },
     "scrollTabsLeft": "タブを左にスクロール",
     "tabsAriaLabel": "設定タブ",
     "scrollTabsRight": "タブを右にスクロール"

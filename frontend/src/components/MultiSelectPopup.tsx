@@ -11,6 +11,7 @@ export type OptionType = {
   id: string | number;
   label: string;
   icon?: string | React.ReactNode;
+  group?: string;
   [key: string]: any;
 };
 
@@ -227,43 +228,75 @@ export default function MultiSelectPopup({
                 </p>
               </div>
             ) : (
-              filteredOptions.map((option) => {
-                const isSelected = selectedIds.has(option.id);
-                return (
-                  <div
-                    key={option.id}
-                    onClick={() => handleOptionClick(option.id)}
-                    className="dark:border-border dark:hover:bg-accent hover:bg-accent flex cursor-pointer items-center justify-between border-b border-[#D9D9D9] p-3 last:border-b-0"
-                    role="option"
-                    aria-selected={isSelected}
-                  >
-                    <div className="mr-3 flex grow items-center overflow-hidden">
-                      {option.icon && renderIcon(option.icon)}
-                      <p
-                        className="overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap text-gray-900 dark:text-white"
-                        title={option.label}
-                      >
-                        {option.label}
-                      </p>
-                    </div>
-                    <div className="shrink-0">
-                      <div
-                        className={`border-border bg-card flex h-4 w-4 items-center justify-center rounded-xs border-2`}
-                        aria-hidden="true"
-                      >
-                        {isSelected && (
-                          <img
-                            src={CheckmarkIcon}
-                            alt="checkmark"
-                            width={10}
-                            height={10}
-                          />
-                        )}
+              (() => {
+                const hasGroups = filteredOptions.some((o) => !!o.group);
+                const renderOption = (option: OptionType) => {
+                  const isSelected = selectedIds.has(option.id);
+                  return (
+                    <div
+                      key={option.id}
+                      onClick={() => handleOptionClick(option.id)}
+                      className="dark:border-border dark:hover:bg-accent hover:bg-accent flex cursor-pointer items-center justify-between border-b border-[#D9D9D9] p-3 last:border-b-0"
+                      role="option"
+                      aria-selected={isSelected}
+                    >
+                      <div className="mr-3 flex grow items-center overflow-hidden">
+                        {option.icon && renderIcon(option.icon)}
+                        <p
+                          className="overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap text-gray-900 dark:text-white"
+                          title={option.label}
+                        >
+                          {option.label}
+                        </p>
+                      </div>
+                      <div className="shrink-0">
+                        <div
+                          className={`border-border bg-card flex h-4 w-4 items-center justify-center rounded-xs border-2`}
+                          aria-hidden="true"
+                        >
+                          {isSelected && (
+                            <img
+                              src={CheckmarkIcon}
+                              alt="checkmark"
+                              width={10}
+                              height={10}
+                            />
+                          )}
+                        </div>
                       </div>
                     </div>
+                  );
+                };
+
+                if (!hasGroups) {
+                  return filteredOptions.map(renderOption);
+                }
+
+                const groupOrder: string[] = [];
+                const groupMap = new Map<string, OptionType[]>();
+                filteredOptions.forEach((opt) => {
+                  const key = opt.group || '';
+                  if (!groupMap.has(key)) {
+                    groupOrder.push(key);
+                    groupMap.set(key, []);
+                  }
+                  groupMap.get(key)!.push(opt);
+                });
+
+                return groupOrder.map((groupKey) => (
+                  <div key={`group-${groupKey || 'ungrouped'}`}>
+                    {groupKey && (
+                      <div
+                        className="bg-muted/50 dark:bg-card text-muted-foreground sticky top-0 z-10 border-b border-[#D9D9D9] px-3 py-1.5 text-xs font-semibold uppercase dark:border-[#2E2E2E]"
+                        role="presentation"
+                      >
+                        {groupKey}
+                      </div>
+                    )}
+                    {(groupMap.get(groupKey) || []).map(renderOption)}
                   </div>
-                );
-              })
+                ));
+              })()
             )}
           </div>
         )}

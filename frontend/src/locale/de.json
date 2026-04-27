@@ -244,6 +244,71 @@
         }
       }
     },
+    "customModels": {
+      "label": "Eigene Modelle",
+      "subtitle": "Verbinde dein eigenes OpenAI-kompatibles Modell.",
+      "addModel": "Modell hinzufügen",
+      "empty": "Keine Modelle gefunden",
+      "searchPlaceholder": "Modelle suchen...",
+      "modalSubtitle": "Verbinde einen beliebigen OpenAI-kompatiblen Endpunkt (Mistral, Together, vLLM usw.).",
+      "addTitle": "Eigenes Modell hinzufügen",
+      "editTitle": "Eigenes Modell bearbeiten",
+      "save": "Speichern",
+      "saving": "Speichern",
+      "testConnection": "Verbindung testen",
+      "testing": "Test läuft",
+      "testSuccess": "Verbindung erfolgreich.",
+      "testHintNew": "Fülle Basis-URL, Modell-ID und API-Schlüssel aus, um Verbindungstests zu aktivieren.",
+      "disabledBadge": "Deaktiviert",
+      "deleteWarning": "Möchtest du das eigene Modell \"{{modelName}}\" wirklich löschen?",
+      "actionsMenuAria": "Aktionen für {{modelName}}",
+      "modelsGroup": {
+        "builtin": "DocsGPT-Modelle",
+        "user": "Meine Modelle"
+      },
+      "actions": {
+        "edit": "Bearbeiten",
+        "delete": "Löschen"
+      },
+      "fields": {
+        "displayName": "Anzeigename",
+        "modelId": "Modell-ID",
+        "description": "Beschreibung",
+        "baseUrl": "Basis-URL",
+        "apiKey": "API-Schlüssel"
+      },
+      "placeholders": {
+        "displayName": "Mein Mistral",
+        "modelId": "z. B. mistral-large-latest",
+        "description": "Optionale Beschreibung",
+        "baseUrl": "https://api.mistral.ai/v1",
+        "apiKey": "sk-...",
+        "apiKeyEdit": "Leer lassen, um den vorhandenen Schlüssel beizubehalten"
+      },
+      "hints": {
+        "apiKeyEdit": "Leer lassen, um den vorhandenen Schlüssel beizubehalten."
+      },
+      "capabilities": {
+        "title": "Fähigkeiten",
+        "contextWindowShort": "Kontextfenster",
+        "chips": {
+          "tools": "Tools",
+          "structuredOutput": "Strukturierte Ausgabe",
+          "images": "Bilder"
+        }
+      },
+      "errors": {
+        "displayNameRequired": "Anzeigename ist erforderlich",
+        "modelIdRequired": "Modell-ID ist erforderlich",
+        "baseUrlRequired": "Basis-URL ist erforderlich",
+        "baseUrlScheme": "Basis-URL muss mit http:// oder https:// beginnen",
+        "baseUrlInvalid": "Bitte gib eine gültige URL ein",
+        "apiKeyRequired": "API-Schlüssel ist erforderlich",
+        "contextWindowRange": "Kontextfenster muss zwischen 1.000 und 10.000.000 liegen",
+        "saveFailed": "Eigenes Modell konnte nicht gespeichert werden",
+        "testFailed": "Verbindungstest fehlgeschlagen"
+      }
+    },
     "scrollTabsLeft": "Tabs nach links scrollen",
     "tabsAriaLabel": "Einstellungs-Tabs",
     "scrollTabsRight": "Tabs nach rechts scrollen"

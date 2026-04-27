@@ -177,6 +177,7 @@ class BaseAnswerResource:
         is_shared_usage: bool = False,
         shared_token: Optional[str] = None,
         model_id: Optional[str] = None,
+        model_user_id: Optional[str] = None,
         _continuation: Optional[Dict] = None,
     ) -> Generator[str, None, None]:
         """
@@ -289,8 +290,18 @@ class BaseAnswerResource:
                     # conversation if this is the first turn.
                     if not conversation_id and should_save_conversation:
                         try:
+                            # Use model-owner scope so shared-agent
+                            # owner-BYOM resolves to its registered plugin.
                             provider = (
-                                get_provider_from_model_id(model_id)
+                                get_provider_from_model_id(
+                                    model_id,
+                                    user_id=model_user_id
+                                    or (
+                                        decoded_token.get("sub")
+                                        if decoded_token
+                                        else None
+                                    ),
+                                )
                                 if model_id
                                 else settings.LLM_PROVIDER
                             )
@@ -304,6 +315,7 @@ class BaseAnswerResource:
                                 decoded_token=decoded_token,
                                 model_id=model_id,
                                 agent_id=agent_id,
+                                model_user_id=model_user_id,
                             )
                             conversation_id = (
                                 self.conversation_service.save_conversation(
@@ -340,6 +352,9 @@ class BaseAnswerResource:
                                 tool_schemas=getattr(agent, "tools", []),
                                 agent_config={
                                     "model_id": model_id or self.default_model_id,
+                                    # Persist BYOM scope so resume doesn't
+                                    # fall back to caller's layer.
+                                    "model_user_id": model_user_id,
                                     "llm_name": getattr(agent, "llm_name", settings.LLM_PROVIDER),
                                     "api_key": getattr(agent, "api_key", None),
                                     "user_api_key": user_api_key,
@@ -370,8 +385,14 @@ class BaseAnswerResource:
             if isNoneDoc:
                 for doc in source_log_docs:
                     doc["source"] = "None"
+            # Run under model-owner scope so title-gen LLM inside
+            # save_conversation uses the owner's BYOM provider/key.
             provider = (
-                get_provider_from_model_id(model_id)
+                get_provider_from_model_id(
+                    model_id,
+                    user_id=model_user_id
+                    or (decoded_token.get("sub") if decoded_token else None),
+                )
                 if model_id
                 else settings.LLM_PROVIDER
             )
@@ -384,6 +405,7 @@ class BaseAnswerResource:
                 decoded_token=decoded_token,
                 model_id=model_id,
                 agent_id=agent_id,
+                model_user_id=model_user_id,
             )
 
             if should_save_conversation:
@@ -481,12 +503,34 @@ class BaseAnswerResource:
                     if isNoneDoc:
                         for doc in source_log_docs:
                             doc["source"] = "None"
+                    # Mirror the normal-path provider resolution so the
+                    # partial-save title LLM uses the model-owner's BYOM
+                    # registration (shared-agent dispatch) rather than
+                    # the deployment default with the instance api key.
+                    provider = (
+                        get_provider_from_model_id(
+                            model_id,
+                            user_id=model_user_id
+                            or (
+                                decoded_token.get("sub")
+                                if decoded_token
+                                else None
+                            ),
+                        )
+                        if model_id
+                        else settings.LLM_PROVIDER
+                    )
+                    sys_api_key = get_api_key_for_provider(
+                        provider or settings.LLM_PROVIDER
+                    )
                     llm = LLMCreator.create_llm(
-                        settings.LLM_PROVIDER,
-                        api_key=settings.API_KEY,
+                        provider or settings.LLM_PROVIDER,
+                        api_key=sys_api_key,
                         user_api_key=user_api_key,
                         decoded_token=decoded_token,
+                        model_id=model_id,
                         agent_id=agent_id,
+                        model_user_id=model_user_id,
                     )
                     self.conversation_service.save_conversation(
                         conversation_id,

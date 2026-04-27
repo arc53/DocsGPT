@@ -122,6 +122,11 @@ def mock_llm():
     llm._supports_tools = True
     llm._supports_structured_output = Mock(return_value=False)
     llm.__class__.__name__ = "MockLLM"
+    # Mirror BaseLLM.__init__: real LLMCreator stores the resolved
+    # upstream model name on self.model_id. Tests that build agents via
+    # ``mock_llm_creator`` rely on the agent's ``upstream_model_id``
+    # falling through to this attribute.
+    llm.model_id = "gpt-4"
     return llm
 
 

@@ -198,8 +198,14 @@ def normalize_agent_node_json_schemas(nodes: List[Dict]) -> List[Dict]:
     return normalized_nodes
 
 
-def validate_workflow_structure(nodes: List[Dict], edges: List[Dict]) -> List[str]:
-    """Validate workflow graph structure."""
+def validate_workflow_structure(
+    nodes: List[Dict], edges: List[Dict], user_id: str | None = None
+) -> List[str]:
+    """Validate workflow graph structure.
+
+    ``user_id`` is required so per-user BYOM custom-model UUIDs resolve
+    when checking each agent node's structured-output capability.
+    """
     errors = []
 
     if not nodes:
@@ -343,7 +349,7 @@ def validate_workflow_structure(nodes: List[Dict], edges: List[Dict]) -> List[st
 
         model_id = raw_config.get("model_id")
         if has_json_schema and isinstance(model_id, str) and model_id.strip():
-            capabilities = get_model_capabilities(model_id.strip())
+            capabilities = get_model_capabilities(model_id.strip(), user_id=user_id)
             if capabilities and not capabilities.get("supports_structured_output", False):
                 errors.append(
                     f"Agent node '{agent_title}' selected model does not support structured output"
@@ -389,7 +395,9 @@ class WorkflowList(Resource):
         nodes_data = data.get("nodes", [])
         edges_data = data.get("edges", [])
 
-        validation_errors = validate_workflow_structure(nodes_data, edges_data)
+        validation_errors = validate_workflow_structure(
+            nodes_data, edges_data, user_id=user_id
+        )
         if validation_errors:
             return error_response(
                 "Workflow validation failed", errors=validation_errors
@@ -451,7 +459,9 @@ class WorkflowDetail(Resource):
         nodes_data = data.get("nodes", [])
         edges_data = data.get("edges", [])
 
-        validation_errors = validate_workflow_structure(nodes_data, edges_data)
+        validation_errors = validate_workflow_structure(
+            nodes_data, edges_data, user_id=user_id
+        )
         if validation_errors:
             return error_response(
                 "Workflow validation failed", errors=validation_errors

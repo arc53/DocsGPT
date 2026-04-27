@@ -112,7 +112,7 @@ class TestFlaskCors:
         response = client.get("/api/health", headers={"Origin": "http://localhost:5173"})
         assert response.headers["Access-Control-Allow-Origin"] == "*"
         assert response.headers["Access-Control-Allow-Headers"] == "Content-Type, Authorization"
-        assert response.headers["Access-Control-Allow-Methods"] == "GET, POST, PUT, DELETE, OPTIONS"
+        assert response.headers["Access-Control-Allow-Methods"] == "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 
     @pytest.mark.unit
     def test_cors_headers_on_flask_preflight(self, client):
@@ -127,4 +127,4 @@ class TestFlaskCors:
         assert response.status_code == 200
         assert response.headers["Access-Control-Allow-Origin"] == "*"
         assert response.headers["Access-Control-Allow-Headers"] == "Content-Type, Authorization"
-        assert response.headers["Access-Control-Allow-Methods"] == "GET, POST, PUT, DELETE, OPTIONS"
+        assert response.headers["Access-Control-Allow-Methods"] == "GET, POST, PUT, PATCH, DELETE, OPTIONS"
