@@ -95,6 +95,96 @@ class TestGenMethods:
         )
         assert result == ["a", "b"]
 
+    @patch("application.llm.base.stream_cache", lambda f: f)
+    @patch("application.llm.base.stream_token_usage", lambda f: f)
+    def test_gen_stream_emits_llm_stream_start_event(self, caplog):
+        import logging as _logging
+
+        class FakeProvider(StubLLM):
+            provider_name = "fake-provider"
+
+        llm = FakeProvider(raw_gen_stream_items=["x"])
+        with caplog.at_level(_logging.INFO, logger="root"):
+            list(
+                llm.gen_stream(
+                    model="m1",
+                    messages=[{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hey"}],
+                    tools=[{"name": "t"}],
+                    _usage_attachments=[{"path": "/tmp/a.png"}],
+                )
+            )
+
+        starts = [r for r in caplog.records if r.message == "llm_stream_start"]
+        assert len(starts) == 1
+        evt = starts[0]
+        assert evt.model == "m1"
+        assert evt.provider == "fake-provider"
+        assert evt.message_count == 2
+        # ``_usage_attachments`` is what ``Agent._llm_gen`` actually passes;
+        # the alias check below covers the bare ``attachments=`` form.
+        assert evt.has_attachments is True
+        assert evt.has_tools is True
+
+    @patch("application.llm.base.stream_cache", lambda f: f)
+    @patch("application.llm.base.stream_token_usage", lambda f: f)
+    def test_gen_stream_recognises_attachments_kwarg_alias(self, caplog):
+        import logging as _logging
+
+        llm = StubLLM(raw_gen_stream_items=["x"])
+        with caplog.at_level(_logging.INFO, logger="root"):
+            list(
+                llm.gen_stream(
+                    model="m1", messages=[], attachments=[{"path": "/tmp/a"}]
+                )
+            )
+        evt = next(r for r in caplog.records if r.message == "llm_stream_start")
+        assert evt.has_attachments is True
+
+    @patch("application.llm.base.stream_cache", lambda f: f)
+    @patch("application.llm.base.stream_token_usage", lambda f: f)
+    def test_gen_stream_emits_event_without_attachments_or_tools(self, caplog):
+        import logging as _logging
+
+        llm = StubLLM(raw_gen_stream_items=["x"])
+        with caplog.at_level(_logging.INFO, logger="root"):
+            list(llm.gen_stream(model="m1", messages=[]))
+
+        evt = next(r for r in caplog.records if r.message == "llm_stream_start")
+        assert evt.message_count == 0
+        assert evt.has_attachments is False
+        assert evt.has_tools is False
+        # BaseLLM default — concrete providers always override.
+        assert evt.provider == "unknown"
+
+
+@pytest.mark.unit
+class TestProviderNameRegistry:
+    """A new provider without ``provider_name`` would silently report
+    ``provider="unknown"`` in telemetry. Pin the expected values here."""
+
+    def test_provider_names_match_expectations(self):
+        from application.llm.anthropic import AnthropicLLM
+        from application.llm.docsgpt_provider import DocsGPTAPILLM
+        from application.llm.google_ai import GoogleLLM
+        from application.llm.groq import GroqLLM
+        from application.llm.llama_cpp import LlamaCpp
+        from application.llm.novita import NovitaLLM
+        from application.llm.open_router import OpenRouterLLM
+        from application.llm.openai import OpenAILLM
+        from application.llm.premai import PremAILLM
+        from application.llm.sagemaker import SagemakerAPILLM
+
+        assert OpenAILLM.provider_name == "openai"
+        assert GoogleLLM.provider_name == "google"
+        assert AnthropicLLM.provider_name == "anthropic"
+        assert GroqLLM.provider_name == "groq"
+        assert NovitaLLM.provider_name == "novita"
+        assert OpenRouterLLM.provider_name == "openrouter"
+        assert DocsGPTAPILLM.provider_name == "docsgpt"
+        assert PremAILLM.provider_name == "premai"
+        assert LlamaCpp.provider_name == "llama_cpp"
+        assert SagemakerAPILLM.provider_name == "sagemaker"
+
     @patch("application.llm.base.gen_cache", lambda f: f)
     @patch("application.llm.base.gen_token_usage", lambda f: f)
     def test_gen_passes_tools(self):

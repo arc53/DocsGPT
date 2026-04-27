@@ -153,4 +153,108 @@ class TestLogActivity:
         ):
             list(failing_gen(FakeAgent()))
 
+    def test_log_activity_emits_lifecycle_events(self, caplog):
+        import logging as _logging
+
+        from application.logging import log_activity
+
+        class FakeAgent:
+            endpoint = "test"
+            user = "user1"
+            user_api_key = "k"
+            query = "q"
+            agent_id = "agent-7"
+            conversation_id = "conv-3"
+
+        @log_activity()
+        def gen(agent, log_context=None):
+            yield "x"
+
+        with patch("application.logging._log_activity_to_db"), \
+                caplog.at_level(_logging.INFO, logger="root"):
+            list(gen(FakeAgent()))
+
+        messages = [r.message for r in caplog.records]
+        assert "activity_started" in messages
+        assert "activity_finished" in messages
+
+        started = next(r for r in caplog.records if r.message == "activity_started")
+        finished = next(r for r in caplog.records if r.message == "activity_finished")
+
+        assert started.endpoint == "test"
+        assert started.user_id == "user1"
+        assert started.agent_id == "agent-7"
+        assert started.conversation_id == "conv-3"
+        assert started.parent_activity_id is None  # top-level activity
+
+        assert finished.activity_id == started.activity_id
+        assert finished.status == "ok"
+        assert isinstance(finished.duration_ms, int)
+        assert finished.duration_ms >= 0
+        assert finished.error_class is None
+
+    def test_log_activity_records_parent_activity_id_when_nested(self, caplog):
+        # Sub-agents / workflow_agents wrap an outer @log_activity gen;
+        # the inner activity_started event must link to the outer's id.
+        import logging as _logging
+
+        from application.logging import log_activity
+
+        class FakeAgent:
+            endpoint = "outer"
+            user = "user1"
+            user_api_key = ""
+            query = ""
+
+        class InnerAgent:
+            endpoint = "inner"
+            user = "user1"
+            user_api_key = ""
+            query = ""
+
+        @log_activity()
+        def inner_gen(agent, log_context=None):
+            yield "i"
+
+        @log_activity()
+        def outer_gen(agent, log_context=None):
+            yield from inner_gen(InnerAgent())
+
+        with patch("application.logging._log_activity_to_db"), \
+                caplog.at_level(_logging.INFO, logger="root"):
+            list(outer_gen(FakeAgent()))
+
+        starts = [r for r in caplog.records if r.message == "activity_started"]
+        assert len(starts) == 2
+        outer_start, inner_start = starts
+        assert outer_start.endpoint == "outer"
+        assert outer_start.parent_activity_id is None
+        assert inner_start.endpoint == "inner"
+        assert inner_start.parent_activity_id == outer_start.activity_id
+
+    def test_log_activity_records_error_status_on_failure(self, caplog):
+        import logging as _logging
+
+        from application.logging import log_activity
+
+        class FakeAgent:
+            endpoint = "boom"
+            user = "user1"
+            user_api_key = ""
+            query = ""
+
+        @log_activity()
+        def failing(agent, log_context=None):
+            yield "before"
+            raise ValueError("bad thing")
+
+        with patch("application.logging._log_activity_to_db"), \
+                caplog.at_level(_logging.INFO, logger="root"), \
+                pytest.raises(ValueError):
+            list(failing(FakeAgent()))
+
+        finished = next(r for r in caplog.records if r.message == "activity_finished")
+        assert finished.status == "error"
+        assert finished.error_class == "ValueError"
+
 

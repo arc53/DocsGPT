@@ -1,5 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
+from typing import ClassVar
 
 from application.cache import gen_cache, stream_cache
 
@@ -10,6 +11,10 @@ logger = logging.getLogger(__name__)
 
 
 class BaseLLM(ABC):
+    # Stamped onto the ``llm_stream_start`` event so dashboards can group
+    # calls by vendor. Subclasses override.
+    provider_name: ClassVar[str] = "unknown"
+
     def __init__(
         self,
         decoded_token=None,
@@ -206,6 +211,21 @@ class BaseLLM(ABC):
         )
 
     def gen_stream(self, model, messages, stream=True, tools=None, *args, **kwargs):
+        # Attachments arrive as ``_usage_attachments`` from ``Agent._llm_gen``;
+        # the ``stream_token_usage`` decorator pops that key, but the log
+        # fires before the decorator runs so it's still in ``kwargs`` here.
+        logging.info(
+            "llm_stream_start",
+            extra={
+                "model": model,
+                "provider": self.provider_name,
+                "message_count": len(messages) if messages is not None else 0,
+                "has_attachments": bool(
+                    kwargs.get("_usage_attachments") or kwargs.get("attachments")
+                ),
+                "has_tools": bool(tools),
+            },
+        )
         decorators = [stream_cache, stream_token_usage]
         return self._execute_with_fallback(
             "_raw_gen_stream",

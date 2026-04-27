@@ -10,6 +10,8 @@ from application.storage.storage_creator import StorageCreator
 
 
 class GoogleLLM(BaseLLM):
+    provider_name = "google"
+
     def __init__(
         self, api_key=None, user_api_key=None, decoded_token=None, *args, **kwargs
     ):
@@ -540,22 +542,6 @@ class GoogleLLM(BaseLLM):
             config.response_schema = response_schema
             config.response_mime_type = "application/json"
         # Check if we have both tools and file attachments
-
-        has_attachments = False
-        for message in messages:
-            for part in message.parts:
-                if hasattr(part, "file_data") and part.file_data is not None:
-                    has_attachments = True
-                    break
-            if has_attachments:
-                break
-        messages_summary = self._summarize_messages_for_log(messages)
-        logging.info(
-            "GoogleLLM: Starting stream generation. Model: %s, Messages: %s, Has attachments: %s",
-            model,
-            messages_summary,
-            has_attachments,
-        )
 
         response = client.models.generate_content_stream(
             model=model,

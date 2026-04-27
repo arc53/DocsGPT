@@ -61,6 +61,7 @@ def _truncate_base64_for_logging(messages):
 
 
 class OpenAILLM(BaseLLM):
+    provider_name = "openai"
 
     def __init__(
         self,

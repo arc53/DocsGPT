@@ -9,6 +9,7 @@ from jose import jwt
 
 from application.auth import handle_auth
 
+from application.core import log_context
 from application.core.logging_config import setup_logging
 
 setup_logging()
@@ -112,6 +113,38 @@ def generate_token():
     return jsonify({"error": "Token generation not allowed in current auth mode"}), 400
 
 
+_LOG_CTX_TOKEN_ATTR = "_log_ctx_token"
+
+
+@app.before_request
+def _bind_log_context():
+    """Bind activity_id + endpoint for the duration of this request.
+
+    Runs before ``authenticate_request``; ``user_id`` is overlaid in a
+    follow-up handler once the JWT has been decoded.
+    """
+    if request.method == "OPTIONS":
+        return None
+    activity_id = str(uuid.uuid4())
+    request.activity_id = activity_id
+    token = log_context.bind(
+        activity_id=activity_id,
+        endpoint=request.endpoint,
+    )
+    setattr(request, _LOG_CTX_TOKEN_ATTR, token)
+    return None
+
+
+@app.teardown_request
+def _reset_log_context(_exc):
+    # SSE streams keep yielding after teardown fires, but a2wsgi runs each
+    # request inside ``copy_context().run(...)``, so this reset doesn't
+    # leak into the stream's view of the context.
+    token = getattr(request, _LOG_CTX_TOKEN_ATTR, None)
+    if token is not None:
+        log_context.reset(token)
+
+
 @app.before_request
 def enforce_stt_request_size_limits():
     if request.method == "OPTIONS":
@@ -146,6 +179,21 @@ def authenticate_request():
         return jsonify(decoded_token), 401
     else:
         request.decoded_token = decoded_token
+
+
+@app.before_request
+def _bind_user_id_to_log_context():
+    # Registered after ``authenticate_request`` (Flask runs before_request
+    # handlers in registration order), so ``request.decoded_token`` is
+    # populated by the time we read it. ``teardown_request`` unwinds the
+    # whole request-level bind, so no separate reset token is needed here.
+    if request.method == "OPTIONS":
+        return None
+    decoded_token = getattr(request, "decoded_token", None)
+    user_id = decoded_token.get("sub") if isinstance(decoded_token, dict) else None
+    if user_id:
+        log_context.bind(user_id=user_id)
+    return None
 
 
 @app.after_request

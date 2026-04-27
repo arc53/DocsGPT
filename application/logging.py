@@ -1,11 +1,13 @@
 import datetime
 import functools
 import inspect
+import time
 
 import logging
 import uuid
 from typing import Any, Callable, Dict, Generator, List
 
+from application.core import log_context
 from application.storage.db.repositories.stack_logs import StackLogsRepository
 from application.storage.db.session import db_session
 
@@ -78,20 +80,94 @@ def log_activity() -> Callable:
             user = data.get("user", "local")
             api_key = data.get("user_api_key", "")
             query = kwargs.get("query", getattr(args[0], "query", ""))
+            agent_id = getattr(args[0], "agent_id", None) or kwargs.get("agent_id")
+            conversation_id = (
+                kwargs.get("conversation_id")
+                or getattr(args[0], "conversation_id", None)
+            )
+            model = getattr(args[0], "gpt_model", None) or getattr(args[0], "model", None)
+
+            # Capture the surrounding activity_id before overlaying ours,
+            # so nested activities record the parent → child link.
+            parent_activity_id = log_context.snapshot().get("activity_id")
 
             context = LogContext(endpoint, activity_id, user, api_key, query)
             kwargs["log_context"] = context
 
-            logging.info(
-                f"Starting activity: {endpoint} - {activity_id} - User: {user}"
+            ctx_token = log_context.bind(
+                activity_id=activity_id,
+                parent_activity_id=parent_activity_id,
+                user_id=user,
+                agent_id=agent_id,
+                conversation_id=conversation_id,
+                endpoint=endpoint,
+                model=model,
             )
 
-            generator = func(*args, **kwargs)
-            yield from _consume_and_log(generator, context)
+            started_at = time.monotonic()
+            logging.info(
+                "activity_started",
+                extra={
+                    "activity_id": activity_id,
+                    "parent_activity_id": parent_activity_id,
+                    "user_id": user,
+                    "agent_id": agent_id,
+                    "conversation_id": conversation_id,
+                    "endpoint": endpoint,
+                    "model": model,
+                },
+            )
+
+            error: BaseException | None = None
+            try:
+                generator = func(*args, **kwargs)
+                yield from _consume_and_log(generator, context)
+            except Exception as exc:
+                # Only ``Exception`` counts as an activity error; ``GeneratorExit``
+                # (consumer disconnected mid-stream) and ``KeyboardInterrupt``
+                # flow through the finally as ``status="ok"``, matching
+                # ``_consume_and_log``.
+                error = exc
+                raise
+            finally:
+                _emit_activity_finished(
+                    activity_id=activity_id,
+                    parent_activity_id=parent_activity_id,
+                    user=user,
+                    endpoint=endpoint,
+                    started_at=started_at,
+                    error=error,
+                )
+                log_context.reset(ctx_token)
 
         return wrapper
 
     return decorator
+
+
+def _emit_activity_finished(
+    *,
+    activity_id: str,
+    parent_activity_id: str | None,
+    user: str,
+    endpoint: str,
+    started_at: float,
+    error: BaseException | None,
+) -> None:
+    """Emit the paired ``activity_finished`` event with duration and outcome."""
+    duration_ms = int((time.monotonic() - started_at) * 1000)
+    logging.info(
+        "activity_finished",
+        extra={
+            "activity_id": activity_id,
+            "parent_activity_id": parent_activity_id,
+            "user_id": user,
+            "endpoint": endpoint,
+            "duration_ms": duration_ms,
+            "status": "error" if error is not None else "ok",
+            "error_class": type(error).__name__ if error is not None else None,
+        },
+    )
 
 
 def _consume_and_log(generator: Generator, context: "LogContext"):
