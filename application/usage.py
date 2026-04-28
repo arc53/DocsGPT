@@ -1,5 +1,6 @@
 import sys
 import logging
+import time
 from datetime import datetime
 
 from application.storage.db.repositories.token_usage import TokenUsageRepository
@@ -145,19 +146,44 @@ def stream_token_usage(func):
             **kwargs,
         )
         batch = []
-        result = func(self, model, messages, stream, tools, **kwargs)
-        for r in result:
-            batch.append(r)
-            yield r
-        for line in batch:
-            call_usage["generated_tokens"] += _count_tokens(line)
-        self.token_usage["prompt_tokens"] += call_usage["prompt_tokens"]
-        self.token_usage["generated_tokens"] += call_usage["generated_tokens"]
-        update_token_usage(
-            self.decoded_token,
-            self.user_api_key,
-            call_usage,
-            getattr(self, "agent_id", None),
-        )
+        started_at = time.monotonic()
+        error: BaseException | None = None
+        try:
+            result = func(self, model, messages, stream, tools, **kwargs)
+            for r in result:
+                batch.append(r)
+                yield r
+        except Exception as exc:
+            # ``GeneratorExit`` (consumer disconnected) and KeyboardInterrupt
+            # flow through as ``status="ok"`` — same convention as
+            # ``application.logging._consume_and_log``.
+            error = exc
+            raise
+        finally:
+            for line in batch:
+                call_usage["generated_tokens"] += _count_tokens(line)
+            self.token_usage["prompt_tokens"] += call_usage["prompt_tokens"]
+            self.token_usage["generated_tokens"] += call_usage["generated_tokens"]
+            # Persist usage rows only on success: a partial mid-stream
+            # failure shouldn't bill the user for a response they never got.
+            if error is None:
+                update_token_usage(
+                    self.decoded_token,
+                    self.user_api_key,
+                    call_usage,
+                    getattr(self, "agent_id", None),
+                )
+            emit = getattr(self, "_emit_stream_finished_log", None)
+            if callable(emit):
+                try:
+                    emit(
+                        model,
+                        prompt_tokens=call_usage["prompt_tokens"],
+                        completion_tokens=call_usage["generated_tokens"],
+                        latency_ms=int((time.monotonic() - started_at) * 1000),
+                        error=error,
+                    )
+                except Exception:
+                    logger.exception("Failed to emit llm_stream_finished")
 
     return wrapper

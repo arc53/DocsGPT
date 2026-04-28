@@ -296,6 +296,35 @@ class BaseLLM(ABC):
             },
         )
 
+    def _emit_stream_finished_log(
+        self,
+        model,
+        *,
+        prompt_tokens,
+        completion_tokens,
+        latency_ms,
+        cached_tokens=None,
+        error=None,
+    ):
+        # Paired with ``llm_stream_start`` so cost dashboards can sum tokens
+        # by user/agent/provider. Token counts are client-side estimates
+        # from ``stream_token_usage``; vendor-reported counts (incl.
+        # ``cached_tokens`` for prompt caching) require per-provider
+        # extraction in each ``_raw_gen_stream`` and aren't wired yet.
+        extra = {
+            "model": model,
+            "provider": self.provider_name,
+            "prompt_tokens": int(prompt_tokens),
+            "completion_tokens": int(completion_tokens),
+            "latency_ms": int(latency_ms),
+            "status": "error" if error is not None else "ok",
+        }
+        if cached_tokens is not None:
+            extra["cached_tokens"] = int(cached_tokens)
+        if error is not None:
+            extra["error_class"] = type(error).__name__
+        logging.info("llm_stream_finished", extra=extra)
+
     def gen_stream(self, model, messages, stream=True, tools=None, *args, **kwargs):
         # Attachments arrive as ``_usage_attachments`` from ``Agent._llm_gen``;
         # the ``stream_token_usage`` decorator pops that key, but the log

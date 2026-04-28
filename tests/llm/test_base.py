@@ -151,6 +151,90 @@ class TestGenMethods:
         # BaseLLM default — concrete providers always override.
         assert evt.provider == "unknown"
 
+    @patch("application.llm.base.stream_cache", lambda f: f)
+    def test_gen_stream_emits_llm_stream_finished_on_success(self, caplog):
+        # Real ``stream_token_usage`` so the emit-from-finally path runs.
+        # ``update_token_usage`` short-circuits under pytest, so no DB
+        # mocking is needed.
+        import logging as _logging
+
+        class FakeProvider(StubLLM):
+            provider_name = "fake-provider"
+
+        llm = FakeProvider(raw_gen_stream_items=["alpha", "beta"])
+        llm.user_api_key = None
+        with caplog.at_level(_logging.INFO, logger="root"):
+            list(
+                llm.gen_stream(
+                    model="m1",
+                    messages=[{"role": "user", "content": "hi"}],
+                )
+            )
+
+        finished = [r for r in caplog.records if r.message == "llm_stream_finished"]
+        assert len(finished) == 1
+        evt = finished[0]
+        assert evt.model == "m1"
+        assert evt.provider == "fake-provider"
+        assert evt.status == "ok"
+        assert isinstance(evt.prompt_tokens, int) and evt.prompt_tokens >= 0
+        assert isinstance(evt.completion_tokens, int) and evt.completion_tokens > 0
+        assert isinstance(evt.latency_ms, int) and evt.latency_ms >= 0
+        # ``cached_tokens`` is intentionally absent until per-provider
+        # vendor-usage extraction lands.
+        assert not hasattr(evt, "cached_tokens")
+        assert not hasattr(evt, "error_class")
+
+    @patch("application.llm.base.stream_cache", lambda f: f)
+    def test_gen_stream_emits_llm_stream_finished_on_error(self, caplog):
+        import logging as _logging
+
+        class FakeProvider(BaseLLM):
+            provider_name = "fake-provider"
+
+            def _raw_gen(self, baseself, model, messages, stream=False, tools=None, **kw):
+                return "x"
+
+            def _raw_gen_stream(self, baseself, model, messages, stream=True, tools=None, **kw):
+                yield "partial"
+                raise RuntimeError("mid_stream_boom")
+
+        llm = FakeProvider()
+        llm.user_api_key = None
+        with caplog.at_level(_logging.INFO, logger="root"), pytest.raises(RuntimeError):
+            list(llm.gen_stream(model="m1", messages=[]))
+
+        finished = [r for r in caplog.records if r.message == "llm_stream_finished"]
+        assert len(finished) == 1
+        evt = finished[0]
+        assert evt.status == "error"
+        assert evt.error_class == "RuntimeError"
+        # Partial completion tokens still recorded (the chunk yielded
+        # before the failure is in the batch).
+        assert evt.completion_tokens > 0
+
+    @patch("application.llm.base.stream_cache", lambda f: f)
+    def test_gen_stream_finished_event_paired_with_stream_start(self, caplog):
+        # The two events form a pair the cost dashboards join on; verify
+        # they always come in order and from the same provider/model.
+        import logging as _logging
+
+        class FakeProvider(StubLLM):
+            provider_name = "fake-provider"
+
+        llm = FakeProvider(raw_gen_stream_items=["x"])
+        llm.user_api_key = None
+        with caplog.at_level(_logging.INFO, logger="root"):
+            list(llm.gen_stream(model="m1", messages=[]))
+
+        records = [
+            r for r in caplog.records
+            if r.message in ("llm_stream_start", "llm_stream_finished")
+        ]
+        assert [r.message for r in records] == ["llm_stream_start", "llm_stream_finished"]
+        assert records[0].model == records[1].model == "m1"
+        assert records[0].provider == records[1].provider == "fake-provider"
+
 
 @pytest.mark.unit
 class TestProviderNameRegistry:

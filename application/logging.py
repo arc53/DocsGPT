@@ -24,6 +24,15 @@ class LogContext:
         self.api_key = api_key
         self.query = query
         self.stacks = []
+        # Per-activity response aggregates populated by ``_consume_and_log``
+        # while it forwards stream items, then flushed onto the
+        # ``activity_finished`` event so every Flask request gets the
+        # same summary that ``run_agent_logic`` used to log only for the
+        # Celery webhook path.
+        self.answer_length = 0
+        self.thought_length = 0
+        self.source_count = 0
+        self.tool_call_count = 0
 
 
 def build_stack_data(
@@ -131,10 +140,8 @@ def log_activity() -> Callable:
                 raise
             finally:
                 _emit_activity_finished(
-                    activity_id=activity_id,
+                    context=context,
                     parent_activity_id=parent_activity_id,
-                    user=user,
-                    endpoint=endpoint,
                     started_at=started_at,
                     error=error,
                 )
@@ -147,32 +154,60 @@ def log_activity() -> Callable:
 
 def _emit_activity_finished(
     *,
-    activity_id: str,
+    context: "LogContext",
     parent_activity_id: str | None,
-    user: str,
-    endpoint: str,
     started_at: float,
     error: BaseException | None,
 ) -> None:
-    """Emit the paired ``activity_finished`` event with duration and outcome."""
+    """Emit the paired ``activity_finished`` event with duration, outcome,
+    and per-activity response aggregates accumulated in ``_consume_and_log``.
+    """
     duration_ms = int((time.monotonic() - started_at) * 1000)
     logging.info(
         "activity_finished",
         extra={
-            "activity_id": activity_id,
+            "activity_id": context.activity_id,
             "parent_activity_id": parent_activity_id,
-            "user_id": user,
-            "endpoint": endpoint,
+            "user_id": context.user,
+            "endpoint": context.endpoint,
             "duration_ms": duration_ms,
             "status": "error" if error is not None else "ok",
             "error_class": type(error).__name__ if error is not None else None,
+            "answer_length": context.answer_length,
+            "thought_length": context.thought_length,
+            "source_count": context.source_count,
+            "tool_call_count": context.tool_call_count,
         },
     )
+
+
+def _accumulate_response_summary(item: Any, context: "LogContext") -> None:
+    """Mirror the per-line aggregation that ``run_agent_logic`` did for the
+    Celery webhook path, but at the generator-consumption layer so every
+    ``Agent.gen`` activity (Flask streaming, sub-agents, workflow agents)
+    gets the same summary.
+    """
+    if not isinstance(item, dict):
+        return
+    if "answer" in item:
+        context.answer_length += len(str(item["answer"]))
+        return
+    if "thought" in item:
+        context.thought_length += len(str(item["thought"]))
+        return
+    sources = item.get("sources") if "sources" in item else None
+    if isinstance(sources, list):
+        context.source_count += len(sources)
+        return
+    tool_calls = item.get("tool_calls") if "tool_calls" in item else None
+    if isinstance(tool_calls, list):
+        context.tool_call_count += len(tool_calls)
 
 
 def _consume_and_log(generator: Generator, context: "LogContext"):
     try:
         for item in generator:
+            _accumulate_response_summary(item, context)
             yield item
     except Exception as e:
         logging.exception(f"Error in {context.endpoint} - {context.activity_id}: {e}")

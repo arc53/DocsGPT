@@ -257,4 +257,115 @@ class TestLogActivity:
         assert finished.status == "error"
         assert finished.error_class == "ValueError"
 
+    def test_log_activity_emits_response_summary_aggregates(self, caplog):
+        # Replaces the ``agent_response`` event that ``run_agent_logic``
+        # used to emit only on the Celery webhook path: every Flask
+        # activity now gets the same aggregates on ``activity_finished``.
+        import logging as _logging
+
+        from application.logging import log_activity
+
+        class FakeAgent:
+            endpoint = "stream"
+            user = "user1"
+            user_api_key = ""
+            query = "q"
+
+        @log_activity()
+        def streaming(agent, log_context=None):
+            yield {"answer": "Hello "}
+            yield {"answer": "world"}
+            yield {"thought": "thinking..."}
+            yield {"sources": [{"id": "a"}, {"id": "b"}, {"id": "c"}]}
+            yield {"tool_calls": [{"name": "search"}, {"name": "fetch"}]}
+            yield "ignored-non-dict"
+            yield {"unrecognised": "noop"}
+
+        with patch("application.logging._log_activity_to_db"), \
+                caplog.at_level(_logging.INFO, logger="root"):
+            list(streaming(FakeAgent()))
+
+        finished = next(r for r in caplog.records if r.message == "activity_finished")
+        assert finished.answer_length == len("Hello world")
+        assert finished.thought_length == len("thinking...")
+        assert finished.source_count == 3
+        assert finished.tool_call_count == 2
+
+    def test_log_activity_aggregates_initialise_to_zero(self, caplog):
+        # No yields → summary fields still present and zero (so Axiom
+        # schemas don't get a missing-field hole on empty activities).
+        import logging as _logging
+
+        from application.logging import log_activity
+
+        class FakeAgent:
+            endpoint = "stream"
+            user = "user1"
+            user_api_key = ""
+            query = ""
+
+        @log_activity()
+        def empty(agent, log_context=None):
+            return
+            yield  # pragma: no cover — generator marker
+
+        with patch("application.logging._log_activity_to_db"), \
+                caplog.at_level(_logging.INFO, logger="root"):
+            list(empty(FakeAgent()))
+
+        finished = next(r for r in caplog.records if r.message == "activity_finished")
+        assert finished.answer_length == 0
+        assert finished.thought_length == 0
+        assert finished.source_count == 0
+        assert finished.tool_call_count == 0
+
+
+@pytest.mark.unit
+class TestAccumulateResponseSummary:
+    """Direct coverage of the dispatch table — easier to enumerate edge
+    cases here than in end-to-end ``log_activity`` tests."""
+
+    def _ctx(self):
+        from application.logging import LogContext
+
+        return LogContext(
+            endpoint="e", activity_id="a", user="u", api_key="k", query="q"
+        )
+
+    def test_answer_appends_length(self):
+        from application.logging import _accumulate_response_summary
+
+        ctx = self._ctx()
+        _accumulate_response_summary({"answer": "abcd"}, ctx)
+        _accumulate_response_summary({"answer": "ef"}, ctx)
+        assert ctx.answer_length == 6
+        assert ctx.thought_length == 0
+
+    def test_non_dict_items_are_ignored(self):
+        from application.logging import _accumulate_response_summary
+
+        ctx = self._ctx()
+        for item in ("string", 123, None, ["list"], object()):
+            _accumulate_response_summary(item, ctx)
+        assert ctx.answer_length == 0
+        assert ctx.source_count == 0
+
+    def test_sources_must_be_list(self):
+        # A malformed payload (sources=str) shouldn't crash the
+        # accumulator — drop it silently rather than half-count it.
+        from application.logging import _accumulate_response_summary
+
+        ctx = self._ctx()
+        _accumulate_response_summary({"sources": "not-a-list"}, ctx)
+        assert ctx.source_count == 0
+
+    def test_tool_calls_counted(self):
+        from application.logging import _accumulate_response_summary
+
+        ctx = self._ctx()
+        _accumulate_response_summary(
+            {"tool_calls": [{"name": "a"}, {"name": "b"}]}, ctx
+        )
+        assert ctx.tool_call_count == 2
+
 
