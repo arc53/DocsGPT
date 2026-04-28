@@ -77,7 +77,7 @@
     "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-unused-imports": "^4.4.1",
-    "globals": "^15.15.0",
+    "globals": "^17.5.0",
     "parcel": "^2.16.4",
     "prettier": "^3.8.1",
     "process": "^0.11.10",
