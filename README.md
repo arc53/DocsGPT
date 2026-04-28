@@ -47,11 +47,13 @@
 </ul>
 
 ## Roadmap
-- [x] Add OAuth 2.0 authentication for MCP ( September 2025 )
-- [x] Deep Agents ( October 2025 )
-- [x] Prompt Templating ( October 2025 )
-- [x] Full api tooling ( Dec 2025 )
-- [ ] Agent scheduling ( Jan 2026 )
+- [x] Agent Workflow Builder with conditional nodes ( February 2026 )
+- [x] SharePoint & Confluence connectors ( March – April 2026 )
+- [x] Research mode ( March 2026 )
+- [x] Postgres migration for user data ( April 2026 )
+- [x] OpenTelemetry observability ( April 2026 )
+- [x] Bring Your Own Model (BYOM) ( April 2026 )
+- [ ] Agent scheduling (RedBeat-backed) ( Q2 2026 )
 
 You can find our full roadmap [here](https://github.com/orgs/arc53/projects/2). Please don't hesitate to contribute or create issues, it helps us improve DocsGPT!
 
