@@ -9,7 +9,6 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import ArrowDown from '../assets/arrow-down.svg';
-import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import RetryIcon from '../components/RetryIcon';
 import Hero from '../Hero';
 import { useDarkTheme } from '../hooks';
@@ -17,7 +16,7 @@ import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
 
 const SCROLL_THRESHOLD = 10;
-const LAST_BUBBLE_MARGIN = 'mb-32';
+const LAST_BUBBLE_MARGIN = 'mb-40';
 const DEFAULT_BUBBLE_MARGIN = 'mb-7';
 const FIRST_QUESTION_BUBBLE_MARGIN_TOP = 'mt-5';
 
@@ -44,6 +43,7 @@ type ConversationMessagesProps = {
     comment?: string,
   ) => void;
   isSplitView?: boolean;
+  onScrolledFromBottom?: (distanceFromBottom: number) => void;
 };
 
 export default function ConversationMessages({
@@ -57,63 +57,88 @@ export default function ConversationMessages({
   onOpenArtifact,
   onToolAction,
   isSplitView = false,
+  onScrolledFromBottom,
 }: ConversationMessagesProps) {
   const [isDarkTheme] = useDarkTheme();
   const { t } = useTranslation();
 
   const conversationRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [scrollButtonVisible, setScrollButtonVisible] = useState(false);
   const userInterruptedRef = useRef(false);
   const [interrupted, setInterrupted] = useState(false);
+  const wasNotAtBottomRef = useRef(false);
   const lastTouchYRef = useRef<number | null>(null);
   const isInitialLoad = useRef(true);
   const prevQueriesRef = useRef(queries);
   const isAutoScrollingRef = useRef(false);
-  const smoothScrollTimeoutRef =
-    useRef<ReturnType<typeof setTimeout>>(undefined);
+  const scrollAnimFrameRef = useRef<number | null>(null);
+  const settleAnimFrameRef = useRef<number | null>(null);
   const showButtonTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const shadowRafRef = useRef<number | null>(null);
 
   useEffect(() => {
     return () => {
-      clearTimeout(smoothScrollTimeoutRef.current);
       clearTimeout(showButtonTimerRef.current);
+      if (scrollAnimFrameRef.current !== null)
+        cancelAnimationFrame(scrollAnimFrameRef.current);
+      if (settleAnimFrameRef.current !== null)
+        cancelAnimationFrame(settleAnimFrameRef.current);
     };
   }, []);
 
   const isAtBottom = useCallback(() => {
     const el = conversationRef.current;
     if (!el) return true;
-    return el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
+    return (
+      el.scrollHeight - Math.max(0, el.scrollTop) - el.clientHeight <
+      SCROLL_THRESHOLD
+    );
   }, []);
 
-  // Arm on upward scroll intent; requiring !isAtBottom() missed small nudges still inside SCROLL_THRESHOLD.
-  const markInterruptedIfLoading = useCallback(() => {
-    if (userInterruptedRef.current || status !== 'loading') return;
+  const markInterrupted = useCallback(() => {
+    if (userInterruptedRef.current) return;
     userInterruptedRef.current = true;
+    wasNotAtBottomRef.current = false;
+    isAutoScrollingRef.current = false;
+    if (settleAnimFrameRef.current !== null) {
+      cancelAnimationFrame(settleAnimFrameRef.current);
+      settleAnimFrameRef.current = null;
+    }
+    if (scrollAnimFrameRef.current !== null) {
+      cancelAnimationFrame(scrollAnimFrameRef.current);
+      scrollAnimFrameRef.current = null;
+    }
     setInterrupted(true);
-  }, [status]);
+  }, []);
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
-      if (e.deltaY < 0) markInterruptedIfLoading();
+      if (e.deltaY < 0) markInterrupted();
     },
-    [markInterruptedIfLoading],
+    [markInterrupted],
   );
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    lastTouchYRef.current = e.touches[0].clientY;
-  }, []);
-
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent) => {
+  useEffect(() => {
+    const el = conversationRef.current;
+    if (!el) return;
+    const onTouchStart = (e: TouchEvent) => {
+      lastTouchYRef.current = e.touches[0].clientY;
+    };
+    const onTouchMove = (e: TouchEvent) => {
       const y = e.touches[0].clientY;
       if (lastTouchYRef.current !== null && y > lastTouchYRef.current) {
-        markInterruptedIfLoading();
+        markInterrupted();
       }
       lastTouchYRef.current = y;
-    },
-    [markInterruptedIfLoading],
-  );
+    };
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+    };
+  }, [markInterrupted]);
 
   const setButtonHidden = useCallback(() => {
     clearTimeout(showButtonTimerRef.current);
@@ -129,63 +154,68 @@ export default function ConversationMessages({
     }, 300);
   }, []);
 
-  const scrollConversationToBottom = useCallback(
-    (instant?: boolean) => {
-      if (!conversationRef.current) return;
-
-      isAutoScrollingRef.current = true;
-      clearTimeout(smoothScrollTimeoutRef.current);
-
-      requestAnimationFrame(() => {
-        if (!conversationRef?.current) return;
-
-        if (instant) {
-          conversationRef.current.scrollTop =
-            conversationRef.current.scrollHeight;
-          if (isAtBottom()) {
-            setButtonHidden();
-          }
-          isAutoScrollingRef.current = false;
-        } else {
-          conversationRef.current.scrollTo({
-            behavior: 'smooth',
-            top: conversationRef.current.scrollHeight,
-          });
-          smoothScrollTimeoutRef.current = setTimeout(() => {
-            if (isAtBottom()) {
-              setButtonHidden();
-            }
-            isAutoScrollingRef.current = false;
-          }, 500);
-        }
-      });
-    },
-    [isAtBottom, setButtonHidden],
-  );
+  const scrollToBottom = useCallback((instant = false) => {
+    const el = conversationRef.current;
+    if (!el) return;
+    if (scrollAnimFrameRef.current !== null) {
+      cancelAnimationFrame(scrollAnimFrameRef.current);
+      scrollAnimFrameRef.current = null;
+    }
+    if (instant) {
+      el.scrollTop = el.scrollHeight;
+      isAutoScrollingRef.current = false;
+      return;
+    }
+    const startTop = el.scrollTop;
+    const distance = el.scrollHeight - el.clientHeight - startTop;
+    if (distance <= SCROLL_THRESHOLD) return;
+    isAutoScrollingRef.current = true;
+    const duration = Math.min(Math.max(distance * 0.5, 450), 900);
+    const startTime = performance.now();
+    const step = (now: number) => {
+      if (!isAutoScrollingRef.current) {
+        scrollAnimFrameRef.current = null;
+        return;
+      }
+      const t = Math.min((now - startTime) / duration, 1);
+      el.scrollTop = startTop + distance * (1 - (1 - t) ** 3);
+      if (t < 1) {
+        scrollAnimFrameRef.current = requestAnimationFrame(step);
+      } else {
+        el.scrollTop = el.scrollHeight;
+        isAutoScrollingRef.current = false;
+        scrollAnimFrameRef.current = null;
+      }
+    };
+    scrollAnimFrameRef.current = requestAnimationFrame(step);
+  }, []);
 
   const handleScroll = useCallback(() => {
     const el = conversationRef.current;
     if (!el) return;
-
     const atBottom = isAtBottom();
-
-    if (atBottom && userInterruptedRef.current) {
-      userInterruptedRef.current = false;
-      setInterrupted(false);
+    const dist = Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight);
+    if (onScrolledFromBottom) {
+      if (shadowRafRef.current !== null) cancelAnimationFrame(shadowRafRef.current);
+      shadowRafRef.current = requestAnimationFrame(() => {
+        onScrolledFromBottom(dist);
+        shadowRafRef.current = null;
+      });
     }
-
     if (atBottom) {
-      setButtonHidden();
       isAutoScrollingRef.current = false;
+      if (userInterruptedRef.current && wasNotAtBottomRef.current) {
+        userInterruptedRef.current = false;
+        wasNotAtBottomRef.current = false;
+        setInterrupted(false);
+      }
+      setButtonHidden();
       return;
     }
-
-    if (isAutoScrollingRef.current) {
-      return;
-    }
-
+    wasNotAtBottomRef.current = true;
+    if (isAutoScrollingRef.current) return;
     setButtonVisibleDebounced();
-  }, [isAtBottom, setButtonHidden, setButtonVisibleDebounced]);
+  }, [isAtBottom, onScrolledFromBottom, setButtonHidden, setButtonVisibleDebounced]);
 
   const lastQuery = queries[queries.length - 1];
   const lastQueryResponse = lastQuery?.response;
@@ -193,45 +223,86 @@ export default function ConversationMessages({
   const lastQueryThought = lastQuery?.thought;
 
   useEffect(() => {
-    if (interrupted) return;
-
     const prevQueries = prevQueriesRef.current;
     const isConversationSwitch =
       prevQueries !== queries && prevQueries[0] !== queries[0];
 
     if (isInitialLoad.current || isConversationSwitch) {
       isInitialLoad.current = false;
-      scrollConversationToBottom(true);
+      userInterruptedRef.current = false;
+      wasNotAtBottomRef.current = false;
       prevQueriesRef.current = queries;
+      scrollToBottom(true);
+      if (settleAnimFrameRef.current !== null) {
+        cancelAnimationFrame(settleAnimFrameRef.current);
+      }
+      let frames = 0;
+      const settle = () => {
+        if (frames++ >= 45 || userInterruptedRef.current) {
+          settleAnimFrameRef.current = null;
+          return;
+        }
+        const el = conversationRef.current;
+        if (
+          el &&
+          el.scrollHeight - el.scrollTop - el.clientHeight > SCROLL_THRESHOLD
+        ) {
+          el.scrollTop = el.scrollHeight;
+        }
+        settleAnimFrameRef.current = requestAnimationFrame(settle);
+      };
+      settleAnimFrameRef.current = requestAnimationFrame(settle);
       return;
     }
 
     const isNewMessage = queries.length > prevQueries.length;
     prevQueriesRef.current = queries;
 
-    scrollConversationToBottom(isNewMessage ? false : true);
+    if (isNewMessage) {
+      userInterruptedRef.current = false;
+      wasNotAtBottomRef.current = false;
+      setInterrupted(false);
+      scrollToBottom(false);
+      return;
+    }
+
+    if (interrupted) return;
+
+    scrollToBottom(status !== 'idle');
   }, [
     queries.length,
     lastQueryResponse,
     lastQueryError,
     lastQueryThought,
     interrupted,
-    scrollConversationToBottom,
+    status,
+    scrollToBottom,
   ]);
 
   useEffect(() => {
     if (status === 'idle') {
       userInterruptedRef.current = false;
+      wasNotAtBottomRef.current = false;
       setInterrupted(false);
     }
   }, [status]);
 
   useEffect(() => {
-    const currentConversationRef = conversationRef.current;
-    currentConversationRef?.addEventListener('scroll', handleScroll);
-    return () => {
-      currentConversationRef?.removeEventListener('scroll', handleScroll);
-    };
+    const el = contentRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      if (!userInterruptedRef.current && !isAutoScrollingRef.current) {
+        scrollToBottom(true);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [scrollToBottom]);
+
+  useEffect(() => {
+    const el = conversationRef.current;
+    el?.addEventListener('scroll', handleScroll);
+    return () => el?.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
   const retryIconProps = {
@@ -248,9 +319,16 @@ export default function ConversationMessages({
       ? LAST_BUBBLE_MARGIN
       : DEFAULT_BUBBLE_MARGIN;
 
-    if (query.thought || query.response || query.tool_calls || query.research) {
-      const isCurrentlyStreaming =
-        status === 'loading' && index === queries.length - 1;
+    const isCurrentlyStreaming =
+      status === 'loading' && index === queries.length - 1;
+
+    if (
+      query.thought ||
+      query.response ||
+      query.tool_calls ||
+      query.research ||
+      isCurrentlyStreaming
+    ) {
       return (
         <ConversationBubble
           className={bubbleMargin}
@@ -303,36 +381,6 @@ export default function ConversationMessages({
       );
     }
 
-    if (status === 'loading' && isLastMessage) {
-      return (
-        <div
-          className={`fade-in-bubble flex flex-wrap self-start ${bubbleMargin} group dark:text-foreground flex-col`}
-        >
-          <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-            <div className="my-2 flex flex-row items-center justify-center gap-3">
-              <div className="flex h-8.5 w-8.5 items-center justify-center overflow-hidden rounded-full">
-                <img
-                  src={DocsGPT3}
-                  alt={t('conversation.answer')}
-                  className="h-full w-full object-cover"
-                />
-              </div>
-              <p className="text-base font-semibold">
-                {t('conversation.answer')}
-              </p>
-            </div>
-            <div className="bg-gray-1000 dark:bg-gun-metal mr-5 flex rounded-3xl px-6 py-5">
-              <div className="thinking-dots">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
     return null;
   };
 
@@ -340,16 +388,15 @@ export default function ConversationMessages({
     <div
       ref={conversationRef}
       onWheel={handleWheel}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      className="flex h-full w-full justify-center overflow-y-auto will-change-scroll sm:pt-6 lg:pt-12"
+      className="flex h-full w-full justify-center overflow-y-auto overscroll-y-contain will-change-scroll sm:pt-6 lg:pt-12"
     >
       {queries.length > 0 && (
         <button
           onClick={() => {
             userInterruptedRef.current = false;
+            wasNotAtBottomRef.current = false;
             setInterrupted(false);
-            scrollConversationToBottom();
+            scrollToBottom(status === 'loading');
           }}
           aria-label={t('Scroll to bottom') || 'Scroll to bottom'}
           className={`border-border bg-card fixed bottom-40 left-1/2 z-10 flex h-7 w-7 -translate-x-1/2 items-center justify-center rounded-full border transition-all duration-300 ease-in-out md:right-14 md:left-auto md:h-9 md:w-9 md:translate-x-0 ${
@@ -367,6 +414,7 @@ export default function ConversationMessages({
       )}
 
       <div
+        ref={contentRef}
         className={
           isSplitView
             ? 'w-full max-w-325 px-2'
