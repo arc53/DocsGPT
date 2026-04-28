@@ -52,7 +52,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "dompurify": "^3.1.5",
-    "flow-bin": "^0.309.0",
+    "flow-bin": "^0.311.0",
     "markdown-it": "^14.1.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
