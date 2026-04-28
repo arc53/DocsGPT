@@ -166,7 +166,7 @@ class BaseLLM(ABC):
 
         if is_stream:
             return self._stream_with_fallback(
-                decorated_method, method_name, *args, **kwargs
+                decorated_method, method_name, decorators, *args, **kwargs
             )
 
         try:
@@ -187,14 +187,27 @@ class BaseLLM(ABC):
                 f"{fallback.model_id}. Error: {str(e)}"
             )
 
-            fallback_method = getattr(
-                fallback, method_name.replace("_raw_", "")
-            )
+            # Apply decorators to fallback's raw method directly — calling
+            # fallback.gen() would re-enter the orchestrator and recurse via
+            # fallback.fallback_llm.
+            fallback_method = getattr(fallback, method_name)
+            for decorator in decorators:
+                fallback_method = decorator(fallback_method)
             fallback_kwargs = {**kwargs, "model": fallback.model_id}
-            return fallback_method(*args, **fallback_kwargs)
+            try:
+                return fallback_method(fallback, *args, **fallback_kwargs)
+            except Exception as e2:
+                if self._is_non_retriable_client_error(e2):
+                    logger.error(
+                        f"Fallback LLM failed with non-retriable client "
+                        f"error; giving up: {str(e2)}"
+                    )
+                else:
+                    logger.error(f"Fallback LLM also failed; giving up: {str(e2)}")
+                raise
 
     def _stream_with_fallback(
-        self, decorated_method, method_name, *args, **kwargs
+        self, decorated_method, method_name, decorators, *args, **kwargs
     ):
         """
         Wrapper generator that catches mid-stream errors and falls back.
@@ -223,11 +236,37 @@ class BaseLLM(ABC):
                 f"Primary LLM failed mid-stream. Falling back to "
                 f"{fallback.model_id}. Error: {str(e)}"
             )
-            fallback_method = getattr(
-                fallback, method_name.replace("_raw_", "")
+            # Apply decorators to fallback's raw stream method directly —
+            # calling fallback.gen_stream() would re-enter the orchestrator
+            # and recurse via fallback.fallback_llm. Emit the stream-start
+            # event manually so dashboards still see the fallback's
+            # provider/model when the response actually comes from it.
+            fallback._emit_stream_start_log(
+                fallback.model_id,
+                kwargs.get("messages"),
+                kwargs.get("tools"),
+                bool(
+                    kwargs.get("_usage_attachments")
+                    or kwargs.get("attachments")
+                ),
             )
+            fallback_method = getattr(fallback, method_name)
+            for decorator in decorators:
+                fallback_method = decorator(fallback_method)
             fallback_kwargs = {**kwargs, "model": fallback.model_id}
-            yield from fallback_method(*args, **fallback_kwargs)
+            try:
+                yield from fallback_method(fallback, *args, **fallback_kwargs)
+            except Exception as e2:
+                if self._is_non_retriable_client_error(e2):
+                    logger.error(
+                        f"Fallback LLM failed mid-stream with non-retriable "
+                        f"client error; giving up: {str(e2)}"
+                    )
+                else:
+                    logger.error(
+                        f"Fallback LLM also failed mid-stream; giving up: {str(e2)}"
+                    )
+                raise
 
     def gen(self, model, messages, stream=False, tools=None, *args, **kwargs):
         decorators = [gen_token_usage, gen_cache]
@@ -242,22 +281,29 @@ class BaseLLM(ABC):
             **kwargs,
         )
 
-    def gen_stream(self, model, messages, stream=True, tools=None, *args, **kwargs):
-        # Attachments arrive as ``_usage_attachments`` from ``Agent._llm_gen``;
-        # the ``stream_token_usage`` decorator pops that key, but the log
-        # fires before the decorator runs so it's still in ``kwargs`` here.
+    def _emit_stream_start_log(self, model, messages, tools, has_attachments):
+        # Stamped with ``self.provider_name`` so dashboards can group calls
+        # by vendor; the fallback path emits its own copy on the fallback
+        # instance so the actual responding provider is recorded.
         logging.info(
             "llm_stream_start",
             extra={
                 "model": model,
                 "provider": self.provider_name,
                 "message_count": len(messages) if messages is not None else 0,
-                "has_attachments": bool(
-                    kwargs.get("_usage_attachments") or kwargs.get("attachments")
-                ),
+                "has_attachments": bool(has_attachments),
                 "has_tools": bool(tools),
             },
         )
+
+    def gen_stream(self, model, messages, stream=True, tools=None, *args, **kwargs):
+        # Attachments arrive as ``_usage_attachments`` from ``Agent._llm_gen``;
+        # the ``stream_token_usage`` decorator pops that key, but the log
+        # fires before the decorator runs so it's still in ``kwargs`` here.
+        has_attachments = bool(
+            kwargs.get("_usage_attachments") or kwargs.get("attachments")
+        )
+        self._emit_stream_start_log(model, messages, tools, has_attachments)
         decorators = [stream_cache, stream_token_usage]
         return self._execute_with_fallback(
             "_raw_gen_stream",

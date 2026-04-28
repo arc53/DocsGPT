@@ -360,7 +360,38 @@ class TestExtractTextFromContent:
         handler = ConcreteHandler()
         content = [{"files": ["/tmp/a.txt"]}]
         result = handler._extract_text_from_content(content)
-        assert "files" in result
+        assert result == "[attachment: /tmp/a.txt]"
+
+    def test_list_with_inline_image_bytes(self):
+        # Google attaches images as inline bytes; stringifying them into
+        # the compression prompt would bust the compression LLM's input
+        # limit. The placeholder must describe the attachment without
+        # embedding the bytes.
+        handler = ConcreteHandler()
+        content = [
+            {
+                "files": [
+                    {"file_bytes": b"\x89PNG" + b"\x00" * 1000, "mime_type": "image/png"}
+                ]
+            }
+        ]
+        result = handler._extract_text_from_content(content)
+        assert result == "[attachment: image/png]"
+        assert "PNG" not in result
+        assert "\\x" not in result
+
+    def test_list_with_multiple_files(self):
+        handler = ConcreteHandler()
+        content = [
+            {
+                "files": [
+                    {"file_bytes": b"a", "mime_type": "image/png"},
+                    {"file_uri": "https://x", "mime_type": "image/jpeg"},
+                ]
+            }
+        ]
+        result = handler._extract_text_from_content(content)
+        assert result == "[attachment: image/png, image/jpeg]"
 
     def test_list_with_none_text(self):
         handler = ConcreteHandler()

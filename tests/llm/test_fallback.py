@@ -31,30 +31,26 @@ class FakeLLM(BaseLLM):
         self.gen_stream_called = False
         self.last_model_received = None  # tracks the model kwarg passed to gen/gen_stream
 
+    # Track at the raw-method level. _execute_with_fallback applies
+    # decorators to the fallback's raw method directly and
+    # never calls .gen() / .gen_stream() on it, so a public-method
+    # override would not register fallback hops.
     def _raw_gen(self, baseself, model, messages, stream, tools=None, **kwargs):
+        self.gen_called = True
+        self.last_model_received = model
         if self.fail_at is not None:
             raise RuntimeError("primary model unavailable")
         return self.responses[0]
 
     def _raw_gen_stream(self, baseself, model, messages, stream, tools=None, **kwargs):
+        self.gen_stream_called = True
+        self.last_model_received = model
         yielded = 0
         for chunk in self.stream_chunks:
             if self.fail_at is not None and yielded >= self.fail_at:
                 raise RuntimeError("mid-stream failure")
             yield chunk
             yielded += 1
-
-    # Wrap gen/gen_stream so we can track whether the fallback instance was used
-    # and which model kwarg it received
-    def gen(self, *args, **kwargs):
-        self.gen_called = True
-        self.last_model_received = kwargs.get("model")
-        return super().gen(*args, **kwargs)
-
-    def gen_stream(self, *args, **kwargs):
-        self.gen_stream_called = True
-        self.last_model_received = kwargs.get("model")
-        return super().gen_stream(*args, **kwargs)
 
 
 # Helpers
@@ -293,6 +289,140 @@ class TestStreamingFallback:
         primary = FakeLLM(stream_chunks=["x"], fail_at=0, backup_models=[])
         with pytest.raises(RuntimeError, match="mid-stream failure"):
             list(primary.gen_stream(**CALL_ARGS))
+
+    def test_fallback_emits_stream_start_with_fallback_provider(
+        self, patch_model_utils, caplog
+    ):
+        # The fallback raw-stream path bypasses ``gen_stream``, so it must
+        # emit its own ``llm_stream_start`` event tagged with the fallback
+        # vendor — otherwise dashboards record only the failed primary
+        # even when the response came from the backup.
+        import logging as _logging
+
+        class FallbackProvider(FakeLLM):
+            provider_name = "fallback-vendor"
+
+        backup = FallbackProvider(
+            stream_chunks=["b1"], model_id="backup-model-id"
+        )
+        patch_model_utils(
+            get_provider=lambda m, **_kwargs: "openai",
+            get_api_key=lambda p: "k",
+            create_llm=lambda type, **kw: backup,
+        )
+
+        class PrimaryProvider(FakeLLM):
+            provider_name = "primary-vendor"
+
+        primary = PrimaryProvider(
+            stream_chunks=["x"],
+            fail_at=0,
+            backup_models=["backup-model-id"],
+        )
+
+        with caplog.at_level(_logging.INFO, logger="root"):
+            list(
+                primary.gen_stream(
+                    model="primary-model",
+                    messages=[{"role": "user", "content": "hi"}],
+                )
+            )
+
+        starts = [r for r in caplog.records if r.message == "llm_stream_start"]
+        assert len(starts) == 2
+        assert starts[0].provider == "primary-vendor"
+        assert starts[0].model == "primary-model"
+        assert starts[1].provider == "fallback-vendor"
+        assert starts[1].model == "backup-model-id"
+
+
+# Tests — fallback never re-enters the orchestrator (Option B regression)
+
+
+@pytest.mark.integration
+class TestFallbackNoRecursion:
+    """When the primary fails, _execute_with_fallback applies decorators to
+    the fallback's raw method directly. The fallback's own ``fallback_llm``
+    property must never be accessed — otherwise a fallback failure would
+    re-enter the orchestrator and walk the global FALLBACK_LLM_* chain
+    unboundedly."""
+
+    def test_backup_fallback_llm_property_never_accessed_on_gen_failure(
+        self, monkeypatch, patch_model_utils
+    ):
+        backup = FakeLLM(fail_at=0)  # backup also fails
+
+        accessed_on = []
+        original_property = BaseLLM.fallback_llm
+
+        def tracked_fallback_llm(self_llm):
+            accessed_on.append(self_llm)
+            return original_property.fget(self_llm)
+
+        monkeypatch.setattr(
+            BaseLLM, "fallback_llm", property(tracked_fallback_llm)
+        )
+
+        patch_model_utils(
+            get_provider=lambda m, **_kwargs: "openai",
+            get_api_key=lambda p: "k",
+            create_llm=lambda type, **kw: backup,
+        )
+
+        primary = FakeLLM(fail_at=0, backup_models=["backup-model"])
+        with pytest.raises(RuntimeError, match="primary model unavailable"):
+            primary.gen(**CALL_ARGS)
+
+        assert primary in accessed_on  # primary lazy-loaded its fallback
+        assert backup not in accessed_on  # backup's chain was never walked
+
+    def test_backup_fallback_llm_property_never_accessed_on_stream_failure(
+        self, monkeypatch, patch_model_utils
+    ):
+        backup = FakeLLM(stream_chunks=["x"], fail_at=0)
+
+        accessed_on = []
+        original_property = BaseLLM.fallback_llm
+
+        def tracked_fallback_llm(self_llm):
+            accessed_on.append(self_llm)
+            return original_property.fget(self_llm)
+
+        monkeypatch.setattr(
+            BaseLLM, "fallback_llm", property(tracked_fallback_llm)
+        )
+
+        patch_model_utils(
+            get_provider=lambda m, **_kwargs: "openai",
+            get_api_key=lambda p: "k",
+            create_llm=lambda type, **kw: backup,
+        )
+
+        primary = FakeLLM(
+            stream_chunks=["y"], fail_at=0, backup_models=["backup-model"]
+        )
+        with pytest.raises(RuntimeError, match="mid-stream failure"):
+            list(primary.gen_stream(**CALL_ARGS))
+
+        assert primary in accessed_on
+        assert backup not in accessed_on
+
+    def test_fallback_failure_propagates_without_chain(self, patch_model_utils):
+        """When both primary and fallback fail, the fallback's exception
+        propagates cleanly — no third hop, no extra retries."""
+        backup = FakeLLM(fail_at=0)
+
+        patch_model_utils(
+            get_provider=lambda m, **_kwargs: "openai",
+            get_api_key=lambda p: "k",
+            create_llm=lambda type, **kw: backup,
+        )
+
+        primary = FakeLLM(fail_at=0, backup_models=["backup-model"])
+        with pytest.raises(RuntimeError, match="primary model unavailable"):
+            primary.gen(**CALL_ARGS)
+
+        assert backup.gen_called  # confirms fallback raw method WAS invoked
 
 
 # Tests — backup model priority over global fallback

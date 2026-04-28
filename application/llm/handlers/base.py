@@ -280,7 +280,26 @@ class LLMHandler(ABC):
                         # Keep serialized function calls/responses so the compressor sees actions
                         parts_text.append(str(item))
                     elif "files" in item:
-                        parts_text.append(str(item))
+                        # Image attachments arrive with raw bytes / base64
+                        # inline (see GoogleLLM.prepare_messages_with_attachments).
+                        # ``str(item)`` would dump the whole byte/base64
+                        # blob into the compression prompt and bust the
+                        # compression LLM's input limit.
+                        files = item.get("files") or []
+                        descriptors = []
+                        if isinstance(files, list):
+                            for f in files:
+                                if isinstance(f, dict):
+                                    descriptors.append(
+                                        f.get("mime_type") or "file"
+                                    )
+                                elif isinstance(f, str):
+                                    descriptors.append(f)
+                        if not descriptors:
+                            descriptors = ["file"]
+                        parts_text.append(
+                            f"[attachment: {', '.join(descriptors)}]"
+                        )
             return "\n".join(parts_text)
         return ""
 

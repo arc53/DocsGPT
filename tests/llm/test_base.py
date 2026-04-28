@@ -49,6 +49,9 @@ class FailingLLM(BaseLLM):
 
 
 class FallbackLLM(BaseLLM):
+    # _execute_with_fallback applies decorators to the fallback's raw method
+    # directly and never calls .gen() / .gen_stream() on it, so
+    # tracking lives on the raw methods.
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.gen_called = False
@@ -61,14 +64,6 @@ class FallbackLLM(BaseLLM):
     def _raw_gen_stream(self, baseself, model, messages, stream=True, tools=None, **kw):
         self.gen_stream_called = True
         yield "fallback_chunk"
-
-    def gen(self, *args, **kwargs):
-        self.gen_called = True
-        return "fallback_gen_result"
-
-    def gen_stream(self, *args, **kwargs):
-        self.gen_stream_called = True
-        yield "fallback_stream_chunk"
 
 
 # ---------------------------------------------------------------------------
@@ -230,7 +225,7 @@ class TestExecuteWithFallbackNonStreaming:
         llm._fallback_llm = fallback
 
         result = llm.gen(model="m", messages=[])
-        assert result == "fallback_gen_result"
+        assert result == "fallback_result"
         assert fallback.gen_called
 
 
@@ -257,7 +252,7 @@ class TestStreamWithFallback:
         llm._fallback_llm = fallback
 
         result = list(llm.gen_stream(model="m", messages=[]))
-        assert "fallback_stream_chunk" in result
+        assert "fallback_chunk" in result
         assert fallback.gen_stream_called
 
 
@@ -344,7 +339,7 @@ class TestNonRetriableClientError:
         llm._fallback_llm = fallback
 
         result = llm.gen(model="m", messages=[])
-        assert result == "fallback_gen_result"
+        assert result == "fallback_result"
         assert fallback.gen_called
 
 
