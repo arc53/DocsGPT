@@ -361,6 +361,16 @@ class TestSerializeForTokenCount:
     def test_none_returns_empty(self):
         assert _serialize_for_token_count(None) == ""
 
+    def test_bytes_returns_empty(self):
+        # Regression: image/file attachments arrive as ``bytes`` from the
+        # provider-specific message preparation. Without an explicit
+        # branch they fell through to ``str(value)`` and inflated
+        # ``prompt_tokens`` by millions per call.
+        png_header = b"\x89PNG\r\n\x1a\n" + b"\x00" * 4096
+        assert _serialize_for_token_count(png_header) == ""
+        assert _serialize_for_token_count(bytearray(png_header)) == ""
+        assert _serialize_for_token_count(memoryview(png_header)) == ""
+
     def test_list_recursion(self):
         result = _serialize_for_token_count(["hello", "world"])
         assert result == ["hello", "world"]
@@ -438,6 +448,11 @@ class TestCountTokens:
         data_url = "data:image/png;base64,iVBORw0KGgoAAAA..."
         assert _count_tokens(data_url) == 0
 
+    def test_bytes_returns_zero(self):
+        # Regression: a multi-megabyte ``bytes`` payload (image attachment)
+        # used to be repr-stringified and counted as millions of tokens.
+        assert _count_tokens(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100000) == 0
+
     def test_dict_counts(self):
         assert _count_tokens({"key": "some text here"}) > 0
 
@@ -502,6 +517,26 @@ class TestCountPromptTokens:
             messages, tools=None, response_format={"type": "json_object"}
         )
         assert tokens_with > tokens_without
+
+    def test_bytes_in_message_content_does_not_inflate_count(self):
+        # Production regression: a single image attachment landed as bytes
+        # inside ``content`` and the prior repr-fallback pushed
+        # ``prompt_tokens`` past 2,000,000 on Axiom. Verify the bytes
+        # branch keeps the count bounded by the surrounding text.
+        text_only = [{"content": "Summarize this image."}]
+        with_bytes = [
+            {
+                "content": [
+                    {"type": "text", "text": "Summarize this image."},
+                    {"type": "image", "data": b"\x89PNG\r\n" + b"\x00" * 200_000},
+                ]
+            }
+        ]
+        baseline = _count_prompt_tokens(text_only, tools=None)
+        with_attachment = _count_prompt_tokens(with_bytes, tools=None)
+        # 200KB of zero bytes used to register as ~200K tokens; cap the
+        # acceptable inflation at a small constant for tool-format overhead.
+        assert with_attachment - baseline < 50
 
     def test_message_with_tool_calls_field(self):
         messages = [

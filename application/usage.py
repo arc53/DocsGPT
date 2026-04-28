@@ -21,6 +21,15 @@ def _serialize_for_token_count(value):
     if value is None:
         return ""
 
+    # Raw binary payloads (image/file attachments arrive as ``bytes`` from
+    # ``GoogleLLM.prepare_messages_with_attachments``) — without this
+    # branch they fall through to ``str(value)`` below, which produces a
+    # multi-megabyte ``"b'\\x89PNG...'"`` repr-string and inflates
+    # ``prompt_tokens`` by orders of magnitude. Same intent as the
+    # data-URL skip above.
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return ""
+
     if isinstance(value, list):
         return [_serialize_for_token_count(item) for item in value]
 
