@@ -53,7 +53,7 @@
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.2.2",
+    "@tailwindcss/postcss": "^4.2.4",
     "@types/lodash": "^4.17.20",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
