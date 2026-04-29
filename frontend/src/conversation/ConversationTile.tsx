@@ -64,7 +64,7 @@ export default function ConversationTile({
   }
 
   function handleSaveConversation(changedConversation: ConversationProps) {
-    if (changedConversation.name.trim().length) {
+    if (changedConversation.name.trim().length && changedConversation.name.trim() !== conversation.name) {
       onSave(changedConversation);
       setIsEdit(false);
     } else {
