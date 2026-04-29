@@ -36,12 +36,6 @@ class GoogleLLM(BaseLLM):
             "image/jpg",
             "image/webp",
             "image/gif",
-            "application/pdf",
-            "image/png",
-            "image/jpeg",
-            "image/jpg",
-            "image/webp",
-            "image/gif",
         ]
 
     def prepare_messages_with_attachments(self, messages, attachments=None):
@@ -129,11 +123,12 @@ class GoogleLLM(BaseLLM):
         Returns:
             str: Google AI file URI for the uploaded file.
         """
-        # Truthy check, not membership: a poisoned cache row of "" or
-        # None must be treated as a miss and trigger a fresh upload.
-        if attachment.get("google_file_uri"):
-            return attachment["google_file_uri"]
-        file_path = attachment.get("path")
+        cached_uri = attachment.get("google_file_uri")
+        if cached_uri:
+            return cached_uri
+
+        file_path = attachment.get("upload_path") or attachment.get("path")
+
         if not file_path:
             raise ValueError("No file path provided in attachment")
         if not self.storage.file_exists(file_path):
@@ -150,11 +145,6 @@ class GoogleLLM(BaseLLM):
                     f"Google Files API upload returned empty URI for {file_path}"
                 )
 
-            # Cache the Google file URI on the attachment row so we don't
-            # re-upload on the next LLM call. Accept either a PG UUID
-            # (``id``) or a legacy Mongo ObjectId (``_id``). Opened per
-            # write — this runs mid-LLM-call, so we don't wrap the
-            # surrounding generator in a long-lived session.
             attachment_id = attachment.get("id") or attachment.get("_id")
             if attachment_id:
                 user_id = None
@@ -549,6 +539,7 @@ class GoogleLLM(BaseLLM):
         config = types.GenerateContentConfig()
         if system_instruction:
             config.system_instruction = system_instruction
+        config.thinking_config = types.ThinkingConfig(thinking_budget=0)
         if tools:
             cleaned_tools = self._clean_tools_format(tools)
             config.tools = cleaned_tools
@@ -566,7 +557,17 @@ class GoogleLLM(BaseLLM):
         if tools:
             return response
         else:
-            return response.text
+            try:
+                text_parts = []
+                for part in response.candidates[0].content.parts:
+                    if getattr(part, "thought", False):
+                        continue
+                    text = getattr(part, "text", None)
+                    if isinstance(text, str) and text:
+                        text_parts.append(text)
+                return "\n".join(text_parts) if text_parts else response.text
+            except Exception:
+                return response.text
 
     def _raw_gen_stream(
         self,
@@ -587,6 +588,7 @@ class GoogleLLM(BaseLLM):
         config = types.GenerateContentConfig()
         if system_instruction:
             config.system_instruction = system_instruction
+        config.thinking_config = types.ThinkingConfig(thinking_budget=0)
         if tools:
             cleaned_tools = self._clean_tools_format(tools)
             config.tools = cleaned_tools
@@ -612,13 +614,10 @@ class GoogleLLM(BaseLLM):
                                     yield part
                                     continue
 
-                                part_text = self._get_text_value(part)
-                                if not part_text:
-                                    continue
-
                                 if self._is_thought_part(part):
-                                    yield {"type": "thought", "thought": part_text}
-                                else:
+                                    continue
+                                part_text = self._get_text_value(part)
+                                if part_text:
                                     yield part_text
                 elif hasattr(chunk, "text"):
                     chunk_text = self._get_text_value(chunk)

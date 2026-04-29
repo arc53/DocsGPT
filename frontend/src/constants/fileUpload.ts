@@ -29,6 +29,8 @@ export const FILE_UPLOAD_ACCEPT: Record<string, string[]> = {
   'image/png': ['.png'],
   'image/jpeg': ['.jpeg'],
   'image/jpg': ['.jpg'],
+  'image/webp': ['.webp'],
+  'image/gif': ['.gif'],
   ...AUDIO_FILE_ACCEPT,
 };
 
@@ -48,6 +50,8 @@ export const FILE_UPLOAD_ACCEPT_ATTR = [
   '.png',
   '.jpeg',
   '.jpg',
+  '.webp',
+  '.gif',
   '.wav',
   '.mp3',
   '.m4a',
