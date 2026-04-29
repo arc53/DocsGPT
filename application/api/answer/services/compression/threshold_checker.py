@@ -30,6 +30,7 @@ class CompressionThresholdChecker:
         conversation: Dict[str, Any],
         model_id: str,
         current_query_tokens: int = 500,
+        user_id: str | None = None,
     ) -> bool:
         """
         Determine if compression is needed.
@@ -38,6 +39,8 @@ class CompressionThresholdChecker:
             conversation: Full conversation document
             model_id: Target model for this request
             current_query_tokens: Estimated tokens for current query
+            user_id: Owner — needed so per-user BYOM custom-model UUIDs
+                resolve when looking up the context window.
 
         Returns:
             True if tokens >= threshold% of context window
@@ -48,7 +51,7 @@ class CompressionThresholdChecker:
             total_tokens += current_query_tokens
 
             # Get context window limit for model
-            context_limit = get_token_limit(model_id)
+            context_limit = get_token_limit(model_id, user_id=user_id)
 
             # Calculate threshold
             threshold = int(context_limit * self.threshold_percentage)
@@ -73,20 +76,24 @@ class CompressionThresholdChecker:
             logger.error(f"Error checking compression need: {str(e)}", exc_info=True)
             return False
 
-    def check_message_tokens(self, messages: list, model_id: str) -> bool:
+    def check_message_tokens(
+        self, messages: list, model_id: str, user_id: str | None = None
+    ) -> bool:
         """
         Check if message list exceeds threshold.
 
         Args:
             messages: List of message dicts
             model_id: Target model
+            user_id: Owner — needed so per-user BYOM custom-model UUIDs
+                resolve when looking up the context window.
 
         Returns:
             True if at or above threshold
         """
         try:
             current_tokens = TokenCounter.count_message_tokens(messages)
-            context_limit = get_token_limit(model_id)
+            context_limit = get_token_limit(model_id, user_id=user_id)
             threshold = int(context_limit * self.threshold_percentage)
 
             if current_tokens >= threshold:

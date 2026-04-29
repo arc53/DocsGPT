@@ -42,7 +42,9 @@ import { MultiSelect } from '@/components/ui/multi-select';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -706,7 +708,7 @@ function WorkflowBuilderInner() {
   useEffect(() => {
     const loadModelsAndTools = async () => {
       try {
-        const modelsResponse = await modelService.getModels(null);
+        const modelsResponse = await modelService.getModels(token);
         if (modelsResponse.ok) {
           const modelsData = await modelsResponse.json();
           const transformedModels = modelService.transformModels(
@@ -732,7 +734,7 @@ function WorkflowBuilderInner() {
       }
     };
     loadModelsAndTools();
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     if (!selectedNode || selectedNode.type !== 'agent') return;
@@ -1847,15 +1849,54 @@ function WorkflowBuilderInner() {
                                       <SelectValue placeholder="Select a model" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      {availableModels.map((model) => (
-                                        <SelectItem
-                                          key={model.id}
-                                          value={model.id}
-                                        >
-                                          {model.display_name} ·{' '}
-                                          {model.provider}
-                                        </SelectItem>
-                                      ))}
+                                      {(() => {
+                                        const builtin = availableModels.filter(
+                                          (m) => m.source !== 'user',
+                                        );
+                                        const user = availableModels.filter(
+                                          (m) => m.source === 'user',
+                                        );
+                                        return (
+                                          <>
+                                            {builtin.length > 0 && (
+                                              <SelectGroup>
+                                                <SelectLabel>
+                                                  {t(
+                                                    'settings.customModels.modelsGroup.builtin',
+                                                  )}
+                                                </SelectLabel>
+                                                {builtin.map((model) => (
+                                                  <SelectItem
+                                                    key={model.id}
+                                                    value={model.id}
+                                                  >
+                                                    {model.display_name} ·{' '}
+                                                    {model.provider}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectGroup>
+                                            )}
+                                            {user.length > 0 && (
+                                              <SelectGroup>
+                                                <SelectLabel>
+                                                  {t(
+                                                    'settings.customModels.modelsGroup.user',
+                                                  )}
+                                                </SelectLabel>
+                                                {user.map((model) => (
+                                                  <SelectItem
+                                                    key={model.id}
+                                                    value={model.id}
+                                                  >
+                                                    {model.display_name} ·{' '}
+                                                    {model.provider}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectGroup>
+                                            )}
+                                          </>
+                                        );
+                                      })()}
                                     </SelectContent>
                                   </Select>
                                 </div>

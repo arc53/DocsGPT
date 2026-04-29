@@ -3,6 +3,7 @@ from application.core.settings import settings
 
 
 class PremAILLM(BaseLLM):
+    provider_name = "premai"
 
     def __init__(self, api_key=None, user_api_key=None, *args, **kwargs):
         from premai import Prem

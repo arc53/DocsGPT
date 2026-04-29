@@ -48,14 +48,15 @@ class AvailableModel:
     capabilities: ModelCapabilities = field(default_factory=ModelCapabilities)
     enabled: bool = True
     base_url: Optional[str] = None
-    # User-facing label distinct from the dispatch ``provider``. Used by
-    # openai_compatible YAMLs so a Mistral model shows "mistral" in the
-    # API response while still routing through the OpenAI wire format.
+    # User-facing label distinct from dispatch provider (e.g. mistral
+    # routed through openai_compatible).
     display_provider: Optional[str] = None
-    # Per-record API key. Operator YAMLs leave this None; populated for
-    # openai_compatible models (resolved from the YAML's ``api_key_env``)
-    # and reserved for the future end-user BYOM phase. Never serialized
-    # into to_dict().
+    # Sent in the API call's ``model`` field; falls back to ``self.id``
+    # for built-ins where id IS the upstream name.
+    upstream_model_id: Optional[str] = None
+    # "builtin" for catalog YAMLs, "user" for BYOM records.
+    source: str = "builtin"
+    # Decrypted/resolved at registry-merge time. Never serialized.
     api_key: Optional[str] = field(default=None, repr=False, compare=False)
 
     def to_dict(self) -> Dict:
@@ -70,6 +71,7 @@ class AvailableModel:
             "supports_streaming": self.capabilities.supports_streaming,
             "context_window": self.capabilities.context_window,
             "enabled": self.enabled,
+            "source": self.source,
         }
         if self.base_url:
             result["base_url"] = self.base_url

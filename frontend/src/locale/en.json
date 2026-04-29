@@ -256,6 +256,71 @@
         }
       }
     },
+    "customModels": {
+      "label": "Custom Models",
+      "subtitle": "Bring your own OpenAI-compatible model.",
+      "addModel": "Add Model",
+      "empty": "No models found",
+      "searchPlaceholder": "Search models...",
+      "modalSubtitle": "Connect any OpenAI-compatible endpoint (Mistral, Together, vLLM, etc).",
+      "addTitle": "Add Custom Model",
+      "editTitle": "Edit Custom Model",
+      "save": "Save",
+      "saving": "Saving",
+      "testConnection": "Test connection",
+      "testing": "Testing",
+      "testSuccess": "Connection successful.",
+      "testHintNew": "Fill in Base URL, Model ID, and API key to enable connection tests.",
+      "disabledBadge": "Disabled",
+      "deleteWarning": "Are you sure you want to delete the custom model \"{{modelName}}\"?",
+      "actionsMenuAria": "Actions for {{modelName}}",
+      "modelsGroup": {
+        "builtin": "DocsGPT Models",
+        "user": "My Models"
+      },
+      "actions": {
+        "edit": "Edit",
+        "delete": "Delete"
+      },
+      "fields": {
+        "displayName": "Display name",
+        "modelId": "Model ID",
+        "description": "Description",
+        "baseUrl": "Base URL",
+        "apiKey": "API key"
+      },
+      "placeholders": {
+        "displayName": "My Mistral",
+        "modelId": "e.g. mistral-large-latest",
+        "description": "Optional description",
+        "baseUrl": "https://api.mistral.ai/v1",
+        "apiKey": "sk-...",
+        "apiKeyEdit": "Leave blank to keep existing"
+      },
+      "hints": {
+        "apiKeyEdit": "Leave blank to keep existing key."
+      },
+      "capabilities": {
+        "title": "Capabilities",
+        "contextWindowShort": "Context window",
+        "chips": {
+          "tools": "Tools",
+          "structuredOutput": "Structured output",
+          "images": "Images"
+        }
+      },
+      "errors": {
+        "displayNameRequired": "Display name is required",
+        "modelIdRequired": "Model ID is required",
+        "baseUrlRequired": "Base URL is required",
+        "baseUrlScheme": "Base URL must start with http:// or https://",
+        "baseUrlInvalid": "Please enter a valid URL",
+        "apiKeyRequired": "API key is required",
+        "contextWindowRange": "Context window must be between 1,000 and 10,000,000",
+        "saveFailed": "Failed to save custom model",
+        "testFailed": "Connection test failed"
+      }
+    },
     "scrollTabsLeft": "Scroll tabs left",
     "tabsAriaLabel": "Settings tabs",
     "scrollTabsRight": "Scroll tabs right"

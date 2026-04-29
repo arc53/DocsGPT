@@ -99,11 +99,11 @@ class TestRunAgentLogic:
             "application.core.model_utils.get_default_model_id", lambda: "gpt-4"
         )
         monkeypatch.setattr(
-            "application.core.model_utils.validate_model_id", lambda m: True
+            "application.core.model_utils.validate_model_id", lambda m, **_kwargs: True
         )
         monkeypatch.setattr(
             "application.core.model_utils.get_provider_from_model_id",
-            lambda m: "openai",
+            lambda m, **_kwargs: "openai",
         )
         monkeypatch.setattr(
             "application.core.model_utils.get_api_key_for_provider",
@@ -111,7 +111,7 @@ class TestRunAgentLogic:
         )
         monkeypatch.setattr(
             "application.utils.calculate_doc_token_budget",
-            lambda model_id=None: 1000,
+            lambda model_id=None, **_kwargs: 1000,
         )
         monkeypatch.setattr(
             "application.api.answer.services.stream_processor.get_prompt",

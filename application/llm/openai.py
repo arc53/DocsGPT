@@ -61,8 +61,17 @@ def _truncate_base64_for_logging(messages):
 
 
 class OpenAILLM(BaseLLM):
+    provider_name = "openai"
 
-    def __init__(self, api_key=None, user_api_key=None, base_url=None, *args, **kwargs):
+    def __init__(
+        self,
+        api_key=None,
+        user_api_key=None,
+        base_url=None,
+        http_client=None,
+        *args,
+        **kwargs,
+    ):
 
         super().__init__(*args, **kwargs)
         self.api_key = api_key or settings.OPENAI_API_KEY or settings.API_KEY
@@ -80,7 +89,18 @@ class OpenAILLM(BaseLLM):
         else:
             effective_base_url = "https://api.openai.com/v1"
 
-        self.client = OpenAI(api_key=self.api_key, base_url=effective_base_url)
+        # http_client (set by LLMCreator for BYOM) is a DNS-rebinding-safe
+        # httpx.Client; without it the SDK re-resolves DNS per request.
+        if http_client is not None:
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url=effective_base_url,
+                http_client=http_client,
+            )
+        else:
+            self.client = OpenAI(
+                api_key=self.api_key, base_url=effective_base_url
+            )
         self.storage = StorageCreator.get_storage()
 
     def _clean_messages_openai(self, messages):
@@ -243,6 +263,13 @@ class OpenAILLM(BaseLLM):
         if "max_tokens" in kwargs:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
 
+        # Defense-in-depth: drop tools / response_format if the
+        # registry's capability flags deny them.
+        if tools and not self._supports_tools():
+            tools = None
+        if response_format and not self._supports_structured_output():
+            response_format = None
+
         request_params = {
             "model": model,
             "messages": messages,
@@ -278,6 +305,13 @@ class OpenAILLM(BaseLLM):
         # Convert max_tokens to max_completion_tokens for newer models
         if "max_tokens" in kwargs:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+
+        # See _raw_gen for rationale — drop tools/response_format when the
+        # registry-provided capabilities say the model doesn't support them.
+        if tools and not self._supports_tools():
+            tools = None
+        if response_format and not self._supports_structured_output():
+            response_format = None
 
         request_params = {
             "model": model,
@@ -320,9 +354,17 @@ class OpenAILLM(BaseLLM):
                 response.close()
 
     def _supports_tools(self):
+        # When the LLM was constructed via LLMCreator with a registered
+        # AvailableModel, ``self.capabilities`` is the per-model record.
+        # BYOM users can disable tool support; respect that. Otherwise
+        # OpenAI's API supports tools by default.
+        if self.capabilities is not None:
+            return bool(self.capabilities.supports_tools)
         return True
 
     def _supports_structured_output(self):
+        if self.capabilities is not None:
+            return bool(self.capabilities.supports_structured_output)
         return True
 
     def prepare_structured_output_format(self, json_schema):
@@ -389,6 +431,12 @@ class OpenAILLM(BaseLLM):
         Returns:
             list: List of supported MIME types
         """
+        # Per-model caps from the registry win when present — a BYOM
+        # endpoint that doesn't accept images would otherwise still be
+        # sent base64 image parts because the OpenAI default below
+        # advertises the image alias unconditionally.
+        if self.capabilities is not None:
+            return list(self.capabilities.supported_attachment_types or [])
         from application.core.model_yaml import resolve_attachment_alias
         return resolve_attachment_alias("image")
 

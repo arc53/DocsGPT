@@ -438,3 +438,94 @@ def test_stream_cache_key_generation_failure_yields(mock_make_redis):
     messages = ["not_a_dict"]
     result = list(mock_function(None, "model", messages, stream=True, tools=None))
     assert result == ["fallback_chunk"]
+
+
+# =====================================================================
+# gen_cache_key with inline bytes (Google attachments)
+# =====================================================================
+
+
+@pytest.mark.unit
+def test_gen_cache_key_handles_inline_bytes():
+    """Image attachments arrive in messages as raw bytes (see
+    GoogleLLM.prepare_messages_with_attachments). gen_cache_key must not
+    crash on json.dumps of bytes."""
+    msgs = [
+        {
+            "role": "user",
+            "content": [{"file_bytes": b"\x00\x01\x02", "mime_type": "image/png"}],
+        }
+    ]
+    key = gen_cache_key(msgs, model="x")
+    assert isinstance(key, str)
+    assert len(key) == 32
+
+
+@pytest.mark.unit
+def test_gen_cache_key_stable_for_same_bytes():
+    """Two requests with identical image bytes must produce the same key
+    — otherwise we'd never get cache hits on image-bearing prompts."""
+    a = [
+        {
+            "role": "user",
+            "content": [{"file_bytes": b"abc", "mime_type": "image/png"}],
+        }
+    ]
+    b = [
+        {
+            "role": "user",
+            "content": [{"file_bytes": b"abc", "mime_type": "image/png"}],
+        }
+    ]
+    assert gen_cache_key(a, "m") == gen_cache_key(b, "m")
+
+
+@pytest.mark.unit
+def test_gen_cache_key_differs_for_different_bytes():
+    """Different image bytes must produce different keys — otherwise two
+    different images would collide in cache."""
+    a = [
+        {
+            "role": "user",
+            "content": [{"file_bytes": b"abc", "mime_type": "image/png"}],
+        }
+    ]
+    b = [
+        {
+            "role": "user",
+            "content": [{"file_bytes": b"xyz", "mime_type": "image/png"}],
+        }
+    ]
+    assert gen_cache_key(a, "m") != gen_cache_key(b, "m")
+
+
+@pytest.mark.unit
+def test_gen_cache_key_handles_bytearray_and_memoryview():
+    """The default helper covers all bytes-like types so refactors that
+    swap bytes for bytearray/memoryview don't silently re-introduce the
+    TypeError."""
+    msgs_ba = [
+        {
+            "role": "user",
+            "content": [
+                {"file_bytes": bytearray(b"abc"), "mime_type": "image/png"}
+            ],
+        }
+    ]
+    msgs_mv = [
+        {
+            "role": "user",
+            "content": [
+                {"file_bytes": memoryview(b"abc"), "mime_type": "image/png"}
+            ],
+        }
+    ]
+    msgs_b = [
+        {
+            "role": "user",
+            "content": [{"file_bytes": b"abc", "mime_type": "image/png"}],
+        }
+    ]
+    # All three should hash the same content to the same key.
+    assert gen_cache_key(msgs_ba, "m") == gen_cache_key(msgs_b, "m")
+    assert gen_cache_key(msgs_mv, "m") == gen_cache_key(msgs_b, "m")

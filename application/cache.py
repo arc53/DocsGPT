@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import time
@@ -9,6 +10,14 @@ from application.core.settings import settings
 from application.utils import get_hash
 
 logger = logging.getLogger(__name__)
+
+
+def _cache_default(value):
+    # Image attachments arrive inline as bytes (see GoogleLLM.prepare_messages_with_attachments);
+    # hash so the cache key stays bounded in size and stable across identical content.
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return f"<bytes:sha256:{hashlib.sha256(bytes(value)).hexdigest()}>"
+    return repr(value)
 
 _redis_instance = None
 _redis_creation_failed = False
@@ -36,7 +45,7 @@ def get_redis_instance():
 def gen_cache_key(messages, model="docgpt", tools=None):
     if not all(isinstance(msg, dict) for msg in messages):
         raise ValueError("All messages must be dictionaries.")
-    messages_str = json.dumps(messages)
+    messages_str = json.dumps(messages, default=_cache_default)
     tools_str = json.dumps(str(tools)) if tools else ""
     combined = f"{model}_{messages_str}_{tools_str}"
     cache_key = get_hash(combined)

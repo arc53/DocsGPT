@@ -312,7 +312,7 @@ class ResearchAgent(BaseAgent):
 
         try:
             response = self.llm.gen(
-                model=self.model_id,
+                model=self.upstream_model_id,
                 messages=messages,
                 tools=None,
                 response_format={"type": "json_object"},
@@ -390,7 +390,7 @@ class ResearchAgent(BaseAgent):
 
         try:
             response = self.llm.gen(
-                model=self.model_id,
+                model=self.upstream_model_id,
                 messages=messages,
                 tools=None,
                 response_format={"type": "json_object"},
@@ -506,7 +506,7 @@ class ResearchAgent(BaseAgent):
 
             try:
                 response = self.llm.gen(
-                    model=self.model_id,
+                    model=self.upstream_model_id,
                     messages=messages,
                     tools=self.tools if self.tools else None,
                 )
@@ -537,7 +537,7 @@ class ResearchAgent(BaseAgent):
         )
         try:
             response = self.llm.gen(
-                model=self.model_id, messages=messages, tools=None
+                model=self.upstream_model_id, messages=messages, tools=None
             )
             self._track_tokens(self._snapshot_llm_tokens())
             text = self._extract_text(response)
@@ -664,7 +664,7 @@ class ResearchAgent(BaseAgent):
         ]
 
         llm_response = self.llm.gen_stream(
-            model=self.model_id, messages=messages, tools=None
+            model=self.upstream_model_id, messages=messages, tools=None
         )
 
         if log_context:

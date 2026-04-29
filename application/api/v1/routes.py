@@ -213,6 +213,7 @@ def _stream_response(
         decoded_token=processor.decoded_token,
         agent_id=processor.agent_id,
         model_id=processor.model_id,
+        model_user_id=processor.model_user_id,
         should_save_conversation=should_save_conversation,
         _continuation=continuation,
     )
@@ -257,6 +258,7 @@ def _non_stream_response(
         decoded_token=processor.decoded_token,
         agent_id=processor.agent_id,
         model_id=processor.model_id,
+        model_user_id=processor.model_user_id,
         should_save_conversation=should_save_conversation,
         _continuation=continuation,
     )

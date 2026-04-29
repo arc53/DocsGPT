@@ -203,6 +203,24 @@ agents_table = Table(
     Column("legacy_mongo_id", Text),
 )
 
+user_custom_models_table = Table(
+    "user_custom_models",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("upstream_model_id", Text, nullable=False),
+    Column("display_name", Text, nullable=False),
+    Column("description", Text, nullable=False, server_default=""),
+    Column("base_url", Text, nullable=False),
+    # AES-CBC ciphertext (base64) keyed via per-user PBKDF2 in
+    # application.security.encryption.encrypt_credentials.
+    Column("api_key_encrypted", Text, nullable=False),
+    Column("capabilities", JSONB, nullable=False, server_default="{}"),
+    Column("enabled", Boolean, nullable=False, server_default="true"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
 attachments_table = Table(
     "attachments",
     metadata,

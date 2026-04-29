@@ -211,15 +211,26 @@ class WorkflowEngine:
             node_config.json_schema, node.title
         )
         node_model_id = node_config.model_id or self.agent.model_id
+        # Inherit BYOM scope from parent agent so owner-stored BYOM
+        # resolves on shared workflows.
+        node_user_id = getattr(self.agent, "model_user_id", None) or (
+            self.agent.decoded_token.get("sub")
+            if isinstance(self.agent.decoded_token, dict)
+            else None
+        )
         node_llm_name = (
             node_config.llm_name
-            or get_provider_from_model_id(node_model_id or "")
+            or get_provider_from_model_id(
+                node_model_id or "", user_id=node_user_id
+            )
             or self.agent.llm_name
         )
         node_api_key = get_api_key_for_provider(node_llm_name) or self.agent.api_key
 
         if node_json_schema and node_model_id:
-            model_capabilities = get_model_capabilities(node_model_id)
+            model_capabilities = get_model_capabilities(
+                node_model_id, user_id=node_user_id
+            )
             if model_capabilities and not model_capabilities.get(
                 "supports_structured_output", False
             ):
@@ -232,6 +243,7 @@ class WorkflowEngine:
             "endpoint": self.agent.endpoint,
             "llm_name": node_llm_name,
             "model_id": node_model_id,
+            "model_user_id": getattr(self.agent, "model_user_id", None),
             "api_key": node_api_key,
             "tool_ids": node_config.tools,
             "prompt": node_config.system_prompt,

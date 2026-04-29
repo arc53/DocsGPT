@@ -11,9 +11,7 @@ import pytest
 from application.llm.base import BaseLLM
 
 
-# ---------------------------------------------------------------------------
 # Concrete LLM stubs
-# ---------------------------------------------------------------------------
 
 
 class FakeLLM(BaseLLM):
@@ -33,12 +31,20 @@ class FakeLLM(BaseLLM):
         self.gen_stream_called = False
         self.last_model_received = None  # tracks the model kwarg passed to gen/gen_stream
 
+    # Track at the raw-method level. _execute_with_fallback applies
+    # decorators to the fallback's raw method directly and
+    # never calls .gen() / .gen_stream() on it, so a public-method
+    # override would not register fallback hops.
     def _raw_gen(self, baseself, model, messages, stream, tools=None, **kwargs):
+        self.gen_called = True
+        self.last_model_received = model
         if self.fail_at is not None:
             raise RuntimeError("primary model unavailable")
         return self.responses[0]
 
     def _raw_gen_stream(self, baseself, model, messages, stream, tools=None, **kwargs):
+        self.gen_stream_called = True
+        self.last_model_received = model
         yielded = 0
         for chunk in self.stream_chunks:
             if self.fail_at is not None and yielded >= self.fail_at:
@@ -46,22 +52,8 @@ class FakeLLM(BaseLLM):
             yield chunk
             yielded += 1
 
-    # Wrap gen/gen_stream so we can track whether the fallback instance was used
-    # and which model kwarg it received
-    def gen(self, *args, **kwargs):
-        self.gen_called = True
-        self.last_model_received = kwargs.get("model")
-        return super().gen(*args, **kwargs)
 
-    def gen_stream(self, *args, **kwargs):
-        self.gen_stream_called = True
-        self.last_model_received = kwargs.get("model")
-        return super().gen_stream(*args, **kwargs)
-
-
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 
 def _noop_decorator(func):
@@ -121,9 +113,7 @@ def patch_model_utils(monkeypatch):
 CALL_ARGS = dict(model="test-model", messages=[{"role": "user", "content": "hi"}])
 
 
-# ---------------------------------------------------------------------------
 # Tests — fallback_llm property resolution
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -135,7 +125,7 @@ class TestFallbackLLMResolution:
         backup_llm = FakeLLM(responses=["backup response"])
 
         patch_model_utils(
-            get_provider=lambda mid: "openai",
+            get_provider=lambda mid, **_kwargs: "openai",
             get_api_key=lambda prov: "fake-key",
             create_llm=lambda type, **kw: backup_llm,
         )
@@ -174,7 +164,7 @@ class TestFallbackLLMResolution:
         good_backup = FakeLLM(responses=["good backup"])
         call_count = {"n": 0}
 
-        def fake_get_provider(model_id):
+        def fake_get_provider(model_id, **_kwargs):
             call_count["n"] += 1
             if model_id == "bad-model":
                 return None  # unresolvable
@@ -202,9 +192,7 @@ class TestFallbackLLMResolution:
         assert primary.fallback_llm is None
 
 
-# ---------------------------------------------------------------------------
 # Tests — non-streaming fallback (gen)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -221,7 +209,7 @@ class TestNonStreamingFallback:
         backup = FakeLLM(responses=["backup ok"])
 
         patch_model_utils(
-            get_provider=lambda mid: "openai",
+            get_provider=lambda mid, **_kwargs: "openai",
             get_api_key=lambda p: "k",
             create_llm=lambda type, **kw: backup,
         )
@@ -242,9 +230,7 @@ class TestNonStreamingFallback:
             primary.gen(**CALL_ARGS)
 
 
-# ---------------------------------------------------------------------------
 # Tests — streaming fallback (gen_stream)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -261,7 +247,7 @@ class TestStreamingFallback:
         backup = FakeLLM(stream_chunks=["fallback1", "fallback2"])
 
         patch_model_utils(
-            get_provider=lambda m: "openai",
+            get_provider=lambda m, **_kwargs: "openai",
             get_api_key=lambda p: "k",
             create_llm=lambda type, **kw: backup,
         )
@@ -280,7 +266,7 @@ class TestStreamingFallback:
         backup = FakeLLM(stream_chunks=["recovery1", "recovery2"])
 
         patch_model_utils(
-            get_provider=lambda m: "openai",
+            get_provider=lambda m, **_kwargs: "openai",
             get_api_key=lambda p: "k",
             create_llm=lambda type, **kw: backup,
         )
@@ -304,10 +290,142 @@ class TestStreamingFallback:
         with pytest.raises(RuntimeError, match="mid-stream failure"):
             list(primary.gen_stream(**CALL_ARGS))
 
+    def test_fallback_emits_stream_start_with_fallback_provider(
+        self, patch_model_utils, caplog
+    ):
+        # The fallback raw-stream path bypasses ``gen_stream``, so it must
+        # emit its own ``llm_stream_start`` event tagged with the fallback
+        # vendor — otherwise dashboards record only the failed primary
+        # even when the response came from the backup.
+        import logging as _logging
 
-# ---------------------------------------------------------------------------
+        class FallbackProvider(FakeLLM):
+            provider_name = "fallback-vendor"
+
+        backup = FallbackProvider(
+            stream_chunks=["b1"], model_id="backup-model-id"
+        )
+        patch_model_utils(
+            get_provider=lambda m, **_kwargs: "openai",
+            get_api_key=lambda p: "k",
+            create_llm=lambda type, **kw: backup,
+        )
+
+        class PrimaryProvider(FakeLLM):
+            provider_name = "primary-vendor"
+
+        primary = PrimaryProvider(
+            stream_chunks=["x"],
+            fail_at=0,
+            backup_models=["backup-model-id"],
+        )
+
+        with caplog.at_level(_logging.INFO, logger="root"):
+            list(
+                primary.gen_stream(
+                    model="primary-model",
+                    messages=[{"role": "user", "content": "hi"}],
+                )
+            )
+
+        starts = [r for r in caplog.records if r.message == "llm_stream_start"]
+        assert len(starts) == 2
+        assert starts[0].provider == "primary-vendor"
+        assert starts[0].model == "primary-model"
+        assert starts[1].provider == "fallback-vendor"
+        assert starts[1].model == "backup-model-id"
+
+
+# Tests — fallback never re-enters the orchestrator (Option B regression)
+
+
+@pytest.mark.integration
+class TestFallbackNoRecursion:
+    """When the primary fails, _execute_with_fallback applies decorators to
+    the fallback's raw method directly. The fallback's own ``fallback_llm``
+    property must never be accessed — otherwise a fallback failure would
+    re-enter the orchestrator and walk the global FALLBACK_LLM_* chain
+    unboundedly."""
+
+    def test_backup_fallback_llm_property_never_accessed_on_gen_failure(
+        self, monkeypatch, patch_model_utils
+    ):
+        backup = FakeLLM(fail_at=0)  # backup also fails
+
+        accessed_on = []
+        original_property = BaseLLM.fallback_llm
+
+        def tracked_fallback_llm(self_llm):
+            accessed_on.append(self_llm)
+            return original_property.fget(self_llm)
+
+        monkeypatch.setattr(
+            BaseLLM, "fallback_llm", property(tracked_fallback_llm)
+        )
+
+        patch_model_utils(
+            get_provider=lambda m, **_kwargs: "openai",
+            get_api_key=lambda p: "k",
+            create_llm=lambda type, **kw: backup,
+        )
+
+        primary = FakeLLM(fail_at=0, backup_models=["backup-model"])
+        with pytest.raises(RuntimeError, match="primary model unavailable"):
+            primary.gen(**CALL_ARGS)
+
+        assert primary in accessed_on  # primary lazy-loaded its fallback
+        assert backup not in accessed_on  # backup's chain was never walked
+
+    def test_backup_fallback_llm_property_never_accessed_on_stream_failure(
+        self, monkeypatch, patch_model_utils
+    ):
+        backup = FakeLLM(stream_chunks=["x"], fail_at=0)
+
+        accessed_on = []
+        original_property = BaseLLM.fallback_llm
+
+        def tracked_fallback_llm(self_llm):
+            accessed_on.append(self_llm)
+            return original_property.fget(self_llm)
+
+        monkeypatch.setattr(
+            BaseLLM, "fallback_llm", property(tracked_fallback_llm)
+        )
+
+        patch_model_utils(
+            get_provider=lambda m, **_kwargs: "openai",
+            get_api_key=lambda p: "k",
+            create_llm=lambda type, **kw: backup,
+        )
+
+        primary = FakeLLM(
+            stream_chunks=["y"], fail_at=0, backup_models=["backup-model"]
+        )
+        with pytest.raises(RuntimeError, match="mid-stream failure"):
+            list(primary.gen_stream(**CALL_ARGS))
+
+        assert primary in accessed_on
+        assert backup not in accessed_on
+
+    def test_fallback_failure_propagates_without_chain(self, patch_model_utils):
+        """When both primary and fallback fail, the fallback's exception
+        propagates cleanly — no third hop, no extra retries."""
+        backup = FakeLLM(fail_at=0)
+
+        patch_model_utils(
+            get_provider=lambda m, **_kwargs: "openai",
+            get_api_key=lambda p: "k",
+            create_llm=lambda type, **kw: backup,
+        )
+
+        primary = FakeLLM(fail_at=0, backup_models=["backup-model"])
+        with pytest.raises(RuntimeError, match="primary model unavailable"):
+            primary.gen(**CALL_ARGS)
+
+        assert backup.gen_called  # confirms fallback raw method WAS invoked
+
+
 # Tests — backup model priority over global fallback
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -323,7 +441,7 @@ class TestBackupModelPriority:
             return backup
 
         patch_model_utils(
-            get_provider=lambda m: "openai",
+            get_provider=lambda m, **_kwargs: "openai",
             get_api_key=lambda p: "k",
             create_llm=fake_create_llm,
         )
@@ -346,7 +464,7 @@ class TestBackupModelPriority:
             return backup
 
         patch_model_utils(
-            get_provider=lambda m: "openai",
+            get_provider=lambda m, **_kwargs: "openai",
             get_api_key=lambda p: "k",
             create_llm=fake_create_llm,
         )
@@ -366,7 +484,7 @@ class TestBackupModelPriority:
         global_fallback = FakeLLM(responses=["global ok"])
         call_order = []
 
-        def fake_get_provider(mid):
+        def fake_get_provider(mid, **_kwargs):
             if mid == "broken-backup":
                 return "nonexistent_provider"
             return "openai"
@@ -401,9 +519,7 @@ class TestBackupModelPriority:
         assert call_order == ["broken-backup", "global-model"]
 
 
-# ---------------------------------------------------------------------------
 # Tests — fallback uses its own model_id, not the primary's
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -419,7 +535,7 @@ class TestFallbackModelIdOverride:
         )
 
         patch_model_utils(
-            get_provider=lambda m: "groq",
+            get_provider=lambda m, **_kwargs: "groq",
             get_api_key=lambda p: "k",
             create_llm=lambda type, **kw: backup,
         )
@@ -441,7 +557,7 @@ class TestFallbackModelIdOverride:
         )
 
         patch_model_utils(
-            get_provider=lambda m: "groq",
+            get_provider=lambda m, **_kwargs: "groq",
             get_api_key=lambda p: "k",
             create_llm=lambda type, **kw: backup,
         )
@@ -465,7 +581,7 @@ class TestFallbackModelIdOverride:
         )
 
         patch_model_utils(
-            get_provider=lambda m: "groq",
+            get_provider=lambda m, **_kwargs: "groq",
             get_api_key=lambda p: "k",
             create_llm=lambda type, **kw: backup,
         )
@@ -480,3 +596,161 @@ class TestFallbackModelIdOverride:
 
         assert chunks == ["partial1", "partial2", "recovered"]
         assert backup.last_model_received == "groq-gpt-oss-120b"
+
+
+# Tests — model_user_id (BYOM owner scope) propagates into fallback resolution
+
+
+@pytest.mark.integration
+class TestFallbackModelUserIdScope:
+    """A shared agent dispatched by user B but owned by user A stores
+    A's BYOM UUIDs as backup_models. Without the P2 fix the fallback
+    property looks up those UUIDs against ``decoded_token['sub']`` (B,
+    the caller), which can't see A's per-user layer — backups are
+    silently skipped and the global FALLBACK_* settings are used
+    instead. These tests pin down that ``model_user_id`` (the owner)
+    is used both for the registry lookup and for the recursive
+    ``LLMCreator.create_llm`` call."""
+
+    def test_backup_lookup_uses_model_user_id_not_caller(
+        self, patch_model_utils
+    ):
+        captured = {"user_id": None}
+
+        def fake_get_provider(model_id, **kwargs):
+            captured["user_id"] = kwargs.get("user_id")
+            return "openai"
+
+        backup = FakeLLM(responses=["ok"])
+        patch_model_utils(
+            get_provider=fake_get_provider,
+            get_api_key=lambda p: "k",
+            create_llm=lambda type, **kw: backup,
+        )
+
+        primary = FakeLLM(
+            decoded_token={"sub": "caller-bob"},
+            model_user_id="owner-alice",
+            backup_models=["alice-byom-uuid"],
+        )
+        _ = primary.fallback_llm
+        assert captured["user_id"] == "owner-alice"
+
+    def test_backup_create_llm_receives_model_user_id(self, patch_model_utils):
+        backup = FakeLLM(responses=["ok"])
+        captured = {}
+
+        def fake_create_llm(type, **kw):
+            captured["model_user_id"] = kw.get("model_user_id")
+            captured["model_id"] = kw.get("model_id")
+            return backup
+
+        patch_model_utils(
+            get_provider=lambda m, **_kwargs: "openai",
+            get_api_key=lambda p: "k",
+            create_llm=fake_create_llm,
+        )
+
+        primary = FakeLLM(
+            decoded_token={"sub": "caller-bob"},
+            model_user_id="owner-alice",
+            backup_models=["alice-byom-uuid"],
+        )
+        _ = primary.fallback_llm
+        assert captured["model_user_id"] == "owner-alice"
+        assert captured["model_id"] == "alice-byom-uuid"
+
+    def test_global_fallback_create_llm_receives_model_user_id(
+        self, monkeypatch, patch_model_utils
+    ):
+        """The global FALLBACK_LLM_NAME path must also forward
+        ``model_user_id`` — operators can configure it to a BYOM UUID
+        that's owned by the same user as the primary model."""
+        backup = FakeLLM(responses=["ok"])
+        captured = {}
+
+        def fake_create_llm(type, **kw):
+            captured["model_user_id"] = kw.get("model_user_id")
+            return backup
+
+        patch_model_utils(create_llm=fake_create_llm)
+        monkeypatch.setattr(
+            "application.llm.base.settings",
+            MagicMock(
+                FALLBACK_LLM_PROVIDER="openai",
+                FALLBACK_LLM_NAME="some-uuid",
+                FALLBACK_LLM_API_KEY="k",
+                API_KEY="k",
+            ),
+        )
+
+        primary = FakeLLM(
+            decoded_token={"sub": "caller-bob"},
+            model_user_id="owner-alice",
+            backup_models=[],
+        )
+        _ = primary.fallback_llm
+        assert captured["model_user_id"] == "owner-alice"
+
+    def test_falls_back_to_caller_when_model_user_id_unset(
+        self, patch_model_utils
+    ):
+        """Built-in models / pre-P2 callers don't pass model_user_id.
+        In that case the caller's sub is still used — preserving
+        existing behaviour."""
+        captured = {}
+
+        def fake_get_provider(model_id, **kwargs):
+            captured["user_id"] = kwargs.get("user_id")
+            return "openai"
+
+        patch_model_utils(
+            get_provider=fake_get_provider,
+            get_api_key=lambda p: "k",
+            create_llm=lambda type, **kw: FakeLLM(responses=["ok"]),
+        )
+
+        primary = FakeLLM(
+            decoded_token={"sub": "caller-bob"},
+            model_user_id=None,
+            backup_models=["some-builtin-id"],
+        )
+        _ = primary.fallback_llm
+        assert captured["user_id"] == "caller-bob"
+
+
+# Tests — LLMCreator wires model_user_id through to BaseLLM
+
+
+@pytest.mark.unit
+class TestLLMCreatorPassesModelUserId:
+    """End-to-end through ``LLMCreator.create_llm``: the constructed
+    LLM must store ``model_user_id`` so its fallback property can
+    resolve under the right scope."""
+
+    def test_model_user_id_set_on_constructed_llm(self, monkeypatch):
+        from application.llm.llm_creator import LLMCreator
+        from application.llm.providers import PROVIDERS_BY_NAME
+
+        captured = {}
+
+        class _CapturingLLM:
+            def __init__(self, api_key, user_api_key, *args, **kwargs):
+                captured["model_user_id"] = kwargs.get("model_user_id")
+
+        # Pick any registered provider — we only need the constructor
+        # call to land in our fake.
+        monkeypatch.setattr(
+            PROVIDERS_BY_NAME["openai"], "llm_class", _CapturingLLM
+        )
+
+        LLMCreator.create_llm(
+            type="openai",
+            api_key="k",
+            user_api_key=None,
+            decoded_token={"sub": "caller-bob"},
+            model_id=None,
+            model_user_id="owner-alice",
+        )
+
+        assert captured["model_user_id"] == "owner-alice"

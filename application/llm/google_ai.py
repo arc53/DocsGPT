@@ -10,6 +10,8 @@ from application.storage.storage_creator import StorageCreator
 
 
 class GoogleLLM(BaseLLM):
+    provider_name = "google"
+
     def __init__(
         self, api_key=None, user_api_key=None, decoded_token=None, *args, **kwargs
     ):
@@ -73,24 +75,39 @@ class GoogleLLM(BaseLLM):
         for attachment in attachments:
             mime_type = attachment.get("mime_type")
 
-            if mime_type in self.get_supported_attachment_types():
-                try:
+            if mime_type not in self.get_supported_attachment_types():
+                continue
+            try:
+                # Images go inline as bytes per Google's guidance for
+                # requests under 20MB; the Files API can return before
+                # the upload reaches ACTIVE state and yield an empty URI.
+                if mime_type.startswith("image/"):
+                    file_bytes = self._read_attachment_bytes(attachment)
+                    files.append(
+                        {"file_bytes": file_bytes, "mime_type": mime_type}
+                    )
+                else:
                     file_uri = self._upload_file_to_google(attachment)
+                    if not file_uri:
+                        raise ValueError(
+                            f"Google Files API returned empty URI for "
+                            f"{attachment.get('path', 'unknown')}"
+                        )
                     logging.info(
                         f"GoogleLLM: Successfully uploaded file, got URI: {file_uri}"
                     )
                     files.append({"file_uri": file_uri, "mime_type": mime_type})
-                except Exception as e:
-                    logging.error(
-                        f"GoogleLLM: Error uploading file: {e}", exc_info=True
+            except Exception as e:
+                logging.error(
+                    f"GoogleLLM: Error processing attachment: {e}", exc_info=True
+                )
+                if "content" in attachment:
+                    prepared_messages[user_message_index]["content"].append(
+                        {
+                            "type": "text",
+                            "text": f"[File could not be processed: {attachment.get('path', 'unknown')}]",
+                        }
                     )
-                    if "content" in attachment:
-                        prepared_messages[user_message_index]["content"].append(
-                            {
-                                "type": "text",
-                                "text": f"[File could not be processed: {attachment.get('path', 'unknown')}]",
-                            }
-                        )
         if files:
             logging.info(f"GoogleLLM: Adding {len(files)} files to message")
             prepared_messages[user_message_index]["content"].append({"files": files})
@@ -123,6 +140,10 @@ class GoogleLLM(BaseLLM):
                     file=local_path
                 ).uri,
             )
+            if not file_uri:
+                raise ValueError(
+                    f"Google Files API upload returned empty URI for {file_path}"
+                )
 
             attachment_id = attachment.get("id") or attachment.get("_id")
             if attachment_id:
@@ -150,6 +171,26 @@ class GoogleLLM(BaseLLM):
         except Exception as e:
             logging.error(f"Error uploading file to Google AI: {e}", exc_info=True)
             raise
+
+    def _read_attachment_bytes(self, attachment):
+        """
+        Read attachment bytes from storage for inline transmission.
+
+        Args:
+            attachment (dict): Attachment dictionary with path and metadata.
+
+        Returns:
+            bytes: Raw file bytes.
+        """
+        file_path = attachment.get("path")
+        if not file_path:
+            raise ValueError("No file path provided in attachment")
+        if not self.storage.file_exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+        return self.storage.process_file(
+            file_path,
+            lambda local_path, **kwargs: open(local_path, "rb").read(),
+        )
 
     def _clean_messages_google(self, messages):
         """
@@ -290,12 +331,24 @@ class GoogleLLM(BaseLLM):
                             )
                         elif "files" in item:
                             for file_data in item["files"]:
-                                parts.append(
-                                    types.Part.from_uri(
-                                        file_uri=file_data["file_uri"],
-                                        mime_type=file_data["mime_type"],
+                                if "file_bytes" in file_data:
+                                    parts.append(
+                                        types.Part.from_bytes(
+                                            data=file_data["file_bytes"],
+                                            mime_type=file_data["mime_type"],
+                                        )
                                     )
-                                )
+                                elif file_data.get("file_uri"):
+                                    parts.append(
+                                        types.Part.from_uri(
+                                            file_uri=file_data["file_uri"],
+                                            mime_type=file_data["mime_type"],
+                                        )
+                                    )
+                                else:
+                                    logging.warning(
+                                        "GoogleLLM: dropping file part with empty URI and no bytes"
+                                    )
                         else:
                             raise ValueError(
                                 f"Unexpected content dictionary format:{item}"
@@ -544,22 +597,6 @@ class GoogleLLM(BaseLLM):
             config.response_schema = response_schema
             config.response_mime_type = "application/json"
         # Check if we have both tools and file attachments
-
-        has_attachments = False
-        for message in messages:
-            for part in message.parts:
-                if hasattr(part, "file_data") and part.file_data is not None:
-                    has_attachments = True
-                    break
-            if has_attachments:
-                break
-        messages_summary = self._summarize_messages_for_log(messages)
-        logging.info(
-            "GoogleLLM: Starting stream generation. Model: %s, Messages: %s, Has attachments: %s",
-            model,
-            messages_summary,
-            has_attachments,
-        )
 
         response = client.models.generate_content_stream(
             model=model,

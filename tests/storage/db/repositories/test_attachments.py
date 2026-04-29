@@ -31,6 +31,23 @@ class TestCreate:
         doc = repo.create("u", "f", "/p")
         assert doc["_id"] == doc["id"]
 
+    def test_create_aliases_upload_path_as_path(self, pg_conn):
+        # LLM provider code (google_ai/openai/anthropic and handlers/base)
+        # reads attachment.get("path") — preserved from the legacy Mongo
+        # shape. Repo emits both keys so consumers don't need to know
+        # which storage backend produced the dict.
+        repo = _repo(pg_conn)
+        doc = repo.create("u", "f", "/uploads/x.png")
+        assert doc["path"] == "/uploads/x.png"
+        assert doc["upload_path"] == "/uploads/x.png"
+
+    def test_get_aliases_upload_path_as_path(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create("u", "f", "/uploads/y.pdf")
+        fetched = repo.get(created["id"], "u")
+        assert fetched is not None
+        assert fetched["path"] == "/uploads/y.pdf"
+
     def test_create_with_legacy_mongo_id(self, pg_conn):
         repo = _repo(pg_conn)
         doc = repo.create(

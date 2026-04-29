@@ -281,6 +281,39 @@ def resolve_attachment_alias(alias: str) -> List[str]:
     return list(aliases[alias])
 
 
+def expand_attachments_lenient(
+    attachments: Sequence[str], source: str
+) -> List[str]:
+    """Expand attachment aliases to MIME types, tolerating unknowns.
+
+    Mirrors ``_expand_attachments`` but logs+skips unknown aliases
+    rather than raising. Used for runtime call sites (BYOM registry
+    load) where an operator-side alias-map edit must not drop the
+    entire user's BYOM layer; the strict raise still happens at the
+    API validation boundary.
+    """
+    aliases = builtin_attachment_aliases()
+    expanded: List[str] = []
+    seen: set = set()
+    for entry in attachments:
+        if "/" in entry:
+            if entry not in seen:
+                expanded.append(entry)
+                seen.add(entry)
+            continue
+        mime_list = aliases.get(entry)
+        if mime_list is None:
+            logger.warning(
+                "%s: skipping unknown attachment alias %r", source, entry,
+            )
+            continue
+        for mime in mime_list:
+            if mime not in seen:
+                expanded.append(mime)
+                seen.add(mime)
+    return expanded
+
+
 def load_model_yamls(directories: Sequence[Path]) -> List[ProviderCatalog]:
     """Load every ``*.yaml`` file (excluding ``_defaults.yaml``) under each
     directory in order and return a flat list of catalogs.

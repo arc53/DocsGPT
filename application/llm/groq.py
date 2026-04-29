@@ -5,6 +5,8 @@ GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
 
 class GroqLLM(OpenAILLM):
+    provider_name = "groq"
+
     def __init__(self, api_key=None, user_api_key=None, base_url=None, *args, **kwargs):
         super().__init__(
             api_key=api_key or settings.GROQ_API_KEY or settings.API_KEY,

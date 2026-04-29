@@ -2,6 +2,36 @@ import logging
 import os
 from logging.config import dictConfig
 
+from application.core.log_context import snapshot as _ctx_snapshot
+
+
+# Loggers with ``propagate=False`` don't share root's handlers, so the
+# context filter has to be installed on their handlers directly.
+_NON_PROPAGATING_LOGGERS: tuple[str, ...] = (
+    "uvicorn",
+    "uvicorn.access",
+    "uvicorn.error",
+    "celery.app.trace",
+    "celery.worker.strategy",
+    "gunicorn.error",
+    "gunicorn.access",
+)
+
+
+class _ContextFilter(logging.Filter):
+    """Stamp the current ``log_context`` snapshot onto every ``LogRecord``.
+
+    Must be installed on **handlers**, not loggers: Python skips logger-level
+    filters when a child logger's record propagates up. The ``hasattr`` guard
+    keeps an explicit ``logger.info(..., extra={...})`` from being overwritten.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        for key, value in _ctx_snapshot().items():
+            if not hasattr(record, key):
+                setattr(record, key, value)
+        return True
+
 
 def _otlp_logs_enabled() -> bool:
     """Return True when the user has opted in to OTLP log export.
@@ -60,3 +90,23 @@ def setup_logging() -> None:
         for handler in preserved_handlers:
             if handler not in root.handlers:
                 root.addHandler(handler)
+
+    _install_context_filter()
+
+
+def _install_context_filter() -> None:
+    """Attach :class:`_ContextFilter` to root's handlers + every handler on
+    the known non-propagating loggers. Skipping handlers that already carry
+    one keeps repeat ``setup_logging`` calls from stacking filters.
+    """
+
+    def _has_ctx_filter(handler: logging.Handler) -> bool:
+        return any(isinstance(f, _ContextFilter) for f in handler.filters)
+
+    for handler in logging.getLogger().handlers:
+        if not _has_ctx_filter(handler):
+            handler.addFilter(_ContextFilter())
+    for name in _NON_PROPAGATING_LOGGERS:
+        for handler in logging.getLogger(name).handlers:
+            if not _has_ctx_filter(handler):
+                handler.addFilter(_ContextFilter())

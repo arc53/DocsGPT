@@ -274,7 +274,14 @@ class ToolExecutor:
 
         if tool_id is None or action_name is None:
             error_message = f"Error: Failed to parse LLM tool call. Tool name: {llm_name}"
-            logger.error(error_message)
+            logger.error(
+                "tool_call_parse_failed",
+                extra={
+                    "llm_class_name": llm_class_name,
+                    "llm_tool_name": llm_name,
+                    "call_id": call_id,
+                },
+            )
 
             tool_call_data = {
                 "tool_name": "unknown",
@@ -289,7 +296,15 @@ class ToolExecutor:
 
         if tool_id not in tools_dict:
             error_message = f"Error: Tool ID '{tool_id}' extracted from LLM call not found in available tools_dict. Available IDs: {list(tools_dict.keys())}"
-            logger.error(error_message)
+            logger.error(
+                "tool_id_not_found",
+                extra={
+                    "tool_id": tool_id,
+                    "llm_tool_name": llm_name,
+                    "call_id": call_id,
+                    "available_tool_count": len(tools_dict),
+                },
+            )
 
             tool_call_data = {
                 "tool_name": "unknown",
@@ -356,7 +371,15 @@ class ToolExecutor:
                 f"Failed to load tool '{tool_data.get('name')}' (tool_id key={tool_id}): "
                 "missing 'id' on tool row."
             )
-            logger.error(error_message)
+            logger.error(
+                "tool_load_failed",
+                extra={
+                    "tool_name": tool_data.get("name"),
+                    "tool_id": tool_id,
+                    "action_name": action_name,
+                    "call_id": call_id,
+                },
+            )
             tool_call_data["result"] = error_message
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
@@ -451,10 +474,12 @@ class ToolExecutor:
             row_id = tool_data.get("id")
             if not row_id:
                 logger.error(
-                    "Tool data missing 'id' for tool name=%s (enumerate-key tool_id=%s); "
-                    "skipping load to avoid binding a non-UUID downstream.",
-                    tool_data.get("name"),
-                    tool_id,
+                    "tool_missing_row_id",
+                    extra={
+                        "tool_name": tool_data.get("name"),
+                        "tool_id": tool_id,
+                        "action_name": action_name,
+                    },
                 )
                 return None
             tool_config["tool_id"] = str(row_id)

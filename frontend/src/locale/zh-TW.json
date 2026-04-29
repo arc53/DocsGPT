@@ -244,6 +244,71 @@
         }
       }
     },
+    "customModels": {
+      "label": "自訂模型",
+      "subtitle": "接入你自己的 OpenAI 相容模型。",
+      "addModel": "新增模型",
+      "empty": "找不到模型",
+      "searchPlaceholder": "搜尋模型...",
+      "modalSubtitle": "可連接任何 OpenAI 相容端點(Mistral、Together、vLLM 等)。",
+      "addTitle": "新增自訂模型",
+      "editTitle": "編輯自訂模型",
+      "save": "儲存",
+      "saving": "儲存中",
+      "testConnection": "測試連線",
+      "testing": "測試中",
+      "testSuccess": "連線成功。",
+      "testHintNew": "請填寫 Base URL、模型 ID 與 API 金鑰以啟用連線測試。",
+      "disabledBadge": "已停用",
+      "deleteWarning": "確定要刪除自訂模型「{{modelName}}」嗎?",
+      "actionsMenuAria": "{{modelName}} 的操作",
+      "modelsGroup": {
+        "builtin": "DocsGPT 模型",
+        "user": "我的模型"
+      },
+      "actions": {
+        "edit": "編輯",
+        "delete": "刪除"
+      },
+      "fields": {
+        "displayName": "顯示名稱",
+        "modelId": "模型 ID",
+        "description": "說明",
+        "baseUrl": "Base URL",
+        "apiKey": "API 金鑰"
+      },
+      "placeholders": {
+        "displayName": "My Mistral",
+        "modelId": "例:mistral-large-latest",
+        "description": "選填說明",
+        "baseUrl": "https://api.mistral.ai/v1",
+        "apiKey": "sk-...",
+        "apiKeyEdit": "留空則保留原金鑰"
+      },
+      "hints": {
+        "apiKeyEdit": "留空以保留現有金鑰。"
+      },
+      "capabilities": {
+        "title": "功能",
+        "contextWindowShort": "脈絡視窗",
+        "chips": {
+          "tools": "工具",
+          "structuredOutput": "結構化輸出",
+          "images": "圖片"
+        }
+      },
+      "errors": {
+        "displayNameRequired": "顯示名稱為必填",
+        "modelIdRequired": "模型 ID 為必填",
+        "baseUrlRequired": "Base URL 為必填",
+        "baseUrlScheme": "Base URL 必須以 http:// 或 https:// 開頭",
+        "baseUrlInvalid": "請輸入有效的 URL",
+        "apiKeyRequired": "API 金鑰為必填",
+        "contextWindowRange": "脈絡視窗須介於 1,000 至 10,000,000 之間",
+        "saveFailed": "儲存自訂模型失敗",
+        "testFailed": "連線測試失敗"
+      }
+    },
     "scrollTabsLeft": "向左捲動標籤",
     "tabsAriaLabel": "設定標籤",
     "scrollTabsRight": "向右捲動標籤"

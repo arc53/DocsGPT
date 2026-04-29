@@ -12,6 +12,12 @@ logger = logging.getLogger(__name__)
 class TokenCounter:
     """Centralized token counting for conversations and messages."""
 
+    # Per-image token estimate. Provider tokenizers vary widely
+    # (Gemini ~258, GPT-4o 85-1500, Claude ~1500) and the actual cost
+    # depends on resolution/detail we can't see here. Errs slightly high
+    # so the threshold check stays conservative.
+    _IMAGE_PART_TOKEN_ESTIMATE = 1500
+
     @staticmethod
     def count_message_tokens(messages: List[Dict]) -> int:
         """
@@ -29,11 +35,35 @@ class TokenCounter:
             if isinstance(content, str):
                 total_tokens += num_tokens_from_string(content)
             elif isinstance(content, list):
-                # Handle structured content (tool calls, etc.)
+                # Handle structured content (tool calls, image parts, etc.)
                 for item in content:
                     if isinstance(item, dict):
-                        total_tokens += num_tokens_from_string(str(item))
+                        total_tokens += TokenCounter._count_content_part(item)
         return total_tokens
+
+    @staticmethod
+    def _count_content_part(item: Dict) -> int:
+        # Image/file attachments are billed by the provider per image,
+        # not proportional to the inline bytes/base64 string.
+        # ``str(item)`` on a 1MB image inflates the count by ~10000x,
+        # which trips spurious compression and overflows downstream
+        # input limits.
+        item_type = item.get("type")
+
+        if "files" in item:
+            files = item.get("files")
+            count = len(files) if isinstance(files, list) and files else 1
+            return TokenCounter._IMAGE_PART_TOKEN_ESTIMATE * count
+
+        if "image_url" in item or item_type in {
+            "image",
+            "image_url",
+            "input_image",
+            "file",
+        }:
+            return TokenCounter._IMAGE_PART_TOKEN_ESTIMATE
+
+        return num_tokens_from_string(str(item))
 
     @staticmethod
     def count_query_tokens(

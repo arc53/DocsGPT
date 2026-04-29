@@ -28,10 +28,11 @@ from application.llm.google_ai import GoogleLLM
 
 
 class _FakePart:
-    def __init__(self, text=None, function_call=None, file_data=None, thought=False, **kwargs):
+    def __init__(self, text=None, function_call=None, file_data=None, inline_data=None, thought=False, **kwargs):
         self.text = text
         self.function_call = function_call or kwargs.get("functionCall")
         self.file_data = file_data
+        self.inline_data = inline_data
         self.thought = thought
         self.thoughtSignature = kwargs.get("thoughtSignature")
 
@@ -51,6 +52,12 @@ class _FakePart:
     def from_uri(file_uri, mime_type):
         return _FakePart(
             file_data=types.SimpleNamespace(file_uri=file_uri, mime_type=mime_type)
+        )
+
+    @staticmethod
+    def from_bytes(data, mime_type):
+        return _FakePart(
+            inline_data=types.SimpleNamespace(data=data, mime_type=mime_type)
         )
 
 
@@ -225,6 +232,43 @@ class TestCleanMessagesGoogle:
             hasattr(p, "file_data") and p.file_data is not None
             for p in cleaned[0].parts
         )
+
+    def test_files_with_inline_bytes(self, llm):
+        msgs = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "files": [
+                            {"file_bytes": b"\x89PNG", "mime_type": "image/png"}
+                        ]
+                    },
+                ],
+            }
+        ]
+        cleaned, _ = llm._clean_messages_google(msgs)
+        assert len(cleaned) == 1
+        inline_parts = [
+            p for p in cleaned[0].parts
+            if getattr(p, "inline_data", None) is not None
+        ]
+        assert len(inline_parts) == 1
+        assert inline_parts[0].inline_data.data == b"\x89PNG"
+        assert inline_parts[0].inline_data.mime_type == "image/png"
+
+    def test_files_with_empty_uri_dropped(self, llm):
+        msgs = [
+            {
+                "role": "user",
+                "content": [
+                    {"files": [{"file_uri": "", "mime_type": "image/png"}]},
+                ],
+            }
+        ]
+        cleaned, _ = llm._clean_messages_google(msgs)
+        # Empty URI part is dropped; no other parts means the whole
+        # content is empty and the message itself is not appended.
+        assert cleaned == []
 
     def test_unexpected_list_item_raises(self, llm):
         msgs = [{"role": "user", "content": [{"unknown_key": "val"}]}]
@@ -719,7 +763,9 @@ class TestPrepareMessagesWithAttachments:
 
     def test_upload_error_adds_text_fallback(self, llm, monkeypatch):
         monkeypatch.setattr(
-            llm, "_upload_file_to_google", lambda a: (_ for _ in ()).throw(Exception("fail"))
+            llm,
+            "_read_attachment_bytes",
+            lambda a: (_ for _ in ()).throw(Exception("fail")),
         )
         msgs = [{"role": "user", "content": "hi"}]
         attachments = [
@@ -733,8 +779,57 @@ class TestPrepareMessagesWithAttachments:
         ]
         assert len(text_parts) == 1
 
+    def test_pdf_upload_error_adds_text_fallback(self, llm, monkeypatch):
+        monkeypatch.setattr(
+            llm,
+            "_upload_file_to_google",
+            lambda a: (_ for _ in ()).throw(Exception("fail")),
+        )
+        msgs = [{"role": "user", "content": "hi"}]
+        attachments = [
+            {"mime_type": "application/pdf", "path": "/tmp/doc.pdf", "content": "x"},
+        ]
+        result = llm.prepare_messages_with_attachments(msgs, attachments)
+        user_msg = next(m for m in result if m["role"] == "user")
+        text_parts = [
+            p for p in user_msg["content"]
+            if isinstance(p, dict) and p.get("type") == "text" and "could not" in p.get("text", "").lower()
+        ]
+        assert len(text_parts) == 1
+
+    def test_pdf_empty_uri_adds_text_fallback(self, llm, monkeypatch):
+        monkeypatch.setattr(llm, "_upload_file_to_google", lambda a: "")
+        msgs = [{"role": "user", "content": "hi"}]
+        attachments = [
+            {"mime_type": "application/pdf", "path": "/tmp/doc.pdf", "content": "x"},
+        ]
+        result = llm.prepare_messages_with_attachments(msgs, attachments)
+        user_msg = next(m for m in result if m["role"] == "user")
+        files_entries = [
+            p for p in user_msg["content"] if isinstance(p, dict) and "files" in p
+        ]
+        assert files_entries == []
+        text_parts = [
+            p for p in user_msg["content"]
+            if isinstance(p, dict) and p.get("type") == "text" and "could not" in p.get("text", "").lower()
+        ]
+        assert len(text_parts) == 1
+
+    def test_image_uses_inline_bytes(self, llm, monkeypatch):
+        monkeypatch.setattr(llm, "_read_attachment_bytes", lambda a: b"\x89PNG-bytes")
+        msgs = [{"role": "user", "content": "hi"}]
+        attachments = [{"mime_type": "image/png", "path": "/img.png"}]
+        result = llm.prepare_messages_with_attachments(msgs, attachments)
+        user_msg = next(m for m in result if m["role"] == "user")
+        files_entry = next(
+            p for p in user_msg["content"] if isinstance(p, dict) and "files" in p
+        )
+        assert files_entry["files"] == [
+            {"file_bytes": b"\x89PNG-bytes", "mime_type": "image/png"}
+        ]
+
     def test_no_user_message_creates_one(self, llm, monkeypatch):
-        monkeypatch.setattr(llm, "_upload_file_to_google", lambda a: "gs://uri")
+        monkeypatch.setattr(llm, "_read_attachment_bytes", lambda a: b"png")
         msgs = [{"role": "system", "content": "sys"}]
         attachments = [{"mime_type": "image/png", "path": "/img.png"}]
         result = llm.prepare_messages_with_attachments(msgs, attachments)
@@ -754,6 +849,26 @@ class TestUploadFileToGoogle:
         attachment = {"google_file_uri": "gs://cached"}
         result = llm._upload_file_to_google(attachment)
         assert result == "gs://cached"
+
+    def test_empty_cached_uri_triggers_reupload(self, llm, monkeypatch):
+        # Poisoned-cache repro: an empty-string google_file_uri must be
+        # treated as a miss and re-upload, not returned as-is.
+        monkeypatch.setattr(
+            "application.llm.google_ai.settings",
+            types.SimpleNamespace(GOOGLE_API_KEY="k", API_KEY="k"),
+        )
+        result = llm._upload_file_to_google(
+            {"google_file_uri": "", "path": "/tmp/file.pdf"}
+        )
+        assert result == "gs://fake-uri"
+
+    def test_empty_upload_uri_raises(self, llm):
+        llm.storage = types.SimpleNamespace(
+            file_exists=lambda p: True,
+            process_file=lambda path, fn, **kw: "",
+        )
+        with pytest.raises(ValueError, match="empty URI"):
+            llm._upload_file_to_google({"path": "/tmp/file.pdf"})
 
     def test_raises_for_no_path(self, llm):
         with pytest.raises(ValueError, match="No file path"):

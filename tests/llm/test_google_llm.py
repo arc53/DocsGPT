@@ -231,6 +231,7 @@ def test_prepare_messages_with_attachments_appends_files(monkeypatch):
         process_file=lambda path, processor_func, **kwargs: "gs://file_uri"
     )
     monkeypatch.setattr(llm, "_upload_file_to_google", lambda att: "gs://file_uri")
+    monkeypatch.setattr(llm, "_read_attachment_bytes", lambda att: b"png-bytes")
 
     messages = [{"role": "user", "content": "Hi"}]
     attachments = [
@@ -243,4 +244,9 @@ def test_prepare_messages_with_attachments_appends_files(monkeypatch):
     assert isinstance(user_msg["content"], list)
     files_entry = next((p for p in user_msg["content"] if isinstance(p, dict) and "files" in p), None)
     assert files_entry is not None
-    assert isinstance(files_entry["files"], list) and len(files_entry["files"]) == 2
+    files = files_entry["files"]
+    assert len(files) == 2
+    image_part = next(f for f in files if f["mime_type"] == "image/png")
+    pdf_part = next(f for f in files if f["mime_type"] == "application/pdf")
+    assert image_part == {"file_bytes": b"png-bytes", "mime_type": "image/png"}
+    assert pdf_part == {"file_uri": "gs://file_uri", "mime_type": "application/pdf"}

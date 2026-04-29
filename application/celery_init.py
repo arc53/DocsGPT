@@ -1,8 +1,17 @@
+import inspect
+import logging
 import threading
 
 from celery import Celery
+from application.core import log_context
 from application.core.settings import settings
-from celery.signals import setup_logging, worker_process_init, worker_ready
+from celery.signals import (
+    setup_logging,
+    task_postrun,
+    task_prerun,
+    worker_process_init,
+    worker_ready,
+)
 
 
 def make_celery(app_name=__name__):
@@ -39,6 +48,54 @@ def _dispose_db_engine_on_fork(*args, **kwargs):
     except Exception:
         return
     dispose_engine()
+
+
+# Most tasks in this repo accept ``user`` where the log context wants
+# ``user_id``; map task parameter names to context keys explicitly.
+_TASK_PARAM_TO_CTX_KEY: dict[str, str] = {
+    "user": "user_id",
+    "user_id": "user_id",
+    "agent_id": "agent_id",
+    "conversation_id": "conversation_id",
+}
+
+_task_log_tokens: dict[str, object] = {}
+
+
+@task_prerun.connect
+def _bind_task_log_context(task_id, task, args, kwargs, **_):
+    # Resolve task args by parameter name — nearly every task in this repo
+    # is called positionally, so ``kwargs.get('user')`` would bind nothing.
+    ctx = {"activity_id": task_id}
+    try:
+        sig = inspect.signature(task.run)
+        bound = sig.bind_partial(*args, **kwargs).arguments
+    except (TypeError, ValueError):
+        bound = dict(kwargs)
+    for param_name, value in bound.items():
+        ctx_key = _TASK_PARAM_TO_CTX_KEY.get(param_name)
+        if ctx_key and value:
+            ctx[ctx_key] = value
+    _task_log_tokens[task_id] = log_context.bind(**ctx)
+
+
+@task_postrun.connect
+def _unbind_task_log_context(task_id, **_):
+    # ``task_postrun`` fires on both success and failure. Required for
+    # Celery: unlike the Flask path, tasks aren't isolated in their own
+    # ``copy_context().run(...)``, so a missing reset would leak the
+    # bind onto the next task on the same worker.
+    token = _task_log_tokens.pop(task_id, None)
+    if token is None:
+        return
+    try:
+        log_context.reset(token)
+    except ValueError:
+        # task_prerun and task_postrun ran on different threads (non-default
+        # Celery pool); the token isn't valid in this context. Drop it.
+        logging.getLogger(__name__).debug(
+            "log_context reset skipped for task %s", task_id
+        )
 
 
 @worker_ready.connect

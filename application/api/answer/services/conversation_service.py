@@ -136,8 +136,14 @@ class ConversationService:
                 },
             ]
 
+            # ``model_id`` here is the registry id (a UUID for BYOM
+            # records). The LLM's own ``model_id`` is the upstream name
+            # LLMCreator resolved at construction time — that's what
+            # the provider's API expects. Built-ins are unaffected.
             completion = llm.gen(
-                model=model_id, messages=messages_summary, max_tokens=500
+                model=getattr(llm, "model_id", None) or model_id,
+                messages=messages_summary,
+                max_tokens=500,
             )
 
             if not completion or not completion.strip():

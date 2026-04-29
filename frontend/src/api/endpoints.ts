@@ -76,6 +76,10 @@ const endpoints = {
     GET_ARTIFACT: (artifactId: string) => `/api/artifact/${artifactId}`,
     WORKFLOWS: '/api/workflows',
     WORKFLOW: (id: string) => `/api/workflows/${id}`,
+    CUSTOM_MODELS: '/api/user/models',
+    CUSTOM_MODEL: (id: string) => `/api/user/models/${id}`,
+    CUSTOM_MODEL_TEST: (id: string) => `/api/user/models/${id}/test`,
+    CUSTOM_MODEL_TEST_PAYLOAD: '/api/user/models/test',
   },
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',

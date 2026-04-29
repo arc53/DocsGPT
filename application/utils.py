@@ -83,9 +83,9 @@ def count_tokens_docs(docs):
 
 
 def calculate_doc_token_budget(
-    model_id: str = "gpt-4o"
+    model_id: str = "gpt-4o", user_id: str | None = None
 ) -> int:
-    total_context = get_token_limit(model_id)
+    total_context = get_token_limit(model_id, user_id=user_id)
     reserved = sum(settings.RESERVED_TOKENS.values())
     doc_budget = total_context - reserved
     return max(doc_budget, 1000)
@@ -150,9 +150,11 @@ def get_hash(data):
     return hashlib.md5(data.encode(), usedforsecurity=False).hexdigest()
 
 
-def limit_chat_history(history, max_token_limit=None, model_id="docsgpt-local"):
+def limit_chat_history(
+    history, max_token_limit=None, model_id="docsgpt-local", user_id=None
+):
     """Limit chat history to fit within token limit."""
-    model_token_limit = get_token_limit(model_id)
+    model_token_limit = get_token_limit(model_id, user_id=user_id)
     max_token_limit = (
         max_token_limit
         if max_token_limit and max_token_limit < model_token_limit
@@ -204,7 +206,9 @@ def generate_image_url(image_path):
 
 
 def calculate_compression_threshold(
-    model_id: str, threshold_percentage: float = 0.8
+    model_id: str,
+    threshold_percentage: float = 0.8,
+    user_id: str | None = None,
 ) -> int:
     """
     Calculate token threshold for triggering compression.
@@ -212,11 +216,13 @@ def calculate_compression_threshold(
     Args:
         model_id: Model identifier
         threshold_percentage: Percentage of context window (default 80%)
+        user_id: When set, BYOM custom-model records (UUID-keyed) resolve
+            for context-window lookup.
 
     Returns:
         Token count threshold
     """
-    total_context = get_token_limit(model_id)
+    total_context = get_token_limit(model_id, user_id=user_id)
     threshold = int(total_context * threshold_percentage)
     return threshold
 
