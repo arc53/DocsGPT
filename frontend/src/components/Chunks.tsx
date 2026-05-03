@@ -3,6 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import {
+  throttleManager,
+  isThrottleRejection,
+} from '../api/ThrottleManager';
 import ArrowLeft from '../assets/arrow-left.svg';
 import FileIcon from '../assets/file.svg';
 import FolderIcon from '../assets/folder.svg';
@@ -275,16 +279,22 @@ const Chunks: React.FC<ChunksProps> = ({
     setChunkToDelete(null);
   };
 
-  useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      if (page !== 1) {
+  const debouncedSearchAction = useRef(
+    throttleManager.debounce((currentPage: number, doFetch: () => void) => {
+      if (currentPage !== 1) {
         setPage(1);
       } else {
-        fetchChunks();
+        doFetch();
       }
-    }, 300);
+    }, 300),
+  ).current;
 
-    return () => clearTimeout(delayDebounceFn);
+  useEffect(() => {
+    debouncedSearchAction(page, fetchChunks).catch((err: unknown) => {
+      if (!isThrottleRejection(err)) {
+        console.error(err);
+      }
+    });
   }, [searchTerm]);
 
   useEffect(() => {

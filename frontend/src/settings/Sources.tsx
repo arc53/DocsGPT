@@ -3,6 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import {
+  throttleManager,
+  ThrottleManager,
+  ThrottleError,
+  isThrottleRejection,
+} from '../api/ThrottleManager';
 
 import EyeView from '../assets/eye-view.svg';
 import NoFilesIcon from '../assets/no-files.svg';
@@ -117,12 +123,19 @@ export default function Sources({
     document: null,
   });
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-    }, 500);
+  const debouncedSetSearch = useRef(
+    throttleManager.debounce((term: string) => {
+      setDebouncedSearchTerm(term);
+    }, 500),
+  ).current;
 
-    return () => clearTimeout(timer);
+  useEffect(() => {
+    debouncedSetSearch(searchTerm).catch((err: unknown) => {
+      if (!isThrottleRejection(err)) {
+        console.error(err);
+      }
+      // DEBOUNCED rejections are expected – the newer call superseded this one.
+    });
   }, [searchTerm]);
 
   const refreshDocs = useCallback(
@@ -152,19 +165,38 @@ export default function Sources({
       }
 
       setLoading(true);
-      getDocsWithPagination(
-        newSortField,
-        newSortOrder,
-        page,
-        rowsPerPg,
-        debouncedSearchTerm,
-        token,
-      )
+      const key = ThrottleManager.generateKey('/docs/paginated', {
+        params: {
+          sort: newSortField,
+          order: newSortOrder,
+          page,
+          rows: rowsPerPg,
+          search: debouncedSearchTerm,
+        },
+      });
+
+      throttleManager
+        .dedupe(key, (signal) =>
+          getDocsWithPagination(
+            newSortField,
+            newSortOrder,
+            page,
+            rowsPerPg,
+            debouncedSearchTerm,
+            token,
+            signal,
+          ),
+        )
         .then((data) => {
           dispatch(setPaginatedDocuments(data ? data.docs : []));
           setTotalPages(data ? data.totalPages : 0);
         })
-        .catch((error) => console.error(error))
+        .catch((error: unknown) => {
+          // Suppress expected ThrottleManager rejections (ABORTED, DEDUPLICATED).
+          if (!isThrottleRejection(error)) {
+            console.error(error);
+          }
+        })
         .finally(() => {
           setLoading(false);
         });

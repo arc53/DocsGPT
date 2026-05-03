@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  throttleManager,
+  isThrottleRejection,
+} from '../api/ThrottleManager';
 import { useTranslation } from 'react-i18next';
 import { formatBytes } from '../utils/stringUtils';
 import { formatDate } from '../utils/dateTimeUtils';
@@ -100,7 +104,6 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   const [activeTab, setActiveTab] = useState<'my_files' | 'shared'>('my_files');
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const isFolder = (file: CloudFile) => {
@@ -292,32 +295,42 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
   useEffect(() => {
     return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
       abortControllerRef.current?.abort();
     };
   }, []);
 
+  const debouncedFileSearch = useRef(
+    throttleManager.debounce(
+      (
+        query: string,
+        sessionToken: string,
+        folderId: string | null,
+        loadFn: typeof loadCloudFiles,
+        isShared: boolean,
+      ) => {
+        loadFn(sessionToken, folderId, undefined, query, isShared);
+      },
+      300,
+    ),
+  ).current;
+
   const handleSearchChange = (query: string) => {
     setSearchQuery(query);
 
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
+    const sessionToken = getSessionToken(provider);
+    if (sessionToken) {
+      debouncedFileSearch(
+        query,
+        sessionToken,
+        currentFolderId,
+        loadCloudFiles,
+        activeTab === 'shared' && !currentFolderId,
+      ).catch((err: unknown) => {
+        if (!isThrottleRejection(err)) {
+          console.error(err);
+        }
+      });
     }
-
-    searchTimeoutRef.current = setTimeout(() => {
-      const sessionToken = getSessionToken(provider);
-      if (sessionToken) {
-        loadCloudFiles(
-          sessionToken,
-          currentFolderId,
-          undefined,
-          query,
-          activeTab === 'shared' && !currentFolderId,
-        );
-      }
-    }, 300);
   };
 
   const handleFolderClick = (folderId: string, folderName: string) => {

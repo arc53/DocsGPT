@@ -8,8 +8,12 @@ const userService = {
     apiClient.get(endpoints.USER.NEW_TOKEN, null),
   getDocs: (token: string | null): Promise<any> =>
     apiClient.get(`${endpoints.USER.DOCS}`, token),
-  getDocsWithPagination: (query: string, token: string | null): Promise<any> =>
-    apiClient.get(`${endpoints.USER.DOCS_PAGINATED}?${query}`, token),
+  getDocsWithPagination: (
+    query: string,
+    token: string | null,
+    signal?: AbortSignal,
+  ): Promise<any> =>
+    apiClient.get(`${endpoints.USER.DOCS_PAGINATED}?${query}`, token, {}, signal),
   getAPIKeys: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.API_KEYS, token),
   createAPIKey: (data: any, token: string | null): Promise<any> =>

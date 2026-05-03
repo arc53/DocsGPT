@@ -7,6 +7,7 @@ import {
   clearAttachments,
   selectCompletedAttachments,
 } from '../upload/uploadSlice';
+import { ThrottleManager, throttleManager } from '../api/ThrottleManager';
 import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
@@ -45,13 +46,29 @@ export const fetchAnswer = createAsyncThunk<
 >('fetchAnswer', async ({ question, indx }, { dispatch, getState }) => {
   if (abortController) abortController.abort();
   abortController = new AbortController();
-  const { signal } = abortController;
+  const { signal: externalSignal } = abortController;
 
   let isSourceUpdated = false;
   const state = getState() as RootState;
   const attachmentIds = selectCompletedAttachments(state)
     .filter((a) => a.id)
     .map((a) => a.id) as string[];
+
+  const currentConversationId = state.conversation.conversationId;
+  const modelId =
+    state.preference.selectedAgent?.default_model_id ||
+    state.preference.selectedModel?.id;
+
+  const dedupeKey = ThrottleManager.generateKey('fetchAnswer', {
+    body: { question, currentConversationId, modelId, attachmentIds },
+  });
+
+  return throttleManager.dedupe(
+    dedupeKey,
+    async (signal) => {
+      if (attachmentIds.length > 0) {
+        dispatch(clearAttachments());
+      }
 
   if (attachmentIds.length > 0) {
     dispatch(clearAttachments());
@@ -349,17 +366,19 @@ export const fetchAnswer = createAsyncThunk<
         dispatch(conversationSlice.actions.setStatus('idle'));
       }
     }
-  }
-  return {
-    conversationId: null,
-    title: null,
-    answer: '',
-    query: question,
-    result: '',
-    thought: '',
-    sources: [],
-    tool_calls: [],
-  };
+    return {
+      conversationId: null,
+      title: null,
+      answer: '',
+      query: question,
+      result: '',
+      thought: '',
+      sources: [],
+      tool_calls: [],
+    };
+  },
+  externalSignal,
+  );
 });
 
 export const submitToolActions = createAsyncThunk<
@@ -375,19 +394,26 @@ export const submitToolActions = createAsyncThunk<
 >('submitToolActions', async ({ toolActions }, { dispatch, getState }) => {
   if (abortController) abortController.abort();
   abortController = new AbortController();
-  const { signal } = abortController;
+  const { signal: externalSignal } = abortController;
 
   const state = getState() as RootState;
   const conversationId = state.conversation.conversationId;
   if (!conversationId) return;
 
-  dispatch(conversationSlice.actions.setStatus('loading'));
+  const dedupeKey = ThrottleManager.generateKey('submitToolActions', {
+    body: { toolActions, conversationId },
+  });
 
-  await handleSubmitToolActions(
-    conversationId,
-    toolActions,
-    state.preference.token,
-    signal,
+  return throttleManager.dedupe(
+    dedupeKey,
+    async (signal) => {
+      dispatch(conversationSlice.actions.setStatus('loading'));
+
+      await handleSubmitToolActions(
+        conversationId,
+        toolActions,
+        state.preference.token,
+        signal,
     (event) => {
       const data = JSON.parse(event.data);
       const targetIndex = state.conversation.queries.length - 1;
@@ -448,6 +474,7 @@ export const submitToolActions = createAsyncThunk<
       }
     },
   );
+}, externalSignal);
 });
 
 export const conversationSlice = createSlice({

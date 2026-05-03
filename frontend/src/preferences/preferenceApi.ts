@@ -28,10 +28,15 @@ export async function getDocsWithPagination(
   rowsPerPage = 10,
   searchTerm = '',
   token: string | null,
+  signal?: AbortSignal,
 ): Promise<GetDocsResponse | null> {
   try {
     const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${searchTerm}`;
-    const response = await userService.getDocsWithPagination(query, token);
+    const response = await userService.getDocsWithPagination(
+      query,
+      token,
+      signal,
+    );
     const data = await response.json();
     const docs: Doc[] = [];
     Array.isArray(data.paginated) &&
