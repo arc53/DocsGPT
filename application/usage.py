@@ -1,4 +1,3 @@
-import sys
 import logging
 import time
 from datetime import datetime
@@ -93,33 +92,59 @@ def _count_prompt_tokens(messages, tools=None, usage_attachments=None, **kwargs)
     return prompt_tokens
 
 
-def update_token_usage(decoded_token, user_api_key, token_usage, agent_id=None):
-    if "pytest" in sys.modules:
-        return
-    user_id = decoded_token.get("sub") if isinstance(decoded_token, dict) else None
-    normalized_agent_id = str(agent_id) if agent_id else None
+def _persist_call_usage(llm, call_usage):
+    """Write one ``token_usage`` row per LLM call. Always-on; no flag.
 
-    if not user_id and not user_api_key and not normalized_agent_id:
+    Source defaults to ``agent_stream`` and can be overridden per
+    instance via ``_token_usage_source`` (set on side-channel LLMs:
+    title / compression / rag_condense / fallback). A ``_request_id``
+    stamped on the LLM lets ``count_in_range`` deduplicate the multiple
+    rows produced by a single multi-tool agent run.
+    """
+    if call_usage["prompt_tokens"] == 0 and call_usage["generated_tokens"] == 0:
+        return
+    decoded_token = getattr(llm, "decoded_token", None)
+    user_id = (
+        decoded_token.get("sub") if isinstance(decoded_token, dict) else None
+    )
+    user_api_key = getattr(llm, "user_api_key", None)
+    agent_id = getattr(llm, "agent_id", None)
+    if not user_id and not user_api_key:
+        # Repository would raise on the attribution check — log instead
+        # so operators see the gap rather than crashing the stream.
         logger.warning(
-            "Skipping token usage insert: missing user_id, api_key, and agent_id"
+            "token_usage skip: no user_id/api_key on LLM instance",
+            extra={
+                "source": getattr(llm, "_token_usage_source", "agent_stream"),
+            },
         )
         return
-
     try:
         with db_session() as conn:
             TokenUsageRepository(conn).insert(
                 user_id=user_id,
                 api_key=user_api_key,
-                agent_id=normalized_agent_id,
-                prompt_tokens=token_usage["prompt_tokens"],
-                generated_tokens=token_usage["generated_tokens"],
+                agent_id=str(agent_id) if agent_id else None,
+                prompt_tokens=call_usage["prompt_tokens"],
+                generated_tokens=call_usage["generated_tokens"],
+                source=(
+                    getattr(llm, "_token_usage_source", None) or "agent_stream"
+                ),
+                request_id=getattr(llm, "_request_id", None),
                 timestamp=datetime.now(),
             )
-    except Exception as e:
-        logger.error(f"Failed to record token usage: {e}", exc_info=True)
+    except Exception:
+        logger.exception("token_usage persist failed")
 
 
 def gen_token_usage(func):
+    """Accumulate per-call token counts and write a ``token_usage`` row.
+
+    The accumulator on ``self.token_usage`` stays in place for code
+    paths that introspect it (e.g., logging, response payloads). DB
+    persistence happens here for every call so primary streams,
+    side-channel LLMs, and no-save flows all produce rows uniformly.
+    """
     def wrapper(self, model, messages, stream, tools, **kwargs):
         usage_attachments = kwargs.pop("_usage_attachments", None)
         call_usage = {"prompt_tokens": 0, "generated_tokens": 0}
@@ -133,18 +158,14 @@ def gen_token_usage(func):
         call_usage["generated_tokens"] += _count_tokens(result)
         self.token_usage["prompt_tokens"] += call_usage["prompt_tokens"]
         self.token_usage["generated_tokens"] += call_usage["generated_tokens"]
-        update_token_usage(
-            self.decoded_token,
-            self.user_api_key,
-            call_usage,
-            getattr(self, "agent_id", None),
-        )
+        _persist_call_usage(self, call_usage)
         return result
 
     return wrapper
 
 
 def stream_token_usage(func):
+    """Stream variant of ``gen_token_usage``. Same persistence contract."""
     def wrapper(self, model, messages, stream, tools, **kwargs):
         usage_attachments = kwargs.pop("_usage_attachments", None)
         call_usage = {"prompt_tokens": 0, "generated_tokens": 0}
@@ -173,15 +194,7 @@ def stream_token_usage(func):
                 call_usage["generated_tokens"] += _count_tokens(line)
             self.token_usage["prompt_tokens"] += call_usage["prompt_tokens"]
             self.token_usage["generated_tokens"] += call_usage["generated_tokens"]
-            # Persist usage rows only on success: a partial mid-stream
-            # failure shouldn't bill the user for a response they never got.
-            if error is None:
-                update_token_usage(
-                    self.decoded_token,
-                    self.user_api_key,
-                    call_usage,
-                    getattr(self, "agent_id", None),
-                )
+            _persist_call_usage(self, call_usage)
             emit = getattr(self, "_emit_stream_finished_log", None)
             if callable(emit):
                 try:

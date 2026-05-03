@@ -91,6 +91,16 @@ token_usage_table = Table(
     Column("prompt_tokens", Integer, nullable=False, server_default="0"),
     Column("generated_tokens", Integer, nullable=False, server_default="0"),
     Column("timestamp", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # Added in ``0004_durability_foundation``. Distinguishes
+    # ``agent_stream`` (primary completion) from side-channel inserts
+    # (``title`` / ``compression`` / ``rag_condense`` / ``fallback``)
+    # so cost attribution dashboards can group by call source.
+    Column("source", Text, nullable=False, server_default="agent_stream"),
+    # Added in ``0005_token_usage_request_id``. Stream-scoped UUID stamped
+    # on the agent's primary LLM so multi-call agent runs (which produce
+    # N rows) count as a single request via DISTINCT in the repository
+    # query. NULL on side-channel sources by design.
+    Column("request_id", Text),
 )
 
 user_logs_table = Table(
@@ -345,6 +355,11 @@ conversation_messages_table = Table(
     Column("feedback", JSONB),
     Column("timestamp", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # Added in 0004_durability_foundation. ``status`` is the WAL state
+    # machine (pending|streaming|complete|failed); ``request_id`` ties a
+    # row to a specific HTTP request for log correlation.
+    Column("status", Text, nullable=False, server_default="complete"),
+    Column("request_id", Text),
     UniqueConstraint("conversation_id", "position", name="conversation_messages_conv_pos_uidx"),
 )
 
@@ -377,8 +392,100 @@ pending_tool_state_table = Table(
     Column("client_tools", JSONB),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("expires_at", DateTime(timezone=True), nullable=False),
+    # Added in ``0004_durability_foundation``. ``status`` is the
+    # ``pending|resuming`` claim flag for the resumed-run path;
+    # ``resumed_at`` stamps when ``mark_resuming`` flipped the row so
+    # the cleanup janitor can revert stale claims after the grace
+    # window.
+    Column("status", Text, nullable=False, server_default="pending"),
+    Column("resumed_at", DateTime(timezone=True)),
     UniqueConstraint("conversation_id", "user_id", name="pending_tool_state_conv_user_uidx"),
 )
+
+
+# --- Tier 1 durability foundation (migration 0004) --------------------------
+# CHECK constraints (status enums) and partial indexes are intentionally
+# omitted from these declarations — the DB is the authority. Repositories
+# use raw ``text(...)`` SQL against these tables, not the Core objects.
+
+task_dedup_table = Table(
+    "task_dedup",
+    metadata,
+    Column("idempotency_key", Text, primary_key=True),
+    Column("task_name", Text, nullable=False),
+    Column("task_id", Text, nullable=False),
+    Column("result_json", JSONB),
+    # CHECK (status IN ('pending', 'completed', 'failed')) lives in 0004.
+    Column("status", Text, nullable=False),
+    # Bumped each time the per-Celery-task wrapper re-enters; the
+    # poison-loop guard (``MAX_TASK_ATTEMPTS=5``) refuses to run fn once
+    # this exceeds the threshold.
+    Column("attempt_count", Integer, nullable=False, server_default="0"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # Added in ``0006_idempotency_lease``. Per-invocation random id
+    # written by the wrapper at lease claim; refreshed every 30 s by a
+    # heartbeat thread. Other workers seeing a fresh lease (NOT NULL
+    # AND ``lease_expires_at > now()``) refuse to run the task body.
+    Column("lease_owner_id", Text),
+    Column("lease_expires_at", DateTime(timezone=True)),
+)
+
+webhook_dedup_table = Table(
+    "webhook_dedup",
+    metadata,
+    Column("idempotency_key", Text, primary_key=True),
+    Column("agent_id", UUID(as_uuid=True), nullable=False),
+    Column("task_id", Text, nullable=False),
+    Column("response_json", JSONB),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+# Three-phase tool-call journal: ``proposed → executed → confirmed``
+# (terminal: ``failed``; ``compensated`` is grandfathered in the CHECK
+# from migration 0004 but no code writes it). The reconciler sweeps
+# stuck rows via the partial ``tool_call_attempts_pending_ts_idx``.
+tool_call_attempts_table = Table(
+    "tool_call_attempts",
+    metadata,
+    Column("call_id", Text, primary_key=True),
+    # ON DELETE SET NULL preserves the journal even after the parent
+    # message is deleted — useful for cost-attribution / compliance.
+    Column(
+        "message_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversation_messages.id", ondelete="SET NULL"),
+    ),
+    Column("tool_id", UUID(as_uuid=True)),
+    Column("tool_name", Text, nullable=False),
+    Column("action_name", Text, nullable=False),
+    Column("arguments", JSONB, nullable=False),
+    Column("result", JSONB),
+    Column("error", Text),
+    # CHECK (status IN ('proposed', 'executed', 'confirmed',
+    # 'compensated', 'failed')) lives in 0004.
+    Column("status", Text, nullable=False),
+    Column("attempted_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+# Per-source ingest checkpoint. Heartbeat thread bumps ``last_updated``
+# every 30s while a worker embeds; the reconciler escalates when it
+# stops ticking.
+ingest_chunk_progress_table = Table(
+    "ingest_chunk_progress",
+    metadata,
+    Column("source_id", UUID(as_uuid=True), primary_key=True),
+    Column("total_chunks", Integer, nullable=False),
+    Column("embedded_chunks", Integer, nullable=False, server_default="0"),
+    Column("last_index", Integer, nullable=False, server_default="-1"),
+    Column("last_updated", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # Added in ``0005_ingest_attempt_id``. Stamped from
+    # ``self.request.id`` (Celery's stable task id) so a retry of the
+    # same task resumes from the checkpoint, but a separate invocation
+    # (manual reingest, scheduled sync) resets to a clean re-index.
+    Column("attempt_id", Text),
+)
+
 
 workflows_table = Table(
     "workflows",

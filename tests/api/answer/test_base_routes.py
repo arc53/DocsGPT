@@ -11,7 +11,8 @@ Additional coverage beyond tests/api/answer/routes/test_base.py:
 
 import json
 import uuid
-from unittest.mock import MagicMock
+from contextlib import contextmanager
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -368,6 +369,11 @@ class TestCompleteStreamCompressionMetadata:
 
             resource.conversation_service = MagicMock()
             resource.conversation_service.save_conversation.return_value = "conv123"
+            resource.conversation_service.save_user_question.return_value = {
+                "conversation_id": "conv123",
+                "message_id": "msg123",
+                "request_id": "req123",
+            }
 
             stream = list(
                 resource.complete_stream(
@@ -560,3 +566,69 @@ class TestCompleteStreamGeneratorExit:
 
             next(gen)
             gen.close()  # Should not crash even with save error
+
+
+@contextmanager
+def _patch_db_session(conn):
+    @contextmanager
+    def _yield():
+        yield conn
+
+    with patch(
+        "application.api.answer.services.conversation_service.db_session",
+        _yield,
+    ), patch(
+        "application.api.answer.services.conversation_service.db_readonly",
+        _yield,
+    ):
+        yield
+
+
+@pytest.mark.unit
+class TestCompleteStreamWalAcceptance:
+    """Acceptance for the WAL pre-persist behaviour: when the LLM raises
+    immediately, the user question is still queryable from PG with
+    status='failed' and a meaningful error in metadata."""
+
+    def test_failed_llm_persists_question_with_failed_status(
+        self, pg_conn, flask_app,
+    ):
+        from application.api.answer.routes.base import BaseAnswerResource
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+
+            mock_agent = MagicMock()
+            mock_agent.gen.side_effect = RuntimeError("LLM upstream failed")
+
+            with _patch_db_session(pg_conn):
+                stream = list(
+                    resource.complete_stream(
+                        question="why does the WAL matter?",
+                        agent=mock_agent,
+                        conversation_id=None,
+                        user_api_key=None,
+                        decoded_token={"sub": "u-acceptance"},
+                        should_save_conversation=True,
+                        model_id="gpt-4",
+                    )
+                )
+            error_chunks = [s for s in stream if '"type": "error"' in s]
+            assert len(error_chunks) == 1
+
+            from sqlalchemy import text as sql_text
+            convs = pg_conn.execute(
+                sql_text("SELECT id FROM conversations WHERE user_id = :u"),
+                {"u": "u-acceptance"},
+            ).fetchall()
+            assert len(convs) == 1
+            conv_id = str(convs[0][0])
+            msgs = ConversationsRepository(pg_conn).get_messages(conv_id)
+            assert len(msgs) == 1
+            assert msgs[0]["prompt"] == "why does the WAL matter?"
+            assert msgs[0]["status"] == "failed"
+            assert "RuntimeError" in msgs[0]["metadata"]["error"]
+            assert "LLM upstream failed" in msgs[0]["metadata"]["error"]

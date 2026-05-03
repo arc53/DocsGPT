@@ -31,6 +31,8 @@ class TokenUsageRepository:
         agent_id: Optional[str] = None,
         prompt_tokens: int = 0,
         generated_tokens: int = 0,
+        source: str = "agent_stream",
+        request_id: Optional[str] = None,
         timestamp: Optional[datetime] = None,
     ) -> None:
         # Attribution guard: the ``token_usage_attribution_chk`` CHECK
@@ -54,12 +56,16 @@ class TokenUsageRepository:
         self._conn.execute(
             text(
                 """
-                INSERT INTO token_usage (user_id, api_key, agent_id, prompt_tokens, generated_tokens, timestamp)
+                INSERT INTO token_usage (
+                    user_id, api_key, agent_id,
+                    prompt_tokens, generated_tokens,
+                    source, request_id, timestamp
+                )
                 VALUES (
                     :user_id, :api_key,
                     CAST(:agent_id AS uuid),
                     :prompt_tokens, :generated_tokens,
-                    COALESCE(:timestamp, now())
+                    :source, :request_id, COALESCE(:timestamp, now())
                 )
                 """
             ),
@@ -69,6 +75,8 @@ class TokenUsageRepository:
                 "agent_id": agent_id_uuid,
                 "prompt_tokens": prompt_tokens,
                 "generated_tokens": generated_tokens,
+                "source": source,
+                "request_id": request_id,
                 "timestamp": timestamp,
             },
         )
@@ -173,8 +181,22 @@ class TokenUsageRepository:
         user_id: Optional[str] = None,
         api_key: Optional[str] = None,
     ) -> int:
-        """Count of token_usage rows in the given time range (for request limiting)."""
-        clauses = ["timestamp >= :start", "timestamp <= :end"]
+        """Count user-initiated requests in the given time range.
+
+        A request = one ``agent_stream`` invocation. Multi-tool agent
+        runs produce multiple rows (one per LLM call) tagged with the
+        same ``request_id``; we DISTINCT on that to count the request
+        once. Pre-migration rows have ``request_id=NULL`` and are
+        counted one-per-row via the second branch (back-compat).
+        Side-channel sources (``title`` / ``compression`` /
+        ``rag_condense`` / ``fallback``) are excluded — they aren't
+        user-initiated and shouldn't tick the request limit.
+        """
+        clauses = [
+            "timestamp >= :start",
+            "timestamp <= :end",
+            "source = 'agent_stream'",
+        ]
         params: dict = {"start": start, "end": end}
         if user_id is not None:
             clauses.append("user_id = :user_id")
@@ -184,7 +206,15 @@ class TokenUsageRepository:
             params["api_key"] = api_key
         where = " AND ".join(clauses)
         result = self._conn.execute(
-            text(f"SELECT COUNT(*) FROM token_usage WHERE {where}"),
+            text(
+                f"""
+                SELECT
+                    COUNT(DISTINCT request_id) FILTER (WHERE request_id IS NOT NULL)
+                    + COUNT(*) FILTER (WHERE request_id IS NULL)
+                FROM token_usage
+                WHERE {where}
+                """
+            ),
             params,
         )
         return result.scalar()

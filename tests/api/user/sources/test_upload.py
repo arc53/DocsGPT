@@ -107,7 +107,7 @@ class TestUploadFile:
             "application.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.delay",
+            "application.api.user.sources.upload.ingest.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/upload", method="POST",
@@ -164,7 +164,7 @@ class TestUploadFile:
             "application.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.delay",
+            "application.api.user.sources.upload.ingest.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/upload", method="POST",
@@ -197,7 +197,7 @@ class TestUploadFile:
             "application.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.sources.upload.ingest.delay",
+            "application.api.user.sources.upload.ingest.apply_async",
             return_value=MagicMock(id="t"),
         ), app.test_request_context(
             "/api/upload", method="POST",
@@ -274,7 +274,7 @@ class TestUploadRemote:
 
         fake_task = MagicMock(id="remote-task-1")
         with patch(
-            "application.api.user.sources.upload.ingest_remote.delay",
+            "application.api.user.sources.upload.ingest_remote.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/remote", method="POST",
@@ -295,7 +295,7 @@ class TestUploadRemote:
 
         fake_task = MagicMock(id="url-task")
         with patch(
-            "application.api.user.sources.upload.ingest_remote.delay",
+            "application.api.user.sources.upload.ingest_remote.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/remote", method="POST",
@@ -315,7 +315,7 @@ class TestUploadRemote:
 
         fake_task = MagicMock(id="reddit-task")
         with patch(
-            "application.api.user.sources.upload.ingest_remote.delay",
+            "application.api.user.sources.upload.ingest_remote.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/remote", method="POST",
@@ -334,7 +334,7 @@ class TestUploadRemote:
         from application.api.user.sources.upload import UploadRemote
 
         with patch(
-            "application.api.user.sources.upload.ingest_remote.delay",
+            "application.api.user.sources.upload.ingest_remote.apply_async",
             side_effect=RuntimeError("boom"),
         ), app.test_request_context(
             "/api/remote", method="POST",
@@ -460,7 +460,7 @@ class TestManageSourceFiles:
             "application.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.delay",
+            "application.api.user.tasks.reingest_source_task.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -560,7 +560,7 @@ class TestManageSourceFiles:
             "application.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.delay",
+            "application.api.user.tasks.reingest_source_task.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",
@@ -666,7 +666,7 @@ class TestManageSourceFiles:
             "application.api.user.sources.upload.StorageCreator.get_storage",
             return_value=fake_storage,
         ), patch(
-            "application.api.user.tasks.reingest_source_task.delay",
+            "application.api.user.tasks.reingest_source_task.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/manage_source_files", method="POST",

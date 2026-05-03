@@ -30,6 +30,12 @@ class Settings(BaseSettings):
 
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
+    # Prefetch=1 caps SIGKILL loss to one task. Visibility timeout must exceed
+    # the longest legitimate task runtime (ingest, agent webhook) but stay
+    # short enough that SIGKILLed tasks redeliver promptly. 1h matches Onyx
+    # and Dify defaults; long ingests can override via env.
+    CELERY_WORKER_PREFETCH_MULTIPLIER: int = 1
+    CELERY_VISIBILITY_TIMEOUT: int = 3600
     # Only consulted when VECTOR_STORE=mongodb or when running scripts/db/backfill.py; user data lives in Postgres.
     MONGO_URI: Optional[str] = None
     # User-data Postgres DB.

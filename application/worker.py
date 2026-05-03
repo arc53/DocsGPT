@@ -6,6 +6,7 @@ import os
 import shutil
 import string
 import tempfile
+import threading
 from typing import Any, Dict
 import zipfile
 
@@ -22,7 +23,10 @@ from application.cache import get_redis_instance
 from application.core.settings import settings
 from application.parser.chunking import Chunker
 from application.parser.connectors.connector_creator import ConnectorCreator
-from application.parser.embedding_pipeline import embed_and_store_documents
+from application.parser.embedding_pipeline import (
+    assert_index_complete,
+    embed_and_store_documents,
+)
 from application.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
 from application.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
 from application.parser.remote.remote_creator import RemoteCreator
@@ -32,6 +36,9 @@ from application.retriever.retriever_creator import RetrieverCreator
 from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.attachments import AttachmentsRepository
+from application.storage.db.repositories.ingest_chunk_progress import (
+    IngestChunkProgressRepository,
+)
 from application.storage.db.repositories.sources import SourcesRepository
 from application.storage.db.session import db_readonly, db_session
 from application.storage.storage_creator import StorageCreator
@@ -43,6 +50,53 @@ from application.utils import count_tokens_docs, num_tokens_from_string, safe_fi
 MIN_TOKENS = 150
 MAX_TOKENS = 1250
 RECURSION_DEPTH = 2
+INGEST_HEARTBEAT_INTERVAL_SECONDS = 30
+
+# Stable namespace for deterministic source IDs derived from idempotency keys.
+# Pinned literal — do not change. Re-rolling this would mint different
+# source_ids for the same idempotency_keys across deploys, defeating the
+# retry-resume contract.
+DOCSGPT_INGEST_NAMESPACE = uuid.UUID("fa25d5d1-398b-46df-ac89-8d1c360b9bea")
+
+
+def _derive_source_id(idempotency_key):
+    """``uuid5(NS, key)`` when a key is supplied; ``uuid4()`` otherwise."""
+    if isinstance(idempotency_key, str) and idempotency_key:
+        return uuid.uuid5(DOCSGPT_INGEST_NAMESPACE, idempotency_key)
+    return uuid.uuid4()
+
+
+def _ingest_heartbeat_loop(source_id, stop_event, interval=INGEST_HEARTBEAT_INTERVAL_SECONDS):
+    """Bump ``ingest_chunk_progress.last_updated`` until ``stop_event`` is set."""
+    while not stop_event.wait(interval):
+        try:
+            with db_session() as conn:
+                IngestChunkProgressRepository(conn).bump_heartbeat(source_id)
+        except Exception as e:
+            logging.warning(
+                f"Heartbeat failed for {source_id}: {e}", exc_info=True
+            )
+
+
+def _start_ingest_heartbeat(source_id):
+    """Spawn the heartbeat daemon and return ``(thread, stop_event)``."""
+    stop_event = threading.Event()
+    thread = threading.Thread(
+        target=_ingest_heartbeat_loop,
+        args=(str(source_id), stop_event),
+        daemon=True,
+        name=f"ingest-heartbeat-{source_id}",
+    )
+    thread.start()
+    return thread, stop_event
+
+
+def _stop_ingest_heartbeat(thread, stop_event):
+    """Signal the heartbeat daemon to exit and wait briefly for it."""
+    if stop_event is not None:
+        stop_event.set()
+    if thread is not None:
+        thread.join(timeout=5)
 
 
 # Define a function to extract metadata from a given filename.
@@ -455,6 +509,7 @@ def ingest_worker(
     user,
     retriever="classic",
     file_name_map=None,
+    idempotency_key=None,
 ):
     """
     Ingest and process documents.
@@ -469,6 +524,9 @@ def ingest_worker(
         user (str): Identifier for the user initiating the ingestion (original, unsanitized).
         retriever (str): Type of retriever to use for processing the documents.
         file_name_map (dict|str|None): Optional mapping of safe relative paths to original filenames.
+        idempotency_key (str|None): When provided, the ``source_id`` is derived
+            deterministically from the key so a retried task reuses the same
+            source row instead of duplicating it.
 
     Returns:
         dict: Information about the completed ingestion task, including input parameters and a "limited" flag.
@@ -575,12 +633,23 @@ def ingest_worker(
 
             docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
 
-            id = uuid.uuid4()
+            id = _derive_source_id(idempotency_key)
 
             vector_store_path = os.path.join(temp_dir, "vector_store")
             os.makedirs(vector_store_path, exist_ok=True)
 
-            embed_and_store_documents(docs, vector_store_path, id, self)
+            heartbeat_thread, heartbeat_stop = _start_ingest_heartbeat(id)
+            try:
+                embed_and_store_documents(
+                    docs, vector_store_path, id, self,
+                    attempt_id=getattr(self.request, "id", None),
+                )
+            finally:
+                _stop_ingest_heartbeat(heartbeat_thread, heartbeat_stop)
+            # Defense-in-depth: chunk-progress is the authoritative
+            # record of how many chunks landed; mismatch raises so the
+            # task fails loud rather than caching a partial index.
+            assert_index_complete(id)
 
             tokens = count_tokens_docs(docs)
 
@@ -943,6 +1012,7 @@ def remote_worker(
     sync_frequency="never",
     operation_mode="upload",
     doc_id=None,
+    idempotency_key=None,
 ):
     safe_user = safe_filename(user)
     full_path = os.path.join(directory, safe_user, uuid.uuid4().hex)
@@ -1035,14 +1105,22 @@ def remote_worker(
         )
 
         if operation_mode == "upload":
-            id = uuid.uuid4()
-            embed_and_store_documents(docs, full_path, id, self)
+            id = _derive_source_id(idempotency_key)
+            embed_and_store_documents(
+                docs, full_path, id, self,
+                attempt_id=getattr(self.request, "id", None),
+            )
+            assert_index_complete(id)
         elif operation_mode == "sync":
             if not doc_id:
                 logging.error("Invalid doc_id provided for sync operation: %s", doc_id)
                 raise ValueError("doc_id must be provided for sync operation.")
             id = str(doc_id)
-            embed_and_store_documents(docs, full_path, id, self)
+            embed_and_store_documents(
+                docs, full_path, id, self,
+                attempt_id=getattr(self.request, "id", None),
+            )
+            assert_index_complete(id)
         self.update_state(state="PROGRESS", meta={"current": 100})
 
         # Serialize remote_data as JSON if it's a dict (for S3, Reddit, etc.)
@@ -1248,16 +1326,10 @@ def attachment_worker(self, file_info, user):
 
 
 def agent_webhook_worker(self, agent_id, payload):
-    """
-    Process the webhook payload for an agent.
+    """Process the webhook payload for an agent.
 
-    Args:
-        self: Reference to the instance of the task.
-        agent_id (str): Unique identifier for the agent.
-        payload (dict): The payload data from the webhook.
-
-    Returns:
-        dict: Information about the processed webhook.
+    Raises on failure: Celery treats a returned dict as success and
+    would skip retries, leaving the caller with a stale 200.
     """
     self.update_state(state="PROGRESS", meta={"current": 1})
     try:
@@ -1283,13 +1355,13 @@ def agent_webhook_worker(self, agent_id, payload):
         input_data = json.dumps(payload)
     except Exception as e:
         logging.error(f"Error processing agent webhook: {e}", exc_info=True)
-        return {"status": "error", "error": str(e)}
+        raise
     self.update_state(state="PROGRESS", meta={"current": 50})
     try:
         result = run_agent_logic(agent_config, input_data)
     except Exception as e:
         logging.error(f"Error running agent logic: {e}", exc_info=True)
-        return {"status": "error"}
+        raise
     else:
         logging.info(
             f"Webhook processed for agent {agent_id}", extra={"agent_id": agent_id}
@@ -1312,6 +1384,7 @@ def ingest_connector(
     operation_mode: str = "upload",
     doc_id=None,
     sync_frequency: str = "never",
+    idempotency_key=None,
 ) -> Dict[str, Any]:
     """
     Ingestion for internal knowledge bases (GoogleDrive, etc.).
@@ -1328,6 +1401,8 @@ def ingest_connector(
         operation_mode: "upload" for initial ingestion, "sync" for incremental sync
         doc_id: Document ID for sync operations (required when operation_mode="sync")
         sync_frequency: How often to sync ("never", "daily", "weekly", "monthly")
+        idempotency_key: When provided, the ``source_id`` is derived
+            deterministically so a retried upload reuses the same source row.
     """
     logging.info(
         f"Starting remote ingestion from {source_type} for user: {user}, job: {job_name}"
@@ -1423,7 +1498,7 @@ def ingest_connector(
             docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
 
             if operation_mode == "upload":
-                id = uuid.uuid4()
+                id = _derive_source_id(idempotency_key)
             elif operation_mode == "sync":
                 if not doc_id:
                     logging.error(
@@ -1440,7 +1515,11 @@ def ingest_connector(
             self.update_state(
                 state="PROGRESS", meta={"current": 80, "status": "Storing documents"}
             )
-            embed_and_store_documents(docs, vector_store_path, id, self)
+            embed_and_store_documents(
+                docs, vector_store_path, id, self,
+                attempt_id=getattr(self.request, "id", None),
+            )
+            assert_index_complete(id)
 
             tokens = count_tokens_docs(docs)
 

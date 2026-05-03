@@ -1028,8 +1028,23 @@ class UpdateAgent(Resource):
                         extra_final = update_fields.get(
                             "extra_source_ids", existing_agent.get("extra_source_ids") or [],
                         )
-                        if not source_final and not extra_final:
-                            missing_published_fields.append("Source")
+                        # ``retriever`` carries the runtime identity for
+                        # agents that publish against the synthetic
+                        # "Default" source (frontend's auto-selected
+                        # ``{name: "Default", retriever: "classic"}``
+                        # entry has no ``id``, so ``source_id`` ends up
+                        # NULL even though the user picked something).
+                        # Without this fallback the most common new-agent
+                        # publish flow gets a 400.
+                        retriever_final = update_fields.get(
+                            "retriever", existing_agent.get("retriever"),
+                        )
+                        if (
+                            not source_final
+                            and not extra_final
+                            and not retriever_final
+                        ):
+                            missing_published_fields.append("Source or retriever")
                         if missing_published_fields:
                             return make_response(
                                 jsonify(

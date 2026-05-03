@@ -154,8 +154,9 @@ class TestGenMethods:
     @patch("application.llm.base.stream_cache", lambda f: f)
     def test_gen_stream_emits_llm_stream_finished_on_success(self, caplog):
         # Real ``stream_token_usage`` so the emit-from-finally path runs.
-        # ``update_token_usage`` short-circuits under pytest, so no DB
-        # mocking is needed.
+        # The decorator no longer writes to the DB — billing rows are
+        # committed by ``finalize_message`` once per assistant message —
+        # so no DB mocking is needed.
         import logging as _logging
 
         class FakeProvider(StubLLM):

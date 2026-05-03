@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from application.api.user.idempotency import with_idempotency
 from application.celery_init import celery
 from application.worker import (
     agent_webhook_worker,
@@ -13,9 +14,32 @@ from application.worker import (
 )
 
 
-@celery.task(bind=True)
+# Shared decorator config for long-running, side-effecting tasks. ``acks_late``
+# is also the celeryconfig default but stays explicit here so each task's
+# durability story is grep-able next to the body. Combined with
+# ``autoretry_for=(Exception,)`` and a bounded ``max_retries`` so a poison
+# message can't loop forever.
+DURABLE_TASK = dict(
+    bind=True,
+    acks_late=True,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60},
+    retry_backoff=True,
+)
+
+
+@celery.task(**DURABLE_TASK)
+@with_idempotency(task_name="ingest")
 def ingest(
-    self, directory, formats, job_name, user, file_path, filename, file_name_map=None
+    self,
+    directory,
+    formats,
+    job_name,
+    user,
+    file_path,
+    filename,
+    file_name_map=None,
+    idempotency_key=None,
 ):
     resp = ingest_worker(
         self,
@@ -26,25 +50,35 @@ def ingest(
         filename,
         user,
         file_name_map=file_name_map,
+        idempotency_key=idempotency_key,
     )
     return resp
 
 
-@celery.task(bind=True)
-def ingest_remote(self, source_data, job_name, user, loader):
-    resp = remote_worker(self, source_data, job_name, user, loader)
+@celery.task(**DURABLE_TASK)
+@with_idempotency(task_name="ingest_remote")
+def ingest_remote(self, source_data, job_name, user, loader, idempotency_key=None):
+    resp = remote_worker(
+        self, source_data, job_name, user, loader,
+        idempotency_key=idempotency_key,
+    )
     return resp
 
 
-@celery.task(bind=True)
-def reingest_source_task(self, source_id, user):
+@celery.task(**DURABLE_TASK)
+@with_idempotency(task_name="reingest_source_task")
+def reingest_source_task(self, source_id, user, idempotency_key=None):
     from application.worker import reingest_source_worker
 
     resp = reingest_source_worker(self, source_id, user)
     return resp
 
 
-@celery.task(bind=True)
+# Beat-driven dispatch tasks default to ``acks_late=False``: a SIGKILL
+# of a beat tick is harmless to redeliver only if the dispatch itself is
+# idempotent. We keep these early-ACK so the broker doesn't replay a
+# dispatch that already enqueued downstream work.
+@celery.task(bind=True, acks_late=False)
 def schedule_syncs(self, frequency):
     resp = sync_worker(self, frequency)
     return resp
@@ -74,19 +108,22 @@ def sync_source(
     return resp
 
 
-@celery.task(bind=True)
-def store_attachment(self, file_info, user):
+@celery.task(**DURABLE_TASK)
+@with_idempotency(task_name="store_attachment")
+def store_attachment(self, file_info, user, idempotency_key=None):
     resp = attachment_worker(self, file_info, user)
     return resp
 
 
-@celery.task(bind=True)
-def process_agent_webhook(self, agent_id, payload):
+@celery.task(**DURABLE_TASK)
+@with_idempotency(task_name="process_agent_webhook")
+def process_agent_webhook(self, agent_id, payload, idempotency_key=None):
     resp = agent_webhook_worker(self, agent_id, payload)
     return resp
 
 
-@celery.task(bind=True)
+@celery.task(**DURABLE_TASK)
+@with_idempotency(task_name="ingest_connector_task")
 def ingest_connector_task(
     self,
     job_name,
@@ -100,6 +137,7 @@ def ingest_connector_task(
     operation_mode="upload",
     doc_id=None,
     sync_frequency="never",
+    idempotency_key=None,
 ):
     from application.worker import ingest_connector
 
@@ -116,6 +154,7 @@ def ingest_connector_task(
         operation_mode=operation_mode,
         doc_id=doc_id,
         sync_frequency=sync_frequency,
+        idempotency_key=idempotency_key,
     )
     return resp
 
@@ -140,6 +179,19 @@ def setup_periodic_tasks(sender, **kwargs):
         cleanup_pending_tool_state.s(),
         name="cleanup-pending-tool-state",
     )
+    # Pure housekeeping for ``task_dedup`` / ``webhook_dedup`` — the
+    # upsert paths already handle stale rows, so cadence only bounds
+    # table size. Hourly is plenty for typical traffic.
+    sender.add_periodic_task(
+        timedelta(hours=1),
+        cleanup_idempotency_dedup.s(),
+        name="cleanup-idempotency-dedup",
+    )
+    sender.add_periodic_task(
+        timedelta(seconds=30),
+        reconciliation_task.s(),
+        name="reconciliation",
+    )
     sender.add_periodic_task(
         timedelta(hours=7),
         version_check_task.s(),
@@ -159,18 +211,12 @@ def mcp_oauth_status_task(self, task_id):
     return resp
 
 
-@celery.task(bind=True)
+@celery.task(bind=True, acks_late=False)
 def cleanup_pending_tool_state(self):
-    """Delete pending_tool_state rows past their TTL.
-
-    Replaces Mongo's ``expireAfterSeconds=0`` TTL index — Postgres has
-    no native TTL, so this task runs every 60 seconds to keep
-    ``pending_tool_state`` bounded. No-ops if ``POSTGRES_URI`` isn't
-    configured (keeps the task runnable in Mongo-only environments).
-    """
+    """Revert stale ``resuming`` rows, then delete TTL-expired rows."""
     from application.core.settings import settings
     if not settings.POSTGRES_URI:
-        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+        return {"deleted": 0, "reverted": 0, "skipped": "POSTGRES_URI not set"}
 
     from application.storage.db.engine import get_engine
     from application.storage.db.repositories.pending_tool_state import (
@@ -179,11 +225,47 @@ def cleanup_pending_tool_state(self):
 
     engine = get_engine()
     with engine.begin() as conn:
-        deleted = PendingToolStateRepository(conn).cleanup_expired()
-    return {"deleted": deleted}
+        repo = PendingToolStateRepository(conn)
+        reverted = repo.revert_stale_resuming(grace_seconds=600)
+        deleted = repo.cleanup_expired()
+    return {"deleted": deleted, "reverted": reverted}
 
 
-@celery.task(bind=True)
+@celery.task(bind=True, acks_late=False)
+def cleanup_idempotency_dedup(self):
+    """Delete TTL-expired rows from ``task_dedup`` and ``webhook_dedup``.
+
+    Pure housekeeping — the upsert paths already ignore stale rows
+    (TTL-aware ``ON CONFLICT DO UPDATE``), so this only bounds table
+    growth and keeps SELECT planning tight on large deployments.
+    """
+    from application.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {
+            "task_dedup_deleted": 0,
+            "webhook_dedup_deleted": 0,
+            "skipped": "POSTGRES_URI not set",
+        }
+
+    from application.storage.db.engine import get_engine
+    from application.storage.db.repositories.idempotency import (
+        IdempotencyRepository,
+    )
+
+    engine = get_engine()
+    with engine.begin() as conn:
+        return IdempotencyRepository(conn).cleanup_expired()
+
+
+@celery.task(bind=True, acks_late=False)
+def reconciliation_task(self):
+    """Sweep stuck durability rows and escalate them to terminal status + alert."""
+    from application.api.user.reconciliation import run_reconciliation
+
+    return run_reconciliation()
+
+
+@celery.task(bind=True, acks_late=False)
 def version_check_task(self):
     """Periodic anonymous version check.
 

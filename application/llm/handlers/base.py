@@ -624,6 +624,10 @@ class LLMHandler(ABC):
                 agent_id=getattr(agent, "agent_id", None),
                 model_user_id=compression_user_id,
             )
+            # Side-channel LLM tag — see ``orchestrator.py`` for rationale.
+            compression_llm._token_usage_source = "compression"
+            compression_llm._request_id = getattr(agent, "_request_id", None) \
+                or getattr(getattr(agent, "llm", None), "_request_id", None)
 
             # Create service without DB persistence capability
             compression_service = CompressionService(

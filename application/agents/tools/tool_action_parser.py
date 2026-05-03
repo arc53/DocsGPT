@@ -57,6 +57,15 @@ class ToolActionParser:
     def _parse_google_llm(self, call):
         try:
             call_args = call.arguments
+            # Gemini's SDK natively returns ``args`` as a dict, but the
+            # resume path (``gen_continuation``) stringifies it for the
+            # assistant message. Coerce a JSON string back into a dict so
+            # downstream ``call_args.items()`` works in both cases.
+            if isinstance(call_args, str):
+                try:
+                    call_args = json.loads(call_args)
+                except (json.JSONDecodeError, TypeError):
+                    pass
 
             resolved = self._resolve_via_mapping(call.name)
             if resolved:

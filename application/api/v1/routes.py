@@ -9,6 +9,7 @@ import json
 import logging
 import time
 import traceback
+from datetime import datetime
 from typing import Any, Dict, Generator, Optional
 
 from flask import Blueprint, jsonify, make_response, request, Response
@@ -306,7 +307,16 @@ def list_models():
                     401,
                 )
 
+        # Repository rows now go through ``coerce_pg_native`` at SELECT
+        # time, so timestamps arrive as ISO 8601 strings. Parse before
+        # taking ``.timestamp()``; fall back to ``time.time()`` only when
+        # the value is genuinely missing or unparseable.
         created = agent.get("created_at") or agent.get("createdAt")
+        if isinstance(created, str):
+            try:
+                created = datetime.fromisoformat(created)
+            except (ValueError, TypeError):
+                created = None
         created_ts = (
             int(created.timestamp()) if hasattr(created, "timestamp")
             else int(time.time())

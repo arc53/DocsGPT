@@ -175,7 +175,9 @@ class TestAppendMessage:
             "response": "a",
             "timestamp": ts,
         })
-        assert msg["timestamp"] == ts
+        # ``row_to_dict`` coerces datetimes to ISO strings at the SELECT
+        # boundary; round-trip via ``fromisoformat`` to compare values.
+        assert datetime.fromisoformat(msg["timestamp"]) == ts
 
 
 class TestGetMessages:
@@ -228,7 +230,7 @@ class TestUpdateMessageAt:
         ) is True
         msg = repo.get_message_at(conv["id"], 0)
         assert msg["response"] == "new"
-        assert msg["timestamp"] == ts
+        assert datetime.fromisoformat(msg["timestamp"]) == ts
 
 
 class TestTruncateAfter:
@@ -440,6 +442,117 @@ class TestUpdateMessageFeedback:
         ) is True
         msg = repo.get_message_at(conv["id"], 0)
         assert msg["feedback"] is None
+
+
+class TestReserveAndFinalizeMessage:
+    """Pre-persist (WAL) + finalisation primitives used by save_user_question /
+    finalize_message in the answer-streaming path."""
+
+    def test_reserve_message_inserts_pending_row(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"],
+            prompt="q1",
+            placeholder_response="placeholder",
+            request_id="req-1",
+        )
+        assert msg["position"] == 0
+        assert msg["status"] == "pending"
+        assert msg["request_id"] == "req-1"
+        assert msg["prompt"] == "q1"
+        assert msg["response"] == "placeholder"
+
+    def test_reserve_message_allocates_next_position(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        repo.append_message(conv["id"], {"prompt": "q0", "response": "a0"})
+        msg = repo.reserve_message(
+            conv["id"], prompt="q1", placeholder_response="ph",
+        )
+        assert msg["position"] == 1
+
+    def test_update_message_by_id_updates_response_and_status(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"], prompt="q", placeholder_response="ph",
+        )
+        ok = repo.update_message_by_id(
+            msg["id"], {"response": "real answer", "status": "complete"},
+        )
+        assert ok is True
+        refreshed = repo.get_message_at(conv["id"], 0)
+        assert refreshed["response"] == "real answer"
+        assert refreshed["status"] == "complete"
+
+    def test_update_message_by_id_writes_metadata_error(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"], prompt="q", placeholder_response="ph",
+        )
+        repo.update_message_by_id(
+            msg["id"],
+            {"status": "failed", "metadata": {"error": "RuntimeError: boom"}},
+        )
+        refreshed = repo.get_message_at(conv["id"], 0)
+        assert refreshed["status"] == "failed"
+        assert refreshed["metadata"]["error"] == "RuntimeError: boom"
+
+    def test_update_message_by_id_rejects_non_uuid(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.update_message_by_id("not-a-uuid", {"status": "complete"}) is False
+
+    def test_update_message_status_only(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"], prompt="q", placeholder_response="ph",
+        )
+        assert repo.update_message_status(msg["id"], "streaming") is True
+        refreshed = repo.get_message_at(conv["id"], 0)
+        assert refreshed["status"] == "streaming"
+
+    def test_confirm_executed_tool_calls_flips_status(self, pg_conn):
+        from sqlalchemy import text as sql_text
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"], prompt="q", placeholder_response="ph",
+        )
+        # Insert two rows: one 'executed' (should flip), one 'proposed' (no-op).
+        pg_conn.execute(
+            sql_text(
+                "INSERT INTO tool_call_attempts "
+                "(call_id, message_id, tool_name, action_name, arguments, status) "
+                "VALUES (:cid, CAST(:mid AS uuid), 't', 'a', '{}'::jsonb, :status)"
+            ),
+            [
+                {"cid": "c-exec", "mid": msg["id"], "status": "executed"},
+                {"cid": "c-prop", "mid": msg["id"], "status": "proposed"},
+            ],
+        )
+        flipped = repo.confirm_executed_tool_calls(msg["id"])
+        assert flipped == 1
+        rows = pg_conn.execute(
+            sql_text(
+                "SELECT call_id, status FROM tool_call_attempts "
+                "WHERE message_id = CAST(:mid AS uuid) ORDER BY call_id"
+            ),
+            {"mid": msg["id"]},
+        ).fetchall()
+        as_dict = {r[0]: r[1] for r in rows}
+        assert as_dict == {"c-exec": "confirmed", "c-prop": "proposed"}
+
+    def test_confirm_executed_tool_calls_no_rows_is_zero(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"], prompt="q", placeholder_response="ph",
+        )
+        # No tool_call_attempts inserted — no-op
+        assert repo.confirm_executed_tool_calls(msg["id"]) == 0
 
 
 class TestConcurrentAppend:

@@ -7,13 +7,13 @@ resume later by sending tool_actions.
 
 import logging
 from typing import Any, Dict, List, Optional
-from uuid import UUID
 
 from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.conversations import ConversationsRepository
 from application.storage.db.repositories.pending_tool_state import (
     PendingToolStateRepository,
 )
+from application.storage.db.serialization import coerce_pg_native as _make_serializable
 from application.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
@@ -21,23 +21,9 @@ logger = logging.getLogger(__name__)
 # TTL for pending states — auto-cleaned after this period
 PENDING_STATE_TTL_SECONDS = 30 * 60  # 30 minutes
 
-
-def _make_serializable(obj: Any) -> Any:
-    """Recursively coerce non-JSON values into JSON-safe forms.
-
-    Handles ``uuid.UUID`` (from PG columns), ``bytes``, and recurses into
-    dicts/lists. Post-Mongo-cutover the ObjectId branch is gone — none of
-    our writers produce them anymore.
-    """
-    if isinstance(obj, UUID):
-        return str(obj)
-    if isinstance(obj, dict):
-        return {str(k): _make_serializable(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_make_serializable(v) for v in obj]
-    if isinstance(obj, bytes):
-        return obj.decode("utf-8", errors="replace")
-    return obj
+# Re-export so the existing tests at tests/api/answer/services/test_continuation_service_pg.py
+# can keep importing ``_make_serializable`` from here.
+__all__ = ["_make_serializable", "ContinuationService", "PENDING_STATE_TTL_SECONDS"]
 
 
 class ContinuationService:
@@ -155,3 +141,23 @@ class ContinuationService:
                 f"Deleted continuation state for conversation {conversation_id}"
             )
         return deleted
+
+    def mark_resuming(self, conversation_id: str, user: str) -> bool:
+        """Flip the pending row to ``resuming`` so a crashed resume can be retried."""
+        with db_session() as conn:
+            conv = ConversationsRepository(conn).get_by_legacy_id(conversation_id)
+            if conv is not None:
+                pg_conv_id = conv["id"]
+            elif looks_like_uuid(conversation_id):
+                pg_conv_id = conversation_id
+            else:
+                return False
+            flipped = PendingToolStateRepository(conn).mark_resuming(
+                pg_conv_id, user
+            )
+        if flipped:
+            logger.info(
+                f"Marked continuation state as resuming for conversation "
+                f"{conversation_id}"
+            )
+        return flipped

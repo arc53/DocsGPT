@@ -1,7 +1,31 @@
+import base64
+import binascii
 import uuid
-from typing import Any, Dict, Generator
+from typing import Any, Dict, Generator, Optional, Union
 
 from application.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
+
+
+def _encode_thought_signature(sig: Optional[Union[bytes, str]]) -> Optional[str]:
+    # Gemini's Python SDK returns thought_signature as raw bytes, but the
+    # field is typed Optional[str] downstream and gets json.dumps'd into
+    # SSE events. Encode once at ingress so callers only ever see a str.
+    if isinstance(sig, bytes):
+        return base64.b64encode(sig).decode("ascii")
+    return sig
+
+
+def _decode_thought_signature(
+    sig: Optional[Union[bytes, str]],
+) -> Optional[Union[bytes, str]]:
+    # Reverse of _encode_thought_signature — Gemini's SDK expects bytes
+    # back when we replay a tool call, so decode at egress.
+    if isinstance(sig, str):
+        try:
+            return base64.b64decode(sig.encode("ascii"))
+        except (binascii.Error, ValueError):
+            return sig
+    return sig
 
 
 class GoogleLLMHandler(LLMHandler):
@@ -23,7 +47,7 @@ class GoogleLLMHandler(LLMHandler):
             for idx, part in enumerate(parts):
                 if hasattr(part, "function_call") and part.function_call is not None:
                     has_sig = hasattr(part, "thought_signature") and part.thought_signature is not None
-                    thought_sig = part.thought_signature if has_sig else None
+                    thought_sig = _encode_thought_signature(part.thought_signature) if has_sig else None
                     tool_calls.append(
                         ToolCall(
                             id=str(uuid.uuid4()),
@@ -50,7 +74,7 @@ class GoogleLLMHandler(LLMHandler):
             tool_calls = []
             if hasattr(response, "function_call") and response.function_call is not None:
                 has_sig = hasattr(response, "thought_signature") and response.thought_signature is not None
-                thought_sig = response.thought_signature if has_sig else None
+                thought_sig = _encode_thought_signature(response.thought_signature) if has_sig else None
                 tool_calls.append(
                     ToolCall(
                         id=str(uuid.uuid4()),
@@ -70,8 +94,15 @@ class GoogleLLMHandler(LLMHandler):
         """Create a tool result message in the standard internal format."""
         import json as _json
 
+        from application.storage.db.serialization import PGNativeJSONEncoder
+
+        # PostgresTool results commonly include PG-native types
+        # (datetime / UUID / Decimal / bytea) when SELECT touches
+        # timestamptz / numeric / uuid / bytea columns. The shared
+        # encoder handles all five — bytes get base64 (lossless) instead
+        # of the ``str(b'...')`` repr that ``default=str`` would emit.
         content = (
-            _json.dumps(result)
+            _json.dumps(result, cls=PGNativeJSONEncoder)
             if not isinstance(result, str)
             else result
         )

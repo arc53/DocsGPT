@@ -1,16 +1,105 @@
 import logging
 import uuid
 from collections import Counter
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from application.agents.tools.tool_action_parser import ToolActionParser
 from application.agents.tools.tool_manager import ToolManager
 from application.security.encryption import decrypt_credentials
+from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.tool_call_attempts import (
+    ToolCallAttemptsRepository,
+)
 from application.storage.db.repositories.user_tools import UserToolsRepository
-from application.storage.db.session import db_readonly
+from application.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
+
+
+def _record_proposed(
+    call_id: str,
+    tool_name: str,
+    action_name: str,
+    arguments: Any,
+    *,
+    tool_id: Optional[str] = None,
+) -> bool:
+    """Insert a ``proposed`` row; swallow infra failures so tool calls
+    still run when the journal is unreachable. Returns True iff the row
+    is now journaled (newly created or already present).
+    """
+    try:
+        with db_session() as conn:
+            inserted = ToolCallAttemptsRepository(conn).record_proposed(
+                call_id,
+                tool_name,
+                action_name,
+                arguments,
+                tool_id=tool_id if tool_id and looks_like_uuid(tool_id) else None,
+            )
+        if not inserted:
+            logger.warning(
+                "tool_call_attempts duplicate call_id=%s; existing row left in place",
+                call_id,
+                extra={"alert": "tool_call_id_collision", "call_id": call_id},
+            )
+        return True
+    except Exception:
+        logger.exception("tool_call_attempts proposed write failed for %s", call_id)
+        return False
+
+
+def _mark_executed(
+    call_id: str,
+    result: Any,
+    *,
+    message_id: Optional[str] = None,
+    artifact_id: Optional[str] = None,
+    proposed_ok: bool = True,
+    tool_name: Optional[str] = None,
+    action_name: Optional[str] = None,
+    arguments: Any = None,
+    tool_id: Optional[str] = None,
+) -> None:
+    """Flip the row to ``executed``. If ``proposed_ok`` is False (the
+    proposed write failed earlier), upsert a fresh row in ``executed`` so
+    the reconciler can still see the attempt — without this, the side
+    effect would be invisible to the journal.
+    """
+    try:
+        with db_session() as conn:
+            repo = ToolCallAttemptsRepository(conn)
+            if proposed_ok:
+                updated = repo.mark_executed(
+                    call_id,
+                    result,
+                    message_id=message_id,
+                    artifact_id=artifact_id,
+                )
+                if updated:
+                    return
+            # Fallback synthesizes the row so the journal isn't lost.
+            repo.upsert_executed(
+                call_id,
+                tool_name=tool_name or "unknown",
+                action_name=action_name or "",
+                arguments=arguments if arguments is not None else {},
+                result=result,
+                tool_id=tool_id if tool_id and looks_like_uuid(tool_id) else None,
+                message_id=message_id,
+                artifact_id=artifact_id,
+            )
+    except Exception:
+        logger.exception("tool_call_attempts executed write failed for %s", call_id)
+
+
+def _mark_failed(call_id: str, error: str) -> None:
+    try:
+        with db_session() as conn:
+            ToolCallAttemptsRepository(conn).mark_failed(call_id, error)
+    except Exception:
+        logger.exception("tool_call_attempts failed-write failed for %s", call_id)
 
 
 class ToolExecutor:
@@ -31,6 +120,7 @@ class ToolExecutor:
         self.tool_calls: List[Dict] = []
         self._loaded_tools: Dict[str, object] = {}
         self.conversation_id: Optional[str] = None
+        self.message_id: Optional[str] = None
         self.client_tools: Optional[List[Dict]] = None
         self._name_to_tool: Dict[str, Tuple[str, str]] = {}
         self._tool_to_name: Dict[Tuple[str, str], str] = {}
@@ -326,6 +416,15 @@ class ToolExecutor:
         yield {"type": "tool_call", "data": {**tool_call_data, "status": "pending"}}
 
         tool_data = tools_dict[tool_id]
+        # Journal the call before any side effect runs so the
+        # reconciler can see attempts that crashed mid-execute.
+        proposed_ok = _record_proposed(
+            call_id,
+            tool_data["name"],
+            action_name,
+            call_args,
+            tool_id=tool_data.get("id"),
+        )
         action_data = (
             tool_data["config"]["actions"][action_name]
             if tool_data["name"] == "api_tool"
@@ -381,6 +480,7 @@ class ToolExecutor:
                 },
             )
             tool_call_data["result"] = error_message
+            _mark_failed(call_id, error_message)
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
             return error_message, call_id
@@ -390,14 +490,18 @@ class ToolExecutor:
             if tool_data["name"] == "api_tool"
             else parameters
         )
-        if tool_data["name"] == "api_tool":
-            logger.debug(
-                f"Executing api: {action_name} with query_params: {query_params}, headers: {headers}, body: {body}"
-            )
-            result = tool.execute_action(action_name, **body)
-        else:
-            logger.debug(f"Executing tool: {action_name} with args: {call_args}")
-            result = tool.execute_action(action_name, **parameters)
+        try:
+            if tool_data["name"] == "api_tool":
+                logger.debug(
+                    f"Executing api: {action_name} with query_params: {query_params}, headers: {headers}, body: {body}"
+                )
+                result = tool.execute_action(action_name, **body)
+            else:
+                logger.debug(f"Executing tool: {action_name} with args: {call_args}")
+                result = tool.execute_action(action_name, **parameters)
+        except Exception as exc:
+            _mark_failed(call_id, str(exc))
+            raise
 
         get_artifact_id = (
             getattr(tool, "get_artifact_id", None)
@@ -424,6 +528,22 @@ class ToolExecutor:
         tool_call_data["result_full"] = result_full
         tool_call_data["result"] = (
             f"{result_full[:50]}..." if len(result_full) > 50 else result_full
+        )
+
+        # Tool side effect has run; flip the journal row so the
+        # message-finalize path can later confirm it. If the proposed
+        # write failed (DB outage), upsert a fresh row in ``executed`` so
+        # the reconciler still sees the side effect.
+        _mark_executed(
+            call_id,
+            result_full,
+            message_id=self.message_id,
+            artifact_id=artifact_id or None,
+            proposed_ok=proposed_ok,
+            tool_name=tool_data["name"],
+            action_name=action_name,
+            arguments=call_args,
+            tool_id=tool_data.get("id"),
         )
 
         stream_tool_call_data = {

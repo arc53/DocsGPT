@@ -1,4 +1,3 @@
-import sys
 from contextlib import contextmanager
 
 import pytest
@@ -9,8 +8,34 @@ from application.usage import (
     _serialize_for_token_count,
     gen_token_usage,
     stream_token_usage,
-    update_token_usage,
 )
+
+
+class _FakeTokenUsageRepo:
+    """In-memory stand-in for TokenUsageRepository used by the usage tests."""
+
+    last_instance = None
+
+    def __init__(self, conn=None):
+        self.inserted = []
+        _FakeTokenUsageRepo.last_instance = self
+
+    def insert(self, **kwargs):
+        self.inserted.append(kwargs)
+
+
+@contextmanager
+def _fake_db_session():
+    yield None
+
+
+def _install_fake_token_repo(monkeypatch):
+    """Replace TokenUsageRepository + db_session with in-memory stubs."""
+    _FakeTokenUsageRepo.last_instance = None
+    monkeypatch.setattr(
+        "application.usage.TokenUsageRepository", _FakeTokenUsageRepo
+    )
+    monkeypatch.setattr("application.usage.db_session", _fake_db_session)
 
 
 @pytest.mark.unit
@@ -36,16 +61,9 @@ def test_count_tokens_includes_tool_call_payloads():
 
 
 @pytest.mark.unit
-def test_gen_token_usage_counts_structured_tool_content(monkeypatch):
-    captured = {}
-
-    def fake_update(decoded_token, user_api_key, token_usage, agent_id=None):
-        captured["decoded_token"] = decoded_token
-        captured["user_api_key"] = user_api_key
-        captured["token_usage"] = token_usage.copy()
-        captured["agent_id"] = agent_id
-
-    monkeypatch.setattr("application.usage.update_token_usage", fake_update)
+def test_gen_token_usage_writes_row_per_call(monkeypatch):
+    """Always-on persistence: every decorated ``gen`` call writes one row."""
+    _install_fake_token_repo(monkeypatch)
 
     class DummyLLM:
         decoded_token = {"sub": "user_123"}
@@ -92,22 +110,24 @@ def test_gen_token_usage_counts_structured_tool_content(monkeypatch):
     llm = DummyLLM()
     wrapped(llm, "gpt-4o", messages, False, None)
 
-    assert captured["decoded_token"] == {"sub": "user_123"}
-    assert captured["user_api_key"] == "api_key_123"
-    assert captured["agent_id"] == "agent_123"
-    assert captured["token_usage"]["prompt_tokens"] > 0
-    assert captured["token_usage"]["generated_tokens"] > 0
+    inserted = _FakeTokenUsageRepo.last_instance.inserted
+    assert len(inserted) == 1
+    assert inserted[0]["user_id"] == "user_123"
+    assert inserted[0]["api_key"] == "api_key_123"
+    assert inserted[0]["agent_id"] == "agent_123"
+    assert inserted[0]["prompt_tokens"] > 0
+    assert inserted[0]["generated_tokens"] > 0
+    # Default source for unmarked LLMs.
+    assert inserted[0]["source"] == "agent_stream"
+    # Running totals also accumulate on the LLM instance.
+    assert llm.token_usage["prompt_tokens"] > 0
+    assert llm.token_usage["generated_tokens"] > 0
 
 
 @pytest.mark.unit
-def test_stream_token_usage_counts_tool_call_chunks(monkeypatch):
-    captured = {}
-
-    def fake_update(decoded_token, user_api_key, token_usage, agent_id=None):
-        captured["token_usage"] = token_usage.copy()
-        captured["agent_id"] = agent_id
-
-    monkeypatch.setattr("application.usage.update_token_usage", fake_update)
+def test_stream_token_usage_writes_row_per_call(monkeypatch):
+    """Stream variant: same per-call write as ``gen``."""
+    _install_fake_token_repo(monkeypatch)
 
     class ToolChunk:
         def model_dump(self):
@@ -155,20 +175,110 @@ def test_stream_token_usage_counts_tool_call_chunks(monkeypatch):
     llm = DummyLLM()
     list(wrapped(llm, "gpt-4o", messages, True, None))
 
-    assert captured["agent_id"] == "agent_123"
-    assert captured["token_usage"]["prompt_tokens"] > 0
-    assert captured["token_usage"]["generated_tokens"] > 0
+    inserted = _FakeTokenUsageRepo.last_instance.inserted
+    assert len(inserted) == 1
+    assert inserted[0]["prompt_tokens"] > 0
+    assert inserted[0]["generated_tokens"] > 0
+    assert llm.token_usage["prompt_tokens"] > 0
+    assert llm.token_usage["generated_tokens"] > 0
+
+
+@pytest.mark.unit
+def test_decorator_propagates_request_id_and_source(monkeypatch):
+    """``_request_id`` + ``_token_usage_source`` on the LLM ride along
+    with the row insert so DISTINCT counts and source filters work."""
+    _install_fake_token_repo(monkeypatch)
+
+    class TitleLLM:
+        decoded_token = {"sub": "u"}
+        user_api_key = "ak"
+        agent_id = "agent"
+        token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
+        _token_usage_source = "title"
+        _request_id = "req-abc-123"
+
+    @gen_token_usage
+    def wrapped(self, model, messages, stream, tools, **kwargs):
+        _ = (model, messages, stream, tools, kwargs)
+        return "title"
+
+    wrapped(TitleLLM(), "m", [{"role": "user", "content": "hi"}], False, None)
+
+    inserted = _FakeTokenUsageRepo.last_instance.inserted
+    assert len(inserted) == 1
+    assert inserted[0]["source"] == "title"
+    assert inserted[0]["request_id"] == "req-abc-123"
+
+
+@pytest.mark.unit
+def test_decorator_skips_zero_token_calls(monkeypatch):
+    """Per-call write skipped when both counts are zero (e.g., empty result)."""
+    _install_fake_token_repo(monkeypatch)
+
+    class EmptyLLM:
+        decoded_token = {"sub": "u"}
+        user_api_key = "ak"
+        agent_id = None
+        token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
+
+    @gen_token_usage
+    def wrapped(self, model, messages, stream, tools, **kwargs):
+        _ = (model, messages, stream, tools, kwargs)
+        return None  # Forces both counts to 0
+
+    wrapped(EmptyLLM(), "m", [], False, None)
+
+    # When zero-token short-circuits, the repo is never instantiated.
+    assert (
+        _FakeTokenUsageRepo.last_instance is None
+        or _FakeTokenUsageRepo.last_instance.inserted == []
+    )
+
+
+@pytest.mark.unit
+def test_decorator_skips_when_no_attribution(monkeypatch, caplog):
+    """No user_id and no api_key → warn and skip."""
+    import logging
+
+    _install_fake_token_repo(monkeypatch)
+
+    class OrphanLLM:
+        decoded_token = None
+        user_api_key = None
+        agent_id = None
+        token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
+
+    @gen_token_usage
+    def wrapped(self, model, messages, stream, tools, **kwargs):
+        _ = (model, messages, stream, tools, kwargs)
+        return "ok"
+
+    with caplog.at_level(logging.WARNING, logger="application.usage"):
+        wrapped(
+            OrphanLLM(),
+            "m",
+            [{"role": "user", "content": "hello"}],
+            False,
+            None,
+        )
+
+    # The decorator short-circuits before constructing the repo.
+    assert (
+        _FakeTokenUsageRepo.last_instance is None
+        or _FakeTokenUsageRepo.last_instance.inserted == []
+    )
+    assert any(
+        "no user_id/api_key" in r.message
+        for r in caplog.records
+    )
 
 
 @pytest.mark.unit
 def test_gen_token_usage_counts_tools_and_image_inputs(monkeypatch):
-    captured = []
-
-    def fake_update(decoded_token, user_api_key, token_usage, agent_id=None):
-        _ = (decoded_token, user_api_key, agent_id)
-        captured.append(token_usage.copy())
-
-    monkeypatch.setattr("application.usage.update_token_usage", fake_update)
+    """Tools+attachments inflate the prompt-token count on the LLM's
+    running totals.
+    """
+    _install_fake_token_repo(monkeypatch)
 
     class DummyLLM:
         decoded_token = {"sub": "user_123"}
@@ -205,6 +315,7 @@ def test_gen_token_usage_counts_tools_and_image_inputs(monkeypatch):
 
     llm = DummyLLM()
     wrapped(llm, "gpt-4o", messages, False, None)
+    after_first = llm.token_usage["prompt_tokens"]
     wrapped(
         llm,
         "gpt-4o",
@@ -213,20 +324,16 @@ def test_gen_token_usage_counts_tools_and_image_inputs(monkeypatch):
         tools_payload,
         _usage_attachments=usage_attachments,
     )
+    after_second = llm.token_usage["prompt_tokens"]
 
-    assert len(captured) == 2
-    assert captured[1]["prompt_tokens"] > captured[0]["prompt_tokens"]
+    # Second call carries tools+attachments → strictly more prompt tokens.
+    assert (after_second - after_first) > after_first
 
 
 @pytest.mark.unit
 def test_stream_token_usage_counts_tools_and_image_inputs(monkeypatch):
-    captured = []
-
-    def fake_update(decoded_token, user_api_key, token_usage, agent_id=None):
-        _ = (decoded_token, user_api_key, agent_id)
-        captured.append(token_usage.copy())
-
-    monkeypatch.setattr("application.usage.update_token_usage", fake_update)
+    """Stream variant of the prompt-inflation check."""
+    _install_fake_token_repo(monkeypatch)
 
     class DummyLLM:
         decoded_token = {"sub": "user_123"}
@@ -263,6 +370,7 @@ def test_stream_token_usage_counts_tools_and_image_inputs(monkeypatch):
 
     llm = DummyLLM()
     list(wrapped(llm, "gpt-4o", messages, True, None))
+    after_first = llm.token_usage["prompt_tokens"]
     list(
         wrapped(
             llm,
@@ -273,76 +381,9 @@ def test_stream_token_usage_counts_tools_and_image_inputs(monkeypatch):
             _usage_attachments=usage_attachments,
         )
     )
+    after_second = llm.token_usage["prompt_tokens"]
 
-    assert len(captured) == 2
-    assert captured[1]["prompt_tokens"] > captured[0]["prompt_tokens"]
-
-
-class _FakeTokenUsageRepo:
-    """In-memory stand-in for TokenUsageRepository used by the usage tests."""
-
-    last_instance = None
-
-    def __init__(self, conn=None):
-        self.inserted = []
-        _FakeTokenUsageRepo.last_instance = self
-
-    def insert(self, **kwargs):
-        self.inserted.append(kwargs)
-
-
-@contextmanager
-def _fake_db_session():
-    yield None
-
-
-def _install_fake_token_repo(monkeypatch):
-    """Replace TokenUsageRepository + db_session and strip pytest sentinel."""
-    modules_without_pytest = dict(sys.modules)
-    modules_without_pytest.pop("pytest", None)
-    monkeypatch.setattr("application.usage.sys.modules", modules_without_pytest)
-    monkeypatch.setattr(
-        "application.usage.TokenUsageRepository", _FakeTokenUsageRepo
-    )
-    monkeypatch.setattr("application.usage.db_session", _fake_db_session)
-
-
-@pytest.mark.unit
-def test_update_token_usage_inserts_with_agent_id_only(monkeypatch):
-    _install_fake_token_repo(monkeypatch)
-
-    update_token_usage(
-        decoded_token=None,
-        user_api_key=None,
-        token_usage={"prompt_tokens": 10, "generated_tokens": 5},
-        agent_id="agent_123",
-    )
-
-    inserted = _FakeTokenUsageRepo.last_instance.inserted
-    assert len(inserted) == 1
-    assert inserted[0]["agent_id"] == "agent_123"
-    assert inserted[0]["user_id"] is None
-    assert inserted[0]["api_key"] is None
-
-
-@pytest.mark.unit
-def test_update_token_usage_skips_when_all_ids_missing(monkeypatch):
-    _FakeTokenUsageRepo.last_instance = None
-    _install_fake_token_repo(monkeypatch)
-
-    update_token_usage(
-        decoded_token=None,
-        user_api_key=None,
-        token_usage={"prompt_tokens": 10, "generated_tokens": 5},
-        agent_id=None,
-    )
-
-    # The repository is never even constructed when all ids are missing
-    # because the route short-circuits before entering db_session().
-    assert (
-        _FakeTokenUsageRepo.last_instance is None
-        or _FakeTokenUsageRepo.last_instance.inserted == []
-    )
+    assert (after_second - after_first) > after_first
 
 
 # ── _serialize_for_token_count ──────────────────────────────────────────────
@@ -559,50 +600,3 @@ class TestCountPromptTokens:
         ]
         tokens = _count_prompt_tokens(messages, tools=None)
         assert tokens > 0
-
-
-# ── update_token_usage edge cases ───────────────────────────────────────────
-
-
-@pytest.mark.unit
-def test_update_token_usage_with_user_api_key(monkeypatch):
-    _install_fake_token_repo(monkeypatch)
-    update_token_usage(
-        decoded_token=None,
-        user_api_key="api-key-123",
-        token_usage={"prompt_tokens": 10, "generated_tokens": 5},
-        agent_id=None,
-    )
-    inserted = _FakeTokenUsageRepo.last_instance.inserted
-    assert len(inserted) == 1
-    assert inserted[0]["api_key"] == "api-key-123"
-    assert inserted[0]["user_id"] is None
-    assert inserted[0].get("agent_id") is None
-
-
-@pytest.mark.unit
-def test_update_token_usage_with_decoded_token(monkeypatch):
-    _install_fake_token_repo(monkeypatch)
-    update_token_usage(
-        decoded_token={"sub": "user-abc"},
-        user_api_key=None,
-        token_usage={"prompt_tokens": 20, "generated_tokens": 10},
-        agent_id=None,
-    )
-    inserted = _FakeTokenUsageRepo.last_instance.inserted
-    assert len(inserted) == 1
-    assert inserted[0]["user_id"] == "user-abc"
-
-
-@pytest.mark.unit
-def test_update_token_usage_non_dict_decoded_token(monkeypatch):
-    _install_fake_token_repo(monkeypatch)
-    update_token_usage(
-        decoded_token="not-a-dict",
-        user_api_key="key",
-        token_usage={"prompt_tokens": 5, "generated_tokens": 3},
-        agent_id=None,
-    )
-    inserted = _FakeTokenUsageRepo.last_instance.inserted
-    assert len(inserted) == 1
-    assert inserted[0]["user_id"] is None

@@ -379,7 +379,21 @@ export const submitToolActions = createAsyncThunk<
 
   const state = getState() as RootState;
   const conversationId = state.conversation.conversationId;
-  if (!conversationId) return;
+  if (!conversationId) {
+    const targetIndex = state.conversation.queries.length - 1;
+    if (targetIndex >= 0) {
+      dispatch(
+        conversationSlice.actions.raiseError({
+          conversationId: null,
+          index: targetIndex,
+          message:
+            'Cannot submit decision — the conversation was not initialized. Please retry the question.',
+        }),
+      );
+    }
+    dispatch(conversationSlice.actions.setStatus('failed'));
+    return;
+  }
 
   dispatch(conversationSlice.actions.setStatus('loading'));
 

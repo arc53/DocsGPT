@@ -1,13 +1,18 @@
 import datetime
 import json
 import logging
+import time
+import uuid
 from typing import Any, Dict, Generator, List, Optional
 
 from flask import jsonify, make_response, Response
 from flask_restx import Namespace
 
 from application.api.answer.services.continuation_service import ContinuationService
-from application.api.answer.services.conversation_service import ConversationService
+from application.api.answer.services.conversation_service import (
+    ConversationService,
+    TERMINATED_RESPONSE_PLACEHOLDER,
+)
 from application.core.model_utils import (
     get_api_key_for_provider,
     get_default_model_id,
@@ -203,14 +208,111 @@ class BaseAnswerResource:
         Yields:
             Server-sent event strings
         """
-        try:
-            response_full, thought, source_log_docs, tool_calls = "", "", [], []
-            is_structured = False
-            schema_info = None
-            structured_chunks = []
-            query_metadata = {}
-            paused = False
+        response_full, thought, source_log_docs, tool_calls = "", "", [], []
+        is_structured = False
+        schema_info = None
+        structured_chunks = []
+        query_metadata: Dict[str, Any] = {}
+        paused = False
 
+        # WAL: reserve the placeholder row before invoking the LLM so a
+        # crash mid-stream still leaves the question (and a meaningful
+        # placeholder) queryable from PG. Continuation reuses the
+        # original placeholder; regenerate (``index`` set) truncates the
+        # old answer at that position before reserving so the placeholder
+        # *replaces* it instead of appending at the end of the
+        # conversation.
+        reserved_message_id: Optional[str] = None
+        wal_eligible = should_save_conversation and not _continuation
+        if wal_eligible:
+            try:
+                reservation = self.conversation_service.save_user_question(
+                    conversation_id=conversation_id,
+                    question=question,
+                    decoded_token=decoded_token,
+                    attachment_ids=attachment_ids,
+                    api_key=user_api_key,
+                    agent_id=agent_id,
+                    is_shared_usage=is_shared_usage,
+                    shared_token=shared_token,
+                    model_id=model_id or self.default_model_id,
+                    index=index,
+                )
+                conversation_id = reservation["conversation_id"]
+                reserved_message_id = reservation["message_id"]
+            except Exception as e:
+                logger.error(
+                    f"Failed to reserve message row before stream: {e}",
+                    exc_info=True,
+                )
+        elif _continuation and _continuation.get("reserved_message_id"):
+            reserved_message_id = _continuation["reserved_message_id"]
+
+        # Stream-scoped request id stamped on the agent's primary LLM.
+        # The token-usage decorator writes this onto every row produced
+        # by the run; ``count_in_range`` DISTINCTs on it so a multi-tool
+        # agent run (which produces N rows) counts as one request.
+        request_id = str(uuid.uuid4())
+        primary_llm = getattr(agent, "llm", None)
+        if primary_llm is not None:
+            primary_llm._request_id = request_id
+
+        # Flip pending → streaming on the first chunk so the reconciler
+        # distinguishes "never started" from "in flight" rows.
+        streaming_marked = False
+        # Heartbeat extends a long stream's freshness via
+        # ``metadata.last_heartbeat_at`` (read by the reconciler's
+        # staleness check). It deliberately doesn't bump ``updated_at``
+        # because reconciler-side writes share that column — using
+        # metadata keeps the producer signal independent. Cadence is
+        # wall-clock bounded by ``time.monotonic`` so a paused/blocked
+        # event loop can't make the heartbeat appear fresh.
+        STREAM_HEARTBEAT_INTERVAL = 60
+        last_heartbeat_at = time.monotonic()
+
+        def _mark_streaming_once() -> None:
+            nonlocal streaming_marked, last_heartbeat_at
+            if streaming_marked or not reserved_message_id:
+                return
+            try:
+                self.conversation_service.update_message_status(
+                    reserved_message_id, "streaming",
+                )
+            except Exception:
+                logger.exception(
+                    "update_message_status streaming failed for %s",
+                    reserved_message_id,
+                )
+            streaming_marked = True
+            last_heartbeat_at = time.monotonic()
+
+        def _heartbeat_streaming() -> None:
+            nonlocal last_heartbeat_at
+            if not reserved_message_id or not streaming_marked:
+                return
+            now_mono = time.monotonic()
+            if now_mono - last_heartbeat_at < STREAM_HEARTBEAT_INTERVAL:
+                return
+            try:
+                self.conversation_service.heartbeat_message(
+                    reserved_message_id,
+                )
+            except Exception:
+                logger.exception(
+                    "stream heartbeat update failed for %s",
+                    reserved_message_id,
+                )
+            last_heartbeat_at = now_mono
+
+        # Stamp the placeholder id on the executor so tool_call_attempts
+        # rows are message-correlated at proposed/executed time.
+        if reserved_message_id and getattr(agent, "tool_executor", None):
+            try:
+                agent.tool_executor.message_id = reserved_message_id
+            except Exception:
+                pass
+
+        try:
             if _continuation:
                 gen_iter = agent.gen_continuation(
                     messages=_continuation["messages"],
@@ -222,9 +324,13 @@ class BaseAnswerResource:
                 gen_iter = agent.gen(query=question)
 
             for line in gen_iter:
+                # Cheap closure check that only hits the DB when the
+                # heartbeat interval has elapsed.
+                _heartbeat_streaming()
                 if "metadata" in line:
                     query_metadata.update(line["metadata"])
                 elif "answer" in line:
+                    _mark_streaming_once()
                     response_full += str(line["answer"])
                     if line.get("structured"):
                         is_structured = True
@@ -234,6 +340,7 @@ class BaseAnswerResource:
                         data = json.dumps({"type": "answer", "answer": line["answer"]})
                         yield f"data: {data}\n\n"
                 elif "sources" in line:
+                    _mark_streaming_once()
                     truncated_sources = []
                     source_log_docs = line["sources"]
                     for source in line["sources"]:
@@ -363,6 +470,10 @@ class BaseAnswerResource:
                                     "prompt": getattr(agent, "prompt", ""),
                                     "json_schema": getattr(agent, "json_schema", None),
                                     "retriever_config": getattr(agent, "retriever_config", None),
+                                    # Carry the WAL placeholder forward so the
+                                    # resumed run finalises the same row
+                                    # instead of stranding it for the reconciler.
+                                    "reserved_message_id": reserved_message_id,
                                 },
                                 client_tools=getattr(
                                     agent.tool_executor, "client_tools", None
@@ -407,26 +518,51 @@ class BaseAnswerResource:
                 agent_id=agent_id,
                 model_user_id=model_user_id,
             )
+            # This route-level LLM is used only for title generation
+            # (the agent's stream tokens live on ``agent.llm``). Tag the
+            # source so its rows land as ``source='title'``.
+            llm._token_usage_source = "title"
 
             if should_save_conversation:
-                conversation_id = self.conversation_service.save_conversation(
-                    conversation_id,
-                    question,
-                    response_full,
-                    thought,
-                    source_log_docs,
-                    tool_calls,
-                    llm,
-                    model_id or self.default_model_id,
-                    decoded_token,
-                    index=index,
-                    api_key=user_api_key,
-                    agent_id=agent_id,
-                    is_shared_usage=is_shared_usage,
-                    shared_token=shared_token,
-                    attachment_ids=attachment_ids,
-                    metadata=query_metadata if query_metadata else None,
-                )
+                if reserved_message_id is not None:
+                    self.conversation_service.finalize_message(
+                        reserved_message_id,
+                        response_full,
+                        thought=thought,
+                        sources=source_log_docs,
+                        tool_calls=tool_calls,
+                        model_id=model_id or self.default_model_id,
+                        metadata=query_metadata if query_metadata else None,
+                        status="complete",
+                        title_inputs={
+                            "llm": llm,
+                            "question": question,
+                            "response": response_full,
+                            "model_id": model_id or self.default_model_id,
+                            "fallback_name": (
+                                question[:50] if question else "New Conversation"
+                            ),
+                        },
+                    )
+                else:
+                    conversation_id = self.conversation_service.save_conversation(
+                        conversation_id,
+                        question,
+                        response_full,
+                        thought,
+                        source_log_docs,
+                        tool_calls,
+                        llm,
+                        model_id or self.default_model_id,
+                        decoded_token,
+                        index=index,
+                        api_key=user_api_key,
+                        agent_id=agent_id,
+                        is_shared_usage=is_shared_usage,
+                        shared_token=shared_token,
+                        attachment_ids=attachment_ids,
+                        metadata=query_metadata if query_metadata else None,
+                    )
                 # Persist compression metadata/summary if it exists and wasn't saved mid-execution
                 compression_meta = getattr(agent, "compression_metadata", None)
                 compression_saved = getattr(agent, "compression_saved", False)
@@ -449,6 +585,24 @@ class BaseAnswerResource:
                         )
             else:
                 conversation_id = None
+            # Resumed run completed without pausing again — drop the
+            # continuation row now that the assistant message is final.
+            # On crash/abort the row stays in ``resuming`` for the
+            # janitor to revert; on a second pause the ``save_state``
+            # branch above resets the row back to ``pending``.
+            if _continuation and conversation_id:
+                try:
+                    cont_service = ContinuationService()
+                    cont_service.delete_state(
+                        str(conversation_id),
+                        decoded_token.get("sub", "local"),
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to delete continuation state on resume "
+                        f"completion: {e}",
+                        exc_info=True,
+                    )
             id_data = {"type": "id", "id": str(conversation_id)}
             data = json.dumps(id_data)
             yield f"data: {data}\n\n"
@@ -532,24 +686,48 @@ class BaseAnswerResource:
                         agent_id=agent_id,
                         model_user_id=model_user_id,
                     )
-                    self.conversation_service.save_conversation(
-                        conversation_id,
-                        question,
-                        response_full,
-                        thought,
-                        source_log_docs,
-                        tool_calls,
-                        llm,
-                        model_id or self.default_model_id,
-                        decoded_token,
-                        index=index,
-                        api_key=user_api_key,
-                        agent_id=agent_id,
-                        is_shared_usage=is_shared_usage,
-                        shared_token=shared_token,
-                        attachment_ids=attachment_ids,
-                        metadata=query_metadata if query_metadata else None,
-                    )
+                    # See success-path comment: this route-level LLM
+                    # only drives title generation. Tag its rows.
+                    llm._token_usage_source = "title"
+                    if reserved_message_id is not None:
+                        self.conversation_service.finalize_message(
+                            reserved_message_id,
+                            response_full,
+                            thought=thought,
+                            sources=source_log_docs,
+                            tool_calls=tool_calls,
+                            model_id=model_id or self.default_model_id,
+                            metadata=query_metadata if query_metadata else None,
+                            status="complete",
+                            title_inputs={
+                                "llm": llm,
+                                "question": question,
+                                "response": response_full,
+                                "model_id": model_id or self.default_model_id,
+                                "fallback_name": (
+                                    question[:50] if question else "New Conversation"
+                                ),
+                            },
+                        )
+                    else:
+                        self.conversation_service.save_conversation(
+                            conversation_id,
+                            question,
+                            response_full,
+                            thought,
+                            source_log_docs,
+                            tool_calls,
+                            llm,
+                            model_id or self.default_model_id,
+                            decoded_token,
+                            index=index,
+                            api_key=user_api_key,
+                            agent_id=agent_id,
+                            is_shared_usage=is_shared_usage,
+                            shared_token=shared_token,
+                            attachment_ids=attachment_ids,
+                            metadata=query_metadata if query_metadata else None,
+                        )
                     compression_meta = getattr(agent, "compression_metadata", None)
                     compression_saved = getattr(agent, "compression_saved", False)
                     if conversation_id and compression_meta and not compression_saved:
@@ -576,6 +754,24 @@ class BaseAnswerResource:
             raise
         except Exception as e:
             logger.error(f"Error in stream: {str(e)}", exc_info=True)
+            if reserved_message_id is not None:
+                try:
+                    self.conversation_service.finalize_message(
+                        reserved_message_id,
+                        response_full or TERMINATED_RESPONSE_PLACEHOLDER,
+                        thought=thought,
+                        sources=source_log_docs,
+                        tool_calls=tool_calls,
+                        model_id=model_id or self.default_model_id,
+                        metadata=query_metadata if query_metadata else None,
+                        status="failed",
+                        error=e,
+                    )
+                except Exception as fin_err:
+                    logger.error(
+                        f"Failed to finalize errored message: {fin_err}",
+                        exc_info=True,
+                    )
             data = json.dumps(
                 {
                     "type": "error",

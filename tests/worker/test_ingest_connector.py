@@ -9,6 +9,7 @@ is the sync variant.
 
 from __future__ import annotations
 
+import uuid
 from unittest.mock import MagicMock
 
 import pytest
@@ -57,7 +58,7 @@ def _mock_connector_pipeline(monkeypatch):
     monkeypatch.setattr(
         worker,
         "embed_and_store_documents",
-        lambda docs, full_path, source_id, task: None,
+        lambda docs, full_path, source_id, task, **kw: None,
     )
     monkeypatch.setattr(
         worker, "upload_index", lambda full_path, file_data: None
@@ -107,3 +108,69 @@ class TestIngestConnectorSyncUpdatesDate:
         assert refreshed["date"] > old_date, (
             "ingest_connector(sync) should push sources.date forward"
         )
+
+
+@pytest.mark.unit
+class TestIngestConnectorDeterministicSourceId:
+    """Upload-mode ``ingest_connector`` derives a stable ``source_id`` from the key."""
+
+    def test_uses_uuid5_when_idempotency_key_present(
+        self,
+        task_self,
+        monkeypatch,
+        _mock_connector_pipeline,
+    ):
+        from application import worker
+
+        captured: list[dict] = []
+        monkeypatch.setattr(
+            worker, "upload_index",
+            lambda full_path, file_data: captured.append(file_data),
+        )
+
+        for _ in range(2):
+            worker.ingest_connector(
+                task_self,
+                "gdrive-folder",
+                "dave",
+                "google_drive",
+                session_token="tok",
+                file_ids=["f1"],
+                folder_ids=[],
+                operation_mode="upload",
+                idempotency_key="abc",
+            )
+
+        expected = str(uuid.uuid5(worker.DOCSGPT_INGEST_NAMESPACE, "abc"))
+        assert len(captured) == 2
+        assert captured[0]["id"] == expected
+        assert captured[1]["id"] == expected
+
+    def test_falls_back_to_uuid4_without_key(
+        self,
+        task_self,
+        monkeypatch,
+        _mock_connector_pipeline,
+    ):
+        from application import worker
+
+        captured: list[dict] = []
+        monkeypatch.setattr(
+            worker, "upload_index",
+            lambda full_path, file_data: captured.append(file_data),
+        )
+
+        for _ in range(2):
+            worker.ingest_connector(
+                task_self,
+                "gdrive-folder",
+                "dave",
+                "google_drive",
+                session_token="tok",
+                file_ids=["f1"],
+                folder_ids=[],
+                operation_mode="upload",
+            )
+
+        assert len(captured) == 2
+        assert captured[0]["id"] != captured[1]["id"]

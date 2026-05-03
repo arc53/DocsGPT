@@ -123,6 +123,8 @@ class StreamProcessor:
         self.model_id: Optional[str] = None
         # BYOM-resolution scope, set by _validate_and_set_model.
         self.model_user_id: Optional[str] = None
+        # WAL placeholder id pulled from continuation state on resume.
+        self.reserved_message_id: Optional[str] = None
         self.conversation_service = ConversationService()
         self.compression_orchestrator = CompressionOrchestrator(
             self.conversation_service
@@ -928,6 +930,20 @@ class StreamProcessor:
         if not state:
             raise ValueError("No pending tool state found for this conversation")
 
+        # Claim the resume up-front. ``mark_resuming`` only flips ``pending``
+        # → ``resuming``; if it returns False, another resume already
+        # claimed this row (status='resuming') — bail before any further
+        # LLM/tool work to avoid double-execution. The cleanup janitor
+        # reverts a stale ``resuming`` claim back to ``pending`` after the
+        # 10-minute grace window so the user can retry.
+        if not cont_service.mark_resuming(
+            conversation_id, self.initial_user_id,
+        ):
+            raise ValueError(
+                "Resume already in progress for this conversation; "
+                "retry after the grace window if it stalls."
+            )
+
         messages = state["messages"]
         pending_tool_calls = state["pending_tool_calls"]
         tools_dict = state["tools_dict"]
@@ -1022,9 +1038,9 @@ class StreamProcessor:
         self.agent_id = agent_id
         self.agent_config["user_api_key"] = user_api_key
         self.conversation_id = conversation_id
-
-        # Delete state so it can't be replayed
-        cont_service.delete_state(conversation_id, self.initial_user_id)
+        # Pulled forward so the resumed complete_stream finalises the
+        # original WAL placeholder rather than stranding it.
+        self.reserved_message_id = agent_config.get("reserved_message_id")
 
         return agent, messages, tools_dict, pending_tool_calls, tool_actions
 
