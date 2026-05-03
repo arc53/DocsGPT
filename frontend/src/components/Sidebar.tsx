@@ -33,8 +33,8 @@ export default function Sidebar({
   return (
     <div ref={sidebarRef} className="h-vh relative">
       <div
-        className={`bg-card fixed top-0 right-0 z-50 h-full w-64 transform shadow-xl transition-all duration-300 sm:w-80 ${
-          isOpen ? 'translate-x-[10px]' : 'translate-x-full'
+        className={`bg-card fixed top-0 right-0 z-50 flex h-full w-64 transform flex-col shadow-xl transition-all duration-300 sm:w-80 ${
+          isOpen ? 'translate-x-2.5' : 'translate-x-full'
         } border-l border-[#9ca3af]/10`}
       >
         <div className="flex w-full flex-row items-end justify-end px-4 pt-3">
@@ -45,7 +45,7 @@ export default function Sidebar({
             <img className="filter dark:invert" src={Exit} />
           </button>
         </div>
-        <div className="flex h-full flex-col items-center gap-2 px-6 py-4 text-center">
+        <div className="flex flex-1 flex-col items-center gap-2 overflow-hidden px-6 py-4 text-center">
           {children}
         </div>
       </div>
