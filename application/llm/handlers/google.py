@@ -19,10 +19,12 @@ def _decode_thought_signature(
     sig: Optional[Union[bytes, str]],
 ) -> Optional[Union[bytes, str]]:
     # Reverse of _encode_thought_signature — Gemini's SDK expects bytes
-    # back when we replay a tool call, so decode at egress.
+    # back when we replay a tool call. ``validate=True`` keeps ASCII
+    # strings that happen to be loosely decodable from being silently
+    # turned into bytes; non-base64 inputs pass through unchanged.
     if isinstance(sig, str):
         try:
-            return base64.b64decode(sig.encode("ascii"))
+            return base64.b64decode(sig.encode("ascii"), validate=True)
         except (binascii.Error, ValueError):
             return sig
     return sig

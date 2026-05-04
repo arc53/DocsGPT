@@ -66,13 +66,14 @@ def decode_base64_bytes(value: Any) -> Any:
     """Reverse ``coerce_pg_native``'s bytes-to-base64 step.
 
     Useful at egress points that need the original bytes back (e.g.
-    sending Gemini's ``thought_signature`` to the SDK on resume). Falls
-    back to passing through on non-base64 strings so a value that wasn't
-    actually encoded survives.
+    sending Gemini's ``thought_signature`` to the SDK on resume). Uses
+    ``validate=True`` so plain ASCII strings that happen to be
+    permissively decodable (e.g. ``"abcd"``) are not silently turned
+    into bytes — the original value passes through.
     """
     if isinstance(value, str):
         try:
-            return base64.b64decode(value.encode("ascii"))
+            return base64.b64decode(value.encode("ascii"), validate=True)
         except (binascii.Error, ValueError):
             return value
     return value

@@ -413,10 +413,21 @@ class ToolExecutor:
             "action_name": llm_name,
             "arguments": call_args,
         }
+        tool_data = tools_dict[tool_id]
+        # Journal first so the reconciler sees malformed calls and any
+        # subsequent ``_mark_failed`` actually updates a real row.
+        proposed_ok = _record_proposed(
+            call_id,
+            tool_data["name"],
+            action_name,
+            call_args if isinstance(call_args, dict) else {},
+            tool_id=tool_data.get("id"),
+        )
         # Defensive guard: a non-dict ``call_args`` (e.g. malformed
         # JSON on the resume path) would crash the param walk below
         # with AttributeError on ``.items()``. Surface a clean error
-        # event and journal the failure instead of killing the stream.
+        # event and flip the journal row to ``failed`` instead of
+        # killing the stream.
         if not isinstance(call_args, dict):
             error_message = (
                 f"Tool call arguments must be a JSON object, got "
@@ -432,17 +443,6 @@ class ToolExecutor:
             self.tool_calls.append(tool_call_data)
             return error_message, call_id
         yield {"type": "tool_call", "data": {**tool_call_data, "status": "pending"}}
-
-        tool_data = tools_dict[tool_id]
-        # Journal the call before any side effect runs so the
-        # reconciler can see attempts that crashed mid-execute.
-        proposed_ok = _record_proposed(
-            call_id,
-            tool_data["name"],
-            action_name,
-            call_args,
-            tool_id=tool_data.get("id"),
-        )
         action_data = (
             tool_data["config"]["actions"][action_name]
             if tool_data["name"] == "api_tool"
