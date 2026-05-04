@@ -10,7 +10,7 @@ COPY . .
 
 FROM base AS development
 
-# start the develpoment server of Vite
+# start the development server of Vite
 CMD ["npm", "run", "dev", "--", "--host"]
 
 
