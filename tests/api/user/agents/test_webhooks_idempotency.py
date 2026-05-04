@@ -200,16 +200,9 @@ class TestWebhookIdempotency:
                 yield conn
 
         def fire(idx):
-            with patch(
-                "application.api.user.agents.webhooks.db_session",
-                _engine_session,
-            ), patch(
-                "application.api.user.agents.webhooks.db_readonly",
-                _engine_readonly,
-            ), patch(
-                "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
-                apply_mock,
-            ), app.test_request_context(
+            # Patches sit outside the thread pool (see below); only the
+            # per-thread Flask request context is set up inside.
+            with app.test_request_context(
                 "/api/webhooks/agents/tk-race", method="POST",
                 json={"event": idx},
                 headers={"Idempotency-Key": "wh-race"},
@@ -221,7 +214,19 @@ class TestWebhookIdempotency:
                     agent_id_str=str(agent["id"]),
                 )
 
-        with ThreadPoolExecutor(max_workers=8) as ex:
+        # ``unittest.mock.patch`` is not thread-safe; set up
+        # module-attribute patches once before fanning out so every
+        # thread sees the mock instead of racing on save/restore.
+        with patch(
+            "application.api.user.agents.webhooks.db_session",
+            _engine_session,
+        ), patch(
+            "application.api.user.agents.webhooks.db_readonly",
+            _engine_readonly,
+        ), patch(
+            "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
+            apply_mock,
+        ), ThreadPoolExecutor(max_workers=8) as ex:
             responses = list(ex.map(fire, range(8)))
         assert all(r.status_code == 200 for r in responses)
         assert apply_mock.call_count == 1

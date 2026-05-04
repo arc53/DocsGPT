@@ -264,19 +264,9 @@ class TestUploadIdempotency:
                 yield conn
 
         def fire(idx):
-            with patch(
-                "application.api.user.sources.upload.db_session",
-                _engine_session,
-            ), patch(
-                "application.api.user.sources.upload.db_readonly",
-                _engine_readonly,
-            ), patch(
-                "application.api.user.sources.upload.StorageCreator.get_storage",
-                return_value=fake_storage,
-            ), patch(
-                "application.api.user.sources.upload.ingest.apply_async",
-                apply_mock,
-            ), app.test_request_context(
+            # Patches sit OUTSIDE the threads (see below); only the
+            # per-thread Flask request context is set up inside.
+            with app.test_request_context(
                 "/api/upload", method="POST",
                 data={
                     "user": "alice", "name": "j",
@@ -289,7 +279,24 @@ class TestUploadIdempotency:
                 request.decoded_token = {"sub": "alice"}
                 return UploadFile().post()
 
-        with ThreadPoolExecutor(max_workers=8) as ex:
+        # ``unittest.mock.patch`` is not thread-safe — concurrent
+        # ``__enter__`` calls race on saving/restoring the module
+        # attribute and can leave threads pointing at the real
+        # function instead of the mock. Set up patches once, share
+        # across threads.
+        with patch(
+            "application.api.user.sources.upload.db_session",
+            _engine_session,
+        ), patch(
+            "application.api.user.sources.upload.db_readonly",
+            _engine_readonly,
+        ), patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "application.api.user.sources.upload.ingest.apply_async",
+            apply_mock,
+        ), ThreadPoolExecutor(max_workers=8) as ex:
             responses = list(ex.map(fire, range(8)))
         assert all(r.status_code == 200 for r in responses)
         # Only one writer wins the claim, so only one apply_async is fired.
@@ -700,26 +707,29 @@ class TestManageSourceFilesIdempotency:
                 yield conn
 
         def fire(_idx):
-            with patch(
-                "application.api.user.sources.upload.db_session",
-                _engine_session,
-            ), patch(
-                "application.api.user.sources.upload.db_readonly",
-                _engine_readonly,
-            ), patch(
-                "application.api.user.sources.upload.StorageCreator.get_storage",
-                return_value=fake_storage,
-            ), patch(
-                "application.api.user.tasks.reingest_source_task.apply_async",
-                apply_mock,
-            ), self._add_request(
-                app, src["id"], user, key="mgr-race",
-            ):
+            # Patches sit outside the thread pool (see below); only the
+            # per-thread Flask request context is set up inside.
+            with self._add_request(app, src["id"], user, key="mgr-race"):
                 from flask import request
                 request.decoded_token = {"sub": user}
                 return ManageSourceFiles().post()
 
-        with ThreadPoolExecutor(max_workers=8) as ex:
+        # ``unittest.mock.patch`` is not thread-safe; set up the
+        # module-attribute patches once before fanning out so every
+        # thread sees the mock instead of racing on save/restore.
+        with patch(
+            "application.api.user.sources.upload.db_session",
+            _engine_session,
+        ), patch(
+            "application.api.user.sources.upload.db_readonly",
+            _engine_readonly,
+        ), patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "application.api.user.tasks.reingest_source_task.apply_async",
+            apply_mock,
+        ), ThreadPoolExecutor(max_workers=8) as ex:
             responses = list(ex.map(fire, range(8)))
         assert all(r.status_code == 200 for r in responses)
         assert apply_mock.call_count == 1
