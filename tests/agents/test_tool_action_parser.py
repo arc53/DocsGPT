@@ -154,10 +154,10 @@ class TestToolActionParser:
         assert action_name == "search_docs"
         assert call_args == {"query": "workflows", "limit": 5}
 
-    def test_parse_google_llm_non_json_string_arguments_pass_through(self):
-        # Defensive: if for any reason a non-JSON string lands here, leave
-        # it as-is rather than raising — the executor surfaces the issue
-        # later via a clearer error path.
+    def test_parse_google_llm_non_json_string_arguments_fall_back_to_empty_dict(self):
+        # Malformed string args fall back to ``{}`` so the executor's
+        # ``call_args.items()`` walk doesn't crash. The executor still
+        # journals the malformed call via its own type guard.
         parser = ToolActionParser("GoogleLLM")
 
         call = Mock()
@@ -168,7 +168,7 @@ class TestToolActionParser:
 
         assert tool_id == "7"
         assert action_name == "act"
-        assert call_args == "not json"
+        assert call_args == {}
 
     def test_parse_unknown_llm_type_defaults_to_openai(self):
         parser = ToolActionParser("UnknownLLM")

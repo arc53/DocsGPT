@@ -1,6 +1,5 @@
 import logging
 import time
-from datetime import datetime
 
 from application.storage.db.repositories.token_usage import TokenUsageRepository
 from application.storage.db.session import db_session
@@ -121,6 +120,10 @@ def _persist_call_usage(llm, call_usage):
         return
     try:
         with db_session() as conn:
+            # ``timestamp`` is omitted so Postgres ``server_default
+            # = func.now()`` populates a tz-aware UTC value; passing
+            # naive ``datetime.now()`` would silently shift on
+            # non-UTC servers.
             TokenUsageRepository(conn).insert(
                 user_id=user_id,
                 api_key=user_api_key,
@@ -131,7 +134,6 @@ def _persist_call_usage(llm, call_usage):
                     getattr(llm, "_token_usage_source", None) or "agent_stream"
                 ),
                 request_id=getattr(llm, "_request_id", None),
-                timestamp=datetime.now(),
             )
     except Exception:
         logger.exception("token_usage persist failed")

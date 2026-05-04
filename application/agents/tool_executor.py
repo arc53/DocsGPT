@@ -413,6 +413,24 @@ class ToolExecutor:
             "action_name": llm_name,
             "arguments": call_args,
         }
+        # Defensive guard: a non-dict ``call_args`` (e.g. malformed
+        # JSON on the resume path) would crash the param walk below
+        # with AttributeError on ``.items()``. Surface a clean error
+        # event and journal the failure instead of killing the stream.
+        if not isinstance(call_args, dict):
+            error_message = (
+                f"Tool call arguments must be a JSON object, got "
+                f"{type(call_args).__name__}."
+            )
+            tool_call_data["result"] = error_message
+            tool_call_data["arguments"] = {}
+            _mark_failed(call_id, error_message)
+            yield {
+                "type": "tool_call",
+                "data": {**tool_call_data, "status": "error"},
+            }
+            self.tool_calls.append(tool_call_data)
+            return error_message, call_id
         yield {"type": "tool_call", "data": {**tool_call_data, "status": "pending"}}
 
         tool_data = tools_dict[tool_id]

@@ -59,13 +59,27 @@ class ToolActionParser:
             call_args = call.arguments
             # Gemini's SDK natively returns ``args`` as a dict, but the
             # resume path (``gen_continuation``) stringifies it for the
-            # assistant message. Coerce a JSON string back into a dict so
-            # downstream ``call_args.items()`` works in both cases.
+            # assistant message. Coerce a JSON string back into a dict;
+            # fall back to an empty dict on malformed input so downstream
+            # ``call_args.items()`` doesn't crash the stream.
             if isinstance(call_args, str):
                 try:
                     call_args = json.loads(call_args)
                 except (json.JSONDecodeError, TypeError):
-                    pass
+                    logger.warning(
+                        "Google call.arguments was not valid JSON; "
+                        "falling back to empty args for %s",
+                        getattr(call, "name", "<unknown>"),
+                    )
+                    call_args = {}
+            if not isinstance(call_args, dict):
+                logger.warning(
+                    "Google call.arguments has unexpected type %s; "
+                    "falling back to empty args for %s",
+                    type(call_args).__name__,
+                    getattr(call, "name", "<unknown>"),
+                )
+                call_args = {}
 
             resolved = self._resolve_via_mapping(call.name)
             if resolved:
