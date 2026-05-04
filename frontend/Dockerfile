@@ -9,15 +9,13 @@ COPY . .
 
 RUN npm run build
 
-FROM node:22-alpine AS production
+FROM nginx:alpine
 
-WORKDIR /app
+COPY --from=build /app/dist /usr/share/nginx/html
 
-COPY --from=build /app/dist ./dist
-
-RUN npm install -g serve
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 5173
 
 # serving on port 5173 to match the Vite development server port, making it compatible with existing setup
-CMD ["serve", "-s", "dist", "-l", "5173"]
+CMD ["nginx", "-g", "daemon off;"]
