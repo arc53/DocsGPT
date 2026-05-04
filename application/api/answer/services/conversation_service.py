@@ -204,14 +204,9 @@ class ConversationService:
     ) -> Dict[str, str]:
         """Reserve the placeholder message row before the LLM call.
 
-        ``index`` carries the regenerate semantics: when supplied with an
-        existing ``conversation_id``, every message at ``position >=
-        index`` is deleted before the new placeholder is reserved. The
-        placeholder then lands at ``position = index`` (since
-        ``reserve_message`` picks ``MAX(position) + 1`` and the truncate
-        leaves ``MAX = index - 1``). Without this, the WAL path appended
-        a new row at the end and the original answer at ``index`` was
-        never replaced.
+        ``index`` triggers regenerate semantics: messages at
+        ``position >= index`` are truncated so the new placeholder
+        lands at ``position = index`` rather than appending.
 
         Returns ``{"conversation_id", "message_id", "request_id"}``.
         """
@@ -311,12 +306,7 @@ class ConversationService:
         error: Optional[BaseException] = None,
         title_inputs: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """Commit the response and tool_call confirms in one transaction.
-
-        ``token_usage`` is no longer written here — the per-call
-        decorator in ``application.usage`` writes one row per LLM call
-        directly, so finalize-time persistence would double-count.
-        """
+        """Commit the response and tool_call confirms in one transaction."""
         if not message_id:
             return False
         sources = sources or []
@@ -341,12 +331,9 @@ class ConversationService:
         if model_id is not None:
             update_fields["model_id"] = model_id
 
-        # Single transaction for the data-integrity write — message
-        # update and tool_call_attempts confirm share atomicity. The
-        # message update is first so a failed match short-circuits
-        # before the confirm runs. ``only_if_non_terminal`` keeps a
-        # reconciler-set ``failed`` row from being silently retracted
-        # by a late successful stream.
+        # Atomic message update + tool_call_attempts confirm; the
+        # ``only_if_non_terminal`` guard prevents a late stream from
+        # retracting a row the reconciler already escalated.
         with db_session() as conn:
             repo = ConversationsRepository(conn)
             ok = repo.update_message_by_id(
@@ -361,9 +348,7 @@ class ConversationService:
                 return False
             repo.confirm_executed_tool_calls(message_id)
 
-        # Title generation is a multi-second LLM round trip; doing it
-        # outside the data-integrity txn avoids holding row locks across
-        # network I/O. Failures here don't roll back the finalize.
+        # Outside the txn — title-gen is a multi-second LLM round trip.
         if title_inputs and status == "complete":
             try:
                 with db_session() as conn:

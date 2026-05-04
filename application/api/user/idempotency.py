@@ -15,46 +15,26 @@ from application.storage.db.session import db_readonly, db_session
 logger = logging.getLogger(__name__)
 
 
-# Bound by both Celery's ``autoretry_for`` (up to ~4 executions per worker
-# crash) and broker redeliveries (acks_late). 5 is enough headroom for
-# legitimate transient failures, low enough that a poison message can't
-# loop indefinitely.
+# Poison-loop cap; transient-failure headroom without infinite retry.
 MAX_TASK_ATTEMPTS = 5
 
-# Lease cadence. The wrapper claims a lease at entry and refreshes
-# ``lease_expires_at`` every ``LEASE_HEARTBEAT_INTERVAL`` seconds; a
-# crashed worker's lease becomes reclaimable after ``LEASE_TTL_SECONDS``.
-# 30 s heartbeat against a 60 s TTL gives ~2 missed ticks of slack.
+# 30s heartbeat / 60s TTL → ~2 missed ticks of slack before reclaim.
 LEASE_TTL_SECONDS = 60
 LEASE_HEARTBEAT_INTERVAL = 30
 
-# When a redelivery hits a live lease, we ``self.retry(countdown=...)``
-# to re-queue the message instead of running. ``LEASE_RETRY_MAX`` caps
-# how long we'll keep deferring before giving up — at 5 retries × 60 s
-# that's ~5 min of waiting, which is comfortably above any realistic
-# in-flight task duration we care about.
+# 10 × 60s ≈ 5 min of deferral before giving up on a held lease.
 LEASE_RETRY_MAX = 10
 
 
 def with_idempotency(task_name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Short-circuit on completed key; gate concurrent runs via a lease.
 
-    Three short-circuits at entry:
-
-    - If a ``status='completed'`` row exists for ``idempotency_key``,
-      return its cached ``result_json`` without re-running.
-    - If another worker holds a live ``lease_expires_at > now()`` on
-      this key, ``self.retry(countdown=LEASE_TTL_SECONDS)`` and let
-      the broker redeliver after the lease expires.
-    - If we acquire the lease but ``attempt_count`` exceeds
-      :data:`MAX_TASK_ATTEMPTS`, the wrapper writes ``status='failed'``
-      and returns the poison-loop alert without running fn.
-
-    On a successful run, writes ``status='completed'`` with the result
-    (which retires the lease implicitly via :meth:`finalize_task`'s
-    ``WHERE status='pending'`` predicate). On exception, leaves the row
-    in ``pending`` so Celery's ``autoretry_for`` and broker redeliveries
-    can try again until the poison-loop guard trips.
+    Entry short-circuits:
+      - completed row → return cached result
+      - live lease held → retry(countdown=LEASE_TTL_SECONDS)
+      - attempt_count > MAX_TASK_ATTEMPTS → poison-loop alert
+    Success writes ``completed``; exceptions leave ``pending`` for
+    autoretry until the poison-loop guard trips.
     """
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -118,11 +98,7 @@ def with_idempotency(task_name: str) -> Callable[[Callable[..., Any]], Callable[
                 _finalize(key, result, status="completed")
                 return result
             except Exception:
-                # Drop the lease so Celery's ``autoretry_for`` doesn't
-                # have to wait the full ``LEASE_TTL_SECONDS`` before the
-                # next worker can re-claim. ``finalize_task`` would also
-                # clear it on success, but on failure the row stays
-                # ``pending`` for the retry path.
+                # Drop the lease so the next retry doesn't wait LEASE_TTL.
                 _release_lease(key, owner_id)
                 raise
             finally:
@@ -147,13 +123,10 @@ def _lookup_completed(key: str) -> Any:
 def _try_claim_lease(
     key: str, task_name: str, task_id: str, owner_id: str,
 ) -> Optional[int]:
-    """Atomic CAS at the repository level — see :meth:`try_claim_lease`.
+    """Atomic CAS; returns ``attempt_count`` or ``None`` when held.
 
-    Returns the new ``attempt_count`` on success or ``None`` when a
-    different worker holds a live lease. A DB outage is treated as
-    "claim succeeded with attempt=1" so a transient repository failure
-    doesn't block all task execution; the lease columns will be
-    populated by the next heartbeat tick or repaired by the reconciler.
+    DB outage → treated as ``attempt=1`` so transient failures don't
+    block all task execution; reconciler repairs the lease columns.
     """
     try:
         with db_session() as conn:

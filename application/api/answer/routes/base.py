@@ -215,13 +215,15 @@ class BaseAnswerResource:
         query_metadata: Dict[str, Any] = {}
         paused = False
 
-        # WAL: reserve the placeholder row before invoking the LLM so a
-        # crash mid-stream still leaves the question (and a meaningful
-        # placeholder) queryable from PG. Continuation reuses the
-        # original placeholder; regenerate (``index`` set) truncates the
-        # old answer at that position before reserving so the placeholder
-        # *replaces* it instead of appending at the end of the
-        # conversation.
+        # One id shared across the WAL row, primary LLM (token_usage
+        # attribution), the SSE event, and resumed continuations.
+        request_id = (
+            _continuation.get("request_id") if _continuation else None
+        ) or str(uuid.uuid4())
+
+        # Reserve the placeholder row before the LLM call so a crash
+        # mid-stream still leaves the question queryable. Continuations
+        # reuse the original placeholder.
         reserved_message_id: Optional[str] = None
         wal_eligible = should_save_conversation and not _continuation
         if wal_eligible:
@@ -236,6 +238,7 @@ class BaseAnswerResource:
                     is_shared_usage=is_shared_usage,
                     shared_token=shared_token,
                     model_id=model_id or self.default_model_id,
+                    request_id=request_id,
                     index=index,
                 )
                 conversation_id = reservation["conversation_id"]
@@ -248,25 +251,16 @@ class BaseAnswerResource:
         elif _continuation and _continuation.get("reserved_message_id"):
             reserved_message_id = _continuation["reserved_message_id"]
 
-        # Stream-scoped request id stamped on the agent's primary LLM.
-        # The token-usage decorator writes this onto every row produced
-        # by the run; ``count_in_range`` DISTINCTs on it so a multi-tool
-        # agent run (which produces N rows) counts as one request.
-        request_id = str(uuid.uuid4())
         primary_llm = getattr(agent, "llm", None)
         if primary_llm is not None:
             primary_llm._request_id = request_id
 
-        # Flip pending → streaming on the first chunk so the reconciler
-        # distinguishes "never started" from "in flight" rows.
+        # Flipped to ``streaming`` on first chunk; reconciler uses this
+        # to tell "never started" from "in flight".
         streaming_marked = False
-        # Heartbeat extends a long stream's freshness via
-        # ``metadata.last_heartbeat_at`` (read by the reconciler's
-        # staleness check). It deliberately doesn't bump ``updated_at``
-        # because reconciler-side writes share that column — using
-        # metadata keeps the producer signal independent. Cadence is
-        # wall-clock bounded by ``time.monotonic`` so a paused/blocked
-        # event loop can't make the heartbeat appear fresh.
+        # Heartbeat goes into ``metadata.last_heartbeat_at`` (not
+        # ``updated_at``, which reconciler-side writes share) and uses
+        # ``time.monotonic`` so a blocked event loop can't fake fresh.
         STREAM_HEARTBEAT_INTERVAL = 60
         last_heartbeat_at = time.monotonic()
 
@@ -304,8 +298,7 @@ class BaseAnswerResource:
                 )
             last_heartbeat_at = now_mono
 
-        # Stamp the placeholder id on the executor so tool_call_attempts
-        # rows are message-correlated at proposed/executed time.
+        # Correlates tool_call_attempts rows with this message.
         if reserved_message_id and getattr(agent, "tool_executor", None):
             try:
                 agent.tool_executor.message_id = reserved_message_id
@@ -313,6 +306,21 @@ class BaseAnswerResource:
                 pass
 
         try:
+            # Surface the placeholder id before any LLM tokens so a
+            # mid-handshake disconnect still has a row to tail-poll.
+            if reserved_message_id:
+                early_event = json.dumps(
+                    {
+                        "type": "message_id",
+                        "message_id": reserved_message_id,
+                        "conversation_id": (
+                            str(conversation_id) if conversation_id else None
+                        ),
+                        "request_id": request_id,
+                    }
+                )
+                yield f"data: {early_event}\n\n"
+
             if _continuation:
                 gen_iter = agent.gen_continuation(
                     messages=_continuation["messages"],
@@ -393,12 +401,9 @@ class BaseAnswerResource:
             if paused:
                 continuation = getattr(agent, "_pending_continuation", None)
                 if continuation:
-                    # Ensure we have a conversation_id — create a partial
-                    # conversation if this is the first turn.
+                    # First-turn pause needs a conversation row to attach to.
                     if not conversation_id and should_save_conversation:
                         try:
-                            # Use model-owner scope so shared-agent
-                            # owner-BYOM resolves to its registered plugin.
                             provider = (
                                 get_provider_from_model_id(
                                     model_id,
@@ -459,8 +464,8 @@ class BaseAnswerResource:
                                 tool_schemas=getattr(agent, "tools", []),
                                 agent_config={
                                     "model_id": model_id or self.default_model_id,
-                                    # Persist BYOM scope so resume doesn't
-                                    # fall back to caller's layer.
+                                    # BYOM scope; without it resume falls
+                                    # back to caller's layer.
                                     "model_user_id": model_user_id,
                                     "llm_name": getattr(agent, "llm_name", settings.LLM_PROVIDER),
                                     "api_key": getattr(agent, "api_key", None),
@@ -470,10 +475,11 @@ class BaseAnswerResource:
                                     "prompt": getattr(agent, "prompt", ""),
                                     "json_schema": getattr(agent, "json_schema", None),
                                     "retriever_config": getattr(agent, "retriever_config", None),
-                                    # Carry the WAL placeholder forward so the
-                                    # resumed run finalises the same row
-                                    # instead of stranding it for the reconciler.
+                                    # Reused on resume so the same WAL row
+                                    # is finalised and request_id stays
+                                    # consistent across token_usage rows.
                                     "reserved_message_id": reserved_message_id,
+                                    "request_id": request_id,
                                 },
                                 client_tools=getattr(
                                     agent.tool_executor, "client_tools", None
@@ -496,8 +502,7 @@ class BaseAnswerResource:
             if isNoneDoc:
                 for doc in source_log_docs:
                     doc["source"] = "None"
-            # Run under model-owner scope so title-gen LLM inside
-            # save_conversation uses the owner's BYOM provider/key.
+            # Model-owner scope so title-gen uses owner's BYOM key.
             provider = (
                 get_provider_from_model_id(
                     model_id,
@@ -518,9 +523,7 @@ class BaseAnswerResource:
                 agent_id=agent_id,
                 model_user_id=model_user_id,
             )
-            # This route-level LLM is used only for title generation
-            # (the agent's stream tokens live on ``agent.llm``). Tag the
-            # source so its rows land as ``source='title'``.
+            # Title-gen only; agent stream tokens live on ``agent.llm``.
             llm._token_usage_source = "title"
 
             if should_save_conversation:
@@ -585,11 +588,8 @@ class BaseAnswerResource:
                         )
             else:
                 conversation_id = None
-            # Resumed run completed without pausing again — drop the
-            # continuation row now that the assistant message is final.
-            # On crash/abort the row stays in ``resuming`` for the
-            # janitor to revert; on a second pause the ``save_state``
-            # branch above resets the row back to ``pending``.
+            # Resume finished cleanly; drop the continuation row.
+            # Crash-paths leave it ``resuming`` for the janitor to revert.
             if _continuation and conversation_id:
                 try:
                     cont_service = ContinuationService()
@@ -657,10 +657,8 @@ class BaseAnswerResource:
                     if isNoneDoc:
                         for doc in source_log_docs:
                             doc["source"] = "None"
-                    # Mirror the normal-path provider resolution so the
-                    # partial-save title LLM uses the model-owner's BYOM
-                    # registration (shared-agent dispatch) rather than
-                    # the deployment default with the instance api key.
+                    # Resolve under model-owner scope so shared-agent
+                    # title-gen uses owner BYOM, not deployment default.
                     provider = (
                         get_provider_from_model_id(
                             model_id,
@@ -686,8 +684,6 @@ class BaseAnswerResource:
                         agent_id=agent_id,
                         model_user_id=model_user_id,
                     )
-                    # See success-path comment: this route-level LLM
-                    # only drives title generation. Tag its rows.
                     llm._token_usage_source = "title"
                     if reserved_message_id is not None:
                         self.conversation_service.finalize_message(

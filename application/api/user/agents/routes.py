@@ -46,7 +46,9 @@ AGENT_TYPE_SCHEMAS = {
             "prompt_id",
         ],
         "required_draft": ["name"],
-        "validate_published": ["name", "description", "prompt_id"],
+        # ``prompt_id`` intentionally omitted — the "default" sentinel
+        # is acceptable and maps to NULL downstream.
+        "validate_published": ["name", "description"],
         "validate_draft": [],
         "require_source": True,
         "fields": [
@@ -1009,12 +1011,16 @@ class UpdateAgent(Resource):
                                 400,
                             )
                     else:
+                        # ``prompt_id`` is intentionally omitted: the
+                        # frontend's "default" choice maps to NULL here
+                        # (see the prompt_id branch above), and NULL
+                        # means "use the built-in default prompt" which
+                        # is a valid published-agent state.
                         missing_published_fields = []
                         for req_field, field_label in (
                             ("name", "Agent name"),
                             ("description", "Agent description"),
                             ("chunks", "Chunks count"),
-                            ("prompt_id", "Prompt"),
                             ("agent_type", "Agent type"),
                         ):
                             final_value = update_fields.get(

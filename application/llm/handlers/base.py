@@ -10,6 +10,18 @@ from application.logging import build_stack_data
 logger = logging.getLogger(__name__)
 
 
+# Cap the agent tool-call loop. Without this an LLM that keeps
+# requesting more tool calls (preview models, sparse tool results,
+# under-specified prompts) can chain searches indefinitely and the
+# stream never finalises. 25 mirrors Dify's default.
+MAX_TOOL_ITERATIONS = 25
+_FINALIZE_INSTRUCTION = (
+    f"You have made {MAX_TOOL_ITERATIONS} tool calls. Provide a final "
+    "response to the user based on what you have, without making any "
+    "additional tool calls."
+)
+
+
 @dataclass
 class ToolCall:
     """Represents a tool/function call from the LLM."""
@@ -938,7 +950,9 @@ class LLMHandler(ABC):
         parsed = self.parse_response(response)
         self.llm_calls.append(build_stack_data(agent.llm))
 
+        iteration = 0
         while parsed.requires_tool_call:
+            iteration += 1
             tool_handler_gen = self.handle_tool_calls(
                 agent, parsed.tool_calls, tools_dict, messages
             )
@@ -962,6 +976,25 @@ class LLMHandler(ABC):
                 }
                 return ""
 
+            # Cap reached: force one final tool-less call so the stream
+            # always ends with content rather than cutting off.
+            if iteration >= MAX_TOOL_ITERATIONS:
+                logger.warning(
+                    "agent tool loop hit cap (%d); forcing finalize",
+                    MAX_TOOL_ITERATIONS,
+                )
+                messages.append(
+                    {"role": "system", "content": _FINALIZE_INSTRUCTION},
+                )
+                response = agent.llm.gen(
+                    model=getattr(agent.llm, "model_id", None) or agent.model_id,
+                    messages=messages,
+                    tools=None,
+                )
+                parsed = self.parse_response(response)
+                self.llm_calls.append(build_stack_data(agent.llm))
+                break
+
             # ``agent.model_id`` is the registry id (a UUID for BYOM
             # records). Use the LLM's own model_id, which LLMCreator
             # already resolved to the upstream model name. Built-ins:
@@ -977,7 +1010,12 @@ class LLMHandler(ABC):
         return parsed.content
 
     def handle_streaming(
-        self, agent, response: Any, tools_dict: Dict, messages: List[Dict]
+        self,
+        agent,
+        response: Any,
+        tools_dict: Dict,
+        messages: List[Dict],
+        _iteration: int = 0,
     ) -> Generator:
         """
         Handle streaming response flow.
@@ -1046,6 +1084,9 @@ class LLMHandler(ABC):
                     }
                     return
 
+                next_iteration = _iteration + 1
+                cap_reached = next_iteration >= MAX_TOOL_ITERATIONS
+
                 # Check if context limit was reached during tool execution
                 if hasattr(agent, 'context_limit_reached') and agent.context_limit_reached:
                     # Add system message warning about context limit
@@ -1058,16 +1099,32 @@ class LLMHandler(ABC):
                         )
                     })
                     logger.info("Context limit reached - instructing agent to wrap up")
+                elif cap_reached:
+                    logger.warning(
+                        "agent tool loop hit cap (%d); forcing finalize",
+                        MAX_TOOL_ITERATIONS,
+                    )
+                    messages.append(
+                        {"role": "system", "content": _FINALIZE_INSTRUCTION},
+                    )
 
                 # See note above on agent.model_id vs llm.model_id.
                 response = agent.llm.gen_stream(
                     model=getattr(agent.llm, "model_id", None) or agent.model_id,
                     messages=messages,
-                    tools=agent.tools if not agent.context_limit_reached else None,
+                    tools=(
+                        None
+                        if cap_reached
+                        or getattr(agent, "context_limit_reached", False)
+                        else agent.tools
+                    ),
                 )
                 self.llm_calls.append(build_stack_data(agent.llm))
 
-                yield from self.handle_streaming(agent, response, tools_dict, messages)
+                yield from self.handle_streaming(
+                    agent, response, tools_dict, messages,
+                    _iteration=next_iteration,
+                )
                 return
             if parsed.content:
                 buffer += parsed.content

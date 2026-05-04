@@ -565,8 +565,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           setJsonSchemaText(jsonText);
           setJsonSchemaValid(true);
         }
-        setAgent(data);
-        initialAgentRef.current = data;
+        // Backfill required fields so older agents (created before
+        // agent_type / prompt_id / models existed) don't fail
+        // ``isPublishable()`` and leave Save permanently disabled.
+        const normalized = {
+          ...data,
+          agent_type: data.agent_type || 'classic',
+          prompt_id: data.prompt_id || 'default',
+          retriever: data.retriever || 'classic',
+          chunks: data.chunks || '2',
+          tools: data.tools || [],
+          sources: data.sources || [],
+          models: data.models || [],
+          default_model_id: data.default_model_id || '',
+        };
+        setAgent(normalized);
+        initialAgentRef.current = normalized;
       };
       getAgent();
     }

@@ -47,12 +47,7 @@ def _read_idempotency_key():
 
 
 def _scoped_idempotency_key(idempotency_key, scope):
-    """Compose ``"{scope}:{idempotency_key}"`` so two agents (or two
-    callers via different agent webhooks) sharing the same raw header
-    value can't collapse onto a single ``webhook_dedup`` row. Returns
-    ``None`` if either side is missing — caller treats that as "no
-    dedup" rather than risking a global collision.
-    """
+    """``{scope}:{key}`` so different agents can't collide on the same key."""
     if not idempotency_key or not scope:
         return None
     return f"{scope}:{idempotency_key}"
@@ -120,8 +115,7 @@ class AgentWebhookListener(Resource):
         idempotency_key, key_error = _read_idempotency_key()
         if key_error is not None:
             return key_error
-        # Resolve to a real PG UUID up-front so the dedup write doesn't crash
-        # when the path token corresponds to a legacy non-UUID agent id.
+        # Resolve to PG UUID first so dedup writes don't crash on legacy ids.
         agent_uuid = None
         if agent is not None:
             candidate = str(agent.get("id") or "")
@@ -133,13 +127,9 @@ class AgentWebhookListener(Resource):
                 agent_id_str,
             )
             idempotency_key = None
-        # Scope dedup by ``agent_id`` so two agents (or callers behind
-        # different webhook tokens) sharing the same raw header value
-        # can't collapse onto a single ``webhook_dedup`` row. Webhooks
-        # don't carry a user_id, so the agent UUID is the natural scope.
+        # Agent-scoped (webhooks have no user_id).
         scoped_key = _scoped_idempotency_key(idempotency_key, agent_uuid)
-        # Claim before enqueue so concurrent same-key POSTs cannot both
-        # call .delay(). Loser path returns the winner's task_id.
+        # Claim before enqueue; the loser returns the winner's task_id.
         predetermined_task_id = None
         if scoped_key:
             predetermined_task_id = str(uuid.uuid4())
@@ -166,8 +156,7 @@ class AgentWebhookListener(Resource):
                 kwargs={
                     "agent_id": agent_id_str,
                     "payload": payload,
-                    # Pass the *scoped* key downstream so the worker
-                    # decorator's ``task_dedup`` row is also user-distinct.
+                    # Scoped so the worker dedup row matches the HTTP claim.
                     "idempotency_key": scoped_key or idempotency_key,
                 },
             )

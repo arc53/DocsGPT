@@ -3,6 +3,8 @@ import { ToolCallsType } from './types';
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
 export type Status = 'idle' | 'loading' | 'failed' | 'awaiting_tool_actions';
 export type FEEDBACK = 'LIKE' | 'DISLIKE' | null;
+// Mirrors ``conversation_messages.status``.
+export type MessageStatus = 'pending' | 'streaming' | 'complete' | 'failed';
 
 export interface Message {
   text: string;
@@ -65,6 +67,13 @@ export interface Query {
   structured?: boolean;
   schema?: object;
   research?: ResearchState;
+  // WAL placeholder id; lets the client tail an in-flight stream.
+  messageId?: string;
+  messageStatus?: MessageStatus;
+  requestId?: string;
+  lastHeartbeatAt?: string;
+  // Persisted so Retry can re-send the same key for server-side dedup.
+  idempotencyKey?: string;
 }
 
 export interface RetrievalPayload {

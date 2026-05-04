@@ -116,6 +116,7 @@ class StreamResource(Resource, BaseAnswerResource):
                             "pending_tool_calls": pending_tool_calls,
                             "tool_actions": tool_actions,
                             "reserved_message_id": processor.reserved_message_id,
+                            "request_id": processor.request_id,
                         },
                     ),
                     mimetype="text/event-stream",

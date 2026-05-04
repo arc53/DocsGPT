@@ -609,6 +609,7 @@
   },
   "agents": {
     "title": "代理",
+    "edit": "编辑",
     "description": "发现并创建结合指令、额外知识和任意技能组合的DocsGPT自定义版本",
     "newAgent": "新建代理",
     "backToAll": "返回所有代理",

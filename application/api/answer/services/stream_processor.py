@@ -125,6 +125,8 @@ class StreamProcessor:
         self.model_user_id: Optional[str] = None
         # WAL placeholder id pulled from continuation state on resume.
         self.reserved_message_id: Optional[str] = None
+        # Carried through resumes so multi-pause runs keep one request_id.
+        self.request_id: Optional[str] = None
         self.conversation_service = ConversationService()
         self.compression_orchestrator = CompressionOrchestrator(
             self.conversation_service
@@ -1038,9 +1040,10 @@ class StreamProcessor:
         self.agent_id = agent_id
         self.agent_config["user_api_key"] = user_api_key
         self.conversation_id = conversation_id
-        # Pulled forward so the resumed complete_stream finalises the
-        # original WAL placeholder rather than stranding it.
+        # Reused on resume so the same WAL row gets finalised and
+        # request_id stays consistent across token_usage rows.
         self.reserved_message_id = agent_config.get("reserved_message_id")
+        self.request_id = agent_config.get("request_id")
 
         return agent, messages, tools_dict, pending_tool_calls, tool_actions
 

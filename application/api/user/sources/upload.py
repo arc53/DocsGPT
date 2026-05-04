@@ -58,11 +58,7 @@ def _read_idempotency_key():
 
 
 def _scoped_idempotency_key(idempotency_key, scope):
-    """Compose ``"{scope}:{idempotency_key}"`` so two users sharing the
-    same raw header value can't collapse onto a single ``task_dedup``
-    row. Returns ``None`` if either side is missing — the caller treats
-    that as "no dedup" rather than risking a global collision.
-    """
+    """``{scope}:{key}`` so different users can't collide on the same key."""
     if not idempotency_key or not scope:
         return None
     return f"{scope}:{idempotency_key}"
@@ -71,11 +67,9 @@ def _scoped_idempotency_key(idempotency_key, scope):
 def _claim_task_or_get_cached(key, task_name):
     """Claim ``key`` for this request OR return the winner's cached payload.
 
-    Pre-generates the celery task_id at HTTP boundary so a losing writer
-    sees the same id immediately, with no polling window. Winner uses
-    ``apply_async(task_id=...)`` to fire the task with the claimed id.
-    Returns ``(task_id, cached_response)``: when ``cached_response`` is
-    not None the caller should return it without enqueuing.
+    Pre-generates the celery task_id so a losing writer sees the same
+    id immediately. Returns ``(task_id, cached_response)``; non-None
+    cached means the caller should return without enqueuing.
     """
     predetermined_id = str(uuid.uuid4())
     with db_session() as conn:
@@ -94,9 +88,7 @@ def _claim_task_or_get_cached(key, task_name):
 
 
 def _release_claim(key):
-    """Drop a pending claim so a client retry can re-claim. Used when
-    enqueue fails after the row was inserted.
-    """
+    """Drop a pending claim so a client retry can re-claim it."""
     try:
         with db_session() as conn:
             conn.execute(
@@ -147,14 +139,10 @@ class UploadFile(Resource):
         idempotency_key, key_error = _read_idempotency_key()
         if key_error is not None:
             return key_error
-        # Scope the dedup key by user_id: two users sending the same raw
-        # ``Idempotency-Key`` header must not collapse onto a single
-        # ``task_dedup`` row (otherwise the second user's request gets
-        # silently dropped). The scoped form also feeds ``_derive_source_id``
-        # downstream, so cross-user uuid5 collisions are impossible too.
+        # User-scoped to avoid cross-user collisions; also feeds
+        # ``_derive_source_id`` so uuid5 stays user-disjoint.
         scoped_key = _scoped_idempotency_key(idempotency_key, user)
-        # Claim before enqueue so concurrent same-key POSTs can never both
-        # call .delay(). Loser path returns the winner's task_id.
+        # Claim before enqueue; the loser returns the winner's task_id.
         predetermined_task_id = None
         if scoped_key:
             predetermined_task_id, cached = _claim_task_or_get_cached(
@@ -259,10 +247,7 @@ class UploadFile(Resource):
                     "file_path": base_path,
                     "filename": dir_name,
                     "file_name_map": file_name_map,
-                    # Pass the *scoped* key downstream so the worker
-                    # decorator's dedup row matches what the HTTP layer
-                    # claimed, and so ``_derive_source_id`` produces a
-                    # user-distinct uuid5.
+                    # Scoped so the worker dedup row matches the HTTP claim.
                     "idempotency_key": scoped_key or idempotency_key,
                 },
             )
@@ -286,9 +271,7 @@ class UploadFile(Resource):
             if scoped_key:
                 _release_claim(scoped_key)
             return make_response(jsonify({"success": False}), 400)
-        # Prefer the predetermined id (matches what we wrote into the
-        # task_dedup claim row, so a subsequent loser GET sees the same
-        # value). Falls back to ``task.id`` when no scoped key existed.
+        # Predetermined id matches the dedup-claim row; loser GET sees same.
         response_task_id = predetermined_task_id or task.id
         response_payload = {"success": True, "task_id": response_task_id}
         return make_response(jsonify(response_payload), 200)
@@ -325,10 +308,7 @@ class UploadRemote(Resource):
         idempotency_key, key_error = _read_idempotency_key()
         if key_error is not None:
             return key_error
-        # See ``UploadFile.post`` for rationale: scope dedup keys by user.
         scoped_key = _scoped_idempotency_key(idempotency_key, user)
-        # Resolve task name lazily — depends on data["source"]; claim once we
-        # know whether this is a connector or remote ingest.
         data = request.form
         required_fields = ["user", "source", "name", "data"]
         missing_fields = check_required_fields(data, required_fields)
@@ -429,9 +409,6 @@ class UploadRemote(Resource):
             if scoped_key:
                 _release_claim(scoped_key)
             return make_response(jsonify({"success": False}), 400)
-        # Prefer the predetermined id (matches what we wrote into the
-        # task_dedup claim row, so a subsequent loser GET sees the same
-        # value). Falls back to ``task.id`` when no key was supplied.
         response_task_id = predetermined_task_id or task.id
         response_payload = {"success": True, "task_id": response_task_id}
         return make_response(jsonify(response_payload), 200)
@@ -482,7 +459,6 @@ class ManageSourceFiles(Resource):
         idempotency_key, key_error = _read_idempotency_key()
         if key_error is not None:
             return key_error
-        # See ``UploadFile.post`` for rationale: scope dedup keys by user.
         scoped_key = _scoped_idempotency_key(idempotency_key, user)
         source_id = request.form.get("source_id")
         operation = request.form.get("operation")

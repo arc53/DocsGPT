@@ -200,7 +200,9 @@ def _bind_user_id_to_log_context():
 def after_request(response: Response) -> Response:
     """Add CORS headers for the pure Flask development entrypoint."""
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Headers"] = (
+        "Content-Type, Authorization, Idempotency-Key"
+    )
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
     return response
 
