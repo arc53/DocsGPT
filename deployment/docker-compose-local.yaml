@@ -1,9 +1,10 @@
 services:
   frontend:
-    build: ../frontend
-    target: development
+    build:
+      context: ../frontend
+      target: development
     volumes:
-    - ../frontend/src:/app/src
+      - ../frontend/src:/app/src
     environment:
       - VITE_API_HOST=http://localhost:7091
       - VITE_API_STREAMING=$VITE_API_STREAMING
@@ -27,7 +28,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U docsgpt -d docsgpt"]
+      test: [ "CMD-SHELL", "pg_isready -U docsgpt -d docsgpt" ]
       interval: 5s
       timeout: 5s
       retries: 10

@@ -1,8 +1,9 @@
 name: docsgpt-oss
 services:
   frontend:
-    build: ../frontend
-    target: development
+    build:
+      context: ../frontend
+      target: development
     volumes:
       - ../frontend/src:/app/src
     environment:
