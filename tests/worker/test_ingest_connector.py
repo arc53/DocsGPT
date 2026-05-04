@@ -105,7 +105,9 @@ class TestIngestConnectorSyncUpdatesDate:
 
         refreshed = SourcesRepository(pg_conn).get(source_id, "dave")
         assert refreshed is not None
-        assert refreshed["date"] > old_date, (
+        # row_to_dict coerces datetimes to ISO 8601 strings; UTC
+        # timezone-aware ISO strings sort chronologically.
+        assert refreshed["date"] > old_date.isoformat(), (
             "ingest_connector(sync) should push sources.date forward"
         )
 

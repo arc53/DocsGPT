@@ -91,7 +91,9 @@ class TestRemoteWorkerSyncUpdatesDate:
 
         refreshed = SourcesRepository(pg_conn).get(source_id, "bob")
         assert refreshed is not None
-        assert refreshed["date"] > old_date, (
+        # row_to_dict coerces datetimes to ISO 8601 strings; UTC
+        # timezone-aware ISO strings sort chronologically.
+        assert refreshed["date"] > old_date.isoformat(), (
             "remote_worker(sync) should push sources.date forward"
         )
 
