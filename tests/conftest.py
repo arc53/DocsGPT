@@ -224,6 +224,9 @@ def agent_base_params(decoded_token):
 def mock_tool():
     tool = Mock()
     tool.execute_action = Mock(return_value="Tool result")
+    # Skip artifact-id capture in default mock so the recorded JSONB matches
+    # what tests expect; per-tool tests can override.
+    tool.get_artifact_id = None
     tool.get_actions_metadata = Mock(
         return_value=[
             {

@@ -3,16 +3,19 @@
 import json
 import os
 import tempfile
+import uuid
 import zipfile
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
+from sqlalchemy import text as sql_text
 
 from application.api import api
 from application.api.user.tasks import ingest, ingest_connector_task, ingest_remote
 from application.core.settings import settings
 from application.parser.connectors.connector_creator import ConnectorCreator
 from application.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
+from application.storage.db.repositories.idempotency import IdempotencyRepository
 from application.storage.db.repositories.sources import SourcesRepository
 from application.storage.db.session import db_readonly, db_session
 from application.storage.storage_creator import StorageCreator
@@ -28,6 +31,79 @@ from application.utils import check_required_fields, safe_filename
 sources_upload_ns = Namespace(
     "sources", description="Source document management operations", path="/api"
 )
+
+
+_IDEMPOTENCY_KEY_MAX_LEN = 256
+
+
+def _read_idempotency_key():
+    """Return (key, error_response). Empty header → (None, None); oversized → (None, 400)."""
+    key = request.headers.get("Idempotency-Key")
+    if not key:
+        return None, None
+    if len(key) > _IDEMPOTENCY_KEY_MAX_LEN:
+        return None, make_response(
+            jsonify(
+                {
+                    "success": False,
+                    "message": (
+                        f"Idempotency-Key exceeds maximum length of "
+                        f"{_IDEMPOTENCY_KEY_MAX_LEN} characters"
+                    ),
+                }
+            ),
+            400,
+        )
+    return key, None
+
+
+def _scoped_idempotency_key(idempotency_key, scope):
+    """``{scope}:{key}`` so different users can't collide on the same key."""
+    if not idempotency_key or not scope:
+        return None
+    return f"{scope}:{idempotency_key}"
+
+
+def _claim_task_or_get_cached(key, task_name):
+    """Claim ``key`` for this request OR return the winner's cached payload.
+
+    Pre-generates the celery task_id so a losing writer sees the same
+    id immediately. Returns ``(task_id, cached_response)``; non-None
+    cached means the caller should return without enqueuing.
+    """
+    predetermined_id = str(uuid.uuid4())
+    with db_session() as conn:
+        claimed = IdempotencyRepository(conn).claim_task(
+            key=key, task_name=task_name, task_id=predetermined_id,
+        )
+    if claimed is not None:
+        return claimed["task_id"], None
+    with db_readonly() as conn:
+        existing = IdempotencyRepository(conn).get_task(key)
+    cached_id = existing.get("task_id") if existing else None
+    return None, {
+        "success": True,
+        "task_id": cached_id or "deduplicated",
+    }
+
+
+def _release_claim(key):
+    """Drop a pending claim so a client retry can re-claim it."""
+    try:
+        with db_session() as conn:
+            conn.execute(
+                sql_text(
+                    "DELETE FROM task_dedup WHERE idempotency_key = :k "
+                    "AND status = 'pending'"
+                ),
+                {"k": key},
+            )
+    except Exception:
+        current_app.logger.exception(
+            "Failed to release task_dedup claim for key=%s", key,
+        )
+
+
 
 
 def _enforce_audio_path_size_limit(file_path: str, filename: str) -> None:
@@ -49,17 +125,38 @@ class UploadFile(Resource):
         )
     )
     @api.doc(
-        description="Uploads a file to be vectorized and indexed",
+        description=(
+            "Uploads a file to be vectorized and indexed. Honors an optional "
+            "``Idempotency-Key`` header: a repeat request with the same key "
+            "within 24h returns the original cached response without re-enqueuing."
+        ),
     )
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        idempotency_key, key_error = _read_idempotency_key()
+        if key_error is not None:
+            return key_error
+        # User-scoped to avoid cross-user collisions; also feeds
+        # ``_derive_source_id`` so uuid5 stays user-disjoint.
+        scoped_key = _scoped_idempotency_key(idempotency_key, user)
+        # Claim before enqueue; the loser returns the winner's task_id.
+        predetermined_task_id = None
+        if scoped_key:
+            predetermined_task_id, cached = _claim_task_or_get_cached(
+                scoped_key, "ingest",
+            )
+            if cached is not None:
+                return make_response(jsonify(cached), 200)
         data = request.form
         files = request.files.getlist("file")
         required_fields = ["user", "name"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields or not files or all(file.filename == "" for file in files):
+            if scoped_key:
+                _release_claim(scoped_key)
             return make_response(
                 jsonify(
                     {
@@ -69,7 +166,6 @@ class UploadFile(Resource):
                 ),
                 400,
             )
-        user = decoded_token.get("sub")
         job_name = request.form["name"]
 
         # Create safe versions for filesystem operations
@@ -140,16 +236,27 @@ class UploadFile(Resource):
                         file_path = f"{base_path}/{safe_file}"
                         with open(temp_file_path, "rb") as f:
                             storage.save_file(f, file_path)
-            task = ingest.delay(
-                settings.UPLOAD_FOLDER,
-                list(SUPPORTED_SOURCE_EXTENSIONS),
-                job_name,
-                user,
-                file_path=base_path,
-                filename=dir_name,
-                file_name_map=file_name_map,
+            ingest_kwargs = dict(
+                args=(
+                    settings.UPLOAD_FOLDER,
+                    list(SUPPORTED_SOURCE_EXTENSIONS),
+                    job_name,
+                    user,
+                ),
+                kwargs={
+                    "file_path": base_path,
+                    "filename": dir_name,
+                    "file_name_map": file_name_map,
+                    # Scoped so the worker dedup row matches the HTTP claim.
+                    "idempotency_key": scoped_key or idempotency_key,
+                },
             )
+            if predetermined_task_id is not None:
+                ingest_kwargs["task_id"] = predetermined_task_id
+            task = ingest.apply_async(**ingest_kwargs)
         except AudioFileTooLargeError:
+            if scoped_key:
+                _release_claim(scoped_key)
             return make_response(
                 jsonify(
                     {
@@ -161,8 +268,13 @@ class UploadFile(Resource):
             )
         except Exception as err:
             current_app.logger.error(f"Error uploading file: {err}", exc_info=True)
+            if scoped_key:
+                _release_claim(scoped_key)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True, "task_id": task.id}), 200)
+        # Predetermined id matches the dedup-claim row; loser GET sees same.
+        response_task_id = predetermined_task_id or task.id
+        response_payload = {"success": True, "task_id": response_task_id}
+        return make_response(jsonify(response_payload), 200)
 
 
 @sources_upload_ns.route("/remote")
@@ -182,17 +294,38 @@ class UploadRemote(Resource):
         )
     )
     @api.doc(
-        description="Uploads remote source for vectorization",
+        description=(
+            "Uploads remote source for vectorization. Honors an optional "
+            "``Idempotency-Key`` header: a repeat request with the same key "
+            "within 24h returns the original cached response without re-enqueuing."
+        ),
     )
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        idempotency_key, key_error = _read_idempotency_key()
+        if key_error is not None:
+            return key_error
+        scoped_key = _scoped_idempotency_key(idempotency_key, user)
         data = request.form
         required_fields = ["user", "source", "name", "data"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        task_name_for_dedup = (
+            "ingest_connector_task"
+            if data.get("source") in ConnectorCreator.get_supported_connectors()
+            else "ingest_remote"
+        )
+        predetermined_task_id = None
+        if scoped_key:
+            predetermined_task_id, cached = _claim_task_or_get_cached(
+                scoped_key, task_name_for_dedup,
+            )
+            if cached is not None:
+                return make_response(jsonify(cached), 200)
         try:
             config = json.loads(data["data"])
             source_data = None
@@ -208,6 +341,8 @@ class UploadRemote(Resource):
             elif data["source"] in ConnectorCreator.get_supported_connectors():
                 session_token = config.get("session_token")
                 if not session_token:
+                    if scoped_key:
+                        _release_claim(scoped_key)
                     return make_response(
                         jsonify(
                             {
@@ -236,31 +371,47 @@ class UploadRemote(Resource):
                 config["file_ids"] = file_ids
                 config["folder_ids"] = folder_ids
 
-                task = ingest_connector_task.delay(
-                    job_name=data["name"],
-                    user=decoded_token.get("sub"),
-                    source_type=data["source"],
-                    session_token=session_token,
-                    file_ids=file_ids,
-                    folder_ids=folder_ids,
-                    recursive=config.get("recursive", False),
-                    retriever=config.get("retriever", "classic"),
-                )
-                return make_response(
-                    jsonify({"success": True, "task_id": task.id}), 200
-                )
-            task = ingest_remote.delay(
-                source_data=source_data,
-                job_name=data["name"],
-                user=decoded_token.get("sub"),
-                loader=data["source"],
-            )
+                connector_kwargs = {
+                    "kwargs": {
+                        "job_name": data["name"],
+                        "user": user,
+                        "source_type": data["source"],
+                        "session_token": session_token,
+                        "file_ids": file_ids,
+                        "folder_ids": folder_ids,
+                        "recursive": config.get("recursive", False),
+                        "retriever": config.get("retriever", "classic"),
+                        "idempotency_key": scoped_key or idempotency_key,
+                    },
+                }
+                if predetermined_task_id is not None:
+                    connector_kwargs["task_id"] = predetermined_task_id
+                task = ingest_connector_task.apply_async(**connector_kwargs)
+                response_task_id = predetermined_task_id or task.id
+                response_payload = {"success": True, "task_id": response_task_id}
+                return make_response(jsonify(response_payload), 200)
+            remote_kwargs = {
+                "kwargs": {
+                    "source_data": source_data,
+                    "job_name": data["name"],
+                    "user": user,
+                    "loader": data["source"],
+                    "idempotency_key": scoped_key or idempotency_key,
+                },
+            }
+            if predetermined_task_id is not None:
+                remote_kwargs["task_id"] = predetermined_task_id
+            task = ingest_remote.apply_async(**remote_kwargs)
         except Exception as err:
             current_app.logger.error(
                 f"Error uploading remote source: {err}", exc_info=True
             )
+            if scoped_key:
+                _release_claim(scoped_key)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True, "task_id": task.id}), 200)
+        response_task_id = predetermined_task_id or task.id
+        response_payload = {"success": True, "task_id": response_task_id}
+        return make_response(jsonify(response_payload), 200)
 
 
 @sources_upload_ns.route("/manage_source_files")
@@ -305,6 +456,10 @@ class ManageSourceFiles(Resource):
                 jsonify({"success": False, "message": "Unauthorized"}), 401
             )
         user = decoded_token.get("sub")
+        idempotency_key, key_error = _read_idempotency_key()
+        if key_error is not None:
+            return key_error
+        scoped_key = _scoped_idempotency_key(idempotency_key, user)
         source_id = request.form.get("source_id")
         operation = request.form.get("operation")
 
@@ -347,6 +502,12 @@ class ManageSourceFiles(Resource):
                 jsonify({"success": False, "message": "Database error"}), 500
             )
         resolved_source_id = str(source["id"])
+        # Flips to True after each branch's ``apply_async`` returns
+        # successfully — at that point the worker owns the predetermined
+        # task_id. The outer ``except`` only releases the claim while
+        # this is False, so a post-``apply_async`` failure (jsonify,
+        # make_response, etc.) doesn't double-enqueue on the next retry.
+        claim_transferred = False
         try:
             storage = StorageCreator.get_storage()
             source_file_path = source.get("file_path", "")
@@ -379,6 +540,21 @@ class ManageSourceFiles(Resource):
                         ),
                         400,
                     )
+
+                # Claim before any storage mutation so a duplicate request
+                # short-circuits without touching the filesystem. Mirrors
+                # the pattern in ``UploadFile.post`` / ``UploadRemote.post``
+                # — without it ``.delay()`` would enqueue twice for two
+                # racing same-key POSTs (the worker decorator only
+                # deduplicates *after* completion).
+                predetermined_task_id = None
+                if scoped_key:
+                    predetermined_task_id, cached = _claim_task_or_get_cached(
+                        scoped_key, "reingest_source_task",
+                    )
+                    if cached is not None:
+                        return make_response(jsonify(cached), 200)
+
                 added_files = []
                 map_updated = False
 
@@ -414,9 +590,15 @@ class ManageSourceFiles(Resource):
 
                 from application.api.user.tasks import reingest_source_task
 
-                task = reingest_source_task.delay(
-                    source_id=resolved_source_id, user=user
+                task = reingest_source_task.apply_async(
+                    kwargs={
+                        "source_id": resolved_source_id,
+                        "user": user,
+                        "idempotency_key": scoped_key or idempotency_key,
+                    },
+                    task_id=predetermined_task_id,
                 )
+                claim_transferred = True
 
                 return make_response(
                     jsonify(
@@ -455,10 +637,8 @@ class ManageSourceFiles(Resource):
                         ),
                         400,
                     )
-                # Remove files from storage and directory structure
-
-                removed_files = []
-                map_updated = False
+                # Path-traversal guard runs *before* the claim so a 400
+                # for an invalid path doesn't leave a pending dedup row.
                 for file_path in file_paths:
                     if ".." in str(file_path) or str(file_path).startswith("/"):
                         return make_response(
@@ -470,6 +650,22 @@ class ManageSourceFiles(Resource):
                             ),
                             400,
                         )
+
+                # Claim before any storage mutation. See ``add`` branch
+                # comment for rationale.
+                predetermined_task_id = None
+                if scoped_key:
+                    predetermined_task_id, cached = _claim_task_or_get_cached(
+                        scoped_key, "reingest_source_task",
+                    )
+                    if cached is not None:
+                        return make_response(jsonify(cached), 200)
+
+                # Remove files from storage and directory structure
+
+                removed_files = []
+                map_updated = False
+                for file_path in file_paths:
                     full_path = f"{source_file_path}/{file_path}"
 
                     # Remove from storage
@@ -491,9 +687,15 @@ class ManageSourceFiles(Resource):
 
                 from application.api.user.tasks import reingest_source_task
 
-                task = reingest_source_task.delay(
-                    source_id=resolved_source_id, user=user
+                task = reingest_source_task.apply_async(
+                    kwargs={
+                        "source_id": resolved_source_id,
+                        "user": user,
+                        "idempotency_key": scoped_key or idempotency_key,
+                    },
+                    task_id=predetermined_task_id,
                 )
+                claim_transferred = True
 
                 return make_response(
                     jsonify(
@@ -552,6 +754,16 @@ class ManageSourceFiles(Resource):
                         ),
                         404,
                     )
+
+                # Claim before mutation. See ``add`` branch for rationale.
+                predetermined_task_id = None
+                if scoped_key:
+                    predetermined_task_id, cached = _claim_task_or_get_cached(
+                        scoped_key, "reingest_source_task",
+                    )
+                    if cached is not None:
+                        return make_response(jsonify(cached), 200)
+
                 success = storage.remove_directory(full_directory_path)
 
                 if not success:
@@ -560,6 +772,11 @@ class ManageSourceFiles(Resource):
                         f"User: {user}, Source ID: {source_id}, Directory path: {directory_path}, "
                         f"Full path: {full_directory_path}"
                     )
+                    # Release so a client retry can reclaim — otherwise
+                    # the next request would silently 200-cache to the
+                    # task_id that never enqueued.
+                    if scoped_key:
+                        _release_claim(scoped_key)
                     return make_response(
                         jsonify(
                             {"success": False, "message": "Failed to remove directory"}
@@ -591,9 +808,15 @@ class ManageSourceFiles(Resource):
 
                 from application.api.user.tasks import reingest_source_task
 
-                task = reingest_source_task.delay(
-                    source_id=resolved_source_id, user=user
+                task = reingest_source_task.apply_async(
+                    kwargs={
+                        "source_id": resolved_source_id,
+                        "user": user,
+                        "idempotency_key": scoped_key or idempotency_key,
+                    },
+                    task_id=predetermined_task_id,
                 )
+                claim_transferred = True
 
                 return make_response(
                     jsonify(
@@ -607,6 +830,14 @@ class ManageSourceFiles(Resource):
                     200,
                 )
         except Exception as err:
+            # Release the dedup claim only if it wasn't transferred to
+            # a worker. Without this, a same-key retry within the 24h
+            # TTL would 200-cache to a predetermined task_id whose
+            # ``apply_async`` never ran (or ran but the response builder
+            # blew up afterward — only the first case matters in
+            # practice; the flag protects both).
+            if scoped_key and not claim_transferred:
+                _release_claim(scoped_key)
             error_context = f"operation={operation}, user={user}, source_id={source_id}"
             if operation == "remove_directory":
                 directory_path = request.form.get("directory_path", "")

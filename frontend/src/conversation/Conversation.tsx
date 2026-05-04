@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate, useParams } from 'react-router-dom';
 
+import userService from '../api/services/userService';
 import SharedAgentCard from '../agents/SharedAgentCard';
+import { Agent } from '../agents/types';
 import ArtifactSidebar from '../components/ArtifactSidebar';
 import MessageInput from '../components/MessageInput';
 import { useMediaQuery } from '../hooks';
@@ -10,6 +13,7 @@ import {
   selectConversationId,
   selectSelectedAgent,
   selectToken,
+  setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import { handleSendFeedback } from './conversationHandlers';
@@ -19,7 +23,9 @@ import { ToolCallsType } from './types';
 import {
   addQuery,
   fetchAnswer,
+  loadConversation,
   resendQuery,
+  resetConversation,
   selectQueries,
   selectStatus,
   submitToolActions,
@@ -31,6 +37,16 @@ export default function Conversation() {
   const { t } = useTranslation();
   const { isMobile } = useMediaQuery();
   const dispatch = useDispatch<AppDispatch>();
+  const navigate = useNavigate();
+  const params = useParams<{
+    conversationId?: string;
+    agentId?: string;
+  }>();
+  const urlConversationId = params.conversationId;
+  const urlAgentId = params.agentId;
+  // ``new`` is treated as empty-chat intent, not a real id to fetch.
+  const isNewChatRoute =
+    urlConversationId === undefined || urlConversationId === 'new';
 
   const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
@@ -41,6 +57,65 @@ export default function Conversation() {
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] =
     useState<boolean>(false);
+
+  // URL → state. Thunk short-circuits when Redux already matches.
+  useEffect(() => {
+    if (isNewChatRoute) {
+      // Skip when nothing to reset; avoids wiping the in-flight stream
+      // during the null → assigned-id replace below.
+      if (conversationId !== null) {
+        dispatch(resetConversation());
+      }
+      return;
+    }
+    if (urlConversationId && urlConversationId !== conversationId) {
+      dispatch(loadConversation({ id: urlConversationId }))
+        .unwrap()
+        .then((result) => {
+          if (result.stale) return;
+          if (result.data === null) {
+            navigate('/c/new', { replace: true });
+          }
+        })
+        .catch(() => navigate('/c/new', { replace: true }));
+    }
+  }, [urlConversationId, isNewChatRoute]);
+
+  // Agent context follows the URL. ``cancelled`` covers two races:
+  // the user switches agents before the fetch resolves, or leaves the
+  // agent route entirely; either way the late dispatch must be dropped.
+  useEffect(() => {
+    let cancelled = false;
+    if (urlAgentId) {
+      if (selectedAgent?.id !== urlAgentId) {
+        userService
+          .getAgent(urlAgentId, token)
+          .then((response) => (response.ok ? response.json() : null))
+          .then((agent: Agent | null) => {
+            if (cancelled) return;
+            if (agent) dispatch(setSelectedAgent(agent));
+          })
+          .catch((err) => {
+            if (!cancelled) console.error('Failed to load agent:', err);
+          });
+      }
+    } else if (selectedAgent !== null) {
+      dispatch(setSelectedAgent(null));
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [urlAgentId, token]);
+
+  // State → URL. ``replace`` so Back doesn't return to /c/new and
+  // reset the just-streamed chat.
+  useEffect(() => {
+    if (!isNewChatRoute || !conversationId) return;
+    const target = urlAgentId
+      ? `/agents/${urlAgentId}/c/${conversationId}`
+      : `/c/${conversationId}`;
+    navigate(target, { replace: true });
+  }, [conversationId, isNewChatRoute, urlAgentId]);
 
   const handleToolAction = useCallback(
     (callId: string, decision: 'approved' | 'denied', comment?: string) => {
@@ -101,7 +176,13 @@ export default function Conversation() {
         .map((a) => ({ id: a.id as string, fileName: a.fileName }));
 
       if (index !== undefined) {
-        dispatch(resendQuery({ index, prompt: trimmedQuestion }));
+        dispatch(
+          resendQuery({
+            index,
+            prompt: trimmedQuestion,
+            keepIdempotencyKey: isRetry,
+          }),
+        );
         handleFetchAnswer({ question: trimmedQuestion, index });
       } else {
         if (!isRetry)
@@ -151,17 +232,22 @@ export default function Conversation() {
     } else if (question && status !== 'loading') {
       if (lastQueryReturnedErr && queries.length > 0) {
         const retryIndex = queries.length - 1;
-        dispatch(
-          updateQuery({
-            index: retryIndex,
-            query: {
-              prompt: question,
-            },
-          }),
-        );
+        // Different prompt = new logical action, fresh idempotency key.
+        const prevPrompt = queries[retryIndex].prompt;
+        const isSamePrompt = prevPrompt === question;
+        if (!isSamePrompt) {
+          dispatch(
+            updateQuery({
+              index: retryIndex,
+              query: {
+                prompt: question,
+              },
+            }),
+          );
+        }
         handleQuestion({
           question,
-          isRetry: true,
+          isRetry: isSamePrompt,
           index: retryIndex,
         });
       } else {
@@ -250,7 +336,19 @@ export default function Conversation() {
             headerContent={
               selectedAgent ? (
                 <div className="flex w-full items-center justify-center py-4">
-                  <SharedAgentCard agent={selectedAgent} />
+                  <SharedAgentCard
+                    agent={selectedAgent}
+                    onEdit={
+                      selectedAgent.id
+                        ? () =>
+                            navigate(
+                              selectedAgent.agent_type === 'workflow'
+                                ? `/agents/workflow/edit/${selectedAgent.id}`
+                                : `/agents/edit/${selectedAgent.id}`,
+                            )
+                        : undefined
+                    }
+                  />
                 </div>
               ) : undefined
             }

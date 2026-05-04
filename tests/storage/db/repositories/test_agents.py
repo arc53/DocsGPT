@@ -232,7 +232,9 @@ class TestUpdateLastUsedAt:
         when = datetime.datetime(2026, 4, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
         assert repo.update(created["id"], "u", {"last_used_at": when}) is True
         fetched = repo.get(created["id"], "u")
-        assert fetched["last_used_at"] == when
+        # ``row_to_dict`` coerces datetimes to ISO strings at the SELECT
+        # boundary; round-trip via ``fromisoformat`` to compare values.
+        assert datetime.datetime.fromisoformat(fetched["last_used_at"]) == when
 
 
 class TestListForUser:

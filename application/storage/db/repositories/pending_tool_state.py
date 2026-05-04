@@ -7,6 +7,11 @@ Mirrors the continuation service's three operations on
 - load_state  → find_one by (conversation_id, user_id)
 - delete_state → delete_one by (conversation_id, user_id)
 
+Adds ``mark_resuming`` so a resumed run can claim a row without
+deleting it; a separate ``revert_stale_resuming`` flips abandoned
+``resuming`` rows back to ``pending`` so a crashed worker doesn't
+strand the user.
+
 Plus a cleanup method for the Celery beat task that replaces Mongo's
 TTL index.
 """
@@ -20,6 +25,7 @@ from typing import Optional
 from sqlalchemy import Connection, text
 
 from application.storage.db.base_repository import row_to_dict
+from application.storage.db.serialization import PGNativeJSONEncoder
 
 PENDING_STATE_TTL_SECONDS = 30 * 60  # 1800 seconds
 
@@ -71,19 +77,24 @@ class PendingToolStateRepository:
                     agent_config = EXCLUDED.agent_config,
                     client_tools = EXCLUDED.client_tools,
                     created_at = EXCLUDED.created_at,
-                    expires_at = EXCLUDED.expires_at
+                    expires_at = EXCLUDED.expires_at,
+                    status = 'pending',
+                    resumed_at = NULL
                 RETURNING *
                 """
             ),
             {
                 "conv_id": conversation_id,
                 "user_id": user_id,
-                "messages": json.dumps(messages),
-                "pending": json.dumps(pending_tool_calls),
-                "tools_dict": json.dumps(tools_dict),
-                "schemas": json.dumps(tool_schemas),
-                "agent_config": json.dumps(agent_config),
-                "client_tools": json.dumps(client_tools) if client_tools is not None else None,
+                "messages": json.dumps(messages, cls=PGNativeJSONEncoder),
+                "pending": json.dumps(pending_tool_calls, cls=PGNativeJSONEncoder),
+                "tools_dict": json.dumps(tools_dict, cls=PGNativeJSONEncoder),
+                "schemas": json.dumps(tool_schemas, cls=PGNativeJSONEncoder),
+                "agent_config": json.dumps(agent_config, cls=PGNativeJSONEncoder),
+                "client_tools": (
+                    json.dumps(client_tools, cls=PGNativeJSONEncoder)
+                    if client_tools is not None else None
+                ),
                 "created_at": now,
                 "expires_at": expires,
             },
@@ -112,6 +123,45 @@ class PendingToolStateRepository:
             {"conv_id": conversation_id, "user_id": user_id},
         )
         return result.rowcount > 0
+
+    def mark_resuming(self, conversation_id: str, user_id: str) -> bool:
+        """Flip a pending row to ``resuming`` and stamp ``resumed_at``."""
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE pending_tool_state
+                SET status = 'resuming', resumed_at = clock_timestamp()
+                WHERE conversation_id = CAST(:conv_id AS uuid)
+                  AND user_id = :user_id
+                  AND status = 'pending'
+                """
+            ),
+            {"conv_id": conversation_id, "user_id": user_id},
+        )
+        return result.rowcount > 0
+
+    def revert_stale_resuming(
+        self,
+        grace_seconds: int = 600,
+        ttl_extension_seconds: int = PENDING_STATE_TTL_SECONDS,
+    ) -> int:
+        """Revert ``resuming`` rows older than ``grace_seconds`` to ``pending``; bump TTL."""
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE pending_tool_state
+                SET status = 'pending',
+                    resumed_at = NULL,
+                    expires_at = clock_timestamp()
+                                 + make_interval(secs => :ttl)
+                WHERE status = 'resuming'
+                  AND resumed_at
+                      < clock_timestamp() - make_interval(secs => :grace)
+                """
+            ),
+            {"grace": grace_seconds, "ttl": ttl_extension_seconds},
+        )
+        return result.rowcount
 
     def cleanup_expired(self) -> int:
         """Delete rows where ``expires_at < now()``.

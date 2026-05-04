@@ -40,7 +40,7 @@ export default function ActionButtons({
         query: { conversationId: null },
       }),
     );
-    navigate('/');
+    navigate('/c/new');
   };
   return (
     <div

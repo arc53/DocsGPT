@@ -218,10 +218,19 @@ class TestCompleteStreamMethod:
 
             decoded_token = {"sub": "user123"}
 
+            # The fresh-question path now reserves a row before agent.gen()
+            # and calls finalize_message at end of stream — assert both fire.
             with patch.object(
-                resource.conversation_service, "save_conversation"
-            ) as mock_save:
-                mock_save.return_value = str(uuid.uuid4())
+                resource.conversation_service, "save_user_question"
+            ) as mock_reserve, patch.object(
+                resource.conversation_service, "finalize_message"
+            ) as mock_finalize:
+                mock_reserve.return_value = {
+                    "conversation_id": str(uuid.uuid4()),
+                    "message_id": str(uuid.uuid4()),
+                    "request_id": "req-1",
+                }
+                mock_finalize.return_value = True
 
                 list(
                     resource.complete_stream(
@@ -234,7 +243,8 @@ class TestCompleteStreamMethod:
                     )
                 )
 
-                mock_save.assert_called_once()
+                mock_reserve.assert_called_once()
+                mock_finalize.assert_called_once()
 
 
 

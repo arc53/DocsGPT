@@ -15,6 +15,7 @@ export function handleFetchAnswer(
   attachments?: string[],
   save_conversation = true,
   modelId?: string,
+  idempotencyKey?: string,
 ): Promise<
   | {
       result: any;
@@ -66,8 +67,10 @@ export function handleFetchAnswer(
       payload.retriever = selectedDocs[0].retriever as string;
     }
   }
+  const headers: Record<string, string> = {};
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   return conversationService
-    .answer(payload, token, signal)
+    .answer(payload, token, signal, headers)
     .then((response) => {
       if (response.ok) {
         return response.json();
@@ -104,6 +107,7 @@ export function handleFetchAnswerSteaming(
   attachments?: string[],
   save_conversation = true,
   modelId?: string,
+  idempotencyKey?: string,
 ): Promise<Answer> {
   const payload: RetrievalPayload = {
     question: question,
@@ -137,9 +141,11 @@ export function handleFetchAnswerSteaming(
     }
   }
 
+  const headers: Record<string, string> = {};
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   return new Promise<Answer>((resolve, reject) => {
     conversationService
-      .answerStream(payload, token, signal)
+      .answerStream(payload, token, signal, headers)
       .then((response) => {
         if (!response.body) throw Error('No response body');
 
@@ -199,15 +205,18 @@ export function handleSubmitToolActions(
   token: string | null,
   signal: AbortSignal,
   onEvent: (event: MessageEvent) => void,
+  idempotencyKey?: string,
 ): Promise<Answer> {
   const payload = {
     conversation_id: conversationId,
     tool_actions: toolActions,
   };
 
+  const headers: Record<string, string> = {};
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   return new Promise<Answer>((resolve, reject) => {
     conversationService
-      .answerStream(payload, token, signal)
+      .answerStream(payload, token, signal, headers)
       .then((response) => {
         if (!response.body) throw Error('No response body');
 

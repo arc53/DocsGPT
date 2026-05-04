@@ -121,7 +121,7 @@ class TestSourcesUploadExtra:
 
         fake_task = MagicMock(id="t")
         with patch(
-            "application.api.user.sources.upload.ingest_remote.delay",
+            "application.api.user.sources.upload.ingest_remote.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/remote", method="POST",
@@ -168,7 +168,7 @@ class TestSourcesUploadExtra:
             ".get_supported_connectors",
             return_value={"google_drive"},
         ), patch(
-            "application.api.user.sources.upload.ingest_connector_task.delay",
+            "application.api.user.sources.upload.ingest_connector_task.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/remote", method="POST",

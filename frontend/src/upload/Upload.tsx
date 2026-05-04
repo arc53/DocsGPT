@@ -535,6 +535,7 @@ function Upload({
 
     xhr.open('POST', `${apiHost}/api/upload`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('Idempotency-Key', clientTaskId);
     xhr.send(formData);
   };
 
@@ -662,6 +663,7 @@ function Upload({
 
     xhr.open('POST', endpoint);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('Idempotency-Key', clientTaskId);
     xhr.send(formData);
   };
 

@@ -22,6 +22,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.models import conversations_table, conversation_messages_table
+from application.storage.db.serialization import PGNativeJSONEncoder
 
 
 def _message_row_to_dict(row) -> dict:
@@ -452,7 +453,7 @@ class ConversationsRepository:
             ),
             {
                 "id": conversation_id,
-                "point": json.dumps(point, default=str),
+                "point": json.dumps(point, cls=PGNativeJSONEncoder),
                 "max_points": int(max_points),
             },
         )
@@ -631,6 +632,200 @@ class ConversationsRepository:
         )
         result = self._conn.execute(text(sql), params)
         return result.rowcount > 0
+
+    def reserve_message(
+        self,
+        conversation_id: str,
+        *,
+        prompt: str,
+        placeholder_response: str,
+        request_id: str | None = None,
+        status: str = "pending",
+        attachments: list[str] | None = None,
+        model_id: str | None = None,
+        metadata: dict | None = None,
+    ) -> dict:
+        """Pre-persist a placeholder assistant message before the LLM call."""
+        self._conn.execute(
+            text(
+                "SELECT id FROM conversations "
+                "WHERE id = CAST(:conv_id AS uuid) FOR UPDATE"
+            ),
+            {"conv_id": conversation_id},
+        )
+        next_pos = self._conn.execute(
+            text(
+                "SELECT COALESCE(MAX(position), -1) + 1 AS next_pos "
+                "FROM conversation_messages "
+                "WHERE conversation_id = CAST(:conv_id AS uuid)"
+            ),
+            {"conv_id": conversation_id},
+        ).scalar()
+
+        values = {
+            "conversation_id": conversation_id,
+            "position": next_pos,
+            "prompt": prompt,
+            "response": placeholder_response,
+            "status": status,
+            "request_id": request_id,
+            "model_id": model_id,
+            "message_metadata": metadata or {},
+        }
+        if attachments:
+            resolved = self._resolve_attachment_refs(
+                [str(a) for a in attachments],
+            )
+            if resolved:
+                values["attachments"] = resolved
+
+        stmt = (
+            pg_insert(conversation_messages_table)
+            .values(**values)
+            .returning(conversation_messages_table)
+        )
+        result = self._conn.execute(stmt)
+        self._conn.execute(
+            text(
+                "UPDATE conversations SET updated_at = now() "
+                "WHERE id = CAST(:id AS uuid)"
+            ),
+            {"id": conversation_id},
+        )
+        return _message_row_to_dict(result.fetchone())
+
+    def update_message_by_id(
+        self, message_id: str, fields: dict,
+        *, only_if_non_terminal: bool = False,
+    ) -> bool:
+        """Update specific fields on a message identified by its UUID.
+
+        ``metadata`` is merged into the existing JSONB rather than
+        overwritten, so a reconciler-set ``reconcile_attempts`` survives
+        a successful late finalize. When ``only_if_non_terminal`` is
+        True, the update is gated so a late finalize cannot retract a
+        reconciler-set ``failed`` (or a prior ``complete``).
+        """
+        if not looks_like_uuid(message_id):
+            return False
+        allowed = {
+            "prompt", "response", "thought", "sources", "tool_calls",
+            "attachments", "model_id", "metadata", "timestamp", "status",
+            "request_id", "feedback", "feedback_timestamp",
+        }
+        filtered = {k: v for k, v in fields.items() if k in allowed}
+        if not filtered:
+            return False
+
+        api_to_col = {"metadata": "message_metadata"}
+
+        set_parts = []
+        params: dict = {"id": message_id}
+        for key, val in filtered.items():
+            col = api_to_col.get(key, key)
+            if key == "metadata":
+                if val is None:
+                    set_parts.append(f"{col} = NULL")
+                else:
+                    set_parts.append(
+                        f"{col} = COALESCE({col}, '{{}}'::jsonb) "
+                        f"|| CAST(:{col} AS jsonb)"
+                    )
+                    params[col] = (
+                        json.dumps(val) if not isinstance(val, str) else val
+                    )
+            elif key in ("sources", "tool_calls", "feedback"):
+                set_parts.append(f"{col} = CAST(:{col} AS jsonb)")
+                if val is None:
+                    params[col] = None
+                else:
+                    params[col] = (
+                        json.dumps(val) if not isinstance(val, str) else val
+                    )
+            elif key == "attachments":
+                set_parts.append(f"{col} = CAST(:{col} AS uuid[])")
+                params[col] = self._resolve_attachment_refs(
+                    [str(a) for a in val] if val else [],
+                )
+            else:
+                set_parts.append(f"{col} = :{col}")
+                params[col] = val
+
+        set_parts.append("updated_at = now()")
+        where_clauses = ["id = CAST(:id AS uuid)"]
+        if only_if_non_terminal:
+            where_clauses.append("status NOT IN ('complete', 'failed')")
+        sql = (
+            f"UPDATE conversation_messages SET {', '.join(set_parts)} "
+            f"WHERE {' AND '.join(where_clauses)}"
+        )
+        result = self._conn.execute(text(sql), params)
+        return result.rowcount > 0
+
+    def update_message_status(
+        self, message_id: str, status: str,
+    ) -> bool:
+        """Cheap status-only transition (e.g. pending → streaming).
+
+        Only flips non-terminal rows: a reconciler-set ``failed`` row
+        stays put so the late streaming chunk doesn't silently retract
+        the alert.
+        """
+        if not looks_like_uuid(message_id):
+            return False
+        result = self._conn.execute(
+            text(
+                "UPDATE conversation_messages SET status = :status, "
+                "updated_at = now() "
+                "WHERE id = CAST(:id AS uuid) "
+                "AND status NOT IN ('complete', 'failed')"
+            ),
+            {"id": message_id, "status": status},
+        )
+        return result.rowcount > 0
+
+    def heartbeat_message(self, message_id: str) -> bool:
+        """Stamp ``message_metadata.last_heartbeat_at`` with ``clock_timestamp()``.
+
+        The reconciler's staleness check uses ``GREATEST(timestamp,
+        last_heartbeat_at)``, so this call extends a long-running
+        stream's effective freshness without touching ``timestamp`` (the
+        creation time, used for history sort) or ``status`` (the WAL
+        marker). Skips terminal rows so a late heartbeat can't silently
+        retract a reconciler-set ``failed``.
+        """
+        if not looks_like_uuid(message_id):
+            return False
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE conversation_messages
+                SET message_metadata = jsonb_set(
+                    COALESCE(message_metadata, '{}'::jsonb),
+                    '{last_heartbeat_at}',
+                    to_jsonb(clock_timestamp())
+                )
+                WHERE id = CAST(:id AS uuid)
+                  AND status NOT IN ('complete', 'failed')
+                """
+            ),
+            {"id": message_id},
+        )
+        return result.rowcount > 0
+
+    def confirm_executed_tool_calls(self, message_id: str) -> int:
+        """Flip ``tool_call_attempts.status='executed' → 'confirmed'`` for the message."""
+        if not looks_like_uuid(message_id):
+            return 0
+        result = self._conn.execute(
+            text(
+                "UPDATE tool_call_attempts SET status = 'confirmed', "
+                "updated_at = now() "
+                "WHERE message_id = CAST(:mid AS uuid) AND status = 'executed'"
+            ),
+            {"mid": message_id},
+        )
+        return result.rowcount or 0
 
     def truncate_after(self, conversation_id: str, keep_up_to: int) -> int:
         """Delete messages with position > keep_up_to.

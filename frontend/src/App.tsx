@@ -85,6 +85,13 @@ export default function App() {
           }
         >
           <Route index element={<Conversation />} />
+          {/* One dynamic route (accepting "new" or a UUID) so the
+              /c/new → /c/<id> replace doesn't remount Conversation. */}
+          <Route path="/c/:conversationId" element={<Conversation />} />
+          <Route
+            path="/agents/:agentId/c/:conversationId"
+            element={<Conversation />}
+          />
           <Route path="/settings/*" element={<Setting />} />
           <Route path="/agents/*" element={<Agents />} />
         </Route>

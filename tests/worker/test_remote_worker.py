@@ -14,6 +14,7 @@ assert one seeded row is discovered and forwarded.
 from __future__ import annotations
 
 import os
+import uuid
 from unittest.mock import MagicMock
 
 import pytest
@@ -41,7 +42,7 @@ def _mock_remote_pipeline(monkeypatch):
     monkeypatch.setattr(
         worker,
         "embed_and_store_documents",
-        lambda docs, full_path, source_id, task: None,
+        lambda docs, full_path, source_id, task, **kw: None,
     )
     monkeypatch.setattr(
         worker, "upload_index", lambda full_path, file_data: None
@@ -90,7 +91,9 @@ class TestRemoteWorkerSyncUpdatesDate:
 
         refreshed = SourcesRepository(pg_conn).get(source_id, "bob")
         assert refreshed is not None
-        assert refreshed["date"] > old_date, (
+        # row_to_dict coerces datetimes to ISO 8601 strings; UTC
+        # timezone-aware ISO strings sort chronologically.
+        assert refreshed["date"] > old_date.isoformat(), (
             "remote_worker(sync) should push sources.date forward"
         )
 
@@ -210,3 +213,69 @@ class TestRemoteWorkerPathTraversal:
             f"rmtree target {rmtree_targets[0]} escaped {user_root}"
         )
         assert malicious_name not in "".join(created_paths + deleted_paths)
+
+
+@pytest.mark.unit
+class TestRemoteWorkerDeterministicSourceId:
+    """Upload-mode ``remote_worker`` derives a stable ``source_id`` from the key."""
+
+    def test_uses_uuid5_when_idempotency_key_present(
+        self,
+        tmp_path,
+        task_self,
+        monkeypatch,
+        _mock_remote_pipeline,
+    ):
+        from application import worker
+
+        captured: list[dict] = []
+        monkeypatch.setattr(
+            worker, "upload_index",
+            lambda full_path, file_data: captured.append(file_data),
+        )
+
+        for _ in range(2):
+            worker.remote_worker(
+                task_self,
+                {"urls": ["http://example.com"]},
+                "feed",
+                "bob",
+                "crawler",
+                directory=str(tmp_path / "temp"),
+                operation_mode="upload",
+                idempotency_key="abc",
+            )
+
+        expected = str(uuid.uuid5(worker.DOCSGPT_INGEST_NAMESPACE, "abc"))
+        assert len(captured) == 2
+        assert captured[0]["id"] == expected
+        assert captured[1]["id"] == expected
+
+    def test_falls_back_to_uuid4_without_key(
+        self,
+        tmp_path,
+        task_self,
+        monkeypatch,
+        _mock_remote_pipeline,
+    ):
+        from application import worker
+
+        captured: list[dict] = []
+        monkeypatch.setattr(
+            worker, "upload_index",
+            lambda full_path, file_data: captured.append(file_data),
+        )
+
+        for _ in range(2):
+            worker.remote_worker(
+                task_self,
+                {"urls": ["http://example.com"]},
+                "feed",
+                "bob",
+                "crawler",
+                directory=str(tmp_path / "temp"),
+                operation_mode="upload",
+            )
+
+        assert len(captured) == 2
+        assert captured[0]["id"] != captured[1]["id"]

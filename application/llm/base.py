@@ -80,6 +80,14 @@ class BaseLLM(ABC):
                     agent_id=self.agent_id,
                     model_user_id=self.model_user_id,
                 )
+                # Tag the fallback LLM so its rows land as
+                # ``source='fallback'`` in cost-attribution dashboards.
+                # Propagate the parent's ``_request_id`` so a user
+                # request that ran fallback is still grouped under one id.
+                self._fallback_llm._token_usage_source = "fallback"
+                self._fallback_llm._request_id = getattr(
+                    self, "_request_id", None,
+                )
                 logger.info(
                     f"Fallback LLM initialized from agent backup model: "
                     f"{provider}/{backup_model_id}"
@@ -105,6 +113,11 @@ class BaseLLM(ABC):
                     model_id=settings.FALLBACK_LLM_NAME,
                     agent_id=self.agent_id,
                     model_user_id=self.model_user_id,
+                )
+                # Same rationale as the agent-backup branch.
+                self._fallback_llm._token_usage_source = "fallback"
+                self._fallback_llm._request_id = getattr(
+                    self, "_request_id", None,
                 )
                 logger.info(
                     f"Fallback LLM initialized from global settings: "

@@ -84,6 +84,84 @@ class TestCountInRange:
         )
         assert count == 1
 
+    def test_distinct_request_id_collapses_multi_call_stream(self, pg_conn):
+        """A multi-tool agent run produces N rows with the same
+        ``request_id`` but counts as one user request."""
+        repo = _repo(pg_conn)
+        rid = "req-multi-1"
+        # 4 LLM calls within a single user request.
+        for _ in range(4):
+            repo.insert(
+                user_id="u-multi",
+                prompt_tokens=10,
+                generated_tokens=20,
+                request_id=rid,
+            )
+        # And a separate request from the same user.
+        repo.insert(
+            user_id="u-multi",
+            prompt_tokens=5,
+            generated_tokens=5,
+            request_id="req-multi-2",
+        )
+        count = repo.count_in_range(
+            start=_now() - timedelta(minutes=1),
+            end=_now() + timedelta(minutes=1),
+            user_id="u-multi",
+        )
+        assert count == 2
+
+    def test_excludes_side_channel_sources(self, pg_conn):
+        """Title / compression / rag_condense / fallback rows don't tick
+        the request limit — only ``agent_stream`` rows count.
+        """
+        repo = _repo(pg_conn)
+        for src in ("title", "compression", "rag_condense", "fallback"):
+            repo.insert(
+                user_id="u-side",
+                prompt_tokens=5,
+                generated_tokens=5,
+                source=src,
+                request_id="req-side-x",
+            )
+        # One real user request.
+        repo.insert(
+            user_id="u-side",
+            prompt_tokens=5,
+            generated_tokens=5,
+            source="agent_stream",
+            request_id="req-side-x",
+        )
+        count = repo.count_in_range(
+            start=_now() - timedelta(minutes=1),
+            end=_now() + timedelta(minutes=1),
+            user_id="u-side",
+        )
+        assert count == 1
+
+    def test_mixes_legacy_null_and_new_request_id_rows(self, pg_conn):
+        """Pre-migration rows have ``request_id=NULL`` and are counted
+        one-per-row; new rows are DISTINCT'd. The two branches sum.
+        """
+        repo = _repo(pg_conn)
+        # Two legacy rows (NULL request_id) — count as 2.
+        repo.insert(user_id="u-mix", prompt_tokens=1, generated_tokens=1)
+        repo.insert(user_id="u-mix", prompt_tokens=1, generated_tokens=1)
+        # One new request with 3 rows under the same id — counts as 1.
+        for _ in range(3):
+            repo.insert(
+                user_id="u-mix",
+                prompt_tokens=1,
+                generated_tokens=1,
+                request_id="req-mix",
+            )
+        count = repo.count_in_range(
+            start=_now() - timedelta(minutes=1),
+            end=_now() + timedelta(minutes=1),
+            user_id="u-mix",
+        )
+        assert count == 3
+
 
 class TestBucketedTotals:
     def test_day_bucket_sums_per_day(self, pg_conn):

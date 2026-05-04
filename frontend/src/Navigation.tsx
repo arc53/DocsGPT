@@ -25,6 +25,7 @@ import UnPin from './assets/unpin.svg';
 import Help from './components/Help';
 import {
   handleAbort,
+  loadConversation,
   selectQueries,
   setConversation,
   updateConversationId,
@@ -50,6 +51,7 @@ import {
   setSelectedAgent,
   setSharedAgents,
 } from './preferences/preferenceSlice';
+import { AppDispatch } from './store';
 import Upload from './upload/Upload';
 
 interface NavigationProps {
@@ -58,7 +60,7 @@ interface NavigationProps {
 }
 
 export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
 
   const { t } = useTranslation();
@@ -182,7 +184,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     resetConversation();
     dispatch(setSelectedAgent(agent));
     if (isMobile || isTablet) setNavOpen(!navOpen);
-    navigate('/');
+    navigate(agent.id ? `/agents/${agent.id}/c/new` : '/c/new');
   };
 
   const handleTogglePin = (agent: Agent) => {
@@ -200,20 +202,21 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     try {
       dispatch(setSelectedAgent(null));
 
-      const response = await conversationService.getConversation(index, token);
-      if (!response.ok) {
-        navigate('/');
+      // Pre-fetch to choose the route shape (owned-agent / shared / none).
+      const result = await dispatch(
+        loadConversation({ id: index, force: true }),
+      ).unwrap();
+      // Stale: a newer load has already updated Redux; the URL is
+      // wherever that newer flow lands, leave it alone.
+      if (result.stale) return;
+      const data = result.data;
+      if (!data) {
+        navigate('/c/new');
         return;
       }
 
-      const data = await response.json();
-      if (!data) return;
-
-      dispatch(setConversation(data.queries));
-      dispatch(updateConversationId({ query: { conversationId: index } }));
-
       if (!data.agent_id) {
-        navigate('/');
+        navigate(`/c/${index}`);
         return;
       }
 
@@ -224,7 +227,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           token,
         );
         if (!sharedResponse.ok) {
-          navigate('/');
+          navigate(`/c/${index}`);
           return;
         }
         agent = await sharedResponse.json();
@@ -232,7 +235,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       } else {
         const agentResponse = await userService.getAgent(data.agent_id, token);
         if (!agentResponse.ok) {
-          navigate('/');
+          navigate(`/c/${index}`);
           return;
         }
         agent = await agentResponse.json();
@@ -240,12 +243,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           navigate(`/agents/shared/${agent.shared_token}`);
         } else {
           await Promise.resolve(dispatch(setSelectedAgent(agent)));
-          navigate('/');
+          navigate(`/agents/${data.agent_id}/c/${index}`);
         }
       }
     } catch (error) {
       console.error('Error handling conversation click:', error);
-      navigate('/');
+      navigate('/c/new');
     }
   };
 
@@ -264,6 +267,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     if (queries && queries?.length > 0) {
       resetConversation();
     }
+    navigate('/c/new');
   };
 
   async function updateConversationName(updatedConversation: {
@@ -275,7 +279,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .then((response) => response.json())
       .then((data) => {
         if (data) {
-          navigate('/');
           fetchConversations();
         }
       })
@@ -370,7 +373,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </button>
         </div>
         <NavLink
-          to={'/'}
+          to={'/c/new'}
           onClick={() => {
             if (isMobile || isTablet) {
               setNavOpen(!navOpen);

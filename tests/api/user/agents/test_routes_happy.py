@@ -710,6 +710,91 @@ class TestUpdateAgent:
             response = UpdateAgent().put(str(agent["id"]))
         assert response.status_code == 400
 
+    def test_publish_with_default_source_succeeds(self, app, pg_conn):
+        """The frontend's auto-selected "Default" source has no UUID — it
+        sends ``source: ''`` and ``sources: []`` with ``retriever: 'classic'``.
+        Pre-fix, the publish gate rejected this with
+        ``Missing or invalid required fields: Source``. The retriever
+        carries the runtime identity, so the gate now accepts it.
+        """
+        from application.api.user.agents.routes import UpdateAgent
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.prompts import PromptsRepository
+
+        user = "u-publish-default"
+        # Draft agent with retriever='classic', no source_id, prompt + chunks set.
+        agent = _seed_agent(
+            pg_conn, user=user, status="draft",
+            with_source=False, retriever="classic",
+        )
+        prompt = PromptsRepository(pg_conn).create(user, "p", "c")
+        AgentsRepository(pg_conn).update(
+            str(agent["id"]), user,
+            {
+                "prompt_id": str(prompt["id"]),
+                "chunks": 2,
+                "agent_type": "classic",
+            },
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={
+                "name": "n",
+                "description": "d",
+                "status": "published",
+                "source": "",
+                "sources": [],
+                "retriever": "classic",
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+        assert response.status_code == 200, (
+            f"unexpected error: {response.json}"
+        )
+
+    def test_publish_without_source_or_retriever_returns_400(
+        self, app, pg_conn,
+    ):
+        """If neither a source nor a retriever is configured, the gate
+        still trips — the agent has no way to retrieve anything."""
+        from application.api.user.agents.routes import UpdateAgent
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.prompts import PromptsRepository
+
+        user = "u-publish-no-retriever"
+        agent = _seed_agent(
+            pg_conn, user=user, status="draft",
+            with_source=False, retriever="",
+        )
+        prompt = PromptsRepository(pg_conn).create(user, "p", "c")
+        AgentsRepository(pg_conn).update(
+            str(agent["id"]), user,
+            {
+                "prompt_id": str(prompt["id"]),
+                "chunks": 2,
+                "agent_type": "classic",
+            },
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={
+                "name": "n",
+                "description": "d",
+                "status": "published",
+                "source": "",
+                "sources": [],
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+        assert response.status_code == 400
+        assert "Source or retriever" in response.json.get("message", "")
+
     def test_publishing_generates_api_key(self, app, pg_conn):
         from application.api.user.agents.routes import UpdateAgent
         from application.storage.db.repositories.agents import AgentsRepository
