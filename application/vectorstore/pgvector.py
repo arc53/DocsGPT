@@ -1,5 +1,8 @@
 import logging
 from typing import List, Optional, Any, Dict
+
+from psycopg.types.json import Jsonb
+
 from application.core.settings import settings
 from application.vectorstore.base import BaseVectorStore
 from application.vectorstore.document_class import Document
@@ -175,7 +178,7 @@ class PGVectorStore(BaseVectorStore):
             for text, embedding, metadata in zip(texts, embeddings, metadatas):
                 cursor.execute(
                     insert_query,
-                    (text, embedding, metadata, self._source_id)
+                    (text, embedding, Jsonb(metadata), self._source_id)
                 )
                 inserted_id = cursor.fetchone()[0]
                 inserted_ids.append(str(inserted_id))
@@ -266,7 +269,7 @@ class PGVectorStore(BaseVectorStore):
             
             cursor.execute(
                 insert_query,
-                (text, embeddings[0], final_metadata, self._source_id)
+                (text, embeddings[0], Jsonb(final_metadata), self._source_id)
             )
             inserted_id = cursor.fetchone()[0]
             conn.commit()
