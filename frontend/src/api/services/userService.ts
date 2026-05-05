@@ -191,6 +191,42 @@ const userService = {
       token,
     );
   },
+  getConnectorAuthUrl: (provider: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.CONNECTOR_AUTH(provider), token),
+  getConnectorFiles: (
+    data: any,
+    token: string | null,
+    signal?: AbortSignal,
+  ): Promise<any> =>
+    apiClient.post(endpoints.USER.CONNECTOR_FILES, data, token, {}, signal),
+  validateConnectorSession: (
+    provider: string,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.post(
+      endpoints.USER.CONNECTOR_VALIDATE_SESSION,
+      {
+        provider,
+        session_token: getSessionToken(provider),
+      },
+      token,
+    ),
+  disconnectConnector: (
+    provider: string,
+    sessionToken: string,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.post(
+      endpoints.USER.CONNECTOR_DISCONNECT,
+      { provider, session_token: sessionToken },
+      token,
+    ),
+  textToSpeech: (
+    text: string,
+    token: string | null,
+    signal?: AbortSignal,
+  ): Promise<any> =>
+    apiClient.post(endpoints.USER.TTS, { text }, token, {}, signal),
   getAgentFolders: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.AGENT_FOLDERS, token),
   createAgentFolder: (
