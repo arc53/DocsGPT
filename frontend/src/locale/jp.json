@@ -54,6 +54,7 @@
     },
     "sources": {
       "title": "ここでは、利用可能なすべてのソースファイルとアップロードしたファイルを管理できます。",
+      "subtitle": "レスポンスを機能させるドキュメントとナレッジソースをアップロードして管理",
       "label": "ソース",
       "name": "ソース名",
       "date": "ベクトル日付",
@@ -118,6 +119,7 @@
     },
     "analytics": {
       "label": "分析",
+      "subtitle": "アカウント全体のメッセージ量、トークン使用量、ユーザーフィードバックを追跡",
       "filterByChatbot": "チャットボットでフィルター",
       "selectChatbot": "チャットボットを選択",
       "filterOptions": {
@@ -137,6 +139,7 @@
     },
     "logs": {
       "label": "ログ",
+      "subtitle": "APIコールと会話ログを表示・監視",
       "filterByChatbot": "チャットボットでフィルター",
       "selectChatbot": "チャットボットを選択",
       "none": "なし",
@@ -144,6 +147,7 @@
     },
     "tools": {
       "label": "ツール",
+      "subtitle": "エージェントを強化するツールやインテグレーションを検索、接続、設定",
       "searchPlaceholder": "検索...",
       "addTool": "ツールを追加",
       "noToolsFound": "ツールが見つかりません",
@@ -240,6 +244,71 @@
         }
       }
     },
+    "customModels": {
+      "label": "カスタムモデル",
+      "subtitle": "OpenAI 互換のモデルを自分で接続できます。",
+      "addModel": "モデルを追加",
+      "empty": "モデルが見つかりません",
+      "searchPlaceholder": "モデルを検索...",
+      "modalSubtitle": "OpenAI 互換のエンドポイントを接続できます (Mistral、Together、vLLM など)。",
+      "addTitle": "カスタムモデルを追加",
+      "editTitle": "カスタムモデルを編集",
+      "save": "保存",
+      "saving": "保存中",
+      "testConnection": "接続をテスト",
+      "testing": "テスト中",
+      "testSuccess": "接続に成功しました。",
+      "testHintNew": "接続テストを有効にするには、ベース URL、モデル ID、API キーを入力してください。",
+      "disabledBadge": "無効",
+      "deleteWarning": "カスタムモデル「{{modelName}}」を削除してもよろしいですか?",
+      "actionsMenuAria": "{{modelName}} のアクション",
+      "modelsGroup": {
+        "builtin": "DocsGPT モデル",
+        "user": "マイモデル"
+      },
+      "actions": {
+        "edit": "編集",
+        "delete": "削除"
+      },
+      "fields": {
+        "displayName": "表示名",
+        "modelId": "モデル ID",
+        "description": "説明",
+        "baseUrl": "ベース URL",
+        "apiKey": "API キー"
+      },
+      "placeholders": {
+        "displayName": "My Mistral",
+        "modelId": "例: mistral-large-latest",
+        "description": "説明 (任意)",
+        "baseUrl": "https://api.mistral.ai/v1",
+        "apiKey": "sk-...",
+        "apiKeyEdit": "既存のキーを保持する場合は空欄のまま"
+      },
+      "hints": {
+        "apiKeyEdit": "既存のキーを保持するには空欄のままにしてください。"
+      },
+      "capabilities": {
+        "title": "機能",
+        "contextWindowShort": "コンテキストウィンドウ",
+        "chips": {
+          "tools": "ツール",
+          "structuredOutput": "構造化出力",
+          "images": "画像"
+        }
+      },
+      "errors": {
+        "displayNameRequired": "表示名は必須です",
+        "modelIdRequired": "モデル ID は必須です",
+        "baseUrlRequired": "ベース URL は必須です",
+        "baseUrlScheme": "ベース URL は http:// または https:// で始まる必要があります",
+        "baseUrlInvalid": "有効な URL を入力してください",
+        "apiKeyRequired": "API キーは必須です",
+        "contextWindowRange": "コンテキストウィンドウは 1,000 から 10,000,000 の範囲で指定してください",
+        "saveFailed": "カスタムモデルの保存に失敗しました",
+        "testFailed": "接続テストに失敗しました"
+      }
+    },
     "scrollTabsLeft": "タブを左にスクロール",
     "tabsAriaLabel": "設定タブ",
     "scrollTabsRight": "タブを右にスクロール"
@@ -321,6 +390,14 @@
         "s3": {
           "label": "Amazon S3",
           "heading": "Amazon S3からコンテンツを追加"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "SharePointからアップロード"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "Confluenceからアップロード"
         }
       },
       "connectors": {
@@ -340,6 +417,24 @@
           "validateFailed": "セッションの検証に失敗しました。再接続してください。",
           "noSession": "有効なセッションが見つかりません。Google Driveに再接続してください。",
           "noAccessToken": "アクセストークンが利用できません。Google Driveに再接続してください。",
+          "pickerFailed": "ファイルピッカーを開けませんでした。もう一度お試しください。",
+          "selectedFiles": "選択されたファイル",
+          "selectFiles": "ファイルを選択",
+          "loading": "読み込み中...",
+          "noFilesSelected": "ファイルまたはフォルダが選択されていません",
+          "folders": "フォルダ",
+          "files": "ファイル",
+          "remove": "削除",
+          "folderAlt": "フォルダ",
+          "fileAlt": "ファイル"
+        },
+        "sharePoint": {
+          "connect": "SharePointに接続",
+          "sessionExpired": "セッションが期限切れです。SharePointに再接続してください。",
+          "sessionExpiredGeneric": "セッションが期限切れです。アカウントに再接続してください。",
+          "validateFailed": "セッションの検証に失敗しました。再接続してください。",
+          "noSession": "有効なセッションが見つかりません。SharePointに再接続してください。",
+          "noAccessToken": "アクセストークンが利用できません。SharePointに再接続してください。",
           "pickerFailed": "ファイルピッカーを開けませんでした。もう一度お試しください。",
           "selectedFiles": "選択されたファイル",
           "selectFiles": "ファイルを選択",
@@ -514,6 +609,7 @@
   },
   "agents": {
     "title": "エージェント",
+    "edit": "編集",
     "description": "指示、追加知識、スキルの組み合わせを含むDocsGPTのカスタムバージョンを発見して作成します",
     "newAgent": "新しいエージェント",
     "backToAll": "すべてのエージェントに戻る",
@@ -615,7 +711,9 @@
         "tokenLimiting": "トークン制限",
         "tokenLimitingDescription": "このエージェントが使用できる1日の合計トークン数を制限します",
         "requestLimiting": "リクエスト制限",
-        "requestLimitingDescription": "このエージェントに対して行える1日の合計リクエスト数を制限します"
+        "requestLimitingDescription": "このエージェントに対して行える1日の合計リクエスト数を制限します",
+        "systemPromptOverride": "プロンプトの上書きを許可",
+        "systemPromptOverrideDescription": "v1 API呼び出し元がこのエージェントのシステムプロンプトを置き換えることを許可します"
       },
       "preview": {
         "publishedPreview": "公開されたエージェントはここでプレビューできます"
@@ -671,7 +769,10 @@
     "itemsSelected": "{{count}} 件選択済み",
     "name": "名前",
     "lastModified": "最終更新日",
-    "size": "サイズ"
+    "size": "サイズ",
+    "myFiles": "マイファイル",
+    "sharedWithMe": "共有アイテム",
+    "loadingMore": "さらに読み込み中..."
   },
   "actionButtons": {
     "openNewChat": "新しいチャットを開く",

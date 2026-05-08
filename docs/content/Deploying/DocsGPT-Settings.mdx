@@ -3,6 +3,8 @@ title: DocsGPT Settings
 description: Configure your DocsGPT application by understanding the basic settings.
 ---
 
+import { Callout } from 'nextra/components'
+
 # DocsGPT Settings
 
 DocsGPT is highly configurable, allowing you to tailor it to your specific needs and preferences. You can control various aspects of the application, from choosing the Large Language Model (LLM) provider to selecting embedding models and vector stores.
@@ -65,6 +67,8 @@ Here are some of the most fundamental settings you'll likely want to configure:
 
 - **`OPENAI_BASE_URL`**: Specifically used when `LLM_PROVIDER` is set to `openai` but you are connecting to a local inference engine (like Ollama, Llama.cpp, etc.) that exposes an OpenAI-compatible API. This setting tells DocsGPT where to find your local LLM server.
 
+- **`STT_PROVIDER`**: Selects the speech-to-text provider used for microphone transcription in chat and for audio file ingestion through the parser pipeline.
+
 ## Configuration Examples
 
 Let's look at some concrete examples of how to configure these settings in your `.env` file.
@@ -94,6 +98,125 @@ EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2 # You can al
 ```
 
 In this case, even though you are using Ollama locally, `LLM_PROVIDER` is set to `openai` because Ollama (and many other local inference engines) are designed to be API-compatible with OpenAI. `OPENAI_BASE_URL` points DocsGPT to the local Ollama server.
+
+## Adding Custom Models (`MODELS_CONFIG_DIR`)
+
+DocsGPT ships with a built-in catalog of models for the providers it
+supports out of the box (OpenAI, Anthropic, Google, Groq, OpenRouter,
+Novita, Azure OpenAI, Hugging Face, DocsGPT). To add **your own
+models** without forking the repo — for example, a Mistral or Together
+account, a self-hosted vLLM endpoint, or any other OpenAI-compatible
+API — point `MODELS_CONFIG_DIR` at a directory of YAML files.
+
+```
+MODELS_CONFIG_DIR=/etc/docsgpt/models
+MISTRAL_API_KEY=sk-...
+```
+
+A minimal YAML for one provider:
+
+```yaml
+# /etc/docsgpt/models/mistral.yaml
+provider: openai_compatible
+display_provider: mistral
+api_key_env: MISTRAL_API_KEY
+base_url: https://api.mistral.ai/v1
+defaults:
+  supports_tools: true
+  context_window: 128000
+models:
+  - id: mistral-large-latest
+    display_name: Mistral Large
+  - id: mistral-small-latest
+    display_name: Mistral Small
+```
+
+After restart, those models appear in `/api/models` and are selectable
+in the UI. A working template lives at
+`application/core/models/examples/mistral.yaml.example`.
+
+**What you can do:**
+
+- Add new `openai_compatible` providers (Mistral, Together, Fireworks,
+  Ollama, vLLM, ...) — one YAML per provider, each with its own
+  `api_key_env` and `base_url`.
+- Extend an existing provider's catalog by dropping a YAML with the
+  same `provider:` value as the built-in (e.g. `provider: anthropic`
+  with extra models).
+- Override a built-in model's capabilities by re-declaring the same
+  `id` — later wins, override is logged at `WARNING`.
+
+**What you cannot do via `MODELS_CONFIG_DIR`:** add a brand-new
+non-OpenAI provider. That requires a Python plugin under
+`application/llm/providers/`. See
+`application/core/models/README.md` for the full schema reference.
+
+### Docker
+
+Mount the directory and set the env var:
+
+```yaml
+# docker-compose.yml
+services:
+  app:
+    image: arc53/docsgpt
+    environment:
+      MODELS_CONFIG_DIR: /etc/docsgpt/models
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY}
+    volumes:
+      - ./my-models:/etc/docsgpt/models:ro
+```
+
+### Misconfiguration
+
+If `MODELS_CONFIG_DIR` is set but the path doesn't exist (or isn't a
+directory), the app logs a `WARNING` at boot and continues with just
+the built-in catalog — it does **not** fail to start. If a YAML
+declares an unknown provider name or has a schema error, the app
+**does** fail to start, with the offending file path in the message.
+
+## Speech-to-Text Settings
+
+DocsGPT can transcribe audio in two places:
+
+- Voice input in the chat.
+- Audio file ingestion. Uploaded `.wav`, `.mp3`, `.m4a`, `.ogg`, and `.webm` files are transcribed first and then passed through the normal parser, chunking, embedding, and indexing pipeline.
+
+The settings below control speech-to-text behaviour for both voice input and audio file ingestion.
+
+| Setting | Purpose | Typical values |
+| --- | --- | --- |
+| `STT_PROVIDER` | Speech-to-text backend provider. | `openai`, `faster_whisper` |
+| `OPENAI_STT_MODEL` | OpenAI transcription model used when `STT_PROVIDER=openai`. | `gpt-4o-mini-transcribe` |
+| `STT_LANGUAGE` | Optional language hint passed to the provider. Leave unset for auto-detection when supported. | `en`, `es`, unset |
+| `STT_MAX_FILE_SIZE_MB` | Maximum file size accepted by the synchronous `/api/stt` endpoint. | `50` |
+| `STT_ENABLE_TIMESTAMPS` | Include timestamp segments in the normalized transcript response and stored parser metadata. | `true`, `false` |
+| `STT_ENABLE_DIARIZATION` | Reserved provider option for speaker diarization. Some providers may ignore it. | `true`, `false` |
+
+### Example: OpenAI Speech-to-Text
+
+```env
+STT_PROVIDER=openai
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+OPENAI_STT_MODEL=gpt-4o-mini-transcribe
+STT_LANGUAGE=
+STT_MAX_FILE_SIZE_MB=50
+STT_ENABLE_TIMESTAMPS=false
+STT_ENABLE_DIARIZATION=false
+```
+
+If you already use `API_KEY` for OpenAI, DocsGPT can reuse that key for transcription. Set `OPENAI_API_KEY` only when you want a dedicated key.
+
+### Example: Local `faster_whisper`
+
+```env
+STT_PROVIDER=faster_whisper
+STT_LANGUAGE=en
+STT_ENABLE_TIMESTAMPS=true
+STT_ENABLE_DIARIZATION=false
+```
+
+`faster_whisper` is an optional backend dependency. Install it in the Python environment used by the DocsGPT API and worker before selecting this provider.
 
 ## Authentication Settings
 
@@ -169,6 +292,72 @@ If you have configured `AUTH_TYPE=simple_jwt`, the DocsGPT frontend will prompt 
   }}
 />
 
+## S3 Storage Backend
+
+By default DocsGPT stores files locally. Set `STORAGE_TYPE=s3` to use Amazon S3 instead.
+
+| Setting | Description | Default |
+| --- | --- | --- |
+| `STORAGE_TYPE` | `local` or `s3` | `local` |
+| `S3_BUCKET_NAME` | S3 bucket name | `docsgpt-test-bucket` |
+| `SAGEMAKER_ACCESS_KEY` | AWS access key ID | — |
+| `SAGEMAKER_SECRET_KEY` | AWS secret access key | — |
+| `SAGEMAKER_REGION` | AWS region | — |
+| `URL_STRATEGY` | `backend` (proxy through API) or `s3` (direct S3 URLs) | `backend` |
+
+The S3 credentials use `SAGEMAKER_*` variable names because they are shared with the SageMaker integration.
+
+```env
+STORAGE_TYPE=s3
+S3_BUCKET_NAME=your-bucket-name
+SAGEMAKER_ACCESS_KEY=your-aws-access-key-id
+SAGEMAKER_SECRET_KEY=your-aws-secret-access-key
+SAGEMAKER_REGION=us-east-1
+```
+
+Your IAM user needs these permissions on the bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`, `s3:HeadObject`.
+
+## User-Data Storage (Postgres)
+
+DocsGPT stores user data — conversations, agents, prompts, sources, attachments, workflows, logs, and token usage — in **PostgreSQL**. The backend connects via a single setting:
+
+| Setting | Description | Default |
+| --- | --- | --- |
+| `POSTGRES_URI` | SQLAlchemy-compatible Postgres URI. Any standard `postgresql://` form works — DocsGPT normalizes it internally to the `psycopg` v3 dialect. | — |
+| `AUTO_CREATE_DB` | On startup, connect to the server's `postgres` maintenance DB and issue `CREATE DATABASE` if the target is missing. Requires `CREATEDB` or superuser. No-op when the database already exists. Disable in production. | `true` |
+| `AUTO_MIGRATE` | On startup, run `alembic upgrade head` against the target database. Idempotent and serialized across workers via `alembic_version`. Disable in production in favor of an explicit migration step. | `true` |
+
+Example:
+
+```env
+POSTGRES_URI=postgresql://docsgpt:docsgpt@localhost:5432/docsgpt
+# Append ?sslmode=require for managed providers that enforce SSL.
+```
+
+With the defaults, the app applies the schema automatically on first
+boot. To run it explicitly instead (e.g., in CI/CD or a k8s `Job`):
+
+```bash
+python scripts/db/init_postgres.py
+```
+
+The default Docker Compose file bundles a `postgres` service, and the
+app auto-bootstraps the database on boot, so containerized deployments
+need no manual migration step. See
+[PostgreSQL for User Data](/Deploying/Postgres-Migration#production-hardening)
+for the recommended production flow (both flags `false`, migrations
+gated by CI/CD).
+
+<Callout type="info" emoji="ℹ️">
+  `MONGO_URI` is **opt-in**. It is only consulted when you select the
+  MongoDB Atlas vector-store backend (`VECTOR_STORE=mongodb`) or when
+  running the one-shot `scripts/db/backfill.py` migration from a legacy
+  Mongo-based install. Installing the optional Mongo client libraries
+  requires `pip install 'pymongo>=4.6'`. See
+  [PostgreSQL for User Data](/Deploying/Postgres-Migration) for the
+  migration path.
+</Callout>
+
 ## Exploring More Settings
 
 These are just the basic settings to get you started. The `settings.py` file contains many more advanced options that you can explore to further customize DocsGPT, such as:
@@ -179,5 +368,3 @@ These are just the basic settings to get you started. The `settings.py` file con
 - And many more!
 
 For a complete list of available settings and their descriptions, refer to the `settings.py` file in `application/core`. Remember to restart your Docker containers after making changes to your `.env` file or `settings.py` for the changes to take effect.
-
-

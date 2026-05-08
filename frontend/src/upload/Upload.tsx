@@ -32,6 +32,7 @@ import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
 
 import { FilePicker } from '../components/FilePicker';
 import GoogleDrivePicker from '../components/GoogleDrivePicker';
+import { FILE_UPLOAD_ACCEPT } from '../constants/fileUpload';
 
 import ChevronRight from '../assets/chevron-right.svg';
 
@@ -118,7 +119,7 @@ function Upload({
             borderVariant="thin"
             required={isRequired}
             colorVariant="silver"
-            labelBgClassName="bg-white dark:bg-charleston-green-2"
+            labelBgClassName="bg-card"
           />
         );
       case 'number':
@@ -140,7 +141,7 @@ function Upload({
             borderVariant="thin"
             required={isRequired}
             colorVariant="silver"
-            labelBgClassName="bg-white dark:bg-charleston-green-2"
+            labelBgClassName="bg-card"
           />
         );
       case 'enum':
@@ -164,10 +165,6 @@ function Upload({
             size="w-full"
             rounded="3xl"
             placeholder={field.label}
-            border="border"
-            buttonClassName="border-silver bg-white dark:border-dim-gray dark:bg-[#222327]"
-            optionsClassName="border-silver bg-white dark:border-dim-gray dark:bg-[#383838]"
-            placeholderClassName="text-gray-400 dark:text-silver"
             contentSize="text-sm"
           />
         );
@@ -193,27 +190,27 @@ function Upload({
         return (
           <div key={field.name}>
             <div className="mb-3" {...getRootProps()}>
-              <span className="text-purple-30 dark:text-silver inline-block rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
+              <span className="text-primary dark:text-muted-foreground inline-block rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
                 <input type="button" {...getInputProps()} />
                 {t('modals.uploadDoc.choose')}
               </span>
             </div>
             <div className="mt-4 max-w-full">
-              <p className="text-eerie-black dark:text-light-gray mb-[14px] text-[14px] font-medium">
+              <p className="text-foreground dark:text-foreground mb-3.5 text-[14px] font-medium">
                 {t('modals.uploadDoc.selectedFiles')}
               </p>
               <div className="max-w-full overflow-hidden">
                 {files.map((file) => (
                   <p
                     key={file.name}
-                    className="text-gray-6000 truncate overflow-hidden text-ellipsis dark:text-[#ececf1]"
+                    className="text-muted-foreground truncate overflow-hidden text-ellipsis"
                     title={file.name}
                   >
                     {file.name}
                   </p>
                 ))}
                 {files.length === 0 && (
-                  <p className="text-gray-6000 dark:text-light-gray text-[14px]">
+                  <p className="text-muted-foreground text-[14px]">
                     {t('modals.uploadDoc.noFilesSelected')}
                   </p>
                 )}
@@ -250,6 +247,40 @@ function Upload({
               setSelectedFolders(selectedFolderIds);
             }}
             token={token}
+          />
+        );
+      case 'share_point_picker':
+        return (
+          <FilePicker
+            key={field.name}
+            onSelectionChange={(
+              selectedFileIds: string[],
+              selectedFolderIds: string[] = [],
+            ) => {
+              setSelectedFiles(selectedFileIds);
+              setSelectedFolders(selectedFolderIds);
+            }}
+            provider="share_point"
+            token={token}
+            initialSelectedFiles={selectedFiles}
+            initialSelectedFolders={selectedFolders}
+          />
+        );
+      case 'confluence_picker':
+        return (
+          <FilePicker
+            key={field.name}
+            onSelectionChange={(
+              selectedFileIds: string[],
+              selectedFolderIds: string[] = [],
+            ) => {
+              setSelectedFiles(selectedFileIds);
+              setSelectedFolders(selectedFolderIds);
+            }}
+            provider="confluence"
+            token={token}
+            initialSelectedFiles={selectedFiles}
+            initialSelectedFolders={selectedFolders}
           />
         );
       default:
@@ -504,6 +535,7 @@ function Upload({
 
     xhr.open('POST', `${apiHost}/api/upload`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('Idempotency-Key', clientTaskId);
     xhr.send(formData);
   };
 
@@ -534,6 +566,12 @@ function Upload({
     const hasGoogleDrivePicker = schema.some(
       (field: FormField) => field.type === 'google_drive_picker',
     );
+    const hasSharePointPicker = schema.some(
+      (field: FormField) => field.type === 'share_point_picker',
+    );
+    const hasConfluencePicker = schema.some(
+      (field: FormField) => field.type === 'confluence_picker',
+    );
 
     let configData: Record<string, unknown> = { ...ingestor.config };
 
@@ -541,7 +579,12 @@ function Upload({
       files.forEach((file) => {
         formData.append('file', file);
       });
-    } else if (hasRemoteFilePicker || hasGoogleDrivePicker) {
+    } else if (
+      hasRemoteFilePicker ||
+      hasGoogleDrivePicker ||
+      hasSharePointPicker ||
+      hasConfluencePicker
+    ) {
       const sessionToken = getSessionToken(ingestor.type as string);
       configData = {
         provider: ingestor.type as string,
@@ -620,6 +663,7 @@ function Upload({
 
     xhr.open('POST', endpoint);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('Idempotency-Key', clientTaskId);
     xhr.send(formData);
   };
 
@@ -672,27 +716,7 @@ function Upload({
     onDragOver: doNothing,
     onDragLeave: doNothing,
     maxSize: 25000000,
-    accept: {
-      'application/pdf': ['.pdf'],
-      'text/plain': ['.txt'],
-      'text/x-rst': ['.rst'],
-      'text/x-markdown': ['.md'],
-      'application/zip': ['.zip'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        ['.docx'],
-      'application/json': ['.json'],
-      'text/csv': ['.csv'],
-      'text/html': ['.html'],
-      'application/epub+zip': ['.epub'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
-        '.xlsx',
-      ],
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-        ['.pptx'],
-      'image/png': ['.png'],
-      'image/jpeg': ['.jpeg'],
-      'image/jpg': ['.jpg'],
-    },
+    accept: FILE_UPLOAD_ACCEPT,
   });
 
   const isUploadDisabled = (): boolean => {
@@ -717,12 +741,23 @@ function Upload({
     const hasGoogleDrivePicker = schema.some(
       (field: FormField) => field.type === 'google_drive_picker',
     );
+    const hasSharePointPicker = schema.some(
+      (field: FormField) => field.type === 'share_point_picker',
+    );
+    const hasConfluencePicker = schema.some(
+      (field: FormField) => field.type === 'confluence_picker',
+    );
 
     if (hasLocalFilePicker) {
       if (files.length === 0) {
         return true;
       }
-    } else if (hasRemoteFilePicker || hasGoogleDrivePicker) {
+    } else if (
+      hasRemoteFilePicker ||
+      hasGoogleDrivePicker ||
+      hasSharePointPicker ||
+      hasConfluencePicker
+    ) {
       if (selectedFiles.length === 0 && selectedFolders.length === 0) {
         return true;
       }
@@ -804,7 +839,7 @@ function Upload({
             className={`relative mx-auto flex h-[91.2px] w-full cursor-pointer flex-col justify-between gap-2 rounded-2xl border border-solid pt-[21.1px] pr-[21px] pb-[15px] pl-[21px] transition-colors duration-300 ease-out ${
               ingestor.type === option.value
                 ? 'border-[#7D54D1] bg-[#7D54D1] text-white'
-                : 'border-[#D7D7D7] bg-transparent transition-shadow duration-300 hover:bg-[#ECECEC]/30 hover:shadow-[0_0_15px_0_#00000026] dark:border-[#4A4A4A] dark:hover:bg-[#383838]/30'
+                : 'border-border hover:bg-accent/30 dark:border-border/30 bg-transparent transition-shadow duration-300 hover:shadow-[0_0_15px_0_#00000026]'
             }`}
             onClick={() =>
               handleIngestorTypeChange(option.value as IngestorType)
@@ -835,7 +870,7 @@ function Upload({
     >
       <div className="flex w-full flex-col gap-6">
         {!ingestor.type && (
-          <p className="font-inter text-left text-[20px] leading-[28px] font-semibold tracking-[0.15px] text-[#18181B] dark:text-[#ECECF1]">
+          <p className="font-inter text-foreground dark:text-foreground text-left text-[20px] leading-7 font-semibold tracking-[0.15px]">
             {t('modals.uploadDoc.selectSource')}
           </p>
         )}
@@ -857,7 +892,7 @@ function Upload({
                   <span>{t('modals.uploadDoc.back')}</span>
                 </button>
 
-                <h2 className="font-inter text-[22px] leading-[28px] font-semibold tracking-[0.15px] text-black dark:text-[#E0E0E0]">
+                <h2 className="font-inter text-foreground text-[22px] leading-7 font-semibold tracking-[0.15px]">
                   {ingestor.type &&
                     t(`modals.uploadDoc.ingestors.${ingestor.type}.heading`)}
                 </h2>
@@ -876,7 +911,7 @@ function Upload({
                   borderVariant="thin"
                   placeholder={t('modals.uploadDoc.name')}
                   required={true}
-                  labelBgClassName="bg-white dark:bg-charleston-green-2"
+                  labelBgClassName="bg-card"
                   className="w-full"
                 />
                 {renderFormFields()}
@@ -889,7 +924,7 @@ function Upload({
               ) && (
                 <button
                   onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                  className="text-purple-30 bg-transparent py-2 pl-0 text-left text-sm font-normal hover:cursor-pointer"
+                  className="text-primary bg-transparent py-2 pl-0 text-left text-sm font-normal hover:cursor-pointer"
                 >
                   {showAdvancedOptions
                     ? t('modals.uploadDoc.hideAdvanced')
@@ -905,8 +940,8 @@ function Upload({
               disabled={isUploadDisabled()}
               className={`rounded-3xl px-4 py-2 text-[14px] font-medium ${
                 isUploadDisabled()
-                  ? 'cursor-not-allowed bg-gray-300 text-gray-500'
-                  : 'bg-purple-30 hover:bg-violets-are-blue cursor-pointer text-white'
+                  ? 'dark:bg-muted dark:text-muted-foreground cursor-not-allowed bg-gray-300 text-gray-500'
+                  : 'bg-primary hover:bg-primary/90 cursor-pointer text-white'
               }`}
             >
               {t('modals.uploadDoc.train')}

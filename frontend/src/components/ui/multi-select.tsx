@@ -70,12 +70,12 @@ export function MultiSelect({
           role="combobox"
           aria-expanded={open}
           className={cn(
-            'w-full justify-between border-[#E5E5E5] bg-white hover:bg-gray-50 dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:hover:bg-[#383838]',
+            'border-border bg-card hover:bg-accent h-auto min-h-10 w-full justify-between py-1.5',
             !selected.length && 'text-gray-500 dark:text-gray-400',
             className,
           )}
         >
-          <div className="flex flex-wrap gap-1">
+          <div className="flex min-w-0 flex-wrap gap-1">
             {selected.length === 0 ? (
               placeholder
             ) : (
@@ -85,9 +85,9 @@ export function MultiSelect({
                   return (
                     <span
                       key={option?.value || label}
-                      className="dark:bg-purple-30/30 bg-violets-are-blue/20 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium text-purple-700 dark:text-purple-300"
+                      className="bg-primary/20 dark:bg-primary/30 inline-flex max-w-[calc(100%-1rem)] min-w-0 items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium text-purple-700 dark:text-purple-300"
                     >
-                      {label}
+                      <span className="truncate">{label}</span>
                       <span
                         role="button"
                         tabIndex={0}
@@ -124,7 +124,7 @@ export function MultiSelect({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-(--radix-popover-trigger-width) border-[#E5E5E5] bg-white p-0 dark:border-[#3A3A3A] dark:bg-[#2C2C2C]"
+        className="border-border bg-card w-(--radix-popover-trigger-width) p-0"
         align="start"
       >
         <Command className="bg-transparent">
@@ -141,13 +141,13 @@ export function MultiSelect({
                     key={option.value}
                     value={option.label}
                     onSelect={() => handleSelect(option.value)}
-                    className="cursor-pointer dark:hover:bg-[#383838]"
+                    className="cursor-pointer"
                   >
                     <div
                       className={cn(
                         'mr-2 flex h-4 w-4 items-center justify-center rounded-sm border-2',
                         isSelected
-                          ? 'border-purple-30 bg-purple-30 text-white'
+                          ? 'border-primary bg-primary text-white'
                           : 'border-gray-400 dark:border-gray-500',
                       )}
                     >

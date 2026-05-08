@@ -21,6 +21,7 @@ import {
   setSourceDocs,
 } from '../preferences/preferenceSlice';
 import Analytics from './Analytics';
+import CustomModels from './CustomModels';
 import Sources from './Sources';
 import General from './General';
 import Logs from './Logs';
@@ -39,6 +40,8 @@ export default function Settings() {
       return t('settings.analytics.label');
     if (path.includes('/settings/logs')) return t('settings.logs.label');
     if (path.includes('/settings/tools')) return t('settings.tools.label');
+    if (path.includes('/settings/custom-models'))
+      return t('settings.customModels.label');
     return t('settings.general.label');
   };
 
@@ -52,6 +55,8 @@ export default function Settings() {
       navigate('/settings/analytics');
     else if (tab === t('settings.logs.label')) navigate('/settings/logs');
     else if (tab === t('settings.tools.label')) navigate('/settings/tools');
+    else if (tab === t('settings.customModels.label'))
+      navigate('/settings/custom-models');
   };
 
   React.useEffect(() => {
@@ -92,7 +97,7 @@ export default function Settings() {
 
   return (
     <div className="h-full overflow-auto p-4 md:p-12">
-      <p className="text-eerie-black dark:text-bright-gray text-2xl font-bold">
+      <p className="text-foreground dark:text-foreground text-2xl font-bold">
         {t('settings.label')}
       </p>
       <SettingsBar
@@ -113,6 +118,7 @@ export default function Settings() {
         <Route path="analytics" element={<Analytics />} />
         <Route path="logs" element={<Logs />} />
         <Route path="tools" element={<Tools />} />
+        <Route path="custom-models" element={<CustomModels />} />
         <Route path="*" element={<Navigate to="/settings" replace />} />
       </Routes>
     </div>

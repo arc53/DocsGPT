@@ -7,6 +7,10 @@ export default {
     "title": "🔌 Agent API",
     "href": "/Agents/api"
   },
+  "openai-compatible": {
+    "title": "🔄 OpenAI-Compatible API",
+    "href": "/Agents/openai-compatible"
+  },
   "webhooks": {
     "title": "🪝 Agent Webhooks",
     "href": "/Agents/webhooks"

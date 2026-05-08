@@ -54,6 +54,7 @@
     },
     "sources": {
       "title": "Aquí puedes gestionar todos los archivos fuente que están disponibles para ti y los que has subido.",
+      "subtitle": "Sube y gestiona los documentos y fuentes de conocimiento que impulsan tus respuestas",
       "label": "Fuentes",
       "name": "Nombre de la Fuente",
       "date": "Fecha de Vector",
@@ -118,6 +119,7 @@
     },
     "analytics": {
       "label": "Analítica",
+      "subtitle": "Realiza un seguimiento del volumen de mensajes, uso de tokens y comentarios de usuarios en tu cuenta",
       "filterByChatbot": "Filtrar por chatbot",
       "selectChatbot": "Seleccionar chatbot",
       "filterOptions": {
@@ -137,6 +139,7 @@
     },
     "logs": {
       "label": "Registros",
+      "subtitle": "Visualiza y monitorea las llamadas a la API y los registros de conversaciones",
       "filterByChatbot": "Filtrar por chatbot",
       "selectChatbot": "Seleccionar chatbot",
       "none": "Ninguno",
@@ -144,6 +147,7 @@
     },
     "tools": {
       "label": "Herramientas",
+      "subtitle": "Explora, conecta y configura las herramientas e integraciones que impulsan a tus agentes",
       "searchPlaceholder": "Buscar...",
       "addTool": "Agregar Herramienta",
       "noToolsFound": "No se encontraron herramientas",
@@ -240,6 +244,71 @@
         }
       }
     },
+    "customModels": {
+      "label": "Modelos personalizados",
+      "subtitle": "Trae tu propio modelo compatible con OpenAI.",
+      "addModel": "Añadir modelo",
+      "empty": "No se encontraron modelos",
+      "searchPlaceholder": "Buscar modelos...",
+      "modalSubtitle": "Conecta cualquier endpoint compatible con OpenAI (Mistral, Together, vLLM, etc.).",
+      "addTitle": "Añadir modelo personalizado",
+      "editTitle": "Editar modelo personalizado",
+      "save": "Guardar",
+      "saving": "Guardando",
+      "testConnection": "Probar conexión",
+      "testing": "Probando",
+      "testSuccess": "Conexión correcta.",
+      "testHintNew": "Completa URL base, ID de modelo y clave API para habilitar las pruebas de conexión.",
+      "disabledBadge": "Deshabilitado",
+      "deleteWarning": "¿Seguro que quieres eliminar el modelo personalizado \"{{modelName}}\"?",
+      "actionsMenuAria": "Acciones para {{modelName}}",
+      "modelsGroup": {
+        "builtin": "Modelos de DocsGPT",
+        "user": "Mis modelos"
+      },
+      "actions": {
+        "edit": "Editar",
+        "delete": "Eliminar"
+      },
+      "fields": {
+        "displayName": "Nombre para mostrar",
+        "modelId": "ID del modelo",
+        "description": "Descripción",
+        "baseUrl": "URL base",
+        "apiKey": "Clave API"
+      },
+      "placeholders": {
+        "displayName": "Mi Mistral",
+        "modelId": "p. ej. mistral-large-latest",
+        "description": "Descripción opcional",
+        "baseUrl": "https://api.mistral.ai/v1",
+        "apiKey": "sk-...",
+        "apiKeyEdit": "Déjalo en blanco para mantener la actual"
+      },
+      "hints": {
+        "apiKeyEdit": "Déjalo en blanco para mantener la clave actual."
+      },
+      "capabilities": {
+        "title": "Capacidades",
+        "contextWindowShort": "Ventana de contexto",
+        "chips": {
+          "tools": "Herramientas",
+          "structuredOutput": "Salida estructurada",
+          "images": "Imágenes"
+        }
+      },
+      "errors": {
+        "displayNameRequired": "El nombre para mostrar es obligatorio",
+        "modelIdRequired": "El ID del modelo es obligatorio",
+        "baseUrlRequired": "La URL base es obligatoria",
+        "baseUrlScheme": "La URL base debe empezar por http:// o https://",
+        "baseUrlInvalid": "Introduce una URL válida",
+        "apiKeyRequired": "La clave API es obligatoria",
+        "contextWindowRange": "La ventana de contexto debe estar entre 1.000 y 10.000.000",
+        "saveFailed": "No se pudo guardar el modelo personalizado",
+        "testFailed": "La prueba de conexión falló"
+      }
+    },
     "scrollTabsLeft": "Desplazar pestañas a la izquierda",
     "tabsAriaLabel": "Pestañas de configuración",
     "scrollTabsRight": "Desplazar pestañas a la derecha"
@@ -321,6 +390,14 @@
         "s3": {
           "label": "Amazon S3",
           "heading": "Agregar contenido desde Amazon S3"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "Subir desde SharePoint"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "Subir desde Confluence"
         }
       },
       "connectors": {
@@ -340,6 +417,24 @@
           "validateFailed": "Error al validar la sesión. Por favor, reconecte.",
           "noSession": "No se encontró una sesión válida. Por favor, reconecte a Google Drive.",
           "noAccessToken": "No hay token de acceso disponible. Por favor, reconecte a Google Drive.",
+          "pickerFailed": "Error al abrir el selector de archivos. Por favor, inténtelo de nuevo.",
+          "selectedFiles": "Archivos Seleccionados",
+          "selectFiles": "Seleccionar Archivos",
+          "loading": "Cargando...",
+          "noFilesSelected": "No hay archivos o carpetas seleccionados",
+          "folders": "Carpetas",
+          "files": "Archivos",
+          "remove": "Eliminar",
+          "folderAlt": "Carpeta",
+          "fileAlt": "Archivo"
+        },
+        "sharePoint": {
+          "connect": "Conectar a SharePoint",
+          "sessionExpired": "Sesión expirada. Por favor, reconecte a SharePoint.",
+          "sessionExpiredGeneric": "Sesión expirada. Por favor, reconecte su cuenta.",
+          "validateFailed": "Error al validar la sesión. Por favor, reconecte.",
+          "noSession": "No se encontró una sesión válida. Por favor, reconecte a SharePoint.",
+          "noAccessToken": "No hay token de acceso disponible. Por favor, reconecte a SharePoint.",
           "pickerFailed": "Error al abrir el selector de archivos. Por favor, inténtelo de nuevo.",
           "selectedFiles": "Archivos Seleccionados",
           "selectFiles": "Seleccionar Archivos",
@@ -514,6 +609,7 @@
   },
   "agents": {
     "title": "Agentes",
+    "edit": "Editar",
     "description": "Descubre y crea versiones personalizadas de DocsGPT que combinan instrucciones, conocimiento adicional y cualquier combinación de habilidades",
     "newAgent": "Nuevo Agente",
     "backToAll": "Volver a todos los agentes",
@@ -615,7 +711,9 @@
         "tokenLimiting": "Límite de tokens",
         "tokenLimitingDescription": "Limita el total diario de tokens que puede usar este agente",
         "requestLimiting": "Límite de solicitudes",
-        "requestLimitingDescription": "Limita el total diario de solicitudes que se pueden hacer a este agente"
+        "requestLimitingDescription": "Limita el total diario de solicitudes que se pueden hacer a este agente",
+        "systemPromptOverride": "Permitir sobrescribir el prompt",
+        "systemPromptOverrideDescription": "Permitir que los llamadores de la API v1 reemplacen el prompt del sistema de este agente"
       },
       "preview": {
         "publishedPreview": "Los agentes publicados se pueden previsualizar aquí"
@@ -671,7 +769,10 @@
     "itemsSelected": "{{count}} seleccionados",
     "name": "Nombre",
     "lastModified": "Última modificación",
-    "size": "Tamaño"
+    "size": "Tamaño",
+    "myFiles": "Mis archivos",
+    "sharedWithMe": "Compartido conmigo",
+    "loadingMore": "Cargando más archivos..."
   },
   "actionButtons": {
     "openNewChat": "Abrir nuevo chat",

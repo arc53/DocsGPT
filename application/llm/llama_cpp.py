@@ -26,6 +26,8 @@ class LlamaSingleton:
 
 
 class LlamaCpp(BaseLLM):
+    provider_name = "llama_cpp"
+
     def __init__(
         self,
         api_key=None,

@@ -54,6 +54,7 @@
     },
     "sources": {
       "title": "Here you can manage all of the source file that are available to you and those you have uploaded.",
+      "subtitle": "Upload and manage the documents and knowledge sources used to power your responses",
       "label": "Sources",
       "name": "Source Name",
       "date": "Vector Date",
@@ -118,6 +119,7 @@
     },
     "analytics": {
       "label": "Analytics",
+      "subtitle": "Track message volume, token usage, and user feedback across your account",
       "filterByChatbot": "Filter by chatbot",
       "selectChatbot": "Select chatbot",
       "filterOptions": {
@@ -137,6 +139,7 @@
     },
     "logs": {
       "label": "Logs",
+      "subtitle": "View and monitor API calls and conversation logs",
       "filterByChatbot": "Filter by chatbot",
       "selectChatbot": "Select chatbot",
       "none": "None",
@@ -144,6 +147,7 @@
     },
     "tools": {
       "label": "Tools",
+      "subtitle": "Browse, connect, and configure the tools and integrations that power your agents",
       "searchPlaceholder": "Search tools...",
       "addTool": "Add Tool",
       "noToolsFound": "No tools found",
@@ -154,6 +158,12 @@
       "manageTools": "Go to Tools",
       "edit": "Edit",
       "delete": "Delete",
+      "reconnect": "Reconnect",
+      "authStatus": {
+        "connected": "Connected",
+        "needsAuth": "Needs Auth",
+        "configured": "Configured"
+      },
       "deleteWarning": "Are you sure you want to delete the tool \"{{toolName}}\" ?",
       "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
       "leaveWithoutSaving": "Leave without Saving",
@@ -180,6 +190,8 @@
       "deleteActionWarning": "Are you sure you want to delete the action \"{{name}}\"?",
       "backToAllTools": "Back to all tools",
       "save": "Save",
+      "saving": "Saving...",
+      "saveFailed": "Failed to save tool configuration",
       "fieldName": "Field Name",
       "fieldType": "Field Type",
       "filledByLLM": "Filled by LLM",
@@ -195,6 +207,8 @@
       "mcp": {
         "addServer": "Add MCP Server",
         "editServer": "Edit Server",
+        "reconnectServer": "Reconnect Server",
+        "reenterCredentials": "Re-enter your credentials to test and update the connection.",
         "serverName": "Server Name",
         "serverUrl": "Server URL",
         "headerName": "Header Name",
@@ -207,6 +221,8 @@
         "noAuth": "No Authentication",
         "oauthInProgress": "Waiting for OAuth completion...",
         "oauthCompleted": "OAuth completed successfully",
+        "oauthPopupBlocked": "Popup blocked by browser. Click below to authorize:",
+        "openAuthPage": "Open authorization page",
         "authType": "Authentication Type",
         "defaultServerName": "My MCP Server",
         "authTypes": {
@@ -238,6 +254,71 @@
           "oauthTimeout": "OAuth process timed out, please try again",
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
         }
+      }
+    },
+    "customModels": {
+      "label": "Custom Models",
+      "subtitle": "Bring your own OpenAI-compatible model.",
+      "addModel": "Add Model",
+      "empty": "No models found",
+      "searchPlaceholder": "Search models...",
+      "modalSubtitle": "Connect any OpenAI-compatible endpoint (Mistral, Together, vLLM, etc).",
+      "addTitle": "Add Custom Model",
+      "editTitle": "Edit Custom Model",
+      "save": "Save",
+      "saving": "Saving",
+      "testConnection": "Test connection",
+      "testing": "Testing",
+      "testSuccess": "Connection successful.",
+      "testHintNew": "Fill in Base URL, Model ID, and API key to enable connection tests.",
+      "disabledBadge": "Disabled",
+      "deleteWarning": "Are you sure you want to delete the custom model \"{{modelName}}\"?",
+      "actionsMenuAria": "Actions for {{modelName}}",
+      "modelsGroup": {
+        "builtin": "DocsGPT Models",
+        "user": "My Models"
+      },
+      "actions": {
+        "edit": "Edit",
+        "delete": "Delete"
+      },
+      "fields": {
+        "displayName": "Display name",
+        "modelId": "Model ID",
+        "description": "Description",
+        "baseUrl": "Base URL",
+        "apiKey": "API key"
+      },
+      "placeholders": {
+        "displayName": "My Mistral",
+        "modelId": "e.g. mistral-large-latest",
+        "description": "Optional description",
+        "baseUrl": "https://api.mistral.ai/v1",
+        "apiKey": "sk-...",
+        "apiKeyEdit": "Leave blank to keep existing"
+      },
+      "hints": {
+        "apiKeyEdit": "Leave blank to keep existing key."
+      },
+      "capabilities": {
+        "title": "Capabilities",
+        "contextWindowShort": "Context window",
+        "chips": {
+          "tools": "Tools",
+          "structuredOutput": "Structured output",
+          "images": "Images"
+        }
+      },
+      "errors": {
+        "displayNameRequired": "Display name is required",
+        "modelIdRequired": "Model ID is required",
+        "baseUrlRequired": "Base URL is required",
+        "baseUrlScheme": "Base URL must start with http:// or https://",
+        "baseUrlInvalid": "Please enter a valid URL",
+        "apiKeyRequired": "API key is required",
+        "contextWindowRange": "Context window must be between 1,000 and 10,000,000",
+        "saveFailed": "Failed to save custom model",
+        "testFailed": "Connection test failed"
       }
     },
     "scrollTabsLeft": "Scroll tabs left",
@@ -321,6 +402,14 @@
         "s3": {
           "label": "Amazon S3",
           "heading": "Add content from Amazon S3"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "Upload from SharePoint"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "Upload from Confluence"
         }
       },
       "connectors": {
@@ -340,6 +429,24 @@
           "validateFailed": "Failed to validate session. Please reconnect.",
           "noSession": "No valid session found. Please reconnect to Google Drive.",
           "noAccessToken": "No access token available. Please reconnect to Google Drive.",
+          "pickerFailed": "Failed to open file picker. Please try again.",
+          "selectedFiles": "Selected Files",
+          "selectFiles": "Select Files",
+          "loading": "Loading...",
+          "noFilesSelected": "No files or folders selected",
+          "folders": "Folders",
+          "files": "Files",
+          "remove": "Remove",
+          "folderAlt": "Folder",
+          "fileAlt": "File"
+        },
+        "sharePoint": {
+          "connect": "Connect to SharePoint",
+          "sessionExpired": "Session expired. Please reconnect to SharePoint.",
+          "sessionExpiredGeneric": "Session expired. Please reconnect your account.",
+          "validateFailed": "Failed to validate session. Please reconnect.",
+          "noSession": "No valid session found. Please reconnect to SharePoint.",
+          "noAccessToken": "No access token available. Please reconnect to SharePoint.",
           "pickerFailed": "Failed to open file picker. Please try again.",
           "selectedFiles": "Selected Files",
           "selectFiles": "Select Files",
@@ -514,6 +621,7 @@
   },
   "agents": {
     "title": "Agents",
+    "edit": "Edit",
     "description": "Discover and create custom versions of DocsGPT that combine instructions, extra knowledge, and any combination of skills",
     "newAgent": "New Agent",
     "backToAll": "Back to all agents",
@@ -615,7 +723,9 @@
         "tokenLimiting": "Token limiting",
         "tokenLimitingDescription": "Limit daily total tokens that can be used by this agent",
         "requestLimiting": "Request limiting",
-        "requestLimitingDescription": "Limit daily total requests that can be made to this agent"
+        "requestLimitingDescription": "Limit daily total requests that can be made to this agent",
+        "systemPromptOverride": "Allow prompt override",
+        "systemPromptOverrideDescription": "Let v1 API callers replace this agent's system prompt"
       },
       "preview": {
         "publishedPreview": "Published agents can be previewed here"
@@ -672,7 +782,10 @@
     "itemsSelected": "{{count}} selected",
     "name": "Name",
     "lastModified": "Last Modified",
-    "size": "Size"
+    "size": "Size",
+    "myFiles": "My Files",
+    "sharedWithMe": "Shared with Me",
+    "loadingMore": "Loading more files..."
   },
   "actionButtons": {
     "openNewChat": "Open New Chat",

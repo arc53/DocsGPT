@@ -1,0 +1,7 @@
+provider: docsgpt
+
+models:
+  - id: docsgpt-local
+    display_name: DocsGPT Model
+    description: Local model
+    supports_tools: false

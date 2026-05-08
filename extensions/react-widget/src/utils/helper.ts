@@ -30,11 +30,15 @@ interface ParsedElement {
   tag: string;
 }
 
-export const processMarkdownString = (markdown: string, keyword?: string): ParsedElement[] => {
+export const processMarkdownString = (
+  markdown: string,
+  keyword?: string,
+): ParsedElement[] => {
   const lines = markdown.trim().split('\n');
   const keywordLower = keyword?.toLowerCase();
 
-  const escapeRegExp = (str: string) => str.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+  const escapeRegExp = (str: string) =>
+    str.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
   const escapedKeyword = keyword ? escapeRegExp(keyword) : '';
   const keywordRegex = keyword ? new RegExp(`(${escapedKeyword})`, 'gi') : null;
 
@@ -56,7 +60,7 @@ export const processMarkdownString = (markdown: string, keyword?: string): Parse
         const codeContent = codeBlockContent.join('\n');
         const parsedElement: ParsedElement = {
           content: codeContent,
-          tag: 'code'
+          tag: 'code',
         };
 
         if (!firstLine) {
@@ -64,7 +68,10 @@ export const processMarkdownString = (markdown: string, keyword?: string): Parse
         }
 
         if (keywordLower && codeContent.toLowerCase().includes(keywordLower)) {
-          parsedElement.content = parsedElement.content.replace(keywordRegex!, '<span class="highlight">$1</span>');
+          parsedElement.content = parsedElement.content.replace(
+            keywordRegex!,
+            '<span class="highlight">$1</span>',
+          );
           matchingLines.push(parsedElement);
         }
       }
@@ -89,30 +96,30 @@ export const processMarkdownString = (markdown: string, keyword?: string): Parse
       content = headingMatch[2];
       parsedElement = {
         content: content,
-        tag: 'heading'
+        tag: 'heading',
       };
     } else if (bulletMatch) {
       content = bulletMatch[1];
       parsedElement = {
         content: content,
-        tag: 'bulletList'
+        tag: 'bulletList',
       };
     } else if (numberedMatch) {
       content = numberedMatch[1];
       parsedElement = {
         content: content,
-        tag: 'numberedList'
+        tag: 'numberedList',
       };
     } else if (blockquoteMatch) {
       content = blockquoteMatch[1];
       parsedElement = {
         content: content,
-        tag: 'blockquote'
+        tag: 'blockquote',
       };
     } else {
       parsedElement = {
         content: content,
-        tag: 'text'
+        tag: 'text',
       };
     }
 
@@ -120,8 +127,14 @@ export const processMarkdownString = (markdown: string, keyword?: string): Parse
       firstLine = parsedElement;
     }
 
-    if (keywordLower && parsedElement.content.toLowerCase().includes(keywordLower)) {
-      parsedElement.content = parsedElement.content.replace(keywordRegex!, '<span class="highlight">$1</span>');
+    if (
+      keywordLower &&
+      parsedElement.content.toLowerCase().includes(keywordLower)
+    ) {
+      parsedElement.content = parsedElement.content.replace(
+        keywordRegex!,
+        '<span class="highlight">$1</span>',
+      );
       matchingLines.push(parsedElement);
     }
   }
@@ -130,7 +143,7 @@ export const processMarkdownString = (markdown: string, keyword?: string): Parse
     const codeContent = codeBlockContent.join('\n');
     const parsedElement: ParsedElement = {
       content: codeContent,
-      tag: 'code'
+      tag: 'code',
     };
 
     if (!firstLine) {
@@ -138,7 +151,10 @@ export const processMarkdownString = (markdown: string, keyword?: string): Parse
     }
 
     if (keywordLower && codeContent.toLowerCase().includes(keywordLower)) {
-      parsedElement.content = parsedElement.content.replace(keywordRegex!, '<span class="highlight">$1</span>');
+      parsedElement.content = parsedElement.content.replace(
+        keywordRegex!,
+        '<span class="highlight">$1</span>',
+      );
       matchingLines.push(parsedElement);
     }
   }

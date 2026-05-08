@@ -5,6 +5,8 @@ OPEN_ROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 class OpenRouterLLM(OpenAILLM):
+    provider_name = "openrouter"
+
     def __init__(self, api_key=None, user_api_key=None, base_url=None, *args, **kwargs):
         super().__init__(
             api_key=api_key or settings.OPEN_ROUTER_API_KEY or settings.API_KEY,

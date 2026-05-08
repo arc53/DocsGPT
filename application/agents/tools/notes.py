@@ -1,10 +1,16 @@
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 import uuid
 
 from .base import Tool
-from application.core.mongo_db import MongoDB
-from application.core.settings import settings
+from application.storage.db.repositories.notes import NotesRepository
+from application.storage.db.session import db_readonly, db_session
+
+
+# Stable synthetic title used in the Postgres ``notes.title`` column.
+# The notes tool stores one note per (user_id, tool_id); there is no
+# user-facing title. PG requires ``title`` NOT NULL, so we write a stable
+# constant alongside the actual note body in ``content``.
+_NOTE_TITLE = "note"
 
 
 class NotesTool(Tool):
@@ -25,7 +31,6 @@ class NotesTool(Tool):
         self.user_id: Optional[str] = user_id
 
         # Get tool_id from configuration (passed from user_tools._id in production)
-        # In production, tool_id is the MongoDB ObjectId string from user_tools collection
         if tool_config and "tool_id" in tool_config:
             self.tool_id = tool_config["tool_id"]
         elif user_id:
@@ -35,10 +40,24 @@ class NotesTool(Tool):
             # Last resort fallback (shouldn't happen in normal use)
             self.tool_id = str(uuid.uuid4())
 
-        db = MongoDB.get_client()[settings.MONGO_DB_NAME]
-        self.collection = db["notes"]
-
         self._last_artifact_id: Optional[str] = None
+
+    def _pg_enabled(self) -> bool:
+        """Return True only when ``tool_id`` is a real ``user_tools.id`` UUID.
+
+        ``notes.tool_id`` is a UUID FK to ``user_tools``; repo queries
+        ``CAST(:tool_id AS uuid)``. The sentinel ``default_{uid}``
+        fallback is neither a UUID nor a ``user_tools`` row, so any DB
+        operation would crash. Mirror MemoryTool's guard and no-op.
+        """
+        tool_id = getattr(self, "tool_id", None)
+        if not tool_id or not isinstance(tool_id, str):
+            return False
+        if tool_id.startswith("default_"):
+            return False
+        from application.storage.db.base_repository import looks_like_uuid
+
+        return looks_like_uuid(tool_id)
 
     # -----------------------------
     # Action implementations
@@ -54,7 +73,13 @@ class NotesTool(Tool):
             A human-readable string result.
         """
         if not self.user_id:
-             return "Error: NotesTool requires a valid user_id."
+            return "Error: NotesTool requires a valid user_id."
+
+        if not self._pg_enabled():
+            return (
+                "Error: NotesTool is not configured with a persistent "
+                "tool_id; note storage is unavailable for this session."
+            )
 
         self._last_artifact_id = None
 
@@ -135,37 +160,45 @@ class NotesTool(Tool):
     # -----------------------------
     # Internal helpers (single-note)
     # -----------------------------
+    def _fetch_note(self) -> Optional[dict]:
+        """Read the note row for this (user, tool) from Postgres."""
+        with db_readonly() as conn:
+            return NotesRepository(conn).get_for_user_tool(self.user_id, self.tool_id)
+
     def _get_note(self) -> str:
-        doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id})
-        if not doc or not doc.get("note"):
+        doc = self._fetch_note()
+        # ``content`` is the PG column; expose as ``note`` to callers via the
+        # textual return value. Frontends that read the artifact via the
+        # repo dict get ``content`` (PG-native) plus the artifact id below.
+        body = (doc or {}).get("content")
+        if not doc or not body:
             return "No note found."
-        if doc.get("_id") is not None:
-            self._last_artifact_id = str(doc.get("_id"))
-        return str(doc["note"])
+        if doc.get("id") is not None:
+            self._last_artifact_id = str(doc.get("id"))
+        return str(body)
 
     def _overwrite_note(self, content: str) -> str:
         content = (content or "").strip()
         if not content:
             return "Note content required."
-        result = self.collection.find_one_and_update(
-            {"user_id": self.user_id, "tool_id": self.tool_id},
-            {"$set": {"note": content, "updated_at": datetime.utcnow()}},
-            upsert=True,
-            return_document=True,
-        )
-        if result and result.get("_id") is not None:
-            self._last_artifact_id = str(result.get("_id"))
+        with db_session() as conn:
+            row = NotesRepository(conn).upsert(
+                self.user_id, self.tool_id, _NOTE_TITLE, content
+            )
+        if row and row.get("id") is not None:
+            self._last_artifact_id = str(row.get("id"))
         return "Note saved."
 
     def _str_replace(self, old_str: str, new_str: str) -> str:
         if not old_str:
             return "old_str is required."
 
-        doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id})
-        if not doc or not doc.get("note"):
+        doc = self._fetch_note()
+        existing = (doc or {}).get("content")
+        if not doc or not existing:
             return "No note found."
 
-        current_note = str(doc["note"])
+        current_note = str(existing)
 
         # Case-insensitive search
         if old_str.lower() not in current_note.lower():
@@ -175,24 +208,24 @@ class NotesTool(Tool):
         import re
         updated_note = re.sub(re.escape(old_str), new_str, current_note, flags=re.IGNORECASE)
 
-        result = self.collection.find_one_and_update(
-            {"user_id": self.user_id, "tool_id": self.tool_id},
-            {"$set": {"note": updated_note, "updated_at": datetime.utcnow()}},
-            return_document=True,
-        )
-        if result and result.get("_id") is not None:
-            self._last_artifact_id = str(result.get("_id"))
+        with db_session() as conn:
+            row = NotesRepository(conn).upsert(
+                self.user_id, self.tool_id, _NOTE_TITLE, updated_note
+            )
+        if row and row.get("id") is not None:
+            self._last_artifact_id = str(row.get("id"))
         return "Note updated."
 
     def _insert(self, line_number: int, text: str) -> str:
         if not text:
             return "Text is required."
 
-        doc = self.collection.find_one({"user_id": self.user_id, "tool_id": self.tool_id})
-        if not doc or not doc.get("note"):
+        doc = self._fetch_note()
+        existing = (doc or {}).get("content")
+        if not doc or not existing:
             return "No note found."
 
-        current_note = str(doc["note"])
+        current_note = str(existing)
         lines = current_note.split("\n")
 
         # Convert to 0-indexed and validate
@@ -203,21 +236,23 @@ class NotesTool(Tool):
         lines.insert(index, text)
         updated_note = "\n".join(lines)
 
-        result = self.collection.find_one_and_update(
-            {"user_id": self.user_id, "tool_id": self.tool_id},
-            {"$set": {"note": updated_note, "updated_at": datetime.utcnow()}},
-            return_document=True,
-        )
-        if result and result.get("_id") is not None:
-            self._last_artifact_id = str(result.get("_id"))
+        with db_session() as conn:
+            row = NotesRepository(conn).upsert(
+                self.user_id, self.tool_id, _NOTE_TITLE, updated_note
+            )
+        if row and row.get("id") is not None:
+            self._last_artifact_id = str(row.get("id"))
         return "Text inserted."
 
     def _delete_note(self) -> str:
-        doc = self.collection.find_one_and_delete(
-            {"user_id": self.user_id, "tool_id": self.tool_id}
-        )
-        if not doc:
+        # Capture the id (for artifact tracking) before deleting.
+        existing = self._fetch_note()
+        if not existing:
             return "No note found to delete."
-        if doc.get("_id") is not None:
-            self._last_artifact_id = str(doc.get("_id"))
+        with db_session() as conn:
+            deleted = NotesRepository(conn).delete(self.user_id, self.tool_id)
+        if not deleted:
+            return "No note found to delete."
+        if existing.get("id") is not None:
+            self._last_artifact_id = str(existing.get("id"))
         return "Note deleted."

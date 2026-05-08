@@ -56,6 +56,14 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       displayName: 'Drive',
       rootName: 'My Drive',
     },
+    share_point: {
+      displayName: 'SharePoint',
+      rootName: 'My Files',
+    },
+    confluence: {
+      displayName: 'Confluence',
+      rootName: 'Spaces',
+    },
   } as const;
 
   const getProviderConfig = (provider: string) => {
@@ -88,9 +96,12 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   const [authError, setAuthError] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
+  const [allowsSharedContent, setAllowsSharedContent] = useState(false);
+  const [activeTab, setActiveTab] = useState<'my_files' | 'shared'>('my_files');
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const isFolder = (file: CloudFile) => {
     return (
@@ -106,7 +117,13 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       folderId: string | null,
       pageToken?: string,
       searchQuery = '',
+      shared = false,
     ) => {
+      // Cancel any in-flight request so stale responses never overwrite new state
+      abortControllerRef.current?.abort();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       setIsLoading(true);
 
       const apiHost = import.meta.env.VITE_API_HOST;
@@ -115,20 +132,23 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       }
 
       try {
+        const body: Record<string, unknown> = {
+          provider: provider,
+          session_token: sessionToken,
+          folder_id: folderId,
+          limit: 10,
+          page_token: pageToken,
+          search_query: searchQuery,
+          shared: shared,
+        };
         const response = await fetch(`${apiHost}/api/connectors/files`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({
-            provider: provider,
-            session_token: sessionToken,
-            folder_id: folderId,
-            limit: 10,
-            page_token: pageToken,
-            search_query: searchQuery,
-          }),
+          body: JSON.stringify(body),
+          signal: controller.signal,
         });
 
         const data = await response.json();
@@ -145,12 +165,15 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
           }
         }
       } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
         console.error('Error loading files:', err);
         if (!pageToken) {
           setFiles([]);
         }
       } finally {
-        setIsLoading(false);
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
       }
     },
     [token, provider],
@@ -183,7 +206,9 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       if (!validateResponse.ok) {
         removeSessionToken(provider);
         setIsConnected(false);
-        setAuthError('Session expired. Please reconnect to Google Drive.');
+        setAuthError(
+          `Session expired. Please reconnect to ${getProviderConfig(provider).displayName}.`,
+        );
         return;
       }
 
@@ -192,11 +217,15 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
         setUserEmail(validateData.user_email || 'Connected User');
         setIsConnected(true);
         setAuthError('');
+        if (provider === 'share_point') {
+          setAllowsSharedContent(validateData.allows_shared_content ?? false);
+        }
 
         setFiles([]);
         setNextPageToken(null);
         setHasMoreFiles(false);
         setCurrentFolderId(null);
+        setActiveTab('my_files');
         setFolderPath([
           {
             id: null,
@@ -238,6 +267,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
           currentFolderId,
           nextPageToken,
           searchQuery,
+          activeTab === 'shared' && !currentFolderId,
         );
       }
     }
@@ -249,6 +279,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     searchQuery,
     provider,
     loadCloudFiles,
+    activeTab,
   ]);
 
   useEffect(() => {
@@ -264,6 +295,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       if (searchTimeoutRef.current) {
         clearTimeout(searchTimeoutRef.current);
       }
+      abortControllerRef.current?.abort();
     };
   }, []);
 
@@ -277,7 +309,13 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     searchTimeoutRef.current = setTimeout(() => {
       const sessionToken = getSessionToken(provider);
       if (sessionToken) {
-        loadCloudFiles(sessionToken, currentFolderId, undefined, query);
+        loadCloudFiles(
+          sessionToken,
+          currentFolderId,
+          undefined,
+          query,
+          activeTab === 'shared' && !currentFolderId,
+        );
       }
     }, 300);
   };
@@ -295,7 +333,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
     const sessionToken = getSessionToken(provider);
     if (sessionToken) {
-      loadCloudFiles(sessionToken, folderId, undefined, '');
+      loadCloudFiles(sessionToken, folderId, undefined, '', false);
     }
   };
 
@@ -311,7 +349,34 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
     const sessionToken = getSessionToken(provider);
     if (sessionToken) {
-      loadCloudFiles(sessionToken, newFolderId, undefined, '');
+      loadCloudFiles(
+        sessionToken,
+        newFolderId,
+        undefined,
+        '',
+        activeTab === 'shared' && !newFolderId,
+      );
+    }
+  };
+
+  const handleTabChange = (tab: 'my_files' | 'shared') => {
+    if (tab === activeTab) return;
+    setActiveTab(tab);
+    setFiles([]);
+    setNextPageToken(null);
+    setHasMoreFiles(false);
+    setCurrentFolderId(null);
+    setSearchQuery('');
+    setFolderPath([
+      {
+        id: null,
+        name:
+          tab === 'shared' ? 'Shared' : getProviderConfig(provider).rootName,
+      },
+    ]);
+    const sessionToken = getSessionToken(provider);
+    if (sessionToken) {
+      loadCloudFiles(sessionToken, null, undefined, '', tab === 'shared');
     }
   };
 
@@ -339,6 +404,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
       <ConnectorAuth
         provider={provider}
+        label={`Connect to ${getProviderConfig(provider).displayName}`}
         onSuccess={(data) => {
           setUserEmail(data.user_email || 'Connected User');
           setIsConnected(true);
@@ -346,7 +412,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
           if (data.session_token) {
             setSessionToken(provider, data.session_token);
-            loadCloudFiles(data.session_token, null);
+            validateAndLoadFiles();
           }
         }}
         onError={(error) => {
@@ -379,6 +445,8 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
           removeSessionToken(provider);
           setIsConnected(false);
+          setAllowsSharedContent(false);
+          setActiveTab('my_files');
           setFiles([]);
           setSelectedFiles([]);
           onSelectionChange([]);
@@ -390,10 +458,33 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       />
 
       {isConnected && (
-        <div className="mt-3 rounded-lg border border-[#D7D7D7] dark:border-[#6A6A6A]">
-          <div className="rounded-t-lg border-[#EEE6FF78] dark:border-[#6A6A6A]">
-            {/* Breadcrumb navigation */}
-            <div className="rounded-t-lg bg-[#EEE6FF78] px-4 pt-4 dark:bg-[#2A262E]">
+        <div className="border-border dark:border-border mt-3 overflow-hidden rounded-lg border">
+          <div className="border-border dark:border-border rounded-t-lg">
+            {provider === 'share_point' && allowsSharedContent && (
+              <div className="border-border dark:border-border flex border-b">
+                <button
+                  onClick={() => handleTabChange('my_files')}
+                  className={`px-4 py-2 text-sm font-medium ${
+                    activeTab === 'my_files'
+                      ? 'border-b-2 border-[#A076F6] text-[#A076F6]'
+                      : 'text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+                  }`}
+                >
+                  {t('filePicker.myFiles')}
+                </button>
+                <button
+                  onClick={() => handleTabChange('shared')}
+                  className={`px-4 py-2 text-sm font-medium ${
+                    activeTab === 'shared'
+                      ? 'border-b-2 border-[#A076F6] text-[#A076F6]'
+                      : 'text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+                  }`}
+                >
+                  {t('filePicker.sharedWithMe')}
+                </button>
+              </div>
+            )}
+            <div className="dark:bg-muted rounded-t-lg bg-[#EEE6FF78] px-4 pt-4">
               <div className="mb-2 flex items-center gap-1">
                 {folderPath.map((path, index) => (
                   <div
@@ -424,7 +515,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                   onChange={(e) => handleSearchChange(e.target.value)}
                   colorVariant="silver"
                   borderVariant="thin"
-                  labelBgClassName="bg-[#EEE6FF78] dark:bg-[#2A262E]"
+                  labelBgClassName="bg-[#EEE6FF78] dark:bg-muted"
                   leftIcon={
                     <img src={SearchIcon} alt="Search" width={16} height={16} />
                   }
@@ -439,7 +530,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
               </div>
             </div>
 
-            <div className="h-72">
+            <div className="border-border dark:border-border h-72 border-t">
               <TableContainer
                 ref={scrollContainerRef}
                 height="288px"
@@ -464,68 +555,98 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {files.map((file, index) => (
-                          <TableRow
-                            key={`${file.id}-${index}`}
-                            onClick={() => {
-                              if (isFolder(file)) {
-                                handleFolderClick(file.id, file.name);
-                              } else {
-                                handleFileSelect(file.id, false);
-                              }
-                            }}
-                          >
-                            <TableCell width="40px" align="center">
-                              <div
-                                className="mx-auto flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center border border-[#EEE6FF78] p-[0.5px] text-sm dark:border-[#6A6A6A]"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleFileSelect(file.id, isFolder(file));
+                        {isLoading && files.length === 0
+                          ? Array.from({ length: 5 }).map((_, i) => (
+                              <TableRow key={`skeleton-${i}`}>
+                                <TableCell width="40px" align="center">
+                                  <div className="mx-auto h-5 w-5 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                                </TableCell>
+                                <TableCell>
+                                  <div className="h-4 w-48 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                                </TableCell>
+                                <TableCell>
+                                  <div className="h-4 w-24 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                                </TableCell>
+                                <TableCell>
+                                  <div className="h-4 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          : files.map((file, index) => (
+                              <TableRow
+                                key={`${file.id}-${index}`}
+                                onClick={() => {
+                                  if (isFolder(file)) {
+                                    handleFolderClick(file.id, file.name);
+                                  } else {
+                                    handleFileSelect(file.id, false);
+                                  }
                                 }}
                               >
-                                {(isFolder(file)
-                                  ? selectedFolders
-                                  : selectedFiles
-                                ).includes(file.id) && (
-                                  <img
-                                    src={CheckIcon}
-                                    alt="Selected"
-                                    className="h-4 w-4"
-                                  />
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex min-w-0 items-center gap-3">
-                                <div className="flex-shrink-0">
-                                  <img
-                                    src={isFolder(file) ? FolderIcon : FileIcon}
-                                    alt={isFolder(file) ? 'Folder' : 'File'}
-                                    className="h-6 w-6"
-                                  />
-                                </div>
-                                <span className="truncate">{file.name}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-xs">
-                              {formatDate(file.modifiedTime)}
-                            </TableCell>
-                            <TableCell className="text-xs">
-                              {file.size ? formatBytes(file.size) : '-'}
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                                <TableCell width="40px" align="center">
+                                  <div
+                                    className="border-border dark:border-border mx-auto flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center border p-[0.5px] text-sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleFileSelect(file.id, isFolder(file));
+                                    }}
+                                  >
+                                    {(isFolder(file)
+                                      ? selectedFolders
+                                      : selectedFiles
+                                    ).includes(file.id) && (
+                                      <img
+                                        src={CheckIcon}
+                                        alt="Selected"
+                                        className="h-4 w-4"
+                                      />
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex min-w-0 items-center gap-3">
+                                    <div className="shrink-0">
+                                      <img
+                                        src={
+                                          isFolder(file) ? FolderIcon : FileIcon
+                                        }
+                                        alt={isFolder(file) ? 'Folder' : 'File'}
+                                        className="h-6 w-6"
+                                      />
+                                    </div>
+                                    <span className="truncate">
+                                      {file.name}
+                                    </span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-xs">
+                                  {formatDate(file.modifiedTime)}
+                                </TableCell>
+                                <TableCell className="text-xs">
+                                  {file.size ? formatBytes(file.size) : '-'}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        {isLoading &&
+                          files.length > 0 &&
+                          Array.from({ length: 3 }).map((_, i) => (
+                            <TableRow key={`load-more-skeleton-${i}`}>
+                              <TableCell width="40px" align="center">
+                                <div className="mx-auto h-5 w-5 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                              </TableCell>
+                              <TableCell>
+                                <div className="h-4 w-48 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                              </TableCell>
+                              <TableCell>
+                                <div className="h-4 w-24 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                              </TableCell>
+                              <TableCell>
+                                <div className="h-4 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                              </TableCell>
+                            </TableRow>
+                          ))}
                       </TableBody>
                     </Table>
-
-                    {isLoading && (
-                      <div className="flex items-center justify-center border-t border-[#EEE6FF78] p-4 dark:border-[#6A6A6A]">
-                        <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
-                          Loading more files...
-                        </div>
-                      </div>
-                    )}
                   </>
                 }
               </TableContainer>

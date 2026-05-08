@@ -6,14 +6,21 @@ services:
     ports:
       - 6379:6379
 
-  mongo:
-    image: mongo:6
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=docsgpt
+      - POSTGRES_PASSWORD=docsgpt
+      - POSTGRES_DB=docsgpt
     ports:
-      - 27017:27017
+      - "5432:5432"
     volumes:
-      - mongodb_data_container:/data/db
-
-
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docsgpt -d docsgpt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
-  mongodb_data_container:
+  postgres_data:

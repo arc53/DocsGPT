@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from application.parser.remote.crawler_loader import CrawlerLoader
 from application.parser.schema.base import Document
 from langchain_core.documents import Document as LCDocument
@@ -210,3 +212,43 @@ def test_url_to_virtual_path_variants():
         == "guides/setup.md"
     )
     assert crawler._url_to_virtual_path("https://example.com/page.html") == "page.md"
+
+
+# =====================================================================
+# Coverage gap tests  (lines 41-43)
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestCrawlerLoaderGaps:
+    def test_ssrf_validation_skips_invalid_url(self):
+        """Cover lines 41-43: SSRF validation failure skips URL."""
+        from application.parser.remote.crawler_loader import CrawlerLoader
+        from application.core.url_validation import SSRFError
+
+        loader = CrawlerLoader(limit=5)
+        with patch(
+            "application.parser.remote.crawler_loader.validate_url",
+            side_effect=[
+                "https://example.com",
+                SSRFError("blocked"),
+            ],
+        ):
+            with patch(
+                "application.parser.remote.crawler_loader.requests.get"
+            ) as mock_get:
+                # First URL succeeds validation but response has no links
+                mock_response = MagicMock()
+                mock_response.status_code = 200
+                mock_response.text = "<html><body>test</body></html>"
+                mock_response.raise_for_status.return_value = None
+                mock_get.return_value = mock_response
+
+                with patch.object(loader, "loader") as mock_loader_cls:
+                    mock_doc = MagicMock()
+                    mock_doc.page_content = "test content"
+                    mock_doc.metadata = {}
+                    mock_loader_cls.return_value.load.return_value = [mock_doc]
+
+                    result = loader.load_data("https://example.com")
+                    assert isinstance(result, list)

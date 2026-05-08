@@ -3,26 +3,54 @@
 import datetime
 import secrets
 
-from bson import DBRef
-from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
+from sqlalchemy import text as _sql_text
 
 from application.api import api
 from application.core.settings import settings
-from application.api.user.base import (
-    agents_collection,
-    db,
-    ensure_user_doc,
-    resolve_tool_details,
-    user_tools_collection,
-    users_collection,
-)
+from application.api.user.base import resolve_tool_details
+from application.storage.db.base_repository import looks_like_uuid
+from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.users import UsersRepository
+from application.storage.db.session import db_readonly, db_session
 from application.utils import generate_image_url
 
 agents_sharing_ns = Namespace(
     "agents", description="Agent management operations", path="/api"
 )
+
+
+def _serialize_agent_basic(agent: dict) -> dict:
+    """Shape a PG agent row into the API response dict."""
+    source_id = agent.get("source_id")
+    return {
+        "id": str(agent["id"]),
+        "user": agent.get("user_id", ""),
+        "name": agent.get("name", ""),
+        "image": (
+            generate_image_url(agent["image"]) if agent.get("image") else ""
+        ),
+        "description": agent.get("description", ""),
+        "source": str(source_id) if source_id else "",
+        "chunks": str(agent["chunks"]) if agent.get("chunks") is not None else "0",
+        "retriever": agent.get("retriever", "classic") or "classic",
+        "prompt_id": str(agent["prompt_id"]) if agent.get("prompt_id") else "default",
+        "tools": agent.get("tools", []) or [],
+        "tool_details": resolve_tool_details(agent.get("tools", []) or []),
+        "agent_type": agent.get("agent_type", "") or "",
+        "status": agent.get("status", "") or "",
+        "json_schema": agent.get("json_schema"),
+        "limited_token_mode": agent.get("limited_token_mode", False),
+        "token_limit": agent.get("token_limit") or settings.DEFAULT_AGENT_LIMITS["token_limit"],
+        "limited_request_mode": agent.get("limited_request_mode", False),
+        "request_limit": agent.get("request_limit") or settings.DEFAULT_AGENT_LIMITS["request_limit"],
+        "created_at": agent.get("created_at", ""),
+        "updated_at": agent.get("updated_at", ""),
+        "shared": bool(agent.get("shared", False)),
+        "shared_token": agent.get("shared_token", "") or "",
+        "shared_metadata": agent.get("shared_metadata", {}) or {},
+    }
 
 
 @agents_sharing_ns.route("/shared_agent")
@@ -41,70 +69,33 @@ class SharedAgent(Resource):
                 jsonify({"success": False, "message": "Token or ID is required"}), 400
             )
         try:
-            query = {
-                "shared_publicly": True,
-                "shared_token": shared_token,
-            }
-            shared_agent = agents_collection.find_one(query)
+            with db_readonly() as conn:
+                shared_agent = AgentsRepository(conn).find_by_shared_token(
+                    shared_token,
+                )
             if not shared_agent:
                 return make_response(
                     jsonify({"success": False, "message": "Shared agent not found"}),
                     404,
                 )
-            agent_id = str(shared_agent["_id"])
-            data = {
-                "id": agent_id,
-                "user": shared_agent.get("user", ""),
-                "name": shared_agent.get("name", ""),
-                "image": (
-                    generate_image_url(shared_agent["image"])
-                    if shared_agent.get("image")
-                    else ""
-                ),
-                "description": shared_agent.get("description", ""),
-                "source": (
-                    str(source_doc["_id"])
-                    if isinstance(shared_agent.get("source"), DBRef)
-                    and (source_doc := db.dereference(shared_agent.get("source")))
-                    else ""
-                ),
-                "chunks": shared_agent.get("chunks", "0"),
-                "retriever": shared_agent.get("retriever", "classic"),
-                "prompt_id": shared_agent.get("prompt_id", "default"),
-                "tools": shared_agent.get("tools", []),
-                "tool_details": resolve_tool_details(shared_agent.get("tools", [])),
-                "agent_type": shared_agent.get("agent_type", ""),
-                "status": shared_agent.get("status", ""),
-                "json_schema": shared_agent.get("json_schema"),
-                "limited_token_mode": shared_agent.get("limited_token_mode", False),
-                "token_limit": shared_agent.get("token_limit", settings.DEFAULT_AGENT_LIMITS["token_limit"]),
-                "limited_request_mode": shared_agent.get("limited_request_mode", False),
-                "request_limit": shared_agent.get("request_limit", settings.DEFAULT_AGENT_LIMITS["request_limit"]),
-                "created_at": shared_agent.get("createdAt", ""),
-                "updated_at": shared_agent.get("updatedAt", ""),
-                "shared": shared_agent.get("shared_publicly", False),
-                "shared_token": shared_agent.get("shared_token", ""),
-                "shared_metadata": shared_agent.get("shared_metadata", {}),
-            }
+            agent_id = str(shared_agent["id"])
+            data = _serialize_agent_basic(shared_agent)
 
             if data["tools"]:
                 enriched_tools = []
-                for tool in data["tools"]:
-                    tool_data = user_tools_collection.find_one({"_id": ObjectId(tool)})
-                    if tool_data:
-                        enriched_tools.append(tool_data.get("name", ""))
+                for detail in data["tool_details"]:
+                    enriched_tools.append(detail.get("name", ""))
                 data["tools"] = enriched_tools
             decoded_token = getattr(request, "decoded_token", None)
             if decoded_token:
                 user_id = decoded_token.get("sub")
-                owner_id = shared_agent.get("user")
+                owner_id = shared_agent.get("user_id")
 
                 if user_id != owner_id:
-                    ensure_user_doc(user_id)
-                    users_collection.update_one(
-                        {"user_id": user_id},
-                        {"$addToSet": {"agent_preferences.shared_with_me": agent_id}},
-                    )
+                    with db_session() as conn:
+                        users_repo = UsersRepository(conn)
+                        users_repo.upsert(user_id)
+                        users_repo.add_shared(user_id, agent_id)
             return make_response(jsonify(data), 200)
         except Exception as err:
             current_app.logger.error(f"Error retrieving shared agent: {err}")
@@ -121,52 +112,73 @@ class SharedAgents(Resource):
                 return make_response(jsonify({"success": False}), 401)
             user_id = decoded_token.get("sub")
 
-            user_doc = ensure_user_doc(user_id)
-            shared_with_ids = user_doc.get("agent_preferences", {}).get(
-                "shared_with_me", []
-            )
-            shared_object_ids = [ObjectId(id) for id in shared_with_ids]
-
-            shared_agents_cursor = agents_collection.find(
-                {"_id": {"$in": shared_object_ids}, "shared_publicly": True}
-            )
-            shared_agents = list(shared_agents_cursor)
-
-            found_ids_set = {str(agent["_id"]) for agent in shared_agents}
-            stale_ids = [id for id in shared_with_ids if id not in found_ids_set]
-            if stale_ids:
-                users_collection.update_one(
-                    {"user_id": user_id},
-                    {"$pullAll": {"agent_preferences.shared_with_me": stale_ids}},
+            with db_session() as conn:
+                users_repo = UsersRepository(conn)
+                user_doc = users_repo.upsert(user_id)
+                shared_with_ids = (
+                    user_doc.get("agent_preferences", {}).get("shared_with_me", [])
+                    if isinstance(user_doc.get("agent_preferences"), dict)
+                    else []
                 )
-            pinned_ids = set(user_doc.get("agent_preferences", {}).get("pinned", []))
+                # Keep only UUID-shaped ids; ObjectId leftovers are stripped below.
+                uuid_ids = [sid for sid in shared_with_ids if looks_like_uuid(sid)]
+                non_uuid_ids = [sid for sid in shared_with_ids if not looks_like_uuid(sid)]
 
-            list_shared_agents = [
-                {
-                    "id": str(agent["_id"]),
-                    "name": agent.get("name", ""),
-                    "description": agent.get("description", ""),
-                    "image": (
-                        generate_image_url(agent["image"]) if agent.get("image") else ""
-                    ),
-                    "tools": agent.get("tools", []),
-                    "tool_details": resolve_tool_details(agent.get("tools", [])),
-                    "agent_type": agent.get("agent_type", ""),
-                    "status": agent.get("status", ""),
-                    "json_schema": agent.get("json_schema"),
-                    "limited_token_mode": agent.get("limited_token_mode", False),
-                    "token_limit": agent.get("token_limit", settings.DEFAULT_AGENT_LIMITS["token_limit"]),
-                    "limited_request_mode": agent.get("limited_request_mode", False),
-                    "request_limit": agent.get("request_limit", settings.DEFAULT_AGENT_LIMITS["request_limit"]),
-                    "created_at": agent.get("createdAt", ""),
-                    "updated_at": agent.get("updatedAt", ""),
-                    "pinned": str(agent["_id"]) in pinned_ids,
-                    "shared": agent.get("shared_publicly", False),
-                    "shared_token": agent.get("shared_token", ""),
-                    "shared_metadata": agent.get("shared_metadata", {}),
-                }
-                for agent in shared_agents
-            ]
+                if uuid_ids:
+                    result = conn.execute(
+                        _sql_text(
+                            "SELECT * FROM agents "
+                            "WHERE id = ANY(CAST(:ids AS uuid[])) "
+                            "AND shared = true"
+                        ),
+                        {"ids": uuid_ids},
+                    )
+                    shared_agents = [dict(row._mapping) for row in result.fetchall()]
+                else:
+                    shared_agents = []
+
+                found_ids_set = {str(agent["id"]) for agent in shared_agents}
+                stale_ids = [sid for sid in uuid_ids if sid not in found_ids_set]
+                stale_ids.extend(non_uuid_ids)
+                if stale_ids:
+                    users_repo.remove_shared_bulk(user_id, stale_ids)
+
+                pinned_ids = set(
+                    user_doc.get("agent_preferences", {}).get("pinned", [])
+                    if isinstance(user_doc.get("agent_preferences"), dict)
+                    else []
+                )
+
+            list_shared_agents = []
+            for agent in shared_agents:
+                agent_id_str = str(agent["id"])
+                list_shared_agents.append(
+                    {
+                        "id": agent_id_str,
+                        "name": agent.get("name", ""),
+                        "description": agent.get("description", ""),
+                        "image": (
+                            generate_image_url(agent["image"]) if agent.get("image") else ""
+                        ),
+                        "tools": agent.get("tools", []) or [],
+                        "tool_details": resolve_tool_details(
+                            agent.get("tools", []) or []
+                        ),
+                        "agent_type": agent.get("agent_type", "") or "",
+                        "status": agent.get("status", "") or "",
+                        "json_schema": agent.get("json_schema"),
+                        "limited_token_mode": agent.get("limited_token_mode", False),
+                        "token_limit": agent.get("token_limit") or settings.DEFAULT_AGENT_LIMITS["token_limit"],
+                        "limited_request_mode": agent.get("limited_request_mode", False),
+                        "request_limit": agent.get("request_limit") or settings.DEFAULT_AGENT_LIMITS["request_limit"],
+                        "created_at": agent.get("created_at", ""),
+                        "updated_at": agent.get("updated_at", ""),
+                        "pinned": agent_id_str in pinned_ids,
+                        "shared": bool(agent.get("shared", False)),
+                        "shared_token": agent.get("shared_token", "") or "",
+                        "shared_metadata": agent.get("shared_metadata", {}) or {},
+                    }
+                )
 
             return make_response(jsonify(list_shared_agents), 200)
         except Exception as err:
@@ -220,44 +232,43 @@ class ShareAgent(Resource):
                 ),
                 400,
             )
+        shared_token = None
         try:
-            try:
-                agent_oid = ObjectId(agent_id)
-            except Exception:
-                return make_response(
-                    jsonify({"success": False, "message": "Invalid agent ID"}), 400
-                )
-            agent = agents_collection.find_one({"_id": agent_oid, "user": user})
-            if not agent:
-                return make_response(
-                    jsonify({"success": False, "message": "Agent not found"}), 404
-                )
-            if shared:
-                shared_metadata = {
-                    "shared_by": username,
-                    "shared_at": datetime.datetime.now(datetime.timezone.utc),
-                }
-                shared_token = secrets.token_urlsafe(32)
-                agents_collection.update_one(
-                    {"_id": agent_oid, "user": user},
-                    {
-                        "$set": {
-                            "shared_publicly": shared,
-                            "shared_metadata": shared_metadata,
+            with db_session() as conn:
+                repo = AgentsRepository(conn)
+                agent = repo.get_any(agent_id, user)
+                if not agent:
+                    return make_response(
+                        jsonify({"success": False, "message": "Agent not found"}), 404
+                    )
+                if shared:
+                    shared_metadata = {
+                        "shared_by": username,
+                        "shared_at": datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).isoformat(),
+                    }
+                    shared_token = secrets.token_urlsafe(32)
+                    repo.update(
+                        str(agent["id"]), user,
+                        {
+                            "shared": True,
                             "shared_token": shared_token,
-                        }
-                    },
-                )
-            else:
-                agents_collection.update_one(
-                    {"_id": agent_oid, "user": user},
-                    {"$set": {"shared_publicly": shared, "shared_token": None}},
-                    {"$unset": {"shared_metadata": ""}},
-                )
+                            "shared_metadata": shared_metadata,
+                        },
+                    )
+                else:
+                    repo.update(
+                        str(agent["id"]), user,
+                        {
+                            "shared": False,
+                            "shared_token": None,
+                            "shared_metadata": None,
+                        },
+                    )
         except Exception as err:
             current_app.logger.error(f"Error sharing/unsharing agent: {err}", exc_info=True)
             return make_response(jsonify({"success": False, "error": "Failed to update agent sharing status"}), 400)
-        shared_token = shared_token if shared else None
         return make_response(
             jsonify({"success": True, "shared_token": shared_token}), 200
         )

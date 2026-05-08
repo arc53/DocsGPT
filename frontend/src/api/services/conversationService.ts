@@ -6,18 +6,20 @@ const conversationService = {
     data: any,
     token: string | null,
     signal: AbortSignal,
+    headers: Record<string, string> = {},
   ): Promise<any> =>
-    apiClient.post(endpoints.CONVERSATION.ANSWER, data, token, {}, signal),
+    apiClient.post(endpoints.CONVERSATION.ANSWER, data, token, headers, signal),
   answerStream: (
     data: any,
     token: string | null,
     signal: AbortSignal,
+    headers: Record<string, string> = {},
   ): Promise<any> =>
     apiClient.post(
       endpoints.CONVERSATION.ANSWER_STREAMING,
       data,
       token,
-      {},
+      headers,
       signal,
     ),
   search: (data: any, token: string | null): Promise<any> =>
@@ -26,6 +28,8 @@ const conversationService = {
     apiClient.post(endpoints.CONVERSATION.FEEDBACK, data, token, {}),
   getConversation: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.CONVERSATION.CONVERSATION(id), token, {}),
+  tailMessage: (messageId: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.CONVERSATION.MESSAGE_TAIL(messageId), token, {}),
   getConversations: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.CONVERSATION.CONVERSATIONS, token, {}),
   shareConversation: (
@@ -54,6 +58,18 @@ const conversationService = {
     apiClient.get(endpoints.CONVERSATION.DELETE_ALL, token, {}),
   update: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.CONVERSATION.UPDATE, data, token, {}),
+  chatCompletions: (
+    data: any,
+    agentApiKey: string,
+    signal: AbortSignal,
+  ): Promise<any> =>
+    apiClient.post(
+      endpoints.V1.CHAT_COMPLETIONS,
+      data,
+      null,
+      { Authorization: `Bearer ${agentApiKey}` },
+      signal,
+    ),
 };
 
 export default conversationService;

@@ -4,6 +4,7 @@ import os
 import tempfile
 import mimetypes
 from typing import List, Optional
+from application.core.url_validation import SSRFError, validate_url
 from application.parser.remote.base import BaseRemote
 from application.parser.schema.base import Document
 
@@ -107,6 +108,11 @@ class S3Loader(BaseRemote):
             logger.info(f"Original endpoint URL: {endpoint_url}")
             logger.info(f"Normalized endpoint URL: {normalized_endpoint}")
             logger.info(f"Bucket name: '{corrected_bucket}'")
+
+            try:
+                normalized_endpoint = validate_url(normalized_endpoint)
+            except SSRFError as e:
+                raise ValueError(f"Invalid S3 endpoint_url: {e}") from e
 
             client_kwargs["endpoint_url"] = normalized_endpoint
             # Use path-style addressing for S3-compatible services

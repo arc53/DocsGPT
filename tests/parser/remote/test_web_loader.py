@@ -2,9 +2,17 @@ import pytest
 from unittest.mock import patch, MagicMock
 from urllib.parse import urlparse
 
+from application.core.url_validation import SSRFError
 from application.parser.remote.web_loader import WebLoader, headers
 from application.parser.schema.base import Document
 from langchain_core.documents import Document as LCDocument
+
+
+def _mock_validate_url(url):
+    """Mock validate_url that allows test URLs through and prepends scheme like the real impl."""
+    if not urlparse(url).scheme:
+        url = "http://" + url
+    return url
 
 
 @pytest.fixture
@@ -66,7 +74,8 @@ class TestWebLoaderHeaders:
 class TestWebLoaderLoadData:
     """Test WebLoader load_data method."""
 
-    def test_load_data_single_url_string(self, web_loader, mock_langchain_document):
+    @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
+    def test_load_data_single_url_string(self, mock_validate, web_loader, mock_langchain_document):
         """Test loading data from a single URL passed as string."""
 
         mock_loader_instance = MagicMock()
@@ -87,9 +96,10 @@ class TestWebLoaderLoadData:
         mock_web_base_loader_class.assert_called_once_with(["https://example.com"], header_template=headers)
         mock_loader_instance.load.assert_called_once()
 
-    def test_load_data_multiple_urls_list(self, web_loader):
+    @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
+    def test_load_data_multiple_urls_list(self, mock_validate, web_loader):
         """Test loading data from multiple URLs passed as list."""
-        
+
         doc1 = MagicMock(spec=LCDocument)
         doc1.page_content = "Content from site 1"
         doc1.metadata = {"source": "https://site1.com"}
@@ -98,7 +108,6 @@ class TestWebLoaderLoadData:
         doc2.page_content = "Content from site 2"
         doc2.metadata = {"source": "https://site2.com"}
 
-       
         mock_loader_instance1 = MagicMock()
         mock_loader_instance1.load.return_value = [doc1]
 
@@ -124,7 +133,8 @@ class TestWebLoaderLoadData:
         mock_web_base_loader_class.assert_any_call(["https://site1.com"], header_template=headers)
         mock_web_base_loader_class.assert_any_call(["https://site2.com"], header_template=headers)
 
-    def test_load_data_url_without_scheme(self, web_loader, mock_langchain_document):
+    @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
+    def test_load_data_url_without_scheme(self, mock_validate, web_loader, mock_langchain_document):
         """Test loading data from URL without scheme (should add http://)."""
         mock_loader_instance = MagicMock()
         mock_loader_instance.load.return_value = [mock_langchain_document]
@@ -142,7 +152,8 @@ class TestWebLoaderLoadData:
         # Verify WebBaseLoader was called with http:// prefix
         mock_web_base_loader_class.assert_called_once_with(["http://example.com"], header_template=headers)
 
-    def test_load_data_url_with_scheme(self, web_loader, mock_langchain_document):
+    @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
+    def test_load_data_url_with_scheme(self, mock_validate, web_loader, mock_langchain_document):
         """Test loading data from URL with scheme (should not modify)."""
         mock_loader_instance = MagicMock()
         mock_loader_instance.load.return_value = [mock_langchain_document]
@@ -159,7 +170,8 @@ class TestWebLoaderLoadData:
         # Verify WebBaseLoader was called with original URL
         mock_web_base_loader_class.assert_called_once_with(["https://example.com"], header_template=headers)
 
-    def test_load_data_multiple_documents_per_url(self, web_loader):
+    @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
+    def test_load_data_multiple_documents_per_url(self, mock_validate, web_loader):
         """Test loading multiple documents from a single URL."""
         doc1 = MagicMock(spec=LCDocument)
         doc1.page_content = "First document content"
@@ -189,8 +201,9 @@ class TestWebLoaderLoadData:
 class TestWebLoaderErrorHandling:
     """Test WebLoader error handling."""
 
+    @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
     @patch('application.parser.remote.web_loader.logging')
-    def test_load_data_single_url_error(self, mock_logging, web_loader):
+    def test_load_data_single_url_error(self, mock_logging, mock_validate, web_loader):
         """Test error handling for single URL that fails to load."""
         mock_loader_instance = MagicMock()
         mock_loader_instance.load.side_effect = Exception("Network error")
@@ -208,8 +221,9 @@ class TestWebLoaderErrorHandling:
         assert "Error processing URL https://invalid-url.com" in error_call[0][0]
         assert error_call[1]["exc_info"] is True
 
+    @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
     @patch('application.parser.remote.web_loader.logging')
-    def test_load_data_partial_failure(self, mock_logging, web_loader):
+    def test_load_data_partial_failure(self, mock_logging, mock_validate, web_loader):
         """Test partial failure - some URLs succeed, some fail."""
         doc1 = MagicMock(spec=LCDocument)
         doc1.page_content = "Success content"
@@ -238,6 +252,66 @@ class TestWebLoaderErrorHandling:
         assert "Error processing URL https://bad-url.com" in error_call[0][0]
 
 
+class TestWebLoaderSSRF:
+    """Test WebLoader SSRF protection."""
+
+    @patch("application.parser.remote.web_loader.validate_url")
+    def test_load_data_skips_url_failing_ssrf_validation(self, mock_validate, web_loader):
+        """A URL that fails SSRF validation must be skipped, never reaching the fetcher."""
+        mock_validate.side_effect = SSRFError("Access to private/internal IP addresses is not allowed.")
+
+        mock_web_base_loader_class = MagicMock()
+        web_loader.loader = mock_web_base_loader_class
+
+        result = web_loader.load_data("http://169.254.169.254/latest/meta-data/")
+
+        assert result == []
+        mock_validate.assert_called_once_with("http://169.254.169.254/latest/meta-data/")
+        mock_web_base_loader_class.assert_not_called()
+
+    @patch("application.parser.remote.web_loader.validate_url")
+    @patch("application.parser.remote.web_loader.logging")
+    def test_load_data_logs_warning_on_ssrf_failure(self, mock_logging, mock_validate, web_loader):
+        """SSRF rejections should be logged as warnings, not errors."""
+        mock_validate.side_effect = SSRFError("blocked")
+
+        web_loader.loader = MagicMock()
+        web_loader.load_data("http://127.0.0.1")
+
+        mock_logging.warning.assert_called_once()
+        warning_msg = mock_logging.warning.call_args[0][0]
+        assert "SSRF" in warning_msg
+        assert "127.0.0.1" in warning_msg
+
+    @patch("application.parser.remote.web_loader.validate_url")
+    def test_load_data_mixed_safe_and_unsafe_urls(self, mock_validate, web_loader):
+        """In a list of URLs, unsafe ones are skipped while safe ones still load."""
+        def validate(url):
+            if "169.254.169.254" in url:
+                raise SSRFError("metadata blocked")
+            return url
+
+        mock_validate.side_effect = validate
+
+        safe_doc = MagicMock(spec=LCDocument)
+        safe_doc.page_content = "Public page"
+        safe_doc.metadata = {"source": "https://example.com"}
+
+        safe_loader_instance = MagicMock()
+        safe_loader_instance.load.return_value = [safe_doc]
+
+        mock_web_base_loader_class = MagicMock(return_value=safe_loader_instance)
+        web_loader.loader = mock_web_base_loader_class
+
+        urls = ["https://example.com", "http://169.254.169.254/latest/meta-data/"]
+        result = web_loader.load_data(urls)
+
+        assert len(result) == 1
+        assert result[0].text == "Public page"
+        # Only the safe URL should have been fetched
+        mock_web_base_loader_class.assert_called_once_with(["https://example.com"], header_template=headers)
+
+
 class TestWebLoaderEdgeCases:
     """Test WebLoader edge cases."""
 
@@ -246,7 +320,8 @@ class TestWebLoaderEdgeCases:
         result = web_loader.load_data([])
         assert result == []
 
-    def test_load_data_empty_response(self, web_loader):
+    @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
+    def test_load_data_empty_response(self, mock_validate, web_loader):
         """Test loading data when WebBaseLoader returns empty list."""
         mock_loader_instance = MagicMock()
         mock_loader_instance.load.return_value = []
@@ -285,7 +360,8 @@ class TestWebLoaderIntegration:
         assert hasattr(web_loader, 'load_data')
         assert callable(web_loader.load_data)
 
-    def test_load_langchain_documents_method(self, web_loader, mock_langchain_document):
+    @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
+    def test_load_langchain_documents_method(self, mock_validate, web_loader, mock_langchain_document):
         """Test inherited load_langchain_documents method."""
         mock_loader_instance = MagicMock()
         mock_loader_instance.load.return_value = [mock_langchain_document]

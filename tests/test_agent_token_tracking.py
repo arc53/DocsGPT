@@ -176,6 +176,9 @@ class TestLLMHandlerTokenTracking:
         # Create mock agent that hits limit on second tool
         mock_agent = Mock()
         mock_agent.context_limit_reached = False
+        mock_agent.llm.__class__.__name__ = "MockLLM"
+        mock_agent.tool_executor.check_pause = Mock(return_value=None)
+        mock_agent.tool_executor._name_to_tool = {}
 
         call_count = [0]
 
@@ -235,6 +238,9 @@ class TestLLMHandlerTokenTracking:
         mock_agent = Mock()
         mock_agent.context_limit_reached = False
         mock_agent._check_context_limit = Mock(return_value=False)
+        mock_agent.llm.__class__.__name__ = "MockLLM"
+        mock_agent.tool_executor.check_pause = Mock(return_value=None)
+        mock_agent.tool_executor._name_to_tool = {}
         mock_agent._execute_tool_action = Mock(
             return_value=iter([{"type": "tool_call", "data": {}}])
         )
@@ -300,7 +306,7 @@ class TestLLMHandlerTokenTracking:
 
         def tool_handler_gen(*args):
             yield {"type": "tool", "data": {}}
-            return []
+            return [], None
 
         # Mock handle_tool_calls to return messages and set flag
         with patch.object(

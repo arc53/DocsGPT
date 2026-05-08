@@ -1,0 +1,66 @@
+---
+title: Upgrading DocsGPT
+description: Upgrade your DocsGPT deployment across Docker Compose, source builds, and Kubernetes.
+---
+
+import { Callout } from 'nextra/components'
+
+# Upgrading DocsGPT
+
+<Callout type="warning">
+  **Upgrading from 0.16.x?** User data moved from MongoDB to Postgres in 0.17.0. Follow the [Postgres Migration guide](/Deploying/Postgres-Migration) before running `docker compose pull` or `git pull` — existing deployments will not start cleanly without it.
+</Callout>
+
+## Check your version
+
+```bash
+docker compose exec backend python -c "from application.version import get_version; print(get_version())"
+```
+
+Release notes: [changelog](/changelog). Tags: [GitHub releases](https://github.com/arc53/DocsGPT/releases).
+
+## Docker Compose — hub images
+
+```bash
+cd DocsGPT/deployment
+docker compose -f docker-compose-hub.yaml pull
+docker compose -f docker-compose-hub.yaml up -d
+```
+
+`pull` fetches the latest image for whichever tag your compose file references. To move to a specific release, edit `image: arc53/docsgpt:<tag>` first.
+
+## Docker Compose — from source
+
+```bash
+cd DocsGPT
+git pull
+docker compose -f deployment/docker-compose.yaml build
+docker compose -f deployment/docker-compose.yaml up -d
+```
+
+Swap `git pull` for `git checkout <tag>` if you want to pin a specific release.
+
+## Kubernetes
+
+```bash
+kubectl set image deployment/docsgpt-backend backend=arc53/docsgpt:<tag>
+kubectl set image deployment/docsgpt-worker worker=arc53/docsgpt:<tag>
+kubectl rollout status deployment/docsgpt-backend
+kubectl rollout status deployment/docsgpt-worker
+```
+
+Full manifests: [Kubernetes deployment guide](/Deploying/Kubernetes-Deploying).
+
+## Migrations
+
+Alembic migrations run on worker startup. To apply manually:
+
+```bash
+docker compose exec backend alembic -c application/alembic.ini upgrade head
+```
+
+`upgrade head` is idempotent.
+
+## Rollback
+
+Set the image tag to the previous release and `up -d` again. Schema changes are not reversible without a backup — take one before upgrading any release that mentions migrations in the changelog.

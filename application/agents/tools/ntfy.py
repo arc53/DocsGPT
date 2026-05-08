@@ -71,7 +71,7 @@ class NtfyTool(Tool):
         if self.token:
             headers["Authorization"] = f"Basic {self.token}"
         data = message.encode("utf-8")
-        response = requests.post(url, headers=headers, data=data)
+        response = requests.post(url, headers=headers, data=data, timeout=100)
         return {"status_code": response.status_code, "message": "Message sent"}
 
     def get_actions_metadata(self):
@@ -116,12 +116,13 @@ class NtfyTool(Tool):
         ]
 
     def get_config_requirements(self):
-        """
-        Specify the configuration requirements.
-
-        Returns:
-            dict: Dictionary describing required config parameters.
-        """
         return {
-            "token": {"type": "string", "description": "Access token for authentication"},
+            "token": {
+                "type": "string",
+                "label": "Access Token",
+                "description": "Ntfy access token for authentication",
+                "required": True,
+                "secret": True,
+                "order": 1,
+            },
         }

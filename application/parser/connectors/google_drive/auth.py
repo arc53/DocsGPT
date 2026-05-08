@@ -8,6 +8,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from application.core.settings import settings
+from application.parser.connectors._auth_utils import session_token_fingerprint
 from application.parser.connectors.base import BaseConnectorAuth
 
 
@@ -209,33 +210,29 @@ class GoogleDriveAuth(BaseConnectorAuth):
     
     def get_token_info_from_session(self, session_token: str) -> Dict[str, Any]:
         try:
-            from application.core.mongo_db import MongoDB
-            from application.core.settings import settings
+            from application.storage.db.repositories.connector_sessions import (
+                ConnectorSessionsRepository,
+            )
+            from application.storage.db.session import db_readonly
 
-            mongo = MongoDB.get_client()
-            db = mongo[settings.MONGO_DB_NAME]
-            
-            sessions_collection = db["connector_sessions"]
-            session = sessions_collection.find_one({"session_token": session_token})   
+            with db_readonly() as conn:
+                session = ConnectorSessionsRepository(conn).get_by_session_token(
+                    session_token
+                )
             if not session:
-                raise ValueError(f"Invalid session token: {session_token}")
+                raise ValueError(
+                    f"Invalid session token ({session_token_fingerprint(session_token)})"
+                )
 
-            if "token_info" not in session:
-                raise ValueError("Session missing token information")
-
-            token_info = session["token_info"]
+            token_info = session.get("token_info")
             if not token_info:
-                raise ValueError("Invalid token information")
+                raise ValueError("Session missing token information")
 
             required_fields = ["access_token", "refresh_token"]
             missing_fields = [field for field in required_fields if field not in token_info or not token_info.get(field)]
             if missing_fields:
                 raise ValueError(f"Missing required token fields: {missing_fields}")
 
-            if 'client_id' not in token_info:
-                token_info['client_id'] = settings.GOOGLE_CLIENT_ID
-            if 'client_secret' not in token_info:
-                token_info['client_secret'] = settings.GOOGLE_CLIENT_SECRET
             if 'token_uri' not in token_info:
                 token_info['token_uri'] = 'https://oauth2.googleapis.com/token'
 

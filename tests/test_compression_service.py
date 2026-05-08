@@ -427,6 +427,109 @@ class TestCompressionService:
 
         assert token_count_with_tools > token_count_without_tools
 
+    def test_count_message_tokens_skips_inline_image_bytes(self):
+        # Google attaches images as raw bytes inline. Stringifying the
+        # part would tokenize the byte repr (~2M tokens for a 1MB image),
+        # trigger spurious compression, and overflow downstream input
+        # limits. The estimate must stay bounded.
+        big_bytes = b"\x00" * 1_000_000
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "describe this"},
+                    {
+                        "files": [
+                            {"file_bytes": big_bytes, "mime_type": "image/png"}
+                        ]
+                    },
+                ],
+            }
+        ]
+        tokens = TokenCounter.count_message_tokens(messages)
+        assert tokens < 5000
+
+    def test_count_message_tokens_per_image_estimate_scales(self):
+        msgs_one = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "files": [
+                            {"file_bytes": b"x", "mime_type": "image/png"}
+                        ]
+                    }
+                ],
+            }
+        ]
+        msgs_two = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "files": [
+                            {"file_bytes": b"x", "mime_type": "image/png"},
+                            {"file_uri": "https://x", "mime_type": "image/jpeg"},
+                        ]
+                    }
+                ],
+            }
+        ]
+        assert TokenCounter.count_message_tokens(
+            msgs_two
+        ) > TokenCounter.count_message_tokens(msgs_one)
+
+    def test_count_message_tokens_skips_openai_image_url(self):
+        # OpenAI puts images inline as base64 data URLs. ``str(item)`` on
+        # the dict would tokenize the entire base64 payload.
+        big_b64 = "A" * 1_000_000
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{big_b64}"
+                        },
+                    },
+                ],
+            }
+        ]
+        tokens = TokenCounter.count_message_tokens(messages)
+        assert tokens < 5000
+
+    def test_count_message_tokens_skips_anthropic_image(self):
+        # Anthropic puts images inline as ``source.data`` base64.
+        big_b64 = "A" * 1_000_000
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": big_b64,
+                        },
+                    },
+                ],
+            }
+        ]
+        tokens = TokenCounter.count_message_tokens(messages)
+        assert tokens < 5000
+
+    def test_count_message_tokens_still_counts_text_parts(self):
+        # The image bypass must not regress regular text-part counting.
+        messages = [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": "hello world"}],
+            }
+        ]
+        assert TokenCounter.count_message_tokens(messages) > 0
+
     def test_format_conversation_for_compression(
         self, prompt_builder, sample_conversation
     ):
@@ -1010,7 +1113,7 @@ Decorators are essential for writing clean, maintainable Python code with separa
 5. Async Libraries:
    - aiohttp: Async HTTP client/server
    - asyncpg: Async PostgreSQL driver
-   - motor: Async MongoDB driver
+   - asyncio: Async I/O framework
    - aioredis: Async Redis client
 
 6. Error Handling:

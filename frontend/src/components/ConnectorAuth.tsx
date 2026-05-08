@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
-import { useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
+
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 
@@ -136,7 +137,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
           </svg>
 
           <span
-            className="text-sm text-[#E60000] dark:text-[#E37064]"
+            className="text-sm text-[#E60000] dark:text-red-400"
             style={{
               fontFamily: 'Inter',
               lineHeight: '100%',
@@ -149,8 +150,8 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
 
       {isConnected ? (
         <div className="mb-4">
-          <div className="flex w-full items-center justify-between rounded-[10px] bg-[#8FDD51] px-4 py-2 text-sm font-medium text-[#212121]">
-            <div className="flex items-center gap-2">
+          <div className="text-eerie-black flex w-full items-center justify-between rounded-[10px] bg-[#8FDD51] px-4 py-2 text-sm font-medium">
+            <div className="flex max-w-[500px] items-center gap-2">
               <svg className="h-4 w-4" viewBox="0 0 24 24">
                 <path
                   fill="currentColor"
@@ -166,7 +167,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
             {onDisconnect && (
               <button
                 onClick={onDisconnect}
-                className="text-xs font-medium text-[#212121] underline hover:text-gray-700"
+                className="text-eerie-black text-xs font-medium underline hover:text-gray-700"
               >
                 {t('modals.uploadDoc.connectors.auth.disconnect')}
               </button>

@@ -10,9 +10,11 @@ import CircleX from '../assets/circle-x.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import Trash from '../assets/trash.svg';
+import ConfigFields from '../components/ConfigFields';
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import ToggleSwitch from '../components/ToggleSwitch';
+import { Input as ShadInput } from '../components/ui/input';
 import { useDarkTheme } from '../hooks';
 import AddActionModal from '../modals/AddActionModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -44,21 +46,21 @@ export default function ToolConfig({
   handleGoBack: () => void;
 }) {
   const token = useSelector(selectToken);
-  const [authKey, setAuthKey] = React.useState<string>(() => {
-    if (tool.name === 'mcp_tool') {
-      const config = tool.config as any;
-      if (config.auth_type === 'api_key') {
-        return config.api_key || '';
-      } else if (config.auth_type === 'bearer') {
-        return config.encrypted_token || '';
-      } else if (config.auth_type === 'basic') {
-        return config.password || '';
+  const configRequirements = React.useMemo(
+    () => tool.configRequirements ?? {},
+    [tool.configRequirements],
+  );
+  const [configValues, setConfigValues] = React.useState<{
+    [key: string]: any;
+  }>(() => {
+    const vals: { [key: string]: any } = {};
+    const cfg = tool.config as { [key: string]: any } | undefined;
+    Object.keys(configRequirements).forEach((key) => {
+      if (cfg && key in cfg) {
+        vals[key] = cfg[key];
       }
-      return '';
-    } else if ('token' in tool.config) {
-      return tool.config.token;
-    }
-    return '';
+    });
+    return vals;
   });
   const [customName, setCustomName] = React.useState<string>(
     tool.customName || '',
@@ -69,12 +71,17 @@ export default function ToolConfig({
     React.useState<ActiveState>('INACTIVE');
   const [initialState, setInitialState] = React.useState({
     customName: tool.customName || '',
-    authKey: 'token' in tool.config ? tool.config.token : '',
+    configValues: { ...configValues } as { [key: string]: any },
     config: tool.config,
     actions: 'actions' in tool ? tool.actions : [],
   });
   const [hasUnsavedChanges, setHasUnsavedChanges] = React.useState(false);
   const [showUnsavedModal, setShowUnsavedModal] = React.useState(false);
+  const [configErrors, setConfigErrors] = React.useState<{
+    [key: string]: string;
+  }>({});
+  const [saving, setSaving] = React.useState(false);
+  const [saveError, setSaveError] = React.useState('');
   const [userActionsSearch, setUserActionsSearch] = React.useState('');
   const [expandedUserActions, setExpandedUserActions] = React.useState<
     Set<number>
@@ -115,16 +122,76 @@ export default function ToolConfig({
     }
   };
 
+  const handleFieldChange = (key: string, value: any) => {
+    setConfigValues((prev) => ({ ...prev, [key]: value }));
+    if (configErrors[key]) setConfigErrors((prev) => ({ ...prev, [key]: '' }));
+  };
+
+  const validateConfig = () => {
+    if (tool.name === 'api_tool') return true;
+    const newErrors: { [key: string]: string } = {};
+    Object.entries(configRequirements).forEach(([key, spec]) => {
+      if (spec.depends_on) {
+        const visible = Object.entries(spec.depends_on).every(
+          ([dk, dv]) => configValues[dk] === dv,
+        );
+        if (!visible) return;
+      }
+      if (spec.required && !configValues[key]?.toString().trim()) {
+        const hasEncCreds = !!(tool as any).config?.has_encrypted_credentials;
+        if (!(spec.secret && hasEncCreds)) {
+          newErrors[key] = `${spec.label || key} is required`;
+        }
+      }
+      if (
+        spec.type === 'number' &&
+        configValues[key] !== undefined &&
+        configValues[key] !== ''
+      ) {
+        const num = Number(configValues[key]);
+        if (isNaN(num) || num < 1) {
+          newErrors[key] = 'Must be a positive number';
+        }
+        if (key === 'timeout' && num > 300) {
+          newErrors[key] = 'Maximum timeout is 300 seconds';
+        }
+      }
+    });
+    setConfigErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const buildConfigToSave = () => {
+    if (tool.name === 'api_tool') return tool.config;
+    const config: { [key: string]: any } = {};
+    Object.entries(configRequirements).forEach(([key, spec]) => {
+      const val = configValues[key];
+      if (val !== undefined && val !== '') {
+        config[key] = val;
+      } else if (spec.secret) {
+        return;
+      } else {
+        const cfg = tool.config as { [key: string]: any } | undefined;
+        if (cfg && key in cfg) {
+          config[key] = cfg[key];
+        } else if (spec.default !== undefined) {
+          config[key] = spec.default;
+        }
+      }
+    });
+    return config;
+  };
+
   React.useEffect(() => {
     const currentState = {
       customName,
-      authKey,
+      configValues,
       config: tool.config,
       actions: 'actions' in tool ? tool.actions : [],
     };
 
     setHasUnsavedChanges(!areObjectsEqual(initialState, currentState));
-  }, [customName, authKey, tool]);
+  }, [customName, configValues, tool]);
 
   const handleCheckboxChange = (actionIndex: number, property: string) => {
     setTool({
@@ -156,29 +223,15 @@ export default function ToolConfig({
     });
   };
 
-  const handleSaveChanges = () => {
-    let configToSave;
-    if (tool.name === 'api_tool') {
-      configToSave = tool.config;
-    } else if (tool.name === 'mcp_tool') {
-      configToSave = { ...tool.config } as any;
-      const mcpConfig = tool.config as any;
+  const handleSaveChanges = async () => {
+    if (!validateConfig()) return;
+    const configToSave = buildConfigToSave();
 
-      if (authKey.trim()) {
-        if (mcpConfig.auth_type === 'api_key') {
-          configToSave.api_key = authKey;
-        } else if (mcpConfig.auth_type === 'bearer') {
-          configToSave.encrypted_token = authKey;
-        } else if (mcpConfig.auth_type === 'basic') {
-          configToSave.password = authKey;
-        }
-      }
-    } else {
-      configToSave = { token: authKey };
-    }
+    setSaving(true);
+    setSaveError('');
 
-    userService
-      .updateTool(
+    try {
+      await userService.updateTool(
         {
           id: tool.id,
           name: tool.name,
@@ -190,18 +243,20 @@ export default function ToolConfig({
           status: tool.status,
         },
         token,
-      )
-      .then(() => {
-        // Update initialState to match current state
-        setInitialState({
-          customName,
-          authKey,
-          config: tool.config,
-          actions: 'actions' in tool ? tool.actions : [],
-        });
-        setHasUnsavedChanges(false);
-        handleGoBack();
+      );
+      setInitialState({
+        customName,
+        configValues: { ...configValues },
+        config: tool.config,
+        actions: 'actions' in tool ? tool.actions : [],
       });
+      setHasUnsavedChanges(false);
+      handleGoBack();
+    } catch {
+      setSaveError(t('settings.tools.saveFailed'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = () => {
@@ -275,9 +330,9 @@ export default function ToolConfig({
   return (
     <div className="scrollbar-overlay mt-8 flex flex-col gap-4">
       <div className="mb-4 flex items-center justify-between">
-        <div className="text-eerie-black dark:text-bright-gray flex items-center gap-3 text-sm">
+        <div className="text-foreground dark:text-foreground flex items-center gap-3 text-sm">
           <button
-            className="rounded-full border p-3 text-sm text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
+            className="border-border text-muted-foreground hover:bg-accent rounded-full border p-3 text-sm"
             onClick={handleBackClick}
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
@@ -285,83 +340,71 @@ export default function ToolConfig({
           <p className="mt-px">{t('settings.tools.backToAllTools')}</p>
         </div>
         <button
-          className="bg-purple-30 hover:bg-violets-are-blue rounded-full px-3 py-2 text-xs text-nowrap text-white sm:px-4 sm:py-2"
+          className="bg-primary hover:bg-primary/90 rounded-full px-3 py-2 text-xs text-nowrap text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:py-2"
           onClick={handleSaveChanges}
+          disabled={!hasUnsavedChanges || saving}
         >
-          {t('settings.tools.save')}
+          {saving ? t('settings.tools.saving') : t('settings.tools.save')}
         </button>
       </div>
-      {/* Custom name section */}
+      {saveError && (
+        <div className="mb-2 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+          {saveError}
+        </div>
+      )}
       <div className="mt-1">
-        <p className="text-eerie-black dark:text-bright-gray text-sm font-semibold">
+        <p className="text-foreground dark:text-foreground text-sm font-semibold">
           {t('settings.tools.customName')}
         </p>
         <div className="relative mt-4 w-full max-w-96">
-          <Input
+          <ShadInput
             type="text"
             value={customName}
             onChange={(e) => setCustomName(e.target.value)}
-            borderVariant="thin"
             placeholder={t('settings.tools.customNamePlaceholder')}
+            className="rounded-xl"
           />
         </div>
       </div>
       <div className="mt-1">
-        {Object.keys(tool?.config).length !== 0 && tool.name !== 'api_tool' && (
-          <p className="text-eerie-black dark:text-bright-gray text-sm font-semibold">
-            {tool.name === 'mcp_tool'
-              ? (tool.config as any)?.auth_type === 'bearer'
-                ? 'Bearer Token'
-                : (tool.config as any)?.auth_type === 'api_key'
-                  ? 'API Key'
-                  : (tool.config as any)?.auth_type === 'basic'
-                    ? 'Password'
-                    : t('settings.tools.authentication')
-              : t('settings.tools.authentication')}
-          </p>
-        )}
-        <div className="mt-4 flex flex-col items-start gap-2 sm:flex-row sm:items-center">
-          {Object.keys(tool?.config).length !== 0 &&
-            tool.name !== 'api_tool' && (
-              <div className="relative w-full max-w-96">
-                <Input
-                  type="text"
-                  value={authKey}
-                  onChange={(e) => setAuthKey(e.target.value)}
-                  borderVariant="thin"
-                  placeholder={
-                    tool.name === 'mcp_tool'
-                      ? (tool.config as any)?.auth_type === 'bearer'
-                        ? 'Bearer Token'
-                        : (tool.config as any)?.auth_type === 'api_key'
-                          ? 'API Key'
-                          : (tool.config as any)?.auth_type === 'basic'
-                            ? 'Password'
-                            : t('modals.configTool.apiKeyPlaceholder')
-                      : t('modals.configTool.apiKeyPlaceholder')
+        {tool.name !== 'api_tool' &&
+          Object.keys(configRequirements).length > 0 && (
+            <div>
+              <p className="text-foreground dark:text-foreground mb-4 text-sm font-semibold">
+                {t('settings.tools.authentication')}
+              </p>
+              <div className="max-w-96">
+                <ConfigFields
+                  configRequirements={configRequirements}
+                  values={configValues}
+                  onChange={handleFieldChange}
+                  errors={configErrors}
+                  isEditing
+                  hasEncryptedCredentials={
+                    !!(tool as any).config?.has_encrypted_credentials
                   }
                 />
               </div>
-            )}
-        </div>
+            </div>
+          )}
       </div>
       <div className="flex flex-col gap-4">
         <div className="mx-0 my-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40"></div>
         <div className="flex w-full flex-row items-center justify-between gap-2">
-          <p className="text-eerie-black dark:text-bright-gray text-base font-semibold">
+          <p className="text-foreground dark:text-foreground text-base font-semibold">
             {t('settings.tools.actions')}
           </p>
           {tool.name === 'api_tool' && (
             <div className="flex gap-2">
               <button
                 onClick={() => setImportModalState('ACTIVE')}
-                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
+                className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
               >
                 {t('settings.tools.importSpec')}
               </button>
               <button
                 onClick={() => setActionModalState('ACTIVE')}
-                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
+                className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
               >
                 {t('settings.tools.addAction')}
               </button>
@@ -391,26 +434,24 @@ export default function ToolConfig({
             {'actions' in tool && tool.actions && tool.actions.length > 0 ? (
               <>
                 <div className="relative">
+                  <svg
+                    className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    strokeWidth={2}
+                    stroke="currentColor"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <path strokeLinecap="round" d="m21 21-4.35-4.35" />
+                  </svg>
                   <input
                     type="text"
                     value={userActionsSearch}
                     onChange={(e) => setUserActionsSearch(e.target.value)}
                     placeholder={t('settings.tools.searchActions')}
-                    className="border-silver dark:border-silver/40 dark:bg-raisin-black w-full rounded-full border px-4 py-2 pl-10 text-sm outline-none focus:border-purple-500 dark:text-white dark:placeholder-gray-500"
+                    className="border-border text-foreground placeholder:text-muted-foreground h-10 w-full rounded-full border bg-transparent pr-4 pl-10 text-sm outline-none"
                   />
-                  <svg
-                    className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
                 </div>
 
                 {filteredUserActions.length === 0 && userActionsSearch && (
@@ -424,10 +465,10 @@ export default function ToolConfig({
                   return (
                     <div
                       key={originalIndex}
-                      className="border-silver dark:border-silver/40 w-full rounded-xl border"
+                      className="border-border dark:border-border w-full rounded-xl border"
                     >
                       <div
-                        className={`border-silver dark:border-silver/40 flex cursor-pointer flex-wrap items-center justify-between ${isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl'} bg-[#F9F9F9] px-4 py-3 dark:bg-[#28292D]`}
+                        className={`border-border dark:border-border flex cursor-pointer flex-wrap items-center justify-between ${isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl'} bg-muted px-4 py-3`}
                         onClick={() => toggleUserActionExpand(originalIndex)}
                       >
                         <div className="flex items-center gap-3">
@@ -436,7 +477,7 @@ export default function ToolConfig({
                             alt="expand"
                             className={`h-4 w-4 opacity-60 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
                           />
-                          <p className="text-eerie-black dark:text-bright-gray font-semibold">
+                          <p className="text-foreground dark:text-foreground font-semibold">
                             {action.name}
                           </p>
                           {action.description && (
@@ -446,9 +487,33 @@ export default function ToolConfig({
                           )}
                         </div>
                         <div
-                          className="flex items-center gap-2"
+                          className="flex items-center gap-3"
                           onClick={(e) => e.stopPropagation()}
                         >
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {t('settings.tools.requireApproval', 'Approval')}
+                            </span>
+                            <ToggleSwitch
+                              checked={action.require_approval ?? false}
+                              onChange={(checked) => {
+                                setTool({
+                                  ...tool,
+                                  actions: tool.actions.map((act, index) => {
+                                    if (index === originalIndex) {
+                                      return {
+                                        ...act,
+                                        require_approval: checked,
+                                      };
+                                    }
+                                    return act;
+                                  }),
+                                });
+                              }}
+                              size="small"
+                              id={`approvalToggle-${originalIndex}`}
+                            />
+                          </div>
                           <ToggleSwitch
                             checked={action.active}
                             onChange={(checked) => {
@@ -522,7 +587,7 @@ export default function ToolConfig({
                                       <td>
                                         <label
                                           htmlFor={uniqueKey}
-                                          className="ml-[10px] flex cursor-pointer items-start gap-4"
+                                          className="ml-2.5 flex cursor-pointer items-start gap-4"
                                         >
                                           <div className="flex items-center">
                                             &#8203;
@@ -545,7 +610,7 @@ export default function ToolConfig({
                                         <input
                                           key={uniqueKey}
                                           value={param[1].description}
-                                          className="border-silver dark:border-silver/40 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                                          className="border-border dark:border-border rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
                                           onChange={(e) => {
                                             setTool({
                                               ...tool,
@@ -583,7 +648,7 @@ export default function ToolConfig({
                                           value={param[1].value}
                                           key={uniqueKey}
                                           disabled={param[1].filled_by_llm}
-                                          className={`border-silver dark:border-silver/40 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden ${param[1].filled_by_llm ? 'opacity-50' : ''}`}
+                                          className={`border-border dark:border-border rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden ${param[1].filled_by_llm ? 'opacity-50' : ''}`}
                                           onChange={(e) => {
                                             setTool({
                                               ...tool,
@@ -658,29 +723,17 @@ export default function ToolConfig({
             modalState="ACTIVE"
             setModalState={(state) => setShowUnsavedModal(state === 'ACTIVE')}
             submitLabel={t('settings.tools.saveAndLeave')}
-            handleSubmit={() => {
-              let configToSave;
-              if (tool.name === 'api_tool') {
-                configToSave = tool.config;
-              } else if (tool.name === 'mcp_tool') {
-                configToSave = { ...tool.config } as any;
-                const mcpConfig = tool.config as any;
-
-                if (authKey.trim()) {
-                  if (mcpConfig.auth_type === 'api_key') {
-                    configToSave.api_key = authKey;
-                  } else if (mcpConfig.auth_type === 'bearer') {
-                    configToSave.encrypted_token = authKey;
-                  } else if (mcpConfig.auth_type === 'basic') {
-                    configToSave.password = authKey;
-                  }
-                }
-              } else {
-                configToSave = { token: authKey };
+            handleSubmit={async () => {
+              if (!validateConfig()) {
+                setShowUnsavedModal(false);
+                return;
               }
+              const configToSave = buildConfigToSave();
+              setSaving(true);
+              setSaveError('');
 
-              userService
-                .updateTool(
+              try {
+                await userService.updateTool(
                   {
                     id: tool.id,
                     name: tool.name,
@@ -692,11 +745,15 @@ export default function ToolConfig({
                     status: tool.status,
                   },
                   token,
-                )
-                .then(() => {
-                  setShowUnsavedModal(false);
-                  handleGoBack();
-                });
+                );
+                setShowUnsavedModal(false);
+                handleGoBack();
+              } catch {
+                setSaveError(t('settings.tools.saveFailed'));
+                setShowUnsavedModal(false);
+              } finally {
+                setSaving(false);
+              }
             }}
             cancelLabel={t('settings.tools.leaveWithoutSaving')}
             handleCancel={() => {
@@ -820,26 +877,24 @@ function APIToolConfig({
   return (
     <div className="scrollbar-overlay flex flex-col gap-4">
       <div className="relative">
+        <svg
+          className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          strokeWidth={2}
+          stroke="currentColor"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <path strokeLinecap="round" d="m21 21-4.35-4.35" />
+        </svg>
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder={t('settings.tools.searchActions')}
-          className="border-silver dark:border-silver/40 dark:bg-raisin-black w-full rounded-full border px-4 py-2 pl-10 text-sm outline-none focus:border-purple-500 dark:text-white dark:placeholder-gray-500"
+          className="border-border text-foreground placeholder:text-muted-foreground h-10 w-full rounded-full border bg-transparent pr-4 pl-10 text-sm outline-none"
         />
-        <svg
-          className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-          />
-        </svg>
       </div>
 
       {filteredActions.length === 0 && searchQuery && (
@@ -854,10 +909,10 @@ function APIToolConfig({
           return (
             <div
               key={actionIndex}
-              className="border-silver dark:border-silver/40 w-full rounded-xl border"
+              className="border-border dark:border-border w-full rounded-xl border"
             >
               <div
-                className={`border-silver dark:border-silver/40 flex cursor-pointer flex-wrap items-center justify-between ${isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl'} bg-[#F9F9F9] px-4 py-3 dark:bg-[#28292D]`}
+                className={`border-border dark:border-border flex cursor-pointer flex-wrap items-center justify-between ${isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl'} bg-muted px-4 py-3`}
                 onClick={() => toggleActionExpand(actionName)}
               >
                 <div className="flex items-center gap-3">
@@ -871,7 +926,7 @@ function APIToolConfig({
                   >
                     {action.method}
                   </span>
-                  <p className="text-eerie-black dark:text-bright-gray font-semibold">
+                  <p className="text-foreground dark:text-foreground font-semibold">
                     {action.name}
                   </p>
                   {action.description && (
@@ -895,6 +950,35 @@ function APIToolConfig({
                       className="h-4 w-4 opacity-40 transition-opacity hover:opacity-100"
                     />
                   </button>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {t('settings.tools.requireApproval', 'Approval')}
+                    </span>
+                    <ToggleSwitch
+                      checked={action.require_approval ?? false}
+                      onChange={() => {
+                        setApiTool((prevApiTool) => {
+                          const updatedActions = {
+                            ...prevApiTool.config.actions,
+                          };
+                          updatedActions[actionName] = {
+                            ...updatedActions[actionName],
+                            require_approval:
+                              !updatedActions[actionName].require_approval,
+                          };
+                          return {
+                            ...prevApiTool,
+                            config: {
+                              ...prevApiTool.config,
+                              actions: updatedActions,
+                            },
+                          };
+                        });
+                      }}
+                      size="small"
+                      id={`approvalToggle-${actionIndex}`}
+                    />
+                  </div>
                   <ToggleSwitch
                     checked={action.active}
                     onChange={() => handleActionToggle(actionName)}
@@ -934,7 +1018,7 @@ function APIToolConfig({
                   </div>
                   <div className="mt-4 px-5 py-2">
                     <div className="relative w-full">
-                      <span className="text-gray-4000 dark:bg-raisin-black dark:text-silver absolute -top-2 left-5 z-10 bg-white px-2 text-xs">
+                      <span className="text-muted-foreground bg-card absolute -top-2 left-5 z-10 px-2 text-xs">
                         {t('settings.tools.method')}
                       </span>
                       <Dropdown
@@ -976,7 +1060,6 @@ function APIToolConfig({
                         }}
                         size="w-56"
                         rounded="3xl"
-                        border="border"
                       />
                     </div>
                   </div>
@@ -1014,7 +1097,7 @@ function APIToolConfig({
                     action.method === 'OPTIONS') && (
                     <div className="mt-4 px-5 py-2">
                       <div className="relative w-full">
-                        <span className="text-gray-4000 dark:bg-raisin-black dark:text-silver absolute -top-2 left-5 z-10 bg-white px-2 text-xs">
+                        <span className="text-muted-foreground bg-card absolute -top-2 left-5 z-10 px-2 text-xs">
                           {t('settings.tools.bodyContentType')}
                         </span>
                         <Dropdown
@@ -1056,10 +1139,9 @@ function APIToolConfig({
                           }}
                           size="w-56"
                           rounded="3xl"
-                          border="border"
                         />
                       </div>
-                      <p className="text-eerie-black dark:text-bright-gray mt-2 text-xs opacity-60">
+                      <p className="text-foreground dark:text-foreground mt-2 text-xs opacity-60">
                         {action.body_content_type === 'multipart/form-data' &&
                           'For APIs requiring multipart format. File uploads not supported through LLM.'}
                         {action.body_content_type ===
@@ -1091,7 +1173,6 @@ function APIToolConfig({
         })}
       </div>
 
-      {/* Confirmation Modal */}
       {deleteModalState === 'ACTIVE' && actionToDelete && (
         <ConfirmationModal
           message={t('settings.tools.deleteActionWarning', {
@@ -1312,7 +1393,7 @@ function APIActionTable({
                   <div className="flex flex-row items-center justify-between gap-2">
                     <input
                       value={newPropertyKey}
-                      className="border-silver dark:border-silver/40 flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                      className="border-border dark:border-border flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
                       onChange={(e) => setNewPropertyKey(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -1342,7 +1423,7 @@ function APIActionTable({
                 ) : (
                   <input
                     value={key}
-                    className="border-silver dark:border-silver/40 flex w-full min-w-[175.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                    className="border-border dark:border-border flex w-full min-w-[175.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
                     onFocus={() => handleRenamePropertyStart(section, key)}
                     readOnly
                   />
@@ -1358,14 +1439,14 @@ function APIActionTable({
                       e.target.value as 'string' | 'integer',
                     )
                   }
-                  className="border-silver dark:border-silver/40 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                  className="border-border dark:border-border rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
                 >
                   <option value="string">string</option>
                   <option value="integer">integer</option>
                 </select>
               </td>
               <td>
-                <label className="ml-[10px] flex cursor-pointer items-start gap-4">
+                <label className="ml-2.5 flex cursor-pointer items-start gap-4">
                   <div className="flex items-center">
                     <input
                       checked={param.filled_by_llm}
@@ -1386,7 +1467,7 @@ function APIActionTable({
               <td className="w-10">
                 <input
                   value={param.description}
-                  className="border-silver dark:border-silver/40 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                  className="border-border dark:border-border rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
                   onChange={(e) =>
                     handlePropertyChange(
                       section,
@@ -1404,7 +1485,7 @@ function APIActionTable({
                   onChange={(e) =>
                     handlePropertyChange(section, key, 'value', e.target.value)
                   }
-                  className={`border-silver dark:border-silver/40 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden ${param.filled_by_llm ? 'opacity-50' : ''}`}
+                  className={`border-border dark:border-border rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden ${param.filled_by_llm ? 'opacity-50' : ''}`}
                 ></input>
               </td>
               <td
@@ -1414,7 +1495,7 @@ function APIActionTable({
                   maxWidth: '50px',
                   padding: '0',
                 }}
-                className="border-silver dark:border-silver/40 border-b"
+                className="border-border dark:border-border border-b"
               >
                 <button
                   onClick={() => handlePorpertyDelete(section, key)}
@@ -1438,7 +1519,7 @@ function APIActionTable({
                   }
                 }}
                 placeholder={t('settings.tools.propertyName')}
-                className="border-silver dark:border-silver/40 flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                className="border-border dark:border-border flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
               />
             </td>
             <td>
@@ -1447,7 +1528,7 @@ function APIActionTable({
                 onChange={(e) =>
                   setNewPropertyType(e.target.value as 'string' | 'integer')
                 }
-                className="border-silver dark:border-silver/40 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                className="border-border dark:border-border rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
               >
                 <option value="string">string</option>
                 <option value="integer">integer</option>
@@ -1456,13 +1537,13 @@ function APIActionTable({
             <td colSpan={3} className="text-right">
               <button
                 onClick={handleAddProperty}
-                className="bg-purple-30 hover:bg-violets-are-blue mr-1 rounded-full px-5 py-[4px] text-sm text-white"
+                className="bg-primary hover:bg-primary/90 mr-1 rounded-full px-5 py-1 text-sm text-white"
               >
                 {t('settings.tools.add')}
               </button>
               <button
                 onClick={handleAddPropertyCancel}
-                className="rounded-full border border-solid border-red-500 px-5 py-[4px] text-sm text-red-500 hover:bg-red-500 hover:text-white"
+                className="rounded-full border border-solid border-red-500 px-5 py-1 text-sm text-red-500 hover:bg-red-500 hover:text-white"
               >
                 {t('settings.tools.cancel')}
               </button>
@@ -1481,7 +1562,7 @@ function APIActionTable({
             <td colSpan={5}>
               <button
                 onClick={() => handleAddPropertyStart(section)}
-                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue flex items-start rounded-full border border-solid px-5 py-[4px] text-sm text-nowrap transition-colors hover:text-white"
+                className="border-primary text-primary hover:bg-primary/90 flex items-start rounded-full border border-solid px-5 py-1 text-sm text-nowrap transition-colors hover:text-white"
               >
                 {t('settings.tools.addNew')}
               </button>
@@ -1512,7 +1593,7 @@ function APIActionTable({
                   <div className="flex flex-row items-center justify-between gap-2">
                     <input
                       value={newPropertyKey}
-                      className="border-silver dark:border-silver/40 flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                      className="border-border dark:border-border flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
                       onChange={(e) => setNewPropertyKey(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -1542,7 +1623,7 @@ function APIActionTable({
                 ) : (
                   <input
                     value={key}
-                    className="border-silver dark:border-silver/40 flex w-full min-w-[175.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                    className="border-border dark:border-border flex w-full min-w-[175.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
                     onFocus={() => handleRenamePropertyStart('headers', key)}
                     readOnly
                   />
@@ -1560,13 +1641,13 @@ function APIActionTable({
                     )
                   }
                   placeholder="e.g., application/json"
-                  className="border-silver dark:border-silver/40 w-full rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                  className="border-border dark:border-border w-full rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
                 />
               </td>
               <td>
                 <input
                   value={param.description}
-                  className="border-silver dark:border-silver/40 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                  className="border-border dark:border-border rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
                   onChange={(e) =>
                     handlePropertyChange(
                       'headers',
@@ -1584,7 +1665,7 @@ function APIActionTable({
                   maxWidth: '50px',
                   padding: '0',
                 }}
-                className="border-silver dark:border-silver/40 border-b"
+                className="border-border dark:border-border border-b"
               >
                 <button
                   onClick={() => handlePorpertyDelete('headers', key)}
@@ -1608,19 +1689,19 @@ function APIActionTable({
                   }
                 }}
                 placeholder={t('settings.tools.propertyName')}
-                className="border-silver dark:border-silver/40 flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                className="border-border dark:border-border flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
               />
             </td>
             <td colSpan={2} className="text-right">
               <button
                 onClick={handleAddProperty}
-                className="bg-purple-30 hover:bg-violets-are-blue mr-1 rounded-full px-5 py-[4px] text-sm text-white"
+                className="bg-primary hover:bg-primary/90 mr-1 rounded-full px-5 py-1 text-sm text-white"
               >
                 {t('settings.tools.add')}
               </button>
               <button
                 onClick={handleAddPropertyCancel}
-                className="rounded-full border border-solid border-red-500 px-5 py-[4px] text-sm text-red-500 hover:bg-red-500 hover:text-white"
+                className="rounded-full border border-solid border-red-500 px-5 py-1 text-sm text-red-500 hover:bg-red-500 hover:text-white"
               >
                 {t('settings.tools.cancel')}
               </button>
@@ -1639,7 +1720,7 @@ function APIActionTable({
             <td colSpan={3}>
               <button
                 onClick={() => handleAddPropertyStart('headers')}
-                className="border-violets-are-blue text-violets-are-blue hover:bg-violets-are-blue flex items-start rounded-full border border-solid px-5 py-[4px] text-sm text-nowrap transition-colors hover:text-white"
+                className="border-primary text-primary hover:bg-primary/90 flex items-start rounded-full border border-solid px-5 py-1 text-sm text-nowrap transition-colors hover:text-white"
               >
                 {t('settings.tools.addNew')}
               </button>
@@ -1661,19 +1742,19 @@ function APIActionTable({
   return (
     <div className="scrollbar-overlay flex flex-col gap-6">
       <div>
-        <h3 className="text-eerie-black dark:text-bright-gray mb-1 text-base font-normal">
+        <h3 className="text-foreground dark:text-foreground mb-1 text-base font-normal">
           {t('settings.tools.headers')}
         </h3>
         <table className="table-default">
           <thead>
             <tr>
-              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.name')}
               </th>
-              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.value')}
               </th>
-              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.description')}
               </th>
               <th
@@ -1690,25 +1771,25 @@ function APIActionTable({
         </table>
       </div>
       <div>
-        <h3 className="text-eerie-black dark:text-bright-gray mb-1 text-base font-normal">
+        <h3 className="text-foreground dark:text-foreground mb-1 text-base font-normal">
           {t('settings.tools.queryParameters')}
         </h3>
         <table className="table-default">
           <thead>
             <tr>
-              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.name')}
               </th>
-              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.type')}
               </th>
-              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.filledByLLM')}
               </th>
-              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.description')}
               </th>
-              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.value')}
               </th>
               <th
@@ -1725,25 +1806,25 @@ function APIActionTable({
         </table>
       </div>
       <div className="mb-6">
-        <h3 className="text-eerie-black dark:text-bright-gray mb-1 text-base font-normal">
+        <h3 className="text-foreground dark:text-foreground mb-1 text-base font-normal">
           {t('settings.tools.body')}
         </h3>
         <table className="table-default">
           <thead>
             <tr>
-              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.name')}
               </th>
-              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.type')}
               </th>
-              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.filledByLLM')}
               </th>
-              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.description')}
               </th>
-              <th className="text-eerie-black dark:text-bright-gray px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.value')}
               </th>
               <th

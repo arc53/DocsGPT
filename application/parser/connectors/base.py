@@ -62,14 +62,25 @@ class BaseConnectorAuth(ABC):
     def is_token_expired(self, token_info: Dict[str, Any]) -> bool:
         """
         Check if a token is expired.
-        
+
         Args:
             token_info: Token information dictionary
-            
+
         Returns:
             True if token is expired, False otherwise
         """
         pass
+
+    def sanitize_token_info(self, token_info: Dict[str, Any], **extra_fields) -> Dict[str, Any]:
+        """Extract the fields safe to persist in the session store.
+        """
+        return {
+            "access_token": token_info.get("access_token"),
+            "refresh_token": token_info.get("refresh_token"),
+            "token_uri": token_info.get("token_uri"),
+            "expiry": token_info.get("expiry"),
+            **extra_fields,
+        }
 
 
 class BaseConnectorLoader(ABC):

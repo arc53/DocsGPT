@@ -2,12 +2,15 @@
 
 import datetime
 
-from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
+from sqlalchemy import text as sql_text
 
 from application.api import api
-from application.api.user.base import attachments_collection, conversations_collection
+from application.storage.db.base_repository import looks_like_uuid, row_to_dict
+from application.storage.db.repositories.attachments import AttachmentsRepository
+from application.storage.db.repositories.conversations import ConversationsRepository
+from application.storage.db.session import db_readonly, db_session
 from application.utils import check_required_fields
 
 conversations_ns = Namespace(
@@ -30,10 +33,13 @@ class DeleteConversation(Resource):
             return make_response(
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
+        user_id = decoded_token["sub"]
         try:
-            conversations_collection.delete_one(
-                {"_id": ObjectId(conversation_id), "user": decoded_token["sub"]}
-            )
+            with db_session() as conn:
+                repo = ConversationsRepository(conn)
+                conv = repo.get_any(conversation_id, user_id)
+                if conv is not None:
+                    repo.delete(str(conv["id"]), user_id)
         except Exception as err:
             current_app.logger.error(
                 f"Error deleting conversation: {err}", exc_info=True
@@ -53,7 +59,8 @@ class DeleteAllConversations(Resource):
             return make_response(jsonify({"success": False}), 401)
         user_id = decoded_token.get("sub")
         try:
-            conversations_collection.delete_many({"user": user_id})
+            with db_session() as conn:
+                ConversationsRepository(conn).delete_all_for_user(user_id)
         except Exception as err:
             current_app.logger.error(
                 f"Error deleting all conversations: {err}", exc_info=True
@@ -71,26 +78,21 @@ class GetConversations(Resource):
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
+        user_id = decoded_token.get("sub")
         try:
-            conversations = (
-                conversations_collection.find(
-                    {
-                        "$or": [
-                            {"api_key": {"$exists": False}},
-                            {"agent_id": {"$exists": True}},
-                        ],
-                        "user": decoded_token.get("sub"),
-                    }
+            with db_readonly() as conn:
+                conversations = ConversationsRepository(conn).list_for_user(
+                    user_id, limit=30
                 )
-                .sort("date", -1)
-                .limit(30)
-            )
-
             list_conversations = [
                 {
-                    "id": str(conversation["_id"]),
+                    "id": str(conversation["id"]),
                     "name": conversation["name"],
-                    "agent_id": conversation.get("agent_id", None),
+                    "agent_id": (
+                        str(conversation["agent_id"])
+                        if conversation.get("agent_id")
+                        else None
+                    ),
                     "is_shared_usage": conversation.get("is_shared_usage", False),
                     "shared_token": conversation.get("shared_token", None),
                 }
@@ -119,38 +121,74 @@ class GetSingleConversation(Resource):
             return make_response(
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
+        user_id = decoded_token.get("sub")
         try:
-            conversation = conversations_collection.find_one(
-                {"_id": ObjectId(conversation_id), "user": decoded_token.get("sub")}
-            )
-            if not conversation:
-                return make_response(jsonify({"status": "not found"}), 404)
-            # Process queries to include attachment names
+            with db_readonly() as conn:
+                repo = ConversationsRepository(conn)
+                conversation = repo.get_any(conversation_id, user_id)
+                if not conversation:
+                    return make_response(jsonify({"status": "not found"}), 404)
+                conv_pg_id = str(conversation["id"])
+                messages = repo.get_messages(conv_pg_id)
 
-            queries = conversation["queries"]
-            for query in queries:
-                if "attachments" in query and query["attachments"]:
-                    attachment_details = []
-                    for attachment_id in query["attachments"]:
-                        try:
-                            attachment = attachments_collection.find_one(
-                                {"_id": ObjectId(attachment_id)}
-                            )
-                            if attachment:
-                                attachment_details.append(
-                                    {
-                                        "id": str(attachment["_id"]),
-                                        "fileName": attachment.get(
-                                            "filename", "Unknown file"
-                                        ),
-                                    }
+                # Resolve attachment details (id, fileName) for each message.
+                attachments_repo = AttachmentsRepository(conn)
+                queries = []
+                for msg in messages:
+                    metadata = msg.get("metadata") or {}
+                    query = {
+                        "prompt": msg.get("prompt"),
+                        "response": msg.get("response"),
+                        "thought": msg.get("thought"),
+                        "sources": msg.get("sources") or [],
+                        "tool_calls": msg.get("tool_calls") or [],
+                        "timestamp": msg.get("timestamp"),
+                        "model_id": msg.get("model_id"),
+                        # Lets the client distinguish placeholder rows from
+                        # finalised answers and tail-poll in-flight ones.
+                        "message_id": str(msg["id"]) if msg.get("id") else None,
+                        "status": msg.get("status"),
+                        "request_id": msg.get("request_id"),
+                        "last_heartbeat_at": metadata.get("last_heartbeat_at"),
+                    }
+                    if metadata:
+                        query["metadata"] = metadata
+                    # Feedback on conversation_messages is a JSONB blob with
+                    # shape {"text": <str>, "timestamp": <iso>}. The legacy
+                    # frontend consumed a flat scalar feedback string, so
+                    # unwrap the ``text`` field for compat.
+                    feedback = msg.get("feedback")
+                    if feedback is not None:
+                        if isinstance(feedback, dict):
+                            query["feedback"] = feedback.get("text")
+                            if feedback.get("timestamp"):
+                                query["feedback_timestamp"] = feedback["timestamp"]
+                        else:
+                            query["feedback"] = feedback
+                    attachments = msg.get("attachments") or []
+                    if attachments:
+                        attachment_details = []
+                        for attachment_id in attachments:
+                            try:
+                                att = attachments_repo.get_any(
+                                    str(attachment_id), user_id
                                 )
-                        except Exception as e:
-                            current_app.logger.error(
-                                f"Error retrieving attachment {attachment_id}: {e}",
-                                exc_info=True,
-                            )
-                    query["attachments"] = attachment_details
+                                if att:
+                                    attachment_details.append(
+                                        {
+                                            "id": str(att["id"]),
+                                            "fileName": att.get(
+                                                "filename", "Unknown file"
+                                            ),
+                                        }
+                                    )
+                            except Exception as e:
+                                current_app.logger.error(
+                                    f"Error retrieving attachment {attachment_id}: {e}",
+                                    exc_info=True,
+                                )
+                        query["attachments"] = attachment_details
+                    queries.append(query)
         except Exception as err:
             current_app.logger.error(
                 f"Error retrieving conversation: {err}", exc_info=True
@@ -158,7 +196,9 @@ class GetSingleConversation(Resource):
             return make_response(jsonify({"success": False}), 400)
         data = {
             "queries": queries,
-            "agent_id": conversation.get("agent_id"),
+            "agent_id": (
+                str(conversation["agent_id"]) if conversation.get("agent_id") else None
+            ),
             "is_shared_usage": conversation.get("is_shared_usage", False),
             "shared_token": conversation.get("shared_token", None),
         }
@@ -190,11 +230,13 @@ class UpdateConversationName(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        user_id = decoded_token.get("sub")
         try:
-            conversations_collection.update_one(
-                {"_id": ObjectId(data["id"]), "user": decoded_token.get("sub")},
-                {"$set": {"name": data["name"]}},
-            )
+            with db_session() as conn:
+                repo = ConversationsRepository(conn)
+                conv = repo.get_any(data["id"], user_id)
+                if conv is not None:
+                    repo.rename(str(conv["id"]), user_id, data["name"])
         except Exception as err:
             current_app.logger.error(
                 f"Error updating conversation name: {err}", exc_info=True
@@ -237,44 +279,92 @@ class SubmitFeedback(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        user_id = decoded_token.get("sub")
+        feedback_value = data["feedback"]
+        question_index = int(data["question_index"])
+        # Normalize string feedback to lowercase so analytics queries
+        # (which match 'like'/'dislike') count rows correctly. Tolerate
+        # legacy uppercase clients on ingest. Non-string values pass through.
+        if isinstance(feedback_value, str):
+            feedback_value = feedback_value.lower()
+        feedback_payload = (
+            None
+            if feedback_value is None
+            else {
+                "text": feedback_value,
+                "timestamp": datetime.datetime.now(
+                    datetime.timezone.utc
+                ).isoformat(),
+            }
+        )
         try:
-            if data["feedback"] is None:
-                # Remove feedback and feedback_timestamp if feedback is null
-
-                conversations_collection.update_one(
-                    {
-                        "_id": ObjectId(data["conversation_id"]),
-                        "user": decoded_token.get("sub"),
-                        f"queries.{data['question_index']}": {"$exists": True},
-                    },
-                    {
-                        "$unset": {
-                            f"queries.{data['question_index']}.feedback": "",
-                            f"queries.{data['question_index']}.feedback_timestamp": "",
-                        }
-                    },
-                )
-            else:
-                # Set feedback and feedback_timestamp if feedback has a value
-
-                conversations_collection.update_one(
-                    {
-                        "_id": ObjectId(data["conversation_id"]),
-                        "user": decoded_token.get("sub"),
-                        f"queries.{data['question_index']}": {"$exists": True},
-                    },
-                    {
-                        "$set": {
-                            f"queries.{data['question_index']}.feedback": data[
-                                "feedback"
-                            ],
-                            f"queries.{data['question_index']}.feedback_timestamp": datetime.datetime.now(
-                                datetime.timezone.utc
-                            ),
-                        }
-                    },
-                )
+            with db_session() as conn:
+                repo = ConversationsRepository(conn)
+                conv = repo.get_any(data["conversation_id"], user_id)
+                if conv is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Not found"}), 404
+                    )
+                repo.set_feedback(str(conv["id"]), question_index, feedback_payload)
         except Exception as err:
             current_app.logger.error(f"Error submitting feedback: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
+
+
+@conversations_ns.route("/messages/<string:message_id>/tail")
+class GetMessageTail(Resource):
+    @api.doc(
+        description=(
+            "Current state of one conversation_messages row, scoped to the "
+            "authenticated user. Used to reconnect to an in-flight stream "
+            "after a refresh."
+        ),
+        params={"message_id": "Message UUID"},
+    )
+    def get(self, message_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        if not looks_like_uuid(message_id):
+            return make_response(
+                jsonify({"success": False, "message": "Invalid message id"}), 400
+            )
+        user_id = decoded_token.get("sub")
+        try:
+            with db_readonly() as conn:
+                # Owner-or-shared, matching ``ConversationsRepository.get``.
+                row = conn.execute(
+                    sql_text(
+                        "SELECT m.* FROM conversation_messages m "
+                        "JOIN conversations c ON c.id = m.conversation_id "
+                        "WHERE m.id = CAST(:mid AS uuid) "
+                        "AND (c.user_id = :uid OR :uid = ANY(c.shared_with))"
+                    ),
+                    {"mid": message_id, "uid": user_id},
+                ).fetchone()
+                if row is None:
+                    return make_response(jsonify({"status": "not found"}), 404)
+                msg = row_to_dict(row)
+        except Exception as err:
+            current_app.logger.error(
+                f"Error tailing message {message_id}: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        metadata = msg.get("message_metadata") or {}
+        return make_response(
+            jsonify(
+                {
+                    "message_id": str(msg["id"]),
+                    "status": msg.get("status"),
+                    "response": msg.get("response"),
+                    "thought": msg.get("thought"),
+                    "sources": msg.get("sources") or [],
+                    "tool_calls": msg.get("tool_calls") or [],
+                    "request_id": msg.get("request_id"),
+                    "last_heartbeat_at": metadata.get("last_heartbeat_at"),
+                    "error": metadata.get("error"),
+                }
+            ),
+            200,
+        )

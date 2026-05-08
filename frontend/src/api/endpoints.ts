@@ -58,6 +58,10 @@ const endpoints = {
       `/api/delete_chunk?id=${docId}&chunk_id=${chunkId}`,
     UPDATE_CHUNK: '/api/update_chunk',
     STORE_ATTACHMENT: '/api/store_attachment',
+    STT: '/api/stt',
+    LIVE_STT_START: '/api/stt/live/start',
+    LIVE_STT_CHUNK: '/api/stt/live/chunk',
+    LIVE_STT_FINISH: '/api/stt/live/finish',
     DIRECTORY_STRUCTURE: (docId: string) =>
       `/api/directory_structure?id=${docId}`,
     MANAGE_SOURCE_FILES: '/api/manage_source_files',
@@ -65,12 +69,21 @@ const endpoints = {
     MCP_SAVE_SERVER: '/api/mcp_server/save',
     MCP_OAUTH_STATUS: (task_id: string) =>
       `/api/mcp_server/oauth_status/${task_id}`,
+    MCP_AUTH_STATUS: '/api/mcp_server/auth_status',
     AGENT_FOLDERS: '/api/agents/folders/',
     AGENT_FOLDER: (id: string) => `/api/agents/folders/${id}`,
     MOVE_AGENT_TO_FOLDER: '/api/agents/folders/move_agent',
     GET_ARTIFACT: (artifactId: string) => `/api/artifact/${artifactId}`,
     WORKFLOWS: '/api/workflows',
     WORKFLOW: (id: string) => `/api/workflows/${id}`,
+    CUSTOM_MODELS: '/api/user/models',
+    CUSTOM_MODEL: (id: string) => `/api/user/models/${id}`,
+    CUSTOM_MODEL_TEST: (id: string) => `/api/user/models/${id}/test`,
+    CUSTOM_MODEL_TEST_PAYLOAD: '/api/user/models/test',
+  },
+  V1: {
+    CHAT_COMPLETIONS: '/v1/chat/completions',
+    MODELS: '/v1/models',
   },
   CONVERSATION: {
     ANSWER: '/api/answer',
@@ -79,6 +92,7 @@ const endpoints = {
     FEEDBACK: '/api/feedback',
     CONVERSATION: (id: string) => `/api/get_single_conversation?id=${id}`,
     CONVERSATIONS: '/api/get_conversations',
+    MESSAGE_TAIL: (messageId: string) => `/api/messages/${messageId}/tail`,
     SHARE_CONVERSATION: (isPromptable: boolean) =>
       `/api/share?isPromptable=${isPromptable}`,
     SHARED_CONVERSATION: (identifier: string) =>

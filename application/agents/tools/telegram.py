@@ -1,5 +1,10 @@
+import logging
+
 import requests
+
 from application.agents.tools.base import Tool
+
+logger = logging.getLogger(__name__)
 
 
 class TelegramTool(Tool):
@@ -18,24 +23,22 @@ class TelegramTool(Tool):
             "telegram_send_message": self._send_message,
             "telegram_send_image": self._send_image,
         }
-
-        if action_name in actions:
-            return actions[action_name](**kwargs)
-        else:
+        if action_name not in actions:
             raise ValueError(f"Unknown action: {action_name}")
+        return actions[action_name](**kwargs)
 
     def _send_message(self, text, chat_id):
-        print(f"Sending message: {text}")
+        logger.debug("Sending Telegram message to chat_id=%s", chat_id)
         url = f"https://api.telegram.org/bot{self.token}/sendMessage"
         payload = {"chat_id": chat_id, "text": text}
-        response = requests.post(url, data=payload)
+        response = requests.post(url, data=payload, timeout=100)
         return {"status_code": response.status_code, "message": "Message sent"}
 
     def _send_image(self, image_url, chat_id):
-        print(f"Sending image: {image_url}")
+        logger.debug("Sending Telegram image to chat_id=%s", chat_id)
         url = f"https://api.telegram.org/bot{self.token}/sendPhoto"
         payload = {"chat_id": chat_id, "photo": image_url}
-        response = requests.post(url, data=payload)
+        response = requests.post(url, data=payload, timeout=100)
         return {"status_code": response.status_code, "message": "Image sent"}
 
     def get_actions_metadata(self):
@@ -82,5 +85,12 @@ class TelegramTool(Tool):
 
     def get_config_requirements(self):
         return {
-            "token": {"type": "string", "description": "Bot token for authentication"},
+            "token": {
+                "type": "string",
+                "label": "Bot Token",
+                "description": "Telegram bot token for authentication",
+                "required": True,
+                "secret": True,
+                "order": 1,
+            },
         }

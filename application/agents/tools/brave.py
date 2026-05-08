@@ -1,5 +1,10 @@
+import logging
+
 import requests
+
 from application.agents.tools.base import Tool
+
+logger = logging.getLogger(__name__)
 
 
 class BraveSearchTool(Tool):
@@ -41,7 +46,7 @@ class BraveSearchTool(Tool):
         """
         Performs a web search using the Brave Search API.
         """
-        print(f"Performing Brave web search for: {query}")
+        logger.debug("Performing Brave web search for: %s", query)
 
         url = f"{self.base_url}/web/search"
 
@@ -68,7 +73,7 @@ class BraveSearchTool(Tool):
             "X-Subscription-Token": self.token,
         }
 
-        response = requests.get(url, params=params, headers=headers)
+        response = requests.get(url, params=params, headers=headers, timeout=100)
 
         if response.status_code == 200:
             return {
@@ -94,7 +99,7 @@ class BraveSearchTool(Tool):
         """
         Performs an image search using the Brave Search API.
         """
-        print(f"Performing Brave image search for: {query}")
+        logger.debug("Performing Brave image search for: %s", query)
 
         url = f"{self.base_url}/images/search"
 
@@ -113,7 +118,7 @@ class BraveSearchTool(Tool):
             "X-Subscription-Token": self.token,
         }
 
-        response = requests.get(url, params=params, headers=headers)
+        response = requests.get(url, params=params, headers=headers, timeout=100)
 
         if response.status_code == 200:
             return {
@@ -177,6 +182,10 @@ class BraveSearchTool(Tool):
         return {
             "token": {
                 "type": "string",
+                "label": "API Key",
                 "description": "Brave Search API key for authentication",
+                "required": True,
+                "secret": True,
+                "order": 1,
             },
         }

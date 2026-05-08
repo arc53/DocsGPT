@@ -1,7 +1,9 @@
-import { SyntheticEvent, useRef, useEffect, CSSProperties } from 'react';
+import { CSSProperties, SyntheticEvent, useEffect, useRef } from 'react';
+
+import type { LucideIcon } from 'lucide-react';
 
 export interface MenuOption {
-  icon?: string;
+  icon?: string | LucideIcon;
   label: string;
   onClick: (event: SyntheticEvent) => void;
   variant?: 'primary' | 'danger';
@@ -125,7 +127,7 @@ export default function ContextMenu({
       onClick={(e) => e.stopPropagation()}
     >
       <div
-        className="bg-lotion dark:bg-charleston-green-2 flex flex-col rounded-xl text-sm shadow-xl"
+        className="bg-background dark:bg-card flex flex-col rounded-xl text-sm shadow-xl"
         style={{ minWidth: '144px' }}
       >
         {options.map((option, index) => (
@@ -139,22 +141,34 @@ export default function ContextMenu({
             }}
             className={`flex items-center justify-start gap-4 p-3 transition-colors duration-200 ease-in-out ${index === 0 ? 'rounded-t-xl' : ''} ${index === options.length - 1 ? 'rounded-b-xl' : ''} ${
               option.variant === 'danger'
-                ? 'text-rosso-corsa hover:bg-bright-gray dark:text-red-2000 dark:hover:bg-charcoal-grey/20'
-                : 'text-eerie-black hover:bg-bright-gray dark:text-bright-gray dark:hover:bg-charcoal-grey/20'
+                ? 'text-destructive hover:bg-muted'
+                : 'text-foreground hover:bg-muted'
             } `}
           >
             {option.icon && (
               <div className="flex w-4 min-w-4 shrink-0 justify-center">
-                <img
-                  width={option.iconWidth || 16}
-                  height={option.iconHeight || 16}
-                  src={option.icon}
-                  alt={option.label}
-                  className={`cursor-pointer ${option.iconClassName || ''}`}
-                />
+                {typeof option.icon === 'string' ? (
+                  <img
+                    width={option.iconWidth || 16}
+                    height={option.iconHeight || 16}
+                    src={option.icon}
+                    alt={option.label}
+                    className={`cursor-pointer ${option.iconClassName || ''}`}
+                  />
+                ) : (
+                  <option.icon
+                    size={Math.max(
+                      option.iconWidth || 16,
+                      option.iconHeight || 16,
+                    )}
+                    strokeWidth={1.75}
+                    aria-hidden="true"
+                    className={`cursor-pointer ${option.iconClassName || ''}`}
+                  />
+                )}
               </div>
             )}
-            <span className="break-words hyphens-auto">{option.label}</span>
+            <span className="wrap-break-word hyphens-auto">{option.label}</span>
           </button>
         ))}
       </div>

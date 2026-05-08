@@ -33,7 +33,7 @@ export default function AgentTypeModal({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-lg rounded-xl bg-white p-8 shadow-2xl dark:bg-[#1e1e1e]"
+        className="bg-card relative w-full max-w-lg rounded-xl p-8 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -43,7 +43,7 @@ export default function AgentTypeModal({
           <X size={20} />
         </button>
 
-        <h2 className="text-jet dark:text-bright-gray mb-3 text-2xl font-bold">
+        <h2 className="text-foreground dark:text-foreground mb-3 text-2xl font-bold">
           Create New Agent
         </h2>
         <p className="mb-8 text-sm text-gray-500 dark:text-gray-400">
@@ -53,13 +53,13 @@ export default function AgentTypeModal({
         <div className="flex flex-col gap-4">
           <button
             onClick={() => handleSelect('normal')}
-            className="hover:border-purple-30 hover:bg-purple-30/5 dark:hover:border-purple-30 dark:hover:bg-purple-30/10 group flex items-start gap-5 rounded-xl border-2 border-gray-200 p-5 text-left transition-all dark:border-[#2E2F34]"
+            className="hover:border-primary hover:bg-primary/5 dark:hover:border-primary dark:hover:bg-primary/10 group dark:border-border flex items-start gap-5 rounded-xl border-2 border-gray-200 p-5 text-left transition-all"
           >
-            <div className="dark:bg-purple-30/20 bg-purple-30/10 text-purple-30 group-hover:bg-purple-30 flex h-14 w-14 shrink-0 items-center justify-center rounded-xl transition-colors group-hover:text-white dark:text-purple-300">
+            <div className="dark:bg-primary/20 bg-primary/10 text-primary group-hover:bg-primary/90 flex h-14 w-14 shrink-0 items-center justify-center rounded-xl transition-colors group-hover:text-white dark:text-purple-300">
               <Bot size={28} />
             </div>
             <div className="flex-1">
-              <h3 className="text-jet dark:text-bright-gray mb-2 text-lg font-semibold">
+              <h3 className="text-foreground dark:text-foreground mb-2 text-lg font-semibold">
                 Classic Agent
               </h3>
               <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-400">
@@ -71,13 +71,13 @@ export default function AgentTypeModal({
 
           <button
             onClick={() => handleSelect('workflow')}
-            className="hover:border-violets-are-blue hover:bg-violets-are-blue/5 dark:hover:border-violets-are-blue dark:hover:bg-violets-are-blue/10 group flex items-start gap-5 rounded-xl border-2 border-gray-200 p-5 text-left transition-all dark:border-[#2E2F34]"
+            className="hover:border-primary hover:bg-primary/5 dark:hover:border-primary dark:hover:bg-primary/10 group dark:border-border flex items-start gap-5 rounded-xl border-2 border-gray-200 p-5 text-left transition-all"
           >
-            <div className="dark:bg-violets-are-blue/20 bg-violets-are-blue/10 text-violets-are-blue group-hover:bg-violets-are-blue flex h-14 w-14 shrink-0 items-center justify-center rounded-xl transition-colors group-hover:text-white dark:text-purple-300">
+            <div className="dark:bg-primary/20 bg-primary/10 text-primary group-hover:bg-primary flex h-14 w-14 shrink-0 items-center justify-center rounded-xl transition-colors group-hover:text-white dark:text-purple-300">
               <Workflow size={28} />
             </div>
             <div className="flex-1">
-              <h3 className="text-jet dark:text-bright-gray mb-2 text-lg font-semibold">
+              <h3 className="text-foreground dark:text-foreground mb-2 text-lg font-semibold">
                 Workflow Agent
               </h3>
               <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-400">

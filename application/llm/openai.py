@@ -61,8 +61,17 @@ def _truncate_base64_for_logging(messages):
 
 
 class OpenAILLM(BaseLLM):
+    provider_name = "openai"
 
-    def __init__(self, api_key=None, user_api_key=None, base_url=None, *args, **kwargs):
+    def __init__(
+        self,
+        api_key=None,
+        user_api_key=None,
+        base_url=None,
+        http_client=None,
+        *args,
+        **kwargs,
+    ):
 
         super().__init__(*args, **kwargs)
         self.api_key = api_key or settings.OPENAI_API_KEY or settings.API_KEY
@@ -80,7 +89,18 @@ class OpenAILLM(BaseLLM):
         else:
             effective_base_url = "https://api.openai.com/v1"
 
-        self.client = OpenAI(api_key=self.api_key, base_url=effective_base_url)
+        # http_client (set by LLMCreator for BYOM) is a DNS-rebinding-safe
+        # httpx.Client; without it the SDK re-resolves DNS per request.
+        if http_client is not None:
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url=effective_base_url,
+                http_client=http_client,
+            )
+        else:
+            self.client = OpenAI(
+                api_key=self.api_key, base_url=effective_base_url
+            )
         self.storage = StorageCreator.get_storage()
 
     def _clean_messages_openai(self, messages):
@@ -91,19 +111,59 @@ class OpenAILLM(BaseLLM):
 
             if role == "model":
                 role = "assistant"
+
+            # Standard format: assistant message with tool_calls (passthrough)
+            tool_calls = message.get("tool_calls")
+            if tool_calls and role == "assistant":
+                cleaned_tcs = []
+                for tc in tool_calls:
+                    func = tc.get("function", {})
+                    args = func.get("arguments", "{}")
+                    if isinstance(args, dict):
+                        args = json.dumps(self._remove_null_values(args))
+                    elif isinstance(args, str):
+                        try:
+                            parsed = json.loads(args)
+                            args = json.dumps(self._remove_null_values(parsed))
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    cleaned_tcs.append({
+                        "id": tc.get("id", ""),
+                        "type": "function",
+                        "function": {"name": func.get("name", ""), "arguments": args},
+                    })
+                cleaned_messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": cleaned_tcs,
+                })
+                continue
+
+            # Standard format: tool message with tool_call_id (passthrough)
+            tool_call_id = message.get("tool_call_id")
+            if role == "tool" and tool_call_id is not None:
+                cleaned_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": content if isinstance(content, str) else json.dumps(content),
+                })
+                continue
+
             if role and content is not None:
                 if isinstance(content, str):
                     cleaned_messages.append({"role": role, "content": content})
                 elif isinstance(content, list):
-                    # Collect all content parts into a single message
                     content_parts = []
-
                     for item in content:
+                        # Legacy format support: function_call / function_response
                         if "function_call" in item:
-                            # Function calls need their own message
-                            cleaned_args = self._remove_null_values(
-                                item["function_call"]["args"]
-                            )
+                            args = item["function_call"]["args"]
+                            if isinstance(args, str):
+                                try:
+                                    args = json.loads(args)
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+                            cleaned_args = self._remove_null_values(args)
                             tool_call = {
                                 "id": item["function_call"]["call_id"],
                                 "type": "function",
@@ -112,28 +172,20 @@ class OpenAILLM(BaseLLM):
                                     "arguments": json.dumps(cleaned_args),
                                 },
                             }
-                            cleaned_messages.append(
-                                {
-                                    "role": "assistant",
-                                    "content": None,
-                                    "tool_calls": [tool_call],
-                                }
-                            )
+                            cleaned_messages.append({
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [tool_call],
+                            })
                         elif "function_response" in item:
-                            # Function responses need their own message
-                            cleaned_messages.append(
-                                {
-                                    "role": "tool",
-                                    "tool_call_id": item["function_response"][
-                                        "call_id"
-                                    ],
-                                    "content": json.dumps(
-                                        item["function_response"]["response"]["result"]
-                                    ),
-                                }
-                            )
+                            cleaned_messages.append({
+                                "role": "tool",
+                                "tool_call_id": item["function_response"]["call_id"],
+                                "content": json.dumps(
+                                    item["function_response"]["response"]["result"]
+                                ),
+                            })
                         elif isinstance(item, dict):
-                            # Collect content parts (text, images, files) into a single message
                             if "type" in item and item["type"] == "text" and "text" in item:
                                 content_parts.append(item)
                             elif "type" in item and item["type"] == "file" and "file" in item:
@@ -141,10 +193,7 @@ class OpenAILLM(BaseLLM):
                             elif "type" in item and item["type"] == "image_url" and "image_url" in item:
                                 content_parts.append(item)
                             elif "text" in item and "type" not in item:
-                                # Legacy format: {"text": "..."} without type
                                 content_parts.append({"type": "text", "text": item["text"]})
-
-                    # Add the collected content parts as a single message
                     if content_parts:
                         cleaned_messages.append({"role": role, "content": content_parts})
                 else:
@@ -214,6 +263,13 @@ class OpenAILLM(BaseLLM):
         if "max_tokens" in kwargs:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
 
+        # Defense-in-depth: drop tools / response_format if the
+        # registry's capability flags deny them.
+        if tools and not self._supports_tools():
+            tools = None
+        if response_format and not self._supports_structured_output():
+            response_format = None
+
         request_params = {
             "model": model,
             "messages": messages,
@@ -249,6 +305,13 @@ class OpenAILLM(BaseLLM):
         # Convert max_tokens to max_completion_tokens for newer models
         if "max_tokens" in kwargs:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+
+        # See _raw_gen for rationale — drop tools/response_format when the
+        # registry-provided capabilities say the model doesn't support them.
+        if tools and not self._supports_tools():
+            tools = None
+        if response_format and not self._supports_structured_output():
+            response_format = None
 
         request_params = {
             "model": model,
@@ -291,9 +354,17 @@ class OpenAILLM(BaseLLM):
                 response.close()
 
     def _supports_tools(self):
+        # When the LLM was constructed via LLMCreator with a registered
+        # AvailableModel, ``self.capabilities`` is the per-model record.
+        # BYOM users can disable tool support; respect that. Otherwise
+        # OpenAI's API supports tools by default.
+        if self.capabilities is not None:
+            return bool(self.capabilities.supports_tools)
         return True
 
     def _supports_structured_output(self):
+        if self.capabilities is not None:
+            return bool(self.capabilities.supports_structured_output)
         return True
 
     def prepare_structured_output_format(self, json_schema):
@@ -360,8 +431,14 @@ class OpenAILLM(BaseLLM):
         Returns:
             list: List of supported MIME types
         """
-        from application.core.model_configs import OPENAI_ATTACHMENTS
-        return OPENAI_ATTACHMENTS
+        # Per-model caps from the registry win when present — a BYOM
+        # endpoint that doesn't accept images would otherwise still be
+        # sent base64 image parts because the OpenAI default below
+        # advertises the image alias unconditionally.
+        if self.capabilities is not None:
+            return list(self.capabilities.supported_attachment_types or [])
+        from application.core.model_yaml import resolve_attachment_alias
+        return resolve_attachment_alias("image")
 
     def prepare_messages_with_attachments(self, messages, attachments=None):
         """
@@ -498,15 +575,34 @@ class OpenAILLM(BaseLLM):
                 ).id,
             )
 
-            from application.core.mongo_db import MongoDB
-
-            mongo = MongoDB.get_client()
-            db = mongo[settings.MONGO_DB_NAME]
-            attachments_collection = db["attachments"]
-            if "_id" in attachment:
-                attachments_collection.update_one(
-                    {"_id": attachment["_id"]}, {"$set": {"openai_file_id": file_id}}
+            # Cache the OpenAI file id on the attachment row so we don't
+            # re-upload the same blob on the next LLM call. Prefer the PG
+            # UUID (``id``) when present; fall back to the legacy Mongo
+            # ObjectId string (``_id``). Opened per-write — this runs
+            # inside the hot LLM path, so we don't want a long-lived
+            # session wrapping the generator.
+            attachment_id = attachment.get("id") or attachment.get("_id")
+            if attachment_id:
+                user_id = None
+                decoded = getattr(self, "decoded_token", None)
+                if isinstance(decoded, dict):
+                    user_id = decoded.get("sub")
+                from application.storage.db.repositories.attachments import (
+                    AttachmentsRepository,
                 )
+                from application.storage.db.session import db_session
+
+                try:
+                    with db_session() as conn:
+                        AttachmentsRepository(conn).update_any(
+                            str(attachment_id),
+                            user_id,
+                            {"openai_file_id": file_id},
+                        )
+                except Exception as cache_err:
+                    logging.warning(
+                        f"Failed to cache openai_file_id on attachment {attachment_id}: {cache_err}"
+                    )
             return file_id
         except Exception as e:
             logging.error(f"Error uploading file to OpenAI: {e}", exc_info=True)

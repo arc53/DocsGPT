@@ -250,6 +250,22 @@ prefListenerMiddleware.startListening({
   },
 });
 
+// Reconcile selectedModel when availableModels changes so a deleted
+// BYOM doesn't leave a stale id in localStorage.
+prefListenerMiddleware.startListening({
+  matcher: isAnyOf(setAvailableModels),
+  effect: (_action, listenerApi) => {
+    const state = listenerApi.getState() as RootState;
+    const { selectedModel, availableModels } = state.preference;
+    if (!availableModels.length) return;
+    if (!selectedModel) return;
+    const stillValid = availableModels.some((m) => m.id === selectedModel.id);
+    if (!stillValid) {
+      listenerApi.dispatch(setSelectedModel(availableModels[0]));
+    }
+  },
+});
+
 export const selectApiKey = (state: RootState) => state.preference.apiKey;
 export const selectApiKeyStatus = (state: RootState) =>
   !!state.preference.apiKey;

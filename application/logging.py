@@ -1,13 +1,15 @@
 import datetime
 import functools
 import inspect
+import time
 
 import logging
 import uuid
 from typing import Any, Callable, Dict, Generator, List
 
-from application.core.mongo_db import MongoDB
-from application.core.settings import settings
+from application.core import log_context
+from application.storage.db.repositories.stack_logs import StackLogsRepository
+from application.storage.db.session import db_session
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -22,6 +24,15 @@ class LogContext:
         self.api_key = api_key
         self.query = query
         self.stacks = []
+        # Per-activity response aggregates populated by ``_consume_and_log``
+        # while it forwards stream items, then flushed onto the
+        # ``activity_finished`` event so every Flask request gets the
+        # same summary that ``run_agent_logic`` used to log only for the
+        # Celery webhook path.
+        self.answer_length = 0
+        self.thought_length = 0
+        self.source_count = 0
+        self.tool_call_count = 0
 
 
 def build_stack_data(
@@ -78,30 +89,130 @@ def log_activity() -> Callable:
             user = data.get("user", "local")
             api_key = data.get("user_api_key", "")
             query = kwargs.get("query", getattr(args[0], "query", ""))
+            agent_id = getattr(args[0], "agent_id", None) or kwargs.get("agent_id")
+            conversation_id = (
+                kwargs.get("conversation_id")
+                or getattr(args[0], "conversation_id", None)
+            )
+            model = getattr(args[0], "gpt_model", None) or getattr(args[0], "model", None)
+
+            # Capture the surrounding activity_id before overlaying ours,
+            # so nested activities record the parent → child link.
+            parent_activity_id = log_context.snapshot().get("activity_id")
 
             context = LogContext(endpoint, activity_id, user, api_key, query)
             kwargs["log_context"] = context
 
-            logging.info(
-                f"Starting activity: {endpoint} - {activity_id} - User: {user}"
+            ctx_token = log_context.bind(
+                activity_id=activity_id,
+                parent_activity_id=parent_activity_id,
+                user_id=user,
+                agent_id=agent_id,
+                conversation_id=conversation_id,
+                endpoint=endpoint,
+                model=model,
             )
 
-            generator = func(*args, **kwargs)
-            yield from _consume_and_log(generator, context)
+            started_at = time.monotonic()
+            logging.info(
+                "activity_started",
+                extra={
+                    "activity_id": activity_id,
+                    "parent_activity_id": parent_activity_id,
+                    "user_id": user,
+                    "agent_id": agent_id,
+                    "conversation_id": conversation_id,
+                    "endpoint": endpoint,
+                    "model": model,
+                },
+            )
+
+            error: BaseException | None = None
+            try:
+                generator = func(*args, **kwargs)
+                yield from _consume_and_log(generator, context)
+            except Exception as exc:
+                # Only ``Exception`` counts as an activity error; ``GeneratorExit``
+                # (consumer disconnected mid-stream) and ``KeyboardInterrupt``
+                # flow through the finally as ``status="ok"``, matching
+                # ``_consume_and_log``.
+                error = exc
+                raise
+            finally:
+                _emit_activity_finished(
+                    context=context,
+                    parent_activity_id=parent_activity_id,
+                    started_at=started_at,
+                    error=error,
+                )
+                log_context.reset(ctx_token)
 
         return wrapper
 
     return decorator
 
 
+def _emit_activity_finished(
+    *,
+    context: "LogContext",
+    parent_activity_id: str | None,
+    started_at: float,
+    error: BaseException | None,
+) -> None:
+    """Emit the paired ``activity_finished`` event with duration, outcome,
+    and per-activity response aggregates accumulated in ``_consume_and_log``.
+    """
+    duration_ms = int((time.monotonic() - started_at) * 1000)
+    logging.info(
+        "activity_finished",
+        extra={
+            "activity_id": context.activity_id,
+            "parent_activity_id": parent_activity_id,
+            "user_id": context.user,
+            "endpoint": context.endpoint,
+            "duration_ms": duration_ms,
+            "status": "error" if error is not None else "ok",
+            "error_class": type(error).__name__ if error is not None else None,
+            "answer_length": context.answer_length,
+            "thought_length": context.thought_length,
+            "source_count": context.source_count,
+            "tool_call_count": context.tool_call_count,
+        },
+    )
+
+
+def _accumulate_response_summary(item: Any, context: "LogContext") -> None:
+    """Mirror the per-line aggregation that ``run_agent_logic`` did for the
+    Celery webhook path, but at the generator-consumption layer so every
+    ``Agent.gen`` activity (Flask streaming, sub-agents, workflow agents)
+    gets the same summary.
+    """
+    if not isinstance(item, dict):
+        return
+    if "answer" in item:
+        context.answer_length += len(str(item["answer"]))
+        return
+    if "thought" in item:
+        context.thought_length += len(str(item["thought"]))
+        return
+    sources = item.get("sources") if "sources" in item else None
+    if isinstance(sources, list):
+        context.source_count += len(sources)
+        return
+    tool_calls = item.get("tool_calls") if "tool_calls" in item else None
+    if isinstance(tool_calls, list):
+        context.tool_call_count += len(tool_calls)
+
+
 def _consume_and_log(generator: Generator, context: "LogContext"):
     try:
         for item in generator:
+            _accumulate_response_summary(item, context)
             yield item
     except Exception as e:
         logging.exception(f"Error in {context.endpoint} - {context.activity_id}: {e}")
         context.stacks.append({"component": "error", "data": {"message": str(e)}})
-        _log_to_mongodb(
+        _log_activity_to_db(
             endpoint=context.endpoint,
             activity_id=context.activity_id,
             user=context.user,
@@ -112,7 +223,7 @@ def _consume_and_log(generator: Generator, context: "LogContext"):
         )
         raise
     finally:
-        _log_to_mongodb(
+        _log_activity_to_db(
             endpoint=context.endpoint,
             activity_id=context.activity_id,
             user=context.user,
@@ -123,7 +234,7 @@ def _consume_and_log(generator: Generator, context: "LogContext"):
         )
 
 
-def _log_to_mongodb(
+def _log_activity_to_db(
     endpoint: str,
     activity_id: str,
     user: str,
@@ -132,30 +243,26 @@ def _log_to_mongodb(
     stacks: List[Dict],
     level: str,
 ) -> None:
+    """Append a per-request activity log row to Postgres (``stack_logs``)."""
     try:
-        mongo = MongoDB.get_client()
-        db = mongo[settings.MONGO_DB_NAME]
-        user_logs_collection = db["stack_logs"]
-        
+        # Clean up text fields to be no longer than 10000 characters so a
+        # runaway payload can't blow up the insert.
+        def _truncate(val):
+            if isinstance(val, str) and len(val) > 10000:
+                return val[:10000]
+            return val
 
-
-        log_entry = {
-            "endpoint": endpoint,
-            "id": activity_id,
-            "level": level,
-            "user": user,
-            "api_key": api_key,
-            "query": query,
-            "stacks": stacks,
-            "timestamp": datetime.datetime.now(datetime.timezone.utc),
-        }
-        # clean up text fields to be no longer than 10000 characters
-        for key, value in log_entry.items():
-            if isinstance(value, str) and len(value) > 10000:
-                log_entry[key] = value[:10000]
-    
-        user_logs_collection.insert_one(log_entry)
-        logging.debug(f"Logged activity to MongoDB: {activity_id}")
-
+        with db_session() as conn:
+            StackLogsRepository(conn).insert(
+                activity_id=activity_id,
+                endpoint=_truncate(endpoint),
+                level=_truncate(level),
+                user_id=_truncate(user),
+                api_key=_truncate(api_key),
+                query=_truncate(query),
+                stacks=stacks,
+                timestamp=datetime.datetime.now(datetime.timezone.utc),
+            )
+        logging.debug(f"Logged activity to Postgres: {activity_id}")
     except Exception as e:
-        logging.error(f"Failed to log to MongoDB: {e}", exc_info=True)
+        logging.error(f"Failed to log activity to Postgres: {e}", exc_info=True)

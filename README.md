@@ -7,7 +7,7 @@
 </p>
 
 <p align="left">
-  <strong><a href="https://www.docsgpt.cloud/">DocsGPT</a></strong> is an open-source AI platform for building intelligent agents and assistants. Features Agent Builder, deep research tools, document analysis (PDF, Office, web content), Multi-model support (choose your provider or run locally), and rich API connectivity for agents with actionable tools and integrations. Deploy anywhere with complete privacy control.
+  <strong><a href="https://www.docsgpt.cloud/">DocsGPT</a></strong> is an open-source AI platform for building intelligent agents and assistants. Features Agent Builder, deep research tools, document analysis (PDF, Office, web content, and audio), Multi-model support (choose your provider or run locally), and rich API connectivity for agents with actionable tools and integrations. Deploy anywhere with complete privacy control.
 </p>
 
 <div align="center">
@@ -29,13 +29,14 @@
 
 <div align="center">
   <br>
-<img src="https://d3dg1063dc54p9.cloudfront.net/videos/demov7.gif" alt="video-example-of-docs-gpt" width="800" height="450">
+<img src="https://d3dg1063dc54p9.cloudfront.net/videos/demo-26.gif" alt="video-example-of-docs-gpt" width="800" height="480">
 </div>
 <h3 align="left">
   <strong>Key Features:</strong>
 </h3>
 <ul align="left">
-    <li><strong>🗂️ Wide Format Support:</strong> Reads PDF, DOCX, CSV, XLSX, EPUB, MD, RST, HTML, MDX, JSON, PPTX, and images.</li>
+    <li><strong>🗂️ Wide Format Support:</strong> Reads PDF, DOCX, CSV, XLSX, EPUB, MD, RST, HTML, MDX, JSON, PPTX, images, and audio files such as MP3, WAV, M4A, OGG, and WebM.</li>
+    <li><strong>🎙️ Speech Workflows:</strong> Record voice input into chat, transcribe audio on the backend, and ingest meeting recordings or voice notes as searchable knowledge.</li>
     <li><strong>🌐 Web & Data Integration:</strong> Ingests from URLs, sitemaps, Reddit, GitHub and web crawlers.</li>
     <li><strong>✅ Reliable Answers:</strong> Get accurate, hallucination-free responses with source citations viewable in a clean UI.</li>
     <li><strong>🔑 Streamlined API Keys:</strong>  Generate keys linked to your settings, documents, and models, simplifying chatbot and integration setup.</li>
@@ -46,11 +47,13 @@
 </ul>
 
 ## Roadmap
-- [x] Add OAuth 2.0 authentication for MCP ( September 2025 )
-- [x] Deep Agents ( October 2025 )
-- [x] Prompt Templating ( October 2025 )
-- [x] Full api tooling ( Dec 2025 )
-- [ ] Agent scheduling ( Jan 2026 )
+- [x] Agent Workflow Builder with conditional nodes ( February 2026 )
+- [x] SharePoint & Confluence connectors ( March – April 2026 )
+- [x] Research mode ( March 2026 )
+- [x] Postgres migration for user data ( April 2026 )
+- [x] OpenTelemetry observability ( April 2026 )
+- [x] Bring Your Own Model (BYOM) ( April 2026 )
+- [ ] Agent scheduling (RedBeat-backed) ( Q2 2026 )
 
 You can find our full roadmap [here](https://github.com/orgs/arc53/projects/2). Please don't hesitate to contribute or create issues, it helps us improve DocsGPT!
 
@@ -158,4 +161,3 @@ The source code license is [MIT](https://opensource.org/license/mit/), as descri
   </a>
   
 </p>
-

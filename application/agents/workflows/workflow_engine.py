@@ -7,6 +7,7 @@ from application.agents.workflows.cel_evaluator import CelEvaluationError, evalu
 from application.agents.workflows.node_agent import WorkflowNodeAgentFactory
 from application.agents.workflows.schemas import (
     AgentNodeConfig,
+    AgentType,
     ConditionNodeConfig,
     ExecutionStatus,
     NodeExecutionLog,
@@ -18,6 +19,7 @@ from application.core.json_schema_utils import (
     JsonSchemaValidationError,
     normalize_json_schema_payload,
 )
+from application.error import sanitize_api_error
 from application.templates.namespaces import NamespaceManager
 from application.templates.template_engine import TemplateEngine, TemplateRenderError
 
@@ -99,6 +101,7 @@ class WorkflowEngine:
                 log_entry["state_snapshot"] = dict(self.state)
                 self.execution_log.append(log_entry)
 
+                user_friendly_error = sanitize_api_error(e)
                 yield {
                     "type": "workflow_step",
                     "node_id": node.id,
@@ -106,9 +109,9 @@ class WorkflowEngine:
                     "node_title": node.title,
                     "status": "failed",
                     "state_snapshot": dict(self.state),
-                    "error": str(e),
+                    "error": user_friendly_error,
                 }
-                yield {"type": "error", "error": str(e)}
+                yield {"type": "error", "error": user_friendly_error}
                 break
             log_entry["state_snapshot"] = dict(self.state)
             self.execution_log.append(log_entry)
@@ -197,6 +200,9 @@ class WorkflowEngine:
 
         node_config = AgentNodeConfig(**node.config.get("config", node.config))
 
+        if node_config.sources:
+            self._retrieve_node_sources(node_config)
+
         if node_config.prompt_template:
             formatted_prompt = self._format_template(node_config.prompt_template)
         else:
@@ -205,15 +211,26 @@ class WorkflowEngine:
             node_config.json_schema, node.title
         )
         node_model_id = node_config.model_id or self.agent.model_id
+        # Inherit BYOM scope from parent agent so owner-stored BYOM
+        # resolves on shared workflows.
+        node_user_id = getattr(self.agent, "model_user_id", None) or (
+            self.agent.decoded_token.get("sub")
+            if isinstance(self.agent.decoded_token, dict)
+            else None
+        )
         node_llm_name = (
             node_config.llm_name
-            or get_provider_from_model_id(node_model_id or "")
+            or get_provider_from_model_id(
+                node_model_id or "", user_id=node_user_id
+            )
             or self.agent.llm_name
         )
         node_api_key = get_api_key_for_provider(node_llm_name) or self.agent.api_key
 
         if node_json_schema and node_model_id:
-            model_capabilities = get_model_capabilities(node_model_id)
+            model_capabilities = get_model_capabilities(
+                node_model_id, user_id=node_user_id
+            )
             if model_capabilities and not model_capabilities.get(
                 "supports_structured_output", False
             ):
@@ -221,18 +238,33 @@ class WorkflowEngine:
                     f'Model "{node_model_id}" does not support structured output for node "{node.title}"'
                 )
 
-        node_agent = WorkflowNodeAgentFactory.create(
-            agent_type=node_config.agent_type,
-            endpoint=self.agent.endpoint,
-            llm_name=node_llm_name,
-            model_id=node_model_id,
-            api_key=node_api_key,
-            tool_ids=node_config.tools,
-            prompt=node_config.system_prompt,
-            chat_history=self.agent.chat_history,
-            decoded_token=self.agent.decoded_token,
-            json_schema=node_json_schema,
-        )
+        factory_kwargs = {
+            "agent_type": node_config.agent_type,
+            "endpoint": self.agent.endpoint,
+            "llm_name": node_llm_name,
+            "model_id": node_model_id,
+            "model_user_id": getattr(self.agent, "model_user_id", None),
+            "api_key": node_api_key,
+            "tool_ids": node_config.tools,
+            "prompt": node_config.system_prompt,
+            "chat_history": self.agent.chat_history,
+            "decoded_token": self.agent.decoded_token,
+            "json_schema": node_json_schema,
+        }
+
+        # Agentic/research agents need retriever_config for on-demand search
+        if node_config.agent_type in (AgentType.AGENTIC, AgentType.RESEARCH):
+            factory_kwargs["retriever_config"] = {
+                "source": {"active_docs": node_config.sources} if node_config.sources else {},
+                "retriever_name": node_config.retriever or "classic",
+                "chunks": int(node_config.chunks) if node_config.chunks else 2,
+                "model_id": node_model_id,
+                "llm_name": node_llm_name,
+                "api_key": node_api_key,
+                "decoded_token": self.agent.decoded_token,
+            }
+
+        node_agent = WorkflowNodeAgentFactory.create(**factory_kwargs)
 
         full_response_parts: List[str] = []
         structured_response_parts: List[str] = []
@@ -437,6 +469,29 @@ class WorkflowEngine:
 
         docs_together = "\n\n".join(docs_together_parts) if docs_together_parts else None
         return docs, docs_together
+
+    def _retrieve_node_sources(self, node_config: AgentNodeConfig) -> None:
+        """Retrieve documents from the node's sources for template resolution."""
+        from application.retriever.retriever_creator import RetrieverCreator
+
+        query = self.state.get("query", "")
+        if not query:
+            return
+
+        try:
+            retriever = RetrieverCreator.create_retriever(
+                node_config.retriever or "classic",
+                source={"active_docs": node_config.sources},
+                chat_history=[],
+                prompt="",
+                chunks=int(node_config.chunks) if node_config.chunks else 2,
+                decoded_token=self.agent.decoded_token,
+            )
+            docs = retriever.search(query)
+            if docs:
+                self.agent.retrieved_docs = docs
+        except Exception:
+            logger.exception("Failed to retrieve docs for workflow node")
 
     def get_execution_summary(self) -> List[NodeExecutionLog]:
         return [

@@ -126,13 +126,17 @@ class TestInitClient:
 
     def test_init_client_with_custom_endpoint(self, s3_loader, mock_boto3):
         """Should configure path-style addressing for custom endpoints."""
-        s3_loader._init_client(
-            aws_access_key_id="test-key",
-            aws_secret_access_key="test-secret",
-            region_name="us-east-1",
-            endpoint_url="https://nyc3.digitaloceanspaces.com",
-            bucket="my-bucket",
-        )
+        with patch(
+            "application.parser.remote.s3_loader.validate_url",
+            side_effect=lambda u: u,
+        ):
+            s3_loader._init_client(
+                aws_access_key_id="test-key",
+                aws_secret_access_key="test-secret",
+                region_name="us-east-1",
+                endpoint_url="https://nyc3.digitaloceanspaces.com",
+                bucket="my-bucket",
+            )
 
         call_kwargs = mock_boto3.client.call_args[1]
         assert call_kwargs["endpoint_url"] == "https://nyc3.digitaloceanspaces.com"
@@ -140,13 +144,17 @@ class TestInitClient:
 
     def test_init_client_normalizes_do_endpoint(self, s3_loader, mock_boto3):
         """Should normalize DigitalOcean Spaces bucket-prefixed URLs."""
-        corrected_bucket = s3_loader._init_client(
-            aws_access_key_id="test-key",
-            aws_secret_access_key="test-secret",
-            region_name="us-east-1",
-            endpoint_url="https://mybucket.nyc3.digitaloceanspaces.com",
-            bucket="",
-        )
+        with patch(
+            "application.parser.remote.s3_loader.validate_url",
+            side_effect=lambda u: u,
+        ):
+            corrected_bucket = s3_loader._init_client(
+                aws_access_key_id="test-key",
+                aws_secret_access_key="test-secret",
+                region_name="us-east-1",
+                endpoint_url="https://mybucket.nyc3.digitaloceanspaces.com",
+                bucket="",
+            )
 
         assert corrected_bucket == "mybucket"
         call_kwargs = mock_boto3.client.call_args[1]
@@ -555,7 +563,11 @@ class TestLoadData:
             "endpoint_url": "https://nyc3.digitaloceanspaces.com",
         }
 
-        s3_loader.load_data(input_data)
+        with patch(
+            "application.parser.remote.s3_loader.validate_url",
+            side_effect=lambda u: u,
+        ):
+            s3_loader.load_data(input_data)
 
         call_kwargs = mock_boto3.client.call_args[1]
         assert call_kwargs["endpoint_url"] == "https://nyc3.digitaloceanspaces.com"
@@ -631,7 +643,11 @@ class TestLoadData:
             "endpoint_url": "https://mybucket.nyc3.digitaloceanspaces.com",
         }
 
-        docs = s3_loader.load_data(input_data)
+        with patch(
+            "application.parser.remote.s3_loader.validate_url",
+            side_effect=lambda u: u,
+        ):
+            docs = s3_loader.load_data(input_data)
 
         # Verify bucket name was corrected
         paginator.paginate.assert_called_once_with(Bucket="mybucket", Prefix="")
@@ -712,3 +728,178 @@ class TestProcessDocument:
 
                         mock_exists.assert_called_with("/tmp/test.pdf")
                         mock_unlink.assert_called_with("/tmp/test.pdf")
+
+
+class TestListObjectsAdditional:
+    """Cover lines 225, 230-232: NoSuchKey error and generic S3 error."""
+
+    def test_list_objects_raises_on_no_such_key(self, s3_loader):
+        """Cover lines 225, 230-232: NoSuchKey error on ListObjectsV2."""
+        mock_client = MagicMock()
+        s3_loader.s3_client = mock_client
+        mock_client.meta.endpoint_url = "https://nyc3.digitaloceanspaces.com"
+
+        paginator = MagicMock()
+        mock_client.get_paginator.return_value = paginator
+        paginator.paginate.return_value.__iter__ = MagicMock(
+            side_effect=ClientError(
+                {"Error": {"Code": "NoSuchKey", "Message": "No such key"}},
+                "ListObjectsV2",
+            )
+        )
+
+        with pytest.raises(Exception, match="S3 error"):
+            s3_loader.list_objects("test-bucket", "")
+
+    def test_list_objects_raises_on_generic_error(self, s3_loader):
+        """Cover line 274: generic ClientError raises."""
+        mock_client = MagicMock()
+        s3_loader.s3_client = mock_client
+        mock_client.meta.endpoint_url = "https://s3.amazonaws.com"
+
+        paginator = MagicMock()
+        mock_client.get_paginator.return_value = paginator
+        paginator.paginate.return_value.__iter__ = MagicMock(
+            side_effect=ClientError(
+                {"Error": {"Code": "InternalError", "Message": "Server error"}},
+                "ListObjectsV2",
+            )
+        )
+
+        with pytest.raises(Exception, match="S3 error"):
+            s3_loader.list_objects("test-bucket", "")
+
+
+class TestGetObjectContentAdditional:
+    """Cover lines 293, 299-302: document file and generic error paths."""
+
+    def test_get_object_content_supported_document(self, s3_loader):
+        """Cover lines 293, 308-309: supported document processed."""
+        mock_client = MagicMock()
+        s3_loader.s3_client = mock_client
+
+        mock_body = MagicMock()
+        mock_body.read.return_value = b"PDF bytes"
+        mock_client.get_object.return_value = {"Body": mock_body}
+
+        with patch.object(s3_loader, "_process_document", return_value="Extracted") as mock_proc:
+            result = s3_loader.get_object_content("bucket", "doc.pdf")
+
+        assert result == "Extracted"
+        mock_proc.assert_called_once_with(b"PDF bytes", "doc.pdf")
+
+    def test_get_object_content_generic_client_error(self, s3_loader):
+        """Cover lines 299-302: generic ClientError returns None."""
+        mock_client = MagicMock()
+        s3_loader.s3_client = mock_client
+        mock_client.get_object.side_effect = ClientError(
+            {"Error": {"Code": "InternalError", "Message": "Internal error"}},
+            "GetObject",
+        )
+
+        result = s3_loader.get_object_content("bucket", "file.txt")
+        assert result is None
+
+    def test_get_object_text_empty_returns_none(self, s3_loader):
+        """Cover line 293/303-304: empty text content returns None."""
+        mock_client = MagicMock()
+        s3_loader.s3_client = mock_client
+
+        mock_body = MagicMock()
+        mock_body.read.return_value = b""
+        mock_client.get_object.return_value = {"Body": mock_body}
+
+        result = s3_loader.get_object_content("bucket", "empty.txt")
+        assert result is None
+
+
+class TestNormalizeEndpointAdditional:
+    """Cover lines 13-14, 24: import handling and digitaloceanspaces.com without region."""
+
+    def test_do_spaces_no_region(self, s3_loader):
+        """Cover line 71-76: digitaloceanspaces.com without region."""
+        endpoint, bucket = s3_loader._normalize_endpoint_url(
+            "https://digitaloceanspaces.com", "my-bucket"
+        )
+        assert endpoint == "https://digitaloceanspaces.com"
+        assert bucket == "my-bucket"
+
+
+class TestProcessDocumentAdditional:
+    """Cover lines 346-348: empty documents list returns None."""
+
+    def test_process_document_empty_documents_returns_none(self, s3_loader):
+        """Cover line 347-348: no documents extracted returns None."""
+        with patch(
+            "application.parser.file.bulk.SimpleDirectoryReader"
+        ) as mock_reader_class:
+            mock_reader = MagicMock()
+            mock_reader.load_data.return_value = []
+            mock_reader_class.return_value = mock_reader
+
+            with patch("tempfile.NamedTemporaryFile") as mock_temp:
+                mock_file = MagicMock()
+                mock_file.__enter__ = MagicMock(return_value=mock_file)
+                mock_file.__exit__ = MagicMock(return_value=False)
+                mock_file.name = "/tmp/test.docx"
+                mock_temp.return_value = mock_file
+
+                with patch("os.path.exists", return_value=True):
+                    with patch("os.unlink"):
+                        result = s3_loader._process_document(
+                            b"docx content", "document.docx"
+                        )
+
+        assert result is None
+
+
+class TestSSRFValidation:
+    """Ensure user-supplied endpoint_url values cannot target internal networks."""
+
+    def test_init_client_rejects_loopback_endpoint(self, s3_loader, mock_boto3):
+        """Should refuse to initialize boto3 when endpoint points at localhost."""
+        with pytest.raises(ValueError, match="Invalid S3 endpoint_url"):
+            s3_loader._init_client(
+                aws_access_key_id="k",
+                aws_secret_access_key="s",
+                region_name="us-east-1",
+                endpoint_url="http://127.0.0.1:9000",
+                bucket="b",
+            )
+        mock_boto3.client.assert_not_called()
+
+    def test_init_client_rejects_metadata_ip(self, s3_loader, mock_boto3):
+        """Should refuse to initialize boto3 when endpoint targets cloud metadata."""
+        with pytest.raises(ValueError, match="Invalid S3 endpoint_url"):
+            s3_loader._init_client(
+                aws_access_key_id="k",
+                aws_secret_access_key="s",
+                region_name="us-east-1",
+                endpoint_url="http://169.254.169.254/",
+                bucket="b",
+            )
+        mock_boto3.client.assert_not_called()
+
+    def test_init_client_rejects_private_ip(self, s3_loader, mock_boto3):
+        """Should refuse to initialize boto3 when endpoint targets an RFC1918 host."""
+        with pytest.raises(ValueError, match="Invalid S3 endpoint_url"):
+            s3_loader._init_client(
+                aws_access_key_id="k",
+                aws_secret_access_key="s",
+                region_name="us-east-1",
+                endpoint_url="http://10.0.0.5:9000",
+                bucket="b",
+            )
+        mock_boto3.client.assert_not_called()
+
+    def test_load_data_rejects_ssrf_endpoint(self, s3_loader, mock_boto3):
+        """load_data should surface a ValueError without hitting boto3 for blocked endpoints."""
+        input_data = {
+            "aws_access_key_id": "k",
+            "aws_secret_access_key": "s",
+            "bucket": "b",
+            "endpoint_url": "http://localhost:9000",
+        }
+        with pytest.raises(ValueError, match="Invalid S3 endpoint_url"):
+            s3_loader.load_data(input_data)
+        mock_boto3.client.assert_not_called()

@@ -1,0 +1,63 @@
+---
+title: SharePoint / OneDrive Connector
+description: Connect your Microsoft SharePoint or OneDrive as an external knowledge base to upload and process files directly.
+---
+
+import { Callout } from 'nextra/components'
+import { Steps } from 'nextra/components'
+
+# SharePoint / OneDrive Connector
+
+Connect your SharePoint or OneDrive account to upload and process files directly as an external knowledge base. Supports Office files, PDFs, text files, CSVs, images, and more. Authentication is handled via Microsoft Entra ID (Azure AD) with automatic token refresh.
+
+## Setup
+
+<Steps>
+
+### Step 1: Create an App Registration in Azure
+
+1. Go to the [Azure Portal](https://portal.azure.com/) > **Microsoft Entra ID** > **App registrations** > **New registration**
+2. Set **Redirect URI** (Web) to:
+   - Local: `http://localhost:7091/api/connectors/callback?provider=share_point`
+   - Production: `https://yourdomain.com/api/connectors/callback?provider=share_point`
+
+### Step 2: Configure API Permissions
+
+In your App Registration, go to **API permissions** > **Add a permission** > **Microsoft Graph** > **Delegated permissions** and add: `Files.Read`, `Files.Read.All`, `Sites.Read.All`. Grant admin consent if possible.
+
+### Step 3: Create a Client Secret
+
+Go to **Certificates & secrets** > **New client secret**. Copy the secret value immediately (it won't be shown again).
+
+### Step 4: Configure Environment Variables
+
+Add to your `.env` file:
+
+```env
+MICROSOFT_CLIENT_ID=your-azure-ad-client-id
+MICROSOFT_CLIENT_SECRET=your-azure-ad-client-secret
+MICROSOFT_TENANT_ID=your-azure-ad-tenant-id
+```
+
+| Variable | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `MICROSOFT_CLIENT_ID` | Application (client) ID from App Registration overview | Yes | — |
+| `MICROSOFT_CLIENT_SECRET` | Client secret value | Yes | — |
+| `MICROSOFT_TENANT_ID` | Directory (tenant) ID | No | `common` |
+| `MICROSOFT_AUTHORITY` | Login endpoint override | No | Auto-constructed |
+
+<Callout type="warning">
+`MICROSOFT_TENANT_ID=common` (the default) allows any Microsoft account to authenticate. Set this to your specific tenant ID in production.
+</Callout>
+
+### Step 5: Restart and Use
+
+Restart your application, then go to the upload section in DocsGPT and select **SharePoint / OneDrive** as the source. You'll be redirected to Microsoft to sign in, then can browse and select files to process.
+
+</Steps>
+
+## Troubleshooting
+
+- **Option not appearing** — Verify `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` are set, then restart.
+- **Authentication failed** — Check that the redirect URI matches exactly, including `?provider=share_point`.
+- **Permission denied** — Ensure admin consent is granted and the user has access to the target files.

@@ -24,8 +24,15 @@ export default function WrapperModal({
     if (isPerformingTask) return;
 
     const handleClickOutside = (event: MouseEvent) => {
-      if (modalRef.current && !modalRef.current.contains(event.target as Node))
-        close();
+      const target = event.target as Node;
+      if (
+        (target as Element)?.closest?.(
+          '[data-radix-popper-content-wrapper], [data-radix-select-viewport], [role="listbox"]',
+        )
+      )
+        return;
+      if (document.querySelector('[data-radix-select-content]')) return;
+      if (modalRef.current && !modalRef.current.contains(target)) close();
     };
 
     const handleEscapePress = (event: KeyboardEvent) => {
@@ -43,7 +50,7 @@ export default function WrapperModal({
 
   const modalContent = (
     <div
-      className="fixed top-0 left-0 z-[100] flex h-screen w-screen items-center justify-center"
+      className="fixed top-0 left-0 z-100 flex h-screen w-screen items-center justify-center"
       onClick={(e: React.MouseEvent) => e.stopPropagation()}
       onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
     >
@@ -53,7 +60,7 @@ export default function WrapperModal({
       />
       <div
         ref={modalRef}
-        className={`relative rounded-2xl bg-white p-8 shadow-[0px_4px_40px_-3px_#0000001A] dark:bg-[#26272E] ${className}`}
+        className={`bg-card dark:bg-card relative rounded-2xl p-8 shadow-[0px_4px_40px_-3px_#0000001A] ${className}`}
       >
         {!isPerformingTask && (
           <button
@@ -64,7 +71,7 @@ export default function WrapperModal({
           </button>
         )}
         <div
-          className={`no-scrollbar overflow-y-auto text-[#18181B] dark:text-[#ECECF1] ${contentClassName}`}
+          className={`no-scrollbar text-foreground dark:text-foreground overflow-y-auto ${contentClassName}`}
         >
           {children}
         </div>

@@ -15,17 +15,18 @@ const Input = ({
   borderVariant = 'thick',
   textSize = 'medium',
   children,
-  labelBgClassName = 'bg-white dark:bg-raisin-black',
+  labelBgClassName = 'bg-card',
   leftIcon,
   onChange,
   onPaste,
   onKeyDown,
   edgeRoundness = 'rounded-full',
+  'data-testid': dataTestId,
 }: InputProps) => {
   const colorStyles = {
-    silver: 'border-silver dark:border-silver/40',
+    silver: 'border-border dark:border-border',
     jet: 'border-jet',
-    gray: 'border-gray-5000 dark:text-silver',
+    gray: 'border-gray-5000 dark:text-muted-foreground',
   };
   const borderStyles = {
     thin: 'border',
@@ -44,7 +45,7 @@ const Input = ({
     <div className={`relative ${className}`}>
       <input
         ref={inputRef}
-        className={`peer text-jet dark:text-bright-gray h-[42px] w-full ${edgeRoundness} bg-transparent ${leftIcon ? 'pl-10' : 'px-3'} py-1 placeholder-transparent outline-hidden ${colorStyles[colorVariant]} ${borderStyles[borderVariant]} ${textSizeStyles[textSize]} [&:-webkit-autofill]:appearance-none [&:-webkit-autofill]:bg-transparent [&:-webkit-autofill_selected]:bg-transparent`}
+        className={`peer text-foreground dark:text-foreground h-[42px] w-full ${edgeRoundness} bg-transparent ${leftIcon ? 'pl-10' : 'px-3'} py-1 placeholder-transparent outline-hidden ${colorStyles[colorVariant]} ${borderStyles[borderVariant]} ${textSizeStyles[textSize]} [&:-webkit-autofill]:appearance-none [&:-webkit-autofill]:bg-transparent [&:-webkit-autofill_selected]:bg-transparent`}
         type={type}
         id={id}
         name={name}
@@ -56,6 +57,7 @@ const Input = ({
         onPaste={onPaste}
         onKeyDown={onKeyDown}
         required={required}
+        data-testid={dataTestId}
       >
         {children}
       </input>
@@ -75,11 +77,11 @@ const Input = ({
               : 'peer-placeholder-shown:left-3'
           } peer-placeholder-shown:${
             textSizeStyles[textSize]
-          } text-gray-4000 pointer-events-none cursor-none peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs dark:text-gray-400 ${labelBgClassName} max-w-[calc(100%-24px)] overflow-hidden text-ellipsis whitespace-nowrap`}
+          } text-muted-foreground pointer-events-none cursor-none peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs ${labelBgClassName} max-w-[calc(100%-24px)] overflow-hidden text-ellipsis whitespace-nowrap`}
         >
           {placeholder}
           {required && (
-            <span className="ml-0.5 text-[#D30000] dark:text-[#D42626]">*</span>
+            <span className="ml-0.5 text-[#D30000] dark:text-red-500">*</span>
           )}
         </label>
       )}

@@ -1,21 +1,31 @@
 import datetime
 import json
 import logging
+import time
+import uuid
 from typing import Any, Dict, Generator, List, Optional
 
 from flask import jsonify, make_response, Response
 from flask_restx import Namespace
 
-from application.api.answer.services.conversation_service import ConversationService
+from application.api.answer.services.continuation_service import ContinuationService
+from application.api.answer.services.conversation_service import (
+    ConversationService,
+    TERMINATED_RESPONSE_PLACEHOLDER,
+)
 from application.core.model_utils import (
     get_api_key_for_provider,
     get_default_model_id,
     get_provider_from_model_id,
 )
 
-from application.core.mongo_db import MongoDB
 from application.core.settings import settings
+from application.error import sanitize_api_error
 from application.llm.llm_creator import LLMCreator
+from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.token_usage import TokenUsageRepository
+from application.storage.db.repositories.user_logs import UserLogsRepository
+from application.storage.db.session import db_readonly, db_session
 from application.utils import check_required_fields
 
 logger = logging.getLogger(__name__)
@@ -28,17 +38,22 @@ class BaseAnswerResource:
     """Shared base class for answer endpoints"""
 
     def __init__(self):
-        mongo = MongoDB.get_client()
-        db = mongo[settings.MONGO_DB_NAME]
-        self.db = db
-        self.user_logs_collection = db["user_logs"]
         self.default_model_id = get_default_model_id()
         self.conversation_service = ConversationService()
 
     def validate_request(
         self, data: Dict[str, Any], require_conversation_id: bool = False
     ) -> Optional[Response]:
-        """Common request validation"""
+        """Common request validation.
+
+        Continuation requests (``tool_actions`` present) require
+        ``conversation_id`` but not ``question``.
+        """
+        if data.get("tool_actions"):
+            # Continuation mode — question is not required
+            if missing := check_required_fields(data, ["conversation_id"]):
+                return missing
+            return None
         required_fields = ["question"]
         if require_conversation_id:
             required_fields.append("conversation_id")
@@ -80,8 +95,8 @@ class BaseAnswerResource:
         api_key = agent_config.get("user_api_key")
         if not api_key:
             return None
-        agents_collection = self.db["agents"]
-        agent = agents_collection.find_one({"key": api_key})
+        with db_readonly() as conn:
+            agent = AgentsRepository(conn).find_by_key(api_key)
 
         if not agent:
             return make_response(
@@ -102,41 +117,32 @@ class BaseAnswerResource:
         )
 
         token_limit = int(
-            agent.get("token_limit", settings.DEFAULT_AGENT_LIMITS["token_limit"])
+            agent.get("token_limit") or settings.DEFAULT_AGENT_LIMITS["token_limit"]
         )
         request_limit = int(
-            agent.get("request_limit", settings.DEFAULT_AGENT_LIMITS["request_limit"])
+            agent.get("request_limit") or settings.DEFAULT_AGENT_LIMITS["request_limit"]
         )
 
-        token_usage_collection = self.db["token_usage"]
-
-        end_date = datetime.datetime.now()
+        end_date = datetime.datetime.now(datetime.timezone.utc)
         start_date = end_date - datetime.timedelta(hours=24)
 
-        match_query = {
-            "timestamp": {"$gte": start_date, "$lte": end_date},
-            "api_key": api_key,
-        }
-
-        if limited_token_mode:
-            token_pipeline = [
-                {"$match": match_query},
-                {
-                    "$group": {
-                        "_id": None,
-                        "total_tokens": {
-                            "$sum": {"$add": ["$prompt_tokens", "$generated_tokens"]}
-                        },
-                    }
-                },
-            ]
-            token_result = list(token_usage_collection.aggregate(token_pipeline))
-            daily_token_usage = token_result[0]["total_tokens"] if token_result else 0
+        if limited_token_mode or limited_request_mode:
+            with db_readonly() as conn:
+                token_repo = TokenUsageRepository(conn)
+                if limited_token_mode:
+                    daily_token_usage = token_repo.sum_tokens_in_range(
+                        start=start_date, end=end_date, api_key=api_key,
+                    )
+                else:
+                    daily_token_usage = 0
+                if limited_request_mode:
+                    daily_request_usage = token_repo.count_in_range(
+                        start=start_date, end=end_date, api_key=api_key,
+                    )
+                else:
+                    daily_request_usage = 0
         else:
             daily_token_usage = 0
-        if limited_request_mode:
-            daily_request_usage = token_usage_collection.count_documents(match_query)
-        else:
             daily_request_usage = 0
         if not limited_token_mode and not limited_request_mode:
             return None
@@ -176,6 +182,8 @@ class BaseAnswerResource:
         is_shared_usage: bool = False,
         shared_token: Optional[str] = None,
         model_id: Optional[str] = None,
+        model_user_id: Optional[str] = None,
+        _continuation: Optional[Dict] = None,
     ) -> Generator[str, None, None]:
         """
         Generator function that streams the complete conversation response.
@@ -200,14 +208,137 @@ class BaseAnswerResource:
         Yields:
             Server-sent event strings
         """
-        try:
-            response_full, thought, source_log_docs, tool_calls = "", "", [], []
-            is_structured = False
-            schema_info = None
-            structured_chunks = []
+        response_full, thought, source_log_docs, tool_calls = "", "", [], []
+        is_structured = False
+        schema_info = None
+        structured_chunks = []
+        query_metadata: Dict[str, Any] = {}
+        paused = False
 
-            for line in agent.gen(query=question):
-                if "answer" in line:
+        # One id shared across the WAL row, primary LLM (token_usage
+        # attribution), the SSE event, and resumed continuations.
+        request_id = (
+            _continuation.get("request_id") if _continuation else None
+        ) or str(uuid.uuid4())
+
+        # Reserve the placeholder row before the LLM call so a crash
+        # mid-stream still leaves the question queryable. Continuations
+        # reuse the original placeholder.
+        reserved_message_id: Optional[str] = None
+        wal_eligible = should_save_conversation and not _continuation
+        if wal_eligible:
+            try:
+                reservation = self.conversation_service.save_user_question(
+                    conversation_id=conversation_id,
+                    question=question,
+                    decoded_token=decoded_token,
+                    attachment_ids=attachment_ids,
+                    api_key=user_api_key,
+                    agent_id=agent_id,
+                    is_shared_usage=is_shared_usage,
+                    shared_token=shared_token,
+                    model_id=model_id or self.default_model_id,
+                    request_id=request_id,
+                    index=index,
+                )
+                conversation_id = reservation["conversation_id"]
+                reserved_message_id = reservation["message_id"]
+            except Exception as e:
+                logger.error(
+                    f"Failed to reserve message row before stream: {e}",
+                    exc_info=True,
+                )
+        elif _continuation and _continuation.get("reserved_message_id"):
+            reserved_message_id = _continuation["reserved_message_id"]
+
+        primary_llm = getattr(agent, "llm", None)
+        if primary_llm is not None:
+            primary_llm._request_id = request_id
+
+        # Flipped to ``streaming`` on first chunk; reconciler uses this
+        # to tell "never started" from "in flight".
+        streaming_marked = False
+        # Heartbeat goes into ``metadata.last_heartbeat_at`` (not
+        # ``updated_at``, which reconciler-side writes share) and uses
+        # ``time.monotonic`` so a blocked event loop can't fake fresh.
+        STREAM_HEARTBEAT_INTERVAL = 60
+        last_heartbeat_at = time.monotonic()
+
+        def _mark_streaming_once() -> None:
+            nonlocal streaming_marked, last_heartbeat_at
+            if streaming_marked or not reserved_message_id:
+                return
+            try:
+                self.conversation_service.update_message_status(
+                    reserved_message_id, "streaming",
+                )
+            except Exception:
+                logger.exception(
+                    "update_message_status streaming failed for %s",
+                    reserved_message_id,
+                )
+            streaming_marked = True
+            last_heartbeat_at = time.monotonic()
+
+        def _heartbeat_streaming() -> None:
+            nonlocal last_heartbeat_at
+            if not reserved_message_id or not streaming_marked:
+                return
+            now_mono = time.monotonic()
+            if now_mono - last_heartbeat_at < STREAM_HEARTBEAT_INTERVAL:
+                return
+            try:
+                self.conversation_service.heartbeat_message(
+                    reserved_message_id,
+                )
+            except Exception:
+                logger.exception(
+                    "stream heartbeat update failed for %s",
+                    reserved_message_id,
+                )
+            last_heartbeat_at = now_mono
+
+        # Correlates tool_call_attempts rows with this message.
+        if reserved_message_id and getattr(agent, "tool_executor", None):
+            try:
+                agent.tool_executor.message_id = reserved_message_id
+            except Exception:
+                pass
+
+        try:
+            # Surface the placeholder id before any LLM tokens so a
+            # mid-handshake disconnect still has a row to tail-poll.
+            if reserved_message_id:
+                early_event = json.dumps(
+                    {
+                        "type": "message_id",
+                        "message_id": reserved_message_id,
+                        "conversation_id": (
+                            str(conversation_id) if conversation_id else None
+                        ),
+                        "request_id": request_id,
+                    }
+                )
+                yield f"data: {early_event}\n\n"
+
+            if _continuation:
+                gen_iter = agent.gen_continuation(
+                    messages=_continuation["messages"],
+                    tools_dict=_continuation["tools_dict"],
+                    pending_tool_calls=_continuation["pending_tool_calls"],
+                    tool_actions=_continuation["tool_actions"],
+                )
+            else:
+                gen_iter = agent.gen(query=question)
+
+            for line in gen_iter:
+                # Cheap closure check that only hits the DB when the
+                # heartbeat interval has elapsed.
+                _heartbeat_streaming()
+                if "metadata" in line:
+                    query_metadata.update(line["metadata"])
+                elif "answer" in line:
+                    _mark_streaming_once()
                     response_full += str(line["answer"])
                     if line.get("structured"):
                         is_structured = True
@@ -217,6 +348,7 @@ class BaseAnswerResource:
                         data = json.dumps({"type": "answer", "answer": line["answer"]})
                         yield f"data: {data}\n\n"
                 elif "sources" in line:
+                    _mark_streaming_once()
                     truncated_sources = []
                     source_log_docs = line["sources"]
                     for source in line["sources"]:
@@ -240,8 +372,21 @@ class BaseAnswerResource:
                     data = json.dumps({"type": "thought", "thought": line["thought"]})
                     yield f"data: {data}\n\n"
                 elif "type" in line:
-                    data = json.dumps(line)
-                    yield f"data: {data}\n\n"
+                    if line.get("type") == "tool_calls_pending":
+                        # Save continuation state and end the stream
+                        paused = True
+                        data = json.dumps(line)
+                        yield f"data: {data}\n\n"
+                    elif line.get("type") == "error":
+                        sanitized_error = {
+                            "type": "error",
+                            "error": sanitize_api_error(line.get("error", "An error occurred"))
+                        }
+                        data = json.dumps(sanitized_error)
+                        yield f"data: {data}\n\n"
+                    else:
+                        data = json.dumps(line)
+                        yield f"data: {data}\n\n"
             if is_structured and structured_chunks:
                 structured_data = {
                     "type": "structured_answer",
@@ -251,11 +396,119 @@ class BaseAnswerResource:
                 }
                 data = json.dumps(structured_data)
                 yield f"data: {data}\n\n"
+
+            # ---- Paused: save continuation state and end stream early ----
+            if paused:
+                continuation = getattr(agent, "_pending_continuation", None)
+                if continuation:
+                    # First-turn pause needs a conversation row to attach to.
+                    if not conversation_id and should_save_conversation:
+                        try:
+                            provider = (
+                                get_provider_from_model_id(
+                                    model_id,
+                                    user_id=model_user_id
+                                    or (
+                                        decoded_token.get("sub")
+                                        if decoded_token
+                                        else None
+                                    ),
+                                )
+                                if model_id
+                                else settings.LLM_PROVIDER
+                            )
+                            sys_api_key = get_api_key_for_provider(
+                                provider or settings.LLM_PROVIDER
+                            )
+                            llm = LLMCreator.create_llm(
+                                provider or settings.LLM_PROVIDER,
+                                api_key=sys_api_key,
+                                user_api_key=user_api_key,
+                                decoded_token=decoded_token,
+                                model_id=model_id,
+                                agent_id=agent_id,
+                                model_user_id=model_user_id,
+                            )
+                            conversation_id = (
+                                self.conversation_service.save_conversation(
+                                    None,
+                                    question,
+                                    response_full,
+                                    thought,
+                                    source_log_docs,
+                                    tool_calls,
+                                    llm,
+                                    model_id or self.default_model_id,
+                                    decoded_token,
+                                    api_key=user_api_key,
+                                    agent_id=agent_id,
+                                    is_shared_usage=is_shared_usage,
+                                    shared_token=shared_token,
+                                )
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to create conversation for continuation: {e}",
+                                exc_info=True,
+                            )
+
+                    if conversation_id:
+                        try:
+                            cont_service = ContinuationService()
+                            cont_service.save_state(
+                                conversation_id=str(conversation_id),
+                                user=decoded_token.get("sub", "local"),
+                                messages=continuation["messages"],
+                                pending_tool_calls=continuation["pending_tool_calls"],
+                                tools_dict=continuation["tools_dict"],
+                                tool_schemas=getattr(agent, "tools", []),
+                                agent_config={
+                                    "model_id": model_id or self.default_model_id,
+                                    # BYOM scope; without it resume falls
+                                    # back to caller's layer.
+                                    "model_user_id": model_user_id,
+                                    "llm_name": getattr(agent, "llm_name", settings.LLM_PROVIDER),
+                                    "api_key": getattr(agent, "api_key", None),
+                                    "user_api_key": user_api_key,
+                                    "agent_id": agent_id,
+                                    "agent_type": agent.__class__.__name__,
+                                    "prompt": getattr(agent, "prompt", ""),
+                                    "json_schema": getattr(agent, "json_schema", None),
+                                    "retriever_config": getattr(agent, "retriever_config", None),
+                                    # Reused on resume so the same WAL row
+                                    # is finalised and request_id stays
+                                    # consistent across token_usage rows.
+                                    "reserved_message_id": reserved_message_id,
+                                    "request_id": request_id,
+                                },
+                                client_tools=getattr(
+                                    agent.tool_executor, "client_tools", None
+                                ),
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to save continuation state: {str(e)}",
+                                exc_info=True,
+                            )
+
+                id_data = {"type": "id", "id": str(conversation_id)}
+                data = json.dumps(id_data)
+                yield f"data: {data}\n\n"
+
+                data = json.dumps({"type": "end"})
+                yield f"data: {data}\n\n"
+                return
+
             if isNoneDoc:
                 for doc in source_log_docs:
                     doc["source"] = "None"
+            # Model-owner scope so title-gen uses owner's BYOM key.
             provider = (
-                get_provider_from_model_id(model_id)
+                get_provider_from_model_id(
+                    model_id,
+                    user_id=model_user_id
+                    or (decoded_token.get("sub") if decoded_token else None),
+                )
                 if model_id
                 else settings.LLM_PROVIDER
             )
@@ -268,26 +521,51 @@ class BaseAnswerResource:
                 decoded_token=decoded_token,
                 model_id=model_id,
                 agent_id=agent_id,
+                model_user_id=model_user_id,
             )
+            # Title-gen only; agent stream tokens live on ``agent.llm``.
+            llm._token_usage_source = "title"
 
             if should_save_conversation:
-                conversation_id = self.conversation_service.save_conversation(
-                    conversation_id,
-                    question,
-                    response_full,
-                    thought,
-                    source_log_docs,
-                    tool_calls,
-                    llm,
-                    model_id or self.default_model_id,
-                    decoded_token,
-                    index=index,
-                    api_key=user_api_key,
-                    agent_id=agent_id,
-                    is_shared_usage=is_shared_usage,
-                    shared_token=shared_token,
-                    attachment_ids=attachment_ids,
-                )
+                if reserved_message_id is not None:
+                    self.conversation_service.finalize_message(
+                        reserved_message_id,
+                        response_full,
+                        thought=thought,
+                        sources=source_log_docs,
+                        tool_calls=tool_calls,
+                        model_id=model_id or self.default_model_id,
+                        metadata=query_metadata if query_metadata else None,
+                        status="complete",
+                        title_inputs={
+                            "llm": llm,
+                            "question": question,
+                            "response": response_full,
+                            "model_id": model_id or self.default_model_id,
+                            "fallback_name": (
+                                question[:50] if question else "New Conversation"
+                            ),
+                        },
+                    )
+                else:
+                    conversation_id = self.conversation_service.save_conversation(
+                        conversation_id,
+                        question,
+                        response_full,
+                        thought,
+                        source_log_docs,
+                        tool_calls,
+                        llm,
+                        model_id or self.default_model_id,
+                        decoded_token,
+                        index=index,
+                        api_key=user_api_key,
+                        agent_id=agent_id,
+                        is_shared_usage=is_shared_usage,
+                        shared_token=shared_token,
+                        attachment_ids=attachment_ids,
+                        metadata=query_metadata if query_metadata else None,
+                    )
                 # Persist compression metadata/summary if it exists and wasn't saved mid-execution
                 compression_meta = getattr(agent, "compression_metadata", None)
                 compression_saved = getattr(agent, "compression_saved", False)
@@ -310,6 +588,21 @@ class BaseAnswerResource:
                         )
             else:
                 conversation_id = None
+            # Resume finished cleanly; drop the continuation row.
+            # Crash-paths leave it ``resuming`` for the janitor to revert.
+            if _continuation and conversation_id:
+                try:
+                    cont_service = ContinuationService()
+                    cont_service.delete_state(
+                        str(conversation_id),
+                        decoded_token.get("sub", "local"),
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to delete continuation state on resume "
+                        f"completion: {e}",
+                        exc_info=True,
+                    )
             id_data = {"type": "id", "id": str(conversation_id)}
             data = json.dumps(id_data)
             yield f"data: {data}\n\n"
@@ -340,7 +633,18 @@ class BaseAnswerResource:
             for key, value in log_data.items():
                 if isinstance(value, str) and len(value) > 10000:
                     log_data[key] = value[:10000]
-            self.user_logs_collection.insert_one(log_data)
+            try:
+                with db_session() as conn:
+                    UserLogsRepository(conn).insert(
+                        user_id=log_data.get("user"),
+                        endpoint="stream_answer",
+                        data=log_data,
+                    )
+            except Exception as log_err:
+                logger.error(
+                    f"Failed to persist stream_answer user log: {log_err}",
+                    exc_info=True,
+                )
 
             data = json.dumps({"type": "end"})
             yield f"data: {data}\n\n"
@@ -353,30 +657,73 @@ class BaseAnswerResource:
                     if isNoneDoc:
                         for doc in source_log_docs:
                             doc["source"] = "None"
+                    # Resolve under model-owner scope so shared-agent
+                    # title-gen uses owner BYOM, not deployment default.
+                    provider = (
+                        get_provider_from_model_id(
+                            model_id,
+                            user_id=model_user_id
+                            or (
+                                decoded_token.get("sub")
+                                if decoded_token
+                                else None
+                            ),
+                        )
+                        if model_id
+                        else settings.LLM_PROVIDER
+                    )
+                    sys_api_key = get_api_key_for_provider(
+                        provider or settings.LLM_PROVIDER
+                    )
                     llm = LLMCreator.create_llm(
-                        settings.LLM_PROVIDER,
-                        api_key=settings.API_KEY,
+                        provider or settings.LLM_PROVIDER,
+                        api_key=sys_api_key,
                         user_api_key=user_api_key,
                         decoded_token=decoded_token,
+                        model_id=model_id,
                         agent_id=agent_id,
+                        model_user_id=model_user_id,
                     )
-                    self.conversation_service.save_conversation(
-                        conversation_id,
-                        question,
-                        response_full,
-                        thought,
-                        source_log_docs,
-                        tool_calls,
-                        llm,
-                        model_id or self.default_model_id,
-                        decoded_token,
-                        index=index,
-                        api_key=user_api_key,
-                        agent_id=agent_id,
-                        is_shared_usage=is_shared_usage,
-                        shared_token=shared_token,
-                        attachment_ids=attachment_ids,
-                    )
+                    llm._token_usage_source = "title"
+                    if reserved_message_id is not None:
+                        self.conversation_service.finalize_message(
+                            reserved_message_id,
+                            response_full,
+                            thought=thought,
+                            sources=source_log_docs,
+                            tool_calls=tool_calls,
+                            model_id=model_id or self.default_model_id,
+                            metadata=query_metadata if query_metadata else None,
+                            status="complete",
+                            title_inputs={
+                                "llm": llm,
+                                "question": question,
+                                "response": response_full,
+                                "model_id": model_id or self.default_model_id,
+                                "fallback_name": (
+                                    question[:50] if question else "New Conversation"
+                                ),
+                            },
+                        )
+                    else:
+                        self.conversation_service.save_conversation(
+                            conversation_id,
+                            question,
+                            response_full,
+                            thought,
+                            source_log_docs,
+                            tool_calls,
+                            llm,
+                            model_id or self.default_model_id,
+                            decoded_token,
+                            index=index,
+                            api_key=user_api_key,
+                            agent_id=agent_id,
+                            is_shared_usage=is_shared_usage,
+                            shared_token=shared_token,
+                            attachment_ids=attachment_ids,
+                            metadata=query_metadata if query_metadata else None,
+                        )
                     compression_meta = getattr(agent, "compression_metadata", None)
                     compression_saved = getattr(agent, "compression_saved", False)
                     if conversation_id and compression_meta and not compression_saved:
@@ -403,6 +750,24 @@ class BaseAnswerResource:
             raise
         except Exception as e:
             logger.error(f"Error in stream: {str(e)}", exc_info=True)
+            if reserved_message_id is not None:
+                try:
+                    self.conversation_service.finalize_message(
+                        reserved_message_id,
+                        response_full or TERMINATED_RESPONSE_PLACEHOLDER,
+                        thought=thought,
+                        sources=source_log_docs,
+                        tool_calls=tool_calls,
+                        model_id=model_id or self.default_model_id,
+                        metadata=query_metadata if query_metadata else None,
+                        status="failed",
+                        error=e,
+                    )
+                except Exception as fin_err:
+                    logger.error(
+                        f"Failed to finalize errored message: {fin_err}",
+                        exc_info=True,
+                    )
             data = json.dumps(
                 {
                     "type": "error",
@@ -412,8 +777,13 @@ class BaseAnswerResource:
             yield f"data: {data}\n\n"
             return
 
-    def process_response_stream(self, stream):
-        """Process the stream response for non-streaming endpoint"""
+    def process_response_stream(self, stream) -> Dict[str, Any]:
+        """Process the stream response for non-streaming endpoint.
+
+        Returns:
+            Dict with keys: conversation_id, answer, sources, tool_calls,
+            thought, error, and optional extra.
+        """
         conversation_id = ""
         response_full = ""
         source_log_docs = []
@@ -422,6 +792,7 @@ class BaseAnswerResource:
         stream_ended = False
         is_structured = False
         schema_info = None
+        pending_tool_calls = None
 
         for line in stream:
             try:
@@ -440,11 +811,22 @@ class BaseAnswerResource:
                     source_log_docs = event["source"]
                 elif event["type"] == "tool_calls":
                     tool_calls = event["tool_calls"]
+                elif event["type"] == "tool_calls_pending":
+                    pending_tool_calls = event.get("data", {}).get(
+                        "pending_tool_calls", []
+                    )
                 elif event["type"] == "thought":
                     thought = event["thought"]
                 elif event["type"] == "error":
                     logger.error(f"Error from stream: {event['error']}")
-                    return None, None, None, None, event["error"], None
+                    return {
+                        "conversation_id": None,
+                        "answer": None,
+                        "sources": None,
+                        "tool_calls": None,
+                        "thought": None,
+                        "error": event["error"],
+                    }
                 elif event["type"] == "end":
                     stream_ended = True
             except (json.JSONDecodeError, KeyError) as e:
@@ -452,18 +834,30 @@ class BaseAnswerResource:
                 continue
         if not stream_ended:
             logger.error("Stream ended unexpectedly without an 'end' event.")
-            return None, None, None, None, "Stream ended unexpectedly", None
-        result = (
-            conversation_id,
-            response_full,
-            source_log_docs,
-            tool_calls,
-            thought,
-            None,
-        )
+            return {
+                "conversation_id": None,
+                "answer": None,
+                "sources": None,
+                "tool_calls": None,
+                "thought": None,
+                "error": "Stream ended unexpectedly",
+            }
+
+        result: Dict[str, Any] = {
+            "conversation_id": conversation_id,
+            "answer": response_full,
+            "sources": source_log_docs,
+            "tool_calls": tool_calls,
+            "thought": thought,
+            "error": None,
+        }
+
+        if pending_tool_calls is not None:
+            result["extra"] = {"pending_tool_calls": pending_tool_calls}
 
         if is_structured:
-            result = result + ({"structured": True, "schema": schema_info},)
+            result["extra"] = {"structured": True, "schema": schema_info}
+
         return result
 
     def error_stream_generate(self, err_response):

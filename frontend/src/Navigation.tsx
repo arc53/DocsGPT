@@ -25,6 +25,7 @@ import UnPin from './assets/unpin.svg';
 import Help from './components/Help';
 import {
   handleAbort,
+  loadConversation,
   selectQueries,
   setConversation,
   updateConversationId,
@@ -50,6 +51,7 @@ import {
   setSelectedAgent,
   setSharedAgents,
 } from './preferences/preferenceSlice';
+import { AppDispatch } from './store';
 import Upload from './upload/Upload';
 
 interface NavigationProps {
@@ -58,7 +60,7 @@ interface NavigationProps {
 }
 
 export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
 
   const { t } = useTranslation();
@@ -182,7 +184,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     resetConversation();
     dispatch(setSelectedAgent(agent));
     if (isMobile || isTablet) setNavOpen(!navOpen);
-    navigate('/');
+    navigate(agent.id ? `/agents/${agent.id}/c/new` : '/c/new');
   };
 
   const handleTogglePin = (agent: Agent) => {
@@ -200,20 +202,21 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     try {
       dispatch(setSelectedAgent(null));
 
-      const response = await conversationService.getConversation(index, token);
-      if (!response.ok) {
-        navigate('/');
+      // Pre-fetch to choose the route shape (owned-agent / shared / none).
+      const result = await dispatch(
+        loadConversation({ id: index, force: true }),
+      ).unwrap();
+      // Stale: a newer load has already updated Redux; the URL is
+      // wherever that newer flow lands, leave it alone.
+      if (result.stale) return;
+      const data = result.data;
+      if (!data) {
+        navigate('/c/new');
         return;
       }
 
-      const data = await response.json();
-      if (!data) return;
-
-      dispatch(setConversation(data.queries));
-      dispatch(updateConversationId({ query: { conversationId: index } }));
-
       if (!data.agent_id) {
-        navigate('/');
+        navigate(`/c/${index}`);
         return;
       }
 
@@ -224,7 +227,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           token,
         );
         if (!sharedResponse.ok) {
-          navigate('/');
+          navigate(`/c/${index}`);
           return;
         }
         agent = await sharedResponse.json();
@@ -232,7 +235,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       } else {
         const agentResponse = await userService.getAgent(data.agent_id, token);
         if (!agentResponse.ok) {
-          navigate('/');
+          navigate(`/c/${index}`);
           return;
         }
         agent = await agentResponse.json();
@@ -240,12 +243,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           navigate(`/agents/shared/${agent.shared_token}`);
         } else {
           await Promise.resolve(dispatch(setSelectedAgent(agent)));
-          navigate('/');
+          navigate(`/agents/${data.agent_id}/c/${index}`);
         }
       }
     } catch (error) {
       console.error('Error handling conversation click:', error);
-      navigate('/');
+      navigate('/c/new');
     }
   };
 
@@ -264,6 +267,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     if (queries && queries?.length > 0) {
       resetConversation();
     }
+    navigate('/c/new');
   };
 
   async function updateConversationName(updatedConversation: {
@@ -275,7 +279,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       .then((response) => response.json())
       .then((data) => {
         if (data) {
-          navigate('/');
           fetchConversations();
         }
       })
@@ -328,7 +331,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 />
               </button>
             )}
-            <div className="text-gray-4000 text-[20px] font-medium">
+            <div className="text-muted-foreground text-[20px] font-medium">
               DocsGPT
             </div>
           </div>
@@ -338,7 +341,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         ref={navRef}
         className={`${
           !navOpen && '-ml-96 md:-ml-72'
-        } bg-lotion dark:border-r-purple-taupe dark:bg-chinese-black fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-300 ease-in-out dark:text-white`}
+        } bg-sidebar dark:border-r-sidebar-border fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-300 ease-in-out dark:text-white`}
       >
         <div
           className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
@@ -370,7 +373,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </button>
         </div>
         <NavLink
-          to={'/'}
+          to={'/c/new'}
           onClick={() => {
             if (isMobile || isTablet) {
               setNavOpen(!navOpen);
@@ -380,7 +383,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           className={({ isActive }) =>
             `${
               isActive ? 'bg-transparent' : ''
-            } group border-silver hover:border-rainy-gray dark:border-purple-taupe sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border p-3 hover:bg-transparent dark:text-white`
+            } group border-sidebar-border hover:border-sidebar-border sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border p-3 hover:bg-transparent dark:text-white`
           }
         >
           <img
@@ -388,13 +391,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             alt="Create new chat"
             className="opacity-80 group-hover:opacity-100"
           />
-          <p className="text-dove-gray dark:text-chinese-silver dark:group-hover:text-bright-gray text-sm group-hover:text-neutral-600">
+          <p className="text-muted-foreground dark:text-foreground dark:group-hover:text-foreground text-sm group-hover:text-neutral-600">
             {t('newChat')}
           </p>
         </NavLink>
         <div
           id="conversationsMainDiv"
-          className="mb-auto h-[78vh] overflow-x-hidden overflow-y-auto scrollbar-overlay dark:text-white"
+          className="scrollbar-overlay mb-auto h-[78vh] overflow-x-hidden overflow-y-auto dark:text-white"
         >
           {conversations?.loading && !isDeletingConversation && (
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform">
@@ -417,9 +420,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   {recentAgents.map((agent, idx) => (
                     <div
                       key={idx}
-                      className={`group hover:bg-bright-gray dark:hover:bg-dark-charcoal mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 ${
+                      className={`group hover:bg-sidebar-accent mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 ${
                         agent.id === selectedAgent?.id && !conversationId
-                          ? 'bg-bright-gray dark:bg-dark-charcoal'
+                          ? 'bg-sidebar-accent'
                           : ''
                       }`}
                       onClick={() => handleAgentClick(agent)}
@@ -432,7 +435,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                             className="h-6 w-6 rounded-full object-contain"
                           />
                         </div>
-                        <p className="text-eerie-black dark:text-bright-gray overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
+                        <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
                           {agent.name}
                         </p>
                       </div>
@@ -456,7 +459,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   ))}
                 </div>
                 <div
-                  className="hover:bg-bright-gray dark:hover:bg-dark-charcoal mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
+                  className="hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
                   onClick={() => {
                     dispatch(setSelectedAgent(null));
                     if (isMobile || isTablet) {
@@ -472,7 +475,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                       className="h-[18px] w-[18px]"
                     />
                   </div>
-                  <p className="text-eerie-black dark:text-bright-gray overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
+                  <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
                     {t('manageAgents')}
                   </p>
                 </div>
@@ -480,7 +483,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             </div>
           ) : (
             <div
-              className="hover:bg-bright-gray dark:hover:bg-dark-charcoal mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
+              className="hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
               onClick={() => {
                 if (isMobile || isTablet) {
                   setNavOpen(false);
@@ -496,7 +499,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   className="h-[18px] w-[18px]"
                 />
               </div>
-              <p className="text-eerie-black dark:text-bright-gray overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
+              <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
                 {t('manageAgents')}
               </p>
             </div>
@@ -529,8 +532,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <></>
           )}
         </div>
-        <div className="text-eerie-black flex h-auto flex-col justify-end dark:text-white">
-          <div className="dark:border-b-purple-taupe flex flex-col gap-2 border-b py-2">
+        <div className="text-foreground flex h-auto flex-col justify-end dark:text-white">
+          <div className="dark:border-b-sidebar-border flex flex-col gap-2 border-b py-2">
             <NavLink
               onClick={() => {
                 if (isMobile || isTablet) {
@@ -540,8 +543,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }}
               to="/settings"
               className={({ isActive }) =>
-                `mx-4 my-auto flex h-9 cursor-pointer items-center gap-4 rounded-3xl hover:bg-gray-100 dark:hover:bg-[#28292E] ${
-                  isActive ? 'bg-gray-3000 dark:bg-transparent' : ''
+                `hover:bg-sidebar-accent mx-4 my-auto flex h-9 cursor-pointer items-center gap-4 rounded-3xl ${
+                  isActive ? 'bg-sidebar-accent' : ''
                 }`
               }
             >
@@ -552,12 +555,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 height={21}
                 className="my-auto ml-2 filter dark:invert"
               />
-              <p className="text-eerie-black text-sm dark:text-white">
+              <p className="text-foreground text-sm dark:text-white">
                 {t('settings.label')}
               </p>
             </NavLink>
           </div>
-          <div className="text-eerie-black flex flex-col justify-end dark:text-white">
+          <div className="text-foreground flex flex-col justify-end dark:text-white">
             <div className="flex items-center justify-between py-1">
               <Help />
 
@@ -565,9 +568,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <NavLink
                   target="_blank"
                   to={'https://discord.gg/vN7YFfdMpj'}
-                  className={
-                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
-                  }
+                  className={'hover:bg-sidebar-accent rounded-full'}
                 >
                   <img
                     src={Discord}
@@ -580,9 +581,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <NavLink
                   target="_blank"
                   to={'https://x.com/docsgptai'}
-                  className={
-                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
-                  }
+                  className={'hover:bg-sidebar-accent rounded-full'}
                 >
                   <img
                     src={Twitter}
@@ -595,9 +594,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <NavLink
                   target="_blank"
                   to={'https://github.com/arc53/docsgpt'}
-                  className={
-                    'rounded-full hover:bg-gray-100 dark:hover:bg-[#28292E]'
-                  }
+                  className={'hover:bg-sidebar-accent rounded-full'}
                 >
                   <img
                     src={Github}
@@ -612,7 +609,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </div>
         </div>
       </div>
-      <div className="dark:border-b-purple-taupe dark:bg-chinese-black sticky z-10 h-16 w-full border-b-2 bg-gray-50 lg:hidden">
+      <div className="dark:border-b-sidebar-border bg-sidebar sticky z-10 h-16 w-full border-b-2 lg:hidden">
         <div className="ml-6 flex h-full items-center gap-6">
           <button
             className="h-6 w-6 lg:hidden"
@@ -624,7 +621,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               className="w-7 filter dark:invert"
             />
           </button>
-          <div className="text-gray-4000 text-[20px] font-medium">DocsGPT</div>
+          <div className="text-muted-foreground text-[20px] font-medium">
+            DocsGPT
+          </div>
         </div>
       </div>
       <DeleteConvModal

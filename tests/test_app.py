@@ -15,9 +15,7 @@ def test_app_config():
     app.config["UPLOAD_FOLDER"] = "inputs"
     app.config["CELERY_BROKER_URL"] = settings.CELERY_BROKER_URL
     app.config["CELERY_RESULT_BACKEND"] = settings.CELERY_RESULT_BACKEND
-    app.config["MONGO_URI"] = settings.MONGO_URI
 
     assert app.config["UPLOAD_FOLDER"] == "inputs"
     assert app.config["CELERY_BROKER_URL"] == settings.CELERY_BROKER_URL
     assert app.config["CELERY_RESULT_BACKEND"] == settings.CELERY_RESULT_BACKEND
-    assert app.config["MONGO_URI"] == settings.MONGO_URI

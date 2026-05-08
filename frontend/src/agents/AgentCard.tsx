@@ -174,7 +174,7 @@ export default function AgentCard({
     if (section === 'user') {
       if (agent.status === 'published') {
         dispatch(setSelectedAgent(agent));
-        navigate(`/`);
+        navigate(agent.id ? `/agents/${agent.id}/c/new` : '/c/new');
       }
     }
     if (section === 'shared') {
@@ -251,7 +251,7 @@ export default function AgentCard({
   };
   return (
     <div
-      className={`relative flex h-44 flex-col justify-between rounded-[1.2rem] bg-[#F6F6F6] px-4 py-5 hover:bg-[#ECECEC] sm:w-48 sm:px-6 dark:bg-[#383838] dark:hover:bg-[#383838]/80 ${agent.status === 'published' && 'cursor-pointer'}`}
+      className={`bg-muted hover:bg-accent relative flex h-44 flex-col justify-between rounded-[1.2rem] px-4 py-5 sm:w-48 sm:px-6 ${agent.status === 'published' && 'cursor-pointer'}`}
       onClick={(e) => {
         e.stopPropagation();
         handleClick();
@@ -283,17 +283,17 @@ export default function AgentCard({
             className="h-7 w-7 rounded-full object-contain"
           />
           {agent.status === 'draft' && (
-            <p className="text-xs text-black opacity-50 dark:text-[#E0E0E0]">{`(Draft)`}</p>
+            <p className="text-foreground text-xs opacity-50">{`(Draft)`}</p>
           )}
         </div>
         <div className="mt-2">
           <p
             title={agent.name}
-            className="truncate px-1 text-[13px] leading-relaxed font-semibold text-[#020617] capitalize dark:text-[#E0E0E0]"
+            className="text-foreground truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
           >
             {agent.name}
           </p>
-          <p className="dark:text-sonic-silver-light mt-1 h-20 overflow-auto px-1 text-[12px] leading-relaxed text-[#64748B]">
+          <p className="dark:text-muted-foreground text-muted-foreground mt-1 h-20 overflow-auto px-1 text-[12px] leading-relaxed">
             {agent.description}
           </p>
         </div>

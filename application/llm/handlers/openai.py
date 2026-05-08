@@ -37,18 +37,25 @@ class OpenAILLMHandler(LLMHandler):
         )
 
     def create_tool_message(self, tool_call: ToolCall, result: Any) -> Dict:
-        """Create OpenAI-style tool message."""
+        """Create a tool result message in the standard internal format."""
+        import json as _json
+
+        from application.storage.db.serialization import PGNativeJSONEncoder
+
+        # PostgresTool results commonly include PG-native types
+        # (datetime / UUID / Decimal / bytea) when SELECT touches
+        # timestamptz / numeric / uuid / bytea columns. The shared
+        # encoder handles all five — bytes get base64 (lossless) instead
+        # of the ``str(b'...')`` repr that ``default=str`` would emit.
+        content = (
+            _json.dumps(result, cls=PGNativeJSONEncoder)
+            if not isinstance(result, str)
+            else result
+        )
         return {
             "role": "tool",
-            "content": [
-                {
-                    "function_response": {
-                        "name": tool_call.name,
-                        "response": {"result": result},
-                        "call_id": tool_call.id,
-                    }
-                }
-            ],
+            "tool_call_id": tool_call.id,
+            "content": content,
         }
 
     def _iterate_stream(self, response: Any) -> Generator:

@@ -13,6 +13,7 @@ import ArrowLeft from '../assets/arrow-left.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import EyeView from '../assets/eye-view.svg';
 import Trash from '../assets/red-trash.svg';
+import { SOURCE_FILE_TREE_ACCEPT_ATTR } from '../constants/fileUpload';
 import { useOutsideAlerter, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import {
@@ -413,8 +414,7 @@ const FileTree: React.FC<FileTreeProps> = ({
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.multiple = true;
-    fileInput.accept =
-      '.rst,.md,.pdf,.txt,.docx,.csv,.epub,.html,.mdx,.json,.xlsx,.pptx,.png,.jpg,.jpeg';
+    fileInput.accept = SOURCE_FILE_TREE_ACCEPT_ATTR;
 
     fileInput.onchange = async (event) => {
       const fileList = (event.target as HTMLInputElement).files;
@@ -450,7 +450,7 @@ const FileTree: React.FC<FileTreeProps> = ({
         {/* Left side with path navigation */}
         <div className="flex w-full items-center sm:w-auto">
           <button
-            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm font-medium text-gray-400 dark:border-0 dark:bg-[#28292D] dark:text-gray-500 dark:hover:bg-[#2E2F34]"
+            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm font-medium text-gray-400 dark:border-0 dark:text-gray-500"
             onClick={handleBackNavigation}
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
@@ -503,7 +503,7 @@ const FileTree: React.FC<FileTreeProps> = ({
           {!processingRef.current && (
             <button
               onClick={handleAddFile}
-              className="bg-purple-30 hover:bg-violets-are-blue flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] font-medium whitespace-nowrap text-white"
+              className="bg-primary hover:bg-primary/90 flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] font-medium whitespace-nowrap text-white"
               title={t('settings.sources.addFile')}
             >
               {t('settings.sources.addFile')}
@@ -599,7 +599,7 @@ const FileTree: React.FC<FileTreeProps> = ({
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
-                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E]"
+                  className="dark:hover:bg-muted inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
                   aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
@@ -656,7 +656,7 @@ const FileTree: React.FC<FileTreeProps> = ({
               <div ref={menuRef} className="relative">
                 <button
                   onClick={(e) => handleMenuClick(e, itemId)}
-                  className="inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB] dark:hover:bg-[#26272E]"
+                  className="dark:hover:bg-muted inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
                   aria-label={t('settings.sources.menuAlt')}
                 >
                   <img
@@ -754,11 +754,11 @@ const FileTree: React.FC<FileTreeProps> = ({
             }
           }}
           placeholder={t('settings.sources.searchFiles')}
-          className={`h-[38px] w-full border border-[#D1D9E0] px-4 py-2 dark:border-[#6A6A6A] ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'} bg-transparent focus:outline-none dark:text-[#E0E0E0]`}
+          className={`border-border dark:border-border h-[38px] w-full border px-4 py-2 ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'} bg-transparent focus:outline-none`}
         />
 
         {searchQuery && (
-          <div className="absolute top-full right-0 left-0 z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-[12px] border border-t-0 border-[#D1D9E0] bg-white shadow-lg transition-all duration-200 dark:border-[#6A6A6A] dark:bg-[#1F2023]">
+          <div className="border-border bg-card dark:border-border dark:bg-card absolute top-full right-0 left-0 z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-[12px] border border-t-0 shadow-lg transition-all duration-200">
             <div className="max-h-[calc(100vh-200px)] overflow-x-hidden overflow-y-auto overscroll-contain">
               {searchResults.length === 0 ? (
                 <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -770,9 +770,9 @@ const FileTree: React.FC<FileTreeProps> = ({
                     key={index}
                     onClick={() => handleSearchSelect(result)}
                     title={result.path}
-                    className={`flex min-w-0 cursor-pointer items-center px-3 py-2 hover:bg-[#ECEEEF] dark:hover:bg-[#27282D] ${
+                    className={`hover:bg-muted dark:hover:bg-muted flex min-w-0 cursor-pointer items-center px-3 py-2 ${
                       index !== searchResults.length - 1
-                        ? 'border-b border-[#D1D9E0] dark:border-[#6A6A6A]'
+                        ? 'border-border dark:border-border border-b'
                         : ''
                     }`}
                   >
@@ -785,7 +785,7 @@ const FileTree: React.FC<FileTreeProps> = ({
                       }
                       className="mr-2 h-4 w-4 flex-shrink-0"
                     />
-                    <span className="flex-1 truncate text-sm dark:text-[#E0E0E0]">
+                    <span className="flex-1 truncate text-sm">
                       {result.name}
                     </span>
                   </div>

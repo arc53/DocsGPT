@@ -1,0 +1,31 @@
+# EXAMPLE — copy this file to ../mistral.yaml (or to your
+# MODELS_CONFIG_DIR) and set MISTRAL_API_KEY in your environment.
+#
+# This is the entire integration. No Python required: the
+# `openai_compatible` plugin reads `api_key_env` and `base_url` from
+# the file and routes calls through the OpenAI wire format.
+#
+# Files in this `examples/` directory are NOT loaded by the registry
+# (the loader globs *.yaml at the top level only).
+
+provider: openai_compatible
+display_provider: mistral             # shown in /api/models response
+api_key_env: MISTRAL_API_KEY          # env var the plugin reads
+base_url: https://api.mistral.ai/v1   # OpenAI-compatible endpoint
+
+defaults:
+  supports_tools: true
+  context_window: 128000
+
+models:
+  - id: mistral-large-latest
+    display_name: Mistral Large
+    description: Top-tier reasoning model
+
+  - id: mistral-small-latest
+    display_name: Mistral Small
+    description: Fast, cost-efficient
+
+  - id: codestral-latest
+    display_name: Codestral
+    description: Code-specialized model

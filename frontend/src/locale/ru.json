@@ -54,6 +54,7 @@
     },
     "sources": {
       "title": "Здесь вы можете управлять всеми исходными файлами, которые доступны вам и которые вы загрузили.",
+      "subtitle": "Загружайте и управляйте документами и источниками знаний, которые обеспечивают ваши ответы",
       "label": "Источники",
       "name": "Название источника",
       "date": "Дата вектора",
@@ -118,6 +119,7 @@
     },
     "analytics": {
       "label": "Аналитика",
+      "subtitle": "Отслеживайте объём сообщений, использование токенов и отзывы пользователей в вашем аккаунте",
       "filterByChatbot": "Фильтровать по чат-боту",
       "selectChatbot": "Выбрать чат-бота",
       "filterOptions": {
@@ -137,6 +139,7 @@
     },
     "logs": {
       "label": "Журналы",
+      "subtitle": "Просматривайте и отслеживайте вызовы API и журналы разговоров",
       "filterByChatbot": "Фильтровать по чат-боту",
       "selectChatbot": "Выбрать чат-бота",
       "none": "Нет",
@@ -144,6 +147,7 @@
     },
     "tools": {
       "label": "Инструменты",
+      "subtitle": "Просматривайте, подключайте и настраивайте инструменты и интеграции для ваших агентов",
       "searchPlaceholder": "Поиск...",
       "addTool": "Добавить инструмент",
       "noToolsFound": "Инструменты не найдены",
@@ -240,6 +244,71 @@
         }
       }
     },
+    "customModels": {
+      "label": "Свои модели",
+      "subtitle": "Подключите свою модель, совместимую с OpenAI.",
+      "addModel": "Добавить модель",
+      "empty": "Модели не найдены",
+      "searchPlaceholder": "Поиск моделей...",
+      "modalSubtitle": "Подключите любой OpenAI-совместимый эндпоинт (Mistral, Together, vLLM и т. п.).",
+      "addTitle": "Добавить свою модель",
+      "editTitle": "Изменить свою модель",
+      "save": "Сохранить",
+      "saving": "Сохранение",
+      "testConnection": "Проверить соединение",
+      "testing": "Проверка",
+      "testSuccess": "Соединение установлено.",
+      "testHintNew": "Заполните Base URL, ID модели и API-ключ, чтобы включить проверку соединения.",
+      "disabledBadge": "Отключено",
+      "deleteWarning": "Удалить свою модель «{{modelName}}»?",
+      "actionsMenuAria": "Действия для {{modelName}}",
+      "modelsGroup": {
+        "builtin": "Модели DocsGPT",
+        "user": "Мои модели"
+      },
+      "actions": {
+        "edit": "Изменить",
+        "delete": "Удалить"
+      },
+      "fields": {
+        "displayName": "Отображаемое имя",
+        "modelId": "ID модели",
+        "description": "Описание",
+        "baseUrl": "Base URL",
+        "apiKey": "API-ключ"
+      },
+      "placeholders": {
+        "displayName": "Мой Mistral",
+        "modelId": "напр. mistral-large-latest",
+        "description": "Необязательное описание",
+        "baseUrl": "https://api.mistral.ai/v1",
+        "apiKey": "sk-...",
+        "apiKeyEdit": "Оставьте пустым, чтобы сохранить текущий"
+      },
+      "hints": {
+        "apiKeyEdit": "Оставьте пустым, чтобы сохранить текущий ключ."
+      },
+      "capabilities": {
+        "title": "Возможности",
+        "contextWindowShort": "Контекстное окно",
+        "chips": {
+          "tools": "Инструменты",
+          "structuredOutput": "Структурированный вывод",
+          "images": "Изображения"
+        }
+      },
+      "errors": {
+        "displayNameRequired": "Укажите отображаемое имя",
+        "modelIdRequired": "Укажите ID модели",
+        "baseUrlRequired": "Укажите Base URL",
+        "baseUrlScheme": "Base URL должен начинаться с http:// или https://",
+        "baseUrlInvalid": "Введите корректный URL",
+        "apiKeyRequired": "Укажите API-ключ",
+        "contextWindowRange": "Контекстное окно должно быть от 1 000 до 10 000 000",
+        "saveFailed": "Не удалось сохранить свою модель",
+        "testFailed": "Проверка соединения не удалась"
+      }
+    },
     "scrollTabsLeft": "Прокрутить вкладки влево",
     "tabsAriaLabel": "Вкладки настроек",
     "scrollTabsRight": "Прокрутить вкладки вправо"
@@ -321,6 +390,14 @@
         "s3": {
           "label": "Amazon S3",
           "heading": "Добавить контент из Amazon S3"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "Загрузить из SharePoint"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "Загрузить из Confluence"
         }
       },
       "connectors": {
@@ -340,6 +417,24 @@
           "validateFailed": "Не удалось проверить сеанс. Пожалуйста, переподключитесь.",
           "noSession": "Действительный сеанс не найден. Пожалуйста, переподключитесь к Google Drive.",
           "noAccessToken": "Токен доступа недоступен. Пожалуйста, переподключитесь к Google Drive.",
+          "pickerFailed": "Не удалось открыть средство выбора файлов. Пожалуйста, попробуйте еще раз.",
+          "selectedFiles": "Выбранные файлы",
+          "selectFiles": "Выбрать файлы",
+          "loading": "Загрузка...",
+          "noFilesSelected": "Файлы или папки не выбраны",
+          "folders": "Папки",
+          "files": "Файлы",
+          "remove": "Удалить",
+          "folderAlt": "Папка",
+          "fileAlt": "Файл"
+        },
+        "sharePoint": {
+          "connect": "Подключиться к SharePoint",
+          "sessionExpired": "Сеанс истек. Пожалуйста, переподключитесь к SharePoint.",
+          "sessionExpiredGeneric": "Сеанс истек. Пожалуйста, переподключите свою учетную запись.",
+          "validateFailed": "Не удалось проверить сеанс. Пожалуйста, переподключитесь.",
+          "noSession": "Действительный сеанс не найден. Пожалуйста, переподключитесь к SharePoint.",
+          "noAccessToken": "Токен доступа недоступен. Пожалуйста, переподключитесь к SharePoint.",
           "pickerFailed": "Не удалось открыть средство выбора файлов. Пожалуйста, попробуйте еще раз.",
           "selectedFiles": "Выбранные файлы",
           "selectFiles": "Выбрать файлы",
@@ -514,6 +609,7 @@
   },
   "agents": {
     "title": "Агенты",
+    "edit": "Редактировать",
     "description": "Откройте и создайте пользовательские версии DocsGPT, которые объединяют инструкции, дополнительные знания и любую комбинацию навыков",
     "newAgent": "Новый Агент",
     "backToAll": "Вернуться ко всем агентам",
@@ -615,7 +711,9 @@
         "tokenLimiting": "Лимит токенов",
         "tokenLimitingDescription": "Ограничить ежедневное общее количество токенов, которые может использовать этот агент",
         "requestLimiting": "Лимит запросов",
-        "requestLimitingDescription": "Ограничить ежедневное общее количество запросов, которые можно сделать к этому агенту"
+        "requestLimitingDescription": "Ограничить ежедневное общее количество запросов, которые можно сделать к этому агенту",
+        "systemPromptOverride": "Разрешить замену промпта",
+        "systemPromptOverrideDescription": "Разрешить вызовам API v1 заменять системный промпт этого агента"
       },
       "preview": {
         "publishedPreview": "Опубликованные агенты можно просмотреть здесь"
@@ -671,7 +769,10 @@
     "itemsSelected": "{{count}} выбрано",
     "name": "Имя",
     "lastModified": "Последнее изменение",
-    "size": "Размер"
+    "size": "Размер",
+    "myFiles": "Мои файлы",
+    "sharedWithMe": "Доступные мне",
+    "loadingMore": "Загрузка файлов..."
   },
   "actionButtons": {
     "openNewChat": "Открыть новый чат",

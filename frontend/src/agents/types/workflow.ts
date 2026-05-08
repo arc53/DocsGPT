@@ -1,4 +1,10 @@
-export type NodeType = 'start' | 'end' | 'agent' | 'note' | 'state' | 'condition';
+export type NodeType =
+  | 'start'
+  | 'end'
+  | 'agent'
+  | 'note'
+  | 'state'
+  | 'condition';
 
 export interface ConditionCase {
   name?: string;

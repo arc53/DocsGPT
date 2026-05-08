@@ -1,0 +1,111 @@
+---
+title: Observability
+description: Send traces, metrics, and logs from DocsGPT to any OpenTelemetry-compatible backend (Axiom, Honeycomb, Grafana, Datadog, Jaeger, etc.).
+---
+
+import { Callout } from 'nextra/components'
+
+# Observability
+
+DocsGPT bundles the OpenTelemetry SDK and auto-instrumentation packages
+in `application/requirements.txt` — they install with the rest of the
+backend deps. Telemetry is **off by default**; opt in by prefixing the
+launch command with `opentelemetry-instrument` and setting OTLP env
+vars.
+
+Auto-instrumentation covers Flask, Starlette, Celery, SQLAlchemy,
+psycopg, Redis, requests, and Python logging. LLM/retriever calls are
+not captured at this layer — see *Going further* below.
+
+## Enabling
+
+Set these env vars in your `.env` (or compose `environment:` block):
+
+```bash
+OTEL_SDK_DISABLED=false
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_ENDPOINT=https://your-collector.example.com
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer%20<token>
+OTEL_TRACES_EXPORTER=otlp
+OTEL_METRICS_EXPORTER=otlp
+OTEL_LOGS_EXPORTER=otlp
+OTEL_PYTHON_LOG_CORRELATION=true
+OTEL_RESOURCE_ATTRIBUTES=service.name=docsgpt-backend,deployment.environment=prod
+```
+
+Then prefix the process command with `opentelemetry-instrument`. The
+simplest way is a compose override (no image rebuild):
+
+```yaml
+# deployment/docker-compose.override.yaml
+services:
+  backend:
+    command: >
+      opentelemetry-instrument gunicorn -w 1 -k uvicorn_worker.UvicornWorker
+      --bind 0.0.0.0:7091 --config application/gunicorn_conf.py
+      application.asgi:asgi_app
+    environment:
+      - OTEL_SERVICE_NAME=docsgpt-backend
+  worker:
+    command: opentelemetry-instrument celery -A application.app.celery worker -l INFO -B
+    environment:
+      - OTEL_SERVICE_NAME=docsgpt-celery-worker
+```
+
+For local dev, prepend `dotenv run --` so the `OTEL_*` vars from `.env`
+reach `opentelemetry-instrument` before it boots the SDK:
+
+```bash
+dotenv run -- opentelemetry-instrument flask --app application/app.py run --port=7091
+dotenv run -- opentelemetry-instrument celery -A application.app.celery worker -l INFO --pool=solo
+```
+
+
+<Callout type="info" emoji="ℹ️">
+  Logs are exported in-process when `OTEL_LOGS_EXPORTER=otlp` is set —
+  `application/core/logging_config.py` detects the flag and preserves
+  the OTEL log handler. Without it, `logging` writes only to stdout.
+</Callout>
+
+## Backend examples
+
+### Axiom
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=https://api.axiom.co
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer%20xaat-XXXX,X-Axiom-Dataset=docsgpt
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+```
+
+`%20` is the URL-encoded space between `Bearer` and the token. Create
+the dataset in the Axiom UI before sending.
+
+### Self-hosted OTLP collector / Jaeger / Tempo
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+```
+
+### Honeycomb / Grafana Cloud / Datadog
+
+Each vendor publishes a single-line `OTEL_EXPORTER_OTLP_ENDPOINT` plus
+`OTEL_EXPORTER_OTLP_HEADERS` recipe — drop them in alongside the
+service-name override.
+
+## Caveats
+
+- The Dockerfile uses `gunicorn -w 1`. If you raise worker count, move
+  SDK init into a `post_worker_init` hook to avoid one-thread-per-process
+  exporter contention.
+- `asgi.py` wraps Flask in Starlette's `WSGIMiddleware`. Both
+  instrumentors are installed, so each request produces a Starlette
+  span enclosing a Flask span. Drop
+  `opentelemetry-instrumentation-flask` from `requirements.txt` if the
+  duplication is noisy.
+- OTEL packages add ~50 MB to the image. They install on every build —
+  the runtime cost is zero unless you set `opentelemetry-instrument` on
+  the command and set the OTLP env vars.
+- The OTEL exporter ecosystem currently caps `protobuf` at `<7`, so the
+  backend runs on protobuf 6.x. This will catch up in a future OTEL
+  release.

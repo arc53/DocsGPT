@@ -1,357 +1,629 @@
-"""Tests for sources routes."""
+"""Tests for application/api/user/sources/routes.py."""
 
 import json
-import pytest
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
-from bson import ObjectId
+
+import pytest
+from flask import Flask
+
+
+@pytest.fixture
+def app():
+    return Flask(__name__)
+
+
+@contextmanager
+def _patch_db(conn):
+    @contextmanager
+    def _yield():
+        yield conn
+
+    with patch(
+        "application.api.user.sources.routes.db_session", _yield
+    ), patch(
+        "application.api.user.sources.routes.db_readonly", _yield
+    ):
+        yield
+
+
+def _seed_source(pg_conn, user, **kwargs):
+    from application.storage.db.repositories.sources import SourcesRepository
+    return SourcesRepository(pg_conn).create(
+        kwargs.pop("name", "src"),
+        user_id=user,
+        **kwargs,
+    )
 
 
 class TestGetProviderFromRemoteData:
-    """Test the _get_provider_from_remote_data helper function."""
+    def test_returns_none_for_empty(self):
+        from application.api.user.sources.routes import (
+            _get_provider_from_remote_data,
+        )
+        assert _get_provider_from_remote_data(None) is None
+        assert _get_provider_from_remote_data("") is None
 
-    def test_returns_none_for_none_input(self):
-        """Should return None when remote_data is None."""
-        from application.api.user.sources.routes import _get_provider_from_remote_data
+    def test_returns_from_dict(self):
+        from application.api.user.sources.routes import (
+            _get_provider_from_remote_data,
+        )
+        assert (
+            _get_provider_from_remote_data({"provider": "gdrive"})
+            == "gdrive"
+        )
 
-        result = _get_provider_from_remote_data(None)
-        assert result is None
+    def test_returns_from_json_string(self):
+        from application.api.user.sources.routes import (
+            _get_provider_from_remote_data,
+        )
+        assert (
+            _get_provider_from_remote_data('{"provider": "github"}')
+            == "github"
+        )
 
-    def test_returns_none_for_empty_string(self):
-        """Should return None when remote_data is empty string."""
-        from application.api.user.sources.routes import _get_provider_from_remote_data
-
-        result = _get_provider_from_remote_data("")
-        assert result is None
-
-    def test_extracts_provider_from_dict(self):
-        """Should extract provider from dict remote_data."""
-        from application.api.user.sources.routes import _get_provider_from_remote_data
-
-        remote_data = {"provider": "s3", "bucket": "my-bucket"}
-        result = _get_provider_from_remote_data(remote_data)
-        assert result == "s3"
-
-    def test_extracts_provider_from_json_string(self):
-        """Should extract provider from JSON string remote_data."""
-        from application.api.user.sources.routes import _get_provider_from_remote_data
-
-        remote_data = json.dumps({"provider": "github", "repo": "test/repo"})
-        result = _get_provider_from_remote_data(remote_data)
-        assert result == "github"
-
-    def test_returns_none_for_dict_without_provider(self):
-        """Should return None when dict has no provider key."""
-        from application.api.user.sources.routes import _get_provider_from_remote_data
-
-        remote_data = {"bucket": "my-bucket", "region": "us-east-1"}
-        result = _get_provider_from_remote_data(remote_data)
-        assert result is None
-
-    def test_returns_none_for_invalid_json(self):
-        """Should return None for invalid JSON string."""
-        from application.api.user.sources.routes import _get_provider_from_remote_data
-
-        result = _get_provider_from_remote_data("not valid json")
-        assert result is None
-
-    def test_returns_none_for_json_array(self):
-        """Should return None when JSON parses to non-dict."""
-        from application.api.user.sources.routes import _get_provider_from_remote_data
-
-        result = _get_provider_from_remote_data('["item1", "item2"]')
-        assert result is None
-
-    def test_returns_none_for_non_string_non_dict(self):
-        """Should return None for other types like int."""
-        from application.api.user.sources.routes import _get_provider_from_remote_data
-
-        result = _get_provider_from_remote_data(123)
-        assert result is None
+    def test_returns_none_for_malformed_json(self):
+        from application.api.user.sources.routes import (
+            _get_provider_from_remote_data,
+        )
+        assert _get_provider_from_remote_data("not-json") is None
 
 
-def _get_response_status(response):
-    """Helper to get status code from response (handles both tuple and Response)."""
-    if isinstance(response, tuple):
-        return response[1]
-    return response.status_code
+class TestCombinedJson:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.sources.routes import CombinedJson
 
-
-def _get_response_json(response):
-    """Helper to get JSON from response (handles both tuple and Response)."""
-    if isinstance(response, tuple):
-        return response[0].json
-    return response.json
-
-
-@pytest.mark.unit
-class TestSyncSourceEndpoint:
-    """Test the /sync_source endpoint."""
-
-    @pytest.fixture
-    def mock_sources_collection(self, mock_mongo_db):
-        """Get mock sources collection."""
-        from application.core.settings import settings
-
-        return mock_mongo_db[settings.MONGO_DB_NAME]["sources"]
-
-    def test_sync_source_returns_401_without_token(self, flask_app):
-        """Should return 401 when no decoded_token is present."""
-        from flask import Flask
-        from application.api.user.sources.routes import SyncSource
-
-        app = Flask(__name__)
-
-        with app.test_request_context(
-            "/api/sync_source", method="POST", json={"source_id": "123"}
-        ):
+        with app.test_request_context("/api/sources"):
             from flask import request
-
             request.decoded_token = None
-            resource = SyncSource()
-            response = resource.post()
+            response = CombinedJson().get()
+        assert response.status_code == 401
 
-            assert _get_response_status(response) == 401
+    def test_returns_default_plus_user_sources(self, app, pg_conn):
+        from application.api.user.sources.routes import CombinedJson
 
-    def test_sync_source_returns_400_for_missing_source_id(self, flask_app):
-        """Should return 400 when source_id is missing."""
-        from flask import Flask
-        from application.api.user.sources.routes import SyncSource
+        user = "u-list-sources"
+        _seed_source(pg_conn, user, name="doc1", tokens="100")
 
-        app = Flask(__name__)
-
-        with app.test_request_context("/api/sync_source", method="POST", json={}):
+        with _patch_db(pg_conn), app.test_request_context("/api/sources"):
             from flask import request
+            request.decoded_token = {"sub": user}
+            response = CombinedJson().get()
 
-            request.decoded_token = {"sub": "test_user"}
-            resource = SyncSource()
-            response = resource.post()
+        assert response.status_code == 200
+        names = [d["name"] for d in response.json]
+        assert "Default" in names
+        assert "doc1" in names
 
-            # check_required_fields returns a response tuple on missing fields
-            assert response is not None
+    def test_db_error_returns_400(self, app):
+        from application.api.user.sources.routes import CombinedJson
 
-    def test_sync_source_returns_400_for_invalid_source_id(self, flask_app):
-        """Should return 400 for invalid ObjectId."""
-        from flask import Flask
-        from application.api.user.sources.routes import SyncSource
+        @contextmanager
+        def _broken():
+            raise RuntimeError("boom")
+            yield
 
-        app = Flask(__name__)
+        with patch(
+            "application.api.user.sources.routes.db_readonly", _broken
+        ), app.test_request_context("/api/sources"):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = CombinedJson().get()
+        assert response.status_code == 400
 
-        with app.test_request_context(
-            "/api/sync_source", method="POST", json={"source_id": "invalid"}
+
+class TestPaginatedSources:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.sources.routes import PaginatedSources
+
+        with app.test_request_context("/api/sources/paginated"):
+            from flask import request
+            request.decoded_token = None
+            response = PaginatedSources().get()
+        assert response.status_code == 401
+
+    def test_returns_pagination_shape(self, app, pg_conn):
+        from application.api.user.sources.routes import PaginatedSources
+
+        user = "u-pag"
+        for i in range(5):
+            _seed_source(pg_conn, user, name=f"doc-{i}")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/paginated?page=1&rows=2"
         ):
             from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        assert response.status_code == 200
+        data = response.json
+        assert data["total"] == 5
+        assert data["totalPages"] == 3
+        assert data["currentPage"] == 1
+        assert len(data["paginated"]) == 2
 
-            request.decoded_token = {"sub": "test_user"}
-            resource = SyncSource()
-            response = resource.post()
+    def test_search_filter(self, app, pg_conn):
+        from application.api.user.sources.routes import PaginatedSources
 
-            assert _get_response_status(response) == 400
-            assert "Invalid source ID" in _get_response_json(response)["message"]
+        user = "u-search"
+        _seed_source(pg_conn, user, name="Alpha doc")
+        _seed_source(pg_conn, user, name="Beta doc")
 
-    def test_sync_source_returns_404_for_nonexistent_source(
-        self, flask_app, mock_mongo_db
-    ):
-        """Should return 404 when source doesn't exist."""
-        from flask import Flask
-        from application.api.user.sources.routes import SyncSource
-
-        app = Flask(__name__)
-        source_id = str(ObjectId())
-
-        with app.test_request_context(
-            "/api/sync_source", method="POST", json={"source_id": source_id}
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/paginated?search=alpha"
         ):
             from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        assert response.status_code == 200
+        data = response.json
+        assert data["total"] == 1
+        assert data["paginated"][0]["name"] == "Alpha doc"
 
-            request.decoded_token = {"sub": "test_user"}
+    def test_pagination_across_multiple_pages(self, app, pg_conn):
+        """Every seeded doc surfaces exactly once across paginated windows."""
+        from application.api.user.sources.routes import PaginatedSources
 
-            with patch(
-                "application.api.user.sources.routes.sources_collection",
-                mock_mongo_db["docsgpt"]["sources"],
+        user = "u-multi-page"
+        expected = {f"doc-{i}" for i in range(7)}
+        for name in expected:
+            _seed_source(pg_conn, user, name=name)
+
+        seen: set[str] = set()
+        for page in (1, 2, 3):
+            with _patch_db(pg_conn), app.test_request_context(
+                f"/api/sources/paginated?page={page}&rows=3"
             ):
-                resource = SyncSource()
-                response = resource.post()
+                from flask import request
+                request.decoded_token = {"sub": user}
+                response = PaginatedSources().get()
+            assert response.status_code == 200
+            for doc in response.json["paginated"]:
+                seen.add(doc["name"])
+        assert seen == expected
 
-                assert _get_response_status(response) == 404
-                assert "not found" in _get_response_json(response)["message"]
+    def test_out_of_range_page_returns_empty_window(self, app, pg_conn):
+        from application.api.user.sources.routes import PaginatedSources
 
-    def test_sync_source_returns_400_for_connector_type(
-        self, flask_app, mock_mongo_db, mock_sources_collection
-    ):
-        """Should return 400 for connector sources."""
-        from flask import Flask
-        from application.api.user.sources.routes import SyncSource
+        user = "u-oor"
+        _seed_source(pg_conn, user, name="only-one")
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/paginated?page=99&rows=10"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        assert response.status_code == 200
+        data = response.json
+        assert data["total"] == 1
+        # Prior behavior clamps ``currentPage`` back into range.
+        assert data["currentPage"] == 1
+        assert len(data["paginated"]) == 1
 
-        app = Flask(__name__)
-        source_id = ObjectId()
+    def test_empty_result_set_shape(self, app, pg_conn):
+        from application.api.user.sources.routes import PaginatedSources
 
-        # Insert a connector source
-        mock_sources_collection.insert_one(
-            {
-                "_id": source_id,
-                "user": "test_user",
-                "type": "connector_slack",
-                "name": "Slack Source",
-            }
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/paginated?page=1&rows=10"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u-empty"}
+            response = PaginatedSources().get()
+        assert response.status_code == 200
+        data = response.json
+        assert data["total"] == 0
+        # Legacy route returned ``max(1, ceil(0/rows)) == 1`` for empties.
+        assert data["totalPages"] == 1
+        assert data["paginated"] == []
+
+    def test_search_hits_sql_not_post_filter(self, app, pg_conn):
+        """Search must narrow ``total`` at the DB level, not in Python."""
+        from application.api.user.sources.routes import PaginatedSources
+
+        user = "u-sql-search"
+        _seed_source(pg_conn, user, name="needle in a haystack")
+        _seed_source(pg_conn, user, name="plain")
+        _seed_source(pg_conn, user, name="another plain")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/paginated?search=NEEDLE"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        data = response.json
+        # ``total`` reflects the filtered count — would be 3 if filtering
+        # happened after an unbounded fetch.
+        assert data["total"] == 1
+        assert data["paginated"][0]["name"] == "needle in a haystack"
+
+    def test_response_shape_preserved(self, app, pg_conn):
+        from application.api.user.sources.routes import PaginatedSources
+
+        user = "u-shape"
+        _seed_source(pg_conn, user, name="shape-doc")
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/paginated?page=1&rows=10"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        data = response.json
+        # Top-level contract the frontend relies on.
+        assert set(data.keys()) >= {"total", "totalPages", "currentPage", "paginated"}
+        # Each paginated entry exposes the legacy per-row keys.
+        row = data["paginated"][0]
+        for key in (
+            "id", "name", "date", "model", "location", "tokens",
+            "retriever", "syncFrequency", "provider", "isNested", "type",
+        ):
+            assert key in row
+
+
+class TestDeleteOldIndexes:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.sources.routes import DeleteOldIndexes
+
+        with app.test_request_context("/api/delete_old?source_id=x"):
+            from flask import request
+            request.decoded_token = None
+            response = DeleteOldIndexes().get()
+        assert response.status_code == 401
+
+    def test_returns_400_missing_id(self, app):
+        from application.api.user.sources.routes import DeleteOldIndexes
+
+        with app.test_request_context("/api/delete_old"):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = DeleteOldIndexes().get()
+        assert response.status_code == 400
+
+    def test_returns_404_missing_source(self, app, pg_conn):
+        from application.api.user.sources.routes import DeleteOldIndexes
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/delete_old?source_id=00000000-0000-0000-0000-000000000000"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = DeleteOldIndexes().get()
+        assert response.status_code == 404
+
+    def test_deletes_non_faiss_source(self, app, pg_conn):
+        from application.api.user.sources.routes import DeleteOldIndexes
+
+        user = "u-del-src"
+        src = _seed_source(pg_conn, user, name="remove-me")
+
+        fake_storage = MagicMock()
+        fake_storage.is_directory.return_value = False
+        fake_vs = MagicMock()
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.settings.VECTOR_STORE",
+            "milvus",
+        ), patch(
+            "application.api.user.sources.routes.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "application.api.user.sources.routes.VectorCreator.create_vectorstore",
+            return_value=fake_vs,
+        ), app.test_request_context(
+            f"/api/delete_old?source_id={src['id']}"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = DeleteOldIndexes().get()
+        assert response.status_code == 200
+        fake_vs.delete_index.assert_called_once()
+
+    def test_deletes_faiss_source(self, app, pg_conn):
+        from application.api.user.sources.routes import DeleteOldIndexes
+
+        user = "u-faiss-del"
+        src = _seed_source(
+            pg_conn, user, name="faiss-src", file_path="/tmp/x"
         )
 
-        with app.test_request_context(
-            "/api/sync_source", method="POST", json={"source_id": str(source_id)}
+        fake_storage = MagicMock()
+        fake_storage.file_exists.return_value = True
+        fake_storage.is_directory.return_value = False
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.settings.VECTOR_STORE",
+            "faiss",
+        ), patch(
+            "application.api.user.sources.routes.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), app.test_request_context(
+            f"/api/delete_old?source_id={src['id']}"
         ):
             from flask import request
+            request.decoded_token = {"sub": user}
+            response = DeleteOldIndexes().get()
+        assert response.status_code == 200
+        assert fake_storage.delete_file.call_count >= 2
 
-            request.decoded_token = {"sub": "test_user"}
+    def test_delete_ignores_missing_file_error(self, app, pg_conn):
+        from application.api.user.sources.routes import DeleteOldIndexes
 
-            with patch(
-                "application.api.user.sources.routes.sources_collection",
-                mock_sources_collection,
-            ):
-                resource = SyncSource()
-                response = resource.post()
-
-                assert _get_response_status(response) == 400
-                assert "Connector sources" in _get_response_json(response)["message"]
-
-    def test_sync_source_returns_400_for_non_syncable_source(
-        self, flask_app, mock_mongo_db, mock_sources_collection
-    ):
-        """Should return 400 when source has no remote_data."""
-        from flask import Flask
-        from application.api.user.sources.routes import SyncSource
-
-        app = Flask(__name__)
-        source_id = ObjectId()
-
-        # Insert a source without remote_data
-        mock_sources_collection.insert_one(
-            {
-                "_id": source_id,
-                "user": "test_user",
-                "type": "file",
-                "name": "Local Source",
-                "remote_data": None,
-            }
+        user = "u-nofile"
+        src = _seed_source(
+            pg_conn, user, name="nofile", file_path="/tmp/missing",
         )
 
-        with app.test_request_context(
-            "/api/sync_source", method="POST", json={"source_id": str(source_id)}
+        fake_storage = MagicMock()
+        fake_storage.file_exists.return_value = False
+        fake_storage.is_directory.return_value = False
+        fake_storage.delete_file.side_effect = FileNotFoundError("gone")
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.settings.VECTOR_STORE",
+            "milvus",
+        ), patch(
+            "application.api.user.sources.routes.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "application.api.user.sources.routes.VectorCreator.create_vectorstore",
+            return_value=MagicMock(),
+        ), app.test_request_context(
+            f"/api/delete_old?source_id={src['id']}"
         ):
             from flask import request
+            request.decoded_token = {"sub": user}
+            response = DeleteOldIndexes().get()
+        assert response.status_code == 200
 
-            request.decoded_token = {"sub": "test_user"}
 
-            with patch(
-                "application.api.user.sources.routes.sources_collection",
-                mock_sources_collection,
-            ):
-                resource = SyncSource()
-                response = resource.post()
+class TestRedirectToSources:
+    def test_redirects(self, app):
+        from application.api.user.sources.routes import RedirectToSources
 
-                assert _get_response_status(response) == 400
-                assert "not syncable" in _get_response_json(response)["message"]
+        with app.test_request_context("/api/combine"):
+            response = RedirectToSources().get()
+        assert response.status_code == 301
 
-    def test_sync_source_triggers_sync_task(
-        self, flask_app, mock_mongo_db, mock_sources_collection
-    ):
-        """Should trigger sync task for valid syncable source."""
-        from flask import Flask
-        from application.api.user.sources.routes import SyncSource
 
-        app = Flask(__name__)
-        source_id = ObjectId()
+class TestManageSync:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.sources.routes import ManageSync
 
-        # Insert a valid syncable source
-        mock_sources_collection.insert_one(
-            {
-                "_id": source_id,
-                "user": "test_user",
-                "type": "s3",
-                "name": "S3 Source",
-                "remote_data": json.dumps(
-                    {
-                        "provider": "s3",
-                        "bucket": "my-bucket",
-                        "aws_access_key_id": "key",
-                        "aws_secret_access_key": "secret",
-                    }
-                ),
+        with app.test_request_context(
+            "/api/manage_sync", method="POST",
+            json={"source_id": "x", "sync_frequency": "daily"},
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = ManageSync().post()
+        assert response.status_code == 401
+
+    def test_returns_400_missing_fields(self, app):
+        from application.api.user.sources.routes import ManageSync
+
+        with app.test_request_context(
+            "/api/manage_sync", method="POST", json={"source_id": "x"}
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = ManageSync().post()
+        assert response.status_code == 400
+
+    def test_returns_400_invalid_frequency(self, app):
+        from application.api.user.sources.routes import ManageSync
+
+        with app.test_request_context(
+            "/api/manage_sync",
+            method="POST",
+            json={"source_id": "x", "sync_frequency": "hourly"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = ManageSync().post()
+        assert response.status_code == 400
+
+    def test_returns_404_missing_source(self, app, pg_conn):
+        from application.api.user.sources.routes import ManageSync
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/manage_sync",
+            method="POST",
+            json={
+                "source_id": "00000000-0000-0000-0000-000000000000",
                 "sync_frequency": "daily",
-                "retriever": "classic",
-            }
-        )
-
-        mock_task = MagicMock()
-        mock_task.id = "task-123"
-
-        with app.test_request_context(
-            "/api/sync_source", method="POST", json={"source_id": str(source_id)}
+            },
         ):
             from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = ManageSync().post()
+        assert response.status_code == 404
 
-            request.decoded_token = {"sub": "test_user"}
+    def test_updates_sync_frequency(self, app, pg_conn):
+        from application.api.user.sources.routes import ManageSync
+        from application.storage.db.repositories.sources import SourcesRepository
 
-            with patch(
-                "application.api.user.sources.routes.sources_collection",
-                mock_sources_collection,
-            ):
-                with patch(
-                    "application.api.user.sources.routes.sync_source"
-                ) as mock_sync:
-                    mock_sync.delay.return_value = mock_task
+        user = "u-sync"
+        src = _seed_source(pg_conn, user, name="sync-src")
 
-                    resource = SyncSource()
-                    response = resource.post()
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/manage_sync",
+            method="POST",
+            json={"source_id": str(src["id"]), "sync_frequency": "weekly"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ManageSync().post()
+        assert response.status_code == 200
+        got = SourcesRepository(pg_conn).get_any(str(src["id"]), user)
+        assert got["sync_frequency"] == "weekly"
 
-                    assert _get_response_status(response) == 200
-                    assert _get_response_json(response)["success"] is True
-                    assert _get_response_json(response)["task_id"] == "task-123"
 
-                    mock_sync.delay.assert_called_once()
-                    call_kwargs = mock_sync.delay.call_args[1]
-                    assert call_kwargs["user"] == "test_user"
-                    assert call_kwargs["loader"] == "s3"
-                    assert call_kwargs["doc_id"] == str(source_id)
-
-    def test_sync_source_handles_task_error(
-        self, flask_app, mock_mongo_db, mock_sources_collection
-    ):
-        """Should return 400 when task fails to start."""
-        from flask import Flask
+class TestSyncSource:
+    def test_returns_401_unauthenticated(self, app):
         from application.api.user.sources.routes import SyncSource
 
-        app = Flask(__name__)
-        source_id = ObjectId()
-
-        mock_sources_collection.insert_one(
-            {
-                "_id": source_id,
-                "user": "test_user",
-                "type": "github",
-                "name": "GitHub Source",
-                "remote_data": "https://github.com/test/repo",
-                "sync_frequency": "weekly",
-                "retriever": "classic",
-            }
-        )
-
         with app.test_request_context(
-            "/api/sync_source", method="POST", json={"source_id": str(source_id)}
+            "/api/sync_source", method="POST", json={"source_id": "x"}
         ):
             from flask import request
+            request.decoded_token = None
+            response = SyncSource().post()
+        assert response.status_code == 401
 
-            request.decoded_token = {"sub": "test_user"}
+    def test_returns_400_missing_id(self, app):
+        from application.api.user.sources.routes import SyncSource
 
-            with patch(
-                "application.api.user.sources.routes.sources_collection",
-                mock_sources_collection,
-            ):
-                with patch(
-                    "application.api.user.sources.routes.sync_source"
-                ) as mock_sync:
-                    mock_sync.delay.side_effect = Exception("Celery error")
+        with app.test_request_context(
+            "/api/sync_source", method="POST", json={}
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = SyncSource().post()
+        assert response.status_code == 400
 
-                    resource = SyncSource()
-                    response = resource.post()
+    def test_returns_404_missing_source(self, app, pg_conn):
+        from application.api.user.sources.routes import SyncSource
 
-                    assert _get_response_status(response) == 400
-                    assert _get_response_json(response)["success"] is False
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sync_source",
+            method="POST",
+            json={"source_id": "00000000-0000-0000-0000-000000000000"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = SyncSource().post()
+        assert response.status_code == 404
+
+    def test_returns_400_for_connector_type(self, app, pg_conn):
+        from application.api.user.sources.routes import SyncSource
+
+        user = "u-conn"
+        src = _seed_source(
+            pg_conn, user, name="connector-src", type="connector_github",
+            remote_data=json.dumps({"provider": "github"}),
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sync_source",
+            method="POST",
+            json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SyncSource().post()
+        assert response.status_code == 400
+
+    def test_returns_400_for_non_syncable(self, app, pg_conn):
+        from application.api.user.sources.routes import SyncSource
+
+        user = "u-nosync"
+        src = _seed_source(pg_conn, user, name="nosync", type="file")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sync_source",
+            method="POST",
+            json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SyncSource().post()
+        assert response.status_code == 400
+
+    def test_triggers_sync_task(self, app, pg_conn):
+        from application.api.user.sources.routes import SyncSource
+
+        user = "u-trigger"
+        src = _seed_source(
+            pg_conn, user, name="remote-src", type="github",
+            remote_data=json.dumps({"provider": "github", "url": "x"}),
+        )
+
+        fake_task = MagicMock(id="task-123")
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.sync_source.delay",
+            return_value=fake_task,
+        ), app.test_request_context(
+            "/api/sync_source",
+            method="POST",
+            json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SyncSource().post()
+        assert response.status_code == 200
+        assert response.json["task_id"] == "task-123"
+
+    def test_sync_task_raises_returns_400(self, app, pg_conn):
+        from application.api.user.sources.routes import SyncSource
+
+        user = "u-fail"
+        src = _seed_source(
+            pg_conn, user, name="fail-src", type="github",
+            remote_data=json.dumps({"provider": "github"}),
+        )
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.sync_source.delay",
+            side_effect=RuntimeError("boom"),
+        ), app.test_request_context(
+            "/api/sync_source",
+            method="POST",
+            json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SyncSource().post()
+        assert response.status_code == 400
+
+
+class TestDirectoryStructure:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.sources.routes import DirectoryStructure
+
+        with app.test_request_context("/api/directory_structure?id=x"):
+            from flask import request
+            request.decoded_token = None
+            response = DirectoryStructure().get()
+        assert response.status_code == 401
+
+    def test_returns_400_missing_id(self, app):
+        from application.api.user.sources.routes import DirectoryStructure
+
+        with app.test_request_context("/api/directory_structure"):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = DirectoryStructure().get()
+        assert response.status_code == 400
+
+    def test_returns_404_missing_doc(self, app, pg_conn):
+        from application.api.user.sources.routes import DirectoryStructure
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/directory_structure?id=00000000-0000-0000-0000-000000000000"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = DirectoryStructure().get()
+        assert response.status_code == 404
+
+    def test_returns_structure(self, app, pg_conn):
+        from application.api.user.sources.routes import DirectoryStructure
+
+        user = "u-dir"
+        src = _seed_source(
+            pg_conn, user, name="nested",
+            directory_structure={"root": {"a.txt": None}},
+            file_path="/data/nested",
+            remote_data=json.dumps({"provider": "gdrive"}),
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/directory_structure?id={src['id']}"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = DirectoryStructure().get()
+        assert response.status_code == 200
+        data = response.json
+        assert data["provider"] == "gdrive"
+        assert data["base_path"] == "/data/nested"

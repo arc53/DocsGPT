@@ -137,6 +137,39 @@ class TestToolActionParser:
         assert action_name is None
         assert call_args is None
 
+    def test_parse_google_llm_string_arguments_from_resume(self):
+        # Resume path stringifies dict args for the assistant message format
+        # before re-invoking _execute_tool_action. The Google parser must
+        # decode the JSON string back to a dict so the executor's
+        # ``call_args.items()`` loop doesn't AttributeError.
+        parser = ToolActionParser("GoogleLLM")
+
+        call = Mock()
+        call.name = "search_docs_42"
+        call.arguments = '{"query": "workflows", "limit": 5}'
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+
+        assert tool_id == "42"
+        assert action_name == "search_docs"
+        assert call_args == {"query": "workflows", "limit": 5}
+
+    def test_parse_google_llm_non_json_string_arguments_fall_back_to_empty_dict(self):
+        # Malformed string args fall back to ``{}`` so the executor's
+        # ``call_args.items()`` walk doesn't crash. The executor still
+        # journals the malformed call via its own type guard.
+        parser = ToolActionParser("GoogleLLM")
+
+        call = Mock()
+        call.name = "act_7"
+        call.arguments = "not json"
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+
+        assert tool_id == "7"
+        assert action_name == "act"
+        assert call_args == {}
+
     def test_parse_unknown_llm_type_defaults_to_openai(self):
         parser = ToolActionParser("UnknownLLM")
 
@@ -202,3 +235,69 @@ class TestToolActionParser:
         assert action_name == "create_record"
         assert call_args["data"]["name"] == "John"
         assert call_args["data"]["age"] == 30
+
+
+@pytest.mark.unit
+class TestToolActionParserWithMapping:
+    """Tests for the mapping-based lookup path."""
+
+    def test_openai_mapping_resolves_clean_name(self):
+        mapping = {"get_weather": ("ct0", "get_weather")}
+        parser = ToolActionParser("OpenAILLM", name_mapping=mapping)
+
+        call = Mock()
+        call.name = "get_weather"
+        call.arguments = '{"city": "SF"}'
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+        assert tool_id == "ct0"
+        assert action_name == "get_weather"
+        assert call_args == {"city": "SF"}
+
+    def test_openai_mapping_resolves_numbered_suffix(self):
+        mapping = {"search_1": ("t1", "search"), "search_2": ("t2", "search")}
+        parser = ToolActionParser("OpenAILLM", name_mapping=mapping)
+
+        call = Mock()
+        call.name = "search_1"
+        call.arguments = '{"q": "test"}'
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+        assert tool_id == "t1"
+        assert action_name == "search"
+
+    def test_google_mapping_resolves(self):
+        mapping = {"get_weather": ("ct0", "get_weather")}
+        parser = ToolActionParser("GoogleLLM", name_mapping=mapping)
+
+        call = Mock()
+        call.name = "get_weather"
+        call.arguments = {"city": "SF"}
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+        assert tool_id == "ct0"
+        assert action_name == "get_weather"
+
+    def test_fallback_to_split_when_not_in_mapping(self):
+        mapping = {"get_weather": ("ct0", "get_weather")}
+        parser = ToolActionParser("OpenAILLM", name_mapping=mapping)
+
+        call = Mock()
+        call.name = "unknown_action_99"
+        call.arguments = "{}"
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+        # Falls back to legacy split
+        assert tool_id == "99"
+        assert action_name == "unknown_action"
+
+    def test_no_mapping_uses_legacy_split(self):
+        parser = ToolActionParser("OpenAILLM", name_mapping=None)
+
+        call = Mock()
+        call.name = "action_123"
+        call.arguments = '{"k": "v"}'
+
+        tool_id, action_name, call_args = parser.parse_args(call)
+        assert tool_id == "123"
+        assert action_name == "action"

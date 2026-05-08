@@ -1,561 +1,208 @@
+"""Tests for /api/search route (application/api/answer/routes/search.py).
+
+Retrieval logic lives in ``application/services/search_service.py`` and
+has its own unit tests in ``tests/services/test_search_service.py``. The
+tests below focus on what the route specifically owns:
+
+* Request validation (400 for missing fields).
+* Translation of the service's ``InvalidAPIKey`` / ``SearchFailed``
+  exceptions to HTTP status codes (401 / 500).
+* End-to-end happy path against a real ephemeral Postgres via
+  ``pg_conn``, to catch regressions in the route's wiring to the
+  service and repositories.
+"""
+
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
-from bson import ObjectId
-from bson.dbref import DBRef
 
 
 @pytest.mark.unit
 class TestSearchResourceValidation:
-    def test_returns_error_when_question_missing(self, mock_mongo_db, flask_app):
+    def test_returns_400_when_question_missing(self, flask_app):
         from application.api.answer.routes.search import SearchResource
 
         with flask_app.app_context():
-            with flask_app.test_request_context(
-                json={"api_key": "test_key"}
-            ):
-                resource = SearchResource()
-                result = resource.post()
-
+            with flask_app.test_request_context(json={"api_key": "test_key"}):
+                result = SearchResource().post()
                 assert result.status_code == 400
                 assert "question" in result.json["error"]
 
-    def test_returns_error_when_api_key_missing(self, mock_mongo_db, flask_app):
+    def test_returns_400_when_api_key_missing(self, flask_app):
         from application.api.answer.routes.search import SearchResource
 
         with flask_app.app_context():
-            with flask_app.test_request_context(
-                json={"question": "test query"}
-            ):
-                resource = SearchResource()
-                result = resource.post()
-
+            with flask_app.test_request_context(json={"question": "test query"}):
+                result = SearchResource().post()
                 assert result.status_code == 400
                 assert "api_key" in result.json["error"]
 
-    def test_returns_error_for_invalid_api_key(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.search import SearchResource
-
-        with flask_app.app_context():
-            with flask_app.test_request_context(
-                json={"question": "test query", "api_key": "invalid_key"}
-            ):
-                resource = SearchResource()
-                result = resource.post()
-
-                assert result.status_code == 401
-                assert "Invalid API key" in result.json["error"]
-
 
 @pytest.mark.unit
-class TestGetSourcesFromApiKey:
-    def test_returns_empty_list_when_agent_not_found(self, mock_mongo_db, flask_app):
+class TestSearchResourceExceptionMapping:
+    """Verify the route maps service exceptions to HTTP status codes.
+
+    The service function itself is patched; these tests do not care about
+    the search logic — only that 401/500/200 are produced correctly from
+    the three possible service outcomes.
+    """
+
+    def test_invalid_api_key_returns_401(self, flask_app):
+        from application.api.answer.routes.search import SearchResource
+        from application.services.search_service import InvalidAPIKey
+
+        with flask_app.app_context(), flask_app.test_request_context(
+            json={"question": "q", "api_key": "bad"}
+        ), patch(
+            "application.api.answer.routes.search.search",
+            side_effect=InvalidAPIKey(),
+        ):
+            result = SearchResource().post()
+        assert result.status_code == 401
+        assert result.json == {"error": "Invalid API key"}
+
+    def test_search_failed_returns_500(self, flask_app):
+        from application.api.answer.routes.search import SearchResource
+        from application.services.search_service import SearchFailed
+
+        with flask_app.app_context(), flask_app.test_request_context(
+            json={"question": "q", "api_key": "k"}
+        ), patch(
+            "application.api.answer.routes.search.search",
+            side_effect=SearchFailed("boom"),
+        ):
+            result = SearchResource().post()
+        assert result.status_code == 500
+        assert result.json == {"error": "Search failed"}
+
+    def test_happy_path_passes_service_result_through(self, flask_app):
         from application.api.answer.routes.search import SearchResource
 
-        with flask_app.app_context():
-            resource = SearchResource()
+        hits = [{"text": "t", "title": "T", "source": "s"}]
+        with flask_app.app_context(), flask_app.test_request_context(
+            json={"question": "q", "api_key": "k", "chunks": 7}
+        ), patch(
+            "application.api.answer.routes.search.search",
+            return_value=hits,
+        ) as mock_search:
+            result = SearchResource().post()
+        assert result.status_code == 200
+        assert result.json == hits
+        mock_search.assert_called_once_with("k", "q", 7)
 
-            result = resource._get_sources_from_api_key("nonexistent_key")
-
-            assert result == []
-
-    def test_returns_source_id_from_dbref(self, mock_mongo_db, flask_app):
+    def test_default_chunks_is_5(self, flask_app):
         from application.api.answer.routes.search import SearchResource
-        from application.core.settings import settings
 
-        with flask_app.app_context():
-            source_id = ObjectId()
-            agent_id = ObjectId()
+        with flask_app.app_context(), flask_app.test_request_context(
+            json={"question": "q", "api_key": "k"}  # no chunks field
+        ), patch(
+            "application.api.answer.routes.search.search",
+            return_value=[],
+        ) as mock_search:
+            SearchResource().post()
+        mock_search.assert_called_once_with("k", "q", 5)
 
-            sources_collection = mock_mongo_db[settings.MONGO_DB_NAME]["sources"]
-            sources_collection.insert_one(
-                {"_id": source_id, "name": "Test Source"}
-            )
 
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-            agents_collection.insert_one(
-                {
-                    "_id": agent_id,
-                    "key": "test_api_key",
-                    "source": DBRef("sources", source_id),
-                    "sources": [],
-                }
-            )
+# ---------------------------------------------------------------------------
+# End-to-end against a real ephemeral Postgres.
+#
+# These exercise the full route → service → repository → DB path, patching
+# only ``VectorCreator.create_vectorstore`` (so we don't need real embeddings
+# or a vector index). ``db_readonly`` is redirected at the *service* module
+# since that's where the import now lives.
+# ---------------------------------------------------------------------------
 
-            resource = SearchResource()
-            result = resource._get_sources_from_api_key("test_api_key")
 
-            assert len(result) == 1
-            assert result[0] == str(source_id)
+@contextmanager
+def _patch_search_db(conn):
+    @contextmanager
+    def _yield():
+        yield conn
 
-    def test_returns_multiple_sources_from_sources_array(
-        self, mock_mongo_db, flask_app
+    with patch(
+        "application.services.search_service.db_readonly", _yield
     ):
-        from application.api.answer.routes.search import SearchResource
-        from application.core.settings import settings
-
-        with flask_app.app_context():
-            source_id_1 = ObjectId()
-            source_id_2 = ObjectId()
-            agent_id = ObjectId()
-
-            sources_collection = mock_mongo_db[settings.MONGO_DB_NAME]["sources"]
-            sources_collection.insert_one({"_id": source_id_1, "name": "Source 1"})
-            sources_collection.insert_one({"_id": source_id_2, "name": "Source 2"})
-
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-            agents_collection.insert_one(
-                {
-                    "_id": agent_id,
-                    "key": "test_api_key",
-                    "sources": [
-                        DBRef("sources", source_id_1),
-                        DBRef("sources", source_id_2),
-                    ],
-                }
-            )
-
-            resource = SearchResource()
-            result = resource._get_sources_from_api_key("test_api_key")
-
-            assert len(result) == 2
-            assert str(source_id_1) in result
-            assert str(source_id_2) in result
-
-    def test_skips_default_source_in_sources_array(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.search import SearchResource
-        from application.core.settings import settings
-
-        with flask_app.app_context():
-            source_id = ObjectId()
-            agent_id = ObjectId()
-
-            sources_collection = mock_mongo_db[settings.MONGO_DB_NAME]["sources"]
-            sources_collection.insert_one({"_id": source_id, "name": "Test Source"})
-
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-            agents_collection.insert_one(
-                {
-                    "_id": agent_id,
-                    "key": "test_api_key",
-                    "sources": ["default", DBRef("sources", source_id)],
-                }
-            )
-
-            resource = SearchResource()
-            result = resource._get_sources_from_api_key("test_api_key")
-
-            assert len(result) == 1
-            assert result[0] == str(source_id)
-            assert "default" not in result
-
-    def test_skips_default_source_in_legacy_field(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.search import SearchResource
-        from application.core.settings import settings
-
-        with flask_app.app_context():
-            agent_id = ObjectId()
-
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-            agents_collection.insert_one(
-                {
-                    "_id": agent_id,
-                    "key": "test_api_key",
-                    "source": "default",
-                    "sources": [],
-                }
-            )
-
-            resource = SearchResource()
-            result = resource._get_sources_from_api_key("test_api_key")
-
-            assert result == []
-
-    def test_falls_back_to_legacy_source_when_sources_empty(
-        self, mock_mongo_db, flask_app
-    ):
-        from application.api.answer.routes.search import SearchResource
-        from application.core.settings import settings
-
-        with flask_app.app_context():
-            source_id = ObjectId()
-            agent_id = ObjectId()
-
-            sources_collection = mock_mongo_db[settings.MONGO_DB_NAME]["sources"]
-            sources_collection.insert_one({"_id": source_id, "name": "Test Source"})
-
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-            agents_collection.insert_one(
-                {
-                    "_id": agent_id,
-                    "key": "test_api_key",
-                    "source": DBRef("sources", source_id),
-                    "sources": [],
-                }
-            )
-
-            resource = SearchResource()
-            result = resource._get_sources_from_api_key("test_api_key")
-
-            assert len(result) == 1
-            assert result[0] == str(source_id)
-
-    def test_handles_string_source_id(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.search import SearchResource
-        from application.core.settings import settings
-
-        with flask_app.app_context():
-            agent_id = ObjectId()
-            source_id = "custom_source_id"
-
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-            agents_collection.insert_one(
-                {
-                    "_id": agent_id,
-                    "key": "test_api_key",
-                    "source": source_id,
-                    "sources": [],
-                }
-            )
-
-            resource = SearchResource()
-            result = resource._get_sources_from_api_key("test_api_key")
-
-            assert len(result) == 1
-            assert result[0] == source_id
+        yield
 
 
-@pytest.mark.unit
-class TestSearchVectorstores:
-    def test_returns_empty_when_no_source_ids(self, mock_mongo_db, flask_app):
+class TestSearchResourcePgConn:
+    def test_invalid_api_key_returns_401(self, pg_conn, flask_app):
         from application.api.answer.routes.search import SearchResource
 
-        with flask_app.app_context():
-            resource = SearchResource()
-
-            result = resource._search_vectorstores("test query", [], 5)
-
-            assert result == []
-
-    def test_skips_empty_source_ids(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.search import SearchResource
-
-        with flask_app.app_context():
-            resource = SearchResource()
-
-            with patch(
-                "application.api.answer.routes.search.VectorCreator.create_vectorstore"
-            ) as mock_create:
-                mock_vectorstore = MagicMock()
-                mock_vectorstore.search.return_value = []
-                mock_create.return_value = mock_vectorstore
-
-                result = resource._search_vectorstores("test query", ["", "  "], 5)
-
-                mock_create.assert_not_called()
-                assert result == []
-
-    def test_returns_search_results(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.search import SearchResource
-
-        with flask_app.app_context():
-            resource = SearchResource()
-
-            mock_doc = {
-                "text": "Test content",
-                "page_content": "Test content",
-                "metadata": {
-                    "title": "Test Title",
-                    "source": "/path/to/doc",
-                },
-            }
-
-            with patch(
-                "application.api.answer.routes.search.VectorCreator.create_vectorstore"
-            ) as mock_create:
-                mock_vectorstore = MagicMock()
-                mock_vectorstore.search.return_value = [mock_doc]
-                mock_create.return_value = mock_vectorstore
-
-                result = resource._search_vectorstores("test query", ["source_id"], 5)
-
-                assert len(result) == 1
-                assert result[0]["text"] == "Test content"
-                assert result[0]["title"] == "Test Title"
-                assert result[0]["source"] == "/path/to/doc"
-
-    def test_handles_langchain_document_format(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.search import SearchResource
-
-        with flask_app.app_context():
-            resource = SearchResource()
-
-            mock_doc = MagicMock()
-            mock_doc.page_content = "Langchain content"
-            mock_doc.metadata = {"title": "LC Title", "source": "/lc/path"}
-
-            with patch(
-                "application.api.answer.routes.search.VectorCreator.create_vectorstore"
-            ) as mock_create:
-                mock_vectorstore = MagicMock()
-                mock_vectorstore.search.return_value = [mock_doc]
-                mock_create.return_value = mock_vectorstore
-
-                result = resource._search_vectorstores("test query", ["source_id"], 5)
-
-                assert len(result) == 1
-                assert result[0]["text"] == "Langchain content"
-                assert result[0]["title"] == "LC Title"
-
-    def test_respects_chunks_limit(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.search import SearchResource
-
-        with flask_app.app_context():
-            resource = SearchResource()
-
-            mock_docs = [
-                {"text": f"Content {i}", "metadata": {"title": f"Title {i}"}}
-                for i in range(10)
-            ]
-
-            with patch(
-                "application.api.answer.routes.search.VectorCreator.create_vectorstore"
-            ) as mock_create:
-                mock_vectorstore = MagicMock()
-                mock_vectorstore.search.return_value = mock_docs
-                mock_create.return_value = mock_vectorstore
-
-                result = resource._search_vectorstores("test query", ["source_id"], 3)
-
-                assert len(result) == 3
-
-    def test_deduplicates_results(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.search import SearchResource
-
-        with flask_app.app_context():
-            resource = SearchResource()
-
-            duplicate_text = "Duplicate content " * 20
-            mock_docs = [
-                {"text": duplicate_text, "metadata": {"title": "Title 1"}},
-                {"text": duplicate_text, "metadata": {"title": "Title 2"}},
-                {"text": "Unique content", "metadata": {"title": "Title 3"}},
-            ]
-
-            with patch(
-                "application.api.answer.routes.search.VectorCreator.create_vectorstore"
-            ) as mock_create:
-                mock_vectorstore = MagicMock()
-                mock_vectorstore.search.return_value = mock_docs
-                mock_create.return_value = mock_vectorstore
-
-                result = resource._search_vectorstores("test query", ["source_id"], 5)
-
-                assert len(result) == 2
-
-    def test_handles_vectorstore_error_gracefully(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.search import SearchResource
-
-        with flask_app.app_context():
-            resource = SearchResource()
-
-            with patch(
-                "application.api.answer.routes.search.VectorCreator.create_vectorstore"
-            ) as mock_create:
-                mock_create.side_effect = Exception("Vectorstore error")
-
-                result = resource._search_vectorstores("test query", ["source_id"], 5)
-
-                assert result == []
-
-    def test_uses_filename_as_title_fallback(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.search import SearchResource
-
-        with flask_app.app_context():
-            resource = SearchResource()
-
-            mock_doc = {
-                "text": "Content without title",
-                "metadata": {"filename": "document.pdf"},
-            }
-
-            with patch(
-                "application.api.answer.routes.search.VectorCreator.create_vectorstore"
-            ) as mock_create:
-                mock_vectorstore = MagicMock()
-                mock_vectorstore.search.return_value = [mock_doc]
-                mock_create.return_value = mock_vectorstore
-
-                result = resource._search_vectorstores("test query", ["source_id"], 5)
-
-                assert result[0]["title"] == "document.pdf"
-
-    def test_uses_content_snippet_as_title_last_resort(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.search import SearchResource
-
-        with flask_app.app_context():
-            resource = SearchResource()
-
-            mock_doc = {
-                "text": "Content without any title metadata at all",
-                "metadata": {},
-            }
-
-            with patch(
-                "application.api.answer.routes.search.VectorCreator.create_vectorstore"
-            ) as mock_create:
-                mock_vectorstore = MagicMock()
-                mock_vectorstore.search.return_value = [mock_doc]
-                mock_create.return_value = mock_vectorstore
-
-                result = resource._search_vectorstores("test query", ["source_id"], 5)
-
-                assert "Content without any title" in result[0]["title"]
-                assert result[0]["title"].endswith("...")
-
-
-@pytest.mark.unit
-class TestSearchEndpoint:
-    def test_returns_empty_array_when_no_sources(self, mock_mongo_db, flask_app):
-        from application.api.answer.routes.search import SearchResource
-        from application.core.settings import settings
-
-        with flask_app.app_context():
-            agent_id = ObjectId()
-
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-            agents_collection.insert_one(
-                {
-                    "_id": agent_id,
-                    "key": "test_api_key",
-                    "source": "default",
-                    "sources": [],
-                }
-            )
-
+        with _patch_search_db(pg_conn), flask_app.app_context():
             with flask_app.test_request_context(
-                json={"question": "test query", "api_key": "test_api_key"}
+                json={"question": "q", "api_key": "does-not-exist"},
             ):
-                resource = SearchResource()
-                result = resource.post()
+                result = SearchResource().post()
+        assert result.status_code == 401
 
-                assert result.status_code == 200
-                assert result.json == []
-
-    def test_returns_search_results_successfully(self, mock_mongo_db, flask_app):
+    def test_no_sources_returns_empty(self, pg_conn, flask_app):
         from application.api.answer.routes.search import SearchResource
-        from application.core.settings import settings
+        from application.storage.db.repositories.agents import AgentsRepository
 
-        with flask_app.app_context():
-            source_id = ObjectId()
-            agent_id = ObjectId()
-
-            sources_collection = mock_mongo_db[settings.MONGO_DB_NAME]["sources"]
-            sources_collection.insert_one({"_id": source_id, "name": "Test Source"})
-
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-            agents_collection.insert_one(
-                {
-                    "_id": agent_id,
-                    "key": "test_api_key",
-                    "source": DBRef("sources", source_id),
-                    "sources": [],
-                }
-            )
-
-            mock_doc = {
-                "text": "Search result content",
-                "metadata": {"title": "Result Title", "source": "/doc/path"},
-            }
-
+        AgentsRepository(pg_conn).create(
+            "u", "a", "published", key="no-src-key",
+        )
+        with _patch_search_db(pg_conn), flask_app.app_context():
             with flask_app.test_request_context(
-                json={"question": "test query", "api_key": "test_api_key", "chunks": 5}
+                json={"question": "q", "api_key": "no-src-key"},
             ):
-                with patch(
-                    "application.api.answer.routes.search.VectorCreator.create_vectorstore"
-                ) as mock_create:
-                    mock_vectorstore = MagicMock()
-                    mock_vectorstore.search.return_value = [mock_doc]
-                    mock_create.return_value = mock_vectorstore
+                result = SearchResource().post()
+        assert result.status_code == 200
+        assert result.json == []
 
-                    resource = SearchResource()
-                    result = resource.post()
-
-                    assert result.status_code == 200
-                    assert len(result.json) == 1
-                    assert result.json[0]["text"] == "Search result content"
-                    assert result.json[0]["title"] == "Result Title"
-
-    def test_uses_default_chunks_value(self, mock_mongo_db, flask_app):
+    def test_search_returns_results(self, pg_conn, flask_app):
         from application.api.answer.routes.search import SearchResource
-        from application.core.settings import settings
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.sources import SourcesRepository
 
-        with flask_app.app_context():
-            source_id = ObjectId()
-            agent_id = ObjectId()
+        src = SourcesRepository(pg_conn).create("src", user_id="u")
+        AgentsRepository(pg_conn).create(
+            "u", "a", "published",
+            key="search-key",
+            source_id=str(src["id"]),
+        )
 
-            sources_collection = mock_mongo_db[settings.MONGO_DB_NAME]["sources"]
-            sources_collection.insert_one({"_id": source_id, "name": "Test Source"})
+        fake_vs = MagicMock()
+        fake_vs.search.return_value = [
+            {"text": "answer text", "metadata": {"title": "Doc"}},
+        ]
 
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-            agents_collection.insert_one(
-                {
-                    "_id": agent_id,
-                    "key": "test_api_key",
-                    "source": DBRef("sources", source_id),
-                    "sources": [],
-                }
-            )
-
+        with _patch_search_db(pg_conn), patch(
+            "application.services.search_service.VectorCreator.create_vectorstore",
+            return_value=fake_vs,
+        ), flask_app.app_context():
             with flask_app.test_request_context(
-                json={"question": "test query", "api_key": "test_api_key"}
+                json={"question": "q", "api_key": "search-key"},
             ):
-                with patch(
-                    "application.api.answer.routes.search.VectorCreator.create_vectorstore"
-                ) as mock_create:
-                    mock_vectorstore = MagicMock()
-                    mock_vectorstore.search.return_value = []
-                    mock_create.return_value = mock_vectorstore
+                result = SearchResource().post()
+        assert result.status_code == 200
+        assert len(result.json) == 1
 
-                    resource = SearchResource()
-                    resource.post()
-
-                    mock_vectorstore.search.assert_called_once()
-                    call_args = mock_vectorstore.search.call_args
-                    assert call_args[1]["k"] == 10
-
-    def test_handles_internal_error(self, mock_mongo_db, flask_app):
+    def test_search_uses_extra_source_ids(self, pg_conn, flask_app):
         from application.api.answer.routes.search import SearchResource
-        from application.core.settings import settings
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.sources import SourcesRepository
 
-        with flask_app.app_context():
-            source_id = ObjectId()
-            agent_id = ObjectId()
+        src1 = SourcesRepository(pg_conn).create("s1", user_id="u")
+        src2 = SourcesRepository(pg_conn).create("s2", user_id="u")
+        AgentsRepository(pg_conn).create(
+            "u", "a", "published",
+            key="extra-key",
+            extra_source_ids=[str(src1["id"]), str(src2["id"])],
+        )
 
-            sources_collection = mock_mongo_db[settings.MONGO_DB_NAME]["sources"]
-            sources_collection.insert_one({"_id": source_id, "name": "Test Source"})
-
-            agents_collection = mock_mongo_db[settings.MONGO_DB_NAME]["agents"]
-            agents_collection.insert_one(
-                {
-                    "_id": agent_id,
-                    "key": "test_api_key",
-                    "source": DBRef("sources", source_id),
-                    "sources": [],
-                }
-            )
-
+        fake_vs = MagicMock()
+        fake_vs.search.return_value = [
+            {"text": "one", "metadata": {"title": "A"}},
+        ]
+        with _patch_search_db(pg_conn), patch(
+            "application.services.search_service.VectorCreator.create_vectorstore",
+            return_value=fake_vs,
+        ), flask_app.app_context():
             with flask_app.test_request_context(
-                json={"question": "test query", "api_key": "test_api_key"}
+                json={"question": "q", "api_key": "extra-key", "chunks": 4},
             ):
-                resource = SearchResource()
-
-                with patch.object(
-                    resource, "_get_sources_from_api_key"
-                ) as mock_get_sources:
-                    mock_get_sources.side_effect = Exception("Database error")
-
-                    result = resource.post()
-
-                    assert result.status_code == 500
-                    assert "Search failed" in result.json["error"]
+                result = SearchResource().post()
+        assert result.status_code == 200

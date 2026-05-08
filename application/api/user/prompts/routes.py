@@ -2,12 +2,13 @@
 
 import os
 
-from bson.objectid import ObjectId
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
 from application.api import api
-from application.api.user.base import current_dir, prompts_collection
+from application.api.user.base import current_dir
+from application.storage.db.repositories.prompts import PromptsRepository
+from application.storage.db.session import db_readonly, db_session
 from application.utils import check_required_fields
 
 prompts_ns = Namespace(
@@ -40,15 +41,9 @@ class CreatePrompt(Resource):
             return missing_fields
         user = decoded_token.get("sub")
         try:
-
-            resp = prompts_collection.insert_one(
-                {
-                    "name": data["name"],
-                    "content": data["content"],
-                    "user": user,
-                }
-            )
-            new_id = str(resp.inserted_id)
+            with db_session() as conn:
+                prompt = PromptsRepository(conn).create(user, data["name"], data["content"])
+            new_id = str(prompt["id"])
         except Exception as err:
             current_app.logger.error(f"Error creating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -64,17 +59,17 @@ class GetPrompts(Resource):
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
         try:
-            prompts = prompts_collection.find({"user": user})
+            with db_readonly() as conn:
+                prompts = PromptsRepository(conn).list_for_user(user)
             list_prompts = [
                 {"id": "default", "name": "default", "type": "public"},
                 {"id": "creative", "name": "creative", "type": "public"},
                 {"id": "strict", "name": "strict", "type": "public"},
             ]
-
             for prompt in prompts:
                 list_prompts.append(
                     {
-                        "id": str(prompt["_id"]),
+                        "id": str(prompt["id"]),
                         "name": prompt["name"],
                         "type": "private",
                     }
@@ -119,9 +114,12 @@ class GetSinglePrompt(Resource):
                 ) as f:
                     chat_reduce_strict = f.read()
                 return make_response(jsonify({"content": chat_reduce_strict}), 200)
-            prompt = prompts_collection.find_one(
-                {"_id": ObjectId(prompt_id), "user": user}
-            )
+            with db_readonly() as conn:
+                prompt = PromptsRepository(conn).get_any(prompt_id, user)
+            if not prompt:
+                return make_response(
+                    jsonify({"success": False, "message": "Prompt not found"}), 404
+                )
         except Exception as err:
             current_app.logger.error(f"Error retrieving prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -148,7 +146,15 @@ class DeletePrompt(Resource):
         if missing_fields:
             return missing_fields
         try:
-            prompts_collection.delete_one({"_id": ObjectId(data["id"]), "user": user})
+            with db_session() as conn:
+                repo = PromptsRepository(conn)
+                prompt = repo.get_any(data["id"], user)
+                if not prompt:
+                    return make_response(
+                        jsonify({"success": False, "message": "Prompt not found"}),
+                        404,
+                    )
+                repo.delete(str(prompt["id"]), user)
         except Exception as err:
             current_app.logger.error(f"Error deleting prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -181,10 +187,15 @@ class UpdatePrompt(Resource):
         if missing_fields:
             return missing_fields
         try:
-            prompts_collection.update_one(
-                {"_id": ObjectId(data["id"]), "user": user},
-                {"$set": {"name": data["name"], "content": data["content"]}},
-            )
+            with db_session() as conn:
+                repo = PromptsRepository(conn)
+                prompt = repo.get_any(data["id"], user)
+                if not prompt:
+                    return make_response(
+                        jsonify({"success": False, "message": "Prompt not found"}),
+                        404,
+                    )
+                repo.update(str(prompt["id"]), user, data["name"], data["content"])
         except Exception as err:
             current_app.logger.error(f"Error updating prompt: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)

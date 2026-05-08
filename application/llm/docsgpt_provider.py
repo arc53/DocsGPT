@@ -6,6 +6,8 @@ DOCSGPT_BASE_URL = "https://oai.arc53.com"
 DOCSGPT_MODEL = "docsgpt"
 
 class DocsGPTAPILLM(OpenAILLM):
+    provider_name = "docsgpt"
+
     def __init__(self, api_key=None, user_api_key=None, base_url=None, *args, **kwargs):
         super().__init__(
             api_key=DOCSGPT_API_KEY,

@@ -80,6 +80,22 @@ const apiClient = {
       return response;
     }),
 
+  patch: (
+    url: string,
+    data: any,
+    token: string | null,
+    headers = {},
+    signal?: AbortSignal,
+  ): Promise<any> =>
+    fetch(`${baseURL}${url}`, {
+      method: 'PATCH',
+      headers: getHeaders(token, headers),
+      body: JSON.stringify(data),
+      signal,
+    }).then((response) => {
+      return response;
+    }),
+
   putFormData: (
     url: string,
     formData: FormData,

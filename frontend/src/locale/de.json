@@ -54,6 +54,7 @@
     },
     "sources": {
       "title": "Hier kannst du alle verfügbaren Quelldateien verwalten, die dir zur Verfügung stehen und die du hochgeladen hast.",
+      "subtitle": "Dokumente und Wissensquellen hochladen und verwalten, die deine Antworten antreiben",
       "label": "Quellen",
       "name": "Quellenname",
       "date": "Vektor-Datum",
@@ -118,6 +119,7 @@
     },
     "analytics": {
       "label": "Analytik",
+      "subtitle": "Nachrichtenvolumen, Token-Verbrauch und Nutzerfeedback in deinem Konto verfolgen",
       "filterByChatbot": "Nach Chatbot filtern",
       "selectChatbot": "Chatbot auswählen",
       "filterOptions": {
@@ -137,6 +139,7 @@
     },
     "logs": {
       "label": "Protokolle",
+      "subtitle": "API-Aufrufe und Konversationsprotokolle einsehen und überwachen",
       "filterByChatbot": "Nach Chatbot filtern",
       "selectChatbot": "Chatbot auswählen",
       "none": "Keine",
@@ -144,6 +147,7 @@
     },
     "tools": {
       "label": "Werkzeuge",
+      "subtitle": "Werkzeuge und Integrationen durchsuchen, verbinden und konfigurieren, die deine Agenten antreiben",
       "searchPlaceholder": "Werkzeuge suchen...",
       "addTool": "Werkzeug hinzufügen",
       "noToolsFound": "Keine Werkzeuge gefunden",
@@ -240,6 +244,71 @@
         }
       }
     },
+    "customModels": {
+      "label": "Eigene Modelle",
+      "subtitle": "Verbinde dein eigenes OpenAI-kompatibles Modell.",
+      "addModel": "Modell hinzufügen",
+      "empty": "Keine Modelle gefunden",
+      "searchPlaceholder": "Modelle suchen...",
+      "modalSubtitle": "Verbinde einen beliebigen OpenAI-kompatiblen Endpunkt (Mistral, Together, vLLM usw.).",
+      "addTitle": "Eigenes Modell hinzufügen",
+      "editTitle": "Eigenes Modell bearbeiten",
+      "save": "Speichern",
+      "saving": "Speichern",
+      "testConnection": "Verbindung testen",
+      "testing": "Test läuft",
+      "testSuccess": "Verbindung erfolgreich.",
+      "testHintNew": "Fülle Basis-URL, Modell-ID und API-Schlüssel aus, um Verbindungstests zu aktivieren.",
+      "disabledBadge": "Deaktiviert",
+      "deleteWarning": "Möchtest du das eigene Modell \"{{modelName}}\" wirklich löschen?",
+      "actionsMenuAria": "Aktionen für {{modelName}}",
+      "modelsGroup": {
+        "builtin": "DocsGPT-Modelle",
+        "user": "Meine Modelle"
+      },
+      "actions": {
+        "edit": "Bearbeiten",
+        "delete": "Löschen"
+      },
+      "fields": {
+        "displayName": "Anzeigename",
+        "modelId": "Modell-ID",
+        "description": "Beschreibung",
+        "baseUrl": "Basis-URL",
+        "apiKey": "API-Schlüssel"
+      },
+      "placeholders": {
+        "displayName": "Mein Mistral",
+        "modelId": "z. B. mistral-large-latest",
+        "description": "Optionale Beschreibung",
+        "baseUrl": "https://api.mistral.ai/v1",
+        "apiKey": "sk-...",
+        "apiKeyEdit": "Leer lassen, um den vorhandenen Schlüssel beizubehalten"
+      },
+      "hints": {
+        "apiKeyEdit": "Leer lassen, um den vorhandenen Schlüssel beizubehalten."
+      },
+      "capabilities": {
+        "title": "Fähigkeiten",
+        "contextWindowShort": "Kontextfenster",
+        "chips": {
+          "tools": "Tools",
+          "structuredOutput": "Strukturierte Ausgabe",
+          "images": "Bilder"
+        }
+      },
+      "errors": {
+        "displayNameRequired": "Anzeigename ist erforderlich",
+        "modelIdRequired": "Modell-ID ist erforderlich",
+        "baseUrlRequired": "Basis-URL ist erforderlich",
+        "baseUrlScheme": "Basis-URL muss mit http:// oder https:// beginnen",
+        "baseUrlInvalid": "Bitte gib eine gültige URL ein",
+        "apiKeyRequired": "API-Schlüssel ist erforderlich",
+        "contextWindowRange": "Kontextfenster muss zwischen 1.000 und 10.000.000 liegen",
+        "saveFailed": "Eigenes Modell konnte nicht gespeichert werden",
+        "testFailed": "Verbindungstest fehlgeschlagen"
+      }
+    },
     "scrollTabsLeft": "Tabs nach links scrollen",
     "tabsAriaLabel": "Einstellungs-Tabs",
     "scrollTabsRight": "Tabs nach rechts scrollen"
@@ -321,6 +390,14 @@
         "s3": {
           "label": "Amazon S3",
           "heading": "Inhalt von Amazon S3 hinzufügen"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "Von SharePoint hochladen"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "Von Confluence hochladen"
         }
       },
       "connectors": {
@@ -514,6 +591,7 @@
   },
   "agents": {
     "title": "Agenten",
+    "edit": "Bearbeiten",
     "description": "Entdecke und erstelle benutzerdefinierte Versionen von DocsGPT, die Anweisungen, zusätzliches Wissen und beliebige Kombinationen von Fähigkeiten kombinieren",
     "newAgent": "Neuer Agent",
     "backToAll": "Zurück zu allen Agenten",
@@ -615,7 +693,9 @@
         "tokenLimiting": "Token-Limitierung",
         "tokenLimitingDescription": "Begrenze die täglich von diesem Agenten verwendbaren Tokens",
         "requestLimiting": "Anfrage-Limitierung",
-        "requestLimitingDescription": "Begrenze die täglich an diesen Agenten gestellten Anfragen"
+        "requestLimitingDescription": "Begrenze die täglich an diesen Agenten gestellten Anfragen",
+        "systemPromptOverride": "Prompt-Überschreibung erlauben",
+        "systemPromptOverrideDescription": "Erlaubt v1-API-Aufrufern, den System-Prompt dieses Agenten zu ersetzen"
       },
       "preview": {
         "publishedPreview": "Veröffentlichte Agenten können hier in der Vorschau angezeigt werden"
@@ -671,7 +751,10 @@
     "itemsSelected": "{{count}} ausgewählt",
     "name": "Name",
     "lastModified": "Zuletzt geändert",
-    "size": "Größe"
+    "size": "Größe",
+    "myFiles": "Meine Dateien",
+    "sharedWithMe": "Mit mir geteilt",
+    "loadingMore": "Weitere Dateien laden..."
   },
   "actionButtons": {
     "openNewChat": "Neuen Chat öffnen",

@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class AnthropicLLM(BaseLLM):
+    provider_name = "anthropic"
 
     def __init__(self, api_key=None, user_api_key=None, base_url=None, *args, **kwargs):
 

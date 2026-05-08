@@ -11,7 +11,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   vale:
@@ -20,11 +19,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Vale linter
-        uses: errata-ai/vale-action@v2
-        with:
-          files: docs
-          fail_on_error: false
-          version: 3.0.5
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Vale
+        run: |
+          curl -fsSL -o vale.tar.gz \
+            https://github.com/errata-ai/vale/releases/download/v3.0.5/vale_3.0.5_Linux_64-bit.tar.gz
+          tar -xzf vale.tar.gz
+          sudo mv vale /usr/local/bin/vale
+          vale --version
+
+      - name: Sync Vale packages
+        run: vale sync
+
+      - name: Run Vale
+        run: vale --minAlertLevel=error docs

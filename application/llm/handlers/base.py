@@ -1,3 +1,4 @@
+import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
@@ -7,6 +8,18 @@ from typing import Any, Dict, Generator, List, Optional, Union
 from application.logging import build_stack_data
 
 logger = logging.getLogger(__name__)
+
+
+# Cap the agent tool-call loop. Without this an LLM that keeps
+# requesting more tool calls (preview models, sparse tool results,
+# under-specified prompts) can chain searches indefinitely and the
+# stream never finalises. 25 mirrors Dify's default.
+MAX_TOOL_ITERATIONS = 25
+_FINALIZE_INSTRUCTION = (
+    f"You have made {MAX_TOOL_ITERATIONS} tool calls. Provide a final "
+    "response to the user based on what you have, without making any "
+    "additional tool calls."
+)
 
 
 @dataclass
@@ -279,7 +292,26 @@ class LLMHandler(ABC):
                         # Keep serialized function calls/responses so the compressor sees actions
                         parts_text.append(str(item))
                     elif "files" in item:
-                        parts_text.append(str(item))
+                        # Image attachments arrive with raw bytes / base64
+                        # inline (see GoogleLLM.prepare_messages_with_attachments).
+                        # ``str(item)`` would dump the whole byte/base64
+                        # blob into the compression prompt and bust the
+                        # compression LLM's input limit.
+                        files = item.get("files") or []
+                        descriptors = []
+                        if isinstance(files, list):
+                            for f in files:
+                                if isinstance(f, dict):
+                                    descriptors.append(
+                                        f.get("mime_type") or "file"
+                                    )
+                                elif isinstance(f, str):
+                                    descriptors.append(f)
+                        if not descriptors:
+                            descriptors = ["file"]
+                        parts_text.append(
+                            f"[attachment: {', '.join(descriptors)}]"
+                        )
             return "\n".join(parts_text)
         return ""
 
@@ -315,10 +347,34 @@ class LLMHandler(ABC):
                 current_prompt = self._extract_text_from_content(content)
 
             elif role in {"assistant", "model"}:
-                # If this assistant turn contains tool calls, collect them; otherwise commit a response.
+                # Standard format: tool_calls array on assistant message
+                msg_tool_calls = message.get("tool_calls")
+                if msg_tool_calls:
+                    for tc in msg_tool_calls:
+                        call_id = tc.get("id") or str(uuid.uuid4())
+                        func = tc.get("function", {})
+                        args = func.get("arguments")
+                        if isinstance(args, str):
+                            try:
+                                args = json.loads(args)
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                        current_tool_calls[call_id] = {
+                            "tool_name": "unknown_tool",
+                            "action_name": func.get("name"),
+                            "arguments": args,
+                            "result": None,
+                            "status": "called",
+                            "call_id": call_id,
+                        }
+                    continue
+
+                # Legacy format: function_call/function_response in content list
                 if isinstance(content, list):
+                    has_fc = False
                     for item in content:
                         if "function_call" in item:
+                            has_fc = True
                             fc = item["function_call"]
                             call_id = fc.get("call_id") or str(uuid.uuid4())
                             current_tool_calls[call_id] = {
@@ -329,37 +385,30 @@ class LLMHandler(ABC):
                                 "status": "called",
                                 "call_id": call_id,
                             }
-                        elif "function_response" in item:
-                            fr = item["function_response"]
-                            call_id = fr.get("call_id") or str(uuid.uuid4())
-                            current_tool_calls[call_id] = {
-                                "tool_name": "unknown_tool",
-                                "action_name": fr.get("name"),
-                                "arguments": None,
-                                "result": fr.get("response", {}).get("result"),
-                                "status": "completed",
-                                "call_id": call_id,
-                            }
-                    # No direct assistant text here; continue to next message
-                    continue
+                    if has_fc:
+                        continue
 
                 response_text = self._extract_text_from_content(content)
                 _commit_query(response_text)
 
             elif role == "tool":
-                # Attach tool outputs to the latest pending tool call if possible
+                # Standard format: tool_call_id on tool message
+                call_id = message.get("tool_call_id")
                 tool_text = self._extract_text_from_content(content)
-                # Attempt to parse function_response style
-                call_id = None
-                if isinstance(content, list):
-                    for item in content:
-                        if "function_response" in item and item["function_response"].get("call_id"):
-                            call_id = item["function_response"]["call_id"]
-                            break
+
                 if call_id and call_id in current_tool_calls:
                     current_tool_calls[call_id]["result"] = tool_text
                     current_tool_calls[call_id]["status"] = "completed"
-                elif queries:
+                # Legacy: function_response in content list
+                elif isinstance(content, list):
+                    for item in content:
+                        if "function_response" in item:
+                            legacy_id = item["function_response"].get("call_id")
+                            if legacy_id and legacy_id in current_tool_calls:
+                                current_tool_calls[legacy_id]["result"] = tool_text
+                                current_tool_calls[legacy_id]["status"] = "completed"
+                                break
+                elif call_id is None and queries:
                     queries[-1].setdefault("tool_calls", []).append(
                         {
                             "tool_name": "unknown_tool",
@@ -452,10 +501,14 @@ class LLMHandler(ABC):
                 )
                 return self._perform_in_memory_compression(agent, messages)
 
-            # Use orchestrator to perform compression
+            # Use orchestrator to perform compression. ``model_user_id``
+            # keeps BYOM registry resolution scoped to the model owner
+            # (shared-agent dispatch) while ``user_id`` stays the caller
+            # for the conversation access check.
             result = orchestrator.compress_mid_execution(
                 conversation_id=agent.conversation_id,
                 user_id=agent.initial_user_id,
+                model_user_id=getattr(agent, "model_user_id", None),
                 model_id=agent.model_id,
                 decoded_token=getattr(agent, "decoded_token", {}),
                 current_conversation=conversation,
@@ -559,7 +612,20 @@ class LLMHandler(ABC):
                 if settings.COMPRESSION_MODEL_OVERRIDE
                 else agent.model_id
             )
-            provider = get_provider_from_model_id(compression_model)
+            agent_decoded = getattr(agent, "decoded_token", None)
+            caller_sub = (
+                agent_decoded.get("sub")
+                if isinstance(agent_decoded, dict)
+                else None
+            )
+            # Use model-owner scope (mirrors orchestrator path) so
+            # shared-agent owner-BYOM resolves under the owner's layer.
+            compression_user_id = (
+                getattr(agent, "model_user_id", None) or caller_sub
+            )
+            provider = get_provider_from_model_id(
+                compression_model, user_id=compression_user_id
+            )
             api_key = get_api_key_for_provider(provider)
             compression_llm = LLMCreator.create_llm(
                 provider,
@@ -568,7 +634,12 @@ class LLMHandler(ABC):
                 getattr(agent, "decoded_token", None),
                 model_id=compression_model,
                 agent_id=getattr(agent, "agent_id", None),
+                model_user_id=compression_user_id,
             )
+            # Side-channel LLM tag — see ``orchestrator.py`` for rationale.
+            compression_llm._token_usage_source = "compression"
+            compression_llm._request_id = getattr(agent, "_request_id", None) \
+                or getattr(getattr(agent, "llm", None), "_request_id", None)
 
             # Create service without DB persistence capability
             compression_service = CompressionService(
@@ -648,6 +719,13 @@ class LLMHandler(ABC):
         """
         Execute tool calls and update conversation history.
 
+        When a tool requires approval or client-side execution, it is
+        collected as a pending action instead of being executed.  The
+        generator returns ``(updated_messages, pending_actions)`` where
+        *pending_actions* is ``None`` when every tool was executed
+        normally, or a list of dicts describing actions the client must
+        resolve before the LLM loop can continue.
+
         Args:
             agent: The agent instance
             tool_calls: List of tool calls to execute
@@ -655,9 +733,11 @@ class LLMHandler(ABC):
             messages: Current conversation history
 
         Returns:
-            Updated messages list
+            Tuple of (updated_messages, pending_actions).
+            pending_actions is None if all tools executed, otherwise a list.
         """
         updated_messages = messages.copy()
+        pending_actions: List[Dict] = []
 
         for i, call in enumerate(tool_calls):
             # Check context limit before executing tool call
@@ -763,6 +843,29 @@ class LLMHandler(ABC):
                     # Set flag on agent
                     agent.context_limit_reached = True
                     break
+
+            # ---- Pause check: approval / client-side execution ----
+            llm_class = agent.llm.__class__.__name__
+            pause_info = agent.tool_executor.check_pause(
+                tools_dict, call, llm_class
+            )
+            if pause_info:
+                # Yield pause event so the client knows this tool is waiting
+                yield {
+                    "type": "tool_call",
+                    "data": {
+                        "tool_name": pause_info["tool_name"],
+                        "call_id": pause_info["call_id"],
+                        "action_name": pause_info.get("llm_name", pause_info["name"]),
+                        "arguments": pause_info["arguments"],
+                        "status": pause_info["pause_type"],
+                    },
+                }
+                pending_actions.append(pause_info)
+                # Do NOT add messages for pending tools here.
+                # They will be added on resume to keep call/result pairs together.
+                continue
+
             try:
                 self.tool_calls.append(call)
                 tool_executor_gen = agent._execute_tool_action(tools_dict, call)
@@ -772,25 +875,30 @@ class LLMHandler(ABC):
                     except StopIteration as e:
                         tool_response, call_id = e.value
                         break
-                    
-                function_call_content = {
-                    "function_call": {
-                        "name": call.name,
-                        "args": call.arguments,
-                        "call_id": call_id,
-                    }
-                }
-                # Include thought_signature for Google Gemini 3 models
-                # It should be at the same level as function_call, not inside it
-                if call.thought_signature:
-                    function_call_content["thought_signature"] = call.thought_signature
-                updated_messages.append(
-                    {
-                        "role": "assistant",
-                        "content": [function_call_content],
-                    }
-                )
 
+                # Standard internal format: assistant message with tool_calls array
+                args_str = (
+                    json.dumps(call.arguments)
+                    if isinstance(call.arguments, dict)
+                    else call.arguments
+                )
+                tool_call_obj = {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": call.name,
+                        "arguments": args_str,
+                    },
+                }
+                # Preserve thought_signature for Google Gemini 3 models
+                if call.thought_signature:
+                    tool_call_obj["thought_signature"] = call.thought_signature
+
+                updated_messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [tool_call_obj],
+                })
 
                 updated_messages.append(self.create_tool_message(call, tool_response))
             except Exception as e:
@@ -802,16 +910,15 @@ class LLMHandler(ABC):
                 error_message = self.create_tool_message(error_call, error_response)
                 updated_messages.append(error_message)
 
-                call_parts = call.name.split("_")
-                if len(call_parts) >= 2:
-                    tool_id = call_parts[-1]  # Last part is tool ID (e.g., "1")
-                    action_name = "_".join(call_parts[:-1])
-                    tool_name = tools_dict.get(tool_id, {}).get("name", "unknown_tool")
-                    full_action_name = f"{action_name}_{tool_id}"
+                mapping = agent.tool_executor._name_to_tool
+                if call.name in mapping:
+                    resolved_tool_id, _ = mapping[call.name]
+                    tool_name = tools_dict.get(resolved_tool_id, {}).get(
+                        "name", "unknown_tool"
+                    )
                 else:
                     tool_name = "unknown_tool"
-                    action_name = call.name
-                    full_action_name = call.name
+                full_action_name = call.name
                 yield {
                     "type": "tool_call",
                     "data": {
@@ -823,7 +930,7 @@ class LLMHandler(ABC):
                         "status": "error",
                     },
                 }
-        return updated_messages
+        return updated_messages, pending_actions if pending_actions else None
 
     def handle_non_streaming(
         self, agent, response: Any, tools_dict: Dict, messages: List[Dict]
@@ -843,7 +950,9 @@ class LLMHandler(ABC):
         parsed = self.parse_response(response)
         self.llm_calls.append(build_stack_data(agent.llm))
 
+        iteration = 0
         while parsed.requires_tool_call:
+            iteration += 1
             tool_handler_gen = self.handle_tool_calls(
                 agent, parsed.tool_calls, tools_dict, messages
             )
@@ -851,17 +960,62 @@ class LLMHandler(ABC):
                 try:
                     yield next(tool_handler_gen)
                 except StopIteration as e:
-                    messages = e.value
+                    messages, pending_actions = e.value
                     break
+
+            # If tools need approval or client execution, pause the loop
+            if pending_actions:
+                agent._pending_continuation = {
+                    "messages": messages,
+                    "pending_tool_calls": pending_actions,
+                    "tools_dict": tools_dict,
+                }
+                yield {
+                    "type": "tool_calls_pending",
+                    "data": {"pending_tool_calls": pending_actions},
+                }
+                return ""
+
+            # Cap reached: force one final tool-less call so the stream
+            # always ends with content rather than cutting off.
+            if iteration >= MAX_TOOL_ITERATIONS:
+                logger.warning(
+                    "agent tool loop hit cap (%d); forcing finalize",
+                    MAX_TOOL_ITERATIONS,
+                )
+                messages.append(
+                    {"role": "system", "content": _FINALIZE_INSTRUCTION},
+                )
+                response = agent.llm.gen(
+                    model=getattr(agent.llm, "model_id", None) or agent.model_id,
+                    messages=messages,
+                    tools=None,
+                )
+                parsed = self.parse_response(response)
+                self.llm_calls.append(build_stack_data(agent.llm))
+                break
+
+            # ``agent.model_id`` is the registry id (a UUID for BYOM
+            # records). Use the LLM's own model_id, which LLMCreator
+            # already resolved to the upstream model name. Built-ins:
+            # the two are equal; BYOM: the upstream name like
+            # "mistral-large-latest" instead of the UUID.
             response = agent.llm.gen(
-                model=agent.model_id, messages=messages, tools=agent.tools
+                model=getattr(agent.llm, "model_id", None) or agent.model_id,
+                messages=messages,
+                tools=agent.tools,
             )
             parsed = self.parse_response(response)
             self.llm_calls.append(build_stack_data(agent.llm))
         return parsed.content
 
     def handle_streaming(
-        self, agent, response: Any, tools_dict: Dict, messages: List[Dict]
+        self,
+        agent,
+        response: Any,
+        tools_dict: Dict,
+        messages: List[Dict],
+        _iteration: int = 0,
     ) -> Generator:
         """
         Handle streaming response flow.
@@ -913,9 +1067,25 @@ class LLMHandler(ABC):
                     try:
                         yield next(tool_handler_gen)
                     except StopIteration as e:
-                        messages = e.value
+                        messages, pending_actions = e.value
                         break
                 tool_calls = {}
+
+                # If tools need approval or client execution, pause the loop
+                if pending_actions:
+                    agent._pending_continuation = {
+                        "messages": messages,
+                        "pending_tool_calls": pending_actions,
+                        "tools_dict": tools_dict,
+                    }
+                    yield {
+                        "type": "tool_calls_pending",
+                        "data": {"pending_tool_calls": pending_actions},
+                    }
+                    return
+
+                next_iteration = _iteration + 1
+                cap_reached = next_iteration >= MAX_TOOL_ITERATIONS
 
                 # Check if context limit was reached during tool execution
                 if hasattr(agent, 'context_limit_reached') and agent.context_limit_reached:
@@ -929,13 +1099,32 @@ class LLMHandler(ABC):
                         )
                     })
                     logger.info("Context limit reached - instructing agent to wrap up")
+                elif cap_reached:
+                    logger.warning(
+                        "agent tool loop hit cap (%d); forcing finalize",
+                        MAX_TOOL_ITERATIONS,
+                    )
+                    messages.append(
+                        {"role": "system", "content": _FINALIZE_INSTRUCTION},
+                    )
 
+                # See note above on agent.model_id vs llm.model_id.
                 response = agent.llm.gen_stream(
-                    model=agent.model_id, messages=messages, tools=agent.tools if not agent.context_limit_reached else None
+                    model=getattr(agent.llm, "model_id", None) or agent.model_id,
+                    messages=messages,
+                    tools=(
+                        None
+                        if cap_reached
+                        or getattr(agent, "context_limit_reached", False)
+                        else agent.tools
+                    ),
                 )
                 self.llm_calls.append(build_stack_data(agent.llm))
 
-                yield from self.handle_streaming(agent, response, tools_dict, messages)
+                yield from self.handle_streaming(
+                    agent, response, tools_dict, messages,
+                    _iteration=next_iteration,
+                )
                 return
             if parsed.content:
                 buffer += parsed.content

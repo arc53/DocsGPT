@@ -1,7 +1,5 @@
 import click
 
-from application.core.mongo_db import MongoDB
-from application.core.settings import settings
 from application.seed.seeder import DatabaseSeeder
 
 
@@ -15,10 +13,7 @@ def seed():
 @click.option("--force", is_flag=True, help="Force reseeding even if data exists")
 def init(force):
     """Initialize database with seed data"""
-    mongo = MongoDB.get_client()
-    db = mongo[settings.MONGO_DB_NAME]
-
-    seeder = DatabaseSeeder(db)
+    seeder = DatabaseSeeder()
     seeder.seed_initial_data(force=force)
 
 

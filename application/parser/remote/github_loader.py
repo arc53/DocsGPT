@@ -77,7 +77,7 @@ class GitHubLoader(BaseRemote):
     def _make_request(self, url: str, max_retries: int = 3) -> requests.Response:
         """Make a request with retry logic for rate limiting"""
         for attempt in range(max_retries):
-            response = requests.get(url, headers=self.headers)
+            response = requests.get(url, headers=self.headers, timeout=100)
 
             if response.status_code == 200:
                 return response

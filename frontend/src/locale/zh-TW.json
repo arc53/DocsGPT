@@ -54,6 +54,7 @@
     },
     "sources": {
       "title": "在這裡您可以管理所有可用的來源檔案以及您上傳的檔案。",
+      "subtitle": "上傳並管理您的回答所依賴的文件和知識來源",
       "label": "來源",
       "name": "來源名稱",
       "date": "向量日期",
@@ -118,6 +119,7 @@
     },
     "analytics": {
       "label": "分析",
+      "subtitle": "追蹤您賃戶的訊息量、Token 使用量和使用者回饋",
       "filterByChatbot": "按聊天機器人篩選",
       "selectChatbot": "選擇聊天機器人",
       "filterOptions": {
@@ -137,6 +139,7 @@
     },
     "logs": {
       "label": "日誌",
+      "subtitle": "查看和監控 API 呼叫及會話日誌",
       "filterByChatbot": "按聊天機器人篩選",
       "selectChatbot": "選擇聊天機器人",
       "none": "無",
@@ -144,6 +147,7 @@
     },
     "tools": {
       "label": "工具",
+      "subtitle": "瀏覽、連接並設定驅動您的智能體的工具和整合",
       "searchPlaceholder": "搜尋工具...",
       "addTool": "新增工具",
       "noToolsFound": "找不到工具",
@@ -240,6 +244,71 @@
         }
       }
     },
+    "customModels": {
+      "label": "自訂模型",
+      "subtitle": "接入你自己的 OpenAI 相容模型。",
+      "addModel": "新增模型",
+      "empty": "找不到模型",
+      "searchPlaceholder": "搜尋模型...",
+      "modalSubtitle": "可連接任何 OpenAI 相容端點(Mistral、Together、vLLM 等)。",
+      "addTitle": "新增自訂模型",
+      "editTitle": "編輯自訂模型",
+      "save": "儲存",
+      "saving": "儲存中",
+      "testConnection": "測試連線",
+      "testing": "測試中",
+      "testSuccess": "連線成功。",
+      "testHintNew": "請填寫 Base URL、模型 ID 與 API 金鑰以啟用連線測試。",
+      "disabledBadge": "已停用",
+      "deleteWarning": "確定要刪除自訂模型「{{modelName}}」嗎?",
+      "actionsMenuAria": "{{modelName}} 的操作",
+      "modelsGroup": {
+        "builtin": "DocsGPT 模型",
+        "user": "我的模型"
+      },
+      "actions": {
+        "edit": "編輯",
+        "delete": "刪除"
+      },
+      "fields": {
+        "displayName": "顯示名稱",
+        "modelId": "模型 ID",
+        "description": "說明",
+        "baseUrl": "Base URL",
+        "apiKey": "API 金鑰"
+      },
+      "placeholders": {
+        "displayName": "My Mistral",
+        "modelId": "例:mistral-large-latest",
+        "description": "選填說明",
+        "baseUrl": "https://api.mistral.ai/v1",
+        "apiKey": "sk-...",
+        "apiKeyEdit": "留空則保留原金鑰"
+      },
+      "hints": {
+        "apiKeyEdit": "留空以保留現有金鑰。"
+      },
+      "capabilities": {
+        "title": "功能",
+        "contextWindowShort": "脈絡視窗",
+        "chips": {
+          "tools": "工具",
+          "structuredOutput": "結構化輸出",
+          "images": "圖片"
+        }
+      },
+      "errors": {
+        "displayNameRequired": "顯示名稱為必填",
+        "modelIdRequired": "模型 ID 為必填",
+        "baseUrlRequired": "Base URL 為必填",
+        "baseUrlScheme": "Base URL 必須以 http:// 或 https:// 開頭",
+        "baseUrlInvalid": "請輸入有效的 URL",
+        "apiKeyRequired": "API 金鑰為必填",
+        "contextWindowRange": "脈絡視窗須介於 1,000 至 10,000,000 之間",
+        "saveFailed": "儲存自訂模型失敗",
+        "testFailed": "連線測試失敗"
+      }
+    },
     "scrollTabsLeft": "向左捲動標籤",
     "tabsAriaLabel": "設定標籤",
     "scrollTabsRight": "向右捲動標籤"
@@ -321,6 +390,14 @@
         "s3": {
           "label": "Amazon S3",
           "heading": "從Amazon S3新增內容"
+        },
+        "share_point": {
+          "label": "SharePoint",
+          "heading": "從SharePoint上傳"
+        },
+        "confluence": {
+          "label": "Confluence",
+          "heading": "從Confluence上傳"
         }
       },
       "connectors": {
@@ -340,6 +417,24 @@
           "validateFailed": "驗證工作階段失敗。請重新連接。",
           "noSession": "未找到有效工作階段。請重新連接到 Google Drive。",
           "noAccessToken": "存取權杖不可用。請重新連接到 Google Drive。",
+          "pickerFailed": "無法開啟檔案選擇器。請重試。",
+          "selectedFiles": "已選擇的檔案",
+          "selectFiles": "選擇檔案",
+          "loading": "載入中...",
+          "noFilesSelected": "未選擇檔案或資料夾",
+          "folders": "資料夾",
+          "files": "檔案",
+          "remove": "移除",
+          "folderAlt": "資料夾",
+          "fileAlt": "檔案"
+        },
+        "sharePoint": {
+          "connect": "連接到 SharePoint",
+          "sessionExpired": "工作階段已過期。請重新連接到 SharePoint。",
+          "sessionExpiredGeneric": "工作階段已過期。請重新連接您的帳戶。",
+          "validateFailed": "驗證工作階段失敗。請重新連接。",
+          "noSession": "未找到有效工作階段。請重新連接到 SharePoint。",
+          "noAccessToken": "存取權杖不可用。請重新連接到 SharePoint。",
           "pickerFailed": "無法開啟檔案選擇器。請重試。",
           "selectedFiles": "已選擇的檔案",
           "selectFiles": "選擇檔案",
@@ -514,6 +609,7 @@
   },
   "agents": {
     "title": "代理",
+    "edit": "編輯",
     "description": "探索並創建結合指令、額外知識和任意技能組合的DocsGPT自訂版本",
     "newAgent": "新建代理",
     "backToAll": "返回所有代理",
@@ -615,7 +711,9 @@
         "tokenLimiting": "權杖限制",
         "tokenLimitingDescription": "限制此代理每天可使用的總權杖數",
         "requestLimiting": "請求限制",
-        "requestLimitingDescription": "限制每天可向此代理發出的總請求數"
+        "requestLimitingDescription": "限制每天可向此代理發出的總請求數",
+        "systemPromptOverride": "允許覆蓋提示詞",
+        "systemPromptOverrideDescription": "允許 v1 API 呼叫者替換此代理的系統提示詞"
       },
       "preview": {
         "publishedPreview": "已發佈的代理可以在此處預覽"
@@ -671,7 +769,10 @@
     "itemsSelected": "已選擇 {{count}} 項",
     "name": "名稱",
     "lastModified": "最後修改",
-    "size": "大小"
+    "size": "大小",
+    "myFiles": "我的檔案",
+    "sharedWithMe": "與我共用",
+    "loadingMore": "載入更多檔案..."
   },
   "actionButtons": {
     "openNewChat": "開啟新聊天",

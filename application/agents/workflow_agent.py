@@ -12,9 +12,13 @@ from application.agents.workflows.schemas import (
     WorkflowRun,
 )
 from application.agents.workflows.workflow_engine import WorkflowEngine
-from application.core.mongo_db import MongoDB
-from application.core.settings import settings
 from application.logging import log_activity, LogContext
+from application.storage.db.base_repository import looks_like_uuid
+from application.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
+from application.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
+from application.storage.db.repositories.workflow_runs import WorkflowRunsRepository
+from application.storage.db.repositories.workflows import WorkflowsRepository
+from application.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
 
@@ -103,10 +107,8 @@ class WorkflowAgent(BaseAgent):
 
     def _load_from_database(self) -> Optional[WorkflowGraph]:
         try:
-            from bson.objectid import ObjectId
-
-            if not self.workflow_id or not ObjectId.is_valid(self.workflow_id):
-                logger.error(f"Invalid workflow ID: {self.workflow_id}")
+            if not self.workflow_id:
+                logger.error("Missing workflow ID for load")
                 return None
             owner_id = self.workflow_owner
             if not owner_id and isinstance(self.decoded_token, dict):
@@ -117,61 +119,61 @@ class WorkflowAgent(BaseAgent):
                 )
                 return None
 
-            mongo = MongoDB.get_client()
-            db = mongo[settings.MONGO_DB_NAME]
-
-            workflows_coll = db["workflows"]
-            workflow_nodes_coll = db["workflow_nodes"]
-            workflow_edges_coll = db["workflow_edges"]
-
-            workflow_doc = workflows_coll.find_one(
-                {"_id": ObjectId(self.workflow_id), "user": owner_id}
-            )
-            if not workflow_doc:
-                logger.error(
-                    f"Workflow {self.workflow_id} not found or inaccessible for user {owner_id}"
-                )
-                return None
-            workflow = Workflow(**workflow_doc)
-            graph_version = workflow_doc.get("current_graph_version", 1)
-            try:
-                graph_version = int(graph_version)
-                if graph_version <= 0:
+            with db_readonly() as conn:
+                wf_repo = WorkflowsRepository(conn)
+                if looks_like_uuid(self.workflow_id):
+                    workflow_row = wf_repo.get(self.workflow_id, owner_id)
+                else:
+                    workflow_row = wf_repo.get_by_legacy_id(self.workflow_id, owner_id)
+                if workflow_row is None:
+                    logger.error(
+                        f"Workflow {self.workflow_id} not found or inaccessible "
+                        f"for user {owner_id}"
+                    )
+                    return None
+                pg_workflow_id = str(workflow_row["id"])
+                graph_version = workflow_row.get("current_graph_version", 1)
+                try:
+                    graph_version = int(graph_version)
+                    if graph_version <= 0:
+                        graph_version = 1
+                except (ValueError, TypeError):
                     graph_version = 1
-            except (ValueError, TypeError):
-                graph_version = 1
 
-            nodes_docs = list(
-                workflow_nodes_coll.find(
-                    {"workflow_id": self.workflow_id, "graph_version": graph_version}
+                node_rows = WorkflowNodesRepository(conn).find_by_version(
+                    pg_workflow_id, graph_version,
                 )
-            )
-            if not nodes_docs and graph_version == 1:
-                nodes_docs = list(
-                    workflow_nodes_coll.find(
-                        {
-                            "workflow_id": self.workflow_id,
-                            "graph_version": {"$exists": False},
-                        }
-                    )
+                edge_rows = WorkflowEdgesRepository(conn).find_by_version(
+                    pg_workflow_id, graph_version,
                 )
-            nodes = [WorkflowNode(**doc) for doc in nodes_docs]
 
-            edges_docs = list(
-                workflow_edges_coll.find(
-                    {"workflow_id": self.workflow_id, "graph_version": graph_version}
-                )
+            workflow = Workflow(
+                name=workflow_row.get("name"),
+                description=workflow_row.get("description"),
             )
-            if not edges_docs and graph_version == 1:
-                edges_docs = list(
-                    workflow_edges_coll.find(
-                        {
-                            "workflow_id": self.workflow_id,
-                            "graph_version": {"$exists": False},
-                        }
-                    )
+            nodes = [
+                WorkflowNode(
+                    id=n["node_id"],
+                    workflow_id=pg_workflow_id,
+                    type=n["node_type"],
+                    title=n.get("title") or "Node",
+                    description=n.get("description"),
+                    position=n.get("position") or {"x": 0, "y": 0},
+                    config=n.get("config") or {},
                 )
-            edges = [WorkflowEdge(**doc) for doc in edges_docs]
+                for n in node_rows
+            ]
+            edges = [
+                WorkflowEdge(
+                    id=e["edge_id"],
+                    workflow_id=pg_workflow_id,
+                    source=e.get("source_id"),
+                    target=e.get("target_id"),
+                    sourceHandle=e.get("source_handle"),
+                    targetHandle=e.get("target_handle"),
+                )
+                for e in edge_rows
+            ]
 
             return WorkflowGraph(workflow=workflow, nodes=nodes, edges=edges)
         except Exception as e:
@@ -181,13 +183,13 @@ class WorkflowAgent(BaseAgent):
     def _save_workflow_run(self, query: str) -> None:
         if not self._engine:
             return
+        owner_id = self.workflow_owner
+        if not owner_id and isinstance(self.decoded_token, dict):
+            owner_id = self.decoded_token.get("sub")
         try:
-            mongo = MongoDB.get_client()
-            db = mongo[settings.MONGO_DB_NAME]
-            workflow_runs_coll = db["workflow_runs"]
-
             run = WorkflowRun(
                 workflow_id=self.workflow_id or "unknown",
+                user=owner_id,
                 status=self._determine_run_status(),
                 inputs={"query": query},
                 outputs=self._serialize_state(self._engine.state),
@@ -196,7 +198,28 @@ class WorkflowAgent(BaseAgent):
                 completed_at=datetime.now(timezone.utc),
             )
 
-            workflow_runs_coll.insert_one(run.to_mongo_doc())
+            if not self.workflow_id or not owner_id:
+                return
+            with db_session() as conn:
+                wf_repo = WorkflowsRepository(conn)
+                if looks_like_uuid(self.workflow_id):
+                    workflow_row = wf_repo.get(self.workflow_id, owner_id)
+                else:
+                    workflow_row = wf_repo.get_by_legacy_id(
+                        self.workflow_id, owner_id,
+                    )
+                if workflow_row is None:
+                    return
+                WorkflowRunsRepository(conn).create(
+                    str(workflow_row["id"]),
+                    owner_id,
+                    run.status.value,
+                    inputs=run.inputs,
+                    result=run.outputs,
+                    steps=[step.model_dump(mode="json") for step in run.steps],
+                    started_at=run.created_at,
+                    ended_at=run.completed_at,
+                )
         except Exception as e:
             logger.error(f"Failed to save workflow run: {e}")
 

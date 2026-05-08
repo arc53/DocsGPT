@@ -8,7 +8,7 @@ from application.storage.local import LocalStorage
 
 @pytest.fixture
 def temp_base_dir():
-    return "/tmp/test_storage"
+    return os.path.realpath("/tmp/test_storage")
 
 
 @pytest.fixture
@@ -30,12 +30,12 @@ class TestLocalStorageInitialization:
 
     def test_get_full_path_with_relative_path(self, local_storage):
         result = local_storage._get_full_path("documents/test.txt")
-        expected = os.path.join("/tmp/test_storage", "documents/test.txt")
-        assert os.path.normpath(result) == os.path.normpath(expected)
+        expected = os.path.realpath(os.path.join(os.path.realpath("/tmp/test_storage"), "documents/test.txt"))
+        assert result == expected
 
-    def test_get_full_path_with_absolute_path(self, local_storage):
-        result = local_storage._get_full_path("/absolute/path/test.txt")
-        assert result == "/absolute/path/test.txt"
+    def test_get_full_path_with_absolute_path_outside_base_raises(self, local_storage):
+        with pytest.raises(ValueError, match="Path traversal detected"):
+            local_storage._get_full_path("/absolute/path/test.txt")
 
     @patch("os.makedirs")
     @patch("builtins.open", new_callable=mock_open)
@@ -48,8 +48,8 @@ class TestLocalStorageInitialization:
 
         result = local_storage.save_file(file_data, path)
 
-        expected_dir = os.path.join("/tmp/test_storage", "documents")
-        expected_file = os.path.join("/tmp/test_storage", "documents/test.txt")
+        expected_dir = os.path.join(os.path.realpath("/tmp/test_storage"), "documents")
+        expected_file = os.path.join(os.path.realpath("/tmp/test_storage"), "documents/test.txt")
 
         assert mock_makedirs.call_count == 1
         assert os.path.normpath(mock_makedirs.call_args[0][0]) == os.path.normpath(
@@ -74,25 +74,19 @@ class TestLocalStorageInitialization:
 
         result = local_storage.save_file(file_data, path)
 
-        expected_file = os.path.join("/tmp/test_storage", "documents/test.txt")
+        expected_file = os.path.join(os.path.realpath("/tmp/test_storage"), "documents/test.txt")
         assert file_data.save.call_count == 1
         assert os.path.normpath(file_data.save.call_args[0][0]) == os.path.normpath(
             expected_file
         )
         assert result == {"storage_type": "local"}
 
-    @patch("os.makedirs")
-    @patch("builtins.open", new_callable=mock_open)
-    def test_save_file_with_absolute_path(
-        self, mock_file, mock_makedirs, local_storage
-    ):
+    def test_save_file_with_absolute_path_outside_base_raises(self, local_storage):
         file_data = io.BytesIO(b"test content")
         path = "/absolute/path/test.txt"
 
-        local_storage.save_file(file_data, path)
-
-        mock_makedirs.assert_called_once_with("/absolute/path", exist_ok=True)
-        mock_file.assert_called_once_with("/absolute/path/test.txt", "wb")
+        with pytest.raises(ValueError, match="Path traversal detected"):
+            local_storage.save_file(file_data, path)
 
 
 @pytest.mark.unit
@@ -105,7 +99,7 @@ class TestLocalStorageGetFile:
 
         result = local_storage.get_file(path)
 
-        expected_path = os.path.join("/tmp/test_storage", "documents/test.txt")
+        expected_path = os.path.join(os.path.realpath("/tmp/test_storage"), "documents/test.txt")
         assert mock_exists.call_count == 1
         assert os.path.normpath(mock_exists.call_args[0][0]) == os.path.normpath(
             expected_path
@@ -122,7 +116,7 @@ class TestLocalStorageGetFile:
 
         with pytest.raises(FileNotFoundError, match="File not found"):
             local_storage.get_file(path)
-        expected_path = os.path.join("/tmp/test_storage", "documents/nonexistent.txt")
+        expected_path = os.path.join(os.path.realpath("/tmp/test_storage"), "documents/nonexistent.txt")
         assert mock_exists.call_count == 1
         assert os.path.normpath(mock_exists.call_args[0][0]) == os.path.normpath(
             expected_path
@@ -141,7 +135,7 @@ class TestLocalStorageDeleteFile:
 
         result = local_storage.delete_file(path)
 
-        expected_path = os.path.join("/tmp/test_storage", "documents/test.txt")
+        expected_path = os.path.join(os.path.realpath("/tmp/test_storage"), "documents/test.txt")
         assert result is True
         assert mock_exists.call_count == 1
         assert os.path.normpath(mock_exists.call_args[0][0]) == os.path.normpath(
@@ -158,7 +152,7 @@ class TestLocalStorageDeleteFile:
 
         result = local_storage.delete_file(path)
 
-        expected_path = os.path.join("/tmp/test_storage", "documents/nonexistent.txt")
+        expected_path = os.path.join(os.path.realpath("/tmp/test_storage"), "documents/nonexistent.txt")
         assert result is False
         assert mock_exists.call_count == 1
         assert os.path.normpath(mock_exists.call_args[0][0]) == os.path.normpath(
@@ -175,7 +169,7 @@ class TestLocalStorageFileExists:
 
         result = local_storage.file_exists(path)
 
-        expected_path = os.path.join("/tmp/test_storage", "documents/test.txt")
+        expected_path = os.path.join(os.path.realpath("/tmp/test_storage"), "documents/test.txt")
         assert result is True
         assert mock_exists.call_count == 1
         assert os.path.normpath(mock_exists.call_args[0][0]) == os.path.normpath(
@@ -188,7 +182,7 @@ class TestLocalStorageFileExists:
 
         result = local_storage.file_exists(path)
 
-        expected_path = os.path.join("/tmp/test_storage", "documents/nonexistent.txt")
+        expected_path = os.path.join(os.path.realpath("/tmp/test_storage"), "documents/nonexistent.txt")
         assert result is False
         assert mock_exists.call_count == 1
         assert os.path.normpath(mock_exists.call_args[0][0]) == os.path.normpath(
@@ -205,7 +199,7 @@ class TestLocalStorageListFiles:
         self, mock_exists, mock_walk, local_storage
     ):
         directory = "documents"
-        base_dir = os.path.join("/tmp/test_storage", "documents")
+        base_dir = os.path.join(os.path.realpath("/tmp/test_storage"), "documents")
 
         mock_walk.return_value = [
             (base_dir, ["subdir"], ["file1.txt", "file2.txt"]),
@@ -228,7 +222,7 @@ class TestLocalStorageListFiles:
 
         result = local_storage.list_files(directory)
 
-        expected_path = os.path.join("/tmp/test_storage", "nonexistent")
+        expected_path = os.path.join(os.path.realpath("/tmp/test_storage"), "nonexistent")
         assert result == []
         assert mock_exists.call_count == 1
         assert os.path.normpath(mock_exists.call_args[0][0]) == os.path.normpath(
@@ -248,7 +242,7 @@ class TestLocalStorageProcessFile:
 
         result = local_storage.process_file(path, processor_func, extra_arg="value")
 
-        expected_path = os.path.join("/tmp/test_storage", "documents/test.txt")
+        expected_path = os.path.join(os.path.realpath("/tmp/test_storage"), "documents/test.txt")
         assert result == "processed"
         assert processor_func.call_count == 1
         call_kwargs = processor_func.call_args[1]
@@ -280,7 +274,7 @@ class TestLocalStorageIsDirectory:
 
         result = local_storage.is_directory(path)
 
-        expected_path = os.path.join("/tmp/test_storage", "documents")
+        expected_path = os.path.join(os.path.realpath("/tmp/test_storage"), "documents")
         assert result is True
         assert mock_isdir.call_count == 1
         assert os.path.normpath(mock_isdir.call_args[0][0]) == os.path.normpath(
@@ -295,7 +289,7 @@ class TestLocalStorageIsDirectory:
 
         result = local_storage.is_directory(path)
 
-        expected_path = os.path.join("/tmp/test_storage", "documents/test.txt")
+        expected_path = os.path.join(os.path.realpath("/tmp/test_storage"), "documents/test.txt")
         assert result is False
         assert mock_isdir.call_count == 1
         assert os.path.normpath(mock_isdir.call_args[0][0]) == os.path.normpath(
@@ -316,7 +310,7 @@ class TestLocalStorageRemoveDirectory:
 
         result = local_storage.remove_directory(directory)
 
-        expected_path = os.path.join("/tmp/test_storage", "documents")
+        expected_path = os.path.join(os.path.realpath("/tmp/test_storage"), "documents")
         assert result is True
         assert mock_exists.call_count == 1
         assert os.path.normpath(mock_exists.call_args[0][0]) == os.path.normpath(
@@ -339,7 +333,7 @@ class TestLocalStorageRemoveDirectory:
 
         result = local_storage.remove_directory(directory)
 
-        expected_path = os.path.join("/tmp/test_storage", "nonexistent")
+        expected_path = os.path.join(os.path.realpath("/tmp/test_storage"), "nonexistent")
         assert result is False
         assert mock_exists.call_count == 1
         assert os.path.normpath(mock_exists.call_args[0][0]) == os.path.normpath(
@@ -355,7 +349,7 @@ class TestLocalStorageRemoveDirectory:
 
         result = local_storage.remove_directory(path)
 
-        expected_path = os.path.join("/tmp/test_storage", "documents/test.txt")
+        expected_path = os.path.join(os.path.realpath("/tmp/test_storage"), "documents/test.txt")
         assert result is False
         assert mock_exists.call_count == 1
         assert os.path.normpath(mock_exists.call_args[0][0]) == os.path.normpath(
@@ -376,7 +370,7 @@ class TestLocalStorageRemoveDirectory:
 
         result = local_storage.remove_directory(directory)
 
-        expected_path = os.path.join("/tmp/test_storage", "documents")
+        expected_path = os.path.join(os.path.realpath("/tmp/test_storage"), "documents")
         assert result is False
         assert mock_rmtree.call_count == 1
         assert os.path.normpath(mock_rmtree.call_args[0][0]) == os.path.normpath(
@@ -393,7 +387,7 @@ class TestLocalStorageRemoveDirectory:
 
         result = local_storage.remove_directory(directory)
 
-        expected_path = os.path.join("/tmp/test_storage", "documents")
+        expected_path = os.path.join(os.path.realpath("/tmp/test_storage"), "documents")
         assert result is False
         assert mock_rmtree.call_count == 1
         assert os.path.normpath(mock_rmtree.call_args[0][0]) == os.path.normpath(

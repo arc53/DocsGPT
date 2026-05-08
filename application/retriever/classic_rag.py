@@ -22,6 +22,7 @@ class ClassicRAG(BaseRetriever):
         llm_name=settings.LLM_PROVIDER,
         api_key=settings.API_KEY,
         decoded_token=None,
+        model_user_id=None,
     ):
         self.original_question = source.get("question", "")
         self.chat_history = chat_history if chat_history is not None else []
@@ -42,18 +43,26 @@ class ClassicRAG(BaseRetriever):
             f"sources={'active_docs' in source and source['active_docs'] is not None}"
         )
         self.model_id = model_id
+        self.model_user_id = model_user_id
         self.doc_token_limit = doc_token_limit
         self.user_api_key = user_api_key
         self.agent_id = agent_id
         self.llm_name = llm_name
         self.api_key = api_key
+        # Forward model_id + model_user_id so LLMCreator resolves BYOM
+        # base_url / api_key / upstream id for the rephrase client.
         self.llm = LLMCreator.create_llm(
             self.llm_name,
             api_key=self.api_key,
             user_api_key=self.user_api_key,
             decoded_token=decoded_token,
+            model_id=self.model_id,
             agent_id=self.agent_id,
+            model_user_id=self.model_user_id,
         )
+        # Query-rephrase LLM is a side channel — tag it so its rows
+        # land as ``source='rag_condense'`` in cost-attribution.
+        self.llm._token_usage_source = "rag_condense"
 
         if "active_docs" in source and source["active_docs"] is not None:
             if isinstance(source["active_docs"], list):
@@ -103,7 +112,11 @@ class ClassicRAG(BaseRetriever):
         ]
 
         try:
-            rephrased_query = self.llm.gen(model=self.model_id, messages=messages)
+            # Send upstream id (resolved by LLMCreator), not registry UUID.
+            rephrased_query = self.llm.gen(
+                model=getattr(self.llm, "model_id", None) or self.model_id,
+                messages=messages,
+            )
             print(f"Rephrased query: {rephrased_query}")
             return rephrased_query if rephrased_query else self.original_question
         except Exception as e:

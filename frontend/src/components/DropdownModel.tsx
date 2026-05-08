@@ -7,6 +7,7 @@ import RoundedTick from '../assets/rounded-tick.svg';
 import {
   selectAvailableModels,
   selectSelectedModel,
+  selectToken,
   setAvailableModels,
   setModelsLoading,
   setSelectedModel,
@@ -18,17 +19,26 @@ export default function DropdownModel() {
   const dispatch = useDispatch();
   const selectedModel = useSelector(selectSelectedModel);
   const availableModels = useSelector(selectAvailableModels);
+  const token = useSelector(selectToken);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
+  // Tracks which token the cached availableModels were loaded for.
+  // Without this, the early-return below pins the anonymous/built-in
+  // list forever once it's populated — login/logout never refetches
+  // and a user's BYOM models stay invisible.
+  const lastLoadedTokenRef = React.useRef<string | null | undefined>(undefined);
   const [isOpen, setIsOpen] = React.useState(false);
 
   useEffect(() => {
     const loadModels = async () => {
-      if ((availableModels?.length ?? 0) > 0) {
+      if (
+        (availableModels?.length ?? 0) > 0 &&
+        lastLoadedTokenRef.current === token
+      ) {
         return;
       }
       dispatch(setModelsLoading(true));
       try {
-        const response = await modelService.getModels(null);
+        const response = await modelService.getModels(token);
         if (!response.ok) {
           throw new Error(`API error: ${response.status}`);
         }
@@ -37,6 +47,7 @@ export default function DropdownModel() {
         const transformed = modelService.transformModels(models);
 
         dispatch(setAvailableModels(transformed));
+        lastLoadedTokenRef.current = token;
         if (!selectedModel && transformed.length > 0) {
           const defaultModel =
             transformed.find((m) => m.id === data.default_model_id) ||
@@ -59,7 +70,7 @@ export default function DropdownModel() {
     };
 
     loadModels();
-  }, [availableModels?.length, dispatch, selectedModel]);
+  }, [availableModels?.length, dispatch, selectedModel, token]);
 
   const handleClickOutside = (event: MouseEvent) => {
     if (
@@ -80,15 +91,15 @@ export default function DropdownModel() {
   return (
     <div ref={dropdownRef}>
       <div
-        className={`bg-gray-1000 dark:bg-dark-charcoal mx-auto flex w-full cursor-pointer justify-between p-1 dark:text-white ${isOpen ? 'rounded-t-3xl' : 'rounded-3xl'}`}
+        className={`text-foreground bg-muted dark:bg-card mx-auto flex w-full cursor-pointer items-center justify-between px-3 py-4 ${isOpen ? 'rounded-t-4xl' : 'rounded-4xl'}`}
         onClick={() => setIsOpen(!isOpen)}
       >
         {selectedModel?.display_name ? (
-          <p className="mx-4 my-3 truncate overflow-hidden whitespace-nowrap">
+          <p className="ml-3 truncate overflow-hidden whitespace-nowrap">
             {selectedModel.display_name}
           </p>
         ) : (
-          <p className="mx-4 my-3 truncate overflow-hidden whitespace-nowrap">
+          <p className="text-muted-foreground truncate overflow-hidden whitespace-nowrap">
             Select Model
           </p>
         )}
@@ -101,7 +112,7 @@ export default function DropdownModel() {
         />
       </div>
       {isOpen && (
-        <div className="no-scrollbar dark:bg-dark-charcoal absolute right-0 left-0 z-20 -mt-1 max-h-52 w-full overflow-y-auto rounded-b-3xl bg-white shadow-md">
+        <div className="no-scrollbar bg-muted dark:bg-card absolute right-0 left-0 z-20 -mt-1 max-h-52 w-full overflow-y-auto rounded-b-3xl shadow-md">
           {availableModels && (availableModels?.length ?? 0) > 0 ? (
             availableModels.map((model: Model) => (
               <div
@@ -110,7 +121,7 @@ export default function DropdownModel() {
                   dispatch(setSelectedModel(model));
                   setIsOpen(false);
                 }}
-                className={`border-gray-3000/75 dark:border-purple-taupe/50 hover:bg-gray-3000/75 dark:hover:bg-purple-taupe flex h-10 w-full cursor-pointer items-center justify-between border-t`}
+                className={`border-border/30 hover:bg-accent flex h-10 w-full cursor-pointer items-center justify-between border-t`}
               >
                 <div className="flex w-full items-center justify-between">
                   <p className="flex-1 truncate py-3 pr-2 pl-5">
@@ -127,8 +138,10 @@ export default function DropdownModel() {
               </div>
             ))
           ) : (
-            <div className="h-10 w-full border-x-2 border-b-2">
-              <p className="ml-5 py-3 text-gray-500">No models available</p>
+            <div className="border-border/30 flex h-10 w-full items-center border-t">
+              <p className="text-muted-foreground pl-5 text-sm">
+                No models available
+              </p>
             </div>
           )}
         </div>

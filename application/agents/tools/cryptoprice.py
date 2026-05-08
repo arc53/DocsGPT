@@ -28,7 +28,7 @@ class CryptoPriceTool(Tool):
             returns price in USD.
         """
         url = f"https://min-api.cryptocompare.com/data/price?fsym={symbol.upper()}&tsyms={currency.upper()}"
-        response = requests.get(url)
+        response = requests.get(url, timeout=100)
         if response.status_code == 200:
             data = response.json()
             if currency.upper() in data:

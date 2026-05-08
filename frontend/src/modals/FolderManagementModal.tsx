@@ -47,7 +47,7 @@ export default function FolderNameModal({
   return (
     <WrapperModal close={() => setModalState('INACTIVE')}>
       <div className="w-72">
-        <h2 className="text-jet dark:text-bright-gray mb-4 text-lg font-semibold">
+        <h2 className="text-foreground dark:text-foreground mb-4 text-lg font-semibold">
           {mode === 'create'
             ? t('agents.folders.newFolder')
             : t('agents.folders.rename')}
@@ -59,7 +59,7 @@ export default function FolderNameModal({
           onKeyDown={handleKeyDown}
           placeholder={t('agents.folders.folderName')}
           autoFocus
-          className="w-full rounded-lg border border-[#E5E5E5] bg-white px-3 py-2 text-sm outline-none dark:border-[#3A3A3A] dark:bg-[#2C2C2C] dark:text-white"
+          className="border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none dark:text-white"
         />
         <div className="mt-6 flex justify-end gap-2">
           <button
@@ -67,14 +67,14 @@ export default function FolderNameModal({
               setModalState('INACTIVE');
               setName('');
             }}
-            className="dark:text-light-gray cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium hover:bg-gray-100 dark:bg-transparent dark:hover:bg-[#767183]/50"
+            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium"
           >
             {t('cancel')}
           </button>
           <button
             onClick={handleSubmit}
             disabled={!name.trim()}
-            className="bg-purple-30 hover:bg-violets-are-blue rounded-3xl px-5 py-2 text-sm text-white disabled:opacity-50"
+            className="bg-primary hover:bg-primary/90 rounded-3xl px-5 py-2 text-sm text-white disabled:opacity-50"
           >
             {mode === 'create'
               ? t('agents.folders.createFolder')
