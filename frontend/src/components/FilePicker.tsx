@@ -23,6 +23,7 @@ import {
   TableHeader,
   TableCell,
 } from './Table';
+import { useDebouncedCallback } from '../hooks';
 
 interface CloudFile {
   id: string;
@@ -101,7 +102,6 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   const [activeTab, setActiveTab] = useState<'my_files' | 'shared'>('my_files');
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const isFolder = (file: CloudFile) => {
@@ -277,32 +277,26 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
   useEffect(() => {
     return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
       abortControllerRef.current?.abort();
     };
   }, []);
 
+  const debouncedLoadFiles = useDebouncedCallback((query: string) => {
+    const sessionToken = getSessionToken(provider);
+    if (sessionToken) {
+      loadCloudFiles(
+        sessionToken,
+        currentFolderId,
+        undefined,
+        query,
+        activeTab === 'shared' && !currentFolderId,
+      );
+    }
+  }, 300);
+
   const handleSearchChange = (query: string) => {
     setSearchQuery(query);
-
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
-    searchTimeoutRef.current = setTimeout(() => {
-      const sessionToken = getSessionToken(provider);
-      if (sessionToken) {
-        loadCloudFiles(
-          sessionToken,
-          currentFolderId,
-          undefined,
-          query,
-          activeTab === 'shared' && !currentFolderId,
-        );
-      }
-    }, 300);
+    debouncedLoadFiles(query);
   };
 
   const handleFolderClick = (folderId: string, folderName: string) => {
