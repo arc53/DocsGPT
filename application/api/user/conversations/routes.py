@@ -106,6 +106,61 @@ class GetConversations(Resource):
         return make_response(jsonify(list_conversations), 200)
 
 
+@conversations_ns.route("/search_conversations")
+class SearchConversations(Resource):
+    @api.doc(
+        description=(
+            "Search the authenticated user's conversations by name or "
+            "message content (case-insensitive substring match). Mirrors "
+            "the visibility filter and response shape of /get_conversations."
+        ),
+        params={
+            "q": "Search term (required)",
+            "limit": "Maximum number of results to return (default 30, max 100)",
+        },
+    )
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        query = (request.args.get("q") or "").strip()
+        if not query:
+            return make_response(
+                jsonify({"success": False, "message": "q is required"}), 400
+            )
+        try:
+            limit = int(request.args.get("limit", 30))
+        except (TypeError, ValueError):
+            limit = 30
+        limit = max(1, min(limit, 100))
+        user_id = decoded_token.get("sub")
+        try:
+            with db_readonly() as conn:
+                conversations = ConversationsRepository(conn).search_for_user(
+                    user_id, query, limit=limit
+                )
+            list_conversations = [
+                {
+                    "id": str(conversation["id"]),
+                    "name": conversation["name"],
+                    "agent_id": (
+                        str(conversation["agent_id"])
+                        if conversation.get("agent_id")
+                        else None
+                    ),
+                    "is_shared_usage": conversation.get("is_shared_usage", False),
+                    "shared_token": conversation.get("shared_token", None),
+                }
+                for conversation in conversations
+            ]
+        except Exception as err:
+            current_app.logger.error(
+                f"Error searching conversations: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(list_conversations), 200)
+
+
 @conversations_ns.route("/get_single_conversation")
 class GetSingleConversation(Resource):
     @api.doc(

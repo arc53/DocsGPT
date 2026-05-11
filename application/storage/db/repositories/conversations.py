@@ -245,6 +245,37 @@ class ConversationsRepository:
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
+    def search_for_user(
+        self, user_id: str, query: str, limit: int = 30,
+    ) -> list[dict]:
+        """Search a user's conversations by name or message content.
+
+        Same visibility filter as :meth:`list_for_user`. Matches against
+        ``conversations.name`` or any of the conversation's messages'
+        ``prompt`` / ``response`` columns (case-insensitive substring).
+        """
+        if not query:
+            return []
+        result = self._conn.execute(
+            text(
+                "SELECT c.* FROM conversations c "
+                "WHERE c.user_id = :user_id "
+                "AND (c.api_key IS NULL OR c.agent_id IS NOT NULL) "
+                "AND (c.name ILIKE :pattern OR EXISTS ("
+                "  SELECT 1 FROM conversation_messages m "
+                "  WHERE m.conversation_id = c.id "
+                "  AND (m.prompt ILIKE :pattern OR m.response ILIKE :pattern)"
+                ")) "
+                "ORDER BY c.date DESC LIMIT :limit"
+            ),
+            {
+                "user_id": user_id,
+                "pattern": f"%{query}%",
+                "limit": limit,
+            },
+        )
+        return [row_to_dict(r) for r in result.fetchall()]
+
     def rename(self, conversation_id: str, user_id: str, name: str) -> bool:
         # Shape-gate so a non-UUID id (legacy Mongo ObjectId still floating
         # around in client-side state during the cutover) never reaches the
