@@ -43,6 +43,11 @@ const endpoints = {
     DELETE_TOOL: '/api/delete_tool',
     PARSE_SPEC: '/api/parse_spec',
     SYNC_CONNECTOR: '/api/connectors/sync',
+    CONNECTOR_AUTH: (provider: string) =>
+      `/api/connectors/auth?provider=${provider}`,
+    CONNECTOR_FILES: '/api/connectors/files',
+    CONNECTOR_VALIDATE_SESSION: '/api/connectors/validate-session',
+    CONNECTOR_DISCONNECT: '/api/connectors/disconnect',
     GET_CHUNKS: (
       docId: string,
       page: number,
@@ -59,6 +64,7 @@ const endpoints = {
     UPDATE_CHUNK: '/api/update_chunk',
     STORE_ATTACHMENT: '/api/store_attachment',
     STT: '/api/stt',
+    TTS: '/api/tts',
     LIVE_STT_START: '/api/stt/live/start',
     LIVE_STT_CHUNK: '/api/stt/live/chunk',
     LIVE_STT_FINISH: '/api/stt/live/finish',

@@ -2,8 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import Speaker from '../assets/speaker.svg?react';
 import Stopspeech from '../assets/stopspeech.svg?react';
 import LoadingIcon from '../assets/Loading.svg?react'; // Add a loading icon SVG here
-
-const apiHost = import.meta.env.VITE_API_HOST || 'https://docsapi.arc53.com';
+import userService from '../api/services/userService';
 
 let currentlyPlayingAudio: {
   audio: HTMLAudioElement;
@@ -114,12 +113,11 @@ export default function SpeakButton({ text }: { text: string }) {
           },
         };
 
-        const response = await fetch(apiHost + '/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text }),
-          signal: abortController.signal,
-        });
+        const response = await userService.textToSpeech(
+          text,
+          null,
+          abortController.signal,
+        );
 
         const data = await response.json();
         abortControllerRef.current = null;
