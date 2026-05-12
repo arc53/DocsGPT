@@ -39,12 +39,6 @@ export interface UploadTask {
    * polling endpoint.
    */
   sourceId?: string;
-  /**
-   * ``Date.now()`` of the last SSE event that matched this task by
-   * ``sourceId``. Kept for observability and possible future
-   * stale-detection UI. Unset until the first matching event arrives.
-   */
-  lastEventAt?: number;
   errorMessage?: string;
   dismissed?: boolean;
   /**
@@ -236,10 +230,6 @@ export const uploadSlice = createSlice({
       const task = state.tasks.find((t) => t.sourceId === scopeId);
       if (!task) return;
       const payload = (e.payload || {}) as Record<string, unknown>;
-      // Stamp the per-task freshness clock on every matching event so
-      // ``Upload.tsx`` can prove this task is hearing from its worker
-      // — independent of the global SSE channel-health flag.
-      task.lastEventAt = Date.now();
 
       switch (e.type) {
         case 'source.ingest.queued':
