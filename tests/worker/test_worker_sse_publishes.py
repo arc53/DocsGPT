@@ -614,8 +614,8 @@ class TestAttachmentWorkerPublishes:
         # missing one would leave the UI frozen at the prior stage.
         assert publishes.types() == [
             "attachment.queued",
-            "attachment.processing.progress",
-            "attachment.processing.progress",
+            "attachment.progress",
+            "attachment.progress",
             "attachment.completed",
         ]
 
@@ -671,7 +671,7 @@ class TestAttachmentWorkerPublishes:
         # raises before reaching it.
         assert publishes.types() == [
             "attachment.queued",
-            "attachment.processing.progress",
+            "attachment.progress",
             "attachment.failed",
         ]
         assert publishes.calls[1][2]["current"] == 30

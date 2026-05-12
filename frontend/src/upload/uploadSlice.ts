@@ -182,7 +182,7 @@ export const uploadSlice = createSlice({
           const payload = (e.payload || {}) as Record<string, unknown>;
           switch (e.type) {
             case 'attachment.queued':
-            case 'attachment.processing.progress': {
+            case 'attachment.progress': {
               if (
                 attachment.status === 'completed' ||
                 attachment.status === 'failed'
