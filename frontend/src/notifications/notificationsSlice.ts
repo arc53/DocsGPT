@@ -67,6 +67,15 @@ export const notificationsSlice = createSlice({
   reducers: {
     sseEventReceived: (state, action: PayloadAction<SSEEvent>) => {
       const e = action.payload;
+      // Drop immediate duplicates. Snapshot replay + live tail can
+      // both deliver the same id when the live pubsub frame and the
+      // replay XRANGE overlap, and consumers that walk
+      // ``recentEvents`` (FileTree, ConnectorTree, MCPServerModal,
+      // ToolApprovalToast) would otherwise act on the same envelope
+      // twice. The route's dedup floor catches the common case; this
+      // is a belt-and-suspenders for in-tab StrictMode double-mounts
+      // and any envelope that slips through with the same id.
+      if (e.id && state.recentEvents[0]?.id === e.id) return;
       state.recentEvents.unshift(e);
       if (state.recentEvents.length > RECENT_EVENTS_CAP) {
         state.recentEvents.length = RECENT_EVENTS_CAP;
