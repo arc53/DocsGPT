@@ -67,8 +67,6 @@ const endpoints = {
     MANAGE_SOURCE_FILES: '/api/manage_source_files',
     MCP_TEST_CONNECTION: '/api/mcp_server/test',
     MCP_SAVE_SERVER: '/api/mcp_server/save',
-    MCP_OAUTH_STATUS: (task_id: string) =>
-      `/api/mcp_server/oauth_status/${task_id}`,
     MCP_AUTH_STATUS: '/api/mcp_server/auth_status',
     AGENT_FOLDERS: '/api/agents/folders/',
     AGENT_FOLDER: (id: string) => `/api/agents/folders/${id}`,
