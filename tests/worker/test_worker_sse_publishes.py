@@ -689,6 +689,7 @@ def _make_fake_mcp_tool_class(
     *,
     tools: list[str] | None = None,
     discovery_raises: Exception | None = None,
+    authorization_url: str | None = "https://idp.example.com/authorize?state=xyz",
 ):
     """Build a class that stands in for ``MCPTool`` in mcp_oauth.
 
@@ -699,8 +700,16 @@ def _make_fake_mcp_tool_class(
     - ``_execute_with_client("list_tools")`` (async, returns anything)
     - ``get_actions_metadata()`` (sync, returns the tools list)
 
+    The fake mirrors the real handshake: ``__init__`` lifts the
+    ``oauth_redirect_publish`` callback out of ``tool_config`` and
+    ``_setup_client`` invokes it with ``authorization_url`` — the same
+    spot where the real ``DocsGPTOAuth.redirect_handler`` would fire it
+    once the upstream OAuth provider mints the URL.
+
     The ``discovery_raises`` knob simulates a mid-flow failure inside
-    the ``run_oauth_discovery`` coroutine.
+    the ``run_oauth_discovery`` coroutine. Setting
+    ``authorization_url=None`` suppresses the redirect publish so the
+    ``no user_id`` test path can assert the publisher is fully silent.
     """
     resolved_tools = list(tools) if tools is not None else ["tool_a", "tool_b"]
 
@@ -709,9 +718,26 @@ def _make_fake_mcp_tool_class(
             self._client = None
             self._tool_config = tool_config
             self._user_id = user_id
+            # Real ``MCPTool.__init__`` ``pop``s this key off the config
+            # so it does not leak into the persisted tool config blob.
+            # Mirror that behaviour so the test catches a regression
+            # where the worker stops passing the callback through.
+            self._oauth_redirect_publish = tool_config.pop(
+                "oauth_redirect_publish", None
+            )
 
         def _setup_client(self) -> None:
             self._client = object()
+            # Simulate the real OAuth flow: ``DocsGPTOAuth.redirect_handler``
+            # invokes the worker-provided callback the moment the
+            # authorization URL is known. Doing it here keeps the
+            # observable publish ordering identical to the real path:
+            # ``in_progress`` → ``awaiting_redirect(url)`` → terminal.
+            if (
+                authorization_url is not None
+                and callable(self._oauth_redirect_publish)
+            ):
+                self._oauth_redirect_publish(authorization_url)
 
         async def _execute_with_client(self, name: str):
             if discovery_raises is not None:
@@ -762,8 +788,12 @@ class TestMcpOauthPublishes:
         from application import worker
 
         _stub_mcp_oauth_redis(monkeypatch)
+        auth_url = "https://idp.example.com/authorize?state=happy-path"
         _patch_mcp_tool(
-            monkeypatch, _make_fake_mcp_tool_class(tools=["alpha", "beta"])
+            monkeypatch,
+            _make_fake_mcp_tool_class(
+                tools=["alpha", "beta"], authorization_url=auth_url,
+            ),
         )
 
         result = worker.mcp_oauth(
@@ -782,6 +812,12 @@ class TestMcpOauthPublishes:
             "mcp.oauth.awaiting_redirect",
             "mcp.oauth.completed",
         ]
+        awaiting = publishes.calls[1][2]
+        # The frontend opens the OAuth popup straight from this URL.
+        # Without it the popup never opens and the user retries; the
+        # test guards the contract that the SSE envelope is now the
+        # source of truth for the authorization URL.
+        assert awaiting["authorization_url"] == auth_url
         completed = publishes.calls[2][2]
         assert completed["tools"] == ["alpha", "beta"]
         assert completed["tools_count"] == 2

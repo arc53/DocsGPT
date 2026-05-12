@@ -76,6 +76,12 @@ class MCPTool(Tool):
         self.oauth_task_id = config.get("oauth_task_id", None)
         self.oauth_client_name = config.get("oauth_client_name", "DocsGPT-MCP")
         self.redirect_uri = self._resolve_redirect_uri(config.get("redirect_uri"))
+        # Pulled out of ``config`` (rather than left in ``self.config``)
+        # because it is a callable supplied by the OAuth worker — not
+        # something the rest of the tool plumbing should marshal or
+        # serialize. ``DocsGPTOAuth`` invokes it from ``redirect_handler``
+        # so the SSE envelope can carry ``authorization_url``.
+        self.oauth_redirect_publish = config.pop("oauth_redirect_publish", None)
 
         self.available_tools = []
         self._cache_key = self._generate_cache_key()
@@ -167,6 +173,7 @@ class MCPTool(Tool):
                     redirect_uri=self.redirect_uri,
                     task_id=self.oauth_task_id,
                     user_id=self.user_id,
+                    redirect_publish=self.oauth_redirect_publish,
                 )
         elif self.auth_type == "bearer":
             token = self.auth_credentials.get(
@@ -679,12 +686,17 @@ class DocsGPTOAuth(OAuthClientProvider):
         user_id=None,
         additional_client_metadata: dict[str, Any] | None = None,
         skip_redirect_validation: bool = False,
+        redirect_publish=None,
     ):
         self.redirect_uri = redirect_uri
         self.redis_client = redis_client
         self.redis_prefix = redis_prefix
         self.task_id = task_id
         self.user_id = user_id
+        # Worker-supplied callback. Invoked from ``redirect_handler``
+        # once the authorization URL is known so the SSE envelope can
+        # carry it. ``None`` for any non-worker entrypoint.
+        self.redirect_publish = redirect_publish
 
         parsed_url = urlparse(mcp_url)
         self.server_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
@@ -755,6 +767,20 @@ class DocsGPTOAuth(OAuthClientProvider):
                     "task_id": self.task_id,
                 }
                 self.redis_client.setex(status_key, 600, json.dumps(status_data))
+
+        if self.redirect_publish is not None:
+            # Best-effort: a publish failure must not abort the OAuth
+            # handshake — the user can still authorize via the popup
+            # opened from the legacy polling fallback if the SSE
+            # envelope is lost.
+            try:
+                self.redirect_publish(auth_url)
+            except Exception:
+                logger.warning(
+                    "redirect_publish callback raised for task_id=%s",
+                    self.task_id,
+                    exc_info=True,
+                )
 
     async def callback_handler(self) -> tuple[str, str | None]:
         """Wait for auth code from Redis using the state value."""

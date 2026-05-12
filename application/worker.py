@@ -1907,9 +1907,11 @@ def ingest_connector(
 def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, Any]:
     """Worker to handle MCP OAuth flow asynchronously.
 
-    Emits SSE events alongside the existing Redis ``setex`` status
-    payloads \u2014 frontend polling stays as the safety net while push
-    drives the live UX.
+    Publishes SSE events at each phase boundary so the frontend can
+    drive the OAuth popup directly from the push channel. The
+    ``mcp.oauth.awaiting_redirect`` envelope carries the
+    ``authorization_url`` once the upstream OAuth client surfaces it,
+    eliminating the prior polling-only path for that URL.
     """
 
     # Bind ``task_id``, the Redis client, and the helpers OUTSIDE the
@@ -1944,6 +1946,22 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
             scope={"kind": "mcp_oauth", "id": task_id},
         )
 
+    def publish_awaiting_redirect(authorization_url: str) -> None:
+        """Callback invoked by ``DocsGPTOAuth.redirect_handler`` once
+        the OAuth client has minted the authorization URL.
+
+        Carrying the URL on the SSE envelope lets the frontend open the
+        popup directly from the event instead of polling
+        ``/api/mcp_server/oauth_status/<task_id>`` until the URL lands.
+        """
+        publish_oauth(
+            "mcp.oauth.awaiting_redirect",
+            {
+                "message": "Awaiting OAuth redirect...",
+                "authorization_url": authorization_url,
+            },
+        )
+
     try:
         import asyncio
 
@@ -1960,6 +1978,11 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
 
         tool_config = config.copy()
         tool_config["oauth_task_id"] = task_id
+        # Inject the awaiting-redirect publish callback. ``MCPTool`` pops
+        # it out of the config and threads it into ``DocsGPTOAuth`` so
+        # the publish fires synchronously from inside
+        # ``redirect_handler`` \u2014 the only point where the URL is known.
+        tool_config["oauth_redirect_publish"] = publish_awaiting_redirect
         mcp_tool = MCPTool(tool_config, user_id)
 
         async def run_oauth_discovery():
@@ -1973,10 +1996,6 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
                 "message": "Awaiting OAuth redirect...",
                 "task_id": task_id,
             }
-        )
-        publish_oauth(
-            "mcp.oauth.awaiting_redirect",
-            {"message": "Awaiting OAuth redirect..."},
         )
 
         loop = asyncio.new_event_loop()

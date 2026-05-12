@@ -1325,6 +1325,7 @@ class TestSetupClientExtended:
         tool._client = None
         tool.available_tools = []
         tool.user_id = "user1"
+        tool.oauth_redirect_publish = None
 
         mock_client = MagicMock()
         with patch.object(MCPTool, "_create_transport", return_value=MagicMock()), \
