@@ -125,9 +125,17 @@ def publish_user_event(
             "xadd failed for user=%s event_type=%s", user_id, event_type
         )
 
+    # If the durable journal write failed there is no canonical id to
+    # ship — publishing the envelope live would put an id-less record
+    # on the wire that bypasses the SSE route's dedup floor and breaks
+    # ``Last-Event-ID`` semantics for any reconnect. Best-effort
+    # delivery means dropping consistently, not delivering inconsistent
+    # state.
+    if stream_id is None:
+        return None
+
     envelope = dict(envelope_partial)
-    if stream_id:
-        envelope["id"] = stream_id
+    envelope["id"] = stream_id
 
     try:
         Topic(topic_name(user_id)).publish(json.dumps(envelope))
@@ -136,12 +144,11 @@ def publish_user_event(
             "publish failed for user=%s event_type=%s", user_id, event_type
         )
 
-    if stream_id is not None:
-        logger.debug(
-            "event.published topic=%s type=%s id=%s",
-            topic_name(user_id),
-            event_type,
-            stream_id,
-        )
+    logger.debug(
+        "event.published topic=%s type=%s id=%s",
+        topic_name(user_id),
+        event_type,
+        stream_id,
+    )
 
     return stream_id

@@ -247,9 +247,16 @@ class TestPublishUserEvent:
     @patch("application.events.publisher.Topic")
     @patch("application.events.publisher.get_redis_instance")
     @patch("application.events.publisher.settings")
-    def test_xadd_failure_still_attempts_publish_without_id(
+    def test_xadd_failure_skips_live_publish(
         self, mock_settings, mock_redis, mock_topic_cls
     ):
+        """If the durable journal write fails there is no canonical id
+        to ship. Publishing an id-less envelope would put a record on
+        the wire that bypasses the SSE route's dedup floor and breaks
+        ``Last-Event-ID`` semantics for any reconnect — so we drop the
+        live publish too. Best-effort delivery means dropping
+        consistently, not delivering inconsistent state.
+        """
         mock_settings.ENABLE_SSE_PUSH = True
         mock_settings.EVENTS_STREAM_MAXLEN = 1000
         mock_client = MagicMock()
@@ -260,11 +267,10 @@ class TestPublishUserEvent:
 
         result = publish_user_event("alice", "x.y", {"k": 1})
 
-        # No backlog id; the function still degrades to live-only PUBLISH.
+        # Backlog write failed → publisher returns None and skips the
+        # live publish so subscribers never see an id-less envelope.
         assert result is None
-        mock_topic.publish.assert_called_once()
-        published = json.loads(mock_topic.publish.call_args[0][0])
-        assert "id" not in published
+        mock_topic.publish.assert_not_called()
 
 
 # ── Topic ───────────────────────────────────────────────────────────────
