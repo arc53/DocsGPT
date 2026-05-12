@@ -60,8 +60,6 @@ const userService = {
     apiClient.get(endpoints.USER.SINGLE_PROMPT(id), token),
   deletePath: (docPath: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.DELETE_PATH(docPath), token),
-  getTaskStatus: (task_id: string, token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.TASK_STATUS(task_id), token),
   getMessageAnalytics: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MESSAGE_ANALYTICS, data, token),
   getTokenAnalytics: (data: any, token: string | null): Promise<any> =>
