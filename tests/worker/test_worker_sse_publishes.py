@@ -159,6 +159,11 @@ class TestIngestWorkerPublishes:
         assert completed["source_id"] == caller_source_id
         assert completed["operation"] == "upload"
         assert "tokens" in completed
+        # Forward-looking contract: ``limited`` rides on every
+        # completed envelope so the frontend slice can route a future
+        # token-cap detection to the token-limit toast without further
+        # wire changes. Always False today.
+        assert completed["limited"] is False
 
     def test_pipeline_failure_emits_queued_then_failed(
         self, patch_worker_db, task_self, monkeypatch, publishes
@@ -425,6 +430,10 @@ class TestRemoteWorkerPublishes:
         assert completed["operation"] == "upload"
         # ``source_id`` is the same across both envelopes.
         assert queued["source_id"] == completed["source_id"]
+        # Forward-looking ``limited`` contract — see ingest_worker
+        # happy-path test. Always False today; rides on the wire so a
+        # future token-cap detection can flip it without re-plumbing.
+        assert completed["limited"] is False
 
     def test_upload_failure_emits_failed(
         self, tmp_path, task_self, monkeypatch, publishes

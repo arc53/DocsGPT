@@ -714,6 +714,11 @@ def ingest_worker(
                     "filename": filename,
                     "tokens": tokens,
                     "operation": "upload",
+                    # Forward-looking contract: ``limited`` is always
+                    # ``False`` today but is carried on the wire so a
+                    # future token-cap detection path can flip it and
+                    # the frontend slice / UploadToast already react.
+                    "limited": False,
                 },
                 scope={"kind": "source", "id": source_id_for_events},
             )
@@ -1338,6 +1343,8 @@ def remote_worker(
                 "loader": loader,
                 "operation": operation_mode,
                 "tokens": tokens,
+                # Forward-looking contract: see ingest_worker.
+                "limited": False,
             },
             scope={"kind": "source", "id": source_id_for_events},
         )

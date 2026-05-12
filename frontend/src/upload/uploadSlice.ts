@@ -41,14 +41,21 @@ export interface UploadTask {
   sourceId?: string;
   /**
    * ``Date.now()`` of the last SSE event that matched this task by
-   * ``sourceId``. Drives the per-task push-freshness gate: if the
-   * channel is globally healthy but this task hasn't seen an event in
-   * a while, the polling loop falls back rather than skipping. Unset
-   * until the first matching event arrives.
+   * ``sourceId``. Kept for observability and possible future
+   * stale-detection UI. Unset until the first matching event arrives.
    */
   lastEventAt?: number;
   errorMessage?: string;
   dismissed?: boolean;
+  /**
+   * Flipped when ``source.ingest.completed`` carries
+   * ``payload.limited === true`` (the worker hit a token cap during
+   * ingest). The slice routes such events to a failed status and
+   * sets this flag so ``UploadToast`` can surface a translated
+   * token-limit message instead of a generic error. Forward-looking:
+   * no worker code path sets ``limited: true`` today.
+   */
+  tokenLimitReached?: boolean;
 }
 
 interface UploadState {
@@ -255,10 +262,22 @@ export const uploadSlice = createSlice({
           break;
         }
         case 'source.ingest.completed':
-          task.status = 'completed';
-          task.progress = 100;
-          task.errorMessage = undefined;
-          task.dismissed = false;
+          if (payload.limited === true) {
+            // Token-cap reached during ingest — surface as a failure
+            // so the toast shows the translated limit message rather
+            // than a misleading success state.
+            task.status = 'failed';
+            task.progress = 100;
+            task.tokenLimitReached = true;
+            task.errorMessage = undefined;
+            task.dismissed = false;
+          } else {
+            task.status = 'completed';
+            task.progress = 100;
+            task.errorMessage = undefined;
+            task.tokenLimitReached = false;
+            task.dismissed = false;
+          }
           break;
         case 'source.ingest.failed':
           task.status = 'failed';

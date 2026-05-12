@@ -232,9 +232,11 @@ function UploadRow({
         </div>
       </div>
 
-      {task.status === 'failed' && task.errorMessage && (
+      {task.status === 'failed' && (task.tokenLimitReached || task.errorMessage) && (
         <span className="block px-5 pb-3 text-xs text-red-500">
-          {task.errorMessage}
+          {task.tokenLimitReached
+            ? t('modals.uploadDoc.progress.tokenLimit')
+            : task.errorMessage}
         </span>
       )}
     </li>
