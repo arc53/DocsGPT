@@ -32,12 +32,20 @@ export default function ToolApprovalToast() {
   // place a conversation in view: the bare ``/c/:conversationId`` and
   // the agent-scoped ``/agents/:agentId/c/:conversationId``. Hooks
   // are unconditional; the toast just respects whichever matches.
+  //
+  // ``/c/new`` is the conversation route's literal-string placeholder
+  // for "unknown / not-yet-loaded conversation" (see the rewrite in
+  // the conversation route). Treat it the same as no match — the
+  // user isn't viewing any specific conversation yet, so an approval
+  // toast for any conversation should still surface.
   const plainMatch = useMatch('/c/:conversationId');
   const agentMatch = useMatch('/agents/:agentId/c/:conversationId');
-  const currentConversationId =
+  const matchedConversationId =
     plainMatch?.params.conversationId ??
     agentMatch?.params.conversationId ??
     null;
+  const currentConversationId =
+    matchedConversationId === 'new' ? null : matchedConversationId;
 
   // Conversation name lookup — best-effort. The slice's
   // ``preference.conversations.data`` is populated by
