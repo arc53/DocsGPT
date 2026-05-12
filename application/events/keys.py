@@ -35,19 +35,16 @@ def stream_id_compare(a: str, b: str) -> int:
     Stream ids are ``ms-seq`` strings; comparing as strings would be wrong
     once ``ms`` straddles digit-count boundaries. We parse and compare
     as ``(int, int)`` tuples.
+
+    Raises ``ValueError`` on malformed input. Callers must pre-validate
+    against ``_STREAM_ID_RE`` (or equivalent) — a lex fallback here let
+    a malformed id compare lex-greater than a real one and silently pin
+    dedup forever.
     """
     a_ms, _, a_seq = a.partition("-")
     b_ms, _, b_seq = b.partition("-")
-    try:
-        a_tuple = (int(a_ms), int(a_seq) if a_seq else 0)
-        b_tuple = (int(b_ms), int(b_seq) if b_seq else 0)
-    except ValueError:
-        # Malformed id — fall back to lex compare so we at least don't crash.
-        if a < b:
-            return -1
-        if a > b:
-            return 1
-        return 0
+    a_tuple = (int(a_ms), int(a_seq) if a_seq else 0)
+    b_tuple = (int(b_ms), int(b_seq) if b_seq else 0)
     if a_tuple < b_tuple:
         return -1
     if a_tuple > b_tuple:

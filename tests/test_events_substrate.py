@@ -67,11 +67,16 @@ class TestStreamIdCompare:
     def test_missing_seq_treated_as_zero(self):
         assert stream_id_compare("1234", "1234-0") == 0
 
-    def test_malformed_both_sides_falls_back_to_lex(self):
-        # Pure lex compare on garbage — important: this must not raise.
-        assert stream_id_compare("foo", "bar") == 1
-        assert stream_id_compare("foo", "foo") == 0
-        assert stream_id_compare("aaa", "zzz") == -1
+    def test_malformed_input_raises(self):
+        # Callers must pre-validate; the function refuses to silently
+        # lex-compare garbage because a malformed id that sorts
+        # lex-greater would pin dedup forever.
+        with pytest.raises(ValueError):
+            stream_id_compare("foo", "bar")
+        with pytest.raises(ValueError):
+            stream_id_compare("123-0", "foo")
+        with pytest.raises(ValueError):
+            stream_id_compare("foo", "123-0")
 
 
 # ── _format_sse ─────────────────────────────────────────────────────────
