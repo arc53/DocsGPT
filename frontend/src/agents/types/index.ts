@@ -37,6 +37,9 @@ export type Agent = {
   folder_id?: string;
   workflow?: string;
   allow_system_prompt_override?: boolean;
+  guardrails_enabled?: boolean;
+  input_guardrails?: boolean;
+  output_guardrails?: boolean;
 };
 
 export type AgentFolder = {
