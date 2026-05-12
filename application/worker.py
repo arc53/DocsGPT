@@ -52,18 +52,16 @@ MAX_TOKENS = 1250
 RECURSION_DEPTH = 2
 INGEST_HEARTBEAT_INTERVAL_SECONDS = 30
 
-# Stable namespace for deterministic source IDs derived from idempotency keys.
-# Pinned literal — do not change. Re-rolling this would mint different
-# source_ids for the same idempotency_keys across deploys, defeating the
-# retry-resume contract.
-DOCSGPT_INGEST_NAMESPACE = uuid.UUID("fa25d5d1-398b-46df-ac89-8d1c360b9bea")
-
-
-def _derive_source_id(idempotency_key):
-    """``uuid5(NS, key)`` when a key is supplied; ``uuid4()`` otherwise."""
-    if isinstance(idempotency_key, str) and idempotency_key:
-        return uuid.uuid5(DOCSGPT_INGEST_NAMESPACE, idempotency_key)
-    return uuid.uuid4()
+# Re-exported here for backward-compatible imports
+# (``from application.worker import _derive_source_id`` /
+# ``DOCSGPT_INGEST_NAMESPACE``) from tests and any other in-tree callers.
+# New code should import from ``application.storage.db.source_ids``
+# directly to avoid pulling this Celery worker module into the API
+# process at import time.
+from application.storage.db.source_ids import (  # noqa: E402, F401
+    DOCSGPT_INGEST_NAMESPACE,
+    derive_source_id as _derive_source_id,
+)
 
 
 def _ingest_heartbeat_loop(source_id, stop_event, interval=INGEST_HEARTBEAT_INTERVAL_SECONDS):
@@ -1466,7 +1464,7 @@ def attachment_worker(self, file_info, user):
         )
         publish_user_event(
             user,
-            "attachment.processing.progress",
+            "attachment.progress",
             {
                 "attachment_id": str(attachment_id),
                 "filename": filename,
@@ -1509,7 +1507,7 @@ def attachment_worker(self, file_info, user):
         )
         publish_user_event(
             user,
-            "attachment.processing.progress",
+            "attachment.progress",
             {
                 "attachment_id": str(attachment_id),
                 "filename": filename,

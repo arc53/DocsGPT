@@ -13,7 +13,7 @@ from sqlalchemy import text as sql_text
 from application.api import api
 from application.api.user.tasks import ingest, ingest_connector_task, ingest_remote
 from application.core.settings import settings
-from application.worker import _derive_source_id
+from application.storage.db.source_ids import derive_source_id as _derive_source_id
 from application.parser.connectors.connector_creator import ConnectorCreator
 from application.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
 from application.storage.db.repositories.idempotency import IdempotencyRepository
