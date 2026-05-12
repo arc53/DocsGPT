@@ -683,17 +683,6 @@ class TestAttachmentWorkerPublishes:
 # ── mcp_oauth ────────────────────────────────────────────────────────────
 
 
-def _stub_mcp_oauth_redis(monkeypatch):
-    """Stand-in Redis whose ``setex`` is a no-op (covered separately)."""
-    from application import worker
-
-    fake_redis = MagicMock(name="redis_client")
-    # Default setex behaviour: do nothing, return OK.
-    fake_redis.setex.return_value = True
-    monkeypatch.setattr(worker, "get_redis_instance", lambda: fake_redis)
-    return fake_redis
-
-
 def _make_fake_mcp_tool_class(
     *,
     tools: list[str] | None = None,
@@ -796,7 +785,6 @@ class TestMcpOauthPublishes:
     ):
         from application import worker
 
-        _stub_mcp_oauth_redis(monkeypatch)
         auth_url = "https://idp.example.com/authorize?state=happy-path"
         _patch_mcp_tool(
             monkeypatch,
@@ -845,7 +833,6 @@ class TestMcpOauthPublishes:
         """
         from application import worker
 
-        _stub_mcp_oauth_redis(monkeypatch)
         _patch_mcp_tool(
             monkeypatch,
             _make_fake_mcp_tool_class(
@@ -879,7 +866,6 @@ class TestMcpOauthPublishes:
         """
         from application import worker
 
-        _stub_mcp_oauth_redis(monkeypatch)
         _patch_mcp_tool(monkeypatch, _make_fake_mcp_tool_class())
 
         result = worker.mcp_oauth(

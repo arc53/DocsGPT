@@ -8,6 +8,7 @@ MCPOAuthManager.
 
 import asyncio
 import concurrent.futures
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -869,17 +870,89 @@ class TestMCPOAuthManager:
         from application.agents.tools.mcp_tool import MCPOAuthManager
 
         manager = MCPOAuthManager(MagicMock())
-        result = manager.get_oauth_status("")
+        result = manager.get_oauth_status("", "alice")
         assert result["status"] == "not_started"
 
-    def test_get_oauth_status_with_task(self):
+    def test_get_oauth_status_no_user(self):
         from application.agents.tools.mcp_tool import MCPOAuthManager
 
-        with patch("application.agents.tools.mcp_tool.mcp_oauth_status_task",
-                   return_value={"status": "complete"}):
-            manager = MCPOAuthManager(MagicMock())
-            result = manager.get_oauth_status("task123")
-            assert result["status"] == "complete"
+        manager = MCPOAuthManager(MagicMock())
+        result = manager.get_oauth_status("task123", "")
+        # Without a user id we can't address the per-user SSE journal,
+        # so the manager refuses rather than scanning every user's
+        # stream.
+        assert result["status"] == "not_found"
+
+    def test_get_oauth_status_reads_completed_envelope_from_journal(self):
+        """The manager walks the user's SSE Streams journal and
+        surfaces the latest ``mcp.oauth.*`` envelope for the task.
+
+        Verifies the full polling-contract surface: ``status`` is
+        derived from the event-type suffix, and the completed
+        payload's ``tools`` / ``tools_count`` fields are passed
+        through unchanged so ``mcp.py``'s ``connect_mcp`` can use them
+        without further plumbing.
+        """
+        from application.agents.tools.mcp_tool import MCPOAuthManager
+
+        completed_envelope = json.dumps(
+            {
+                "type": "mcp.oauth.completed",
+                "scope": {"kind": "mcp_oauth", "id": "task123"},
+                "payload": {
+                    "task_id": "task123",
+                    "tools": [{"name": "t1", "description": "d"}],
+                    "tools_count": 1,
+                },
+            }
+        ).encode("utf-8")
+        # xrevrange yields newest-first; an unrelated older entry
+        # should be skipped on the way to the matching one.
+        unrelated_envelope = json.dumps(
+            {
+                "type": "source.ingest.completed",
+                "scope": {"kind": "source", "id": "abc"},
+                "payload": {},
+            }
+        ).encode("utf-8")
+        mock_redis = MagicMock()
+        mock_redis.xrevrange.return_value = [
+            (b"1735682400000-0", {b"event": completed_envelope}),
+            (b"1735682300000-0", {b"event": unrelated_envelope}),
+        ]
+
+        manager = MCPOAuthManager(mock_redis)
+        result = manager.get_oauth_status("task123", "alice")
+
+        assert result["status"] == "completed"
+        assert result["tools"] == [{"name": "t1", "description": "d"}]
+        assert result["tools_count"] == 1
+        # The stream key is scoped per-user — never global.
+        mock_redis.xrevrange.assert_called_once()
+        call_args = mock_redis.xrevrange.call_args
+        assert "user:alice:stream" in call_args.args
+        assert call_args.kwargs.get("count") == 200
+
+    def test_get_oauth_status_returns_not_found_when_no_match(self):
+        from application.agents.tools.mcp_tool import MCPOAuthManager
+
+        mock_redis = MagicMock()
+        # Stream is non-empty but has nothing matching this task.
+        unrelated_envelope = json.dumps(
+            {
+                "type": "mcp.oauth.completed",
+                "scope": {"kind": "mcp_oauth", "id": "other-task"},
+                "payload": {"task_id": "other-task"},
+            }
+        ).encode("utf-8")
+        mock_redis.xrevrange.return_value = [
+            (b"1735682400000-0", {b"event": unrelated_envelope}),
+        ]
+
+        manager = MCPOAuthManager(mock_redis)
+        result = manager.get_oauth_status("task123", "alice")
+
+        assert result["status"] == "not_found"
 
 
 # =====================================================================
@@ -2258,16 +2331,21 @@ class TestMCPOAuthManagerExtended:
         # Should store error in redis
         mock_redis.setex.assert_called()
 
-    def test_get_oauth_status_task_error(self):
+    def test_get_oauth_status_returns_not_found_on_redis_error(self):
+        """A failure inside ``xrevrange`` (Redis down, network blip) is
+        swallowed — the manager returns ``not_found`` so the caller
+        can present a clean "OAuth failed, try again" message rather
+        than a 500.
+        """
         from application.agents.tools.mcp_tool import MCPOAuthManager
 
-        with patch(
-            "application.agents.tools.mcp_tool.mcp_oauth_status_task",
-            side_effect=Exception("task failed"),
-        ):
-            manager = MCPOAuthManager(MagicMock())
-            with pytest.raises(Exception, match="task failed"):
-                manager.get_oauth_status("task123")
+        mock_redis = MagicMock()
+        mock_redis.xrevrange.side_effect = Exception("Redis went away")
+
+        manager = MCPOAuthManager(mock_redis)
+        result = manager.get_oauth_status("task123", "alice")
+
+        assert result["status"] == "not_found"
 
 
 # =====================================================================

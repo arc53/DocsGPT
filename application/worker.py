@@ -19,7 +19,6 @@ import requests
 from application.agents.agent_creator import AgentCreator
 from application.api.answer.services.stream_processor import get_prompt
 
-from application.cache import get_redis_instance
 from application.core.settings import settings
 from application.events.publisher import publish_user_event
 from application.parser.chunking import Chunker
@@ -1921,29 +1920,17 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
     eliminating the prior polling-only path for that URL.
     """
 
-    # Bind ``task_id``, the Redis client, and the helpers OUTSIDE the
-    # outer try so the ``except`` handler at the bottom can reach them
-    # even when the import or any other early statement raises. The
-    # original code referenced these names from inside ``except`` and
-    # would UnboundLocalError on top of the original failure.
+    # Bind ``task_id`` and the publish helpers OUTSIDE the outer try so
+    # the ``except`` handler at the bottom can reach them even when an
+    # early statement raises. Without this, ``publish_oauth`` would
+    # UnboundLocalError on top of the original failure.
     task_id = self.request.id if getattr(self, "request", None) else None
-    redis_client = get_redis_instance()
-
-    def update_status(status_data: Dict[str, Any]):
-        if redis_client is None or task_id is None:
-            return
-        status_key = f"mcp_oauth_status:{task_id}"
-        try:
-            redis_client.setex(status_key, 600, json.dumps(status_data))
-        except Exception:
-            logging.debug(
-                "mcp_oauth setex failed for task_id=%s", task_id, exc_info=True
-            )
 
     def publish_oauth(event_type: str, payload: Dict[str, Any]) -> None:
-        # MCP OAuth runs without a route-bound user_id when the caller
-        # is unauthenticated (legacy paths). Skip the SSE publish in
-        # that case \u2014 polling still works.
+        # MCP OAuth can be invoked without a route-bound user_id by
+        # legacy paths. Skip the SSE publish in that case \u2014 the caller
+        # has no per-user channel to subscribe to, and the status is
+        # surfaced via the task's return value.
         if not user_id or task_id is None:
             return
         publish_user_event(
@@ -1958,8 +1945,8 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
         the OAuth client has minted the authorization URL.
 
         Carrying the URL on the SSE envelope lets the frontend open the
-        popup directly from the event instead of polling
-        ``/api/mcp_server/oauth_status/<task_id>`` until the URL lands.
+        popup directly from the event \u2014 the prior polling-only path
+        for the URL is gone.
         """
         publish_oauth(
             "mcp.oauth.awaiting_redirect",
@@ -1974,13 +1961,6 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
 
         from application.agents.tools.mcp_tool import MCPTool
 
-        update_status(
-            {
-                "status": "in_progress",
-                "message": "Starting OAuth...",
-                "task_id": task_id,
-            }
-        )
         publish_oauth("mcp.oauth.in_progress", {"message": "Starting OAuth..."})
 
         tool_config = config.copy()
@@ -1997,14 +1977,6 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
                 mcp_tool._setup_client()
             return await mcp_tool._execute_with_client("list_tools")
 
-        update_status(
-            {
-                "status": "awaiting_redirect",
-                "message": "Awaiting OAuth redirect...",
-                "task_id": task_id,
-            }
-        )
-
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
@@ -2012,15 +1984,6 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
             loop.run_until_complete(run_oauth_discovery())
             tools = mcp_tool.get_actions_metadata()
 
-            update_status(
-                {
-                    "status": "completed",
-                    "message": f"Connected \u2014 found {len(tools)} tool{'s' if len(tools) != 1 else ''}.",
-                    "tools": tools,
-                    "tools_count": len(tools),
-                    "task_id": task_id,
-                }
-            )
             publish_oauth(
                 "mcp.oauth.completed",
                 {"tools": tools, "tools_count": len(tools)},
@@ -2030,13 +1993,6 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
         except Exception as e:
             error_msg = f"OAuth failed: {str(e)}"
             logging.error("MCP OAuth discovery failed: %s", error_msg, exc_info=True)
-            update_status(
-                {
-                    "status": "error",
-                    "message": error_msg,
-                    "task_id": task_id,
-                }
-            )
             publish_oauth("mcp.oauth.failed", {"error": error_msg[:1024]})
             return {"success": False, "error": error_msg}
         finally:
@@ -2044,23 +2000,5 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
     except Exception as e:
         error_msg = f"OAuth init failed: {str(e)}"
         logging.error("MCP OAuth init failed: %s", error_msg, exc_info=True)
-        update_status(
-            {
-                "status": "error",
-                "message": error_msg,
-                "task_id": task_id,
-            }
-        )
         publish_oauth("mcp.oauth.failed", {"error": error_msg[:1024]})
         return {"success": False, "error": error_msg}
-
-
-def mcp_oauth_status(self, task_id: str) -> Dict[str, Any]:
-    """Check the status of an MCP OAuth flow."""
-    redis_client = get_redis_instance()
-    status_key = f"mcp_oauth_status:{task_id}"
-
-    status_data = redis_client.get(status_key)
-    if status_data:
-        return json.loads(status_data)
-    return {"status": "not_found", "message": "Status not found"}

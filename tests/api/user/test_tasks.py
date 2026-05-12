@@ -262,20 +262,6 @@ class TestMcpOauthTask:
         assert result == {"url": "http://auth"}
 
 
-class TestMcpOauthStatusTask:
-    @pytest.mark.unit
-    @patch("application.api.user.tasks.mcp_oauth_status")
-    def test_calls_mcp_oauth_status(self, mock_worker):
-        from application.api.user.tasks import mcp_oauth_status_task
-
-        mock_worker.return_value = {"status": "authorized"}
-
-        result = mcp_oauth_status_task("task123")
-
-        mock_worker.assert_called_once_with(ANY, "task123")
-        assert result == {"status": "authorized"}
-
-
 class TestDurableTaskRetryPolicy:
     """The long-running tasks share a uniform retry policy."""
 
@@ -307,7 +293,6 @@ class TestDurableTaskRetryPolicy:
             "schedule_syncs",
             "sync_source",
             "mcp_oauth_task",
-            "mcp_oauth_status_task",
             "cleanup_pending_tool_state",
             "reconciliation_task",
             "version_check_task",

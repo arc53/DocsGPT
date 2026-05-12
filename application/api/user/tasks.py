@@ -7,7 +7,6 @@ from application.worker import (
     attachment_worker,
     ingest_worker,
     mcp_oauth,
-    mcp_oauth_status,
     remote_worker,
     sync,
     sync_worker,
@@ -219,12 +218,6 @@ def setup_periodic_tasks(sender, **kwargs):
 @celery.task(bind=True)
 def mcp_oauth_task(self, config, user):
     resp = mcp_oauth(self, config, user)
-    return resp
-
-
-@celery.task(bind=True)
-def mcp_oauth_status_task(self, task_id):
-    resp = mcp_oauth_status(self, task_id)
     return resp
 
 
