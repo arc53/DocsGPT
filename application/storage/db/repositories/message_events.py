@@ -95,6 +95,50 @@ class MessageEventsRepository:
             },
         )
 
+    def bulk_record(
+        self,
+        message_id: str,
+        events: list[tuple[int, str, dict]],
+    ) -> None:
+        """Append multiple events for ``message_id`` in one INSERT.
+
+        ``events`` is a list of ``(sequence_no, event_type, payload)``
+        tuples. SQLAlchemy ``executemany`` issues one bulk INSERT;
+        Postgres treats the whole batch as one statement, so an
+        IntegrityError on any row aborts the entire batch.
+
+        Caller contract: on IntegrityError, do NOT retry this method
+        with the same batch — fall back to per-row ``record()`` calls
+        (each in its own short-lived session) so a single colliding
+        seq doesn't drop the rest of the batch. ``BatchedJournalWriter``
+        in ``application/streaming/message_journal.py`` is the canonical
+        consumer.
+        """
+        if not events:
+            return
+        params = [
+            {
+                "message_id": str(message_id),
+                "sequence_no": int(seq),
+                "event_type": event_type,
+                "payload": json.dumps(payload if payload is not None else {}),
+            }
+            for seq, event_type, payload in events
+        ]
+        self._conn.execute(
+            text(
+                """
+                INSERT INTO message_events (
+                    message_id, sequence_no, event_type, payload
+                ) VALUES (
+                    CAST(:message_id AS uuid), :sequence_no, :event_type,
+                    CAST(:payload AS jsonb)
+                )
+                """
+            ),
+            params,
+        )
+
     def read_after(
         self,
         message_id: str,

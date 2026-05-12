@@ -188,3 +188,66 @@ class TestMessageEventsRepository:
         rows2 = list(repo.read_after(m2))
         assert len(rows1) == 1 and rows1[0]["payload"] == {"chunk": "msg1"}
         assert len(rows2) == 1 and rows2[0]["payload"] == {"chunk": "msg2"}
+
+    def test_bulk_record_inserts_all_rows_in_order(self, pg_conn):
+        """``bulk_record`` is the hot-path INSERT used by
+        ``BatchedJournalWriter``. All rows for one ``message_id`` land
+        in one statement; ``read_after`` returns them in seq order.
+        """
+        msg = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+
+        events = [
+            (0, "answer", {"chunk": "first"}),
+            (1, "answer", {"chunk": "second"}),
+            (2, "answer", {"chunk": "third"}),
+            (3, "end", {"type": "end"}),
+        ]
+        repo.bulk_record(msg, events)
+
+        rows = list(repo.read_after(msg))
+        assert [r["sequence_no"] for r in rows] == [0, 1, 2, 3]
+        assert [r["event_type"] for r in rows] == ["answer", "answer", "answer", "end"]
+        assert rows[0]["payload"] == {"chunk": "first"}
+        assert rows[3]["payload"] == {"type": "end"}
+
+    def test_bulk_record_empty_list_is_no_op(self, pg_conn):
+        msg = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.bulk_record(msg, [])
+        assert list(repo.read_after(msg)) == []
+
+    def test_bulk_record_collision_aborts_entire_batch(self, pg_conn):
+        """All-or-nothing contract: if any row in the batch collides
+        on the composite PK, Postgres aborts the whole INSERT. Caller
+        (``BatchedJournalWriter``) handles this by opening its own
+        short-lived ``db_session`` per flush, so the surrounding
+        transaction is isolated from the abort. Mirror that here by
+        wrapping the failing call in ``begin_nested`` (savepoint) so
+        the outer test transaction can keep running.
+        """
+        from sqlalchemy.exc import IntegrityError
+
+        msg = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        # Seed a row at seq=1 so the bulk batch will collide on it.
+        repo.record(msg, 1, "answer", {"prev": True})
+
+        events = [
+            (0, "answer", {"chunk": "a"}),
+            (1, "answer", {"chunk": "b"}),  # collides with seeded row
+            (2, "answer", {"chunk": "c"}),
+        ]
+        try:
+            with pg_conn.begin_nested():
+                repo.bulk_record(msg, events)
+        except IntegrityError:
+            pass
+        else:
+            pytest.fail("expected IntegrityError on duplicate seq")
+
+        # The bulk INSERT aborted — none of the three rows landed.
+        # Only the original seed row remains.
+        rows = list(repo.read_after(msg))
+        assert [r["sequence_no"] for r in rows] == [1]
+        assert rows[0]["payload"] == {"prev": True}

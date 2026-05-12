@@ -29,7 +29,10 @@ from application.storage.db.repositories.user_logs import UserLogsRepository
 from application.storage.db.session import db_readonly, db_session
 from application.events.publisher import publish_user_event
 from application.streaming.event_replay import format_sse_event
-from application.streaming.message_journal import record_event
+from application.streaming.message_journal import (
+    BatchedJournalWriter,
+    record_event,
+)
 from application.utils import check_required_fields
 
 logger = logging.getLogger(__name__)
@@ -338,12 +341,25 @@ class BaseAnswerResource:
                     reserved_message_id,
                 )
 
+        # One batched journal writer per stream. Per-yield record() calls
+        # buffer rows in memory and flush in bulk on size/time/lifecycle
+        # triggers — order-of-magnitude fewer PG commits than the prior
+        # one-INSERT-per-yield pattern, with a ≤100ms reconnect-visibility
+        # lag for events still sitting in the buffer. Live pubsub publishes
+        # still fire synchronously per record() so subscribers see events
+        # in real time.
+        journal_writer: Optional[BatchedJournalWriter] = (
+            BatchedJournalWriter(reserved_message_id)
+            if reserved_message_id
+            else None
+        )
+
         def _emit(payload: dict) -> str:
             """Format-and-journal one SSE event.
 
             When the stream has a reserved ``message_id`` (the WAL
             path), each yield gets a strictly monotonic ``sequence_no``
-            and is journaled to ``message_events`` plus published to
+            and is buffered to ``message_events`` plus published to
             ``channel:{message_id}`` so reconnecting clients can do
             snapshot+tail. The journal write is best-effort — failures
             log and don't break the live stream.
@@ -353,7 +369,7 @@ class BaseAnswerResource:
             reconnect path applies.
             """
             nonlocal sequence_no
-            if not reserved_message_id:
+            if not reserved_message_id or journal_writer is None:
                 return f"data: {json.dumps(payload)}\n\n"
             sequence_no += 1
             seq = sequence_no
@@ -363,7 +379,7 @@ class BaseAnswerResource:
                 else "data"
             )
             normalised = payload if isinstance(payload, dict) else {"value": payload}
-            record_event(reserved_message_id, seq, event_type, normalised)
+            journal_writer.record(seq, event_type, normalised)
             return format_sse_event(normalised, seq)
 
         try:
@@ -599,6 +615,10 @@ class BaseAnswerResource:
 
                 yield _emit({"type": "id", "id": str(conversation_id)})
                 yield _emit({"type": "end"})
+                # Drain the terminal ``end`` so a reconnecting client
+                # sees it on snapshot — same reason as the main exit.
+                if journal_writer is not None:
+                    journal_writer.close()
                 return
 
             if isNoneDoc:
@@ -747,8 +767,20 @@ class BaseAnswerResource:
                 )
 
             yield _emit({"type": "end"})
+            # Drain the journal buffer so the terminal ``end`` event is
+            # visible to any reconnecting client. Without this the
+            # client could snapshot up to the last flush boundary and
+            # then live-tail waiting for an ``end`` that's still
+            # sitting in memory.
+            if journal_writer is not None:
+                journal_writer.close()
         except GeneratorExit:
             logger.info(f"Stream aborted by client for question: {question[:50]}... ")
+            # Drain any buffered events before the terminal one-shot
+            # ``record_event`` below — keeps the journal's seq order
+            # contiguous (buffered events ... terminal event).
+            if journal_writer is not None:
+                journal_writer.flush()
             # Save partial response
 
             # Whether the DB row was flipped to ``complete`` during this
@@ -955,6 +987,10 @@ class BaseAnswerResource:
                     "error": "Please try again later. We apologize for any inconvenience.",
                 }
             )
+            # Drain the terminal ``error`` event we just yielded so a
+            # reconnecting client sees it on snapshot.
+            if journal_writer is not None:
+                journal_writer.close()
             return
 
     def process_response_stream(self, stream) -> Dict[str, Any]:
