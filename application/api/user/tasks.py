@@ -40,6 +40,7 @@ def ingest(
     filename,
     file_name_map=None,
     idempotency_key=None,
+    source_id=None,
 ):
     resp = ingest_worker(
         self,
@@ -51,16 +52,21 @@ def ingest(
         user,
         file_name_map=file_name_map,
         idempotency_key=idempotency_key,
+        source_id=source_id,
     )
     return resp
 
 
 @celery.task(**DURABLE_TASK)
 @with_idempotency(task_name="ingest_remote")
-def ingest_remote(self, source_data, job_name, user, loader, idempotency_key=None):
+def ingest_remote(
+    self, source_data, job_name, user, loader,
+    idempotency_key=None, source_id=None,
+):
     resp = remote_worker(
         self, source_data, job_name, user, loader,
         idempotency_key=idempotency_key,
+        source_id=source_id,
     )
     return resp
 
@@ -138,6 +144,7 @@ def ingest_connector_task(
     doc_id=None,
     sync_frequency="never",
     idempotency_key=None,
+    source_id=None,
 ):
     from application.worker import ingest_connector
 
@@ -155,6 +162,7 @@ def ingest_connector_task(
         doc_id=doc_id,
         sync_frequency=sync_frequency,
         idempotency_key=idempotency_key,
+        source_id=source_id,
     )
     return resp
 
@@ -196,6 +204,15 @@ def setup_periodic_tasks(sender, **kwargs):
         timedelta(hours=7),
         version_check_task.s(),
         name="version-check",
+    )
+    # Bound ``message_events`` growth — every streamed SSE chunk writes
+    # one row, so retained chats accumulate hundreds of rows per
+    # message. Reconnect-replay is only meaningful for streams the user
+    # could plausibly still be waiting on, so 14 days is generous.
+    sender.add_periodic_task(
+        timedelta(hours=24),
+        cleanup_message_events.s(),
+        name="cleanup-message-events",
     )
 
 
@@ -263,6 +280,32 @@ def reconciliation_task(self):
     from application.api.user.reconciliation import run_reconciliation
 
     return run_reconciliation()
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_message_events(self):
+    """Delete ``message_events`` rows older than the retention window.
+
+    Streamed answer responses write one journal row per SSE yield,
+    so unbounded growth would dominate Postgres for any retained-
+    conversations deployment. The reconnect-replay path only needs
+    rows for in-flight streams; 14 days covers paused/tool-action
+    flows comfortably.
+    """
+    from application.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from application.storage.db.engine import get_engine
+    from application.storage.db.repositories.message_events import (
+        MessageEventsRepository,
+    )
+
+    ttl_days = settings.MESSAGE_EVENTS_RETENTION_DAYS
+    engine = get_engine()
+    with engine.begin() as conn:
+        deleted = MessageEventsRepository(conn).cleanup_older_than(ttl_days)
+    return {"deleted": deleted, "ttl_days": ttl_days}
 
 
 @celery.task(bind=True, acks_late=False)

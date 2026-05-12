@@ -363,6 +363,36 @@ conversation_messages_table = Table(
     UniqueConstraint("conversation_id", "position", name="conversation_messages_conv_pos_uidx"),
 )
 
+# Per-yield journal of chat-stream events, used by Tier 2's snapshot+
+# tail reconnect: the route's GET reconnect endpoint reads
+# ``WHERE message_id = ? AND sequence_no > ?`` from this table before
+# tailing the live ``channel:{message_id}`` pub/sub. See
+# ``application/streaming/event_replay.py`` and migration 0007.
+message_events_table = Table(
+    "message_events",
+    metadata,
+    # PK is the composite ``(message_id, sequence_no)`` — it doubles as
+    # the snapshot read index (covering range scan on
+    # ``WHERE message_id = ? AND sequence_no > ?``).
+    Column(
+        "message_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversation_messages.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    ),
+    # Strictly monotonic per ``message_id``. Allocated by the route as it
+    # yields, so the writer is single-threaded for the lifetime of one
+    # stream — no contention, no SERIAL needed.
+    Column("sequence_no", Integer, primary_key=True, nullable=False),
+    Column("event_type", Text, nullable=False),
+    Column("payload", JSONB, nullable=False, server_default="{}"),
+    Column(
+        "created_at", DateTime(timezone=True), nullable=False, server_default=func.now()
+    ),
+)
+
+
 shared_conversations_table = Table(
     "shared_conversations",
     metadata,

@@ -513,4 +513,73 @@ class TestChatCompletionsHappyPath:
         assert resp.status_code == 200
         assert resp.mimetype == "text/event-stream"
 
+    def test_stream_handles_phase2_id_prefixed_chunks(self, pg_conn):
+        """Phase 2 wires complete_stream to emit ``id: <seq>\\n``
+        before each ``data:`` line. The v1 streaming consumer must
+        skip the id header and the informational ``message_id`` event,
+        not silently drop every chunk.
+        """
+        app = _build_app()
+
+        def _fake_translate(data, api_key):
+            return {"question": "hi"}
+
+        fake_processor = MagicMock()
+        fake_processor.decoded_token = {"sub": "u"}
+        fake_processor.conversation_id = "conv-1"
+        fake_processor.agent_config = {}
+        fake_processor.agent_id = None
+        fake_processor.model_id = "m"
+
+        def _fake_helper_complete_stream(**kw):
+            # Mirror the new wire format: id-prefixed records, plus
+            # the informational message_id event the v1 path doesn't
+            # have an analog for.
+            yield 'id: 0\ndata: {"type": "message_id", "message_id": "m-1"}\n\n'
+            yield 'id: 1\ndata: {"type": "id", "id": "conv-1"}\n\n'
+            yield 'id: 2\ndata: {"type": "answer", "answer": "hi"}\n\n'
+
+        translated_chunks: list = []
+
+        def _fake_translate_stream_event(event_data, completion_id, model_name):
+            translated_chunks.append(event_data)
+            return ['data: x\n\n']
+
+        fake_helper = MagicMock()
+        fake_helper.check_usage.return_value = None
+        fake_helper.complete_stream.side_effect = _fake_helper_complete_stream
+
+        with _patch_v1_db(pg_conn), patch(
+            "application.api.v1.routes.translate_request",
+            side_effect=_fake_translate,
+        ), patch(
+            "application.api.v1.routes.StreamProcessor",
+            return_value=fake_processor,
+        ), patch(
+            "application.api.v1.routes._V1AnswerHelper",
+            return_value=fake_helper,
+        ), patch(
+            "application.api.v1.routes.translate_stream_event",
+            side_effect=_fake_translate_stream_event,
+        ):
+            with app.test_client() as c:
+                resp = c.post(
+                    "/v1/chat/completions",
+                    headers={"Authorization": "Bearer x"},
+                    json={
+                        "messages": [{"role": "user", "content": "Hi"}],
+                        "stream": True,
+                    },
+                )
+                # Drain the response so the generator runs to completion.
+                list(resp.iter_encoded())
+
+        assert resp.status_code == 200
+        # message_id event is skipped (no v1 analog); id + answer are
+        # decoded and forwarded to the translator.
+        types_translated = [c.get("type") for c in translated_chunks]
+        assert "message_id" not in types_translated
+        assert "id" in types_translated
+        assert "answer" in types_translated
+
 

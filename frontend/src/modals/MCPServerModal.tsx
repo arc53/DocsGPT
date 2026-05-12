@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useSelector, useStore } from 'react-redux';
 
 import { baseURL } from '../api/client';
 import userService from '../api/services/userService';
+import type { RootState } from '../store';
 import Spinner from '../components/Spinner';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -33,6 +34,7 @@ export default function MCPServerModal({
 }: MCPServerModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
+  const store = useStore<RootState>();
 
   const authTypes = [
     { label: t('settings.tools.mcp.authTypes.none'), value: 'none' },
@@ -237,13 +239,63 @@ export default function MCPServerModal({
     let popupOpened = false;
     pollingCancelledRef.current = false;
 
+    /**
+     * Phase 4D: short-circuit the OAuth status poll when SSE has
+     * already delivered a terminal event for this task id (Phase 3A
+     * publishes ``mcp.oauth.{completed,failed}`` keyed on the task
+     * id). Non-terminal events (``in_progress``, ``awaiting_redirect``)
+     * carry no useful state for the UI — the OAuth ``authorization_url``
+     * comes only from the polling endpoint, so we MUST keep polling
+     * during the pre-redirect phase. Treating those events as
+     * "push is fresh, skip the network call" delayed the popup by up
+     * to 30s and risked losing the user-gesture window.
+     */
+    const checkSseTerminal = (): { data: any } | null => {
+      const state = store.getState();
+      if (state.notifications.health !== 'healthy') return null;
+      for (const event of state.notifications.recentEvents) {
+        if (event.scope?.id !== taskId) continue;
+        if (event.type === 'mcp.oauth.completed') {
+          const payload = (event.payload || {}) as Record<string, unknown>;
+          return {
+            data: {
+              status: 'completed',
+              task_id: taskId,
+              tools: payload.tools ?? [],
+              tools_count: payload.tools_count ?? 0,
+            },
+          };
+        }
+        if (event.type === 'mcp.oauth.failed') {
+          const payload = (event.payload || {}) as Record<string, unknown>;
+          return {
+            data: {
+              status: 'error',
+              task_id: taskId,
+              success: false,
+              message: (payload.error as string) ?? 'OAuth failed',
+            },
+          };
+        }
+      }
+      return null;
+    };
+
     const poll = async () => {
       if (pollingCancelledRef.current) return;
+
       try {
-        const resp = await userService.getMCPOAuthStatus(taskId, token);
+        const ssePush = checkSseTerminal();
+        const data: any =
+          ssePush !== null
+            ? ssePush.data
+            : await (async () => {
+                const resp = await userService.getMCPOAuthStatus(taskId, token);
+                if (pollingCancelledRef.current) return null;
+                return resp.json();
+              })();
         if (pollingCancelledRef.current) return;
-        const data = await resp.json();
-        if (pollingCancelledRef.current) return;
+        if (data === null) return;
 
         if (data.authorization_url && !popupOpened) {
           if (oauthPopupRef.current && !oauthPopupRef.current.closed) {

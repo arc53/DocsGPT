@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom';
 import { LoaderCircle, Mic, Square } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch, useSelector, useStore } from 'react-redux';
+
+import type { RootState } from '../store';
 
 import endpoints from '../api/endpoints';
 import userService from '../api/services/userService';
@@ -316,6 +318,7 @@ export default function MessageInput({
   const attachments = useSelector(selectAttachments);
 
   const dispatch = useDispatch();
+  const store = useStore<RootState>();
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -510,6 +513,11 @@ export default function MessageInput({
                           id: uiId,
                           updates: {
                             taskId: task.task_id,
+                            // Stash the server's attachment id so SSE
+                            // ``attachment.*`` events (Phase 3A) can
+                            // match this row by ``scope.id`` and drive
+                            // the per-attachment push-fresh poll gate.
+                            attachmentId: task.attachment_id,
                             status: 'processing',
                             progress: 10,
                           },
@@ -545,6 +553,7 @@ export default function MessageInput({
                           id: uiId,
                           updates: {
                             taskId: t.task_id,
+                            attachmentId: t.attachment_id,
                             status: 'processing',
                             progress: 10,
                           },
@@ -583,6 +592,7 @@ export default function MessageInput({
                         id: uiId,
                         updates: {
                           taskId: response.task_id,
+                          attachmentId: response.attachment_id,
                           status: 'processing',
                           progress: 10,
                         },
@@ -714,6 +724,7 @@ export default function MessageInput({
                     id: uniqueId,
                     updates: {
                       taskId: response.task_id,
+                      attachmentId: response.attachment_id,
                       status: 'processing',
                       progress: 10,
                     },
@@ -730,6 +741,7 @@ export default function MessageInput({
                       id: uniqueId,
                       updates: {
                         taskId: response.tasks[0].task_id,
+                        attachmentId: response.tasks[0].attachment_id,
                         status: 'processing',
                         progress: 10,
                       },
@@ -817,12 +829,33 @@ export default function MessageInput({
   });
 
   useEffect(() => {
+    /**
+     * Phase 4C: skip the per-attachment poll round-trip when SSE is
+     * driving this attachment's lifecycle. The slice's
+     * ``attachment.*`` ``extraReducer`` flips ``status``/``progress``
+     * directly on incoming events, so a network poll would only
+     * confirm what's already on screen. Mirrors the per-task gate
+     * pattern from Upload.tsx / FileTree.tsx.
+     */
+    const PUSH_FRESH_WINDOW_MS = 30_000;
+    const isAttachmentPushFresh = (attachment: {
+      attachmentId?: string;
+      lastEventAt?: number;
+    }): boolean => {
+      const state = store.getState();
+      if (state.notifications.health !== 'healthy') return false;
+      if (!attachment.attachmentId) return false;
+      if (!attachment.lastEventAt) return false;
+      return Date.now() - attachment.lastEventAt < PUSH_FRESH_WINDOW_MS;
+    };
+
     const checkTaskStatus = () => {
       const processingAttachments = attachments.filter(
         (att) => att.status === 'processing' && att.taskId,
       );
 
       processingAttachments.forEach((attachment) => {
+        if (isAttachmentPushFresh(attachment)) return;
         userService
           .getTaskStatus(attachment.taskId!, null)
           .then((data) => data.json())
@@ -873,7 +906,7 @@ export default function MessageInput({
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [attachments, dispatch]);
+  }, [attachments, dispatch, store]);
 
   const handleInput = useCallback(() => {
     if (inputRef.current) {

@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useSelector, useStore } from 'react-redux';
 import { selectToken } from '../preferences/preferenceSlice';
+import type { RootState } from '../store';
 import { formatBytes } from '../utils/stringUtils';
 import Chunks from './Chunks';
 import ContextMenu, { MenuOption } from './ContextMenu';
@@ -56,6 +57,7 @@ const FileTree: React.FC<FileTreeProps> = ({
   onBackToDocuments,
 }) => {
   const { t } = useTranslation();
+  const store = useStore<RootState>();
   const [loading, setLoading] = useLoaderState(true, 500);
   const [error, setError] = useState<string | null>(null);
   const [directoryStructure, setDirectoryStructure] =
@@ -315,9 +317,90 @@ const FileTree: React.FC<FileTreeProps> = ({
 
         const maxAttempts = 30;
         const pollInterval = 2000;
+        // Phase 3B: skip the network poll when SSE has delivered an
+        // event for THIS source within the freshness window. The
+        // backend's reingest_source_worker publishes
+        // ``source.ingest.*`` keyed on the resolved ``source_id`` (the
+        // ``manage_source_files`` route returns it explicitly so we can
+        // match without consulting any slice). When push is unhealthy
+        // or events haven't arrived for this source, fall through to
+        // polling — same fallback semantics as Upload.tsx.
+        const PUSH_FRESH_WINDOW_MS = 30_000;
+        const reingestSourceId: string | undefined = result.source_id;
+        // Cutoff so we don't pick up terminal events from a *previous*
+        // reingest of the same source — the backend's
+        // ``source.ingest.*`` payload doesn't carry a Celery task id,
+        // so source_id alone is ambiguous when ops repeat.
+        const opStartedAt = Date.now();
+
+        const isReingestPushFresh = (): boolean => {
+          if (!reingestSourceId) return false;
+          const state = store.getState();
+          if (state.notifications.health !== 'healthy') return false;
+          // The slice's ``recentEvents`` is the cheapest cross-tab
+          // freshness signal we have without dispatching a dedicated
+          // reingest task into ``uploadSlice``. Walk the bounded ring
+          // (≤100 entries) and accept the freshest matching event,
+          // skipping anything older than this op's start so a stale
+          // event from a prior reingest doesn't bypass polling.
+          const now = Date.now();
+          for (const event of state.notifications.recentEvents) {
+            if (event.scope?.id !== reingestSourceId) continue;
+            const ts = event.ts ? Date.parse(event.ts) : NaN;
+            if (!Number.isFinite(ts) || ts < opStartedAt) continue;
+            if (now - ts < PUSH_FRESH_WINDOW_MS) {
+              return true;
+            }
+          }
+          return false;
+        };
+
+        const isTerminalFromSse = (): 'completed' | 'failed' | null => {
+          if (!reingestSourceId) return null;
+          const events = store.getState().notifications.recentEvents;
+          for (const event of events) {
+            if (event.scope?.id !== reingestSourceId) continue;
+            const ts = event.ts ? Date.parse(event.ts) : NaN;
+            if (!Number.isFinite(ts) || ts < opStartedAt) continue;
+            if (event.type === 'source.ingest.completed') return 'completed';
+            if (event.type === 'source.ingest.failed') return 'failed';
+          }
+          return null;
+        };
+
+        const refreshStructure = async (): Promise<boolean> => {
+          const structureResponse = await userService.getDirectoryStructure(
+            docId,
+            token,
+          );
+          const structureData = await structureResponse.json();
+          if (structureData && structureData.directory_structure) {
+            setDirectoryStructure(structureData.directory_structure);
+            currentOpRef.current = null;
+            return true;
+          }
+          return false;
+        };
 
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           try {
+            // Push-fresh? Skip the round-trip; the slice's
+            // ``recentEvents`` is the source of truth for terminal
+            // status this iteration.
+            if (isReingestPushFresh()) {
+              const terminal = isTerminalFromSse();
+              if (terminal === 'completed') {
+                if (await refreshStructure()) return true;
+                break;
+              }
+              if (terminal === 'failed') {
+                console.error('Reingest task failed (per SSE)');
+                break;
+              }
+              await new Promise((resolve) => setTimeout(resolve, pollInterval));
+              continue;
+            }
+
             const statusResponse = await userService.getTaskStatus(
               result.reingest_task_id,
               token,
@@ -331,18 +414,7 @@ const FileTree: React.FC<FileTreeProps> = ({
 
             if (statusData.status === 'SUCCESS') {
               console.log('Task completed successfully');
-
-              const structureResponse = await userService.getDirectoryStructure(
-                docId,
-                token,
-              );
-              const structureData = await structureResponse.json();
-
-              if (structureData && structureData.directory_structure) {
-                setDirectoryStructure(structureData.directory_structure);
-                currentOpRef.current = null;
-                return true;
-              }
+              if (await refreshStructure()) return true;
               break;
             } else if (statusData.status === 'FAILURE') {
               console.error('Task failed');

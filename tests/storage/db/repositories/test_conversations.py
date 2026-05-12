@@ -5,7 +5,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 
-from application.storage.db.repositories.conversations import ConversationsRepository
+from application.storage.db.repositories.conversations import (
+    ConversationsRepository,
+    MessageUpdateOutcome,
+)
 
 
 def _repo(conn) -> ConversationsRepository:
@@ -478,10 +481,10 @@ class TestReserveAndFinalizeMessage:
         msg = repo.reserve_message(
             conv["id"], prompt="q", placeholder_response="ph",
         )
-        ok = repo.update_message_by_id(
+        outcome = repo.update_message_by_id(
             msg["id"], {"response": "real answer", "status": "complete"},
         )
-        assert ok is True
+        assert outcome is MessageUpdateOutcome.UPDATED
         refreshed = repo.get_message_at(conv["id"], 0)
         assert refreshed["response"] == "real answer"
         assert refreshed["status"] == "complete"
@@ -502,7 +505,61 @@ class TestReserveAndFinalizeMessage:
 
     def test_update_message_by_id_rejects_non_uuid(self, pg_conn):
         repo = _repo(pg_conn)
-        assert repo.update_message_by_id("not-a-uuid", {"status": "complete"}) is False
+        assert (
+            repo.update_message_by_id("not-a-uuid", {"status": "complete"})
+            is MessageUpdateOutcome.INVALID
+        )
+
+    def test_update_message_by_id_distinguishes_already_complete(self, pg_conn):
+        """When the row is already ``complete``, a subsequent
+        ``only_if_non_terminal=True`` finalize must report
+        ``ALREADY_COMPLETE`` — not ``UPDATED`` and not the generic
+        not-found case. The SSE abort handler relies on this to
+        journal ``end`` instead of a spurious ``error`` when the
+        normal-path finalize wins the race against a client
+        disconnect.
+        """
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"], prompt="q", placeholder_response="ph",
+        )
+        first = repo.update_message_by_id(
+            msg["id"], {"response": "ok", "status": "complete"},
+            only_if_non_terminal=True,
+        )
+        assert first is MessageUpdateOutcome.UPDATED
+        second = repo.update_message_by_id(
+            msg["id"], {"response": "ok again", "status": "complete"},
+            only_if_non_terminal=True,
+        )
+        assert second is MessageUpdateOutcome.ALREADY_COMPLETE
+        # The second attempt must NOT have overwritten anything.
+        refreshed = repo.get_message_at(conv["id"], 0)
+        assert refreshed["response"] == "ok"
+
+    def test_update_message_by_id_distinguishes_already_failed(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"], prompt="q", placeholder_response="ph",
+        )
+        assert repo.update_message_by_id(
+            msg["id"], {"response": "boom", "status": "failed"},
+            only_if_non_terminal=True,
+        ) is MessageUpdateOutcome.UPDATED
+        assert repo.update_message_by_id(
+            msg["id"], {"response": "late", "status": "complete"},
+            only_if_non_terminal=True,
+        ) is MessageUpdateOutcome.ALREADY_FAILED
+
+    def test_update_message_by_id_unknown_uuid_is_not_found(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.update_message_by_id(
+            "00000000-0000-0000-0000-000000000000",
+            {"status": "complete"},
+            only_if_non_terminal=True,
+        ) is MessageUpdateOutcome.NOT_FOUND
 
     def test_update_message_status_only(self, pg_conn):
         repo = _repo(pg_conn)

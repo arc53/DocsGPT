@@ -33,7 +33,7 @@ class TestIngestTask:
 
         mock_worker.assert_called_once_with(
             ANY, "dir", ["pdf"], "job1", "/path", "file.pdf", "user1",
-            file_name_map=None, idempotency_key=None,
+            file_name_map=None, idempotency_key=None, source_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -50,7 +50,7 @@ class TestIngestTask:
 
         mock_worker.assert_called_once_with(
             ANY, "dir", ["pdf"], "job1", "/path", "file.pdf", "user1",
-            file_name_map=name_map, idempotency_key=None,
+            file_name_map=name_map, idempotency_key=None, source_id=None,
         )
 
 
@@ -66,7 +66,7 @@ class TestIngestRemoteTask:
 
         mock_worker.assert_called_once_with(
             ANY, {"url": "http://x"}, "job1", "user1", "web",
-            idempotency_key=None,
+            idempotency_key=None, source_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -169,6 +169,7 @@ class TestIngestConnectorTask:
             doc_id=None,
             sync_frequency="never",
             idempotency_key=None,
+            source_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -207,6 +208,7 @@ class TestIngestConnectorTask:
             doc_id="doc1",
             sync_frequency="daily",
             idempotency_key=None,
+            source_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -220,7 +222,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 7
+        assert sender.add_periodic_task.call_count == 8
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -241,6 +243,9 @@ class TestSetupPeriodicTasks:
         assert calls[5][1].get("name") == "reconciliation"
         # version-check (every 7h)
         assert calls[6][0][0] == timedelta(hours=7)
+        # message_events retention sweep (24h)
+        assert calls[7][0][0] == timedelta(hours=24)
+        assert calls[7][1].get("name") == "cleanup-message-events"
 
 
 class TestMcpOauthTask:
@@ -449,7 +454,7 @@ class TestIngestIdempotency:
 
         def _fake_worker(self, directory, formats, job_name, file_path,
                          filename, user, file_name_map=None,
-                         idempotency_key=None):
+                         idempotency_key=None, source_id=None):
             worker_calls.append(filename)
             return {"status": "ok", "directory": directory}
 

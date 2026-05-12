@@ -2,8 +2,9 @@ import { useCallback, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch, useSelector, useStore } from 'react-redux';
 
+import type { RootState } from '../store';
 import userService from '../api/services/userService';
 import { getSessionToken } from '../utils/providerUtils';
 import Dropdown from '../components/Dropdown';
@@ -298,6 +299,28 @@ function Upload({
 
   const { t } = useTranslation();
   const dispatch = useDispatch();
+  const store = useStore<RootState>();
+
+  /**
+   * Skip a poll cycle when this *specific* task is hearing from its
+   * worker over SSE. We require: (a) the global push channel is
+   * healthy, (b) the task has a server-side ``sourceId`` we can match
+   * SSE events to, and (c) we've seen at least one matching event for
+   * it within the last ``PUSH_FRESH_WINDOW_MS``. Without (c) — e.g.
+   * the worker doesn't publish (connector path), or events for this
+   * source haven't started arriving yet — the polling loop runs as
+   * normal so the toast can never wedge waiting for events that won't
+   * come.
+   */
+  const PUSH_FRESH_WINDOW_MS = 30_000;
+  const isTaskPushFresh = (clientTaskId: string): boolean => {
+    const state = store.getState();
+    if (state.notifications.health !== 'healthy') return false;
+    const task = state.upload.tasks.find((t) => t.id === clientTaskId);
+    if (!task || !task.sourceId) return false;
+    if (!task.lastEventAt) return false;
+    return Date.now() - task.lastEventAt < PUSH_FRESH_WINDOW_MS;
+  };
 
   const ingestorOptions: IngestorOption[] = IngestorFormSchemas.filter(
     (schema) => (schema.validate ? schema.validate() : true),
@@ -337,8 +360,74 @@ function Upload({
   const trackTraining = useCallback(
     (backendTaskId: string, clientTaskId: string) => {
       let timeoutId: number | null = null;
+      // Local guard against double-firing on push-flap: one poll tick
+      // could close out a task via SSE while a stale polling tick is
+      // still in flight.
+      let terminalHandled = false;
+
+      const handleTerminalFromSSE = (task: { status: string }) => {
+        if (terminalHandled) return;
+        // Hold ``terminalHandled`` low until the side effects actually
+        // run — otherwise a ``getDocs`` failure leaves the task in a
+        // limbo where the polling-success branch self-gates and never
+        // refreshes the source list or fires ``onSuccessfulUpload``.
+        getDocs(token)
+          .then((docs) => {
+            terminalHandled = true;
+            dispatch(setSourceDocs(docs));
+            if (Array.isArray(docs) && task.status === 'completed') {
+              const existingDocIds = new Set(
+                (Array.isArray(sourceDocs) ? sourceDocs : [])
+                  .map((doc: Doc) => doc?.id)
+                  .filter((id): id is string => Boolean(id)),
+              );
+              const newDoc = docs.find(
+                (doc: Doc) => doc.id && !existingDocIds.has(doc.id),
+              );
+              if (newDoc) {
+                if (selectedDocs.length === 1) {
+                  dispatch(setSelectedDocs([newDoc]));
+                } else {
+                  dispatch(setSelectedDocs([...selectedDocs, newDoc]));
+                }
+              }
+            }
+            if (task.status === 'completed') onSuccessfulUpload?.();
+          })
+          .catch((err) => {
+            console.error(
+              'SSE-driven post-completion source-list refresh failed:',
+              err,
+            );
+            // Leave ``terminalHandled`` false so the rescheduled poll
+            // can run the polling-success path's side effects when the
+            // server returns SUCCESS.
+            timeoutId = window.setTimeout(poll, 1000);
+          });
+      };
 
       const poll = () => {
+        // Per-task push-fresh? Skip the network poll — the slice's
+        // extraReducer already updated the task in-place from a
+        // matching SSE event. If push is healthy but no event has
+        // landed for this task yet (e.g. worker hasn't published
+        // ``queued``), fall through to polling so the toast can never
+        // wedge.
+        if (isTaskPushFresh(clientTaskId)) {
+          const task = store
+            .getState()
+            .upload.tasks.find((t) => t.id === clientTaskId);
+          if (
+            task &&
+            (task.status === 'completed' || task.status === 'failed')
+          ) {
+            handleTerminalFromSSE(task);
+            return;
+          }
+          timeoutId = window.setTimeout(poll, 5000);
+          return;
+        }
+
         userService
           .getTaskStatus(backendTaskId, null)
           .then((response) => response.json())
@@ -357,6 +446,9 @@ function Upload({
                 clearTimeout(timeoutId);
                 timeoutId = null;
               }
+
+              if (terminalHandled) return;
+              terminalHandled = true;
 
               const docs = await getDocs(token);
               dispatch(setSourceDocs(docs));
@@ -499,13 +591,17 @@ function Upload({
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          const parsed = JSON.parse(xhr.responseText) as { task_id?: string };
+          const parsed = JSON.parse(xhr.responseText) as {
+            task_id?: string;
+            source_id?: string;
+          };
           if (parsed.task_id) {
             dispatch(
               updateUploadTask({
                 id: clientTaskId,
                 updates: {
                   taskId: parsed.task_id,
+                  sourceId: parsed.source_id,
                   status: 'training',
                   progress: 0,
                 },
@@ -627,13 +723,17 @@ function Upload({
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          const response = JSON.parse(xhr.responseText) as { task_id?: string };
+          const response = JSON.parse(xhr.responseText) as {
+            task_id?: string;
+            source_id?: string;
+          };
           if (response.task_id) {
             dispatch(
               updateUploadTask({
                 id: clientTaskId,
                 updates: {
                   taskId: response.task_id,
+                  sourceId: response.source_id,
                   status: 'training',
                   progress: 0,
                 },
