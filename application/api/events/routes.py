@@ -120,7 +120,9 @@ def _oldest_retained_id(redis_client, user_id: str) -> Optional[str]:
         return None
 
 
-def _allow_replay(redis_client, user_id: str) -> bool:
+def _allow_replay(
+    redis_client, user_id: str, last_event_id: Optional[str]
+) -> bool:
     """Per-user sliding-window snapshot-replay budget.
 
     Increments a Redis counter under
@@ -129,12 +131,39 @@ def _allow_replay(redis_client, user_id: str) -> bool:
     Redis is unavailable, fails open — the existing per-user
     concurrency cap still bounds parallel enumeration. Returns
     ``True`` when the budget setting is 0 (disabled) or non-positive.
+
+    Budget is only consumed when the connect can plausibly do snapshot
+    work. A fresh client (``last_event_id is None``) connecting to an
+    empty backlog (``XLEN == 0``) returns ``True`` without INCR'ing —
+    this catches the React-StrictMode dev-burst case where double
+    mounts of an empty-backlog user would otherwise trip 429 in 5
+    seconds and lock out further connects until the window rolls.
     """
     budget = int(settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW)
     if budget <= 0:
         return True
     if redis_client is None:
         return True
+
+    # Cheap pre-check: only INCR when we might actually replay. XLEN
+    # is one Redis op; the alternative (INCR every connect) is two
+    # ops AND wrongly counts no-op probes. The check is conservative:
+    # if ``last_event_id`` is set we always INCR, even if the cursor
+    # has already overtaken the latest entry — that case is rare and
+    # short-lived, and probing further would mean a redundant XRANGE.
+    if last_event_id is None:
+        try:
+            if int(redis_client.xlen(stream_key(user_id))) == 0:
+                return True
+        except Exception:
+            # XLEN probe failed; fall through to the INCR path so a
+            # transient Redis hiccup can't bypass the budget.
+            logger.debug(
+                "XLEN probe failed for replay budget check user=%s; "
+                "proceeding to INCR",
+                user_id,
+            )
+
     window = max(1, int(settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS))
     key = replay_budget_key(user_id)
     try:
@@ -326,7 +355,7 @@ def stream_events() -> Response:
     # cursor pinned and lets the frontend back off until the window
     # slides (eventStreamClient.ts treats 429 as escalated backoff).
     if push_enabled and redis_client is not None and not _allow_replay(
-        redis_client, user_id
+        redis_client, user_id, last_event_id
     ):
         if counted:
             try:

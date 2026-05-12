@@ -440,7 +440,7 @@ class TestReplayRateLimit:
         with patch("application.api.events.routes.settings") as mock_settings:
             mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 0
             mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
-            assert _allow_replay(MagicMock(), "alice") is True
+            assert _allow_replay(MagicMock(), "alice", "1735682400000-0") is True
 
     def test_allow_replay_returns_true_when_redis_unavailable(self):
         from application.api.events.routes import _allow_replay
@@ -448,7 +448,45 @@ class TestReplayRateLimit:
         with patch("application.api.events.routes.settings") as mock_settings:
             mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 5
             mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
-            assert _allow_replay(None, "alice") is True
+            assert _allow_replay(None, "alice", "1735682400000-0") is True
+
+    def test_allow_replay_skips_incr_when_no_cursor_and_empty_backlog(self):
+        """Fresh client with no cursor and an empty user stream cannot
+        do snapshot work — INCR'ing the counter would needlessly
+        burn budget. Catches the React-StrictMode dev-burst case where
+        double-mounted components would otherwise 429 in 5 connects.
+        """
+        from application.api.events.routes import _allow_replay
+
+        with patch("application.api.events.routes.settings") as mock_settings:
+            mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 3
+            mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
+            redis = MagicMock()
+            redis.xlen.return_value = 0
+
+            # 5 connects in a row, all with no cursor — none consume
+            # budget because the backlog is empty.
+            for _ in range(5):
+                assert _allow_replay(redis, "alice", None) is True
+
+            redis.xlen.assert_called()
+            redis.incr.assert_not_called()
+
+    def test_allow_replay_incrs_when_no_cursor_but_backlog_present(self):
+        """A no-cursor connect against a non-empty backlog *will* do
+        snapshot work, so it consumes budget normally.
+        """
+        from application.api.events.routes import _allow_replay
+
+        with patch("application.api.events.routes.settings") as mock_settings:
+            mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 5
+            mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
+            redis = MagicMock()
+            redis.xlen.return_value = 42
+            redis.incr.return_value = 1
+
+            assert _allow_replay(redis, "alice", None) is True
+            redis.incr.assert_called_once()
 
     def test_allow_replay_passes_until_budget_exhausted(self):
         from application.api.events.routes import _allow_replay
@@ -465,12 +503,14 @@ class TestReplayRateLimit:
 
             redis.incr.side_effect = _incr
 
+            # Cursor set → XLEN short-circuit doesn't fire, INCR always runs.
+            cursor = "1735682400000-0"
             # First three pass.
-            assert _allow_replay(redis, "alice") is True
-            assert _allow_replay(redis, "alice") is True
-            assert _allow_replay(redis, "alice") is True
+            assert _allow_replay(redis, "alice", cursor) is True
+            assert _allow_replay(redis, "alice", cursor) is True
+            assert _allow_replay(redis, "alice", cursor) is True
             # Fourth refused.
-            assert _allow_replay(redis, "alice") is False
+            assert _allow_replay(redis, "alice", cursor) is False
             # TTL only seeded on the first INCR (when count == 1).
             redis.expire.assert_called_once()
 
@@ -482,7 +522,7 @@ class TestReplayRateLimit:
             mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
             redis = MagicMock()
             redis.incr.side_effect = Exception("redis down")
-            assert _allow_replay(redis, "alice") is True
+            assert _allow_replay(redis, "alice", "1735682400000-0") is True
 
     def test_replay_backlog_passes_count_to_xrange(self):
         from application.api.events.routes import _replay_backlog
