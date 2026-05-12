@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     PARSE_IMAGE_REMOTE: bool = False
     DOCLING_OCR_ENABLED: bool = False  # Enable OCR for docling parsers (PDF, images)
     DOCLING_OCR_ATTACHMENTS_ENABLED: bool = False  # Enable OCR for docling when parsing attachments
-    VECTOR_STORE: str = "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector"
+    VECTOR_STORE: str = "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector" or "oracle"
     RETRIEVERS_ENABLED: list = ["classic_rag"]
     AGENT_NAME: str = "classic"
     FALLBACK_LLM_PROVIDER: Optional[str] = None  # provider for fallback llm
@@ -156,6 +156,12 @@ class Settings(BaseSettings):
     # LanceDB vectorstore config
     LANCEDB_PATH: str = "./data/lancedb"  # Path where LanceDB stores its local data
     LANCEDB_TABLE_NAME: Optional[str] = "docsgpts"  # Name of the table to use for storing vectors
+
+    # Oracle Database 23ai vectorstore config
+    ORACLE_USER: Optional[str] = None  # Oracle database username
+    ORACLE_PASSWORD: Optional[str] = None  # Oracle database password
+    ORACLE_DSN: Optional[str] = None  # Oracle DSN / Easy Connect string (e.g., "host:port/service_name")
+    ORACLE_CONNECTION_STRING: Optional[str] = None  # Full Oracle connection string (user/password@dsn)
 
     FLASK_DEBUG_MODE: bool = False
     STORAGE_TYPE: str = "local"  # local or s3
