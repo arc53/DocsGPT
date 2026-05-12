@@ -315,45 +315,23 @@ const FileTree: React.FC<FileTreeProps> = ({
         }
         console.log('Reingest task started:', result.reingest_task_id);
 
-        const maxAttempts = 30;
-        const pollInterval = 2000;
-        // Phase 3B: skip the network poll when SSE has delivered an
-        // event for THIS source within the freshness window. The
-        // backend's reingest_source_worker publishes
-        // ``source.ingest.*`` keyed on the resolved ``source_id`` (the
-        // ``manage_source_files`` route returns it explicitly so we can
-        // match without consulting any slice). When push is unhealthy
-        // or events haven't arrived for this source, fall through to
-        // polling — same fallback semantics as Upload.tsx.
-        const PUSH_FRESH_WINDOW_MS = 30_000;
+        // SSE is the sole driver here. The backend's
+        // ``reingest_source_worker`` publishes ``source.ingest.*``
+        // keyed on the resolved ``source_id`` (the
+        // ``manage_source_files`` route returns it explicitly so we
+        // can match without consulting any slice). Walk
+        // ``notifications.recentEvents`` for the terminal event tagged
+        // with our source and run the structure refresh; if SSE never
+        // delivers (channel drop, accepted risk per the runbook) the
+        // op silently times out at the configured cap.
         const reingestSourceId: string | undefined = result.source_id;
         // Cutoff so we don't pick up terminal events from a *previous*
         // reingest of the same source — the backend's
         // ``source.ingest.*`` payload doesn't carry a Celery task id,
         // so source_id alone is ambiguous when ops repeat.
         const opStartedAt = Date.now();
-
-        const isReingestPushFresh = (): boolean => {
-          if (!reingestSourceId) return false;
-          const state = store.getState();
-          if (state.notifications.health !== 'healthy') return false;
-          // The slice's ``recentEvents`` is the cheapest cross-tab
-          // freshness signal we have without dispatching a dedicated
-          // reingest task into ``uploadSlice``. Walk the bounded ring
-          // (≤100 entries) and accept the freshest matching event,
-          // skipping anything older than this op's start so a stale
-          // event from a prior reingest doesn't bypass polling.
-          const now = Date.now();
-          for (const event of state.notifications.recentEvents) {
-            if (event.scope?.id !== reingestSourceId) continue;
-            const ts = event.ts ? Date.parse(event.ts) : NaN;
-            if (!Number.isFinite(ts) || ts < opStartedAt) continue;
-            if (now - ts < PUSH_FRESH_WINDOW_MS) {
-              return true;
-            }
-          }
-          return false;
-        };
+        const MAX_WAIT_MS = 5 * 60_000;
+        const TICK_MS = 500;
 
         const isTerminalFromSse = (): 'completed' | 'failed' | null => {
           if (!reingestSourceId) return null;
@@ -382,50 +360,18 @@ const FileTree: React.FC<FileTreeProps> = ({
           return false;
         };
 
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-          try {
-            // Push-fresh? Skip the round-trip; the slice's
-            // ``recentEvents`` is the source of truth for terminal
-            // status this iteration.
-            if (isReingestPushFresh()) {
-              const terminal = isTerminalFromSse();
-              if (terminal === 'completed') {
-                if (await refreshStructure()) return true;
-                break;
-              }
-              if (terminal === 'failed') {
-                console.error('Reingest task failed (per SSE)');
-                break;
-              }
-              await new Promise((resolve) => setTimeout(resolve, pollInterval));
-              continue;
-            }
-
-            const statusResponse = await userService.getTaskStatus(
-              result.reingest_task_id,
-              token,
-            );
-            const statusData = await statusResponse.json();
-
-            console.log(
-              `Task status (attempt ${attempt + 1}):`,
-              statusData.status,
-            );
-
-            if (statusData.status === 'SUCCESS') {
-              console.log('Task completed successfully');
-              if (await refreshStructure()) return true;
-              break;
-            } else if (statusData.status === 'FAILURE') {
-              console.error('Task failed');
-              break;
-            }
-
-            await new Promise((resolve) => setTimeout(resolve, pollInterval));
-          } catch (error) {
-            console.error('Error polling task status:', error);
+        const deadline = Date.now() + MAX_WAIT_MS;
+        while (Date.now() < deadline) {
+          const terminal = isTerminalFromSse();
+          if (terminal === 'completed') {
+            if (await refreshStructure()) return true;
             break;
           }
+          if (terminal === 'failed') {
+            console.error('Reingest task failed (per SSE)');
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, TICK_MS));
         }
       } else {
         throw new Error(

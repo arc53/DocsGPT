@@ -751,10 +751,11 @@ class TestManageSourceFilesIdempotency:
         assert apply_mock.call_count == 1
         # Loser's response carries the winner's task_id, not the
         # original 200-with-added_files payload.
-        # Phase 3A: ``manage_source_files`` aliases ``task_id`` ->
+        # ``manage_source_files`` aliases ``task_id`` ->
         # ``reingest_task_id`` in the cached payload so the dedup
-        # response shape matches the fresh-request response (the
-        # frontend keys reingest polling on ``reingest_task_id``).
+        # response shape matches the fresh-request response (FileTree
+        # keys reingest correlation on ``reingest_task_id`` /
+        # ``source_id``).
         assert second.json["reingest_task_id"] == first.json["reingest_task_id"]
         # Cached ``source_id`` must equal the real source row id (not
         # the helper's uuid5-of-key) so FileTree's SSE correlation on
@@ -772,8 +773,8 @@ class TestManageSourceFilesIdempotency:
         place. The reingest worker publishes SSE events tagged with the
         real source row id, so the cached response had to be patched to
         match what the fresh response returns — otherwise FileTree's
-        SSE-fresh correlation silently fails and the frontend falls
-        back to polling on every idempotent retry.
+        SSE correlation silently fails on every idempotent retry and
+        the user never sees the directory refresh.
         """
         from application.api.user.sources.upload import ManageSourceFiles
 
