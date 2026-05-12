@@ -77,7 +77,7 @@ py==1.11.0
 pydantic
 pydantic-core
 pydantic-settings
-pypdf==6.9.2
+pypdf==6.10.2
 python-dateutil==2.9.0.post0
 python-dotenv
 python-jose==3.5.0
