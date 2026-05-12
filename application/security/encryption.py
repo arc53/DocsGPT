@@ -2,12 +2,16 @@ import base64
 import json
 import os
 
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers import algorithms, Cipher, modes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from application.core.settings import settings
+
+_VERSION_GCM = b"\x01"
 
 
 def _derive_key(user_id: str, salt: bytes) -> bytes:
@@ -31,18 +35,16 @@ def encrypt_credentials(credentials: dict, user_id: str) -> str:
         return ""
     try:
         salt = os.urandom(16)
-        iv = os.urandom(16)
+        nonce = os.urandom(12)
         key = _derive_key(user_id, salt)
 
-        json_str = json.dumps(credentials)
+        aad = user_id.encode()
+        json_bytes = json.dumps(credentials).encode()
 
-        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-        encryptor = cipher.encryptor()
+        aesgcm = AESGCM(key)
+        ciphertext_with_tag = aesgcm.encrypt(nonce, json_bytes, aad)
 
-        padded_data = _pad_data(json_str.encode())
-        encrypted_data = encryptor.update(padded_data) + encryptor.finalize()
-
-        result = salt + iv + encrypted_data
+        result = _VERSION_GCM + salt + nonce + ciphertext_with_tag
         return base64.b64encode(result).decode()
     except Exception as e:
         print(f"Warning: Failed to encrypt credentials: {e}")
@@ -55,22 +57,50 @@ def decrypt_credentials(encrypted_data: str, user_id: str) -> dict:
     try:
         data = base64.b64decode(encrypted_data.encode())
 
-        salt = data[:16]
-        iv = data[16:32]
-        encrypted_content = data[32:]
+        # Try GCM first (version-prefixed format). If the GCM tag check fails
+        # (InvalidTag), fall back to legacy CBC — this avoids the 1/256 collision
+        # where a legacy salt's first byte happens to be 0x01.
+        if data[0:1] == _VERSION_GCM:
+            try:
+                return _decrypt_gcm(data[1:], user_id)
+            except InvalidTag:
+                pass
 
-        key = _derive_key(user_id, salt)
-
-        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-        decryptor = cipher.decryptor()
-
-        decrypted_padded = decryptor.update(encrypted_content) + decryptor.finalize()
-        decrypted_data = _unpad_data(decrypted_padded)
-
-        return json.loads(decrypted_data.decode())
+        return _decrypt_legacy_cbc(data, user_id)
     except Exception as e:
         print(f"Warning: Failed to decrypt credentials: {e}")
         return {}
+
+
+def _decrypt_gcm(data: bytes, user_id: str) -> dict:
+    salt = data[:16]
+    nonce = data[16:28]
+    ciphertext_with_tag = data[28:]
+
+    key = _derive_key(user_id, salt)
+    aad = user_id.encode()
+
+    aesgcm = AESGCM(key)
+    plaintext = aesgcm.decrypt(nonce, ciphertext_with_tag, aad)
+
+    return json.loads(plaintext.decode())
+
+
+def _decrypt_legacy_cbc(data: bytes, user_id: str) -> dict:
+    """Decrypt data encrypted with the old AES-CBC format for backward compatibility."""
+    salt = data[:16]
+    iv = data[16:32]
+    encrypted_content = data[32:]
+
+    key = _derive_key(user_id, salt)
+
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    decryptor = cipher.decryptor()
+
+    decrypted_padded = decryptor.update(encrypted_content) + decryptor.finalize()
+    decrypted_data = _unpad_data(decrypted_padded)
+
+    return json.loads(decrypted_data.decode())
 
 
 def _pad_data(data: bytes) -> bytes:
