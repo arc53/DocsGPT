@@ -63,9 +63,16 @@ class MessageEventsRepository:
     ) -> None:
         """Append a single event to the journal.
 
-        ``payload`` is preserved as-is when not ``None`` (lists, scalars,
-        and dicts all round-trip via JSONB); ``None`` substitutes an
-        empty object so the column's NOT NULL invariant holds.
+        At this raw repo layer ``payload`` is preserved as-is when not
+        ``None`` (lists, scalars, and dicts all round-trip via JSONB);
+        ``None`` substitutes an empty object so the column's NOT NULL
+        invariant holds. The streaming-route wrapper
+        ``application/streaming/message_journal.py::record_event``
+        tightens this contract to dicts only — the live and replay
+        paths reconstruct non-dict payloads differently, so the wrapper
+        rejects them at the gate. Direct callers of this repo method
+        (cleanup tasks, tests, future ad-hoc consumers) keep the wider
+        JSONB-compatible surface.
 
         Raises ``sqlalchemy.exc.IntegrityError`` on duplicate
         ``(message_id, sequence_no)`` and ``DataError`` on a malformed
