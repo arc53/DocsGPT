@@ -232,7 +232,21 @@ def build_message_event_stream(
                 seq = int(row["sequence_no"])
                 payload = row.get("payload")
                 if not isinstance(payload, dict):
-                    payload = {"type": row.get("event_type", "unknown")}
+                    # ``record_event`` rejects non-dict payloads at the
+                    # write gate, so this can only be a legacy row from
+                    # before that contract or a direct SQL insert. The
+                    # original synthetic fallback (``{"type": event_type}``)
+                    # used to ship a malformed envelope here — drop the
+                    # row instead so a corrupt journal entry doesn't
+                    # poison a reconnect.
+                    logger.warning(
+                        "Skipping non-dict payload from message_events: "
+                        "message_id=%s seq=%s type=%s",
+                        message_id,
+                        seq,
+                        row.get("event_type"),
+                    )
+                    continue
                 replay_buffer.append(format_sse_event(payload, seq))
                 if max_replayed_seq is None or seq > max_replayed_seq:
                     max_replayed_seq = seq
