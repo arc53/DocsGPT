@@ -11,18 +11,11 @@ export interface Attachment {
   taskId: string; // Server-assigned celery task ID (used for API calls)
   /**
    * Server-assigned attachment id (stable across the lifecycle —
-   * Phase 3A's ``attachment.*`` SSE events use this in ``scope.id``).
-   * Set as soon as the upload response returns. Distinct from
-   * ``id`` (client) and ``taskId`` (celery).
+   * ``attachment.*`` SSE events use this in ``scope.id``). Set as
+   * soon as the upload response returns. Distinct from ``id``
+   * (client) and ``taskId`` (celery).
    */
   attachmentId?: string;
-  /**
-   * ``Date.now()`` of the last SSE event that matched this attachment
-   * by ``attachmentId``. Drives the per-attachment push-freshness
-   * gate in MessageInput's polling loop — same pattern as
-   * ``UploadTask.lastEventAt``.
-   */
-  lastEventAt?: number;
   token_count?: number;
 }
 
@@ -176,16 +169,16 @@ export const uploadSlice = createSlice({
           : undefined;
 
       // Attachment events flow through the same SSE pipe; route them
-      // to ``state.attachments`` matched by ``attachmentId``. Each
-      // tab's slice handles attachments it knows about — events for
-      // attachments uploaded in another session are silently dropped.
+      // to ``state.attachments`` matched by ``attachmentId``. SSE is
+      // the sole driver of attachment state transitions — polling
+      // has been removed. Events for attachments uploaded in another
+      // session are silently dropped.
       if (e.type.startsWith('attachment.') && scopeId) {
         const attachment = state.attachments.find(
           (a) => a.attachmentId === scopeId,
         );
         if (attachment) {
           const payload = (e.payload || {}) as Record<string, unknown>;
-          attachment.lastEventAt = Date.now();
           switch (e.type) {
             case 'attachment.queued':
             case 'attachment.processing.progress': {
@@ -208,13 +201,11 @@ export const uploadSlice = createSlice({
             case 'attachment.completed': {
               attachment.status = 'completed';
               attachment.progress = 100;
-              // Mirror the polling path (MessageInput.tsx:870):
-              // replace the client-generated uuid with the server's
+              // Replace the client-generated uuid with the server's
               // attachment id so question submission
               // (Conversation.tsx:174) sends an id the backend can
-              // resolve. Without this, push-fresh attachments skip
-              // polling and get submitted with the UI uuid, and the
-              // backend silently drops them from the message context.
+              // resolve. Without this the backend would silently drop
+              // the attachment from the message context.
               attachment.id = scopeId;
               const tokenCount = Number(payload.token_count);
               if (Number.isFinite(tokenCount)) {
