@@ -62,9 +62,28 @@ def publish_user_event(
             pointer that lets the frontend filter without parsing the
             payload.
 
-    Never raises. Returns ``None`` when push is disabled, the payload
-    fails to serialize, Redis is unavailable, or both writes fail. A
-    non-``None`` return implies the event reached the durable backlog.
+    Never raises.
+
+    A non-``None`` return is the Redis Streams id of the journaled
+    entry; ``None`` means the event reached neither the durable backlog
+    nor live subscribers. The five reasons we return ``None`` (in the
+    order the function checks them):
+
+    1. Missing ``user_id`` or ``event_type`` — caller bug; logged warn.
+    2. ``settings.ENABLE_SSE_PUSH`` is False — operator-controlled master
+       switch (incident response). No log; routine.
+    3. Payload is not JSON-serialisable — caller bug; logged warn.
+    4. Redis client is unavailable — get_redis_instance returned None.
+       Logged debug; routine on infra outages.
+    5. ``XADD`` raised — journal write failed. The live publish is then
+       skipped so subscribers don't receive an id-less envelope that
+       would bypass the SSE route's dedup floor. Logged exception.
+
+    Every current call site treats the publish as fire-and-forget and
+    ignores the return value, so the distinction above is purely
+    diagnostic — surfacing the reason from logs, not from a typed
+    return. If a future caller needs to react differently per reason,
+    promote this to an enum/dataclass return.
     """
     if not user_id or not event_type:
         logger.warning(
