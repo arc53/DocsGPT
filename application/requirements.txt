@@ -52,6 +52,7 @@ networkx==3.6.1
 numpy==2.4.4
 openai==2.32.0
 openapi3-parser==1.1.22
+oracledb>=2.0.0        
 opentelemetry-distro>=0.50b0,<1
 opentelemetry-exporter-otlp>=1.29.0,<2
 opentelemetry-instrumentation-celery>=0.50b0,<1
