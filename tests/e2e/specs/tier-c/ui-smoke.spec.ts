@@ -292,8 +292,10 @@ test.describe('tier-c · UI smoke', () => {
       const newChat = page.getByRole('link', { name: /new chat/i }).first();
       await expect(newChat).toBeVisible();
       await newChat.click();
-      // Clicking "New Chat" must not navigate us off the root route.
-      await expect(page).toHaveURL(/127\.0\.0\.1:5179\/?$/);
+      // Clicking "New Chat" lands on the empty-conversation sentinel
+      // route. Root or /c/new are both acceptable — the SSE branch made
+      // /c/new the canonical fresh-chat URL.
+      await expect(page).toHaveURL(/127\.0\.0\.1:5179\/(c\/new)?$/);
     } finally {
       await context.close();
     }
