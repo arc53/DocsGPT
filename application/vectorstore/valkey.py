@@ -17,6 +17,7 @@ try:
         GlideClient,
         GlideClientConfiguration,
         NodeAddress,
+        ReturnField,
         ServerCredentials,
         TagField,
         TextField,
@@ -37,6 +38,15 @@ from application.vectorstore.base import BaseVectorStore
 from application.vectorstore.document_class import Document
 
 logger = logging.getLogger(__name__)
+
+# Characters that must be escaped in Valkey tag field query values.
+_TAG_SPECIAL_CHARS = set(r".,<>{}[]\"':;!@#$%^&*()-+=~ /")
+
+# Batch size for DELETE operations in delete_index.
+_DELETE_BATCH_SIZE = 100
+
+# Page size for paginated scan in delete_index / get_chunks.
+_SCAN_PAGE_SIZE = 10000
 
 
 class ValkeyStore(BaseVectorStore):
@@ -77,16 +87,18 @@ class ValkeyStore(BaseVectorStore):
         """
         addresses = [NodeAddress(host=settings.VALKEY_HOST, port=settings.VALKEY_PORT)]
 
-        if settings.VALKEY_PASSWORD:
+        if settings.VALKEY_PASSWORD is not None and settings.VALKEY_PASSWORD != "":
             config = GlideClientConfiguration(
                 addresses=addresses,
                 use_tls=settings.VALKEY_USE_TLS,
                 credentials=ServerCredentials(password=settings.VALKEY_PASSWORD),
+                request_timeout=5000,
             )
         else:
             config = GlideClientConfiguration(
                 addresses=addresses,
                 use_tls=settings.VALKEY_USE_TLS,
+                request_timeout=5000,
             )
 
         return GlideClient.create(config)
@@ -121,6 +133,24 @@ class ValkeyStore(BaseVectorStore):
                 logger.error(f"Error creating Valkey index: {e}")
                 raise
 
+    @staticmethod
+    def _escape_tag_value(value: str) -> str:
+        """Escape special characters for Valkey tag field queries.
+
+        Args:
+            value: The raw tag value to escape.
+
+        Returns:
+            The escaped string safe for use in @field:{...} queries.
+        """
+        escaped = []
+        for ch in value:
+            if ch in _TAG_SPECIAL_CHARS:
+                escaped.append(f"\\{ch}")
+            else:
+                escaped.append(ch)
+        return "".join(escaped)
+
     def _doc_key(self, doc_id: str) -> str:
         """Generate a hash key for a document.
 
@@ -145,15 +175,22 @@ class ValkeyStore(BaseVectorStore):
         query_vector = self._embedding.embed_query(question)
         vector_bytes = struct.pack(f"{len(query_vector)}f", *query_vector)
 
-        # KNN search with source_id filter
-        query = f"@source_id:{{{self._source_id}}} =>[KNN {k} @embedding $BLOB AS score]"
+        escaped_source = self._escape_tag_value(self._source_id)
+        query = f"@source_id:{{{escaped_source}}} =>[KNN {k} @embedding $BLOB AS score]"
 
         try:
             results = ft.search(
                 self._client,
                 self._index_name,
                 query,
-                FtSearchOptions(params={"BLOB": vector_bytes}),
+                FtSearchOptions(
+                    params={"BLOB": vector_bytes},
+                    return_fields=[
+                        ReturnField("content"),
+                        ReturnField("source_id"),
+                        ReturnField("metadata"),
+                    ],
+                ),
             )
 
             return self._parse_search_results(results)
@@ -242,13 +279,17 @@ class ValkeyStore(BaseVectorStore):
 
         Returns:
             List of document IDs that were added.
+
+        Raises:
+            Exception: If any write fails. Successfully written documents
+                prior to the failure are not rolled back.
         """
         if not texts:
             return []
 
         embeddings = self._embedding.embed_documents(texts)
         metadatas = metadatas or [{}] * len(texts)
-        doc_ids = []
+        doc_ids: List[str] = []
 
         for text, embedding, metadata in zip(texts, embeddings, metadatas):
             doc_id = str(uuid.uuid4())
@@ -266,31 +307,65 @@ class ValkeyStore(BaseVectorStore):
                 self._client.hset(key, fields)
                 doc_ids.append(doc_id)
             except Exception as e:
-                logger.error(f"Error adding document to Valkey: {e}")
+                logger.error(
+                    f"Error adding document to Valkey (wrote {len(doc_ids)}/{len(texts)} "
+                    f"before failure): {e}"
+                )
                 raise
 
         return doc_ids
 
-    def delete_index(self, *args, **kwargs):
-        """Delete all documents for this source_id.
+    def _paginated_source_scan(self) -> List[str]:
+        """Scan all keys matching this source_id, handling pagination.
 
-        Searches for all documents with matching source_id and deletes them.
+        Returns:
+            List of key strings for all documents with this source_id.
         """
-        try:
-            query = f"@source_id:{{{self._source_id}}}"
+        all_keys: List[str] = []
+        offset = 0
+        escaped_source = self._escape_tag_value(self._source_id)
+        query = f"@source_id:{{{escaped_source}}}"
+
+        while True:
             results = ft.search(
                 self._client,
                 self._index_name,
                 query,
-                FtSearchOptions(limit=FtSearchLimit(0, 10000)),
+                FtSearchOptions(limit=FtSearchLimit(offset, _SCAN_PAGE_SIZE)),
             )
 
-            if results and len(results) > 1:
-                for entry in results[1:]:
-                    if isinstance(entry, dict):
-                        for key in entry.keys():
-                            key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
-                            self._client.delete([key_str])
+            if not results or len(results) < 2:
+                break
+
+            page_keys: List[str] = []
+            for entry in results[1:]:
+                if isinstance(entry, dict):
+                    for key in entry.keys():
+                        key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
+                        page_keys.append(key_str)
+
+            all_keys.extend(page_keys)
+
+            # If we got fewer results than page size, we've reached the end
+            if len(page_keys) < _SCAN_PAGE_SIZE:
+                break
+            offset += _SCAN_PAGE_SIZE
+
+        return all_keys
+
+    def delete_index(self, *args, **kwargs):
+        """Delete all documents for this source_id.
+
+        Searches for all documents with matching source_id and deletes them
+        in batches. Handles sources with more than 10,000 documents via pagination.
+        """
+        try:
+            keys = self._paginated_source_scan()
+
+            # Batch deletes for efficiency
+            for i in range(0, len(keys), _DELETE_BATCH_SIZE):
+                batch = keys[i : i + _DELETE_BATCH_SIZE]
+                self._client.delete(batch)
 
         except Exception as e:
             logger.error(f"Error deleting index from Valkey: {e}", exc_info=True)
@@ -306,27 +381,51 @@ class ValkeyStore(BaseVectorStore):
             List of chunk dicts with doc_id, text, and metadata.
         """
         try:
-            query = f"@source_id:{{{self._source_id}}}"
-            results = ft.search(
-                self._client,
-                self._index_name,
-                query,
-                FtSearchOptions(limit=FtSearchLimit(0, 10000)),
-            )
+            escaped_source = self._escape_tag_value(self._source_id)
+            query = f"@source_id:{{{escaped_source}}}"
 
-            chunks = []
-            if results and len(results) > 1:
+            chunks: List[Dict[str, Any]] = []
+            offset = 0
+
+            while True:
+                results = ft.search(
+                    self._client,
+                    self._index_name,
+                    query,
+                    FtSearchOptions(
+                        limit=FtSearchLimit(offset, _SCAN_PAGE_SIZE),
+                        return_fields=[
+                            ReturnField("content"),
+                            ReturnField("source_id"),
+                            ReturnField("metadata"),
+                        ],
+                    ),
+                )
+
+                if not results or len(results) < 2:
+                    break
+
+                page_count = 0
                 for entry in results[1:]:
                     if isinstance(entry, dict):
                         for key, fields in entry.items():
-                            key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
+                            key_str = (
+                                key.decode("utf-8") if isinstance(key, bytes) else str(key)
+                            )
                             doc_id = key_str.replace(self._prefix, "", 1)
                             field_dict = self._decode_fields(fields)
-                            chunks.append({
-                                "doc_id": doc_id,
-                                "text": field_dict.get("content", ""),
-                                "metadata": self._parse_metadata(field_dict),
-                            })
+                            chunks.append(
+                                {
+                                    "doc_id": doc_id,
+                                    "text": field_dict.get("content", ""),
+                                    "metadata": self._parse_metadata(field_dict),
+                                }
+                            )
+                            page_count += 1
+
+                if page_count < _SCAN_PAGE_SIZE:
+                    break
+                offset += _SCAN_PAGE_SIZE
 
             return chunks
 
