@@ -164,6 +164,9 @@ class Settings(BaseSettings):
     VALKEY_USE_TLS: bool = False
     VALKEY_INDEX_NAME: str = "docsgpt"
     VALKEY_PREFIX: str = "doc:"
+    VALKEY_DISTANCE_METRIC: str = "cosine"  # "cosine", "l2", or "ip"
+    VALKEY_VECTOR_TYPE: str = "float32"  # "float32" (only option in valkey-glide-sync 2.x)
+    VALKEY_VECTOR_ALGORITHM: str = "hnsw"  # "hnsw" or "flat"
 
     FLASK_DEBUG_MODE: bool = False
     STORAGE_TYPE: str = "local"  # local or s3
