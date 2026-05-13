@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
+import userService from '../api/services/userService';
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 
@@ -88,12 +89,9 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
       authWindowRef.current = null;
       cleanup();
 
-      const apiHost = import.meta.env.VITE_API_HOST;
-      const authResponse = await fetch(
-        `${apiHost}/api/connectors/auth?provider=${provider}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
+      const authResponse = await userService.getConnectorAuthUrl(
+        provider,
+        token,
       );
       if (!mountedRef.current) return;
 

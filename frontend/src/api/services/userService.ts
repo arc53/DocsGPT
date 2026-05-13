@@ -1,11 +1,12 @@
 import { getSessionToken } from '../../utils/providerUtils';
-import apiClient from '../client';
+import apiClient, { throttledApiClient } from '../client';
 import endpoints from '../endpoints';
 
 const userService = {
-  getConfig: (): Promise<any> => apiClient.get(endpoints.USER.CONFIG, null),
+  getConfig: (): Promise<any> =>
+    throttledApiClient.get(endpoints.USER.CONFIG, null),
   getNewToken: (): Promise<any> =>
-    apiClient.get(endpoints.USER.NEW_TOKEN, null),
+    throttledApiClient.get(endpoints.USER.NEW_TOKEN, null),
   getDocs: (token: string | null): Promise<any> =>
     apiClient.get(`${endpoints.USER.DOCS}`, token),
   getDocsWithPagination: (query: string, token: string | null): Promise<any> =>
@@ -17,9 +18,9 @@ const userService = {
   deleteAPIKey: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.DELETE_API_KEY, data, token),
   getAgent: (id: string, token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.AGENT(id), token),
+    throttledApiClient.get(endpoints.USER.AGENT(id), token),
   getAgents: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.AGENTS, token),
+    throttledApiClient.get(endpoints.USER.AGENTS, token),
   createAgent: (data: any, token: string | null): Promise<any> =>
     apiClient.postFormData(endpoints.USER.CREATE_AGENT, data, token),
   updateAgent: (
@@ -31,19 +32,19 @@ const userService = {
   deleteAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.delete(endpoints.USER.DELETE_AGENT(id), token),
   getPinnedAgents: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.PINNED_AGENTS, token),
+    throttledApiClient.get(endpoints.USER.PINNED_AGENTS, token),
   togglePinAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.TOGGLE_PIN_AGENT(id), {}, token),
   getSharedAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.SHARED_AGENT(id), token),
   getSharedAgents: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.SHARED_AGENTS, token),
+    throttledApiClient.get(endpoints.USER.SHARED_AGENTS, token),
   shareAgent: (data: any, token: string | null): Promise<any> =>
     apiClient.put(endpoints.USER.SHARE_AGENT, data, token),
   removeSharedAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.delete(endpoints.USER.REMOVE_SHARED_AGENT(id), token),
   getTemplateAgents: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.TEMPLATE_AGENTS, token),
+    throttledApiClient.get(endpoints.USER.TEMPLATE_AGENTS, token),
   adoptAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.ADOPT_AGENT(id), {}, token),
   getAgentWebhook: (id: string, token: string | null): Promise<any> =>
@@ -147,7 +148,7 @@ const userService = {
     path?: string,
     search?: string,
   ): Promise<any> =>
-    apiClient.get(
+    throttledApiClient.get(
       endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search),
       token,
     ),
@@ -162,7 +163,7 @@ const userService = {
   updateChunk: (data: any, token: string | null): Promise<any> =>
     apiClient.put(endpoints.USER.UPDATE_CHUNK, data, token),
   getDirectoryStructure: (docId: string, token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.DIRECTORY_STRUCTURE(docId), token),
+    throttledApiClient.get(endpoints.USER.DIRECTORY_STRUCTURE(docId), token),
   manageSourceFiles: (data: FormData, token: string | null): Promise<any> =>
     apiClient.postFormData(endpoints.USER.MANAGE_SOURCE_FILES, data, token),
   testMCPConnection: (data: any, token: string | null): Promise<any> =>
@@ -170,7 +171,7 @@ const userService = {
   saveMCPServer: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MCP_SAVE_SERVER, data, token),
   getMCPAuthStatus: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.MCP_AUTH_STATUS, token),
+    throttledApiClient.get(endpoints.USER.MCP_AUTH_STATUS, token),
   syncConnector: (
     docId: string,
     provider: string,
@@ -187,8 +188,50 @@ const userService = {
       token,
     );
   },
+  getConnectorAuthUrl: (provider: string, token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.CONNECTOR_AUTH(provider), token),
+  getConnectorFiles: (
+    data: any,
+    token: string | null,
+    signal?: AbortSignal,
+  ): Promise<any> =>
+    throttledApiClient.post(
+      endpoints.USER.CONNECTOR_FILES,
+      data,
+      token,
+      {},
+      signal,
+    ),
+  validateConnectorSession: (
+    provider: string,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.post(
+      endpoints.USER.CONNECTOR_VALIDATE_SESSION,
+      {
+        provider,
+        session_token: getSessionToken(provider),
+      },
+      token,
+    ),
+  disconnectConnector: (
+    provider: string,
+    sessionToken: string,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.post(
+      endpoints.USER.CONNECTOR_DISCONNECT,
+      { provider, session_token: sessionToken },
+      token,
+    ),
+  textToSpeech: (
+    text: string,
+    token: string | null,
+    signal?: AbortSignal,
+  ): Promise<any> =>
+    apiClient.post(endpoints.USER.TTS, { text }, token, {}, signal),
   getAgentFolders: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.AGENT_FOLDERS, token),
+    throttledApiClient.get(endpoints.USER.AGENT_FOLDERS, token),
   createAgentFolder: (
     data: { name: string; parent_id?: string },
     token: string | null,
