@@ -513,11 +513,11 @@ class TestChatCompletionsHappyPath:
         assert resp.status_code == 200
         assert resp.mimetype == "text/event-stream"
 
-    def test_stream_handles_phase2_id_prefixed_chunks(self, pg_conn):
-        """Phase 2 wires complete_stream to emit ``id: <seq>\\n``
-        before each ``data:`` line. The v1 streaming consumer must
-        skip the id header and the informational ``message_id`` event,
-        not silently drop every chunk.
+    def test_stream_handles_id_prefixed_chunks(self, pg_conn):
+        """``complete_stream`` emits ``id: <seq>\\n`` before each
+        ``data:`` line. The v1 streaming consumer must skip the id
+        header and the informational ``message_id`` event, not silently
+        drop every chunk.
         """
         app = _build_app()
 

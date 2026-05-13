@@ -53,37 +53,8 @@ def publish_user_event(
 ) -> Optional[str]:
     """Publish a user-scoped event; return the Redis Streams id or ``None``.
 
-    Args:
-        user_id: typically ``decoded_token["sub"]``; the per-user Redis
-            stream / pub-sub channel keys are derived from this value.
-        event_type: dotted name, e.g. ``"source.ingest.progress"``.
-        payload: event-specific dict; must be JSON-serializable.
-        scope: optional ``{"kind": "source", "id": "..."}`` resource
-            pointer that lets the frontend filter without parsing the
-            payload.
-
-    Never raises.
-
-    A non-``None`` return is the Redis Streams id of the journaled
-    entry; ``None`` means the event reached neither the durable backlog
-    nor live subscribers. The five reasons we return ``None`` (in the
-    order the function checks them):
-
-    1. Missing ``user_id`` or ``event_type`` — caller bug; logged warn.
-    2. ``settings.ENABLE_SSE_PUSH`` is False — operator-controlled master
-       switch (incident response). No log; routine.
-    3. Payload is not JSON-serialisable — caller bug; logged warn.
-    4. Redis client is unavailable — get_redis_instance returned None.
-       Logged debug; routine on infra outages.
-    5. ``XADD`` raised — journal write failed. The live publish is then
-       skipped so subscribers don't receive an id-less envelope that
-       would bypass the SSE route's dedup floor. Logged exception.
-
-    Every current call site treats the publish as fire-and-forget and
-    ignores the return value, so the distinction above is purely
-    diagnostic — surfacing the reason from logs, not from a typed
-    return. If a future caller needs to react differently per reason,
-    promote this to an enum/dataclass return.
+    Fire-and-forget: never raises. ``None`` means the event reached
+    neither the journal nor live subscribers (see runbook for causes).
     """
     if not user_id or not event_type:
         logger.warning(

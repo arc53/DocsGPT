@@ -5,8 +5,9 @@ import {
   selectLastEventId,
   sseHealthChanged,
   sseLastEventIdAdvanced,
+  sseLastEventIdReset,
 } from '../notifications/notificationsSlice';
-import { selectToken } from '../preferences/preferenceSlice';
+import { selectToken, setToken } from '../preferences/preferenceSlice';
 import type { AppDispatch, RootState } from '../store';
 
 import { connectEventStream } from './eventStreamClient';
@@ -46,7 +47,35 @@ export function useEventStream(): void {
       // owns an independent SSE connection and Redux store, so every
       // active tab tracks its own replay cursor.
       onLastEventId: (id) => dispatch(sseLastEventIdAdvanced(id)),
+      // Server emitted ``id:`` with an empty value — WHATWG cursor reset.
+      // Mirror the slice so the next reconnect doesn't resend a stale id.
+      onLastEventIdReset: () => dispatch(sseLastEventIdReset()),
       onHealthChange: (health) => dispatch(sseHealthChanged(health)),
+      // SSE 401 loop bail-out. Clear the stored token AND dispatch
+      // ``setToken(null)`` so ``useAuth`` regenerates a fresh
+      // ``session_jwt`` in-session; the Redux change also flips this
+      // hook's ``[token]`` dep, tearing down and respawning the
+      // connection with the new token. Without the dispatch a
+      // ``session_jwt`` user is stuck until a hard reload.
+      onAuthFailure: () => {
+        console.error(
+          '[useEventStream] giving up after repeated 401s on /api/events',
+        );
+        try {
+          localStorage.removeItem('authToken');
+        } catch {
+          // localStorage unavailable (private mode, etc.) — nothing to do.
+        }
+        dispatch(setToken(null));
+      },
+      // Surface a warning when the non-401 error budget is exhausted so
+      // the connection going dark isn't completely silent. Doesn't block
+      // UI — just observable in devtools.
+      onPermanentFailure: () => {
+        console.warn(
+          '[useEventStream] SSE connection failed permanently after repeated errors',
+        );
+      },
     });
 
     return () => {

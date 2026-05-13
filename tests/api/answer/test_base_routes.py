@@ -343,12 +343,12 @@ class TestProcessResponseStreamExtended:
             result = resource.process_response_stream(iter(stream))
             assert result["thought"] == "thinking..."
 
-    def test_handles_phase2_id_prefixed_chunks(self, mock_mongo_db, flask_app):
-        """Phase 2 wires ``complete_stream`` to emit ``id: <seq>\\n``
-        before each ``data:`` line so reconnects can resume. The
-        non-streaming ``/api/answer`` consumer must skip the ``id:``
-        header (and the informational ``message_id`` event) without
-        breaking JSON decoding.
+    def test_handles_id_prefixed_chunks(self, mock_mongo_db, flask_app):
+        """``complete_stream`` emits ``id: <seq>\\n`` before each
+        ``data:`` line so reconnects can resume. The non-streaming
+        ``/api/answer`` consumer must skip the ``id:`` header (and the
+        informational ``message_id`` event) without breaking JSON
+        decoding.
         """
         from application.api.answer.routes.base import BaseAnswerResource
 
@@ -896,18 +896,17 @@ def _patch_db_session(conn):
         "application.api.answer.services.conversation_service.db_readonly",
         _yield,
     ), patch(
-        # Phase 2 wiring: ``record_event`` opens its own short-lived
-        # ``db_session`` for cross-connection visibility. In tests we
-        # route it back to the same ``pg_conn`` so the journal write
-        # can see the message row the conversation_service just wrote
-        # in this transaction.
+        # ``record_event`` opens its own short-lived ``db_session`` for
+        # cross-connection visibility. In tests we route it back to the
+        # same ``pg_conn`` so the journal write can see the message row
+        # the conversation_service just wrote in this transaction.
         "application.streaming.message_journal.db_session",
         _yield,
     ), patch(
-        # Phase 2B-3: ``complete_stream`` reads ``latest_sequence_no``
-        # via ``db_readonly`` to seed continuation runs. Same patch
-        # reason as the journal — keep the read on the same pg_conn
-        # so it sees uncommitted writes from this transaction.
+        # ``complete_stream`` reads ``latest_sequence_no`` via
+        # ``db_readonly`` to seed continuation runs. Same patch reason
+        # as the journal — keep the read on the same pg_conn so it sees
+        # uncommitted writes from this transaction.
         "application.api.answer.routes.base.db_readonly",
         _yield,
     ):
@@ -916,7 +915,7 @@ def _patch_db_session(conn):
 
 def _extract_sse_data(chunk: str) -> str:
     """Pull the ``data:`` payload from an SSE record, ignoring any
-    ``id:`` header introduced by the Phase 2 journal wiring.
+    ``id:`` header introduced by the journal wiring.
     """
     for line in chunk.split("\n"):
         if line.startswith("data:"):
@@ -1178,3 +1177,102 @@ class TestCompleteStreamWalAcceptance:
             msgs = ConversationsRepository(pg_conn).get_messages(str(convs[0][0]))
             assert len(msgs) == 1
             assert msgs[0]["request_id"] == sse_request_id
+
+
+@pytest.mark.unit
+class TestStreamingHeartbeatSeed:
+    """Regression guard: when the row flips to ``streaming`` we must seed
+    ``last_heartbeat_at`` so the watchdog doesn't fall back to
+    ``timestamp`` (creation time) on slow LLM cold-starts (>idle_secs).
+    """
+
+    def test_heartbeat_seeded_on_first_chunk(self, mock_mongo_db, flask_app):
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+            mock_agent.gen.return_value = iter(
+                [{"answer": "a"}, {"answer": "b"}]
+            )
+            mock_agent.compression_metadata = None
+            mock_agent.compression_saved = False
+            mock_agent.tool_calls = []
+            mock_agent.tool_executor = None
+
+            resource.conversation_service = MagicMock()
+            resource.conversation_service.save_conversation.return_value = "conv1"
+            resource.conversation_service.save_user_question.return_value = {
+                "conversation_id": "conv1",
+                "message_id": "msg1",
+                "request_id": "req1",
+            }
+
+            list(
+                resource.complete_stream(
+                    question="Q",
+                    agent=mock_agent,
+                    conversation_id="conv1",
+                    user_api_key=None,
+                    decoded_token={"sub": "u"},
+                    should_save_conversation=True,
+                    model_id="gpt-4",
+                )
+            )
+
+            # update_message_status flips the row to ``streaming`` exactly
+            # once (idempotent via streaming_marked).
+            status_calls = [
+                c for c in resource.conversation_service
+                .update_message_status.call_args_list
+                if c.args[1] == "streaming"
+            ]
+            assert len(status_calls) == 1
+            assert status_calls[0].args[0] == "msg1"
+
+            # heartbeat seed runs exactly once at the same flip — multiple
+            # chunks don't re-stamp inside this window (the throttled
+            # _heartbeat_streaming path is gated by STREAM_HEARTBEAT_INTERVAL).
+            hb_calls = (
+                resource.conversation_service.heartbeat_message.call_args_list
+            )
+            assert len(hb_calls) == 1
+            assert hb_calls[0].args[0] == "msg1"
+
+    def test_heartbeat_seed_skipped_without_reserved_message_id(
+        self, mock_mongo_db, flask_app,
+    ):
+        """No DB-backed message row → no heartbeat call (and no error)."""
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+            mock_agent.gen.return_value = iter([{"answer": "a"}])
+            mock_agent.compression_metadata = None
+            mock_agent.compression_saved = False
+            mock_agent.tool_calls = []
+            mock_agent.tool_executor = None
+
+            resource.conversation_service = MagicMock()
+            resource.conversation_service.save_conversation.return_value = "conv1"
+            # save_user_question returns no message_id → reservation absent
+            resource.conversation_service.save_user_question.return_value = {
+                "conversation_id": "conv1",
+                "message_id": None,
+                "request_id": "req1",
+            }
+
+            list(
+                resource.complete_stream(
+                    question="Q",
+                    agent=mock_agent,
+                    conversation_id="conv1",
+                    user_api_key=None,
+                    decoded_token={"sub": "u"},
+                    should_save_conversation=True,
+                    model_id="gpt-4",
+                )
+            )
+
+            resource.conversation_service.heartbeat_message.assert_not_called()

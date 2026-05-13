@@ -1,4 +1,4 @@
-// Phase 3 Tier-B · B17 image serve endpoint.
+// Tier-B · B17 image serve endpoint.
 /**
  * Exercises `GET /api/images/<path:image_path>` in
  * `application/api/user/attachments/routes.py` — the static-ish endpoint

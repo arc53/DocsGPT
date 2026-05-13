@@ -227,9 +227,17 @@ export const uploadSlice = createSlice({
 
       if (!e.type.startsWith('source.ingest.')) return;
       if (!scopeId) return;
+      // ``source.ingest.*`` payloads do not carry a celery task_id
+      // (see ``application/worker.py`` — only ``source_id`` /
+      // ``job_name`` / ``filename`` are published), so ``sourceId``
+      // is the only correlation key. If the task hasn't yet recorded
+      // its ``sourceId`` (xhr.onload race), the event is left to
+      // ``trackTraining``'s ``recentEvents`` scan to recover.
       const task = state.tasks.find((t) => t.sourceId === scopeId);
       if (!task) return;
       const payload = (e.payload || {}) as Record<string, unknown>;
+      const wasTerminal =
+        task.status === 'completed' || task.status === 'failed';
 
       switch (e.type) {
         case 'source.ingest.queued':
@@ -260,13 +268,16 @@ export const uploadSlice = createSlice({
             task.progress = 100;
             task.tokenLimitReached = true;
             task.errorMessage = undefined;
-            task.dismissed = false;
+            // Only un-dismiss on the initial terminal transition;
+            // duplicate envelopes (StrictMode remount, reconnect
+            // overlap) must not re-pop a user-dismissed toast.
+            if (!wasTerminal) task.dismissed = false;
           } else {
             task.status = 'completed';
             task.progress = 100;
             task.errorMessage = undefined;
             task.tokenLimitReached = false;
-            task.dismissed = false;
+            if (!wasTerminal) task.dismissed = false;
           }
           break;
         case 'source.ingest.failed':
@@ -275,7 +286,7 @@ export const uploadSlice = createSlice({
             typeof payload.error === 'string'
               ? payload.error
               : 'Ingestion failed.';
-          task.dismissed = false;
+          if (!wasTerminal) task.dismissed = false;
           break;
         default:
           break;

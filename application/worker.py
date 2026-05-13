@@ -557,17 +557,21 @@ def ingest_worker(
     else:
         source_uuid = _derive_source_id(idempotency_key)
     source_id_for_events = str(source_uuid)
-    publish_user_event(
-        user,
-        "source.ingest.queued",
-        {
-            "job_name": job_name,
-            "filename": filename,
-            "source_id": source_id_for_events,
-            "operation": "upload",
-        },
-        scope={"kind": "source", "id": source_id_for_events},
-    )
+    # Only emit ``queued`` on the original attempt. Celery retries re-run
+    # the body, and re-publishing here would oscillate the toast through
+    # ``queued`` again between ``failed`` and ``completed``.
+    if self.request.retries == 0:
+        publish_user_event(
+            user,
+            "source.ingest.queued",
+            {
+                "job_name": job_name,
+                "filename": filename,
+                "source_id": source_id_for_events,
+                "operation": "upload",
+            },
+            scope={"kind": "source", "id": source_id_for_events},
+        )
 
     # Wrap the entire body in try/except so a failure between the
     # ``queued`` publish above and the inner work (e.g. tempdir
@@ -793,17 +797,20 @@ def reingest_source_worker(self, source_id, user):
         # documented: a Celery-backend or PG-lookup hiccup before this
         # publish means the toast may see only a ``failed`` event with
         # no preceding ``queued`` — acceptable for v1 since both
-        # conditions also imply broader system trouble.
-        publish_user_event(
-            user,
-            "source.ingest.queued",
-            {
-                "source_id": source_id,
-                "name": source_name,
-                "operation": "reingest",
-            },
-            scope={"kind": "source", "id": source_id},
-        )
+        # conditions also imply broader system trouble. Gate on first
+        # attempt only so Celery retries don't re-emit ``queued`` after
+        # a prior attempt already published ``failed``.
+        if self.request.retries == 0:
+            publish_user_event(
+                user,
+                "source.ingest.queued",
+                {
+                    "source_id": source_id,
+                    "name": source_name,
+                    "operation": "reingest",
+                },
+                scope={"kind": "source", "id": source_id},
+            )
 
         storage = StorageCreator.get_storage()
         source_file_path = source.get("file_path", "")
@@ -1178,18 +1185,20 @@ def remote_worker(
 
     # Emit the queued event before any work that could fail (including
     # ``update_state``) so the toast UI always sees a queued envelope
-    # before any subsequent failed event.
-    publish_user_event(
-        user,
-        "source.ingest.queued",
-        {
-            "source_id": source_id_for_events,
-            "job_name": name_job,
-            "loader": loader,
-            "operation": operation_mode,
-        },
-        scope={"kind": "source", "id": source_id_for_events},
-    )
+    # before any subsequent failed event. Gated on first attempt so
+    # Celery retries don't re-emit ``queued`` after a prior ``failed``.
+    if self.request.retries == 0:
+        publish_user_event(
+            user,
+            "source.ingest.queued",
+            {
+                "source_id": source_id_for_events,
+                "job_name": name_job,
+                "loader": loader,
+                "operation": operation_mode,
+            },
+            scope={"kind": "source", "id": source_id_for_events},
+        )
 
     # Wrap ``update_state`` plus the entire body so any pre-loader
     # failure (Celery backend down, OS resource issue) still emits a
@@ -1682,17 +1691,21 @@ def ingest_connector(
         source_uuid = _derive_source_id(idempotency_key)
     source_id_for_events = str(source_uuid)
 
-    publish_user_event(
-        user,
-        "source.ingest.queued",
-        {
-            "source_id": source_id_for_events,
-            "job_name": job_name,
-            "loader": source_type,
-            "operation": operation_mode,
-        },
-        scope={"kind": "source", "id": source_id_for_events},
-    )
+    # First-attempt gate: Celery retries re-run the body, and a
+    # repeated ``queued`` here would oscillate the toast through
+    # ``queued`` again between ``failed`` and ``completed``.
+    if self.request.retries == 0:
+        publish_user_event(
+            user,
+            "source.ingest.queued",
+            {
+                "source_id": source_id_for_events,
+                "job_name": job_name,
+                "loader": source_type,
+                "operation": operation_mode,
+            },
+            scope={"kind": "source", "id": source_id_for_events},
+        )
 
     self.update_state(state="PROGRESS", meta={"current": 1})
 

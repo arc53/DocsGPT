@@ -877,3 +877,142 @@ class TestMcpOauthPublishes:
         assert result["success"] is True
         # ``publish_oauth`` short-circuits when ``user_id`` is falsy.
         assert publishes.calls == []
+
+
+# ── retry-gate: queued must NOT re-emit on Celery retries ───────────────
+
+
+@pytest.fixture
+def task_self_retry():
+    """``self`` with ``request.retries == 1`` — second attempt of the task."""
+    task = MagicMock(name="celery_task_self_retry")
+    task.request.retries = 1
+    return task
+
+
+@pytest.mark.unit
+class TestQueuedEventRetryGate:
+    """``DURABLE_TASK`` retries the same body on transient embed failures.
+
+    Without the first-attempt gate the toast oscillates
+    ``queued → progress → failed → queued → progress → completed``.
+    These tests pin the gate behaviour at all four ingest sites.
+    """
+
+    def test_ingest_worker_skips_queued_on_retry(
+        self, patch_worker_db, task_self_retry, monkeypatch, publishes
+    ):
+        from application import worker
+
+        _patch_ingest_pipeline_min(monkeypatch)
+
+        worker.ingest_worker(
+            task_self_retry,
+            directory="inputs",
+            formats=[".txt"],
+            job_name="job1",
+            file_path="inputs/eve/job1/a.txt",
+            filename="a.txt",
+            user="eve",
+            retriever="classic",
+            source_id=str(uuid.uuid4()),
+        )
+
+        # Retry attempt: only ``completed`` fires; the ``queued`` from the
+        # original attempt has already been published and acked.
+        assert publishes.types() == ["source.ingest.completed"]
+
+    def test_remote_worker_skips_queued_on_retry(
+        self, tmp_path, task_self_retry, monkeypatch, publishes
+    ):
+        from application import worker
+
+        _stub_remote_pipeline(monkeypatch)
+
+        worker.remote_worker(
+            task_self_retry,
+            {"urls": ["http://example.com"]},
+            "my-remote",
+            "bob",
+            "crawler",
+            directory=str(tmp_path / "temp"),
+            operation_mode="upload",
+        )
+
+        assert publishes.types() == ["source.ingest.completed"]
+
+    def test_ingest_connector_skips_queued_on_retry(
+        self, task_self_retry, monkeypatch, publishes
+    ):
+        from application import worker
+
+        _stub_connector_pipeline(monkeypatch)
+
+        worker.ingest_connector(
+            task_self_retry,
+            "gdrive-folder",
+            "dave",
+            "google_drive",
+            session_token="tok",
+            file_ids=["f1"],
+            folder_ids=[],
+            operation_mode="upload",
+        )
+
+        assert publishes.types() == ["source.ingest.completed"]
+
+    def test_reingest_source_worker_skips_queued_on_retry(
+        self, pg_conn, patch_worker_db, task_self_retry, monkeypatch, publishes
+    ):
+        from application import worker
+
+        src = _seed_source_for_reingest(pg_conn, user_id="alice")
+        source_id = str(src["id"])
+
+        _stub_reingest_storage_and_vectorstore(monkeypatch)
+
+        fake_reader = MagicMock(name="reader")
+        fake_reader.load_data.return_value = []
+        fake_reader.directory_structure = {
+            "fresh.md": {
+                "type": "text/markdown",
+                "size_bytes": 42,
+                "token_count": 17,
+            }
+        }
+        fake_reader.file_token_counts = {"fresh.md": 17}
+        monkeypatch.setattr(
+            worker, "SimpleDirectoryReader", lambda *a, **kw: fake_reader
+        )
+
+        worker.reingest_source_worker(task_self_retry, source_id, "alice")
+
+        # Only the terminal ``completed`` — no ``queued`` re-emit.
+        assert publishes.types() == ["source.ingest.completed"]
+
+    def test_ingest_worker_first_attempt_still_emits_queued(
+        self, patch_worker_db, task_self, monkeypatch, publishes
+    ):
+        """Sanity counterpart: ``retries == 0`` keeps the original
+        queued+completed pair so the no-retry path is unchanged.
+        """
+        from application import worker
+
+        _patch_ingest_pipeline_min(monkeypatch)
+
+        worker.ingest_worker(
+            task_self,
+            directory="inputs",
+            formats=[".txt"],
+            job_name="job1",
+            file_path="inputs/eve/job1/a.txt",
+            filename="a.txt",
+            user="eve",
+            retriever="classic",
+            source_id=str(uuid.uuid4()),
+        )
+
+        assert publishes.types() == [
+            "source.ingest.queued",
+            "source.ingest.completed",
+        ]

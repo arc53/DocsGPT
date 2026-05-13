@@ -1,25 +1,9 @@
 """Snapshot+tail iterator for chat-stream reconnect-after-disconnect.
 
-A client that drops mid-answer reconnects to
-``GET /api/messages/<message_id>/events`` with the last
-``sequence_no`` it saw as ``Last-Event-ID``. The endpoint passes that
-cursor here. We:
-
-1. Subscribe to ``channel:{message_id}`` (Phase 1A ``Topic``).
-2. Inside the SUBSCRIBE-ack callback, read ``message_events`` rows
-   ``WHERE sequence_no > last_event_id`` from Postgres.
-3. Yield the snapshot to the client first (each row becomes one
-   ``id: <seq>\\ndata: <json>\\n\\n`` SSE record).
-4. Tail the live pub/sub topic, dropping any inbound message whose
-   ``sequence_no`` is ``<= max_replayed`` (the snapshot already
-   covered it).
-5. Emit ``: keepalive`` comments while idle.
-
-The subscribe-then-snapshot ordering is the same race-free pattern
-the user-event SSE endpoint uses (``application/api/events/routes.py``):
-any publish that fires between SUBSCRIBE-send and SUBSCRIBE-ack has
-its journal row captured by the snapshot read AND its pub/sub message
-buffered at the connection layer until we read it past the callback.
+Subscribe to ``channel:{message_id}``, snapshot ``message_events``
+rows past ``last_event_id`` inside the SUBSCRIBE-ack callback, flush
+snapshot, then tail live pub/sub (dedup'd by ``sequence_no``). See
+``docs/runbooks/sse-notifications.md``.
 """
 
 from __future__ import annotations
@@ -75,11 +59,7 @@ _TERMINAL_EVENT_TYPES = frozenset({"end", "error"})
 def _payload_is_terminal(
     payload: object, event_type: Optional[str] = None
 ) -> bool:
-    """Terminal if either the payload's ``type`` or the column-level
-    ``event_type`` matches a known terminal sentinel. The column
-    fallback covers journal writes that record the discriminator only
-    in ``event_type`` (e.g. abort handlers using ``record_event(..., "end", {})``).
-    """
+    """True if ``payload['type']`` or ``event_type`` is a terminal sentinel."""
     if isinstance(payload, dict) and payload.get("type") in _TERMINAL_EVENT_TYPES:
         return True
     return event_type in _TERMINAL_EVENT_TYPES
@@ -192,15 +172,9 @@ def build_message_event_stream(
 ) -> Iterator[str]:
     """Yield SSE-formatted lines for one ``message_id`` reconnect stream.
 
-    The first frame is a ``: connected`` comment so reverse proxies
-    flush their buffers immediately. Subsequent frames are either:
-
-    - replayed snapshot events (``id: <seq>\\ndata: <json>\\n\\n``)
-    - live tail events from pub/sub (same shape, dedup'd by seq)
-    - ``: keepalive`` comments at ``keepalive_seconds`` cadence
-
-    The iterator runs until cancelled (client disconnect → SSE
-    generator close → ``Topic.subscribe`` finally closes the pubsub).
+    First frame is ``: connected``; subsequent frames are snapshot rows,
+    live-tail events, or ``: keepalive`` comments. Runs until the client
+    disconnects.
     """
     yield ": connected\n\n"
 

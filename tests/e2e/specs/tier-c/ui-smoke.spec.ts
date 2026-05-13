@@ -1,7 +1,7 @@
 import * as playwright from '@playwright/test';
-// Phase 4 Tier-C · UI smoke (surface coverage, no DB assertions)
+// Tier-C · UI smoke (surface coverage, no DB assertions)
 /**
- * Phase 4 — P4 · Tier-C UI smoke.
+ * P4 · Tier-C UI smoke.
  *
  * Cheap surface coverage for UI-only behaviors. One combined spec, many
  * small tests. Scope:
@@ -305,7 +305,7 @@ test.describe('tier-c · UI smoke', () => {
     // them set (see scripts/e2e/env.sh), so App.tsx's `<Notification>` is
     // never rendered and there is nothing observable to assert.
     //
-    // If/when we add a prod-bundle opt-in (Phase 5-C), revive this test with
+    // If/when we add a prod-bundle opt-in, revive this test with
     // those env vars set and check the banner + localStorage-dismiss flow.
   });
 

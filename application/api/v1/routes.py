@@ -222,9 +222,9 @@ def _stream_response(
     for line in internal_stream:
         if not line.strip():
             continue
-        # Phase 2: complete_stream now prefixes each frame with
-        # ``id: <seq>\n`` before the ``data:`` line. Extract just the
-        # data line so JSON decode doesn't choke on the SSE framing.
+        # ``complete_stream`` prefixes each frame with ``id: <seq>\n``
+        # before the ``data:`` line. Extract just the data line so JSON
+        # decode doesn't choke on the SSE framing.
         event_str = ""
         for raw in line.split("\n"):
             if raw.startswith("data:"):
@@ -237,8 +237,8 @@ def _stream_response(
         except (json.JSONDecodeError, TypeError):
             continue
 
-        # Skip the Phase 2 informational ``message_id`` event — it has
-        # no v1 / OpenAI-compatible analog.
+        # Skip the informational ``message_id`` event — it has no v1 /
+        # OpenAI-compatible analog.
         if event_data.get("type") == "message_id":
             continue
 

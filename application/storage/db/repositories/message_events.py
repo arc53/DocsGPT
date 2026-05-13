@@ -1,38 +1,11 @@
 """Repository for ``message_events`` — the chat-stream snapshot journal.
 
-Two operations:
-
-- ``record(message_id, sequence_no, event_type, payload)`` — write a
-  single per-yield event. Called from the streaming route's hot path
-  (one INSERT per emitted SSE chunk). Raises on DB error.
-- ``read_after(message_id, last_sequence_no=None)`` — replay every
-  event newer than ``last_sequence_no`` for the snapshot half of the
-  reconnect path. Returns rows ordered by ``sequence_no`` ASC.
-
-The composite PK ``(message_id, sequence_no)`` makes ``record`` reject
-duplicate ``sequence_no`` writes via ``IntegrityError`` — useful
-defence against double-yield bugs in the route, but the route itself
-allocates ``sequence_no`` monotonically per stream so this should
-never fire in practice.
-
-Connection-lifecycle contract (matters for the streaming route):
-
-- Each ``record`` call **must** run inside its own short-lived
-  transaction (i.e. a fresh ``db_session()`` per call, committed on
-  exit). Two reasons:
-
-  1. **Visibility.** A reconnecting client reads the journal from a
-     *separate* connection. If the streaming connection holds a
-     long-lived transaction, the writes aren't visible until commit —
-     defeating the entire point of snapshot+tail.
-  2. **Failure containment.** A duplicate-PK or malformed-UUID error
-     marks the surrounding transaction as ``ABORTED``; subsequent
-     operations on that connection raise ``InFailedSqlTransaction``
-     until rollback. A short-lived per-call transaction keeps the
-     blast radius to the single failed event.
-
-  The streaming route's ``record_event`` wrapper enforces both — see
-  ``application/streaming/message_journal.py``.
+``record`` / ``bulk_record`` write per-yield events; ``read_after``
+replays rows past a cursor for reconnect snapshots. Composite PK
+``(message_id, sequence_no)`` raises ``IntegrityError`` on duplicates.
+Callers must use short-lived per-call transactions — long-lived
+transactions hide writes from reconnecting clients on a separate
+connection and turn one bad row into ``InFailedSqlTransaction``.
 """
 
 from __future__ import annotations

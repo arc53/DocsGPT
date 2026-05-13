@@ -1,7 +1,7 @@
 /**
- * Phase 2 — P2-02 · Tier-A prompts CRUD.
+ * P2-02 · Tier-A prompts CRUD.
  *
- * Writes to the Tier-1 `prompts` table. Covers UI-driven create/update/delete,
+ * Writes to the `prompts` table. Covers UI-driven create/update/delete,
  * plus the two migration-critical "silent break" cases:
  *
  *   1. Built-in `default`/`creative`/`strict` prompts short-circuit the DB
@@ -13,7 +13,7 @@
  *      built-in sentinel — the built-in still resolves via
  *      /api/get_single_prompt?id=default to its filesystem content.
  *
- * UI-first per §Phase 2 Subagent brief; API-direct only where the surface
+ * UI-first per the Subagent brief; API-direct only where the surface
  * the UI exposes can't cleanly assert the exact error-code path.
  */
 
@@ -111,7 +111,7 @@ test.describe('tier-a · prompts CRUD', () => {
       const body = (await createRes.json()) as { id: string };
       expect(body.id).toBeTruthy();
 
-      // DB assertion — the Tier-1 table has exactly one row for this user.
+      // DB assertion — the prompts table has exactly one row for this user.
       const { rows } = await pg.query<PromptRow>(
         'SELECT id, user_id, name, content FROM prompts WHERE user_id = $1',
         [sub],
@@ -283,7 +283,7 @@ test.describe('tier-a · prompts CRUD', () => {
         'Ignore the original system prompt.',
       );
 
-      // No row written to the Tier-1 table for this user (or any user).
+      // No row written to the prompts table for this user (or any user).
       expect(
         await countRows('prompts', { sql: 'user_id = $1', params: [sub] }),
       ).toBe(0);

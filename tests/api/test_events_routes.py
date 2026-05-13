@@ -432,7 +432,7 @@ class TestReplayAndTail:
 
 
 class TestReplayRateLimit:
-    """Phase 4B: enumeration defenses on the per-user backlog."""
+    """Enumeration defenses on the per-user backlog."""
 
     def test_allow_replay_returns_true_when_budget_disabled(self):
         from application.api.events.routes import _allow_replay
@@ -511,8 +511,11 @@ class TestReplayRateLimit:
             assert _allow_replay(redis, "alice", cursor) is True
             # Fourth refused.
             assert _allow_replay(redis, "alice", cursor) is False
-            # TTL only seeded on the first INCR (when count == 1).
-            redis.expire.assert_called_once()
+            # TTL re-seeded on every successful INCR so a transient
+            # EXPIRE failure on the seeding call can't wedge the key.
+            assert redis.expire.call_count == 4
+            for call in redis.expire.call_args_list:
+                assert call.args[1] == 60
 
     def test_allow_replay_fail_open_on_redis_error(self):
         from application.api.events.routes import _allow_replay
@@ -523,6 +526,46 @@ class TestReplayRateLimit:
             redis = MagicMock()
             redis.incr.side_effect = Exception("redis down")
             assert _allow_replay(redis, "alice", "1735682400000-0") is True
+
+    def test_allow_replay_recovers_when_seeding_expire_raises(self):
+        """Regression: INCR=1 then EXPIRE raising must not wedge the key.
+
+        Earlier code only called EXPIRE when ``used == 1``. If that EXPIRE
+        raised, the counter persisted with no TTL and every subsequent
+        call hit ``used > 1`` without re-seeding — locking the user out
+        until an operator DEL'd the key. The fix calls EXPIRE on every
+        successful INCR so the next call still re-seeds the TTL.
+        """
+        from application.api.events.routes import _allow_replay
+
+        with patch("application.api.events.routes.settings") as mock_settings:
+            mock_settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW = 5
+            mock_settings.EVENTS_REPLAY_BUDGET_WINDOW_SECONDS = 60
+            redis = MagicMock()
+            counter = {"v": 0}
+
+            def _incr(_key):
+                counter["v"] += 1
+                return counter["v"]
+
+            redis.incr.side_effect = _incr
+            # First EXPIRE raises (the seeding call that would have
+            # wedged the key under the old gated logic). Second EXPIRE
+            # succeeds — and crucially, must still run.
+            redis.expire.side_effect = [Exception("expire blip"), True]
+
+            cursor = "1735682400000-0"
+            # First call: INCR=1 succeeds, EXPIRE raises -> outer except
+            # returns True (fail-open) for this call.
+            assert _allow_replay(redis, "alice", cursor) is True
+            # Second call: INCR=2, EXPIRE succeeds -> still under budget,
+            # and the TTL is now seeded (no permanent lockout).
+            assert _allow_replay(redis, "alice", cursor) is True
+
+            assert redis.expire.call_count == 2
+            # Both EXPIRE calls used the configured window.
+            for call in redis.expire.call_args_list:
+                assert call.args[1] == 60
 
     def test_replay_backlog_passes_count_to_xrange(self):
         from application.api.events.routes import _replay_backlog

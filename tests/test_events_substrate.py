@@ -1,8 +1,8 @@
 """Unit tests for the SSE substrate (publisher + Topic + route helpers).
 
 Round-trip integration tests against a real / fake Redis live in
-``tests/test_events_integration.py`` (Phase 1E). The tests here lock in
-the closure-mutated, race-sensitive bits the route relies on so future
+``tests/test_events_integration.py``. The tests here lock in the
+closure-mutated, race-sensitive bits the route relies on so future
 refactors can't regress them silently.
 """
 

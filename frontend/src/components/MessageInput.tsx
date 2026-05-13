@@ -511,9 +511,9 @@ export default function MessageInput({
                           updates: {
                             taskId: task.task_id,
                             // Stash the server's attachment id so SSE
-                            // ``attachment.*`` events (Phase 3A) can
-                            // match this row by ``scope.id`` and drive
-                            // the per-attachment push-fresh poll gate.
+                            // ``attachment.*`` events can match this
+                            // row by ``scope.id`` and drive the
+                            // per-attachment push-fresh poll gate.
                             attachmentId: task.attachment_id,
                             status: 'processing',
                             progress: 10,

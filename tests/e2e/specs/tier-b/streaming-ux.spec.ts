@@ -1,6 +1,6 @@
-// Phase 3 Tier-B · streaming UX (SSE delivery, research progress, tool approval resume)
+// Tier-B · streaming UX (SSE delivery, research progress, tool approval resume)
 /**
- * Phase 3 — B7 · streaming UX + tool-state plumbing.
+ * B7 · streaming UX + tool-state plumbing.
  *
  * Focus: the `/stream` SSE surface that `frontend/src/conversation/Conversation.tsx`
  * consumes. Unlike the migration-critical chat-turn spec (P2-07), these tests

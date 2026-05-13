@@ -614,9 +614,9 @@ class TestReserveAndFinalizeMessage:
 
 class TestConcurrentAppend:
     """Two threads appending to the same conversation must not race on
-    ``position``. The plan (migration-postgres.md §Phase 3) explicitly
-    calls this out as the single trickiest invariant, so we exercise it
-    directly with two parallel connections."""
+    ``position``. The migration plan explicitly calls this out as the
+    single trickiest invariant, so we exercise it directly with two
+    parallel connections."""
 
     def test_concurrent_appends_get_distinct_positions(self, pg_engine, pg_conn):
         import threading

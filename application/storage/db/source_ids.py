@@ -1,14 +1,7 @@
 """Deterministic source-id derivation for idempotent ingest.
 
-Lives here (not in ``application/worker.py``) so both the HTTP route
-(``application/api/user/sources/upload.py``) and the Celery worker
-can import it without the route pulling the worker module's Celery
-dependency tree into the API process at import time.
-
-Pinned namespace is load-bearing — re-rolling it would mint different
-``source_id``s for the same idempotency keys across deploys, defeating
-the retry-resume contract that the rest of the ingest pipeline relies
-on (see ``application/api/user/idempotency.py``).
+DO NOT CHANGE the pinned UUID namespace — it backs cross-deploy
+idempotency keys.
 """
 
 from __future__ import annotations

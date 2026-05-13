@@ -1,5 +1,5 @@
 /**
- * Phase 2 — P2-04 · Token usage / message / feedback analytics.
+ * P2-04 · Token usage / message / feedback analytics.
  *
  * Silent-break covered: analytics bucket keys use YYYY-MM-DD HH24:00 format
  * (Postgres `to_char`). A drift to the Python `%Y-%m-%d %H:00` strftime

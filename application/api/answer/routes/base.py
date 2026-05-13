@@ -284,6 +284,17 @@ class BaseAnswerResource:
                     "update_message_status streaming failed for %s",
                     reserved_message_id,
                 )
+            # Seed last_heartbeat_at so watchdog doesn't fall back to `timestamp`
+            # (creation time) before the first STREAM_HEARTBEAT_INTERVAL tick.
+            try:
+                self.conversation_service.heartbeat_message(
+                    reserved_message_id,
+                )
+            except Exception:
+                logger.exception(
+                    "initial heartbeat seed failed for %s",
+                    reserved_message_id,
+                )
             streaming_marked = True
             last_heartbeat_at = time.monotonic()
 
@@ -310,7 +321,10 @@ class BaseAnswerResource:
             try:
                 agent.tool_executor.message_id = reserved_message_id
             except Exception:
-                pass
+                logger.debug(
+                    "Could not set tool_executor.message_id; tool-call correlation will be missing for message_id=%s",
+                    reserved_message_id,
+                )
 
         # Per-stream monotonic SSE event id. Allocated by ``_emit`` and
         # threaded through both the wire format (``id: <seq>\\n``) and
@@ -341,13 +355,7 @@ class BaseAnswerResource:
                     reserved_message_id,
                 )
 
-        # One batched journal writer per stream. Per-yield record() calls
-        # buffer rows in memory and flush in bulk on size/time/lifecycle
-        # triggers — order-of-magnitude fewer PG commits than the prior
-        # one-INSERT-per-yield pattern, with a ≤100ms reconnect-visibility
-        # lag for events still sitting in the buffer. Live pubsub publishes
-        # still fire synchronously per record() so subscribers see events
-        # in real time.
+        # One batched journal writer per stream.
         journal_writer: Optional[BatchedJournalWriter] = (
             BatchedJournalWriter(reserved_message_id)
             if reserved_message_id
@@ -357,16 +365,9 @@ class BaseAnswerResource:
         def _emit(payload: dict) -> str:
             """Format-and-journal one SSE event.
 
-            When the stream has a reserved ``message_id`` (the WAL
-            path), each yield gets a strictly monotonic ``sequence_no``
-            and is buffered to ``message_events`` plus published to
-            ``channel:{message_id}`` so reconnecting clients can do
-            snapshot+tail. The journal write is best-effort — failures
-            log and don't break the live stream.
-
-            When there's no reservation (some shared-token paths), we
-            fall back to legacy ``data: ...\\n\\n`` framing — no
-            reconnect path applies.
+            With a reserved ``message_id``, buffers into the journal and
+            emits ``id: <seq>``-tagged SSE frames; otherwise falls back to
+            legacy ``data: ...\\n\\n`` framing.
             """
             nonlocal sequence_no
             if not reserved_message_id or journal_writer is None:
@@ -778,9 +779,13 @@ class BaseAnswerResource:
             logger.info(f"Stream aborted by client for question: {question[:50]}... ")
             # Drain any buffered events before the terminal one-shot
             # ``record_event`` below — keeps the journal's seq order
-            # contiguous (buffered events ... terminal event).
+            # contiguous (buffered events ... terminal event). ``close``
+            # is idempotent; pairing it with ``flush`` matches the
+            # normal-exit and error branches so any future ``record()``
+            # past this point would log instead of silently buffering.
             if journal_writer is not None:
                 journal_writer.flush()
+                journal_writer.close()
             # Save partial response
 
             # Whether the DB row was flipped to ``complete`` during this
@@ -896,15 +901,8 @@ class BaseAnswerResource:
                     logger.error(
                         f"Error saving partial response: {str(e)}", exc_info=True
                     )
-            # Journal a terminal event so reconnecting clients see a
-            # terminal row and stop tailing instead of waiting on
-            # keepalives forever — the original publish channel is dead
-            # the moment we ``raise`` below. The choice of event must
-            # match the DB row's user-visible state: ``end`` only when
-            # ``finalize_message`` above flipped the row to ``complete``,
-            # otherwise ``error`` (and a matching ``failed`` finalize)
-            # so a client reconnecting after a pre-response disconnect
-            # doesn't replay a blank successful answer.
+            # Journal a terminal event so reconnecting clients stop tailing;
+            # ``end`` only when the row is ``complete``, else ``error``.
             if reserved_message_id is not None:
                 try:
                     sequence_no += 1
@@ -1012,9 +1010,9 @@ class BaseAnswerResource:
 
         for line in stream:
             try:
-                # Phase 2: each chunk may carry an ``id: <seq>`` header
-                # before the ``data:`` line. Pull just the ``data:`` body
-                # so the JSON decode doesn't choke on the SSE framing.
+                # Each chunk may carry an ``id: <seq>`` header before
+                # the ``data:`` line. Pull just the ``data:`` body so
+                # the JSON decode doesn't choke on the SSE framing.
                 event_data = ""
                 for raw in line.split("\n"):
                     if raw.startswith("data:"):

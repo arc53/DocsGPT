@@ -1,26 +1,9 @@
 """Per-yield journal write for the chat-stream snapshot+tail pattern.
 
-``complete_stream`` calls ``record_event`` once per SSE event it
-yields. The hook does two things:
-
-1. Insert a row into ``message_events`` (the durable snapshot used by
-   reconnecting clients reading from a *different* connection).
-2. Publish a JSON envelope to ``channel:{message_id}`` so any client
-   currently subscribed receives the event live.
-
-Both are best-effort: failures are logged and swallowed, never raised
-back into the streaming loop. A missed journal write means a client
-that reconnects between this event and the next won't see this one in
-their snapshot — degraded UX, not corrupted state. A missed publish
-means currently-subscribed reconnect viewers miss the live tick;
-they'll catch up via the snapshot on their next reconnect (or after
-their poll-timeout cycle if they're already attached).
-
-Each ``record_event`` opens its own short-lived ``db_session()`` so
-the INSERT commits before the matching publish — without that ordering
-a fast-reconnecting client could hit the snapshot read on a separate
-connection and miss the row that's still uncommitted on the streaming
-connection.
+``record_event`` inserts into ``message_events`` and publishes to
+``channel:{message_id}``. Both are best-effort; the INSERT commits
+before the publish so a fast reconnect sees the row. See
+``docs/runbooks/sse-notifications.md``.
 """
 
 from __future__ import annotations
@@ -51,6 +34,31 @@ DEFAULT_BATCH_SIZE = 16
 DEFAULT_BATCH_INTERVAL_MS = 100
 
 
+def _strip_null_bytes(value: Any) -> Any:
+    """Recursively strip ``\\x00`` from string keys/values in ``value``.
+
+    Postgres JSONB rejects the NUL escape; an LLM emitting a stray NUL
+    in a chunk would otherwise raise ``DataError`` at INSERT and the row
+    would be lost from the journal (live stream proceeds, reconnect
+    snapshot misses the chunk). Mirrors the strip already done in
+    ``parser/embedding_pipeline.py`` and
+    ``api/user/attachments/routes.py``.
+    """
+    if isinstance(value, str):
+        return value.replace("\x00", "") if "\x00" in value else value
+    if isinstance(value, dict):
+        return {
+            (k.replace("\x00", "") if isinstance(k, str) and "\x00" in k else k):
+            _strip_null_bytes(v)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_strip_null_bytes(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_strip_null_bytes(item) for item in value)
+    return value
+
+
 def record_event(
     message_id: str,
     sequence_no: int,
@@ -59,18 +67,9 @@ def record_event(
 ) -> bool:
     """Journal one SSE event and publish it live. Best-effort.
 
-    ``payload`` must be a ``dict`` (or ``None``). Passing a list,
-    scalar, or any other shape is a contract violation: the live path
-    in ``base.py::_emit`` and the replay path in
-    ``event_replay`` previously reconstructed non-dicts differently
-    (``{"value": payload}`` vs. ``{"type": event_type}``), so a
-    reconnecting client would receive a different envelope than the
-    one originally streamed. Rejecting non-dicts at this gate keeps
-    the two paths byte-identical.
-
-    Returns ``True`` when the journal INSERT committed (the publish is
-    attempted regardless of insert outcome and isn't reflected in the
-    return value). Never raises — every failure path logs and swallows.
+    ``payload`` must be a ``dict`` or ``None`` (non-dicts are dropped so
+    live and replay envelopes stay byte-identical). Returns ``True`` when
+    the journal INSERT committed. Never raises.
     """
     if not message_id or not event_type:
         logger.warning(
@@ -84,7 +83,7 @@ def record_event(
     if payload is None:
         materialised_payload: dict[str, Any] = {}
     elif isinstance(payload, dict):
-        materialised_payload = payload
+        materialised_payload = _strip_null_bytes(payload)
     else:
         logger.warning(
             "record_event called with non-dict payload "
@@ -198,24 +197,9 @@ def record_event(
 class BatchedJournalWriter:
     """Per-stream journal writer that batches PG INSERTs.
 
-    Replaces the per-emit synchronous ``record_event`` call inside the
-    streaming hot path (``complete_stream``). One writer is created per
-    ``message_id``; each yield calls ``record()``, and the writer flushes
-    on three independent triggers:
-
-    1. **Size** — buffer reaches ``batch_size`` entries.
-    2. **Time** — ``batch_interval_ms`` elapsed since the last flush.
-    3. **Lifecycle** — caller invokes ``close()`` at end of stream.
-
-    Live pubsub publishes still fire synchronously per ``record()`` call,
-    so subscribers see events in real time — only the durable journal
-    write is amortized. The cost is a small reconnect-visibility lag
-    (≤ ``batch_interval_ms``) for events still sitting in the buffer.
-
-    Flush is best-effort: a failed batch logs and continues. On
-    ``IntegrityError`` (typically a stale-seq seed on a continuation
-    retry) the writer falls back to per-row ``record_event`` so a
-    single colliding seq doesn't drop the rest of the batch.
+    One writer per ``message_id``; ``record()`` buffers events and flushes
+    on size/time/``close()`` triggers. Pubsub publishes fire only after the
+    INSERT commits. On ``IntegrityError`` falls back to per-row writes.
     """
 
     def __init__(
@@ -238,17 +222,7 @@ class BatchedJournalWriter:
         event_type: str,
         payload: Optional[dict[str, Any]] = None,
     ) -> bool:
-        """Buffer one event; publish live; maybe flush.
-
-        Returns ``True`` if the event was accepted into the buffer.
-        ``False`` rejects come from contract violations (empty
-        ``event_type``, non-dict payload) — same gates as
-        ``record_event``. The event reaches the journal asynchronously
-        on the next flush; callers that need synchronous visibility
-        (e.g. terminal events written from an abort handler outside
-        the streaming loop) should call ``flush()`` then use
-        ``record_event`` directly.
-        """
+        """Buffer one event; maybe flush. Publish happens after journal commit."""
         if self._closed:
             logger.warning(
                 "BatchedJournalWriter.record after close: "
@@ -269,7 +243,7 @@ class BatchedJournalWriter:
         if payload is None:
             materialised: dict[str, Any] = {}
         elif isinstance(payload, dict):
-            materialised = payload
+            materialised = _strip_null_bytes(payload)
         else:
             # Same contract as ``record_event`` — non-dict payloads
             # are rejected so the live and replay paths can't diverge
@@ -285,21 +259,6 @@ class BatchedJournalWriter:
             return False
 
         self._buffer.append((sequence_no, event_type, materialised))
-
-        # Publish live synchronously so subscribers see events in
-        # real time. Failures are logged and don't block the buffer.
-        try:
-            wire = encode_pubsub_message(
-                self._message_id, sequence_no, event_type, materialised
-            )
-            Topic(message_topic_name(self._message_id)).publish(wire)
-        except Exception:
-            logger.exception(
-                "channel:%s publish failed: seq=%s type=%s",
-                self._message_id,
-                sequence_no,
-                event_type,
-            )
 
         if self._should_flush():
             self.flush()
@@ -346,6 +305,7 @@ class BatchedJournalWriter:
                 len(pending),
             )
             self._flush_per_row(pending)
+            return
         except Exception:
             logger.exception(
                 "BatchedJournalWriter: bulk INSERT failed for "
@@ -353,26 +313,25 @@ class BatchedJournalWriter:
                 self._message_id,
                 len(pending),
             )
+            return
+
+        # Bulk INSERT committed — publish each frame in order. Best-effort:
+        # one failed publish must not poison the rest of the batch.
+        for seq, event_type, payload in pending:
+            self._publish(seq, event_type, payload)
 
     def _flush_per_row(
         self, pending: list[tuple[int, str, dict[str, Any]]]
     ) -> None:
-        """Per-row fallback after a bulk collision.
-
-        Each row goes through ``record_event`` which already handles
-        ``IntegrityError`` with a single seq+1 retry. The live publish
-        is skipped here — ``record()`` already fired it when the row
-        first entered the buffer, so re-publishing on the fallback
-        path would double-deliver.
-        """
+        """Per-row fallback after a bulk collision. Publishes after each commit."""
         for seq, event_type, payload in pending:
-            journal_committed = False
+            committed_seq: Optional[int] = None
             try:
                 with db_session() as conn:
                     MessageEventsRepository(conn).record(
                         self._message_id, seq, event_type, payload
                     )
-                journal_committed = True
+                committed_seq = seq
             except IntegrityError:
                 try:
                     with db_readonly() as conn:
@@ -384,7 +343,7 @@ class BatchedJournalWriter:
                         MessageEventsRepository(conn).record(
                             self._message_id, retry_seq, event_type, payload
                         )
-                    journal_committed = True
+                    committed_seq = retry_seq
                 except IntegrityError:
                     logger.warning(
                         "BatchedJournalWriter: IntegrityError persists "
@@ -410,11 +369,26 @@ class BatchedJournalWriter:
                     seq,
                     event_type,
                 )
-            if not journal_committed:
-                # Stay silent in the loop — the per-row logger above
-                # already captured the failure. This branch is here
-                # to make the control flow explicit for readers.
-                pass
+
+            if committed_seq is not None:
+                self._publish(committed_seq, event_type, payload)
+
+    def _publish(
+        self, sequence_no: int, event_type: str, payload: dict[str, Any]
+    ) -> None:
+        """Publish one frame to the per-message pubsub channel. Best-effort."""
+        try:
+            wire = encode_pubsub_message(
+                self._message_id, sequence_no, event_type, payload
+            )
+            Topic(message_topic_name(self._message_id)).publish(wire)
+        except Exception:
+            logger.exception(
+                "channel:%s publish failed: seq=%s type=%s",
+                self._message_id,
+                sequence_no,
+                event_type,
+            )
 
     def close(self) -> None:
         """Final flush. Idempotent — safe to call from multiple

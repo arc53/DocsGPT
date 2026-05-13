@@ -20,12 +20,13 @@ export const validateProviderSession = async (
   provider: string,
 ) => {
   const apiHost = import.meta.env.VITE_API_HOST;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
   return await fetch(`${apiHost}/api/connectors/validate-session`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
+    headers,
     body: JSON.stringify({
       provider: provider,
       session_token: getSessionToken(provider),

@@ -1,4 +1,4 @@
-"""Phase 2D integration tests — end-to-end snapshot+tail.
+"""Integration tests for the end-to-end snapshot+tail handoff.
 
 Exercises the publisher → journal → reconnect endpoint round-trip
 without mocking the journal layer, so a regression in any of:

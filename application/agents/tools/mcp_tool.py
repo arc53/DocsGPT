@@ -1035,19 +1035,11 @@ class MCPOAuthManager:
             return False
 
     def get_oauth_status(self, task_id: str, user_id: str) -> Dict[str, Any]:
-        """Get current OAuth status by walking the user's SSE Streams journal.
+        """Return the latest OAuth status for ``task_id`` from the user's SSE journal.
 
-        The worker (``application.worker.mcp_oauth``) emits
-        ``mcp.oauth.{in_progress,awaiting_redirect,completed,failed}``
-        envelopes via ``publish_user_event`` — same record the SSE
-        client receives live. Reading from that journal here keeps the
-        worker as the single source of truth and removes the legacy
-        ``mcp_oauth_status:{task_id}`` Redis key entirely.
-
-        Returns a dict with ``status`` derived from the event type
-        suffix plus the payload fields, mirroring the legacy polling
-        contract (e.g. ``status=="completed"`` carries ``tools`` and
-        ``tools_count``).
+        Mirrors the legacy polling contract: ``status`` derived from the
+        ``mcp.oauth.*`` event-type suffix, with payload fields surfaced
+        (e.g. ``tools``/``tools_count`` on ``completed``).
         """
         if not task_id:
             return {"status": "not_started", "message": "OAuth flow not started"}
@@ -1057,11 +1049,15 @@ class MCPOAuthManager:
             return {"status": "not_found", "message": "Redis unavailable"}
 
         try:
-            # OAuth flows are short-lived; the relevant envelopes sit
-            # near the top of the stream. 200 caps the read so a noisy
-            # user-channel doesn't make this O(stream-size).
+            # OAuth flows are short-lived but a concurrent source
+            # ingest can flood the user channel between the OAuth
+            # popup completing and the user clicking Save, pushing the
+            # completion envelope outside the read window. Bound the
+            # scan by the configured stream cap so we cover the full
+            # journal — XADD MAXLEN keeps that bounded too.
+            scan_count = max(settings.EVENTS_STREAM_MAXLEN, 200)
             entries = self.redis_client.xrevrange(
-                stream_key(user_id), count=200
+                stream_key(user_id), count=scan_count
             )
         except Exception:
             logger.exception(
@@ -1072,9 +1068,13 @@ class MCPOAuthManager:
             return {"status": "not_found", "message": "Status unavailable"}
 
         for _entry_id, fields in entries:
-            event_raw = (
-                fields.get(b"event") if isinstance(fields, dict) else None
-            )
+            if not isinstance(fields, dict):
+                continue
+            # decode_responses=False ⇒ bytes keys; the string-key fallback
+            # covers a future flip of that default without a forced refactor.
+            event_raw = fields.get(b"event")
+            if event_raw is None:
+                event_raw = fields.get("event")
             if event_raw is None:
                 continue
             if isinstance(event_raw, bytes):

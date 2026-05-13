@@ -21,6 +21,26 @@ export interface EventStreamOptions {
   onHealthChange: (health: EventStreamHealth) => void;
   /** Called with the most recently received id so the caller can persist it. */
   onLastEventId?: (id: string) => void;
+  /**
+   * Called when the server emitted an ``id:`` line with an empty value
+   * (WHATWG SSE cursor reset). Distinct from ``onLastEventId('')`` so
+   * callers can dispatch ``sseLastEventIdReset`` without overloading
+   * the normal advance path.
+   */
+  onLastEventIdReset?: () => void;
+  /**
+   * Invoked once after ``MAX_CONSECUTIVE_401`` back-to-back 401s. The
+   * reconnect loop then bails out, so the caller is responsible for
+   * refreshing the token / signalling logout. Without this, an expired
+   * token spins forever at the 30s backoff cap.
+   */
+  onAuthFailure?: () => void;
+  /**
+   * Invoked once when the reconnect loop bails out after
+   * ``MAX_CONSECUTIVE_ERRORS`` non-401 failures. Lets the caller surface
+   * a warning instead of the connection silently going dark.
+   */
+  onPermanentFailure?: () => void;
 }
 
 export interface EventStreamConnection {
@@ -35,6 +55,15 @@ export interface EventStreamConnection {
  */
 const BACKOFF_SCHEDULE_MS = [0, 1_000, 2_000, 4_000, 8_000, 16_000, 30_000];
 const HEALTHY_DEBOUNCE_MS = 2_000;
+/**
+ * Reconnect ceilings. Without these, the ``while (!closed)`` loop spins
+ * forever on a persistently-failing endpoint — expired token (401s) or
+ * sustained server outage (5xx). Both counters reset on a successful
+ * stream open. Untested (no frontend test harness); behaviour verified
+ * by manual trace of the loop in ``connectEventStream``.
+ */
+const MAX_CONSECUTIVE_401 = 3;
+const MAX_CONSECUTIVE_ERRORS = 20;
 
 /** Up-to-±20% random jitter so N tabs reconnecting in lockstep stagger. */
 function withJitter(delayMs: number): number {
@@ -62,6 +91,8 @@ export function connectEventStream(
   const controller = new AbortController();
   let closed = false;
   let attempt = 0;
+  let consecutive401 = 0;
+  let consecutiveErrors = 0;
   // Closure cursor. Seeded from the store on each connect attempt so
   // mid-session reconnects use the freshest id, but kept here too so
   // an in-flight stream's reconnect doesn't lose progress between ids
@@ -124,13 +155,31 @@ export function connectEventStream(
 
         if (!response.ok || !response.body) {
           notifyHealth('unhealthy');
-          // 401 typically means token expired — surface as unhealthy so
-          // the parent can refresh and the next backoff tick reconnects.
+          // 401 typically means token expired. Bail out after N
+          // consecutive 401s so the loop doesn't spin forever at the
+          // 30s backoff cap with a stale token; the caller is
+          // responsible for refreshing auth via ``onAuthFailure``.
+          if (response.status === 401) {
+            consecutive401 += 1;
+            consecutiveErrors += 1;
+            if (consecutive401 >= MAX_CONSECUTIVE_401) {
+              opts.onAuthFailure?.();
+              return;
+            }
+          } else {
+            consecutive401 = 0;
+            consecutiveErrors += 1;
+          }
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            opts.onPermanentFailure?.();
+            return;
+          }
           // 429: server-side per-user concurrency cap; backoff harder.
           if (response.status === 429) attempt = Math.max(attempt, 4);
           else attempt = Math.min(attempt + 1, BACKOFF_SCHEDULE_MS.length - 1);
           continue;
         }
+        consecutive401 = 0;
 
         // Connection is open. Mark healthy after either:
         // - 2s of open response body (covers servers that go silent), or
@@ -143,14 +192,16 @@ export function connectEventStream(
           healthyMarked = true;
           notifyHealth('healthy');
           attempt = 0;
+          consecutiveErrors = 0;
         };
         const debounceTimer = setTimeout(markHealthy, HEALTHY_DEBOUNCE_MS);
 
         try {
           await readSSEStream(response.body, controller.signal, (record) => {
             if (record.id !== undefined) {
-              lastEventId = record.id;
+              lastEventId = record.id || null;
               if (record.id) opts.onLastEventId?.(record.id);
+              else opts.onLastEventIdReset?.();
             }
             if (record.data === undefined) {
               // Keepalive comment, id-only frame, or comment line.
@@ -195,6 +246,11 @@ export function connectEventStream(
         // The reader returned without abort — server closed the stream.
         // Fall through to reconnect.
         notifyHealth('unhealthy');
+        consecutiveErrors += 1;
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          opts.onPermanentFailure?.();
+          return;
+        }
         attempt = Math.min(attempt + 1, BACKOFF_SCHEDULE_MS.length - 1);
       } catch (err) {
         if (
@@ -204,6 +260,11 @@ export function connectEventStream(
           return;
         }
         notifyHealth('unhealthy');
+        consecutiveErrors += 1;
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          opts.onPermanentFailure?.();
+          return;
+        }
         attempt = Math.min(attempt + 1, BACKOFF_SCHEDULE_MS.length - 1);
       }
     }

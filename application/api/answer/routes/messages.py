@@ -1,24 +1,7 @@
 """GET /api/messages/<message_id>/events — chat-stream reconnect endpoint.
 
-The Phase 2 reconnect path. A client that drops mid-answer reopens
-this endpoint with the last ``sequence_no`` it saw in the
-``Last-Event-ID`` header (or ``last_event_id`` query param). The
-handler:
-
-1. Authenticates via the standard ``request.decoded_token`` middleware.
-2. Verifies the requested ``message_id`` belongs to the authenticated
-   user (defence against id enumeration; even though the journal is
-   keyed by an unguessable UUID, we still don't want a stolen id to
-   leak across users).
-3. Hands off to ``build_message_event_stream`` which yields a
-   snapshot from ``message_events`` followed by a live tail on
-   ``channel:{message_id}``.
-
-The response shape mirrors the user-events SSE endpoint
-(``application/api/events/routes.py``): ``Cache-Control: no-store``,
-``X-Accel-Buffering: no``, and a ``Connection: keep-alive`` header.
-Reconnects are GET-only; the originating POST to ``/api/stream``
-already created the message row and started the stream.
+Authenticates the caller, verifies ``message_id`` belongs to the user,
+then hands off to ``build_message_event_stream`` for snapshot+tail.
 """
 
 from __future__ import annotations
@@ -48,9 +31,9 @@ _MESSAGE_ID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
-# Phase 2 sequence_no is a non-negative decimal integer. Anything else
-# is corrupt client state — fall through to a fresh-replay cursor and
-# let the snapshot reader catch the client up.
+# ``sequence_no`` is a non-negative decimal integer. Anything else is
+# corrupt client state — fall through to a fresh-replay cursor and let
+# the snapshot reader catch the client up.
 _SEQUENCE_NO_RE = re.compile(r"^\d+$")
 
 

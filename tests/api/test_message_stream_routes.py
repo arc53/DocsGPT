@@ -1,9 +1,8 @@
 """Tests for ``application/api/answer/routes/messages.py``.
 
-Phase 2 reconnect endpoint: GET /api/messages/<id>/events. Auth gate,
-ownership gate, malformed-id rejection, Last-Event-ID normalisation,
-and a smoke test that the SSE response shape matches the user-events
-endpoint.
+Reconnect endpoint: GET /api/messages/<id>/events. Auth gate, ownership
+gate, malformed-id rejection, Last-Event-ID normalisation, and a smoke
+test that the SSE response shape matches the user-events endpoint.
 """
 
 from __future__ import annotations

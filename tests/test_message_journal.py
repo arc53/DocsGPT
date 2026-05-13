@@ -245,6 +245,92 @@ class TestRecordEvent:
             # serve it on a future reconnect anyway.
             mock_topic.publish.assert_called_once()
 
+    def test_payload_with_null_byte_stripped_before_insert(self):
+        """``\\x00`` in a string value would crash JSONB INSERT — strip
+        at the journal boundary so the row lands and reconnecting
+        clients see the chunk.
+        """
+        with patch(
+            "application.streaming.message_journal.db_session"
+        ) as mock_session, patch(
+            "application.streaming.message_journal.MessageEventsRepository"
+        ) as mock_repo_cls, patch(
+            "application.streaming.message_journal.Topic"
+        ) as mock_topic_cls:
+            mock_session.return_value.__enter__.return_value = MagicMock()
+            mock_repo = MagicMock()
+            mock_repo_cls.return_value = mock_repo
+            mock_topic_cls.return_value = MagicMock()
+
+            record_event(
+                "msg-1", 0, "answer", {"answer": "hel\x00lo", "type": "answer"}
+            )
+
+            mock_repo.record.assert_called_once_with(
+                "msg-1", 0, "answer", {"answer": "hello", "type": "answer"}
+            )
+
+    def test_payload_with_nested_null_bytes_stripped_recursively(self):
+        """Strip walks nested dicts and lists — and string keys, to be
+        safe against an LLM emitting structured data with NULs.
+        """
+        with patch(
+            "application.streaming.message_journal.db_session"
+        ) as mock_session, patch(
+            "application.streaming.message_journal.MessageEventsRepository"
+        ) as mock_repo_cls, patch(
+            "application.streaming.message_journal.Topic"
+        ) as mock_topic_cls:
+            mock_session.return_value.__enter__.return_value = MagicMock()
+            mock_repo = MagicMock()
+            mock_repo_cls.return_value = mock_repo
+            mock_topic_cls.return_value = MagicMock()
+
+            record_event(
+                "msg-1",
+                0,
+                "answer",
+                {
+                    "outer": {"inner\x00key": "a\x00b"},
+                    "items": ["x\x00y", {"k": "v\x00"}],
+                    "clean": "ok",
+                },
+            )
+
+            mock_repo.record.assert_called_once_with(
+                "msg-1",
+                0,
+                "answer",
+                {
+                    "outer": {"innerkey": "ab"},
+                    "items": ["xy", {"k": "v"}],
+                    "clean": "ok",
+                },
+            )
+
+    def test_payload_without_null_bytes_unchanged(self):
+        """Common-case: no NUL, no allocation churn — payload passed
+        through identically.
+        """
+        with patch(
+            "application.streaming.message_journal.db_session"
+        ) as mock_session, patch(
+            "application.streaming.message_journal.MessageEventsRepository"
+        ) as mock_repo_cls, patch(
+            "application.streaming.message_journal.Topic"
+        ) as mock_topic_cls:
+            mock_session.return_value.__enter__.return_value = MagicMock()
+            mock_repo = MagicMock()
+            mock_repo_cls.return_value = mock_repo
+            mock_topic_cls.return_value = MagicMock()
+
+            payload = {"a": "1", "nested": {"b": [1, 2, "three"]}}
+            record_event("msg-1", 0, "answer", payload)
+
+            mock_repo.record.assert_called_once_with(
+                "msg-1", 0, "answer", payload
+            )
+
 
 @pytest.mark.unit
 class TestBatchedJournalWriter:
@@ -277,8 +363,7 @@ class TestBatchedJournalWriter:
 
     def test_size_trigger_flushes_at_batch_size(self):
         """Buffer reaches ``batch_size`` → one bulk_record call covers
-        all rows; live pubsub publishes fire per ``record()`` so the
-        subscriber count matches the row count.
+        all rows; publishes fire after the bulk commit, one per row.
         """
         session_cm, readonly_cm, repo_cls_p, topic_cls_p = self._patch_io()
         with session_cm as mock_session, readonly_cm, repo_cls_p as mock_repo_cls, topic_cls_p as mock_topic_cls:
@@ -291,10 +376,11 @@ class TestBatchedJournalWriter:
             writer = BatchedJournalWriter(
                 "msg-1", batch_size=3, batch_interval_ms=10_000
             )
-            # First two records: buffered, no bulk_record yet.
+            # First two records: buffered, no bulk_record yet, no publish.
             writer.record(0, "answer", {"text": "a"})
             writer.record(1, "answer", {"text": "b"})
             mock_repo.bulk_record.assert_not_called()
+            assert mock_topic.publish.call_count == 0
             # Third record: triggers a size-based flush.
             writer.record(2, "answer", {"text": "c"})
             mock_repo.bulk_record.assert_called_once()
@@ -303,8 +389,13 @@ class TestBatchedJournalWriter:
             buffered = args.args[1]
             assert len(buffered) == 3
             assert [seq for seq, _, _ in buffered] == [0, 1, 2]
-            # Live publish fires per ``record()``, not per flush.
+            # Publishes fire after the bulk commit, one per row in order.
             assert mock_topic.publish.call_count == 3
+            published_seqs = [
+                json.loads(call.args[0])["sequence_no"]
+                for call in mock_topic.publish.call_args_list
+            ]
+            assert published_seqs == [0, 1, 2]
 
     def test_time_trigger_flushes_after_interval(self):
         """When the elapsed time since the last flush exceeds
@@ -456,9 +547,11 @@ class TestBatchedJournalWriter:
             # close after the buffer was already drained.
             assert mock_repo.bulk_record.call_count == 1
 
-    def test_live_publish_fires_per_record_not_per_flush(self):
-        """Subscribers must see events in real time, not in batches —
-        the journal write is the only thing being amortized.
+    def test_record_does_not_publish_synchronously(self):
+        """Regression guard: ``record()`` must not publish before the
+        journal INSERT commits. Buffering an event with no flush yet
+        means zero pubsub frames on the wire — otherwise a reconnect
+        snapshot could miss a row that subscribers already received.
         """
         session_cm, readonly_cm, repo_cls_p, topic_cls_p = self._patch_io()
         with session_cm as mock_session, readonly_cm, repo_cls_p as mock_repo_cls, topic_cls_p as mock_topic_cls:
@@ -470,12 +563,134 @@ class TestBatchedJournalWriter:
             writer = BatchedJournalWriter("msg-1", batch_size=100)
             for i in range(5):
                 writer.record(i, "answer", {"text": str(i)})
-            # All five fire live immediately, even though only 0 flushes
-            # have happened (size threshold not met).
-            assert mock_topic.publish.call_count == 5
-            # Each publish carries its own monotonic sequence_no.
+            mock_topic.publish.assert_not_called()
+
+    def test_flush_publishes_each_buffered_event_after_bulk_insert_in_order(
+        self,
+    ):
+        """Happy path: flush issues one bulk INSERT, then publishes each
+        buffered frame in the order it was recorded.
+        """
+        session_cm, readonly_cm, repo_cls_p, topic_cls_p = self._patch_io()
+        with session_cm as mock_session, readonly_cm, repo_cls_p as mock_repo_cls, topic_cls_p as mock_topic_cls:
+            mock_session.return_value.__enter__.return_value = MagicMock()
+            mock_repo = MagicMock()
+            mock_repo_cls.return_value = mock_repo
+            mock_topic = MagicMock()
+            mock_topic_cls.return_value = mock_topic
+
+            writer = BatchedJournalWriter(
+                "msg-1", batch_size=100, batch_interval_ms=100_000
+            )
+            for i in range(4):
+                writer.record(i, "answer", {"text": str(i)})
+            mock_topic.publish.assert_not_called()
+
+            writer.flush()
+            mock_repo.bulk_record.assert_called_once()
+            assert mock_topic.publish.call_count == 4
             published_seqs = [
                 json.loads(call.args[0])["sequence_no"]
                 for call in mock_topic.publish.call_args_list
             ]
-            assert published_seqs == [0, 1, 2, 3, 4]
+            assert published_seqs == [0, 1, 2, 3]
+
+    def test_flush_bulk_exception_drops_both_row_and_publish(self):
+        """Non-IntegrityError from bulk_record → both the journal row
+        and the live publish are dropped together. Matches the
+        publish_user_event "drop live publish when durable write fails"
+        contract.
+        """
+        session_cm, readonly_cm, repo_cls_p, topic_cls_p = self._patch_io()
+        with session_cm as mock_session, readonly_cm, repo_cls_p as mock_repo_cls, topic_cls_p as mock_topic_cls:
+            mock_session.return_value.__enter__.return_value = MagicMock()
+            mock_repo = MagicMock()
+            mock_repo.bulk_record.side_effect = RuntimeError("PG gone")
+            mock_repo_cls.return_value = mock_repo
+            mock_topic = MagicMock()
+            mock_topic_cls.return_value = mock_topic
+
+            writer = BatchedJournalWriter("msg-1", batch_size=2)
+            writer.record(0, "answer", {"text": "a"})
+            writer.record(1, "answer", {"text": "b"})
+
+            mock_repo.bulk_record.assert_called_once()
+            mock_topic.publish.assert_not_called()
+
+    def test_flush_per_row_publishes_on_commit_skips_on_persistent_drop(self):
+        """IntegrityError-after-retry path: per-row fallback publishes
+        each row that lands in PG (including those rewritten at
+        latest+1), and skips publish for any row dropped after the
+        retry collision.
+        """
+        from sqlalchemy.exc import IntegrityError
+
+        session_cm, readonly_cm, repo_cls_p, topic_cls_p = self._patch_io()
+        with session_cm as mock_session, readonly_cm as mock_readonly, repo_cls_p as mock_repo_cls, topic_cls_p as mock_topic_cls:
+            mock_session.return_value.__enter__.return_value = MagicMock()
+            mock_readonly.return_value.__enter__.return_value = MagicMock()
+
+            # Bulk attempt collides. Per-row: row 0 commits at its seq;
+            # row 1 collides, readonly probe returns latest=9, retry at
+            # 10 collides too → dropped without publish.
+            bulk_repo = MagicMock(name="bulk_repo")
+            bulk_repo.bulk_record.side_effect = IntegrityError(
+                "stmt", {}, Exception()
+            )
+            row0_repo = MagicMock(name="row0_repo")
+            row1_first_repo = MagicMock(name="row1_first_repo")
+            row1_first_repo.record.side_effect = IntegrityError(
+                "stmt", {}, Exception()
+            )
+            row1_readonly_repo = MagicMock(name="row1_readonly_repo")
+            row1_readonly_repo.latest_sequence_no.return_value = 9
+            row1_retry_repo = MagicMock(name="row1_retry_repo")
+            row1_retry_repo.record.side_effect = IntegrityError(
+                "stmt", {}, Exception()
+            )
+            mock_repo_cls.side_effect = [
+                bulk_repo,
+                row0_repo,
+                row1_first_repo,
+                row1_readonly_repo,
+                row1_retry_repo,
+            ]
+
+            mock_topic = MagicMock()
+            mock_topic_cls.return_value = mock_topic
+
+            writer = BatchedJournalWriter("msg-1", batch_size=2)
+            writer.record(0, "answer", {"text": "a"})
+            writer.record(1, "answer", {"text": "b"})
+
+            # Only row 0 publishes — row 1 was dropped after the retry
+            # collision, so no live frame reaches the wire for it.
+            assert mock_topic.publish.call_count == 1
+            wire = json.loads(mock_topic.publish.call_args[0][0])
+            assert wire["sequence_no"] == 0
+            assert wire["payload"] == {"text": "a"}
+
+    def test_record_strips_null_bytes_before_buffer(self):
+        """Null-byte sanitization applies at the writer boundary too —
+        otherwise a NUL-bearing chunk would land in the buffer, the
+        bulk INSERT would fail with ``DataError``, and the per-row
+        fallback would re-attempt the same broken row. Strip at the
+        gate so the buffered tuple is JSONB-safe.
+        """
+        session_cm, readonly_cm, repo_cls_p, topic_cls_p = self._patch_io()
+        with session_cm as mock_session, readonly_cm, repo_cls_p as mock_repo_cls, topic_cls_p as mock_topic_cls:
+            mock_session.return_value.__enter__.return_value = MagicMock()
+            mock_repo = MagicMock()
+            mock_repo_cls.return_value = mock_repo
+            mock_topic_cls.return_value = MagicMock()
+
+            writer = BatchedJournalWriter("msg-1", batch_size=2)
+            writer.record(0, "answer", {"answer": "hel\x00lo"})
+            writer.record(
+                1, "answer", {"nested": {"k\x00": ["a\x00b", "ok"]}}
+            )
+
+            mock_repo.bulk_record.assert_called_once()
+            buffered = mock_repo.bulk_record.call_args.args[1]
+            assert buffered[0][2] == {"answer": "hello"}
+            assert buffered[1][2] == {"nested": {"k": ["ab", "ok"]}}

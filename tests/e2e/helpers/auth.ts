@@ -1,5 +1,4 @@
 /**
- * Phase 1 helper — see e2e-plan.md §P1-B.
  * JWT signing + per-test BrowserContext seeding for DocsGPT e2e.
  */
 

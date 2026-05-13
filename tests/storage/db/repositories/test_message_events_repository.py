@@ -1,9 +1,9 @@
 """Round-trip tests for ``MessageEventsRepository`` against a real
 ephemeral Postgres (via the project's ``pg_engine`` fixture).
 
-Phase 2A coverage: insert ordering, read_after cursor semantics, the
-composite PK rejecting duplicate (message_id, sequence_no), cascade on
-parent delete.
+Coverage: insert ordering, read_after cursor semantics, the composite
+PK rejecting duplicate (message_id, sequence_no), cascade on parent
+delete.
 """
 
 from __future__ import annotations

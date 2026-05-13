@@ -354,8 +354,8 @@ export function handleFetchAnswerSteaming(
     if (token) reconnectHeaders.Authorization = `Bearer ${token}`;
     // NB: there is no slice consumer for a synthetic ``reconnecting``
     // event yet — surface only the underlying network reality. The
-    // user-visible ``Reconnecting…`` affordance is a Phase 2 follow-up
-    // that needs ``conversationSlice`` to gain a status case.
+    // user-visible ``Reconnecting…`` affordance is a follow-up that
+    // needs ``conversationSlice`` to gain a status case.
     const response = await fetch(url.toString(), {
       method: 'GET',
       headers: reconnectHeaders,

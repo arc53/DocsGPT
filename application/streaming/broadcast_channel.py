@@ -2,8 +2,8 @@
 
 A Topic is a named channel for one-shot live event delivery. Canonical uses:
 
-- ``user:{user_id}`` for per-user notifications (Phase 1)
-- ``channel:{message_id}`` for per-chat-message streams (Phase 2)
+- ``user:{user_id}`` for per-user notifications
+- ``channel:{message_id}`` for per-chat-message streams
 
 Subscription is race-free via ``on_subscribe``: the callback fires only
 after Redis acknowledges ``SUBSCRIBE``, so a publisher dispatched inside

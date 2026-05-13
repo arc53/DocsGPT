@@ -83,6 +83,25 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   const [syncDone, setSyncDone] = useState<boolean>(false);
   const [syncConfirmationModal, setSyncConfirmationModal] =
     useState<ActiveState>('INACTIVE');
+  const mountedRef = useRef(true);
+  const syncUnsubscribeRef = useRef<(() => void) | null>(null);
+  // Holds the 5-minute SSE-wait timer so the unmount cleanup can clear
+  // it — otherwise the timer fires up to 5 min after unmount and
+  // resolves an abandoned Promise.
+  const syncTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+      syncUnsubscribeRef.current?.();
+      syncUnsubscribeRef.current = null;
+      if (syncTimerRef.current !== null) {
+        window.clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = null;
+      }
+    },
+    [],
+  );
 
   useOutsideAlerter(
     searchDropdownRef,
@@ -141,24 +160,56 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
           return null;
         };
 
-        const terminal = await new Promise<'completed' | 'failed'>(
-          (resolve) => {
-            // Cover the race where the event landed between the POST
-            // returning and the subscribe call.
-            const initial = terminalFromSse();
-            if (initial) {
-              resolve(initial);
+        const MAX_WAIT_MS = 5 * 60_000;
+        const terminal = await new Promise<
+          'completed' | 'failed' | 'timeout' | 'unmounted'
+        >((resolve) => {
+          // Cover the race where the event landed between the POST
+          // returning and the subscribe call.
+          const initial = terminalFromSse();
+          if (initial) {
+            resolve(initial);
+            return;
+          }
+          if (!mountedRef.current) {
+            resolve('unmounted');
+            return;
+          }
+          let settled = false;
+          const finish = (
+            value: 'completed' | 'failed' | 'timeout' | 'unmounted',
+          ) => {
+            if (settled) return;
+            settled = true;
+            if (syncTimerRef.current !== null) {
+              window.clearTimeout(syncTimerRef.current);
+              syncTimerRef.current = null;
+            }
+            if (syncUnsubscribeRef.current) {
+              syncUnsubscribeRef.current();
+              syncUnsubscribeRef.current = null;
+            }
+            resolve(value);
+          };
+          syncTimerRef.current = window.setTimeout(
+            () => finish('timeout'),
+            MAX_WAIT_MS,
+          );
+          syncUnsubscribeRef.current = store.subscribe(() => {
+            if (!mountedRef.current) {
+              finish('unmounted');
               return;
             }
-            const unsubscribe = store.subscribe(() => {
-              const next = terminalFromSse();
-              if (next) {
-                unsubscribe();
-                resolve(next);
-              }
-            });
-          },
-        );
+            const next = terminalFromSse();
+            if (next) finish(next);
+          });
+        });
+
+        if (terminal === 'timeout') {
+          console.error('Sync timed out waiting for SSE terminal');
+        } else if (terminal === 'unmounted') {
+          return;
+        }
 
         if (terminal === 'completed') {
           // The "no files downloaded" early-return path publishes
@@ -186,7 +237,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
           } catch (err) {
             console.error('Error refreshing directory structure:', err);
           }
-        } else {
+        } else if (terminal === 'failed') {
           console.error('Sync task failed (per SSE)');
         }
       } else {

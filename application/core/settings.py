@@ -188,7 +188,7 @@ class Settings(BaseSettings):
     COMPRESSION_PROMPT_VERSION: str = "v1.0"  # Track prompt iterations
     COMPRESSION_MAX_HISTORY_POINTS: int = 3  # Keep only last N compression points to prevent DB bloat
 
-    # Internal SSE push channel (notifications, durability tier 2)
+    # Internal SSE push channel (notifications + durable replay journal)
     # Master switch — when False, /api/events emits a "push_disabled" comment
     # and returns; clients fall back to polling. Publisher becomes a no-op.
     ENABLE_SSE_PUSH: bool = True
@@ -211,10 +211,9 @@ class Settings(BaseSettings):
     # connection cap above and the windowed budget below, total
     # enumeration throughput is bounded.
     EVENTS_REPLAY_MAX_PER_REQUEST: int = 200
-    # Sliding-window cap on snapshot replays per user. After the
-    # budget is exhausted the route serves only the live tail (no
-    # backlog) until the window rolls over. Connection setup itself
-    # still works.
+    # Sliding-window cap on snapshot replays per user. Once the budget
+    # is exhausted the route returns HTTP 429 with the cursor pinned;
+    # the client backs off and retries after the window rolls over.
     EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW: int = 30
     EVENTS_REPLAY_BUDGET_WINDOW_SECONDS: int = 60
 

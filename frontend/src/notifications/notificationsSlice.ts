@@ -1,4 +1,4 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSelector, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 import { RootState } from '../store';
 
@@ -42,16 +42,25 @@ interface NotificationsState {
   lastEventReceivedAt: number | null;
   /**
    * Event ids of ``tool.approval.required`` notifications the user
-   * dismissed (close button or by navigating into the conversation).
+   * dismissed (close button or by navigating into the conversation),
+   * each tagged with the wallclock ms at which it was dismissed.
    * Keyed by the SSE event id so a *new* approval for the same
    * conversation re-surfaces; the dismissal only suppresses the one
    * specific paused-tool prompt.
+   *
+   * Entries are evicted by TTL first (anything older than
+   * ``DISMISSED_TOOL_APPROVALS_TTL_MS``), then by FIFO cap. The TTL
+   * matters because a pure FIFO with a small cap can evict a *still-
+   * pending* approval id before the user acts on it — re-popping the
+   * toast on the next dispatch. The 24h ceiling is longer than any
+   * plausible approval-pending window.
    */
-  dismissedToolApprovals: string[];
+  dismissedToolApprovals: Array<{ id: string; at: number }>;
 }
 
 const RECENT_EVENTS_CAP = 100;
 const DISMISSED_TOOL_APPROVALS_CAP = 200;
+const DISMISSED_TOOL_APPROVALS_TTL_MS = 24 * 60 * 60 * 1000;
 
 const initialState: NotificationsState = {
   health: 'connecting',
@@ -123,11 +132,16 @@ export const notificationsSlice = createSlice({
      * own decision).
      */
     dismissToolApproval: (state, action: PayloadAction<string>) => {
-      if (!state.dismissedToolApprovals.includes(action.payload)) {
-        state.dismissedToolApprovals.push(action.payload);
-      }
-      // Bound the ring so a long-running session doesn't accumulate
-      // dismissed ids forever — drop the oldest.
+      const id = action.payload;
+      const now = Date.now();
+      // Evict expired entries first so the TTL — not the FIFO cap —
+      // governs when stale ids drop, keeping still-pending approvals
+      // suppressed.
+      const cutoff = now - DISMISSED_TOOL_APPROVALS_TTL_MS;
+      state.dismissedToolApprovals = state.dismissedToolApprovals.filter(
+        (entry) => entry.at >= cutoff && entry.id !== id,
+      );
+      state.dismissedToolApprovals.push({ id, at: now });
       if (state.dismissedToolApprovals.length > DISMISSED_TOOL_APPROVALS_CAP) {
         state.dismissedToolApprovals = state.dismissedToolApprovals.slice(
           -DISMISSED_TOOL_APPROVALS_CAP,
@@ -162,7 +176,13 @@ export const selectLastEventReceivedAt = (state: RootState): number | null =>
 export const selectRecentEvents = (state: RootState): SSEEvent[] =>
   state.notifications.recentEvents;
 
-export const selectDismissedToolApprovals = (state: RootState): string[] =>
-  state.notifications.dismissedToolApprovals;
+// Memoised so ``useSelector`` consumers don't re-render on every
+// unrelated ``notifications`` state change — the underlying ``{id,at}``
+// array only changes when ``dismissToolApproval`` runs, but the
+// projected ``.map`` would otherwise return a fresh array each call.
+export const selectDismissedToolApprovals = createSelector(
+  (state: RootState) => state.notifications.dismissedToolApprovals,
+  (entries) => entries.map((entry) => entry.id),
+);
 
 export default notificationsSlice.reducer;

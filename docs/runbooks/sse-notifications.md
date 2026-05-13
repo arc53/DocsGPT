@@ -4,9 +4,9 @@
 > the related "the bell never lights up" / "my upload toast hangs" /
 > "the chat answer doesn't reconnect" symptoms.
 
-The user-facing notifications channel is the SSE pipe that started in
-Phase 1A (`/api/events`) and grew per-message reconnects in Phase 2
-(`/api/messages/<id>/events`). This document maps a user complaint to
+The user-facing notifications channel is the SSE pipe at
+`/api/events` plus per-message reconnects at
+`/api/messages/<id>/events`. This document maps a user complaint to
 the diagnostic that surfaces the cause.
 
 ---
@@ -54,7 +54,7 @@ Worker (publish_user_event)             Frontend tab
 - Live fan-out: Redis pub/sub channel `user:<user_id>`. No durability;
   subscribers must be attached at publish time.
 
-Phase 2's chat-stream pipe is separate, parallel infrastructure:
+The chat-stream pipe is separate, parallel infrastructure:
 - Journal: Postgres `message_events` table.
 - Live fan-out: Redis pub/sub `channel:<message_id>`.
 
@@ -87,17 +87,17 @@ SSE connection isn't subscribed; skip to "Client never connects".
 If the frontend received it but the toast didn't render → the
 `uploadSlice` extraReducer requires `task.sourceId` to match the
 event's `scope.id`. Check the upload route returned `source_id` in
-its POST response (Phase 1D wired this; Phase 3A added it for
-connector / reingest paths). Idempotent / cached responses must also
-include `source_id` (`_claim_task_or_get_cached`).
+its POST response (the upload, connector, and reingest paths all
+include it). Idempotent / cached responses must also include
+`source_id` (`_claim_task_or_get_cached`).
 
 ### B. "The bell badge never goes up"
 
-There is no bell as of Phase 3 (it was removed). If the user is on
-an old build, `Cmd-Shift-R` to bypass cache. If they're on a current
-build complaining about a missing badge: the surface they're looking
-for is `UploadToast` for source uploads and `ToolApprovalToast` for
-tool-approval events. There's no global aggregated counter.
+There is no bell — the global notifications surface is per-event
+toasts, not an aggregated counter. If the user is on an old build,
+`Cmd-Shift-R` to bypass cache. The surfaces they're looking for are
+`UploadToast` for source uploads and `ToolApprovalToast` for
+tool-approval events.
 
 ### C. "My chat answer froze mid-stream and never recovered"
 
@@ -131,8 +131,8 @@ reconnect HTTP errored. Common cases:
 ### D. "The dev install never delivers any notifications at all"
 
 Default `AUTH_TYPE` unset means `decoded_token = {"sub": "local"}`
-for every request. The SSE client (post Phase 4A) connects without
-the `Authorization` header in this case, and `user:local:stream` is
+for every request. The SSE client connects without the
+`Authorization` header in this case, and `user:local:stream` is
 the shared channel everything goes to. If the user has multiple dev
 machines pointing at the same Redis, they will see each other's
 events. Confirm with:
@@ -149,18 +149,19 @@ to scope per-user.
 
 Likely path: `backlog.truncated` event fired, the slice cleared
 `lastEventId` to null, the closure was carrying the same stale id and
-re-tripped the same truncation on every reconnect. **This was the
-P2 bug fixed in Phase 4 — verify the user is on a current build
-(the `eventStreamClient.ts` `lastEventId = opts.getLastEventId();`
-copy without the truthy guard).**
+re-tripped the same truncation on every reconnect. **Verify the user
+is on a current build — `eventStreamClient.ts` must re-read
+`lastEventId = opts.getLastEventId();` without a truthy guard so the
+null clear propagates into the next reconnect.**
 
 ### F. "I keep getting 429 on /api/events"
 
-Phase 1A's per-user concurrent-connection cap (`SSE_MAX_CONCURRENT_PER_USER`,
+The per-user concurrent-connection cap (`SSE_MAX_CONCURRENT_PER_USER`,
 default 8) refused the connection. User has too many tabs open or a
 runaway reconnect loop. `redis-cli -n 2 GET user:<id>:sse_count`
-shows the live counter; the TTL is 1h, so abandoned tabs eventually
-self-recover.
+shows the live counter; the TTL is 1h from the last connection
+attempt (rolling — every INCR re-seeds it), so the key only ages
+out after the user stops reconnecting for a full hour.
 
 If the count is wedged high without explanation, the
 counter-DECR-in-finally path didn't run (worker SIGKILL, OOM). Wait
@@ -168,8 +169,8 @@ for the TTL or `redis-cli -n 2 DEL user:<id>:sse_count` to reset.
 
 ### G. "Replay snapshot stops at 200 events"
 
-Phase 4B caps each replay at `EVENTS_REPLAY_MAX_PER_REQUEST` (default
-200). The cap is intentionally **silent** — the route does NOT
+The route caps each replay at `EVENTS_REPLAY_MAX_PER_REQUEST`
+(default 200). The cap is intentionally **silent** — the route does NOT
 emit a `backlog.truncated` notice for cap-hit. The 200 entries each
 carry their own `id:` header, so the frontend's slice cursor
 advances to the most-recent delivered id. Next reconnect sends
@@ -326,6 +327,7 @@ Everything in `application/core/settings.py`:
 | `EVENTS_REPLAY_MAX_PER_REQUEST`               | `200`   | Hard cap on snapshot rows per request. |
 | `EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW`    | `30`    | Per-user replays per window. 0 = disabled. |
 | `EVENTS_REPLAY_BUDGET_WINDOW_SECONDS`         | `60`    | Window length. |
+| `MESSAGE_EVENTS_RETENTION_DAYS`               | `14`    | Retention for the `message_events` journal; `cleanup_message_events` beat task deletes older rows. |
 
 ---
 
@@ -348,7 +350,7 @@ loaded list, the conversation route rewrites the URL to `/c/new`.
 `ToolApprovalToast`'s gate uses `useMatch('/c/:conversationId')`,
 so for the brief window after the rewrite the toast may surface
 for a conversation the user *thought* they were already viewing.
-Pre-existing route behaviour; not a Phase 4 regression.
+Pre-existing route behaviour; not a notifications regression.
 
 ### Terminal events un-dismiss running uploads
 

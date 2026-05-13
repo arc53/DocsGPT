@@ -931,7 +931,28 @@ class TestMCPOAuthManager:
         mock_redis.xrevrange.assert_called_once()
         call_args = mock_redis.xrevrange.call_args
         assert "user:alice:stream" in call_args.args
-        assert call_args.kwargs.get("count") == 200
+        # Scan window must cover the full bounded stream so a flood of
+        # concurrent source-ingest events between popup-completed and
+        # Save can't push the OAuth envelope out of view.
+        from application.core.settings import settings
+
+        assert call_args.kwargs.get("count") >= settings.EVENTS_STREAM_MAXLEN
+
+    def test_get_oauth_status_scan_covers_events_stream_maxlen(self):
+        """Regression: count must scale with ``EVENTS_STREAM_MAXLEN``
+        so the OAuth completion envelope is reachable even after
+        concurrent source-ingest events flood the user stream."""
+        from application.agents.tools.mcp_tool import MCPOAuthManager
+        from application.core.settings import settings
+
+        mock_redis = MagicMock()
+        mock_redis.xrevrange.return_value = []
+
+        manager = MCPOAuthManager(mock_redis)
+        manager.get_oauth_status("task123", "alice")
+
+        call_args = mock_redis.xrevrange.call_args
+        assert call_args.kwargs.get("count") >= settings.EVENTS_STREAM_MAXLEN
 
     def test_get_oauth_status_returns_not_found_when_no_match(self):
         from application.agents.tools.mcp_tool import MCPOAuthManager

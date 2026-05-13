@@ -97,6 +97,25 @@ const FileTree: React.FC<FileTreeProps> = ({
   const opQueueRef = useRef<QueuedOperation[]>([]);
   const processingRef = useRef(false);
   const [queueLength, setQueueLength] = useState(0);
+  const mountedRef = useRef(true);
+  const waitUnsubscribeRef = useRef<(() => void) | null>(null);
+  // Holds the 5-minute SSE-wait timer so the unmount cleanup can clear
+  // it — otherwise the timer fires up to 5 min after unmount and
+  // resolves an abandoned Promise.
+  const waitTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+      waitUnsubscribeRef.current?.();
+      waitUnsubscribeRef.current = null;
+      if (waitTimerRef.current !== null) {
+        window.clearTimeout(waitTimerRef.current);
+        waitTimerRef.current = null;
+      }
+    },
+    [],
+  );
 
   useOutsideAlerter(
     searchDropdownRef,
@@ -319,11 +338,12 @@ const FileTree: React.FC<FileTreeProps> = ({
         // ``reingest_source_worker`` publishes ``source.ingest.*``
         // keyed on the resolved ``source_id`` (the
         // ``manage_source_files`` route returns it explicitly so we
-        // can match without consulting any slice). Walk
-        // ``notifications.recentEvents`` for the terminal event tagged
-        // with our source and run the structure refresh; if SSE never
-        // delivers (channel drop, accepted risk per the runbook) the
-        // op silently times out at the configured cap.
+        // can match without consulting any slice). Subscribe to the
+        // store and resolve when a terminal event tagged with our
+        // source lands in ``notifications.recentEvents``. Re-checking
+        // on every dispatch (rather than polling on a timer) avoids
+        // races where a terminal could roll off the bounded ring
+        // before the next tick observes it in chatty sessions.
         const reingestSourceId: string | undefined = result.source_id;
         // Cutoff so we don't pick up terminal events from a *previous*
         // reingest of the same source — the backend's
@@ -331,9 +351,8 @@ const FileTree: React.FC<FileTreeProps> = ({
         // so source_id alone is ambiguous when ops repeat.
         const opStartedAt = Date.now();
         const MAX_WAIT_MS = 5 * 60_000;
-        const TICK_MS = 500;
 
-        const isTerminalFromSse = (): 'completed' | 'failed' | null => {
+        const terminalFromSse = (): 'completed' | 'failed' | null => {
           if (!reingestSourceId) return null;
           const events = store.getState().notifications.recentEvents;
           for (const event of events) {
@@ -352,6 +371,7 @@ const FileTree: React.FC<FileTreeProps> = ({
             token,
           );
           const structureData = await structureResponse.json();
+          if (!mountedRef.current) return false;
           if (structureData && structureData.directory_structure) {
             setDirectoryStructure(structureData.directory_structure);
             currentOpRef.current = null;
@@ -360,18 +380,57 @@ const FileTree: React.FC<FileTreeProps> = ({
           return false;
         };
 
-        const deadline = Date.now() + MAX_WAIT_MS;
-        while (Date.now() < deadline) {
-          const terminal = isTerminalFromSse();
-          if (terminal === 'completed') {
-            if (await refreshStructure()) return true;
-            break;
+        const terminal = await new Promise<
+          'completed' | 'failed' | 'timeout' | 'unmounted'
+        >((resolve) => {
+          if (!mountedRef.current) {
+            resolve('unmounted');
+            return;
           }
-          if (terminal === 'failed') {
-            console.error('Reingest task failed (per SSE)');
-            break;
+          // Cover the race where the terminal event landed between
+          // the POST returning and the subscribe call.
+          const initial = terminalFromSse();
+          if (initial) {
+            resolve(initial);
+            return;
           }
-          await new Promise((resolve) => setTimeout(resolve, TICK_MS));
+          const timer = window.setTimeout(() => {
+            waitUnsubscribeRef.current?.();
+            waitUnsubscribeRef.current = null;
+            waitTimerRef.current = null;
+            resolve('timeout');
+          }, MAX_WAIT_MS);
+          waitTimerRef.current = timer;
+          waitUnsubscribeRef.current = store.subscribe(() => {
+            if (!mountedRef.current) {
+              window.clearTimeout(timer);
+              waitTimerRef.current = null;
+              waitUnsubscribeRef.current?.();
+              waitUnsubscribeRef.current = null;
+              resolve('unmounted');
+              return;
+            }
+            const next = terminalFromSse();
+            if (next) {
+              window.clearTimeout(timer);
+              waitTimerRef.current = null;
+              waitUnsubscribeRef.current?.();
+              waitUnsubscribeRef.current = null;
+              resolve(next);
+            }
+          });
+        });
+
+        if (!mountedRef.current) return false;
+
+        if (terminal === 'completed') {
+          if (await refreshStructure()) return true;
+        } else if (terminal === 'failed') {
+          console.error('Reingest task failed (per SSE)');
+        } else if (terminal === 'unmounted') {
+          return false;
+        } else {
+          console.error('Reingest timed out waiting for SSE terminal');
         }
       } else {
         throw new Error(
@@ -392,7 +451,7 @@ const FileTree: React.FC<FileTreeProps> = ({
             ? 'delete directory'
             : 'delete file(s)';
       console.error(`Error ${actionText}:`, error);
-      setError(`Failed to ${errorText}`);
+      if (mountedRef.current) setError(`Failed to ${errorText}`);
     } finally {
       currentOpRef.current = null;
     }

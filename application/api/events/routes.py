@@ -1,32 +1,9 @@
 """GET /api/events — user-scoped Server-Sent Events endpoint.
 
-Per-connection flow:
-
-1. Authenticate via the ``decoded_token`` Flask before-request middleware.
-2. Read the optional ``Last-Event-ID`` header (or ``last_event_id`` query).
-3. Subscribe to ``user:{user_id}`` pub/sub. Inside the SUBSCRIBE-ack
-   callback, snapshot the durable backlog from
-   ``XRANGE user:{user_id}:stream (last_event_id +``. This ordering is
-   the central correctness invariant: any publisher firing between the
-   moment we issue SUBSCRIBE and the moment we finish XRANGE has its
-   pub/sub message buffered at the connection layer until we read it,
-   and its stream entry captured by XRANGE — so neither path drops it.
-4. Flush the snapshot to the client first.
-5. Tail live pub/sub, deduplicating any message whose stream id is
-   ``<= max_replayed_id`` (covered by snapshot already).
-6. Emit an SSE keepalive comment every ``SSE_KEEPALIVE_SECONDS`` to
-   defeat reverse-proxy and mobile-network idle closes.
-
-A separate ``XINFO STREAM`` check at connect time catches the
-``Last-Event-ID`` sat older than the oldest retained entry case (i.e.
-the backlog window has slid past the client) — we surface a
-``backlog.truncated`` event so the frontend can do a full state
-refetch instead of silently missing data.
-
-Concurrency: a per-user Redis counter caps simultaneous SSE connections
-so one runaway tab can't starve the WSGI thread pool. The counter is
-INCR'd at connect, DECR'd in the generator's ``finally``, with a TTL as
-a belt-and-suspenders against orphaned counts after a hard crash.
+Subscribe-then-snapshot pattern: subscribe to ``user:{user_id}``
+pub/sub, snapshot the Redis Streams backlog past ``Last-Event-ID``
+inside the SUBSCRIBE-ack callback, flush snapshot, then tail live
+events (dedup'd by stream id). See ``docs/runbooks/sse-notifications.md``.
 """
 
 from __future__ import annotations
@@ -125,19 +102,8 @@ def _allow_replay(
 ) -> bool:
     """Per-user sliding-window snapshot-replay budget.
 
-    Increments a Redis counter under
-    ``user:{user_id}:replay_count`` with a TTL equal to the window
-    size; returns ``False`` once the count exceeds the budget. When
-    Redis is unavailable, fails open — the existing per-user
-    concurrency cap still bounds parallel enumeration. Returns
-    ``True`` when the budget setting is 0 (disabled) or non-positive.
-
-    Budget is only consumed when the connect can plausibly do snapshot
-    work. A fresh client (``last_event_id is None``) connecting to an
-    empty backlog (``XLEN == 0``) returns ``True`` without INCR'ing —
-    this catches the React-StrictMode dev-burst case where double
-    mounts of an empty-backlog user would otherwise trip 429 in 5
-    seconds and lock out further connects until the window rolls.
+    Fails open on Redis errors or when the budget is disabled. Empty-backlog
+    no-cursor connects skip INCR so dev double-mounts don't trip 429.
     """
     budget = int(settings.EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW)
     if budget <= 0:
@@ -168,11 +134,11 @@ def _allow_replay(
     key = replay_budget_key(user_id)
     try:
         used = int(redis_client.incr(key))
-        # First increment in this window seeds the TTL. Subsequent
-        # increments leave the TTL alone so the window slides
-        # naturally rather than reset on every replay.
-        if used == 1:
-            redis_client.expire(key, window)
+        # Always (re)seed the TTL. Gating on ``used == 1`` would wedge
+        # the counter forever if INCR succeeds but EXPIRE raises on
+        # the seeding call. EXPIRE on an existing key resets the TTL
+        # to ``window`` — within ±1s of the per-window budget semantic.
+        redis_client.expire(key, window)
     except Exception:
         logger.debug(
             "replay budget probe failed for user=%s; failing open",
@@ -204,20 +170,9 @@ def _replay_backlog(
 ) -> Iterator[tuple[str, str]]:
     """Yield ``(entry_id, sse_line)`` for backlog entries past ``last_event_id``.
 
-    Caps the result at ``max_count`` rows so a single request can't
-    move the entire MAXLEN'd backlog over the wire. A client that
-    falls behind by more than ``max_count`` entries catches up over
-    several reconnects: each delivered entry carries an ``id:``
-    header that advances the frontend's ``lastEventId``, so the next
-    reconnect sends ``last_event_id=<max_replayed>`` and resumes
-    naturally. The route deliberately does NOT emit a synthetic
-    ``backlog.truncated`` on cap-hit (which would clear the slice
-    cursor and re-trip the same oldest-N replay forever).
-
-    Entries with parse failures are skipped rather than aborting replay.
-    The stored envelope is missing ``id`` (the Streams id is only known
-    after XADD); we inject it here so replay and live tail produce
-    structurally identical envelopes.
+    Capped at ``max_count`` rows; clients catch up across reconnects.
+    Parse failures are skipped; the Streams id is injected into the
+    envelope so replay matches live-tail shape.
     """
     # Exclusive start: '(<id>' skips the already-delivered entry.
     start = f"({last_event_id}" if last_event_id else "-"

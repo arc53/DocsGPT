@@ -75,8 +75,8 @@ class ConversationsRepository:
         - Already-UUID-shaped → returned as-is.
         - Otherwise treated as a Mongo ObjectId and looked up via
           ``agents.legacy_mongo_id``. Returns ``None`` if no PG row
-          exists yet (e.g. the agent was created before Phase 1
-          backfill).
+          exists yet (e.g. the agent was created before the backfill
+          ran).
         """
         if not agent_id_raw:
             return None

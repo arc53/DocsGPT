@@ -384,20 +384,61 @@ function Upload({
       };
 
       const check = () => {
-        const task = store
-          .getState()
-          .upload.tasks.find((t) => t.id === clientTaskId);
+        const state = store.getState();
+        const task = state.upload.tasks.find((t) => t.id === clientTaskId);
         if (!task) return false;
         if (task.status === 'completed' || task.status === 'failed') {
           handleTerminal(task.status);
           return true;
         }
+        // Recover from the race where the terminal SSE landed before
+        // ``xhr.onload`` populated ``task.sourceId`` — the slice
+        // silently drops such events (no task to match by sourceId).
+        // Mirrors ConnectorTree/FileTree's ``recentEvents`` walk.
+        if (task.sourceId) {
+          for (const event of state.notifications.recentEvents) {
+            if (event.scope?.id !== task.sourceId) continue;
+            if (event.type === 'source.ingest.completed') {
+              handleTerminal('completed');
+              return true;
+            }
+            if (event.type === 'source.ingest.failed') {
+              handleTerminal('failed');
+              return true;
+            }
+          }
+        }
         return false;
       };
 
       if (check()) return;
-      const unsubscribe = store.subscribe(() => {
-        if (check()) unsubscribe();
+      const MAX_WAIT_MS = 5 * 60_000;
+      let unsubscribe: (() => void) | null = null;
+      const timer = window.setTimeout(() => {
+        unsubscribe?.();
+        if (!handled) {
+          handled = true;
+          console.warn(
+            'trackTraining: timed out waiting for terminal SSE',
+            clientTaskId,
+          );
+          dispatch(
+            updateUploadTask({
+              id: clientTaskId,
+              updates: {
+                status: 'failed',
+                errorMessage:
+                  'Timed out waiting for ingest completion. The ingest may still be running — please refresh to check.',
+              },
+            }),
+          );
+        }
+      }, MAX_WAIT_MS);
+      unsubscribe = store.subscribe(() => {
+        if (check()) {
+          window.clearTimeout(timer);
+          unsubscribe?.();
+        }
       });
     },
     [dispatch, onSuccessfulUpload, selectedDocs, sourceDocs, store, token],

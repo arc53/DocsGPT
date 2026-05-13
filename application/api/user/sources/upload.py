@@ -683,7 +683,7 @@ class ManageSourceFiles(Resource):
                             # inbound ``source.ingest.*`` SSE events
                             # (emitted by ``reingest_source_worker``)
                             # back to the reingest task — matches the
-                            # upload route's contract from Phase 1D.
+                            # upload route's source-id contract.
                             "source_id": resolved_source_id,
                         }
                     ),
