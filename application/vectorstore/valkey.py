@@ -6,8 +6,11 @@ import struct
 import uuid
 from typing import Any, Dict, List, Optional
 
+_GLIDE_AVAILABLE = False
 try:
     from glide_sync import (
+        Batch,
+        ConnectionError as GlideConnectionError,
         DataType,
         DistanceMetricType,
         Field,
@@ -17,10 +20,12 @@ try:
         GlideClient,
         GlideClientConfiguration,
         NodeAddress,
+        RequestError,
         ReturnField,
         ServerCredentials,
         TagField,
         TextField,
+        TimeoutError as GlideTimeoutError,
         VectorAlgorithm,
         VectorField,
         VectorFieldAttributesFlat,
@@ -28,20 +33,20 @@ try:
         VectorType,
         ft,
     )
-except ImportError:
-    raise ImportError(
-        "Could not import valkey-glide-sync. "
-        "Please install with `pip install valkey-glide-sync`."
-    )
 
-from application.core.settings import settings
-from application.vectorstore.base import BaseVectorStore
-from application.vectorstore.document_class import Document
+    _GLIDE_AVAILABLE = True
+except ImportError:
+    pass
+
+from application.core.settings import settings  # noqa: E402
+from application.vectorstore.base import BaseVectorStore  # noqa: E402
+from application.vectorstore.document_class import Document  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 # Characters that must be escaped in Valkey tag field query values.
-_TAG_SPECIAL_CHARS = set(r".,<>{}[]\"':;!@#$%^&*()-+=~ /|")
+# Includes '?' which is a single-character wildcard in valkey-search TAG queries.
+_TAG_SPECIAL_CHARS = set(r".,<>{}[]\"':;!@#$%^&*()-+=~ /|?")
 
 # Batch size for DELETE operations in delete_index.
 _DELETE_BATCH_SIZE = 100
@@ -70,7 +75,15 @@ class ValkeyStore(BaseVectorStore):
             source_id: Identifier for the document source, used to
                 namespace and filter documents.
             embeddings_key: Key name or API key for the embeddings provider.
+
+        Raises:
+            ImportError: If valkey-glide-sync is not installed.
         """
+        if not _GLIDE_AVAILABLE:
+            raise ImportError(
+                "Could not import valkey-glide-sync. "
+                "Please install with `pip install valkey-glide-sync`."
+            )
         super().__init__()
         self._source_id = str(source_id).replace("application/indexes/", "").rstrip("/")
         self._embedding = self._get_embeddings(settings.EMBEDDINGS_NAME, embeddings_key)
@@ -127,7 +140,10 @@ class ValkeyStore(BaseVectorStore):
         Uses VALKEY_DISTANCE_METRIC, VALKEY_VECTOR_TYPE, and VALKEY_VECTOR_ALGORITHM
         from settings. Falls back to cosine/float32/hnsw if values are unrecognized.
         """
-        embedding_dim = getattr(self._embedding, "dimension", 768)
+        embedding_dim = getattr(self._embedding, "dimension", None)
+        if embedding_dim is None:
+            probe = self._embedding.embed_query("dimension probe")
+            embedding_dim = len(probe)
 
         distance_metric = self._resolve_distance_metric(settings.VALKEY_DISTANCE_METRIC)
         vector_type = self._resolve_vector_type(settings.VALKEY_VECTOR_TYPE)
@@ -310,7 +326,7 @@ class ValkeyStore(BaseVectorStore):
 
             return self._parse_search_results(results)
 
-        except Exception as e:
+        except (RequestError, GlideConnectionError, GlideTimeoutError) as e:
             logger.error(f"Error searching Valkey: {e}", exc_info=True)
             return []
 
@@ -406,6 +422,8 @@ class ValkeyStore(BaseVectorStore):
         metadatas = metadatas or [{}] * len(texts)
         doc_ids: List[str] = []
 
+        # Use non-atomic Batch (pipeline) to reduce network round trips.
+        batch = Batch(False)
         for text, embedding, metadata in zip(texts, embeddings, metadatas):
             doc_id = str(uuid.uuid4())
             key = self._doc_key(doc_id)
@@ -418,15 +436,17 @@ class ValkeyStore(BaseVectorStore):
                 "embedding": vector_bytes,
             }
 
-            try:
-                self._client.hset(key, fields)
-                doc_ids.append(doc_id)
-            except Exception as e:
-                logger.error(
-                    f"Error adding document to Valkey (wrote {len(doc_ids)}/{len(texts)} "
-                    f"before failure): {e}"
-                )
-                raise
+            batch.hset(key, fields)
+            doc_ids.append(doc_id)
+
+        try:
+            self._client.exec(batch, raise_on_error=True)
+        except (RequestError, GlideConnectionError, GlideTimeoutError) as e:
+            logger.error(
+                f"Error adding documents to Valkey via pipeline "
+                f"({len(doc_ids)} documents): {e}"
+            )
+            raise
 
         return doc_ids
 
@@ -488,7 +508,7 @@ class ValkeyStore(BaseVectorStore):
                 batch = keys[i : i + _DELETE_BATCH_SIZE]
                 self._client.delete(batch)
 
-        except Exception as e:
+        except (RequestError, GlideConnectionError, GlideTimeoutError) as e:
             logger.error(f"Error deleting index from Valkey: {e}", exc_info=True)
 
     def save_local(self, *args, **kwargs):
@@ -550,7 +570,7 @@ class ValkeyStore(BaseVectorStore):
 
             return chunks
 
-        except Exception as e:
+        except (RequestError, GlideConnectionError, GlideTimeoutError) as e:
             logger.error(f"Error getting chunks from Valkey: {e}", exc_info=True)
             return []
 
@@ -586,7 +606,7 @@ class ValkeyStore(BaseVectorStore):
         try:
             self._client.hset(key, fields)
             return doc_id
-        except Exception as e:
+        except (RequestError, GlideConnectionError, GlideTimeoutError) as e:
             logger.error(f"Error adding chunk to Valkey: {e}")
             raise
 
@@ -603,6 +623,6 @@ class ValkeyStore(BaseVectorStore):
             key = self._doc_key(chunk_id)
             result = self._client.delete([key])
             return result > 0
-        except Exception as e:
+        except (RequestError, GlideConnectionError, GlideTimeoutError) as e:
             logger.error(f"Error deleting chunk from Valkey: {e}", exc_info=True)
             return False

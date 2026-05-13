@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
+from glide_sync import RequestError
+
 
 def _make_store(source_id="test-source", embeddings_key="key"):
     """Helper to create a ValkeyStore with all external deps mocked."""
@@ -136,7 +138,7 @@ class TestValkeyStoreSearch:
     def test_search_returns_empty_on_error(self):
         store, mock_client, _ = _make_store()
 
-        with patch("application.vectorstore.valkey.ft.search", side_effect=Exception("connection lost")):
+        with patch("application.vectorstore.valkey.ft.search", side_effect=RequestError("connection lost")):
             results = store.search("query")
             assert results == []
 
@@ -178,12 +180,12 @@ class TestValkeyStoreAddTexts:
     def test_add_texts_returns_ids(self):
         store, mock_client, mock_emb = _make_store()
         mock_emb.embed_documents.return_value = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
-        mock_client.hset = Mock(return_value=3)
+        mock_client.exec = Mock(return_value=["OK", "OK"])
 
         ids = store.add_texts(["text1", "text2"], [{"a": 1}, {"b": 2}])
 
         assert len(ids) == 2
-        assert mock_client.hset.call_count == 2
+        mock_client.exec.assert_called_once()
 
     def test_add_texts_empty_returns_empty(self):
         store, _, _ = _make_store()
@@ -192,7 +194,7 @@ class TestValkeyStoreAddTexts:
     def test_add_texts_default_metadatas(self):
         store, mock_client, mock_emb = _make_store()
         mock_emb.embed_documents.return_value = [[0.1, 0.2, 0.3]]
-        mock_client.hset = Mock(return_value=3)
+        mock_client.exec = Mock(return_value=["OK"])
 
         ids = store.add_texts(["text1"])
         assert len(ids) == 1
@@ -200,27 +202,35 @@ class TestValkeyStoreAddTexts:
     def test_add_texts_raises_on_error(self):
         store, mock_client, mock_emb = _make_store()
         mock_emb.embed_documents.return_value = [[0.1, 0.2, 0.3]]
-        mock_client.hset = Mock(side_effect=Exception("write failed"))
+        mock_client.exec = Mock(side_effect=RequestError("write failed"))
 
-        with pytest.raises(Exception, match="write failed"):
+        with pytest.raises(RequestError, match="write failed"):
             store.add_texts(["text1"])
 
     def test_add_texts_stores_correct_fields(self):
         store, mock_client, mock_emb = _make_store(source_id="src1")
         mock_emb.embed_documents.return_value = [[0.1, 0.2, 0.3]]
-        mock_client.hset = Mock(return_value=3)
+        mock_client.exec = Mock(return_value=["OK"])
 
-        store.add_texts(["hello"], [{"key": "val"}])
+        with patch("application.vectorstore.valkey.Batch") as MockBatch:
+            mock_batch_instance = MagicMock()
+            MockBatch.return_value = mock_batch_instance
 
-        call_args = mock_client.hset.call_args
-        key = call_args[0][0]
-        fields = call_args[0][1]
+            store.add_texts(["hello"], [{"key": "val"}])
 
-        assert key.startswith("doc:")
-        assert fields["content"] == "hello"
-        assert fields["source_id"] == "src1"
-        assert json.loads(fields["metadata"]) == {"key": "val"}
-        assert isinstance(fields["embedding"], bytes)
+            # Verify the batch was created as non-atomic (pipeline)
+            MockBatch.assert_called_once_with(False)
+
+            # Verify hset was called on the batch with correct fields
+            call_args = mock_batch_instance.hset.call_args
+            key = call_args[0][0]
+            fields = call_args[0][1]
+
+            assert key.startswith("doc:")
+            assert fields["content"] == "hello"
+            assert fields["source_id"] == "src1"
+            assert json.loads(fields["metadata"]) == {"key": "val"}
+            assert isinstance(fields["embedding"], bytes)
 
 
 @pytest.mark.unit
@@ -277,7 +287,7 @@ class TestValkeyStoreDeleteIndex:
     def test_delete_index_handles_error(self):
         store, mock_client, _ = _make_store()
 
-        with patch("application.vectorstore.valkey.ft.search", side_effect=Exception("fail")):
+        with patch("application.vectorstore.valkey.ft.search", side_effect=RequestError("fail")):
             # Should not raise
             store.delete_index()
 
@@ -310,7 +320,7 @@ class TestValkeyStoreGetChunks:
     def test_get_chunks_returns_empty_on_error(self):
         store, mock_client, _ = _make_store()
 
-        with patch("application.vectorstore.valkey.ft.search", side_effect=Exception("fail")):
+        with patch("application.vectorstore.valkey.ft.search", side_effect=RequestError("fail")):
             assert store.get_chunks() == []
 
     def test_get_chunks_uses_return_fields(self):
@@ -378,7 +388,7 @@ class TestValkeyStoreDeleteChunk:
 
     def test_delete_chunk_returns_false_on_error(self):
         store, mock_client, _ = _make_store()
-        mock_client.delete = Mock(side_effect=Exception("fail"))
+        mock_client.delete = Mock(side_effect=RequestError("fail"))
 
         result = store.delete_chunk("uuid-123")
         assert result is False
