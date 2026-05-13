@@ -23,6 +23,7 @@ try:
         TextField,
         VectorAlgorithm,
         VectorField,
+        VectorFieldAttributesFlat,
         VectorFieldAttributesHnsw,
         VectorType,
         ft,
@@ -40,7 +41,7 @@ from application.vectorstore.document_class import Document
 logger = logging.getLogger(__name__)
 
 # Characters that must be escaped in Valkey tag field query values.
-_TAG_SPECIAL_CHARS = set(r".,<>{}[]\"':;!@#$%^&*()-+=~ /")
+_TAG_SPECIAL_CHARS = set(r".,<>{}[]\"':;!@#$%^&*()-+=~ /|")
 
 # Batch size for DELETE operations in delete_index.
 _DELETE_BATCH_SIZE = 100
@@ -104,21 +105,48 @@ class ValkeyStore(BaseVectorStore):
         return GlideClient.create(config)
 
     def _ensure_index_exists(self):
-        """Create the search index if it does not already exist."""
+        """Create the search index if it does not already exist.
+
+        Uses VALKEY_DISTANCE_METRIC, VALKEY_VECTOR_TYPE, and VALKEY_VECTOR_ALGORITHM
+        from settings. Falls back to cosine/float32/hnsw if values are unrecognized.
+        """
         embedding_dim = getattr(self._embedding, "dimension", 768)
 
-        schema: List[Field] = [
-            TextField("content"),
-            TagField("source_id"),
-            VectorField(
+        distance_metric = self._resolve_distance_metric(settings.VALKEY_DISTANCE_METRIC)
+        vector_type = self._resolve_vector_type(settings.VALKEY_VECTOR_TYPE)
+        algorithm = self._resolve_vector_algorithm(settings.VALKEY_VECTOR_ALGORITHM)
+
+        logger.info(
+            f"Valkey index config: algorithm={algorithm.name}, "
+            f"distance_metric={distance_metric.name}, vector_type={vector_type.name}, "
+            f"dimensions={embedding_dim}"
+        )
+
+        if algorithm == VectorAlgorithm.HNSW:
+            vector_field = VectorField(
                 name="embedding",
                 algorithm=VectorAlgorithm.HNSW,
                 attributes=VectorFieldAttributesHnsw(
                     dimensions=embedding_dim,
-                    distance_metric=DistanceMetricType.COSINE,
-                    type=VectorType.FLOAT32,
+                    distance_metric=distance_metric,
+                    type=vector_type,
                 ),
-            ),
+            )
+        else:
+            vector_field = VectorField(
+                name="embedding",
+                algorithm=VectorAlgorithm.FLAT,
+                attributes=VectorFieldAttributesFlat(
+                    dimensions=embedding_dim,
+                    distance_metric=distance_metric,
+                    type=vector_type,
+                ),
+            )
+
+        schema: List[Field] = [
+            TextField("content"),
+            TagField("source_id"),
+            vector_field,
         ]
 
         options = FtCreateOptions(data_type=DataType.HASH, prefixes=[self._prefix])
@@ -132,6 +160,75 @@ class ValkeyStore(BaseVectorStore):
             else:
                 logger.error(f"Error creating Valkey index: {e}")
                 raise
+
+    @staticmethod
+    def _resolve_distance_metric(value: str) -> DistanceMetricType:
+        """Resolve distance metric string to enum, defaulting to COSINE.
+
+        Args:
+            value: One of "cosine", "l2", or "ip".
+
+        Returns:
+            The corresponding DistanceMetricType enum value.
+        """
+        mapping = {
+            "cosine": DistanceMetricType.COSINE,
+            "l2": DistanceMetricType.L2,
+            "ip": DistanceMetricType.IP,
+        }
+        result = mapping.get(value.lower().strip())
+        if result is None:
+            logger.warning(
+                f"Unrecognized VALKEY_DISTANCE_METRIC='{value}', "
+                f"falling back to 'cosine'. Valid options: cosine, l2, ip"
+            )
+            return DistanceMetricType.COSINE
+        return result
+
+    @staticmethod
+    def _resolve_vector_type(value: str) -> VectorType:
+        """Resolve vector type string to enum, defaulting to FLOAT32.
+
+        Args:
+            value: Currently only "float32" is supported by valkey-glide-sync.
+
+        Returns:
+            The corresponding VectorType enum value.
+        """
+        mapping = {
+            "float32": VectorType.FLOAT32,
+        }
+        result = mapping.get(value.lower().strip())
+        if result is None:
+            logger.warning(
+                f"Unrecognized VALKEY_VECTOR_TYPE='{value}', "
+                f"falling back to 'float32'. Valid options: float32"
+            )
+            return VectorType.FLOAT32
+        return result
+
+    @staticmethod
+    def _resolve_vector_algorithm(value: str) -> VectorAlgorithm:
+        """Resolve vector algorithm string to enum, defaulting to HNSW.
+
+        Args:
+            value: One of "hnsw" or "flat".
+
+        Returns:
+            The corresponding VectorAlgorithm enum value.
+        """
+        mapping = {
+            "hnsw": VectorAlgorithm.HNSW,
+            "flat": VectorAlgorithm.FLAT,
+        }
+        result = mapping.get(value.lower().strip())
+        if result is None:
+            logger.warning(
+                f"Unrecognized VALKEY_VECTOR_ALGORITHM='{value}', "
+                f"falling back to 'hnsw'. Valid options: hnsw, flat"
+            )
+            return VectorAlgorithm.HNSW
+        return result
 
     @staticmethod
     def _escape_tag_value(value: str) -> str:

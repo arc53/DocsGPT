@@ -81,6 +81,11 @@ class TestValkeyStoreTagEscaping:
 
         assert ValkeyStore._escape_tag_value("my source") == r"my\ source"
 
+    def test_escape_pipe(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        assert ValkeyStore._escape_tag_value("a|b") == r"a\|b"
+
     def test_no_escape_needed(self):
         from application.vectorstore.valkey import ValkeyStore
 
@@ -484,3 +489,79 @@ class TestValkeyStoreCreateClient:
             config_call_kwargs = mock_config_cls.call_args[1]
             assert "credentials" in config_call_kwargs
             mock_creds.assert_called_once_with(password="secret123")
+
+
+@pytest.mark.unit
+class TestValkeyStoreSchemaConfig:
+    """Tests for configurable distance metric, vector type, and algorithm."""
+
+    def test_resolve_distance_metric_cosine(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        from glide_sync import DistanceMetricType
+
+        assert ValkeyStore._resolve_distance_metric("cosine") == DistanceMetricType.COSINE
+
+    def test_resolve_distance_metric_l2(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        from glide_sync import DistanceMetricType
+
+        assert ValkeyStore._resolve_distance_metric("l2") == DistanceMetricType.L2
+
+    def test_resolve_distance_metric_ip(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        from glide_sync import DistanceMetricType
+
+        assert ValkeyStore._resolve_distance_metric("ip") == DistanceMetricType.IP
+
+    def test_resolve_distance_metric_invalid_falls_back(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        from glide_sync import DistanceMetricType
+
+        assert ValkeyStore._resolve_distance_metric("invalid") == DistanceMetricType.COSINE
+
+    def test_resolve_distance_metric_case_insensitive(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        from glide_sync import DistanceMetricType
+
+        assert ValkeyStore._resolve_distance_metric("COSINE") == DistanceMetricType.COSINE
+        assert ValkeyStore._resolve_distance_metric("L2") == DistanceMetricType.L2
+
+    def test_resolve_vector_type_float32(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        from glide_sync import VectorType
+
+        assert ValkeyStore._resolve_vector_type("float32") == VectorType.FLOAT32
+
+    def test_resolve_vector_type_invalid_falls_back(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        from glide_sync import VectorType
+
+        assert ValkeyStore._resolve_vector_type("float64") == VectorType.FLOAT32
+
+    def test_resolve_vector_algorithm_hnsw(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        from glide_sync import VectorAlgorithm
+
+        assert ValkeyStore._resolve_vector_algorithm("hnsw") == VectorAlgorithm.HNSW
+
+    def test_resolve_vector_algorithm_flat(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        from glide_sync import VectorAlgorithm
+
+        assert ValkeyStore._resolve_vector_algorithm("flat") == VectorAlgorithm.FLAT
+
+    def test_resolve_vector_algorithm_invalid_falls_back(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        from glide_sync import VectorAlgorithm
+
+        assert ValkeyStore._resolve_vector_algorithm("annoy") == VectorAlgorithm.HNSW

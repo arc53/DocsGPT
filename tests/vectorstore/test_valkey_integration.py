@@ -76,6 +76,9 @@ def valkey_store():
         mock_settings.VALKEY_USE_TLS = False
         mock_settings.VALKEY_INDEX_NAME = index_name
         mock_settings.VALKEY_PREFIX = f"test:{source_id}:"
+        mock_settings.VALKEY_DISTANCE_METRIC = "cosine"
+        mock_settings.VALKEY_VECTOR_TYPE = "float32"
+        mock_settings.VALKEY_VECTOR_ALGORITHM = "hnsw"
 
         from application.vectorstore.valkey import ValkeyStore
 
