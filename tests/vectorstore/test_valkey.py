@@ -53,6 +53,61 @@ class TestValkeyStoreInit:
 
 
 @pytest.mark.unit
+class TestValkeyStoreTagEscaping:
+    """Tests for _escape_tag_value to ensure source_ids with special chars are safe."""
+
+    def test_escape_dots(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        assert ValkeyStore._escape_tag_value("my.source.v2") == r"my\.source\.v2"
+
+    def test_escape_hyphens(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        assert ValkeyStore._escape_tag_value("my-source") == r"my\-source"
+
+    def test_escape_slashes(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        assert ValkeyStore._escape_tag_value("user/docs") == r"user\/docs"
+
+    def test_escape_colons(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        assert ValkeyStore._escape_tag_value("ns:value") == r"ns\:value"
+
+    def test_escape_spaces(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        assert ValkeyStore._escape_tag_value("my source") == r"my\ source"
+
+    def test_no_escape_needed(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        assert ValkeyStore._escape_tag_value("simplesource123") == "simplesource123"
+
+    def test_escape_multiple_special_chars(self):
+        from application.vectorstore.valkey import ValkeyStore
+
+        result = ValkeyStore._escape_tag_value("a.b-c/d:e")
+        assert result == r"a\.b\-c\/d\:e"
+
+    def test_search_uses_escaped_source_id(self):
+        """Verify search query contains escaped source_id."""
+        store, mock_client, mock_emb = _make_store(source_id="my.source-v2")
+
+        mock_response = [0]
+
+        with patch("application.vectorstore.valkey.ft.search", return_value=mock_response) as mock_ft:
+            store.search("query", k=1)
+
+        call_args = mock_ft.call_args
+        query_str = call_args[0][2]
+        # Should contain escaped version
+        assert r"my\.source\-v2" in query_str
+
+
+@pytest.mark.unit
 class TestValkeyStoreSearch:
     def test_search_returns_documents(self):
         store, mock_client, mock_emb = _make_store()
@@ -100,6 +155,17 @@ class TestValkeyStoreSearch:
 
         assert len(results) == 1
         assert results[0].page_content == "hello"
+
+    def test_search_passes_return_fields(self):
+        """Verify search specifies return_fields to avoid fetching embeddings."""
+        store, mock_client, _ = _make_store()
+
+        with patch("application.vectorstore.valkey.ft.search", return_value=[0]) as mock_ft:
+            store.search("query", k=1)
+
+        call_args = mock_ft.call_args
+        options = call_args[0][3]
+        assert hasattr(options, "return_fields")
 
 
 @pytest.mark.unit
@@ -154,7 +220,8 @@ class TestValkeyStoreAddTexts:
 
 @pytest.mark.unit
 class TestValkeyStoreDeleteIndex:
-    def test_delete_index_deletes_matching_docs(self):
+    def test_delete_index_deletes_matching_docs_in_batch(self):
+        """Verify delete_index uses batched deletes."""
         store, mock_client, _ = _make_store(source_id="src123")
 
         mock_response = [
@@ -164,10 +231,43 @@ class TestValkeyStoreDeleteIndex:
         ]
 
         with patch("application.vectorstore.valkey.ft.search", return_value=mock_response):
+            mock_client.delete = Mock(return_value=2)
+            store.delete_index()
+
+        # Should batch both keys into one delete call
+        mock_client.delete.assert_called_once()
+        deleted_keys = mock_client.delete.call_args[0][0]
+        assert len(deleted_keys) == 2
+
+    def test_delete_index_paginates_large_sets(self):
+        """Verify delete_index paginates when there are more docs than page size."""
+        store, mock_client, _ = _make_store(source_id="src123")
+
+        # Simulate two pages: first returns full page, second returns partial
+        from application.vectorstore.valkey import _SCAN_PAGE_SIZE
+
+        page1_entries = [
+            {f"doc:id{i}".encode(): {b"content": b"text"}} for i in range(_SCAN_PAGE_SIZE)
+        ]
+        page1_response = [_SCAN_PAGE_SIZE] + page1_entries
+
+        page2_entries = [
+            {b"doc:extra1": {b"content": b"text"}},
+            {b"doc:extra2": {b"content": b"text"}},
+        ]
+        page2_response = [2] + page2_entries
+
+        with patch(
+            "application.vectorstore.valkey.ft.search", side_effect=[page1_response, page2_response]
+        ):
             mock_client.delete = Mock(return_value=1)
             store.delete_index()
 
-        assert mock_client.delete.call_count == 2
+        # Should have multiple delete calls due to batching
+        total_deleted = sum(
+            len(call[0][0]) for call in mock_client.delete.call_args_list
+        )
+        assert total_deleted == _SCAN_PAGE_SIZE + 2
 
     def test_delete_index_handles_error(self):
         store, mock_client, _ = _make_store()
@@ -207,6 +307,17 @@ class TestValkeyStoreGetChunks:
 
         with patch("application.vectorstore.valkey.ft.search", side_effect=Exception("fail")):
             assert store.get_chunks() == []
+
+    def test_get_chunks_uses_return_fields(self):
+        """Verify get_chunks specifies return_fields to skip embedding blobs."""
+        store, mock_client, _ = _make_store()
+
+        with patch("application.vectorstore.valkey.ft.search", return_value=[0]) as mock_ft:
+            store.get_chunks()
+
+        call_args = mock_ft.call_args
+        options = call_args[0][3]
+        assert hasattr(options, "return_fields")
 
 
 @pytest.mark.unit
@@ -266,3 +377,110 @@ class TestValkeyStoreDeleteChunk:
 
         result = store.delete_chunk("uuid-123")
         assert result is False
+
+
+@pytest.mark.unit
+class TestValkeyStoreCreateClient:
+    """Tests for password handling in _create_client."""
+
+    def test_password_none_skips_credentials(self):
+        """When VALKEY_PASSWORD is None, no credentials should be passed."""
+        with patch(
+            "application.vectorstore.base.BaseVectorStore._get_embeddings"
+        ) as mock_get_emb, patch(
+            "application.vectorstore.valkey.settings"
+        ) as mock_settings, patch(
+            "application.vectorstore.valkey.GlideClientConfiguration"
+        ) as mock_config_cls, patch(
+            "application.vectorstore.valkey.GlideClient"
+        ) as mock_glide_cls, patch(
+            "application.vectorstore.valkey.ValkeyStore._ensure_index_exists"
+        ):
+            mock_emb = Mock()
+            mock_emb.dimension = 768
+            mock_get_emb.return_value = mock_emb
+            mock_settings.EMBEDDINGS_NAME = "test"
+            mock_settings.VALKEY_HOST = "localhost"
+            mock_settings.VALKEY_PORT = 6379
+            mock_settings.VALKEY_PASSWORD = None
+            mock_settings.VALKEY_USE_TLS = False
+            mock_settings.VALKEY_INDEX_NAME = "docsgpt"
+            mock_settings.VALKEY_PREFIX = "doc:"
+            mock_glide_cls.create = Mock(return_value=MagicMock())
+
+            from application.vectorstore.valkey import ValkeyStore
+
+            ValkeyStore(source_id="test", embeddings_key="key")
+
+            # Verify no credentials kwarg
+            config_call_kwargs = mock_config_cls.call_args[1]
+            assert "credentials" not in config_call_kwargs
+
+    def test_empty_string_password_skips_credentials(self):
+        """When VALKEY_PASSWORD is empty string, no credentials should be passed."""
+        with patch(
+            "application.vectorstore.base.BaseVectorStore._get_embeddings"
+        ) as mock_get_emb, patch(
+            "application.vectorstore.valkey.settings"
+        ) as mock_settings, patch(
+            "application.vectorstore.valkey.GlideClientConfiguration"
+        ) as mock_config_cls, patch(
+            "application.vectorstore.valkey.GlideClient"
+        ) as mock_glide_cls, patch(
+            "application.vectorstore.valkey.ValkeyStore._ensure_index_exists"
+        ):
+            mock_emb = Mock()
+            mock_emb.dimension = 768
+            mock_get_emb.return_value = mock_emb
+            mock_settings.EMBEDDINGS_NAME = "test"
+            mock_settings.VALKEY_HOST = "localhost"
+            mock_settings.VALKEY_PORT = 6379
+            mock_settings.VALKEY_PASSWORD = ""
+            mock_settings.VALKEY_USE_TLS = False
+            mock_settings.VALKEY_INDEX_NAME = "docsgpt"
+            mock_settings.VALKEY_PREFIX = "doc:"
+            mock_glide_cls.create = Mock(return_value=MagicMock())
+
+            from application.vectorstore.valkey import ValkeyStore
+
+            ValkeyStore(source_id="test", embeddings_key="key")
+
+            # Verify no credentials kwarg
+            config_call_kwargs = mock_config_cls.call_args[1]
+            assert "credentials" not in config_call_kwargs
+
+    def test_non_empty_password_sets_credentials(self):
+        """When VALKEY_PASSWORD has a value, credentials should be passed."""
+        with patch(
+            "application.vectorstore.base.BaseVectorStore._get_embeddings"
+        ) as mock_get_emb, patch(
+            "application.vectorstore.valkey.settings"
+        ) as mock_settings, patch(
+            "application.vectorstore.valkey.GlideClientConfiguration"
+        ) as mock_config_cls, patch(
+            "application.vectorstore.valkey.GlideClient"
+        ) as mock_glide_cls, patch(
+            "application.vectorstore.valkey.ValkeyStore._ensure_index_exists"
+        ), patch(
+            "application.vectorstore.valkey.ServerCredentials"
+        ) as mock_creds:
+            mock_emb = Mock()
+            mock_emb.dimension = 768
+            mock_get_emb.return_value = mock_emb
+            mock_settings.EMBEDDINGS_NAME = "test"
+            mock_settings.VALKEY_HOST = "localhost"
+            mock_settings.VALKEY_PORT = 6379
+            mock_settings.VALKEY_PASSWORD = "secret123"
+            mock_settings.VALKEY_USE_TLS = False
+            mock_settings.VALKEY_INDEX_NAME = "docsgpt"
+            mock_settings.VALKEY_PREFIX = "doc:"
+            mock_glide_cls.create = Mock(return_value=MagicMock())
+
+            from application.vectorstore.valkey import ValkeyStore
+
+            ValkeyStore(source_id="test", embeddings_key="key")
+
+            # Verify credentials kwarg was passed
+            config_call_kwargs = mock_config_cls.call_args[1]
+            assert "credentials" in config_call_kwargs
+            mock_creds.assert_called_once_with(password="secret123")
