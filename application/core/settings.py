@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     PARSE_IMAGE_REMOTE: bool = False
     DOCLING_OCR_ENABLED: bool = False  # Enable OCR for docling parsers (PDF, images)
     DOCLING_OCR_ATTACHMENTS_ENABLED: bool = False  # Enable OCR for docling when parsing attachments
-    VECTOR_STORE: str = "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector"
+    VECTOR_STORE: str = "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector" or "valkey"
     RETRIEVERS_ENABLED: list = ["classic_rag"]
     AGENT_NAME: str = "classic"
     FALLBACK_LLM_PROVIDER: Optional[str] = None  # provider for fallback llm
@@ -156,6 +156,14 @@ class Settings(BaseSettings):
     # LanceDB vectorstore config
     LANCEDB_PATH: str = "./data/lancedb"  # Path where LanceDB stores its local data
     LANCEDB_TABLE_NAME: Optional[str] = "docsgpts"  # Name of the table to use for storing vectors
+
+    # Valkey vectorstore config
+    VALKEY_HOST: str = "localhost"
+    VALKEY_PORT: int = 6379
+    VALKEY_PASSWORD: Optional[str] = None
+    VALKEY_USE_TLS: bool = False
+    VALKEY_INDEX_NAME: str = "docsgpt"
+    VALKEY_PREFIX: str = "doc:"
 
     FLASK_DEBUG_MODE: bool = False
     STORAGE_TYPE: str = "local"  # local or s3
