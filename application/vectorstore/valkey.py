@@ -80,6 +80,23 @@ class ValkeyStore(BaseVectorStore):
         self._client = self._create_client()
         self._ensure_index_exists()
 
+    def close(self):
+        """Close the underlying Valkey client connection.
+
+        Should be called when the store is no longer needed to release
+        the TCP connection held by the GLIDE client.
+        """
+        if self._client is not None:
+            try:
+                self._client.close()
+            except Exception as e:
+                logger.debug(f"Error closing Valkey client: {e}")
+            self._client = None
+
+    def __del__(self):
+        """Best-effort cleanup on garbage collection."""
+        self.close()
+
     def _create_client(self) -> GlideClient:
         """Create and return a synchronous Valkey GLIDE client.
 
@@ -155,7 +172,8 @@ class ValkeyStore(BaseVectorStore):
             ft.create(self._client, self._index_name, schema, options)
             logger.info(f"Created Valkey search index '{self._index_name}'")
         except Exception as e:
-            if "already exists" in str(e).lower():
+            error_msg = str(e).lower()
+            if "already exists" in error_msg or "index already" in error_msg:
                 logger.debug(f"Valkey index '{self._index_name}' already exists")
             else:
                 logger.error(f"Error creating Valkey index: {e}")
@@ -415,6 +433,9 @@ class ValkeyStore(BaseVectorStore):
     def _paginated_source_scan(self) -> List[str]:
         """Scan all keys matching this source_id, handling pagination.
 
+        Uses a minimal return field to avoid fetching full document content —
+        only the key names are needed for deletion.
+
         Returns:
             List of key strings for all documents with this source_id.
         """
@@ -428,7 +449,10 @@ class ValkeyStore(BaseVectorStore):
                 self._client,
                 self._index_name,
                 query,
-                FtSearchOptions(limit=FtSearchLimit(offset, _SCAN_PAGE_SIZE)),
+                FtSearchOptions(
+                    limit=FtSearchLimit(offset, _SCAN_PAGE_SIZE),
+                    return_fields=[ReturnField("source_id")],
+                ),
             )
 
             if not results or len(results) < 2:
