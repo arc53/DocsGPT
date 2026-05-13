@@ -565,3 +565,148 @@ class TestValkeyStoreSchemaConfig:
         from glide_sync import VectorAlgorithm
 
         assert ValkeyStore._resolve_vector_algorithm("annoy") == VectorAlgorithm.HNSW
+
+
+@pytest.mark.unit
+class TestValkeyStoreClose:
+    """Tests for client resource cleanup."""
+
+    def test_close_calls_client_close(self):
+        store, mock_client, _ = _make_store()
+
+        store.close()
+
+        mock_client.close.assert_called_once()
+        assert store._client is None
+
+    def test_close_is_idempotent(self):
+        store, mock_client, _ = _make_store()
+
+        store.close()
+        store.close()  # second call should not raise
+
+        mock_client.close.assert_called_once()
+
+    def test_close_handles_exception(self):
+        store, mock_client, _ = _make_store()
+        mock_client.close = Mock(side_effect=Exception("already closed"))
+
+        # Should not raise
+        store.close()
+        assert store._client is None
+
+
+@pytest.mark.unit
+class TestValkeyStoreEnsureIndex:
+    """Tests for _ensure_index_exists with FLAT algorithm path."""
+
+    def test_ensure_index_flat_algorithm(self):
+        """Verify FLAT algorithm path creates index without error."""
+        with patch(
+            "application.vectorstore.base.BaseVectorStore._get_embeddings"
+        ) as mock_get_emb, patch(
+            "application.vectorstore.valkey.settings"
+        ) as mock_settings, patch(
+            "application.vectorstore.valkey.ValkeyStore._create_client"
+        ) as mock_create_client, patch(
+            "application.vectorstore.valkey.ft"
+        ) as mock_ft:
+            mock_emb = Mock()
+            mock_emb.dimension = 128
+            mock_get_emb.return_value = mock_emb
+
+            mock_settings.EMBEDDINGS_NAME = "test"
+            mock_settings.VALKEY_HOST = "localhost"
+            mock_settings.VALKEY_PORT = 6379
+            mock_settings.VALKEY_PASSWORD = None
+            mock_settings.VALKEY_USE_TLS = False
+            mock_settings.VALKEY_INDEX_NAME = "test_idx"
+            mock_settings.VALKEY_PREFIX = "doc:"
+            mock_settings.VALKEY_DISTANCE_METRIC = "l2"
+            mock_settings.VALKEY_VECTOR_TYPE = "float32"
+            mock_settings.VALKEY_VECTOR_ALGORITHM = "flat"
+
+            mock_client = MagicMock()
+            mock_create_client.return_value = mock_client
+
+            from application.vectorstore.valkey import ValkeyStore
+
+            # This should not raise — exercises the FLAT branch
+            ValkeyStore(source_id="test", embeddings_key="key")
+
+            # Verify ft.create was called with the schema
+            mock_ft.create.assert_called_once()
+
+    def test_ensure_index_already_exists_is_silent(self):
+        """Verify 'already exists' error is handled gracefully."""
+        with patch(
+            "application.vectorstore.base.BaseVectorStore._get_embeddings"
+        ) as mock_get_emb, patch(
+            "application.vectorstore.valkey.settings"
+        ) as mock_settings, patch(
+            "application.vectorstore.valkey.ValkeyStore._create_client"
+        ) as mock_create_client, patch(
+            "application.vectorstore.valkey.ft"
+        ) as mock_ft:
+            mock_emb = Mock()
+            mock_emb.dimension = 768
+            mock_get_emb.return_value = mock_emb
+
+            mock_settings.EMBEDDINGS_NAME = "test"
+            mock_settings.VALKEY_HOST = "localhost"
+            mock_settings.VALKEY_PORT = 6379
+            mock_settings.VALKEY_PASSWORD = None
+            mock_settings.VALKEY_USE_TLS = False
+            mock_settings.VALKEY_INDEX_NAME = "test_idx"
+            mock_settings.VALKEY_PREFIX = "doc:"
+            mock_settings.VALKEY_DISTANCE_METRIC = "cosine"
+            mock_settings.VALKEY_VECTOR_TYPE = "float32"
+            mock_settings.VALKEY_VECTOR_ALGORITHM = "hnsw"
+
+            mock_client = MagicMock()
+            mock_create_client.return_value = mock_client
+
+            # Simulate "Index already exists" error
+            mock_ft.create.side_effect = Exception("Index already exists")
+
+            from application.vectorstore.valkey import ValkeyStore
+
+            # Should not raise
+            store = ValkeyStore(source_id="test", embeddings_key="key")
+            assert store is not None
+
+    def test_ensure_index_unknown_error_raises(self):
+        """Verify non-'already exists' errors are re-raised."""
+        with patch(
+            "application.vectorstore.base.BaseVectorStore._get_embeddings"
+        ) as mock_get_emb, patch(
+            "application.vectorstore.valkey.settings"
+        ) as mock_settings, patch(
+            "application.vectorstore.valkey.ValkeyStore._create_client"
+        ) as mock_create_client, patch(
+            "application.vectorstore.valkey.ft"
+        ) as mock_ft:
+            mock_emb = Mock()
+            mock_emb.dimension = 768
+            mock_get_emb.return_value = mock_emb
+
+            mock_settings.EMBEDDINGS_NAME = "test"
+            mock_settings.VALKEY_HOST = "localhost"
+            mock_settings.VALKEY_PORT = 6379
+            mock_settings.VALKEY_PASSWORD = None
+            mock_settings.VALKEY_USE_TLS = False
+            mock_settings.VALKEY_INDEX_NAME = "test_idx"
+            mock_settings.VALKEY_PREFIX = "doc:"
+            mock_settings.VALKEY_DISTANCE_METRIC = "cosine"
+            mock_settings.VALKEY_VECTOR_TYPE = "float32"
+            mock_settings.VALKEY_VECTOR_ALGORITHM = "hnsw"
+
+            mock_client = MagicMock()
+            mock_create_client.return_value = mock_client
+
+            mock_ft.create.side_effect = Exception("Connection refused")
+
+            from application.vectorstore.valkey import ValkeyStore
+
+            with pytest.raises(Exception, match="Connection refused"):
+                ValkeyStore(source_id="test", embeddings_key="key")
