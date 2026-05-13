@@ -173,6 +173,58 @@ class MessageEventsRepository:
         )
         return int(result.rowcount or 0)
 
+    def reconstruct_partial(self, message_id: str) -> dict:
+        """Rebuild partial response/thought/sources/tool_calls from journal events.
+
+        ``answer``/``thought`` chunks concat in seq order; ``source``/
+        ``tool_calls`` carry the full list at emit time (last-wins).
+        """
+        rows = self._conn.execute(
+            text(
+                """
+                SELECT sequence_no, event_type, payload
+                FROM message_events
+                WHERE message_id = CAST(:message_id AS uuid)
+                ORDER BY sequence_no ASC
+                """
+            ),
+            {"message_id": str(message_id)},
+        ).fetchall()
+
+        response_parts: list[str] = []
+        thought_parts: list[str] = []
+        sources: list = []
+        tool_calls: list = []
+
+        for row in rows:
+            payload = row.payload
+            if not isinstance(payload, dict):
+                continue
+            etype = row.event_type
+            if etype == "answer":
+                chunk = payload.get("answer")
+                if isinstance(chunk, str):
+                    response_parts.append(chunk)
+            elif etype == "thought":
+                chunk = payload.get("thought")
+                if isinstance(chunk, str):
+                    thought_parts.append(chunk)
+            elif etype == "source":
+                src = payload.get("source")
+                if isinstance(src, list):
+                    sources = src
+            elif etype == "tool_calls":
+                tcs = payload.get("tool_calls")
+                if isinstance(tcs, list):
+                    tool_calls = tcs
+
+        return {
+            "response": "".join(response_parts),
+            "thought": "".join(thought_parts),
+            "sources": sources,
+            "tool_calls": tool_calls,
+        }
+
     def latest_sequence_no(self, message_id: str) -> Optional[int]:
         """Largest ``sequence_no`` recorded for ``message_id``, or ``None``.
 

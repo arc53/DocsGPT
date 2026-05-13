@@ -1,6 +1,9 @@
 import { createSelector, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 import { RootState } from '../store';
+import { loadDismissed, saveDismissed } from './dismissedPersistence';
+
+const DISMISSED_TOOL_APPROVALS_STORAGE_KEY = 'docsgpt:dismissedToolApprovals';
 
 /**
  * Envelope shape published by the backend SSE endpoint
@@ -67,7 +70,12 @@ const initialState: NotificationsState = {
   lastEventId: null,
   recentEvents: [],
   lastEventReceivedAt: null,
-  dismissedToolApprovals: [],
+  // Hydrate from localStorage: SSE backlog replay re-delivers the
+  // originating ``tool.approval.required`` envelopes on reload.
+  dismissedToolApprovals: loadDismissed(
+    DISMISSED_TOOL_APPROVALS_STORAGE_KEY,
+    DISMISSED_TOOL_APPROVALS_TTL_MS,
+  ),
 };
 
 export const notificationsSlice = createSlice({
@@ -147,6 +155,10 @@ export const notificationsSlice = createSlice({
           -DISMISSED_TOOL_APPROVALS_CAP,
         );
       }
+      saveDismissed(
+        DISMISSED_TOOL_APPROVALS_STORAGE_KEY,
+        state.dismissedToolApprovals,
+      );
     },
   },
 });

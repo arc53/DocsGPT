@@ -813,7 +813,11 @@ function WorkflowBuilderInner() {
         const response = await userService.getWorkflow(workflowId, token);
         if (!response.ok) throw new Error('Failed to fetch workflow');
         const responseData = await response.json();
-        const { workflow, nodes: apiNodes, edges: apiEdges } = responseData.data;
+        const {
+          workflow,
+          nodes: apiNodes,
+          edges: apiEdges,
+        } = responseData.data;
         const nextWorkflowName = workflow.name;
         const nextWorkflowDescription = workflow.description || '';
         const mappedNodes = apiNodes.map((n: WorkflowNode) => {
@@ -1472,7 +1476,9 @@ function WorkflowBuilderInner() {
                           {t('agents.form.advanced.systemPromptOverride')}
                         </label>
                         <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                          {t('agents.form.advanced.systemPromptOverrideDescription')}
+                          {t(
+                            'agents.form.advanced.systemPromptOverrideDescription',
+                          )}
                         </p>
                       </div>
                       <button

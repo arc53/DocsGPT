@@ -322,7 +322,7 @@ export default function Conversation() {
           isSplitArtifactOpen ? 'w-[60%] px-6' : 'w-full'
         }`}
       >
-        <div className="relative min-h-0 flex-1 ">
+        <div className="relative min-h-0 flex-1">
           <ConversationMessages
             handleQuestion={handleQuestion}
             handleQuestionSubmission={handleQuestionSubmission}

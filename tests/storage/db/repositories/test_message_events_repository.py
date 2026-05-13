@@ -97,6 +97,54 @@ class TestMessageEventsRepository:
         repo.record(message_id, 7, "answer", {"chunk": "b"})
         assert repo.latest_sequence_no(message_id) == 7
 
+    def test_reconstruct_partial_concats_answer_and_thought(self, pg_conn):
+        message_id = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(message_id, 0, "message_id", {"type": "message_id"})
+        repo.record(message_id, 1, "answer", {"type": "answer", "answer": "Hello"})
+        repo.record(message_id, 2, "thought", {"type": "thought", "thought": "Hmm "})
+        repo.record(message_id, 3, "answer", {"type": "answer", "answer": ", world"})
+        repo.record(message_id, 4, "thought", {"type": "thought", "thought": "OK."})
+
+        partial = repo.reconstruct_partial(message_id)
+        assert partial["response"] == "Hello, world"
+        assert partial["thought"] == "Hmm OK."
+        assert partial["sources"] == []
+        assert partial["tool_calls"] == []
+
+    def test_reconstruct_partial_last_wins_for_source_and_tool_calls(self, pg_conn):
+        message_id = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(message_id, 0, "source", {"type": "source", "source": [{"id": "a"}]})
+        repo.record(message_id, 1, "tool_calls", {"type": "tool_calls", "tool_calls": [{"name": "x"}]})
+        repo.record(message_id, 2, "source", {"type": "source", "source": [{"id": "a"}, {"id": "b"}]})
+        repo.record(message_id, 3, "tool_calls", {"type": "tool_calls", "tool_calls": []})
+
+        partial = repo.reconstruct_partial(message_id)
+        assert partial["sources"] == [{"id": "a"}, {"id": "b"}]
+        assert partial["tool_calls"] == []
+
+    def test_reconstruct_partial_empty_journal(self, pg_conn):
+        message_id = _seed_message(pg_conn)
+        partial = MessageEventsRepository(pg_conn).reconstruct_partial(message_id)
+        assert partial == {
+            "response": "",
+            "thought": "",
+            "sources": [],
+            "tool_calls": [],
+        }
+
+    def test_reconstruct_partial_skips_malformed_payload(self, pg_conn):
+        message_id = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(message_id, 0, "answer", {"type": "answer", "answer": "good"})
+        # Non-string answer field — must be ignored, not crash.
+        repo.record(message_id, 1, "answer", {"type": "answer", "answer": 123})
+        repo.record(message_id, 2, "answer", {"type": "answer", "answer": " more"})
+
+        partial = repo.reconstruct_partial(message_id)
+        assert partial["response"] == "good more"
+
     def test_cascade_on_message_delete(self, pg_conn):
         message_id = _seed_message(pg_conn)
         repo = MessageEventsRepository(pg_conn)

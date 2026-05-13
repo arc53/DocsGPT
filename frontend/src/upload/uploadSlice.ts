@@ -1,7 +1,32 @@
 import { createSelector, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
+import {
+  DismissedEntry,
+  isDismissed,
+  loadDismissed,
+  saveDismissed,
+} from '../notifications/dismissedPersistence';
 import { sseEventReceived } from '../notifications/notificationsSlice';
 import { RootState } from '../store';
+
+const DISMISSED_SOURCE_IDS_STORAGE_KEY = 'docsgpt:dismissedUploadSourceIds';
+const DISMISSED_SOURCE_IDS_TTL_MS = 24 * 60 * 60 * 1000;
+const DISMISSED_SOURCE_IDS_CAP = 200;
+
+function recordDismissedSourceId(
+  list: DismissedEntry[],
+  sourceId: string,
+): DismissedEntry[] {
+  const now = Date.now();
+  const cutoff = now - DISMISSED_SOURCE_IDS_TTL_MS;
+  const next = list.filter(
+    (entry) => entry.at >= cutoff && entry.id !== sourceId,
+  );
+  next.push({ id: sourceId, at: now });
+  return next.length > DISMISSED_SOURCE_IDS_CAP
+    ? next.slice(-DISMISSED_SOURCE_IDS_CAP)
+    : next;
+}
 
 export interface Attachment {
   id: string; // Client-side state-management id (uuid generated in MessageInput)
@@ -55,11 +80,17 @@ export interface UploadTask {
 interface UploadState {
   attachments: Attachment[];
   tasks: UploadTask[];
+  /** Persisted dismissed sourceIds; keeps backlog-replay auto-creates silent. */
+  dismissedSourceIds: DismissedEntry[];
 }
 
 const initialState: UploadState = {
   attachments: [],
   tasks: [],
+  dismissedSourceIds: loadDismissed(
+    DISMISSED_SOURCE_IDS_STORAGE_KEY,
+    DISMISSED_SOURCE_IDS_TTL_MS,
+  ),
 };
 
 export const uploadSlice = createSlice({
@@ -128,9 +159,19 @@ export const uploadSlice = createSlice({
       );
       if (index !== -1) {
         const updates = action.payload.updates;
+        const existingSourceId = state.tasks[index].sourceId;
+        const incomingSourceId = updates.sourceId;
+        const effectiveSourceId = incomingSourceId ?? existingSourceId;
+        const sourceWasDismissed =
+          !!effectiveSourceId &&
+          isDismissed(state.dismissedSourceIds, effectiveSourceId);
 
-        // When task completes or fails, set dismissed to false to notify user
-        if (updates.status === 'completed' || updates.status === 'failed') {
+        // Re-surface on terminal status, except when the sourceId was
+        // dismissed in a prior session (don't re-pop after reload).
+        if (
+          (updates.status === 'completed' || updates.status === 'failed') &&
+          !sourceWasDismissed
+        ) {
           state.tasks[index] = {
             ...state.tasks[index],
             ...updates,
@@ -151,6 +192,19 @@ export const uploadSlice = createSlice({
           ...state.tasks[index],
           dismissed: true,
         };
+        // Persist by sourceId so a reload doesn't re-pop via the SSE
+        // backlog replay's auto-create branch.
+        const sourceId = state.tasks[index].sourceId;
+        if (sourceId) {
+          state.dismissedSourceIds = recordDismissedSourceId(
+            state.dismissedSourceIds,
+            sourceId,
+          );
+          saveDismissed(
+            DISMISSED_SOURCE_IDS_STORAGE_KEY,
+            state.dismissedSourceIds,
+          );
+        }
       }
     },
     removeUploadTask: (state, action: PayloadAction<string>) => {
@@ -230,14 +284,37 @@ export const uploadSlice = createSlice({
       // ``source.ingest.*`` payloads do not carry a celery task_id
       // (see ``application/worker.py`` — only ``source_id`` /
       // ``job_name`` / ``filename`` are published), so ``sourceId``
-      // is the only correlation key. If the task hasn't yet recorded
-      // its ``sourceId`` (xhr.onload race), the event is left to
-      // ``trackTraining``'s ``recentEvents`` scan to recover.
-      const task = state.tasks.find((t) => t.sourceId === scopeId);
-      if (!task) return;
+      // is the only correlation key.
       const payload = (e.payload || {}) as Record<string, unknown>;
+      let task = state.tasks.find((t) => t.sourceId === scopeId);
+      if (!task) {
+        // Auto-create on backlog/live SSE when the local task is gone
+        // (page refresh mid-ingest). Skip ``completed`` so the historical
+        // backlog doesn't pop toasts for already-finished sources.
+        if (e.type === 'source.ingest.completed') return;
+        const fileName =
+          (typeof payload.filename === 'string' && payload.filename) ||
+          (typeof payload.job_name === 'string' && payload.job_name) ||
+          scopeId;
+        const previouslyDismissed = isDismissed(
+          state.dismissedSourceIds,
+          scopeId,
+        );
+        task = {
+          id: scopeId,
+          fileName,
+          progress: 0,
+          status: 'training',
+          sourceId: scopeId,
+          dismissed: previouslyDismissed,
+        };
+        state.tasks.push(task);
+        task = state.tasks[state.tasks.length - 1];
+      }
       const wasTerminal =
         task.status === 'completed' || task.status === 'failed';
+      const sourceWasDismissed =
+        !!task.sourceId && isDismissed(state.dismissedSourceIds, task.sourceId);
 
       switch (e.type) {
         case 'source.ingest.queued':
@@ -271,13 +348,13 @@ export const uploadSlice = createSlice({
             // Only un-dismiss on the initial terminal transition;
             // duplicate envelopes (StrictMode remount, reconnect
             // overlap) must not re-pop a user-dismissed toast.
-            if (!wasTerminal) task.dismissed = false;
+            if (!wasTerminal && !sourceWasDismissed) task.dismissed = false;
           } else {
             task.status = 'completed';
             task.progress = 100;
             task.errorMessage = undefined;
             task.tokenLimitReached = false;
-            if (!wasTerminal) task.dismissed = false;
+            if (!wasTerminal && !sourceWasDismissed) task.dismissed = false;
           }
           break;
         case 'source.ingest.failed':
@@ -286,7 +363,7 @@ export const uploadSlice = createSlice({
             typeof payload.error === 'string'
               ? payload.error
               : 'Ingestion failed.';
-          if (!wasTerminal) task.dismissed = false;
+          if (!wasTerminal && !sourceWasDismissed) task.dismissed = false;
           break;
         default:
           break;

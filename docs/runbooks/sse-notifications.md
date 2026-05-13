@@ -367,6 +367,12 @@ The dev server (`flask run`) doesn't watch
 After editing the route, restart Flask manually — `--reload`
 isn't on. (Production gunicorn reloads via deploy.)
 
+### MCP OAuth completion can fall outside the user stream's MAXLEN window
+
+`get_oauth_status` scans up to `EVENTS_STREAM_MAXLEN` (~1000) entries via `XREVRANGE`. If the user has a high-rate ingest running concurrent with the OAuth handshake, the `mcp.oauth.completed` envelope can be trimmed off the back before they click Save. Symptom: backend returns "OAuth failed or not completed" even though the popup completed successfully.
+
+Mitigation today: bump `EVENTS_STREAM_MAXLEN` per-deployment if your users routinely flood the channel during OAuth flows. A dedicated short-TTL Redis key for OAuth task results is tracked as a follow-up.
+
 ### React StrictMode double-mounts SSE
 
 In dev, React 18 StrictMode mounts → unmounts → remounts every
