@@ -486,6 +486,11 @@
       "create": "Create",
       "option": "Allow users to prompt further"
     },
+    "searchConversations": {
+      "searchPlaceholder": "Search conversations",
+      "noResults": "No results found",
+      "loading": "Loading..."
+    },
     "configTool": {
       "title": "Tool Config",
       "type": "Type",

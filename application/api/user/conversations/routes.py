@@ -108,11 +108,31 @@ class GetConversations(Resource):
 
 @conversations_ns.route("/search_conversations")
 class SearchConversations(Resource):
+    @staticmethod
+    def _build_match_snippet(text_value: str, query: str, radius: int = 60) -> str:
+        if not text_value:
+            return ""
+        idx = text_value.lower().find(query.lower())
+        if idx == -1:
+            snippet = text_value[: radius * 2]
+            return snippet + ("…" if len(text_value) > len(snippet) else "")
+        start = max(0, idx - radius)
+        end = min(len(text_value), idx + len(query) + radius)
+        snippet = text_value[start:end]
+        if start > 0:
+            snippet = "…" + snippet
+        if end < len(text_value):
+            snippet = snippet + "…"
+        return snippet
+
     @api.doc(
         description=(
             "Search the authenticated user's conversations by name or "
             "message content (case-insensitive substring match). Mirrors "
-            "the visibility filter and response shape of /get_conversations."
+            "the visibility filter and response shape of /get_conversations, "
+            "and additionally returns ``match_field`` (``name``, ``prompt`` "
+            "or ``response``) and ``match_snippet`` (a short excerpt of the "
+            "matched text centered on the query) for each result."
         ),
         params={
             "q": "Search term (required)",
@@ -150,6 +170,10 @@ class SearchConversations(Resource):
                     ),
                     "is_shared_usage": conversation.get("is_shared_usage", False),
                     "shared_token": conversation.get("shared_token", None),
+                    "match_field": conversation.get("match_field"),
+                    "match_snippet": self._build_match_snippet(
+                        conversation.get("match_text") or "", query
+                    ),
                 }
                 for conversation in conversations
             ]

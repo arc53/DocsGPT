@@ -456,6 +456,11 @@
       "create": "Erstellen",
       "option": "Benutzern weitere Eingaben erlauben"
     },
+    "searchConversations": {
+      "searchPlaceholder": "Konversationen durchsuchen",
+      "noResults": "Keine Ergebnisse gefunden",
+      "loading": "Laden..."
+    },
     "configTool": {
       "title": "Werkzeug-Konfiguration",
       "type": "Typ",

@@ -474,6 +474,11 @@
       "create": "创建",
       "option": "允许用户进行更多查询。"
     },
+    "searchConversations": {
+      "searchPlaceholder": "搜索对话",
+      "noResults": "未找到结果",
+      "loading": "加载中..."
+    },
     "configTool": {
       "title": "工具配置",
       "type": "类型",
