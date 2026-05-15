@@ -56,30 +56,38 @@ class FakeEmbeddings:
 
 
 @pytest.fixture
-def valkey_store():
-    """Create a ValkeyStore with a unique source_id for test isolation."""
+def valkey_store(monkeypatch):
+    """Create a ValkeyStore with a unique source_id for test isolation.
+
+    Uses environment variables to override only test-specific settings (index
+    name, prefix, connection target). This avoids fully mocking settings, so
+    new settings never silently break the fixture.
+    """
     from unittest.mock import patch
 
     source_id = f"test-{uuid.uuid4().hex[:8]}"
     index_name = f"test_idx_{uuid.uuid4().hex[:8]}"
 
-    with patch(
-        "application.vectorstore.base.BaseVectorStore._get_embeddings"
-    ) as mock_get_emb, patch(
-        "application.vectorstore.valkey.settings"
-    ) as mock_settings:
-        mock_get_emb.return_value = FakeEmbeddings()
-        mock_settings.EMBEDDINGS_NAME = "test_model"
-        mock_settings.VALKEY_HOST = VALKEY_HOST
-        mock_settings.VALKEY_PORT = VALKEY_PORT
-        mock_settings.VALKEY_PASSWORD = None
-        mock_settings.VALKEY_USE_TLS = False
-        mock_settings.VALKEY_INDEX_NAME = index_name
-        mock_settings.VALKEY_PREFIX = f"test:{source_id}:"
-        mock_settings.VALKEY_DISTANCE_METRIC = "cosine"
-        mock_settings.VALKEY_VECTOR_TYPE = "float32"
-        mock_settings.VALKEY_VECTOR_ALGORITHM = "hnsw"
+    # Override settings via env vars before importing the store
+    monkeypatch.setenv("VALKEY_HOST", VALKEY_HOST)
+    monkeypatch.setenv("VALKEY_PORT", str(VALKEY_PORT))
+    monkeypatch.setenv("VALKEY_PASSWORD", "")
+    monkeypatch.setenv("VALKEY_USE_TLS", "False")
+    monkeypatch.setenv("VALKEY_INDEX_NAME", index_name)
+    monkeypatch.setenv("VALKEY_PREFIX", f"test:{source_id}:")
 
+    # Reload settings with test env vars
+    from application.core.settings import Settings
+
+    test_settings = Settings()
+
+    with patch(
+        "application.vectorstore.base.BaseVectorStore._get_embeddings",
+        return_value=FakeEmbeddings(),
+    ), patch(
+        "application.vectorstore.valkey.settings",
+        test_settings,
+    ):
         from application.vectorstore.valkey import ValkeyStore
 
         store = ValkeyStore(source_id=source_id, embeddings_key="test")

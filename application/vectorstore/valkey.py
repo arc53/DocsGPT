@@ -1,10 +1,16 @@
-"""Valkey vector store implementation using valkey-glide-sync and valkey-search module."""
+"""Valkey vector store implementation using valkey-glide-sync and valkey-search module.
+
+NOTE: The try/except ImportError guard around the glide_sync import below is
+**required** by ``application/vectorstore/vector_creator.py`` which eagerly
+imports all vector store modules at module level.  Without this guard, a missing
+``valkey-glide-sync`` package would break VectorCreator for *all* backends.
+"""
 
 import json
 import logging
 import struct
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
 _GLIDE_AVAILABLE = False
 try:
@@ -54,6 +60,12 @@ _DELETE_BATCH_SIZE = 100
 # Page size for paginated scan in delete_index / get_chunks.
 _SCAN_PAGE_SIZE = 10000
 
+# Safety limit to prevent infinite pagination loops (supports ~10M documents).
+_MAX_SCAN_PAGES = 1000
+
+# Maximum allowed k for vector search to prevent memory exhaustion.
+_MAX_SEARCH_K = 100
+
 
 class ValkeyStore(BaseVectorStore):
     """Vector store backed by Valkey with the valkey-search module.
@@ -62,6 +74,11 @@ class ValkeyStore(BaseVectorStore):
     Creates a search index with FT.CREATE for KNN vector similarity search.
 
     Requires a Valkey server with the valkey-search module loaded.
+
+    Supports use as a context manager for deterministic connection cleanup::
+
+        with ValkeyStore(source_id="my-source") as store:
+            store.search("query")
     """
 
     def __init__(
@@ -93,6 +110,19 @@ class ValkeyStore(BaseVectorStore):
         self._client = self._create_client()
         self._ensure_index_exists()
 
+    # --- Context manager support ---
+
+    def __enter__(self):
+        """Enter the context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager and close the connection."""
+        self.close()
+        return False
+
+    # --- Connection lifecycle ---
+
     def close(self):
         """Close the underlying Valkey client connection.
 
@@ -117,19 +147,20 @@ class ValkeyStore(BaseVectorStore):
             A connected GlideClient instance (synchronous).
         """
         addresses = [NodeAddress(host=settings.VALKEY_HOST, port=settings.VALKEY_PORT)]
+        timeout = settings.VALKEY_REQUEST_TIMEOUT
 
         if settings.VALKEY_PASSWORD is not None and settings.VALKEY_PASSWORD != "":
             config = GlideClientConfiguration(
                 addresses=addresses,
                 use_tls=settings.VALKEY_USE_TLS,
                 credentials=ServerCredentials(password=settings.VALKEY_PASSWORD),
-                request_timeout=5000,
+                request_timeout=timeout,
             )
         else:
             config = GlideClientConfiguration(
                 addresses=addresses,
                 use_tls=settings.VALKEY_USE_TLS,
-                request_timeout=5000,
+                request_timeout=timeout,
             )
 
         return GlideClient.create(config)
@@ -187,12 +218,11 @@ class ValkeyStore(BaseVectorStore):
         try:
             ft.create(self._client, self._index_name, schema, options)
             logger.info(f"Created Valkey search index '{self._index_name}'")
-        except Exception as e:
+        except RequestError as e:
             error_msg = str(e).lower()
             if "already exists" in error_msg or "index already" in error_msg:
                 logger.debug(f"Valkey index '{self._index_name}' already exists")
             else:
-                logger.error(f"Error creating Valkey index: {e}")
                 raise
 
     @staticmethod
@@ -293,16 +323,63 @@ class ValkeyStore(BaseVectorStore):
         """
         return f"{self._prefix}{doc_id}"
 
+    # --- Shared pagination helper ---
+
+    def _paginated_search(
+        self, query: str, return_fields: List[ReturnField]
+    ) -> Generator[Tuple[str, Dict[str, Any]], None, None]:
+        """Yield (key_str, field_dict) tuples across all pages.
+
+        Handles pagination with a safety limit of _MAX_SCAN_PAGES iterations
+        to prevent infinite loops from concurrent inserts.
+
+        Args:
+            query: The ft.search query string.
+            return_fields: Fields to return from each document.
+
+        Yields:
+            Tuples of (key_string, field_dictionary) for each matched document.
+        """
+        offset = 0
+        for _ in range(_MAX_SCAN_PAGES):
+            results = ft.search(
+                self._client,
+                self._index_name,
+                query,
+                FtSearchOptions(
+                    limit=FtSearchLimit(offset, _SCAN_PAGE_SIZE),
+                    return_fields=return_fields,
+                ),
+            )
+
+            if not results or len(results) < 2:
+                break
+
+            page_count = 0
+            for entry in results[1:]:
+                if isinstance(entry, dict):
+                    for key, fields in entry.items():
+                        key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
+                        yield key_str, fields
+                        page_count += 1
+
+            if page_count < _SCAN_PAGE_SIZE:
+                break
+            offset += _SCAN_PAGE_SIZE
+
+    # --- Public interface ---
+
     def search(self, question: str, k: int = 2, *args, **kwargs) -> List[Document]:
         """Search for similar documents using vector similarity.
 
         Args:
             question: The query text to search for.
-            k: Number of results to return.
+            k: Number of results to return (capped at 100).
 
         Returns:
             A list of Document objects sorted by similarity.
         """
+        k = max(1, min(k, _MAX_SEARCH_K))
         query_vector = self._embedding.embed_query(question)
         vector_bytes = struct.pack(f"{len(query_vector)}f", *query_vector)
 
@@ -450,66 +527,29 @@ class ValkeyStore(BaseVectorStore):
 
         return doc_ids
 
-    def _paginated_source_scan(self) -> List[str]:
-        """Scan all keys matching this source_id, handling pagination.
-
-        Uses a minimal return field to avoid fetching full document content —
-        only the key names are needed for deletion.
-
-        Returns:
-            List of key strings for all documents with this source_id.
-        """
-        all_keys: List[str] = []
-        offset = 0
-        escaped_source = self._escape_tag_value(self._source_id)
-        query = f"@source_id:{{{escaped_source}}}"
-
-        while True:
-            results = ft.search(
-                self._client,
-                self._index_name,
-                query,
-                FtSearchOptions(
-                    limit=FtSearchLimit(offset, _SCAN_PAGE_SIZE),
-                    return_fields=[ReturnField("source_id")],
-                ),
-            )
-
-            if not results or len(results) < 2:
-                break
-
-            page_keys: List[str] = []
-            for entry in results[1:]:
-                if isinstance(entry, dict):
-                    for key in entry.keys():
-                        key_str = key.decode("utf-8") if isinstance(key, bytes) else str(key)
-                        page_keys.append(key_str)
-
-            all_keys.extend(page_keys)
-
-            # If we got fewer results than page size, we've reached the end
-            if len(page_keys) < _SCAN_PAGE_SIZE:
-                break
-            offset += _SCAN_PAGE_SIZE
-
-        return all_keys
-
     def delete_index(self, *args, **kwargs):
         """Delete all documents for this source_id.
 
         Searches for all documents with matching source_id and deletes them
         in batches. Handles sources with more than 10,000 documents via pagination.
+
+        Raises:
+            RequestError: If the Valkey server returns an error.
+            ConnectionError: If the connection to Valkey is lost.
+            TimeoutError: If the operation exceeds the request timeout.
         """
-        try:
-            keys = self._paginated_source_scan()
+        escaped_source = self._escape_tag_value(self._source_id)
+        query = f"@source_id:{{{escaped_source}}}"
 
-            # Batch deletes for efficiency
-            for i in range(0, len(keys), _DELETE_BATCH_SIZE):
-                batch = keys[i : i + _DELETE_BATCH_SIZE]
-                self._client.delete(batch)
+        keys = [
+            key_str
+            for key_str, _ in self._paginated_search(query, [ReturnField("source_id")])
+        ]
 
-        except (RequestError, GlideConnectionError, GlideTimeoutError) as e:
-            logger.error(f"Error deleting index from Valkey: {e}", exc_info=True)
+        # Batch deletes for efficiency
+        for i in range(0, len(keys), _DELETE_BATCH_SIZE):
+            batch = keys[i : i + _DELETE_BATCH_SIZE]
+            self._client.delete(batch)
 
     def save_local(self, *args, **kwargs):
         """No-op for Valkey — data is already persisted."""
@@ -526,47 +566,24 @@ class ValkeyStore(BaseVectorStore):
             query = f"@source_id:{{{escaped_source}}}"
 
             chunks: List[Dict[str, Any]] = []
-            offset = 0
 
-            while True:
-                results = ft.search(
-                    self._client,
-                    self._index_name,
-                    query,
-                    FtSearchOptions(
-                        limit=FtSearchLimit(offset, _SCAN_PAGE_SIZE),
-                        return_fields=[
-                            ReturnField("content"),
-                            ReturnField("source_id"),
-                            ReturnField("metadata"),
-                        ],
-                    ),
+            for key_str, fields in self._paginated_search(
+                query,
+                [
+                    ReturnField("content"),
+                    ReturnField("source_id"),
+                    ReturnField("metadata"),
+                ],
+            ):
+                doc_id = key_str.replace(self._prefix, "", 1)
+                field_dict = self._decode_fields(fields)
+                chunks.append(
+                    {
+                        "doc_id": doc_id,
+                        "text": field_dict.get("content", ""),
+                        "metadata": self._parse_metadata(field_dict),
+                    }
                 )
-
-                if not results or len(results) < 2:
-                    break
-
-                page_count = 0
-                for entry in results[1:]:
-                    if isinstance(entry, dict):
-                        for key, fields in entry.items():
-                            key_str = (
-                                key.decode("utf-8") if isinstance(key, bytes) else str(key)
-                            )
-                            doc_id = key_str.replace(self._prefix, "", 1)
-                            field_dict = self._decode_fields(fields)
-                            chunks.append(
-                                {
-                                    "doc_id": doc_id,
-                                    "text": field_dict.get("content", ""),
-                                    "metadata": self._parse_metadata(field_dict),
-                                }
-                            )
-                            page_count += 1
-
-                if page_count < _SCAN_PAGE_SIZE:
-                    break
-                offset += _SCAN_PAGE_SIZE
 
             return chunks
 
