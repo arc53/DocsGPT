@@ -222,11 +222,24 @@ def _stream_response(
     for line in internal_stream:
         if not line.strip():
             continue
-        # Parse the internal SSE event
-        event_str = line.replace("data: ", "").strip()
+        # ``complete_stream`` prefixes each frame with ``id: <seq>\n``
+        # before the ``data:`` line. Extract just the data line so JSON
+        # decode doesn't choke on the SSE framing.
+        event_str = ""
+        for raw in line.split("\n"):
+            if raw.startswith("data:"):
+                event_str = raw[len("data:") :].lstrip()
+                break
+        if not event_str:
+            continue
         try:
             event_data = json.loads(event_str)
         except (json.JSONDecodeError, TypeError):
+            continue
+
+        # Skip the informational ``message_id`` event — it has no v1 /
+        # OpenAI-compatible analog.
+        if event_data.get("type") == "message_id":
             continue
 
         # Update completion_id when we get the conversation id

@@ -61,8 +61,6 @@ const userService = {
     apiClient.get(endpoints.USER.SINGLE_PROMPT(id), token),
   deletePath: (docPath: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.DELETE_PATH(docPath), token),
-  getTaskStatus: (task_id: string, token: string | null): Promise<any> =>
-    throttledApiClient.get(endpoints.USER.TASK_STATUS(task_id), token),
   getMessageAnalytics: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MESSAGE_ANALYTICS, data, token),
   getTokenAnalytics: (data: any, token: string | null): Promise<any> =>
@@ -172,8 +170,6 @@ const userService = {
     apiClient.post(endpoints.USER.MCP_TEST_CONNECTION, data, token),
   saveMCPServer: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MCP_SAVE_SERVER, data, token),
-  getMCPOAuthStatus: (task_id: string, token: string | null): Promise<any> =>
-    throttledApiClient.get(endpoints.USER.MCP_OAUTH_STATUS(task_id), token),
   getMCPAuthStatus: (token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.MCP_AUTH_STATUS, token),
   syncConnector: (

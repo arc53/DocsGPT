@@ -1,5 +1,5 @@
 /**
- * Phase 3 Tier-B · agent folders CRUD + nesting + move/bulk-move
+ * Tier-B · agent folders CRUD + nesting + move/bulk-move
  *
  * Covers B10: create/list/rename/delete folders, nest via parent_id, cycle
  * prevention, and single/bulk agent-move into folders. API-only — folder

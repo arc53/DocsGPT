@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
@@ -32,13 +32,24 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
   const [isDarkTheme] = useDarkTheme();
   const completedRef = useRef(false);
   const intervalRef = useRef<number | null>(null);
+  const authWindowRef = useRef<Window | null>(null);
+  // Hold the exact listener identity so unmount cleanup removes the same fn.
+  const messageHandlerRef = useRef<((event: MessageEvent) => void) | null>(
+    null,
+  );
+  // Tracks mount status so async ``fetch`` resolves after unmount don't
+  // call ``onSuccess`` / ``onError`` on a vanished parent.
+  const mountedRef = useRef(true);
 
   const cleanup = () => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-    window.removeEventListener('message', handleAuthMessage as any);
+    if (messageHandlerRef.current) {
+      window.removeEventListener('message', messageHandlerRef.current as any);
+      messageHandlerRef.current = null;
+    }
   };
 
   const handleAuthMessage = (event: MessageEvent) => {
@@ -49,6 +60,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
     if (successGeneric || successProvider) {
       completedRef.current = true;
       cleanup();
+      authWindowRef.current = null;
       onSuccess({
         session_token: event.data.session_token,
         user_email:
@@ -58,6 +70,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
     } else if (errorProvider) {
       completedRef.current = true;
       cleanup();
+      authWindowRef.current = null;
       onError(
         event.data.error || t('modals.uploadDoc.connectors.auth.authFailed'),
       );
@@ -67,12 +80,20 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
   const handleAuth = async () => {
     try {
       completedRef.current = false;
+      // Close any popup left over from a previous click before wiping
+      // the ref — otherwise the old window keeps living with no
+      // interval watching it and no listener handling its messages.
+      if (authWindowRef.current && !authWindowRef.current.closed) {
+        authWindowRef.current.close();
+      }
+      authWindowRef.current = null;
       cleanup();
 
       const authResponse = await userService.getConnectorAuthUrl(
         provider,
         token,
       );
+      if (!mountedRef.current) return;
 
       if (!authResponse.ok) {
         throw new Error(
@@ -81,6 +102,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
       }
 
       const authData = await authResponse.json();
+      if (!mountedRef.current) return;
       if (!authData.success || !authData.authorization_url) {
         throw new Error(
           authData.error || t('modals.uploadDoc.connectors.auth.authUrlFailed'),
@@ -95,13 +117,23 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
       if (!authWindow) {
         throw new Error(t('modals.uploadDoc.connectors.auth.popupBlocked'));
       }
+      authWindowRef.current = authWindow;
 
+      messageHandlerRef.current = handleAuthMessage;
       window.addEventListener('message', handleAuthMessage as any);
 
       const checkClosed = window.setInterval(() => {
         if (authWindow.closed) {
           clearInterval(checkClosed);
-          window.removeEventListener('message', handleAuthMessage as any);
+          intervalRef.current = null;
+          if (messageHandlerRef.current) {
+            window.removeEventListener(
+              'message',
+              messageHandlerRef.current as any,
+            );
+            messageHandlerRef.current = null;
+          }
+          authWindowRef.current = null;
           if (!completedRef.current) {
             onError(t('modals.uploadDoc.connectors.auth.authCancelled'));
           }
@@ -109,6 +141,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
       }, 1000);
       intervalRef.current = checkClosed;
     } catch (error) {
+      if (!mountedRef.current) return;
       onError(
         error instanceof Error
           ? error.message
@@ -116,6 +149,18 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
       );
     }
   };
+
+  // Release interval, message listener, and popup on unmount only.
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      cleanup();
+      if (authWindowRef.current && !authWindowRef.current.closed) {
+        authWindowRef.current.close();
+      }
+      authWindowRef.current = null;
+    };
+  }, []);
 
   return (
     <>

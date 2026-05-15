@@ -15,7 +15,10 @@ from sqlalchemy import text as sql_text
 from application.core.settings import settings
 from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
-from application.storage.db.repositories.conversations import ConversationsRepository
+from application.storage.db.repositories.conversations import (
+    ConversationsRepository,
+    MessageUpdateOutcome,
+)
 from application.storage.db.session import db_readonly, db_session
 
 
@@ -305,10 +308,17 @@ class ConversationService:
         status: str = "complete",
         error: Optional[BaseException] = None,
         title_inputs: Optional[Dict[str, Any]] = None,
-    ) -> bool:
-        """Commit the response and tool_call confirms in one transaction."""
+    ) -> MessageUpdateOutcome:
+        """Commit the response and tool_call confirms in one transaction.
+
+        The outcome propagates directly from ``update_message_by_id`` so
+        callers (notably the SSE abort handler) can tell a fresh
+        finalize from "the row was already terminal" — the latter must
+        still be treated as success when the prior state was
+        ``complete``.
+        """
         if not message_id:
-            return False
+            return MessageUpdateOutcome.INVALID
         sources = sources or []
         for source in sources:
             if "text" in source and isinstance(source["text"], str):
@@ -336,16 +346,16 @@ class ConversationService:
         # retracting a row the reconciler already escalated.
         with db_session() as conn:
             repo = ConversationsRepository(conn)
-            ok = repo.update_message_by_id(
+            outcome = repo.update_message_by_id(
                 message_id, update_fields,
                 only_if_non_terminal=True,
             )
-            if not ok:
+            if outcome is not MessageUpdateOutcome.UPDATED:
                 logger.warning(
                     f"finalize_message: no row updated for message_id={message_id} "
-                    f"(possibly already terminal — reconciler may have escalated)"
+                    f"(outcome={outcome.value} — possibly already terminal)"
                 )
-                return False
+                return outcome
             repo.confirm_executed_tool_calls(message_id)
 
         # Outside the txn — title-gen is a multi-second LLM round trip.
@@ -358,7 +368,7 @@ class ConversationService:
                     f"finalize_message title generation failed: {e}",
                     exc_info=True,
                 )
-        return True
+        return MessageUpdateOutcome.UPDATED
 
     def _maybe_generate_title(
         self,

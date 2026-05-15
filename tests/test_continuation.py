@@ -1,4 +1,4 @@
-"""Tests for the continuation infrastructure (Phase 1).
+"""Tests for the continuation infrastructure.
 
 Covers ContinuationService, ToolExecutor.check_pause, handler pause
 signaling, BaseAgent.gen_continuation, and request validation.

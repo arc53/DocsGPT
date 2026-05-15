@@ -20,10 +20,11 @@ from pydantic import AnyHttpUrl, ValidationError
 from redis import Redis
 
 from application.agents.tools.base import Tool
-from application.api.user.tasks import mcp_oauth_status_task, mcp_oauth_task
+from application.api.user.tasks import mcp_oauth_task
 from application.cache import get_redis_instance
 from application.core.settings import settings
 from application.core.url_validation import SSRFError, validate_url
+from application.events.keys import stream_key
 from application.security.encryption import decrypt_credentials
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,12 @@ class MCPTool(Tool):
         self.oauth_task_id = config.get("oauth_task_id", None)
         self.oauth_client_name = config.get("oauth_client_name", "DocsGPT-MCP")
         self.redirect_uri = self._resolve_redirect_uri(config.get("redirect_uri"))
+        # Pulled out of ``config`` (rather than left in ``self.config``)
+        # because it is a callable supplied by the OAuth worker — not
+        # something the rest of the tool plumbing should marshal or
+        # serialize. ``DocsGPTOAuth`` invokes it from ``redirect_handler``
+        # so the SSE envelope can carry ``authorization_url``.
+        self.oauth_redirect_publish = config.pop("oauth_redirect_publish", None)
 
         self.available_tools = []
         self._cache_key = self._generate_cache_key()
@@ -167,6 +174,7 @@ class MCPTool(Tool):
                     redirect_uri=self.redirect_uri,
                     task_id=self.oauth_task_id,
                     user_id=self.user_id,
+                    redirect_publish=self.oauth_redirect_publish,
                 )
         elif self.auth_type == "bearer":
             token = self.auth_credentials.get(
@@ -679,12 +687,17 @@ class DocsGPTOAuth(OAuthClientProvider):
         user_id=None,
         additional_client_metadata: dict[str, Any] | None = None,
         skip_redirect_validation: bool = False,
+        redirect_publish=None,
     ):
         self.redirect_uri = redirect_uri
         self.redis_client = redis_client
         self.redis_prefix = redis_prefix
         self.task_id = task_id
         self.user_id = user_id
+        # Worker-supplied callback. Invoked from ``redirect_handler``
+        # once the authorization URL is known so the SSE envelope can
+        # carry it. ``None`` for any non-worker entrypoint.
+        self.redirect_publish = redirect_publish
 
         parsed_url = urlparse(mcp_url)
         self.server_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
@@ -744,17 +757,19 @@ class DocsGPTOAuth(OAuthClientProvider):
             self.redis_client.setex(key, 600, auth_url)
             logger.info("Stored auth_url in Redis: %s", key)
 
-            if self.task_id:
-                status_key = f"mcp_oauth_status:{self.task_id}"
-                status_data = {
-                    "status": "requires_redirect",
-                    "message": "Authorization required",
-                    "authorization_url": self.auth_url,
-                    "state": self.extracted_state,
-                    "requires_oauth": True,
-                    "task_id": self.task_id,
-                }
-                self.redis_client.setex(status_key, 600, json.dumps(status_data))
+        if self.redirect_publish is not None:
+            # Best-effort: a publish failure must not abort the OAuth
+            # handshake — the user can still authorize via the popup
+            # opened from the legacy polling fallback if the SSE
+            # envelope is lost.
+            try:
+                self.redirect_publish(auth_url)
+            except Exception:
+                logger.warning(
+                    "redirect_publish callback raised for task_id=%s",
+                    self.task_id,
+                    exc_info=True,
+                )
 
     async def callback_handler(self) -> tuple[str, str | None]:
         """Wait for auth code from Redis using the state value."""
@@ -764,17 +779,6 @@ class DocsGPTOAuth(OAuthClientProvider):
         max_wait_time = 300
         code_key = f"{self.redis_prefix}code:{self.extracted_state}"
 
-        if self.task_id:
-            status_key = f"mcp_oauth_status:{self.task_id}"
-            status_data = {
-                "status": "awaiting_callback",
-                "message": "Waiting for authorization...",
-                "authorization_url": self.auth_url,
-                "state": self.extracted_state,
-                "requires_oauth": True,
-                "task_id": self.task_id,
-            }
-            self.redis_client.setex(status_key, 600, json.dumps(status_data))
         start_time = time.time()
         while time.time() - start_time < max_wait_time:
             code_data = self.redis_client.get(code_key)
@@ -789,14 +793,6 @@ class DocsGPTOAuth(OAuthClientProvider):
                 self.redis_client.delete(
                     f"{self.redis_prefix}state:{self.extracted_state}"
                 )
-
-                if self.task_id:
-                    status_data = {
-                        "status": "callback_received",
-                        "message": "Completing authentication...",
-                        "task_id": self.task_id,
-                    }
-                    self.redis_client.setex(status_key, 600, json.dumps(status_data))
                 return code, returned_state
             error_key = f"{self.redis_prefix}error:{self.extracted_state}"
             error_data = self.redis_client.get(error_key)
@@ -1038,8 +1034,73 @@ class MCPOAuthManager:
             logger.error("Error handling OAuth callback: %s", e)
             return False
 
-    def get_oauth_status(self, task_id: str) -> Dict[str, Any]:
-        """Get current status of OAuth flow using provided task_id."""
+    def get_oauth_status(self, task_id: str, user_id: str) -> Dict[str, Any]:
+        """Return the latest OAuth status for ``task_id`` from the user's SSE journal.
+
+        Mirrors the legacy polling contract: ``status`` derived from the
+        ``mcp.oauth.*`` event-type suffix, with payload fields surfaced
+        (e.g. ``tools``/``tools_count`` on ``completed``).
+        """
         if not task_id:
             return {"status": "not_started", "message": "OAuth flow not started"}
-        return mcp_oauth_status_task(task_id)
+        if not user_id:
+            return {"status": "not_found", "message": "User not provided"}
+        if self.redis_client is None:
+            return {"status": "not_found", "message": "Redis unavailable"}
+
+        try:
+            # OAuth flows are short-lived but a concurrent source
+            # ingest can flood the user channel between the OAuth
+            # popup completing and the user clicking Save, pushing the
+            # completion envelope outside the read window. Bound the
+            # scan by the configured stream cap so we cover the full
+            # journal — XADD MAXLEN keeps that bounded too.
+            scan_count = max(settings.EVENTS_STREAM_MAXLEN, 200)
+            entries = self.redis_client.xrevrange(
+                stream_key(user_id), count=scan_count
+            )
+        except Exception:
+            logger.exception(
+                "xrevrange failed for oauth status: user_id=%s task_id=%s",
+                user_id,
+                task_id,
+            )
+            return {"status": "not_found", "message": "Status unavailable"}
+
+        for _entry_id, fields in entries:
+            if not isinstance(fields, dict):
+                continue
+            # decode_responses=False ⇒ bytes keys; the string-key fallback
+            # covers a future flip of that default without a forced refactor.
+            event_raw = fields.get(b"event")
+            if event_raw is None:
+                event_raw = fields.get("event")
+            if event_raw is None:
+                continue
+            if isinstance(event_raw, bytes):
+                try:
+                    event_raw = event_raw.decode("utf-8")
+                except Exception:
+                    continue
+            try:
+                envelope = json.loads(event_raw)
+            except Exception:
+                continue
+            if not isinstance(envelope, dict):
+                continue
+            event_type = envelope.get("type", "")
+            if not isinstance(event_type, str) or not event_type.startswith(
+                "mcp.oauth."
+            ):
+                continue
+            scope = envelope.get("scope") or {}
+            if scope.get("kind") != "mcp_oauth" or scope.get("id") != task_id:
+                continue
+            payload = envelope.get("payload") or {}
+            return {
+                "status": event_type[len("mcp.oauth."):],
+                "task_id": task_id,
+                **payload,
+            }
+
+        return {"status": "not_found", "message": "Status not found"}

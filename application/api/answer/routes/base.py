@@ -23,9 +23,16 @@ from application.core.settings import settings
 from application.error import sanitize_api_error
 from application.llm.llm_creator import LLMCreator
 from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.conversations import MessageUpdateOutcome
 from application.storage.db.repositories.token_usage import TokenUsageRepository
 from application.storage.db.repositories.user_logs import UserLogsRepository
 from application.storage.db.session import db_readonly, db_session
+from application.events.publisher import publish_user_event
+from application.streaming.event_replay import format_sse_event
+from application.streaming.message_journal import (
+    BatchedJournalWriter,
+    record_event,
+)
 from application.utils import check_required_fields
 
 logger = logging.getLogger(__name__)
@@ -277,6 +284,17 @@ class BaseAnswerResource:
                     "update_message_status streaming failed for %s",
                     reserved_message_id,
                 )
+            # Seed last_heartbeat_at so watchdog doesn't fall back to `timestamp`
+            # (creation time) before the first STREAM_HEARTBEAT_INTERVAL tick.
+            try:
+                self.conversation_service.heartbeat_message(
+                    reserved_message_id,
+                )
+            except Exception:
+                logger.exception(
+                    "initial heartbeat seed failed for %s",
+                    reserved_message_id,
+                )
             streaming_marked = True
             last_heartbeat_at = time.monotonic()
 
@@ -303,13 +321,73 @@ class BaseAnswerResource:
             try:
                 agent.tool_executor.message_id = reserved_message_id
             except Exception:
-                pass
+                logger.debug(
+                    "Could not set tool_executor.message_id; tool-call correlation will be missing for message_id=%s",
+                    reserved_message_id,
+                )
+
+        # Per-stream monotonic SSE event id. Allocated by ``_emit`` and
+        # threaded through both the wire format (``id: <seq>\\n``) and
+        # the journal write so a reconnecting client can ``Last-Event-
+        # ID`` past anything they already saw. Continuations resume
+        # against the original ``reserved_message_id`` — seed the
+        # allocator from the journal's high-water mark so we don't
+        # collide on the duplicate-PK and silently lose every emit
+        # past the resume point.
+        sequence_no = -1
+        if _continuation and reserved_message_id:
+            try:
+                from application.storage.db.repositories.message_events import (
+                    MessageEventsRepository,
+                )
+
+                with db_readonly() as conn:
+                    latest = MessageEventsRepository(conn).latest_sequence_no(
+                        reserved_message_id
+                    )
+                if latest is not None:
+                    sequence_no = latest
+            except Exception:
+                logger.exception(
+                    "Continuation seq seed lookup failed for message_id=%s; "
+                    "falling back to seq=-1 (duplicate-PK collisions will "
+                    "be swallowed)",
+                    reserved_message_id,
+                )
+
+        # One batched journal writer per stream.
+        journal_writer: Optional[BatchedJournalWriter] = (
+            BatchedJournalWriter(reserved_message_id)
+            if reserved_message_id
+            else None
+        )
+
+        def _emit(payload: dict) -> str:
+            """Format-and-journal one SSE event.
+
+            With a reserved ``message_id``, buffers into the journal and
+            emits ``id: <seq>``-tagged SSE frames; otherwise falls back to
+            legacy ``data: ...\\n\\n`` framing.
+            """
+            nonlocal sequence_no
+            if not reserved_message_id or journal_writer is None:
+                return f"data: {json.dumps(payload)}\n\n"
+            sequence_no += 1
+            seq = sequence_no
+            event_type = (
+                payload.get("type", "data")
+                if isinstance(payload, dict)
+                else "data"
+            )
+            normalised = payload if isinstance(payload, dict) else {"value": payload}
+            journal_writer.record(seq, event_type, normalised)
+            return format_sse_event(normalised, seq)
 
         try:
             # Surface the placeholder id before any LLM tokens so a
             # mid-handshake disconnect still has a row to tail-poll.
             if reserved_message_id:
-                early_event = json.dumps(
+                yield _emit(
                     {
                         "type": "message_id",
                         "message_id": reserved_message_id,
@@ -319,7 +397,6 @@ class BaseAnswerResource:
                         "request_id": request_id,
                     }
                 )
-                yield f"data: {early_event}\n\n"
 
             if _continuation:
                 gen_iter = agent.gen_continuation(
@@ -345,8 +422,9 @@ class BaseAnswerResource:
                         schema_info = line.get("schema")
                         structured_chunks.append(line["answer"])
                     else:
-                        data = json.dumps({"type": "answer", "answer": line["answer"]})
-                        yield f"data: {data}\n\n"
+                        yield _emit(
+                            {"type": "answer", "answer": line["answer"]}
+                        )
                 elif "sources" in line:
                     _mark_streaming_once()
                     truncated_sources = []
@@ -359,43 +437,40 @@ class BaseAnswerResource:
                             )
                         truncated_sources.append(truncated_source)
                     if truncated_sources:
-                        data = json.dumps(
+                        yield _emit(
                             {"type": "source", "source": truncated_sources}
                         )
-                        yield f"data: {data}\n\n"
                 elif "tool_calls" in line:
                     tool_calls = line["tool_calls"]
-                    data = json.dumps({"type": "tool_calls", "tool_calls": tool_calls})
-                    yield f"data: {data}\n\n"
+                    yield _emit({"type": "tool_calls", "tool_calls": tool_calls})
                 elif "thought" in line:
                     thought += line["thought"]
-                    data = json.dumps({"type": "thought", "thought": line["thought"]})
-                    yield f"data: {data}\n\n"
+                    yield _emit({"type": "thought", "thought": line["thought"]})
                 elif "type" in line:
                     if line.get("type") == "tool_calls_pending":
                         # Save continuation state and end the stream
                         paused = True
-                        data = json.dumps(line)
-                        yield f"data: {data}\n\n"
+                        yield _emit(line)
                     elif line.get("type") == "error":
-                        sanitized_error = {
-                            "type": "error",
-                            "error": sanitize_api_error(line.get("error", "An error occurred"))
-                        }
-                        data = json.dumps(sanitized_error)
-                        yield f"data: {data}\n\n"
+                        yield _emit(
+                            {
+                                "type": "error",
+                                "error": sanitize_api_error(
+                                    line.get("error", "An error occurred")
+                                ),
+                            }
+                        )
                     else:
-                        data = json.dumps(line)
-                        yield f"data: {data}\n\n"
+                        yield _emit(line)
             if is_structured and structured_chunks:
-                structured_data = {
-                    "type": "structured_answer",
-                    "answer": response_full,
-                    "structured": True,
-                    "schema": schema_info,
-                }
-                data = json.dumps(structured_data)
-                yield f"data: {data}\n\n"
+                yield _emit(
+                    {
+                        "type": "structured_answer",
+                        "answer": response_full,
+                        "structured": True,
+                        "schema": schema_info,
+                    }
+                )
 
             # ---- Paused: save continuation state and end stream early ----
             if paused:
@@ -452,6 +527,7 @@ class BaseAnswerResource:
                                 exc_info=True,
                             )
 
+                    state_saved = False
                     if conversation_id:
                         try:
                             cont_service = ContinuationService()
@@ -485,18 +561,65 @@ class BaseAnswerResource:
                                     agent.tool_executor, "client_tools", None
                                 ),
                             )
+                            state_saved = True
                         except Exception as e:
                             logger.error(
                                 f"Failed to save continuation state: {str(e)}",
                                 exc_info=True,
                             )
 
-                id_data = {"type": "id", "id": str(conversation_id)}
-                data = json.dumps(id_data)
-                yield f"data: {data}\n\n"
+                    # Notify the user out-of-band so they can navigate
+                    # back to the conversation and decide on the
+                    # pending tool calls. Gated on ``state_saved``: a
+                    # missing pending_tool_state row would 404 the
+                    # resume endpoint, so an unfulfillable notification
+                    # is worse than no notification.
+                    user_id_for_event = (
+                        decoded_token.get("sub") if decoded_token else None
+                    )
+                    if state_saved and user_id_for_event and conversation_id:
+                        pending_calls = continuation.get(
+                            "pending_tool_calls", []
+                        ) if continuation else []
+                        # Trim each pending tool call to its identifying
+                        # metadata so a tool with a multi-MB argument
+                        # doesn't blow out the per-event payload size
+                        # cap. The resume page fetches full args from
+                        # ``pending_tool_state`` regardless.
+                        pending_summaries = [
+                            {
+                                k: tc.get(k)
+                                for k in (
+                                    "call_id",
+                                    "tool_name",
+                                    "action_name",
+                                    "name",
+                                )
+                                if isinstance(tc, dict) and tc.get(k) is not None
+                            }
+                            for tc in (pending_calls or [])
+                            if isinstance(tc, dict)
+                        ]
+                        publish_user_event(
+                            user_id_for_event,
+                            "tool.approval.required",
+                            {
+                                "conversation_id": str(conversation_id),
+                                "message_id": reserved_message_id,
+                                "pending_tool_calls": pending_summaries,
+                            },
+                            scope={
+                                "kind": "conversation",
+                                "id": str(conversation_id),
+                            },
+                        )
 
-                data = json.dumps({"type": "end"})
-                yield f"data: {data}\n\n"
+                yield _emit({"type": "id", "id": str(conversation_id)})
+                yield _emit({"type": "end"})
+                # Drain the terminal ``end`` so a reconnecting client
+                # sees it on snapshot — same reason as the main exit.
+                if journal_writer is not None:
+                    journal_writer.close()
                 return
 
             if isNoneDoc:
@@ -603,9 +726,7 @@ class BaseAnswerResource:
                         f"completion: {e}",
                         exc_info=True,
                     )
-            id_data = {"type": "id", "id": str(conversation_id)}
-            data = json.dumps(id_data)
-            yield f"data: {data}\n\n"
+            yield _emit({"type": "id", "id": str(conversation_id)})
 
             tool_calls_for_logging = self._prepare_tool_calls_for_logging(
                 getattr(agent, "tool_calls", tool_calls) or tool_calls
@@ -646,12 +767,33 @@ class BaseAnswerResource:
                     exc_info=True,
                 )
 
-            data = json.dumps({"type": "end"})
-            yield f"data: {data}\n\n"
+            yield _emit({"type": "end"})
+            # Drain the journal buffer so the terminal ``end`` event is
+            # visible to any reconnecting client. Without this the
+            # client could snapshot up to the last flush boundary and
+            # then live-tail waiting for an ``end`` that's still
+            # sitting in memory.
+            if journal_writer is not None:
+                journal_writer.close()
         except GeneratorExit:
             logger.info(f"Stream aborted by client for question: {question[:50]}... ")
+            # Drain any buffered events before the terminal one-shot
+            # ``record_event`` below — keeps the journal's seq order
+            # contiguous (buffered events ... terminal event). ``close``
+            # is idempotent; pairing it with ``flush`` matches the
+            # normal-exit and error branches so any future ``record()``
+            # past this point would log instead of silently buffering.
+            if journal_writer is not None:
+                journal_writer.flush()
+                journal_writer.close()
             # Save partial response
 
+            # Whether the DB row was flipped to ``complete`` during this
+            # abort handler. Drives the choice of terminal journal event
+            # below: journal ``end`` only when the row actually matches,
+            # else journal ``error`` so a reconnecting client sees a
+            # failed terminal state instead of a blank "success".
+            finalized_complete = False
             if should_save_conversation and response_full:
                 try:
                     if isNoneDoc:
@@ -686,7 +828,7 @@ class BaseAnswerResource:
                     )
                     llm._token_usage_source = "title"
                     if reserved_message_id is not None:
-                        self.conversation_service.finalize_message(
+                        outcome = self.conversation_service.finalize_message(
                             reserved_message_id,
                             response_full,
                             thought=thought,
@@ -704,6 +846,15 @@ class BaseAnswerResource:
                                     question[:50] if question else "New Conversation"
                                 ),
                             },
+                        )
+                        # ``ALREADY_COMPLETE`` means the normal-path
+                        # finalize at line 632 won the race: the DB row
+                        # is already at ``complete`` and the reconnect
+                        # journal should reflect that with ``end``,
+                        # not a spurious ``error``.
+                        finalized_complete = outcome in (
+                            MessageUpdateOutcome.UPDATED,
+                            MessageUpdateOutcome.ALREADY_COMPLETE,
                         )
                     else:
                         self.conversation_service.save_conversation(
@@ -724,6 +875,9 @@ class BaseAnswerResource:
                             attachment_ids=attachment_ids,
                             metadata=query_metadata if query_metadata else None,
                         )
+                        # No journal row to gate, but flag the save as
+                        # successful for symmetry with the WAL path.
+                        finalized_complete = True
                     compression_meta = getattr(agent, "compression_metadata", None)
                     compression_saved = getattr(agent, "compression_saved", False)
                     if conversation_id and compression_meta and not compression_saved:
@@ -747,6 +901,63 @@ class BaseAnswerResource:
                     logger.error(
                         f"Error saving partial response: {str(e)}", exc_info=True
                     )
+            # Journal a terminal event so reconnecting clients stop tailing;
+            # ``end`` only when the row is ``complete``, else ``error``.
+            if reserved_message_id is not None:
+                try:
+                    sequence_no += 1
+                    if finalized_complete:
+                        # Match the wire shape ``_emit({"type": "end"})``
+                        # uses on the normal path — the replay terminal
+                        # check at ``event_replay._payload_is_terminal``
+                        # reads ``payload.type``, and the frontend parses
+                        # the same key off ``data:``.
+                        record_event(
+                            reserved_message_id,
+                            sequence_no,
+                            "end",
+                            {"type": "end"},
+                        )
+                    else:
+                        # Nothing was persisted under the complete status
+                        # — mark the row failed so the reconciler doesn't
+                        # need to sweep it, and journal an ``error`` so a
+                        # reconnecting client surfaces the same failure
+                        # the UI would show on a live error.
+                        try:
+                            self.conversation_service.finalize_message(
+                                reserved_message_id,
+                                response_full or TERMINATED_RESPONSE_PLACEHOLDER,
+                                thought=thought,
+                                sources=source_log_docs,
+                                tool_calls=tool_calls,
+                                model_id=model_id or self.default_model_id,
+                                metadata=query_metadata if query_metadata else None,
+                                status="failed",
+                                error=ConnectionError(
+                                    "client disconnected before response was persisted"
+                                ),
+                            )
+                        except Exception as fin_err:
+                            logger.error(
+                                f"Failed to mark aborted message failed: {fin_err}",
+                                exc_info=True,
+                            )
+                        record_event(
+                            reserved_message_id,
+                            sequence_no,
+                            "error",
+                            {
+                                "type": "error",
+                                "error": "Stream aborted before any response was produced.",
+                                "code": "client_disconnect",
+                            },
+                        )
+                except Exception as journal_err:
+                    logger.error(
+                        f"Failed to journal terminal event on abort: {journal_err}",
+                        exc_info=True,
+                    )
             raise
         except Exception as e:
             logger.error(f"Error in stream: {str(e)}", exc_info=True)
@@ -768,13 +979,16 @@ class BaseAnswerResource:
                         f"Failed to finalize errored message: {fin_err}",
                         exc_info=True,
                     )
-            data = json.dumps(
+            yield _emit(
                 {
                     "type": "error",
                     "error": "Please try again later. We apologize for any inconvenience.",
                 }
             )
-            yield f"data: {data}\n\n"
+            # Drain the terminal ``error`` event we just yielded so a
+            # reconnecting client sees it on snapshot.
+            if journal_writer is not None:
+                journal_writer.close()
             return
 
     def process_response_stream(self, stream) -> Dict[str, Any]:
@@ -796,8 +1010,22 @@ class BaseAnswerResource:
 
         for line in stream:
             try:
-                event_data = line.replace("data: ", "").strip()
+                # Each chunk may carry an ``id: <seq>`` header before
+                # the ``data:`` line. Pull just the ``data:`` body so
+                # the JSON decode doesn't choke on the SSE framing.
+                event_data = ""
+                for raw in line.split("\n"):
+                    if raw.startswith("data:"):
+                        event_data = raw[len("data:") :].lstrip()
+                        break
+                if not event_data:
+                    continue
                 event = json.loads(event_data)
+                # The ``message_id`` event is informational for the
+                # streaming consumer and has no synchronous-API field;
+                # skip it so the type-switch below doesn't KeyError.
+                if event.get("type") == "message_id":
+                    continue
 
                 if event["type"] == "id":
                     conversation_id = event["id"]

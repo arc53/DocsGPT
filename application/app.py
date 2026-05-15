@@ -16,6 +16,8 @@ setup_logging()
 
 from application.api import api  # noqa: E402
 from application.api.answer import answer  # noqa: E402
+from application.api.answer.routes.messages import messages_bp  # noqa: E402
+from application.api.events.routes import events  # noqa: E402
 from application.api.internal.routes import internal  # noqa: E402
 from application.api.user.routes import user  # noqa: E402
 from application.api.connector.routes import connector  # noqa: E402
@@ -49,6 +51,8 @@ ensure_database_ready(
 app = Flask(__name__)
 app.register_blueprint(user)
 app.register_blueprint(answer)
+app.register_blueprint(events)
+app.register_blueprint(messages_bp)
 app.register_blueprint(internal)
 app.register_blueprint(connector)
 app.register_blueprint(v1_bp)

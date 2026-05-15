@@ -1,6 +1,6 @@
-// Phase 3 Tier-B · /v1/chat/completions + /v1/models (OpenAI-compatible)
+// Tier-B · /v1/chat/completions + /v1/models (OpenAI-compatible)
 /**
- * Phase 3 — B9 · OpenAI-compatible endpoints.
+ * B9 · OpenAI-compatible endpoints.
  *
  * `application/api/v1/routes.py` exposes `/v1/chat/completions` (POST)
  * and `/v1/models` (GET). Both read an agent API key from

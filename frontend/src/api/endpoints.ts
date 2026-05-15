@@ -28,7 +28,6 @@ const endpoints = {
     UPDATE_PROMPT: '/api/update_prompt',
     SINGLE_PROMPT: (id: string) => `/api/get_single_prompt?id=${id}`,
     DELETE_PATH: (docPath: string) => `/api/delete_old?source_id=${docPath}`,
-    TASK_STATUS: (task_id: string) => `/api/task_status?task_id=${task_id}`,
     MESSAGE_ANALYTICS: '/api/get_message_analytics',
     TOKEN_ANALYTICS: '/api/get_token_analytics',
     FEEDBACK_ANALYTICS: '/api/get_feedback_analytics',
@@ -73,8 +72,6 @@ const endpoints = {
     MANAGE_SOURCE_FILES: '/api/manage_source_files',
     MCP_TEST_CONNECTION: '/api/mcp_server/test',
     MCP_SAVE_SERVER: '/api/mcp_server/save',
-    MCP_OAUTH_STATUS: (task_id: string) =>
-      `/api/mcp_server/oauth_status/${task_id}`,
     MCP_AUTH_STATUS: '/api/mcp_server/auth_status',
     AGENT_FOLDERS: '/api/agents/folders/',
     AGENT_FOLDER: (id: string) => `/api/agents/folders/${id}`,

@@ -4,6 +4,7 @@ from typing import Any, List, Optional
 from retry import retry
 from tqdm import tqdm
 from application.core.settings import settings
+from application.events.publisher import publish_user_event
 from application.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
 )
@@ -152,6 +153,7 @@ def embed_and_store_documents(
     task_status: Any,
     *,
     attempt_id: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> None:
     """Embeds documents and stores them in a vector store.
 
@@ -170,6 +172,10 @@ def embed_and_store_documents(
         attempt_id: Stable id of the current task invocation,
             typically ``self.request.id`` from the Celery task body.
             ``None`` is treated as a fresh attempt every time.
+        user_id: When provided, per-percent SSE progress events are
+            published to ``user:{user_id}`` for the in-app upload toast.
+            ``None`` is the safe default — workers without a user
+            context (e.g. background syncs) skip the publish.
 
     Returns:
         None
@@ -249,6 +255,8 @@ def embed_and_store_documents(
     # Process and embed documents
     chunk_error: Exception | None = None
     failed_idx: int | None = None
+    last_published_pct = -1
+    source_id_str = str(source_id)
     for idx in tqdm(
         range(loop_start, total_docs),
         desc="Embedding 🦖",
@@ -261,6 +269,24 @@ def embed_and_store_documents(
             # Update task status for progress tracking
             progress = int(((idx + 1) / total_docs) * 100)
             task_status.update_state(state="PROGRESS", meta={"current": progress})
+
+            # SSE push for sub-second upload-toast updates. Throttled to one
+            # event per percent so a 10k-chunk ingest emits ~100 events,
+            # not 10k. The Celery update_state above stays the source of
+            # truth for the polling-fallback path.
+            if user_id and progress > last_published_pct:
+                publish_user_event(
+                    user_id,
+                    "source.ingest.progress",
+                    {
+                        "current": progress,
+                        "total": total_docs,
+                        "embedded_chunks": idx + 1,
+                        "stage": "embedding",
+                    },
+                    scope={"kind": "source", "id": source_id_str},
+                )
+                last_published_pct = progress
 
             # Add document to vector store
             add_text_to_store_with_retry(store, doc, source_id)

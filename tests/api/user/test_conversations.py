@@ -506,6 +506,60 @@ class TestGetMessageTail:
 
         assert response.status_code == 404
 
+    def test_streaming_row_returns_partial_from_journal(self, app, pg_conn):
+        """Mid-stream rows must rebuild from message_events, not return the placeholder."""
+        from application.api.user.conversations.routes import GetMessageTail
+        from application.storage.db.repositories.message_events import (
+            MessageEventsRepository,
+        )
+
+        owner = "user-tail-partial"
+        _, msg_id = self._seed_in_flight_message(pg_conn, owner)
+        events_repo = MessageEventsRepository(pg_conn)
+        events_repo.record(msg_id, 0, "message_id", {"type": "message_id"})
+        events_repo.record(msg_id, 1, "answer", {"type": "answer", "answer": "Hello"})
+        events_repo.record(msg_id, 2, "answer", {"type": "answer", "answer": ", world"})
+        events_repo.record(
+            msg_id, 3, "source", {"type": "source", "source": [{"id": "s1"}]}
+        )
+
+        with _patch_conversations_db(pg_conn), app.test_request_context(
+            f"/api/messages/{msg_id}/tail"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": owner}
+            response = GetMessageTail().get(msg_id)
+
+        assert response.status_code == 200
+        assert response.json["status"] == "streaming"
+        assert response.json["response"] == "Hello, world"
+        assert response.json["sources"] == [{"id": "s1"}]
+        assert "terminated prior to completion" not in (
+            response.json["response"] or ""
+        )
+
+    def test_streaming_row_with_empty_journal_returns_empty_response(
+        self, app, pg_conn
+    ):
+        """Empty journal returns empty response, not the placeholder."""
+        from application.api.user.conversations.routes import GetMessageTail
+
+        owner = "user-tail-empty"
+        _, msg_id = self._seed_in_flight_message(pg_conn, owner)
+
+        with _patch_conversations_db(pg_conn), app.test_request_context(
+            f"/api/messages/{msg_id}/tail"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": owner}
+            response = GetMessageTail().get(msg_id)
+
+        assert response.status_code == 200
+        assert response.json["status"] == "streaming"
+        assert response.json["response"] == ""
+
 
 class TestUpdateConversationNameHappy:
     def test_returns_401_unauthenticated(self, app):

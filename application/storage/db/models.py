@@ -34,7 +34,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, JSONB, UUID
 metadata = MetaData()
 
 
-# --- Phase 1, Tier 1 --------------------------------------------------------
+# --- Users, prompts, tools, logs --------------------------------------------
 
 users_table = Table(
     "users",
@@ -138,7 +138,7 @@ app_metadata_table = Table(
 )
 
 
-# --- Phase 2, Tier 2 --------------------------------------------------------
+# --- Agents, sources, attachments, artifacts --------------------------------
 
 agent_folders_table = Table(
     "agent_folders",
@@ -307,7 +307,7 @@ connector_sessions_table = Table(
 )
 
 
-# --- Phase 3, Tier 3 --------------------------------------------------------
+# --- Conversations, messages, workflows -------------------------------------
 
 conversations_table = Table(
     "conversations",
@@ -363,6 +363,36 @@ conversation_messages_table = Table(
     UniqueConstraint("conversation_id", "position", name="conversation_messages_conv_pos_uidx"),
 )
 
+# Per-yield journal of chat-stream events, used by the snapshot+tail
+# reconnect: the route's GET reconnect endpoint reads
+# ``WHERE message_id = ? AND sequence_no > ?`` from this table before
+# tailing the live ``channel:{message_id}`` pub/sub. See
+# ``application/streaming/event_replay.py`` and migration 0007.
+message_events_table = Table(
+    "message_events",
+    metadata,
+    # PK is the composite ``(message_id, sequence_no)`` — it doubles as
+    # the snapshot read index (covering range scan on
+    # ``WHERE message_id = ? AND sequence_no > ?``).
+    Column(
+        "message_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversation_messages.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+    ),
+    # Strictly monotonic per ``message_id``. Allocated by the route as it
+    # yields, so the writer is single-threaded for the lifetime of one
+    # stream — no contention, no SERIAL needed.
+    Column("sequence_no", Integer, primary_key=True, nullable=False),
+    Column("event_type", Text, nullable=False),
+    Column("payload", JSONB, nullable=False, server_default="{}"),
+    Column(
+        "created_at", DateTime(timezone=True), nullable=False, server_default=func.now()
+    ),
+)
+
+
 shared_conversations_table = Table(
     "shared_conversations",
     metadata,
@@ -403,7 +433,7 @@ pending_tool_state_table = Table(
 )
 
 
-# --- Tier 1 durability foundation (migration 0004) --------------------------
+# --- Durability foundation (idempotency / journals, migration 0004) ---------
 # CHECK constraints (status enums) and partial indexes are intentionally
 # omitted from these declarations — the DB is the authority. Repositories
 # use raw ``text(...)`` SQL against these tables, not the Core objects.

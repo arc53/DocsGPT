@@ -957,20 +957,34 @@ export const conversationSlice = createSlice({
       const status = tail?.status as MessageStatus | undefined;
       query.messageStatus = status;
       query.lastHeartbeatAt = tail?.last_heartbeat_at ?? query.lastHeartbeatAt;
-      if (status === 'complete') {
-        query.response = tail?.response ?? '';
-        query.thought = tail?.thought ?? query.thought;
-        query.sources = tail?.sources ?? query.sources;
-        query.tool_calls = tail?.tool_calls ?? query.tool_calls;
-        delete query.error;
-      } else if (status === 'failed') {
+      if (status === 'failed') {
         // Surface as error so the placeholder text never renders.
         query.error =
           (typeof tail?.error === 'string' && tail.error) ||
           'Generation failed before completing.';
         delete query.response;
+        return;
       }
-      // pending / streaming: untouched; spinner keeps showing.
+      // /tail returns reconstructed partials mid-stream so a second tab
+      // can render the in-flight bubble; spinner is driven by status.
+      const incomingResponse = tail?.response;
+      if (typeof incomingResponse === 'string') {
+        query.response = incomingResponse;
+      } else if (status === 'complete') {
+        query.response = '';
+      }
+      if (typeof tail?.thought === 'string') {
+        query.thought = tail.thought;
+      }
+      if (Array.isArray(tail?.sources) && tail.sources.length > 0) {
+        query.sources = tail.sources;
+      }
+      if (Array.isArray(tail?.tool_calls) && tail.tool_calls.length > 0) {
+        query.tool_calls = tail.tool_calls;
+      }
+      if (status === 'complete') {
+        delete query.error;
+      }
     },
     raiseError(
       state,

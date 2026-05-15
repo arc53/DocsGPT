@@ -29,8 +29,17 @@ def get_redis_instance():
         with _instance_lock:
             if _redis_instance is None and not _redis_creation_failed:
                 try:
+                    # ``health_check_interval`` makes redis-py ping the
+                    # connection every N seconds when otherwise idle.
+                    # Without it, a half-open TCP (NAT silently dropped
+                    # state, ELB idle-close) can hang the SSE generator
+                    # in ``pubsub.get_message`` past its keepalive
+                    # cadence — the kernel never surfaces the dead
+                    # socket because no payload is in flight.
                     _redis_instance = redis.Redis.from_url(
-                        settings.CACHE_REDIS_URL, socket_connect_timeout=2
+                        settings.CACHE_REDIS_URL,
+                        socket_connect_timeout=2,
+                        health_check_interval=10,
                     )
                 except ValueError as e:
                     logger.error(f"Invalid Redis URL: {e}")

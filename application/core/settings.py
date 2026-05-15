@@ -188,6 +188,42 @@ class Settings(BaseSettings):
     COMPRESSION_PROMPT_VERSION: str = "v1.0"  # Track prompt iterations
     COMPRESSION_MAX_HISTORY_POINTS: int = 3  # Keep only last N compression points to prevent DB bloat
 
+    # Internal SSE push channel (notifications + durable replay journal)
+    # Master switch — when False, /api/events emits a "push_disabled" comment
+    # and returns; clients fall back to polling. Publisher becomes a no-op.
+    ENABLE_SSE_PUSH: bool = True
+    # Per-user durable backlog cap (~entries). At typical event rates this
+    # gives ~24h of replay; tune up for verbose feeds, down for memory.
+    EVENTS_STREAM_MAXLEN: int = 1000
+    # SSE keepalive comment cadence. Must sit under Cloudflare's 100s idle
+    # close and iOS Safari's ~60s — 15s gives generous headroom.
+    SSE_KEEPALIVE_SECONDS: int = 15
+    # Cap on simultaneous SSE connections per user. Each connection holds
+    # one WSGI thread (32 per gunicorn worker) and one Redis pub/sub
+    # connection. 8 covers normal multi-tab use without letting one user
+    # starve the pool. Set to 0 to disable the cap.
+    SSE_MAX_CONCURRENT_PER_USER: int = 8
+    # Per-request cap on the number of backlog entries XRANGE returns
+    # for ``/api/events`` snapshots. Bounds the bytes a single replay
+    # can move from Redis to the wire — a malicious client looping
+    # ``Last-Event-ID=<oldest>`` reconnects can only enumerate this
+    # many entries per round-trip. Combined with the per-user
+    # connection cap above and the windowed budget below, total
+    # enumeration throughput is bounded.
+    EVENTS_REPLAY_MAX_PER_REQUEST: int = 200
+    # Sliding-window cap on snapshot replays per user. Once the budget
+    # is exhausted the route returns HTTP 429 with the cursor pinned;
+    # the client backs off and retries after the window rolls over.
+    EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW: int = 30
+    EVENTS_REPLAY_BUDGET_WINDOW_SECONDS: int = 60
+
+    # Retention for the ``message_events`` journal. The ``cleanup_message_events``
+    # beat task deletes rows older than this. Reconnect-replay only
+    # needs the journal for streams a client could still be tailing,
+    # so 14 days is a generous default that covers paused/tool-action
+    # flows without unbounded table growth.
+    MESSAGE_EVENTS_RETENTION_DAYS: int = 14
+
     @field_validator("POSTGRES_URI", mode="before")
     @classmethod
     def _normalize_postgres_uri_validator(cls, v):

@@ -19,8 +19,8 @@ import requests
 from application.agents.agent_creator import AgentCreator
 from application.api.answer.services.stream_processor import get_prompt
 
-from application.cache import get_redis_instance
 from application.core.settings import settings
+from application.events.publisher import publish_user_event
 from application.parser.chunking import Chunker
 from application.parser.connectors.connector_creator import ConnectorCreator
 from application.parser.embedding_pipeline import (
@@ -52,18 +52,16 @@ MAX_TOKENS = 1250
 RECURSION_DEPTH = 2
 INGEST_HEARTBEAT_INTERVAL_SECONDS = 30
 
-# Stable namespace for deterministic source IDs derived from idempotency keys.
-# Pinned literal — do not change. Re-rolling this would mint different
-# source_ids for the same idempotency_keys across deploys, defeating the
-# retry-resume contract.
-DOCSGPT_INGEST_NAMESPACE = uuid.UUID("fa25d5d1-398b-46df-ac89-8d1c360b9bea")
-
-
-def _derive_source_id(idempotency_key):
-    """``uuid5(NS, key)`` when a key is supplied; ``uuid4()`` otherwise."""
-    if isinstance(idempotency_key, str) and idempotency_key:
-        return uuid.uuid5(DOCSGPT_INGEST_NAMESPACE, idempotency_key)
-    return uuid.uuid4()
+# Re-exported here for backward-compatible imports
+# (``from application.worker import _derive_source_id`` /
+# ``DOCSGPT_INGEST_NAMESPACE``) from tests and any other in-tree callers.
+# New code should import from ``application.storage.db.source_ids``
+# directly to avoid pulling this Celery worker module into the API
+# process at import time.
+from application.storage.db.source_ids import (  # noqa: E402, F401
+    DOCSGPT_INGEST_NAMESPACE,
+    derive_source_id as _derive_source_id,
+)
 
 
 def _ingest_heartbeat_loop(source_id, stop_event, interval=INGEST_HEARTBEAT_INTERVAL_SECONDS):
@@ -510,6 +508,7 @@ def ingest_worker(
     retriever="classic",
     file_name_map=None,
     idempotency_key=None,
+    source_id=None,
 ):
     """
     Ingest and process documents.
@@ -527,6 +526,11 @@ def ingest_worker(
         idempotency_key (str|None): When provided, the ``source_id`` is derived
             deterministically from the key so a retried task reuses the same
             source row instead of duplicating it.
+        source_id (str|None): UUID minted by the HTTP route and returned in
+            its response. When supplied, the worker uses it verbatim so SSE
+            envelopes carry the same id the frontend already has — required
+            for non-idempotent uploads where the route can't predict
+            ``_derive_source_id(idempotency_key)``.
 
     Returns:
         dict: Information about the completed ingestion task, including input parameters and a "limited" flag.
@@ -541,10 +545,41 @@ def ingest_worker(
 
     logging.info(f"Ingest path: {file_path}", extra={"user": user, "job": job_name})
 
-    # Create temporary working directory
+    # Source id resolution order:
+    #   1. Caller-supplied ``source_id`` (HTTP route minted + returned to
+    #      the frontend) — keeps the route response and the SSE event
+    #      payloads in lockstep on the non-idempotent path.
+    #   2. Deterministic uuid5 from ``idempotency_key`` — retried tasks
+    #      reuse the original source row instead of duplicating it.
+    #   3. Fresh uuid4 (caller has neither) — opaque, single-shot only.
+    if source_id:
+        source_uuid = uuid.UUID(source_id)
+    else:
+        source_uuid = _derive_source_id(idempotency_key)
+    source_id_for_events = str(source_uuid)
+    # Only emit ``queued`` on the original attempt. Celery retries re-run
+    # the body, and re-publishing here would oscillate the toast through
+    # ``queued`` again between ``failed`` and ``completed``.
+    if self.request.retries == 0:
+        publish_user_event(
+            user,
+            "source.ingest.queued",
+            {
+                "job_name": job_name,
+                "filename": filename,
+                "source_id": source_id_for_events,
+                "operation": "upload",
+            },
+            scope={"kind": "source", "id": source_id_for_events},
+        )
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        try:
+    # Wrap the entire body in try/except so a failure between the
+    # ``queued`` publish above and the inner work (e.g. tempdir
+    # creation, OS-level resource exhaustion) still emits a terminal
+    # ``failed`` event rather than leaving the toast wedged on
+    # 'training' until the polling fallback rescues it 30s later.
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
             os.makedirs(temp_dir, exist_ok=True)
 
             if storage.is_directory(file_path):
@@ -633,23 +668,22 @@ def ingest_worker(
 
             docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
 
-            id = _derive_source_id(idempotency_key)
-
             vector_store_path = os.path.join(temp_dir, "vector_store")
             os.makedirs(vector_store_path, exist_ok=True)
 
-            heartbeat_thread, heartbeat_stop = _start_ingest_heartbeat(id)
+            heartbeat_thread, heartbeat_stop = _start_ingest_heartbeat(source_uuid)
             try:
                 embed_and_store_documents(
-                    docs, vector_store_path, id, self,
+                    docs, vector_store_path, source_uuid, self,
                     attempt_id=getattr(self.request, "id", None),
+                    user_id=user,
                 )
             finally:
                 _stop_ingest_heartbeat(heartbeat_thread, heartbeat_stop)
             # Defense-in-depth: chunk-progress is the authoritative
             # record of how many chunks landed; mismatch raises so the
             # task fails loud rather than caching a partial index.
-            assert_index_complete(id)
+            assert_index_complete(source_uuid)
 
             tokens = count_tokens_docs(docs)
 
@@ -664,7 +698,7 @@ def ingest_worker(
                 "user": user,
                 "tokens": tokens,
                 "retriever": retriever,
-                "id": str(id),
+                "id": source_id_for_events,
                 "type": "local",
                 "file_path": file_path,
                 "directory_structure": json.dumps(directory_structure),
@@ -673,9 +707,36 @@ def ingest_worker(
                 file_data["file_name_map"] = json.dumps(file_name_map)
 
             upload_index(vector_store_path, file_data)
-        except Exception as e:
-            logging.error(f"Error in ingest_worker: {e}", exc_info=True)
-            raise
+            publish_user_event(
+                user,
+                "source.ingest.completed",
+                {
+                    "source_id": source_id_for_events,
+                    "filename": filename,
+                    "tokens": tokens,
+                    "operation": "upload",
+                    # Forward-looking contract: ``limited`` is always
+                    # ``False`` today but is carried on the wire so a
+                    # future token-cap detection path can flip it and
+                    # the frontend slice / UploadToast already react.
+                    "limited": False,
+                },
+                scope={"kind": "source", "id": source_id_for_events},
+            )
+    except Exception as e:
+        logging.error(f"Error in ingest_worker: {e}", exc_info=True)
+        publish_user_event(
+            user,
+            "source.ingest.failed",
+            {
+                "source_id": source_id_for_events,
+                "filename": filename,
+                "operation": "upload",
+                "error": str(e)[:1024],
+            },
+            scope={"kind": "source", "id": source_id_for_events},
+        )
+        raise
     return {
         "directory": directory,
         "formats": formats,
@@ -699,7 +760,23 @@ def reingest_source_worker(self, source_id, user):
 
     Returns:
         dict: Information about the re-ingestion task
+
+    Note:
+        Reingest does its own ``vector_store.add_chunk`` work rather
+        than going through ``embed_and_store_documents`` so it does
+        *not* emit per-percent SSE progress events — only ``queued``,
+        ``completed`` (carrying ``chunks_added`` / ``chunks_deleted``),
+        or ``failed``. v1 limitation; revisit if reingest gains a
+        progress-driven UI.
     """
+    # Declared at the function scope so the outer except can include
+    # ``name`` in the failed event payload when the failure happens
+    # after the source lookup. Empty string until the lookup succeeds.
+    source_name = ""
+    # Tracks inner-block failures so a ``completed`` event reflects
+    # partial-success accurately rather than masking it.
+    inner_warnings: list[str] = []
+
     try:
         from application.vectorstore.vector_creator import VectorCreator
 
@@ -713,6 +790,27 @@ def reingest_source_worker(self, source_id, user):
         if not source:
             raise ValueError(f"Source {source_id} not found or access denied")
         source_id = str(source["id"])
+        source_name = source.get("name") or ""
+
+        # Publish ``queued`` *after* canonicalising ``source_id`` so the
+        # event references the same id as the source row. Trade-off
+        # documented: a Celery-backend or PG-lookup hiccup before this
+        # publish means the toast may see only a ``failed`` event with
+        # no preceding ``queued`` — acceptable for v1 since both
+        # conditions also imply broader system trouble. Gate on first
+        # attempt only so Celery retries don't re-emit ``queued`` after
+        # a prior attempt already published ``failed``.
+        if self.request.retries == 0:
+            publish_user_event(
+                user,
+                "source.ingest.queued",
+                {
+                    "source_id": source_id,
+                    "name": source_name,
+                    "operation": "reingest",
+                },
+                scope={"kind": "source", "id": source_id},
+            )
 
         storage = StorageCreator.get_storage()
         source_file_path = source.get("file_path", "")
@@ -810,6 +908,19 @@ def reingest_source_worker(self, source_id, user):
             try:
                 if not added_files and not removed_files:
                     logging.info("No changes detected.")
+                    publish_user_event(
+                        user,
+                        "source.ingest.completed",
+                        {
+                            "source_id": source_id,
+                            "name": source_name,
+                            "operation": "reingest",
+                            "no_changes": True,
+                            "chunks_added": 0,
+                            "chunks_deleted": 0,
+                        },
+                        scope={"kind": "source", "id": source_id},
+                    )
                     return {
                         "source_id": source_id,
                         "user": user,
@@ -860,6 +971,9 @@ def reingest_source_worker(self, source_id, user):
                         logging.error(
                             f"Error during deletion of removed file chunks: {e}",
                             exc_info=True,
+                        )
+                        inner_warnings.append(
+                            f"deletion failed: {str(e)[:200]}"
                         )
 
                 # 2) Add chunks from new files
@@ -953,6 +1067,9 @@ def reingest_source_worker(self, source_id, user):
                         logging.error(
                             f"Error during ingestion of new files: {e}", exc_info=True
                         )
+                        inner_warnings.append(
+                            f"add failed: {str(e)[:200]}"
+                        )
 
                 # 3) Update source directory structure timestamp
                 try:
@@ -981,6 +1098,25 @@ def reingest_source_worker(self, source_id, user):
                     meta={"current": 100, "status": "Re-ingestion completed"},
                 )
 
+                completed_payload: dict = {
+                    "source_id": source_id,
+                    "name": source_name,
+                    "operation": "reingest",
+                    "chunks_added": added,
+                    "chunks_deleted": deleted,
+                    "tokens": int(total_tokens) if "total_tokens" in locals() else 0,
+                }
+                if inner_warnings:
+                    # Surface the per-block failures so the toast can warn
+                    # rather than claim a clean success.
+                    completed_payload["warnings"] = inner_warnings
+                publish_user_event(
+                    user,
+                    "source.ingest.completed",
+                    completed_payload,
+                    scope={"kind": "source", "id": source_id},
+                )
+
                 return {
                     "source_id": source_id,
                     "user": user,
@@ -998,6 +1134,17 @@ def reingest_source_worker(self, source_id, user):
 
     except Exception as e:
         logging.error(f"Error in reingest_source_worker: {e}", exc_info=True)
+        publish_user_event(
+            user,
+            "source.ingest.failed",
+            {
+                "source_id": str(source_id),
+                "name": source_name,
+                "operation": "reingest",
+                "error": str(e)[:1024],
+            },
+            scope={"kind": "source", "id": str(source_id)},
+        )
         raise
 
 
@@ -1013,12 +1160,51 @@ def remote_worker(
     operation_mode="upload",
     doc_id=None,
     idempotency_key=None,
+    source_id=None,
 ):
     safe_user = safe_filename(user)
     full_path = os.path.join(directory, safe_user, uuid.uuid4().hex)
     os.makedirs(full_path, exist_ok=True)
-    self.update_state(state="PROGRESS", meta={"current": 1})
+
+    # Source id resolution order matches ``ingest_worker``:
+    #   1. ``operation_mode == "sync"`` reuses the existing source's ``doc_id``.
+    #   2. Caller-supplied ``source_id`` (the HTTP route minted it and
+    #      already returned it to the frontend) — keeps the route
+    #      response and the SSE event payloads in lockstep on the
+    #      no-idempotency-key path.
+    #   3. Deterministic uuid5 from ``idempotency_key`` — retried tasks
+    #      reuse the original source row instead of duplicating it.
+    #   4. Fresh uuid4 — opaque, single-shot only.
+    if operation_mode == "sync" and doc_id:
+        source_uuid = str(doc_id)
+    elif source_id:
+        source_uuid = uuid.UUID(source_id)
+    else:
+        source_uuid = _derive_source_id(idempotency_key)
+    source_id_for_events = str(source_uuid)
+
+    # Emit the queued event before any work that could fail (including
+    # ``update_state``) so the toast UI always sees a queued envelope
+    # before any subsequent failed event. Gated on first attempt so
+    # Celery retries don't re-emit ``queued`` after a prior ``failed``.
+    if self.request.retries == 0:
+        publish_user_event(
+            user,
+            "source.ingest.queued",
+            {
+                "source_id": source_id_for_events,
+                "job_name": name_job,
+                "loader": loader,
+                "operation": operation_mode,
+            },
+            scope={"kind": "source", "id": source_id_for_events},
+        )
+
+    # Wrap ``update_state`` plus the entire body so any pre-loader
+    # failure (Celery backend down, OS resource issue) still emits a
+    # terminal ``failed`` event rather than wedging the toast.
     try:
+        self.update_state(state="PROGRESS", meta={"current": 1})
         logging.info("Initializing remote loader with type: %s", loader)
         remote_loader = RemoteCreator.create_loader(loader)
         raw_docs = remote_loader.load_data(source_data)
@@ -1105,22 +1291,22 @@ def remote_worker(
         )
 
         if operation_mode == "upload":
-            id = _derive_source_id(idempotency_key)
             embed_and_store_documents(
-                docs, full_path, id, self,
+                docs, full_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
+                user_id=user,
             )
-            assert_index_complete(id)
+            assert_index_complete(source_uuid)
         elif operation_mode == "sync":
             if not doc_id:
                 logging.error("Invalid doc_id provided for sync operation: %s", doc_id)
                 raise ValueError("doc_id must be provided for sync operation.")
-            id = str(doc_id)
             embed_and_store_documents(
-                docs, full_path, id, self,
+                docs, full_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
+                user_id=user,
             )
-            assert_index_complete(id)
+            assert_index_complete(source_uuid)
         self.update_state(state="PROGRESS", meta={"current": 100})
 
         # Serialize remote_data as JSON if it's a dict (for S3, Reddit, etc.)
@@ -1132,7 +1318,7 @@ def remote_worker(
             "user": user,
             "tokens": tokens,
             "retriever": retriever,
-            "id": str(id),
+            "id": source_id_for_events,
             "type": loader,
             "remote_data": remote_data_serialized,
             "sync_frequency": sync_frequency,
@@ -1146,23 +1332,49 @@ def remote_worker(
             try:
                 with db_session() as conn:
                     repo = SourcesRepository(conn)
-                    src = repo.get_any(str(id), user)
+                    src = repo.get_any(source_id_for_events, user)
                     if src is not None:
                         repo.update(str(src["id"]), user, {"date": last_sync_now})
             except Exception as upd_err:
                 logging.warning(
-                    f"Failed to update last_sync for source {id}: {upd_err}"
+                    f"Failed to update last_sync for source {source_id_for_events}: {upd_err}"
                 )
         upload_index(full_path, file_data)
+        publish_user_event(
+            user,
+            "source.ingest.completed",
+            {
+                "source_id": source_id_for_events,
+                "job_name": name_job,
+                "loader": loader,
+                "operation": operation_mode,
+                "tokens": tokens,
+                # Forward-looking contract: see ingest_worker.
+                "limited": False,
+            },
+            scope={"kind": "source", "id": source_id_for_events},
+        )
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
+        publish_user_event(
+            user,
+            "source.ingest.failed",
+            {
+                "source_id": source_id_for_events,
+                "job_name": name_job,
+                "loader": loader,
+                "operation": operation_mode,
+                "error": str(e)[:1024],
+            },
+            scope={"kind": "source", "id": source_id_for_events},
+        )
         raise
     finally:
         if os.path.exists(full_path):
             shutil.rmtree(full_path)
     logging.info("remote_worker task completed successfully")
     return {
-        "id": str(id),
+        "id": source_id_for_events,
         "urls": source_data,
         "name_job": name_job,
         "user": user,
@@ -1245,12 +1457,30 @@ def attachment_worker(self, file_info, user):
     relative_path = file_info["path"]
     metadata = file_info.get("metadata", {})
 
+    publish_user_event(
+        user,
+        "attachment.queued",
+        {"attachment_id": str(attachment_id), "filename": filename},
+        scope={"kind": "attachment", "id": str(attachment_id)},
+    )
+
     try:
         self.update_state(state="PROGRESS", meta={"current": 10})
         storage = StorageCreator.get_storage()
 
         self.update_state(
             state="PROGRESS", meta={"current": 30, "status": "Processing content"}
+        )
+        publish_user_event(
+            user,
+            "attachment.progress",
+            {
+                "attachment_id": str(attachment_id),
+                "filename": filename,
+                "current": 30,
+                "stage": "processing",
+            },
+            scope={"kind": "attachment", "id": str(attachment_id)},
         )
 
         file_extractor = get_default_file_extractor(
@@ -1284,6 +1514,17 @@ def attachment_worker(self, file_info, user):
         self.update_state(
             state="PROGRESS", meta={"current": 80, "status": "Storing in database"}
         )
+        publish_user_event(
+            user,
+            "attachment.progress",
+            {
+                "attachment_id": str(attachment_id),
+                "filename": filename,
+                "current": 80,
+                "stage": "storing",
+            },
+            scope={"kind": "attachment", "id": str(attachment_id)},
+        )
 
         mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
@@ -1308,6 +1549,18 @@ def attachment_worker(self, file_info, user):
 
         self.update_state(state="PROGRESS", meta={"current": 100, "status": "Complete"})
 
+        publish_user_event(
+            user,
+            "attachment.completed",
+            {
+                "attachment_id": str(attachment_id),
+                "filename": filename,
+                "token_count": token_count,
+                "mime_type": mime_type,
+            },
+            scope={"kind": "attachment", "id": str(attachment_id)},
+        )
+
         return {
             "filename": filename,
             "path": relative_path,
@@ -1321,6 +1574,16 @@ def attachment_worker(self, file_info, user):
             f"Error processing file {filename}: {e}",
             extra={"user": user},
             exc_info=True,
+        )
+        publish_user_event(
+            user,
+            "attachment.failed",
+            {
+                "attachment_id": str(attachment_id),
+                "filename": filename,
+                "error": str(e)[:1024],
+            },
+            scope={"kind": "attachment", "id": str(attachment_id)},
         )
         raise
 
@@ -1385,6 +1648,7 @@ def ingest_connector(
     doc_id=None,
     sync_frequency: str = "never",
     idempotency_key=None,
+    source_id=None,
 ) -> Dict[str, Any]:
     """
     Ingestion for internal knowledge bases (GoogleDrive, etc.).
@@ -1403,14 +1667,50 @@ def ingest_connector(
         sync_frequency: How often to sync ("never", "daily", "weekly", "monthly")
         idempotency_key: When provided, the ``source_id`` is derived
             deterministically so a retried upload reuses the same source row.
+        source_id: When supplied, the worker uses it verbatim so SSE envelopes
+            carry the same id the HTTP route already returned to the frontend
+            — required for non-idempotent uploads where the route can't
+            predict ``_derive_source_id(idempotency_key)``.
     """
     logging.info(
         f"Starting remote ingestion from {source_type} for user: {user}, job: {job_name}"
     )
+
+    # Source id resolution mirrors ``ingest_worker`` / ``remote_worker``:
+    # sync mode reuses ``doc_id``; otherwise the caller-supplied
+    # ``source_id`` (minted by the HTTP route and already echoed to the
+    # client) wins; fall back to ``_derive_source_id`` only when neither
+    # is supplied. Without rule (2) the no-idempotency-key path would
+    # mint a fresh uuid4 here that the frontend has no way to correlate
+    # SSE envelopes to.
+    if operation_mode == "sync" and doc_id:
+        source_uuid = str(doc_id)
+    elif source_id:
+        source_uuid = uuid.UUID(source_id)
+    else:
+        source_uuid = _derive_source_id(idempotency_key)
+    source_id_for_events = str(source_uuid)
+
+    # First-attempt gate: Celery retries re-run the body, and a
+    # repeated ``queued`` here would oscillate the toast through
+    # ``queued`` again between ``failed`` and ``completed``.
+    if self.request.retries == 0:
+        publish_user_event(
+            user,
+            "source.ingest.queued",
+            {
+                "source_id": source_id_for_events,
+                "job_name": job_name,
+                "loader": source_type,
+                "operation": operation_mode,
+            },
+            scope={"kind": "source", "id": source_id_for_events},
+        )
+
     self.update_state(state="PROGRESS", meta={"current": 1})
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        try:
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
             # Step 1: Initialize the appropriate loader
             self.update_state(
                 state="PROGRESS",
@@ -1448,6 +1748,22 @@ def ingest_connector(
                 "files_downloaded", 0
             ):
                 logging.warning(f"No files were downloaded from {source_type}")
+                # Connector returned no files — surface as a benign
+                # ``completed`` event with zero tokens so the toast
+                # closes out cleanly instead of waiting on polling.
+                publish_user_event(
+                    user,
+                    "source.ingest.completed",
+                    {
+                        "source_id": source_id_for_events,
+                        "job_name": job_name,
+                        "loader": source_type,
+                        "operation": operation_mode,
+                        "tokens": 0,
+                        "no_changes": True,
+                    },
+                    scope={"kind": "source", "id": source_id_for_events},
+                )
                 # Create empty result directly instead of calling a separate method
                 return {
                     "name": job_name,
@@ -1497,16 +1813,16 @@ def ingest_connector(
 
             docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
 
-            if operation_mode == "upload":
-                id = _derive_source_id(idempotency_key)
-            elif operation_mode == "sync":
-                if not doc_id:
-                    logging.error(
-                        "Invalid doc_id provided for sync operation: %s", doc_id
-                    )
-                    raise ValueError("doc_id must be provided for sync operation.")
-                id = str(doc_id)
-            else:
+            # Validate operation_mode here too (the source_uuid path
+            # at the top of the function only branches on the
+            # sync+doc_id combination; surfacing the wrong-mode error
+            # this far in matches the legacy behaviour).
+            if operation_mode == "sync" and not doc_id:
+                logging.error(
+                    "Invalid doc_id provided for sync operation: %s", doc_id
+                )
+                raise ValueError("doc_id must be provided for sync operation.")
+            if operation_mode not in ("upload", "sync"):
                 raise ValueError(f"Invalid operation_mode: {operation_mode}")
 
             vector_store_path = os.path.join(temp_dir, "vector_store")
@@ -1516,10 +1832,11 @@ def ingest_connector(
                 state="PROGRESS", meta={"current": 80, "status": "Storing documents"}
             )
             embed_and_store_documents(
-                docs, vector_store_path, id, self,
+                docs, vector_store_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
+                user_id=user,
             )
-            assert_index_complete(id)
+            assert_index_complete(source_uuid)
 
             tokens = count_tokens_docs(docs)
 
@@ -1529,7 +1846,7 @@ def ingest_connector(
                 "name": job_name,
                 "tokens": tokens,
                 "retriever": retriever,
-                "id": str(id),
+                "id": source_id_for_events,
                 "type": "connector:file",
                 "remote_data": json.dumps(
                     {"provider": source_type, **api_source_config}
@@ -1538,16 +1855,13 @@ def ingest_connector(
                 "sync_frequency": sync_frequency,
             }
 
-            if operation_mode == "sync":
-                file_data["last_sync"] = datetime.datetime.now()
-            else:
-                file_data["last_sync"] = datetime.datetime.now()
+            file_data["last_sync"] = datetime.datetime.now()
 
             if operation_mode == "sync":
                 try:
                     with db_session() as conn:
                         repo = SourcesRepository(conn)
-                        src = repo.get_any(str(id), user)
+                        src = repo.get_any(source_id_for_events, user)
                         if src is not None:
                             repo.update(
                                 str(src["id"]), user,
@@ -1555,7 +1869,9 @@ def ingest_connector(
                             )
                 except Exception as upd_err:
                     logging.warning(
-                        f"Failed to update last_sync for source {id}: {upd_err}"
+                        "Failed to update last_sync for source %s: %s",
+                        source_id_for_events,
+                        upd_err,
                     )
 
             upload_index(vector_store_path, file_data)
@@ -1567,59 +1883,110 @@ def ingest_connector(
 
             logging.info(f"Remote ingestion completed: {job_name}")
 
+            publish_user_event(
+                user,
+                "source.ingest.completed",
+                {
+                    "source_id": source_id_for_events,
+                    "job_name": job_name,
+                    "loader": source_type,
+                    "operation": operation_mode,
+                    "tokens": tokens,
+                },
+                scope={"kind": "source", "id": source_id_for_events},
+            )
+
             return {
                 "user": user,
                 "name": job_name,
                 "tokens": tokens,
                 "type": source_type,
-                "id": str(id),
+                "id": source_id_for_events,
                 "status": "complete",
             }
-
-        except Exception as e:
-            logging.error(f"Error during remote ingestion: {e}", exc_info=True)
-            raise
+    except Exception as e:
+        logging.error(f"Error during remote ingestion: {e}", exc_info=True)
+        publish_user_event(
+            user,
+            "source.ingest.failed",
+            {
+                "source_id": source_id_for_events,
+                "job_name": job_name,
+                "loader": source_type,
+                "operation": operation_mode,
+                "error": str(e)[:1024],
+            },
+            scope={"kind": "source", "id": source_id_for_events},
+        )
+        raise
 
 
 def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, Any]:
-    """Worker to handle MCP OAuth flow asynchronously."""
+    """Worker to handle MCP OAuth flow asynchronously.
+
+    Publishes SSE events at each phase boundary so the frontend can
+    drive the OAuth popup directly from the push channel. The
+    ``mcp.oauth.awaiting_redirect`` envelope carries the
+    ``authorization_url`` once the upstream OAuth client surfaces it,
+    eliminating the prior polling-only path for that URL.
+    """
+
+    # Bind ``task_id`` and the publish helpers OUTSIDE the outer try so
+    # the ``except`` handler at the bottom can reach them even when an
+    # early statement raises. Without this, ``publish_oauth`` would
+    # UnboundLocalError on top of the original failure.
+    task_id = self.request.id if getattr(self, "request", None) else None
+
+    def publish_oauth(event_type: str, payload: Dict[str, Any]) -> None:
+        # MCP OAuth can be invoked without a route-bound user_id by
+        # legacy paths. Skip the SSE publish in that case \u2014 the caller
+        # has no per-user channel to subscribe to, and the status is
+        # surfaced via the task's return value.
+        if not user_id or task_id is None:
+            return
+        publish_user_event(
+            user_id,
+            event_type,
+            {"task_id": task_id, **payload},
+            scope={"kind": "mcp_oauth", "id": task_id},
+        )
+
+    def publish_awaiting_redirect(authorization_url: str) -> None:
+        """Callback invoked by ``DocsGPTOAuth.redirect_handler`` once
+        the OAuth client has minted the authorization URL.
+
+        Carrying the URL on the SSE envelope lets the frontend open the
+        popup directly from the event \u2014 the prior polling-only path
+        for the URL is gone.
+        """
+        publish_oauth(
+            "mcp.oauth.awaiting_redirect",
+            {
+                "message": "Awaiting OAuth redirect...",
+                "authorization_url": authorization_url,
+            },
+        )
 
     try:
         import asyncio
 
         from application.agents.tools.mcp_tool import MCPTool
 
-        task_id = self.request.id
-        redis_client = get_redis_instance()
-
-        def update_status(status_data: Dict[str, Any]):
-            status_key = f"mcp_oauth_status:{task_id}"
-            redis_client.setex(status_key, 600, json.dumps(status_data))
-
-        update_status(
-            {
-                "status": "in_progress",
-                "message": "Starting OAuth...",
-                "task_id": task_id,
-            }
-        )
+        publish_oauth("mcp.oauth.in_progress", {"message": "Starting OAuth..."})
 
         tool_config = config.copy()
         tool_config["oauth_task_id"] = task_id
+        # Inject the awaiting-redirect publish callback. ``MCPTool`` pops
+        # it out of the config and threads it into ``DocsGPTOAuth`` so
+        # the publish fires synchronously from inside
+        # ``redirect_handler`` \u2014 the only point where the URL is known.
+        tool_config["oauth_redirect_publish"] = publish_awaiting_redirect
         mcp_tool = MCPTool(tool_config, user_id)
 
         async def run_oauth_discovery():
             if not mcp_tool._client:
                 mcp_tool._setup_client()
             return await mcp_tool._execute_with_client("list_tools")
-
-        update_status(
-            {
-                "status": "awaiting_redirect",
-                "message": "Awaiting OAuth redirect...",
-                "task_id": task_id,
-            }
-        )
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -1628,49 +1995,21 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
             loop.run_until_complete(run_oauth_discovery())
             tools = mcp_tool.get_actions_metadata()
 
-            update_status(
-                {
-                    "status": "completed",
-                    "message": f"Connected \u2014 found {len(tools)} tool{'s' if len(tools) != 1 else ''}.",
-                    "tools": tools,
-                    "tools_count": len(tools),
-                    "task_id": task_id,
-                }
+            publish_oauth(
+                "mcp.oauth.completed",
+                {"tools": tools, "tools_count": len(tools)},
             )
 
             return {"success": True, "tools": tools, "tools_count": len(tools)}
         except Exception as e:
             error_msg = f"OAuth failed: {str(e)}"
             logging.error("MCP OAuth discovery failed: %s", error_msg, exc_info=True)
-            update_status(
-                {
-                    "status": "error",
-                    "message": error_msg,
-                    "task_id": task_id,
-                }
-            )
+            publish_oauth("mcp.oauth.failed", {"error": error_msg[:1024]})
             return {"success": False, "error": error_msg}
         finally:
             loop.close()
     except Exception as e:
         error_msg = f"OAuth init failed: {str(e)}"
         logging.error("MCP OAuth init failed: %s", error_msg, exc_info=True)
-        update_status(
-            {
-                "status": "error",
-                "message": error_msg,
-                "task_id": task_id,
-            }
-        )
+        publish_oauth("mcp.oauth.failed", {"error": error_msg[:1024]})
         return {"success": False, "error": error_msg}
-
-
-def mcp_oauth_status(self, task_id: str) -> Dict[str, Any]:
-    """Check the status of an MCP OAuth flow."""
-    redis_client = get_redis_instance()
-    status_key = f"mcp_oauth_status:{task_id}"
-
-    status_data = redis_client.get(status_key)
-    if status_data:
-        return json.loads(status_data)
-    return {"status": "not_found", "message": "Status not found"}

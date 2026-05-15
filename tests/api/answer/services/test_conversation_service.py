@@ -449,6 +449,9 @@ class TestFinalizeMessage:
                 question="q",
                 decoded_token={"sub": user},
             )
+            from application.storage.db.repositories.conversations import (
+                MessageUpdateOutcome,
+            )
             assert svc.finalize_message(
                 res["message_id"],
                 "real answer",
@@ -458,7 +461,7 @@ class TestFinalizeMessage:
                 model_id="gpt-4",
                 metadata={"foo": "bar"},
                 status="complete",
-            ) is True
+            ) is MessageUpdateOutcome.UPDATED
 
         msgs = ConversationsRepository(pg_conn).get_messages(
             res["conversation_id"],
@@ -488,12 +491,15 @@ class TestFinalizeMessage:
                 decoded_token={"sub": user},
             )
             err = RuntimeError("provider down")
+            from application.storage.db.repositories.conversations import (
+                MessageUpdateOutcome,
+            )
             assert svc.finalize_message(
                 res["message_id"],
                 "fallback text",
                 status="failed",
                 error=err,
-            ) is True
+            ) is MessageUpdateOutcome.UPDATED
 
         msgs = ConversationsRepository(pg_conn).get_messages(
             res["conversation_id"],
@@ -526,9 +532,12 @@ class TestFinalizeMessage:
                 ),
                 {"cid": "c1", "mid": res["message_id"]},
             )
+            from application.storage.db.repositories.conversations import (
+                MessageUpdateOutcome,
+            )
             assert svc.finalize_message(
                 res["message_id"], "ans", status="complete",
-            ) is True
+            ) is MessageUpdateOutcome.UPDATED
 
         status = pg_conn.execute(
             sql_text("SELECT status FROM tool_call_attempts WHERE call_id = :cid"),
@@ -536,16 +545,19 @@ class TestFinalizeMessage:
         ).scalar()
         assert status == "confirmed"
 
-    def test_finalize_returns_false_for_unknown_message(self, pg_conn):
+    def test_finalize_returns_not_found_for_unknown_message(self, pg_conn):
         from application.api.answer.services.conversation_service import (
             ConversationService,
+        )
+        from application.storage.db.repositories.conversations import (
+            MessageUpdateOutcome,
         )
         with _patch_db(pg_conn):
             assert ConversationService().finalize_message(
                 "00000000-0000-0000-0000-000000000000",
                 "x",
                 status="complete",
-            ) is False
+            ) is MessageUpdateOutcome.NOT_FOUND
 
     def test_finalize_rolls_back_tool_call_confirm_on_message_update_failure(
         self, pg_conn
@@ -651,6 +663,9 @@ class TestFinalizeMessage:
                 question="long question that becomes the fallback name",
                 decoded_token={"sub": user},
             )
+            from application.storage.db.repositories.conversations import (
+                MessageUpdateOutcome,
+            )
             assert svc.finalize_message(
                 res["message_id"],
                 "answer",
@@ -664,7 +679,7 @@ class TestFinalizeMessage:
                         "long question that becomes the fallback name"[:50]
                     ),
                 },
-            ) is True
+            ) is MessageUpdateOutcome.UPDATED
 
         repo = ConversationsRepository(pg_conn)
         conv = repo.get_any(res["conversation_id"], user)

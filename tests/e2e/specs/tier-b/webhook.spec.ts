@@ -1,5 +1,5 @@
 /**
- * Phase 3 Tier-B · agent incoming webhook
+ * Tier-B · agent incoming webhook
  *
  * Covers B11: minting of `agents.incoming_webhook_token` via
  * `GET /api/agent_webhook?id=…`, POSTing the resolved URL triggers a

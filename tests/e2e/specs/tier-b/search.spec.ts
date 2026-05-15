@@ -1,6 +1,6 @@
-// Phase 3 Tier-B · /api/search via agent api_key
+// Tier-B · /api/search via agent api_key
 /**
- * Phase 3 — B8 · `/api/search` via agent api_key.
+ * B8 · `/api/search` via agent api_key.
  *
  * `application/api/answer/routes/search.py` is the fast-path retrieval
  * endpoint used by embed/widget integrations: it takes a body with

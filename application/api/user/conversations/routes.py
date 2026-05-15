@@ -7,9 +7,13 @@ from flask_restx import fields, Namespace, Resource
 from sqlalchemy import text as sql_text
 
 from application.api import api
+from application.api.answer.services.conversation_service import (
+    TERMINATED_RESPONSE_PLACEHOLDER,
+)
 from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.repositories.attachments import AttachmentsRepository
 from application.storage.db.repositories.conversations import ConversationsRepository
+from application.storage.db.repositories.message_events import MessageEventsRepository
 from application.storage.db.session import db_readonly, db_session
 from application.utils import check_required_fields
 
@@ -346,6 +350,25 @@ class GetMessageTail(Resource):
                 if row is None:
                     return make_response(jsonify({"status": "not found"}), 404)
                 msg = row_to_dict(row)
+                # Mid-stream the row's response is the placeholder; rebuild
+                # the live partial from the journal so /tail mirrors SSE.
+                status = msg.get("status")
+                response = msg.get("response")
+                thought = msg.get("thought")
+                sources = msg.get("sources") or []
+                tool_calls = msg.get("tool_calls") or []
+                if status in ("pending", "streaming") and (
+                    response == TERMINATED_RESPONSE_PLACEHOLDER
+                ):
+                    partial = MessageEventsRepository(conn).reconstruct_partial(
+                        message_id
+                    )
+                    response = partial["response"]
+                    thought = partial["thought"] or thought
+                    if partial["sources"]:
+                        sources = partial["sources"]
+                    if partial["tool_calls"]:
+                        tool_calls = partial["tool_calls"]
         except Exception as err:
             current_app.logger.error(
                 f"Error tailing message {message_id}: {err}", exc_info=True
@@ -356,11 +379,11 @@ class GetMessageTail(Resource):
             jsonify(
                 {
                     "message_id": str(msg["id"]),
-                    "status": msg.get("status"),
-                    "response": msg.get("response"),
-                    "thought": msg.get("thought"),
-                    "sources": msg.get("sources") or [],
-                    "tool_calls": msg.get("tool_calls") or [],
+                    "status": status,
+                    "response": response,
+                    "thought": thought,
+                    "sources": sources,
+                    "tool_calls": tool_calls,
                     "request_id": msg.get("request_id"),
                     "last_heartbeat_at": metadata.get("last_heartbeat_at"),
                     "error": metadata.get("error"),

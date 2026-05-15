@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { LoaderCircle, Mic, Square } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import endpoints from '../api/endpoints';
 import userService from '../api/services/userService';
@@ -28,6 +28,7 @@ import {
   selectSelectedDocs,
   selectToken,
 } from '../preferences/preferenceSlice';
+import type { RootState } from '../store';
 import Upload from '../upload/Upload';
 import { getOS, isTouchDevice } from '../utils/browserUtils';
 import SourcesPopup from './SourcesPopup';
@@ -316,6 +317,7 @@ export default function MessageInput({
   const attachments = useSelector(selectAttachments);
 
   const dispatch = useDispatch();
+  const store = useStore<RootState>();
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -409,6 +411,86 @@ export default function MessageInput({
       resetLiveTranscriptionState();
     };
   }, []);
+
+  // Recover the race where attachment.* SSE arrives before the upload
+  // XHR's onload sets ``attachmentId``: walk recentEvents and watchdog
+  // the row so it can't stay stuck on 'processing'. Mirrors
+  // Upload.tsx's ``trackTraining``.
+  const trackAttachment = useCallback(
+    (clientId: string, attachmentId: string) => {
+      let handled = false;
+
+      const check = () => {
+        const state = store.getState();
+        const row = state.upload.attachments.find((a) => a.id === clientId);
+        if (!row) return true; // removed by user; stop tracking
+        if (row.status === 'completed' || row.status === 'failed') {
+          handled = true;
+          return true;
+        }
+        for (const event of state.notifications.recentEvents) {
+          if (event.scope?.id !== attachmentId) continue;
+          if (event.type === 'attachment.completed') {
+            const payload = (event.payload || {}) as Record<string, unknown>;
+            const tokenCount = Number(payload.token_count);
+            handled = true;
+            dispatch(
+              updateAttachment({
+                id: clientId,
+                updates: {
+                  status: 'completed',
+                  progress: 100,
+                  ...(Number.isFinite(tokenCount)
+                    ? { token_count: tokenCount }
+                    : {}),
+                },
+              }),
+            );
+            return true;
+          }
+          if (event.type === 'attachment.failed') {
+            handled = true;
+            dispatch(
+              updateAttachment({
+                id: clientId,
+                updates: { status: 'failed' },
+              }),
+            );
+            return true;
+          }
+        }
+        return false;
+      };
+
+      if (check()) return;
+      const MAX_WAIT_MS = 5 * 60_000;
+      let unsubscribe: (() => void) | null = null;
+      const timer = window.setTimeout(() => {
+        unsubscribe?.();
+        if (!handled) {
+          handled = true;
+          console.warn(
+            'trackAttachment: timed out waiting for terminal SSE',
+            clientId,
+            attachmentId,
+          );
+          dispatch(
+            updateAttachment({
+              id: clientId,
+              updates: { status: 'failed' },
+            }),
+          );
+        }
+      }, MAX_WAIT_MS);
+      unsubscribe = store.subscribe(() => {
+        if (check()) {
+          window.clearTimeout(timer);
+          unsubscribe?.();
+        }
+      });
+    },
+    [dispatch, store],
+  );
 
   const uploadFiles = useCallback(
     (files: File[]) => {
@@ -510,11 +592,19 @@ export default function MessageInput({
                           id: uiId,
                           updates: {
                             taskId: task.task_id,
+                            // Stash the server's attachment id so SSE
+                            // ``attachment.*`` events can match this
+                            // row by ``scope.id`` and drive the
+                            // per-attachment push-fresh poll gate.
+                            attachmentId: task.attachment_id,
                             status: 'processing',
                             progress: 10,
                           },
                         }),
                       );
+                      if (task.attachment_id) {
+                        trackAttachment(uiId, task.attachment_id);
+                      }
                       return;
                     }
 
@@ -545,11 +635,15 @@ export default function MessageInput({
                           id: uiId,
                           updates: {
                             taskId: t.task_id,
+                            attachmentId: t.attachment_id,
                             status: 'processing',
                             progress: 10,
                           },
                         }),
                       );
+                      if (t.attachment_id) {
+                        trackAttachment(uiId, t.attachment_id);
+                      }
                     } else {
                       dispatch(
                         updateAttachment({
@@ -583,11 +677,15 @@ export default function MessageInput({
                         id: uiId,
                         updates: {
                           taskId: response.task_id,
+                          attachmentId: response.attachment_id,
                           status: 'processing',
                           progress: 10,
                         },
                       }),
                     );
+                    if (response.attachment_id) {
+                      trackAttachment(uiId, response.attachment_id);
+                    }
                   }
                 } else {
                   console.warn(
@@ -714,11 +812,15 @@ export default function MessageInput({
                     id: uniqueId,
                     updates: {
                       taskId: response.task_id,
+                      attachmentId: response.attachment_id,
                       status: 'processing',
                       progress: 10,
                     },
                   }),
                 );
+                if (response.attachment_id) {
+                  trackAttachment(uniqueId, response.attachment_id);
+                }
               } else {
                 // If backend returned tasks[] for single-file, handle gracefully:
                 if (
@@ -730,11 +832,15 @@ export default function MessageInput({
                       id: uniqueId,
                       updates: {
                         taskId: response.tasks[0].task_id,
+                        attachmentId: response.tasks[0].attachment_id,
                         status: 'processing',
                         progress: 10,
                       },
                     }),
                   );
+                  if (response.tasks[0].attachment_id) {
+                    trackAttachment(uniqueId, response.tasks[0].attachment_id);
+                  }
                 } else {
                   dispatch(
                     updateAttachment({
@@ -781,7 +887,7 @@ export default function MessageInput({
         xhr.send(formData);
       });
     },
-    [dispatch, token],
+    [dispatch, token, trackAttachment],
   );
 
   const handleFileAttachment = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -815,65 +921,6 @@ export default function MessageInput({
     maxSize: 25000000,
     accept: FILE_UPLOAD_ACCEPT,
   });
-
-  useEffect(() => {
-    const checkTaskStatus = () => {
-      const processingAttachments = attachments.filter(
-        (att) => att.status === 'processing' && att.taskId,
-      );
-
-      processingAttachments.forEach((attachment) => {
-        userService
-          .getTaskStatus(attachment.taskId!, null)
-          .then((data) => data.json())
-          .then((data) => {
-            if (data.status === 'SUCCESS') {
-              dispatch(
-                updateAttachment({
-                  id: attachment.id,
-                  updates: {
-                    status: 'completed',
-                    progress: 100,
-                    id: data.result?.attachment_id,
-                    token_count: data.result?.token_count,
-                  },
-                }),
-              );
-            } else if (data.status === 'FAILURE') {
-              dispatch(
-                updateAttachment({
-                  id: attachment.id,
-                  updates: { status: 'failed' },
-                }),
-              );
-            } else if (data.status === 'PROGRESS' && data.result?.current) {
-              dispatch(
-                updateAttachment({
-                  id: attachment.id,
-                  updates: { progress: data.result.current },
-                }),
-              );
-            }
-          })
-          .catch(() => {
-            dispatch(
-              updateAttachment({
-                id: attachment.id,
-                updates: { status: 'failed' },
-              }),
-            );
-          });
-      });
-    };
-
-    const interval = setInterval(() => {
-      if (attachments.some((att) => att.status === 'processing')) {
-        checkTaskStatus();
-      }
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [attachments, dispatch]);
 
   const handleInput = useCallback(() => {
     if (inputRef.current) {

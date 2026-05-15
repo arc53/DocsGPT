@@ -1,4 +1,4 @@
-"""Phase 2 tests for the openai_compatible provider.
+"""Tests for the openai_compatible provider.
 
 Covers YAML loading from a temp directory, multiple coexisting catalogs
 (Mistral + Together), env-var-based credential resolution, the legacy
