@@ -174,9 +174,27 @@ class TestValkeyStoreSearch:
         options = call_args[0][3]
         assert hasattr(options, "return_fields")
 
+    def test_search_caps_k_to_max(self):
+        """Verify k is capped at _MAX_SEARCH_K to prevent memory exhaustion."""
+        store, mock_client, _ = _make_store()
 
-@pytest.mark.unit
-class TestValkeyStoreAddTexts:
+        with patch("application.vectorstore.valkey.ft.search", return_value=[0]) as mock_ft:
+            store.search("query", k=500)
+
+        call_args = mock_ft.call_args
+        query_str = call_args[0][2]
+        assert "KNN 100" in query_str
+
+    def test_search_floors_k_to_one(self):
+        """Verify k is at least 1."""
+        store, mock_client, _ = _make_store()
+
+        with patch("application.vectorstore.valkey.ft.search", return_value=[0]) as mock_ft:
+            store.search("query", k=0)
+
+        call_args = mock_ft.call_args
+        query_str = call_args[0][2]
+        assert "KNN 1" in query_str
     def test_add_texts_returns_ids(self):
         store, mock_client, mock_emb = _make_store()
         mock_emb.embed_documents.return_value = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
@@ -284,12 +302,12 @@ class TestValkeyStoreDeleteIndex:
         )
         assert total_deleted == _SCAN_PAGE_SIZE + 2
 
-    def test_delete_index_handles_error(self):
+    def test_delete_index_raises_on_error(self):
         store, mock_client, _ = _make_store()
 
         with patch("application.vectorstore.valkey.ft.search", side_effect=RequestError("fail")):
-            # Should not raise
-            store.delete_index()
+            with pytest.raises(RequestError):
+                store.delete_index()
 
 
 @pytest.mark.unit
@@ -605,6 +623,15 @@ class TestValkeyStoreClose:
         store.close()
         assert store._client is None
 
+    def test_context_manager_calls_close(self):
+        store, mock_client, _ = _make_store()
+
+        store.__enter__()
+        store.__exit__(None, None, None)
+
+        mock_client.close.assert_called_once()
+        assert store._client is None
+
 
 @pytest.mark.unit
 class TestValkeyStoreEnsureIndex:
@@ -676,8 +703,8 @@ class TestValkeyStoreEnsureIndex:
             mock_client = MagicMock()
             mock_create_client.return_value = mock_client
 
-            # Simulate "Index already exists" error
-            mock_ft.create.side_effect = Exception("Index already exists")
+            # Simulate "Index already exists" error (must be RequestError)
+            mock_ft.create.side_effect = RequestError("Index already exists")
 
             from application.vectorstore.valkey import ValkeyStore
 
