@@ -1,7 +1,7 @@
 /**
- * Phase 2 — P2-06 · User activity logs viewer.
+ * P2-06 · User activity logs viewer.
  *
- * Reads from the Tier-1 append-only `user_logs` table via the
+ * Reads from the append-only `user_logs` table via the
  * `POST /api/get_user_logs` endpoint (the call the UI issues from
  * `frontend/src/settings/Logs.tsx` → `userService.getLogs`). Each log row is
  * written server-side by `complete_stream` in

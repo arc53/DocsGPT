@@ -4,10 +4,16 @@ import datetime
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
+from sqlalchemy import text as sql_text
 
 from application.api import api
+from application.api.answer.services.conversation_service import (
+    TERMINATED_RESPONSE_PLACEHOLDER,
+)
+from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.repositories.attachments import AttachmentsRepository
 from application.storage.db.repositories.conversations import ConversationsRepository
+from application.storage.db.repositories.message_events import MessageEventsRepository
 from application.storage.db.session import db_readonly, db_session
 from application.utils import check_required_fields
 
@@ -133,6 +139,7 @@ class GetSingleConversation(Resource):
                 attachments_repo = AttachmentsRepository(conn)
                 queries = []
                 for msg in messages:
+                    metadata = msg.get("metadata") or {}
                     query = {
                         "prompt": msg.get("prompt"),
                         "response": msg.get("response"),
@@ -141,9 +148,15 @@ class GetSingleConversation(Resource):
                         "tool_calls": msg.get("tool_calls") or [],
                         "timestamp": msg.get("timestamp"),
                         "model_id": msg.get("model_id"),
+                        # Lets the client distinguish placeholder rows from
+                        # finalised answers and tail-poll in-flight ones.
+                        "message_id": str(msg["id"]) if msg.get("id") else None,
+                        "status": msg.get("status"),
+                        "request_id": msg.get("request_id"),
+                        "last_heartbeat_at": metadata.get("last_heartbeat_at"),
                     }
-                    if msg.get("metadata"):
-                        query["metadata"] = msg["metadata"]
+                    if metadata:
+                        query["metadata"] = metadata
                     # Feedback on conversation_messages is a JSONB blob with
                     # shape {"text": <str>, "timestamp": <iso>}. The legacy
                     # frontend consumed a flat scalar feedback string, so
@@ -301,3 +314,80 @@ class SubmitFeedback(Resource):
             current_app.logger.error(f"Error submitting feedback: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
+
+
+@conversations_ns.route("/messages/<string:message_id>/tail")
+class GetMessageTail(Resource):
+    @api.doc(
+        description=(
+            "Current state of one conversation_messages row, scoped to the "
+            "authenticated user. Used to reconnect to an in-flight stream "
+            "after a refresh."
+        ),
+        params={"message_id": "Message UUID"},
+    )
+    def get(self, message_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        if not looks_like_uuid(message_id):
+            return make_response(
+                jsonify({"success": False, "message": "Invalid message id"}), 400
+            )
+        user_id = decoded_token.get("sub")
+        try:
+            with db_readonly() as conn:
+                # Owner-or-shared, matching ``ConversationsRepository.get``.
+                row = conn.execute(
+                    sql_text(
+                        "SELECT m.* FROM conversation_messages m "
+                        "JOIN conversations c ON c.id = m.conversation_id "
+                        "WHERE m.id = CAST(:mid AS uuid) "
+                        "AND (c.user_id = :uid OR :uid = ANY(c.shared_with))"
+                    ),
+                    {"mid": message_id, "uid": user_id},
+                ).fetchone()
+                if row is None:
+                    return make_response(jsonify({"status": "not found"}), 404)
+                msg = row_to_dict(row)
+                # Mid-stream the row's response is the placeholder; rebuild
+                # the live partial from the journal so /tail mirrors SSE.
+                status = msg.get("status")
+                response = msg.get("response")
+                thought = msg.get("thought")
+                sources = msg.get("sources") or []
+                tool_calls = msg.get("tool_calls") or []
+                if status in ("pending", "streaming") and (
+                    response == TERMINATED_RESPONSE_PLACEHOLDER
+                ):
+                    partial = MessageEventsRepository(conn).reconstruct_partial(
+                        message_id
+                    )
+                    response = partial["response"]
+                    thought = partial["thought"] or thought
+                    if partial["sources"]:
+                        sources = partial["sources"]
+                    if partial["tool_calls"]:
+                        tool_calls = partial["tool_calls"]
+        except Exception as err:
+            current_app.logger.error(
+                f"Error tailing message {message_id}: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        metadata = msg.get("message_metadata") or {}
+        return make_response(
+            jsonify(
+                {
+                    "message_id": str(msg["id"]),
+                    "status": status,
+                    "response": response,
+                    "thought": thought,
+                    "sources": sources,
+                    "tool_calls": tool_calls,
+                    "request_id": msg.get("request_id"),
+                    "last_heartbeat_at": metadata.get("last_heartbeat_at"),
+                    "error": metadata.get("error"),
+                }
+            ),
+            200,
+        )

@@ -1,4 +1,10 @@
-import { useEffect, RefObject, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  RefObject,
+} from 'react';
 
 export function useOutsideAlerter<T extends HTMLElement>(
   ref: RefObject<T | null>,
@@ -111,6 +117,51 @@ export function useDarkTheme() {
   };
 
   return [isDarkTheme, toggleTheme, componentMounted] as const;
+}
+
+export function useDebouncedValue<T>(value: T, delay = 300): T {
+  const [debounced, setDebounced] = useState<T>(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+
+  return debounced;
+}
+
+export function useDebouncedCallback<A extends unknown[]>(
+  callback: (...args: A) => void,
+  delay = 300,
+): ((...args: A) => void) & { cancel: () => void } {
+  const callbackRef = useRef(callback);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
+
+  const cancel = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => cancel, [cancel]);
+
+  const debounced = useCallback(
+    (...args: A) => {
+      cancel();
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null;
+        callbackRef.current(...args);
+      }, delay);
+    },
+    [delay, cancel],
+  );
+
+  return Object.assign(debounced, { cancel });
 }
 
 export function useLoaderState(

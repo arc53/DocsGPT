@@ -6,6 +6,7 @@ than held for the duration of a stream.
 """
 
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -14,11 +15,20 @@ from sqlalchemy import text as sql_text
 from application.core.settings import settings
 from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
-from application.storage.db.repositories.conversations import ConversationsRepository
+from application.storage.db.repositories.conversations import (
+    ConversationsRepository,
+    MessageUpdateOutcome,
+)
 from application.storage.db.session import db_readonly, db_session
 
 
 logger = logging.getLogger(__name__)
+
+
+# Shown to the user if the worker dies mid-stream and the response is never finalised.
+TERMINATED_RESPONSE_PLACEHOLDER = (
+    "Response was terminated prior to completion, try regenerating."
+)
 
 
 class ConversationService:
@@ -178,6 +188,243 @@ class ConversationService:
                 append_payload.setdefault("metadata", metadata or {})
                 repo.append_message(conv_pg_id, append_payload)
             return conv_pg_id
+
+    def save_user_question(
+        self,
+        conversation_id: Optional[str],
+        question: str,
+        decoded_token: Dict[str, Any],
+        *,
+        attachment_ids: Optional[List[str]] = None,
+        api_key: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        is_shared_usage: bool = False,
+        shared_token: Optional[str] = None,
+        model_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+        status: str = "pending",
+        index: Optional[int] = None,
+    ) -> Dict[str, str]:
+        """Reserve the placeholder message row before the LLM call.
+
+        ``index`` triggers regenerate semantics: messages at
+        ``position >= index`` are truncated so the new placeholder
+        lands at ``position = index`` rather than appending.
+
+        Returns ``{"conversation_id", "message_id", "request_id"}``.
+        """
+        if decoded_token is None:
+            raise ValueError("Invalid or missing authentication token")
+        user_id = decoded_token.get("sub")
+        if not user_id:
+            raise ValueError("User ID not found in token")
+
+        request_id = request_id or str(uuid.uuid4())
+
+        resolved_api_key: Optional[str] = None
+        resolved_agent_id: Optional[str] = None
+        if api_key and not conversation_id:
+            with db_readonly() as conn:
+                agent = AgentsRepository(conn).find_by_key(api_key)
+            if agent:
+                resolved_api_key = agent.get("key")
+            if agent_id:
+                resolved_agent_id = agent_id
+
+        with db_session() as conn:
+            repo = ConversationsRepository(conn)
+            if conversation_id:
+                conv = repo.get_any(conversation_id, user_id)
+                if conv is None:
+                    raise ValueError("Conversation not found or unauthorized")
+                conv_pg_id = str(conv["id"])
+                # Regenerate / edit-prior-question: drop the message at
+                # ``index`` and everything after it so the new
+                # ``reserve_message`` lands at ``position=index`` rather
+                # than appending at the end of the conversation.
+                if isinstance(index, int) and index >= 0:
+                    repo.truncate_after(conv_pg_id, keep_up_to=index - 1)
+            else:
+                fallback_name = (question[:50] if question else "New Conversation")
+                conv = repo.create(
+                    user_id,
+                    fallback_name,
+                    agent_id=resolved_agent_id,
+                    api_key=resolved_api_key,
+                    is_shared_usage=bool(resolved_agent_id and is_shared_usage),
+                    shared_token=(
+                        shared_token
+                        if (resolved_agent_id and is_shared_usage)
+                        else None
+                    ),
+                )
+                conv_pg_id = str(conv["id"])
+
+            row = repo.reserve_message(
+                conv_pg_id,
+                prompt=question,
+                placeholder_response=TERMINATED_RESPONSE_PLACEHOLDER,
+                request_id=request_id,
+                status=status,
+                attachments=attachment_ids,
+                model_id=model_id,
+            )
+            message_id = str(row["id"])
+
+        return {
+            "conversation_id": conv_pg_id,
+            "message_id": message_id,
+            "request_id": request_id,
+        }
+
+    def update_message_status(self, message_id: str, status: str) -> bool:
+        """Cheap status-only transition (e.g. ``pending → streaming``)."""
+        if not message_id:
+            return False
+        with db_session() as conn:
+            return ConversationsRepository(conn).update_message_status(
+                message_id, status,
+            )
+
+    def heartbeat_message(self, message_id: str) -> bool:
+        """Bump ``message_metadata.last_heartbeat_at`` so the reconciler's
+        staleness sweep counts the row as alive. No-ops on terminal rows.
+        """
+        if not message_id:
+            return False
+        with db_session() as conn:
+            return ConversationsRepository(conn).heartbeat_message(message_id)
+
+    def finalize_message(
+        self,
+        message_id: str,
+        response: str,
+        *,
+        thought: str = "",
+        sources: Optional[List[Dict[str, Any]]] = None,
+        tool_calls: Optional[List[Dict[str, Any]]] = None,
+        model_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        status: str = "complete",
+        error: Optional[BaseException] = None,
+        title_inputs: Optional[Dict[str, Any]] = None,
+    ) -> MessageUpdateOutcome:
+        """Commit the response and tool_call confirms in one transaction.
+
+        The outcome propagates directly from ``update_message_by_id`` so
+        callers (notably the SSE abort handler) can tell a fresh
+        finalize from "the row was already terminal" — the latter must
+        still be treated as success when the prior state was
+        ``complete``.
+        """
+        if not message_id:
+            return MessageUpdateOutcome.INVALID
+        sources = sources or []
+        for source in sources:
+            if "text" in source and isinstance(source["text"], str):
+                source["text"] = source["text"][:1000]
+
+        merged_metadata: Dict[str, Any] = dict(metadata or {})
+        if status == "failed" and error is not None:
+            merged_metadata.setdefault(
+                "error", f"{type(error).__name__}: {str(error)}"
+            )
+
+        update_fields: Dict[str, Any] = {
+            "response": response,
+            "status": status,
+            "thought": thought,
+            "sources": sources,
+            "tool_calls": tool_calls or [],
+            "metadata": merged_metadata,
+        }
+        if model_id is not None:
+            update_fields["model_id"] = model_id
+
+        # Atomic message update + tool_call_attempts confirm; the
+        # ``only_if_non_terminal`` guard prevents a late stream from
+        # retracting a row the reconciler already escalated.
+        with db_session() as conn:
+            repo = ConversationsRepository(conn)
+            outcome = repo.update_message_by_id(
+                message_id, update_fields,
+                only_if_non_terminal=True,
+            )
+            if outcome is not MessageUpdateOutcome.UPDATED:
+                logger.warning(
+                    f"finalize_message: no row updated for message_id={message_id} "
+                    f"(outcome={outcome.value} — possibly already terminal)"
+                )
+                return outcome
+            repo.confirm_executed_tool_calls(message_id)
+
+        # Outside the txn — title-gen is a multi-second LLM round trip.
+        if title_inputs and status == "complete":
+            try:
+                with db_session() as conn:
+                    self._maybe_generate_title(conn, message_id, title_inputs)
+            except Exception as e:
+                logger.error(
+                    f"finalize_message title generation failed: {e}",
+                    exc_info=True,
+                )
+        return MessageUpdateOutcome.UPDATED
+
+    def _maybe_generate_title(
+        self,
+        conn,
+        message_id: str,
+        title_inputs: Dict[str, Any],
+    ) -> None:
+        """Generate an LLM-summarised conversation name if one isn't set yet."""
+        llm = title_inputs.get("llm")
+        question = title_inputs.get("question") or ""
+        response = title_inputs.get("response") or ""
+        fallback_name = title_inputs.get("fallback_name") or question[:50]
+        if llm is None:
+            return
+
+        row = conn.execute(
+            sql_text(
+                "SELECT c.id, c.name FROM conversation_messages m "
+                "JOIN conversations c ON c.id = m.conversation_id "
+                "WHERE m.id = CAST(:mid AS uuid)"
+            ),
+            {"mid": message_id},
+        ).fetchone()
+        if row is None:
+            return
+        conv_id, current_name = str(row[0]), row[1]
+        if current_name and current_name != fallback_name:
+            return
+
+        messages_summary = [
+            {
+                "role": "system",
+                "content": "You are a helpful assistant that creates concise conversation titles. "
+                "Summarize conversations in 3 words or less using the same language as the user.",
+            },
+            {
+                "role": "user",
+                "content": "Summarise following conversation in no more than 3 words, "
+                "respond ONLY with the summary, use the same language as the "
+                "user query \n\nUser: " + question + "\n\n" + "AI: " + response,
+            },
+        ]
+        completion = llm.gen(
+            model=getattr(llm, "model_id", None) or title_inputs.get("model_id"),
+            messages=messages_summary,
+            max_tokens=500,
+        )
+        if not completion or not completion.strip():
+            completion = fallback_name or "New Conversation"
+        conn.execute(
+            sql_text(
+                "UPDATE conversations SET name = :name, updated_at = now() "
+                "WHERE id = CAST(:id AS uuid)"
+            ),
+            {"id": conv_id, "name": completion.strip()},
+        )
 
     def update_compression_metadata(
         self, conversation_id: str, compression_metadata: Dict[str, Any]

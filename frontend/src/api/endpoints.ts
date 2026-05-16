@@ -28,7 +28,6 @@ const endpoints = {
     UPDATE_PROMPT: '/api/update_prompt',
     SINGLE_PROMPT: (id: string) => `/api/get_single_prompt?id=${id}`,
     DELETE_PATH: (docPath: string) => `/api/delete_old?source_id=${docPath}`,
-    TASK_STATUS: (task_id: string) => `/api/task_status?task_id=${task_id}`,
     MESSAGE_ANALYTICS: '/api/get_message_analytics',
     TOKEN_ANALYTICS: '/api/get_token_analytics',
     FEEDBACK_ANALYTICS: '/api/get_feedback_analytics',
@@ -43,6 +42,11 @@ const endpoints = {
     DELETE_TOOL: '/api/delete_tool',
     PARSE_SPEC: '/api/parse_spec',
     SYNC_CONNECTOR: '/api/connectors/sync',
+    CONNECTOR_AUTH: (provider: string) =>
+      `/api/connectors/auth?provider=${provider}`,
+    CONNECTOR_FILES: '/api/connectors/files',
+    CONNECTOR_VALIDATE_SESSION: '/api/connectors/validate-session',
+    CONNECTOR_DISCONNECT: '/api/connectors/disconnect',
     GET_CHUNKS: (
       docId: string,
       page: number,
@@ -59,6 +63,7 @@ const endpoints = {
     UPDATE_CHUNK: '/api/update_chunk',
     STORE_ATTACHMENT: '/api/store_attachment',
     STT: '/api/stt',
+    TTS: '/api/tts',
     LIVE_STT_START: '/api/stt/live/start',
     LIVE_STT_CHUNK: '/api/stt/live/chunk',
     LIVE_STT_FINISH: '/api/stt/live/finish',
@@ -67,8 +72,6 @@ const endpoints = {
     MANAGE_SOURCE_FILES: '/api/manage_source_files',
     MCP_TEST_CONNECTION: '/api/mcp_server/test',
     MCP_SAVE_SERVER: '/api/mcp_server/save',
-    MCP_OAUTH_STATUS: (task_id: string) =>
-      `/api/mcp_server/oauth_status/${task_id}`,
     MCP_AUTH_STATUS: '/api/mcp_server/auth_status',
     AGENT_FOLDERS: '/api/agents/folders/',
     AGENT_FOLDER: (id: string) => `/api/agents/folders/${id}`,
@@ -92,6 +95,7 @@ const endpoints = {
     FEEDBACK: '/api/feedback',
     CONVERSATION: (id: string) => `/api/get_single_conversation?id=${id}`,
     CONVERSATIONS: '/api/get_conversations',
+    MESSAGE_TAIL: (messageId: string) => `/api/messages/${messageId}/tail`,
     SHARE_CONVERSATION: (isPromptable: boolean) =>
       `/api/share?isPromptable=${isPromptable}`,
     SHARED_CONVERSATION: (identifier: string) =>

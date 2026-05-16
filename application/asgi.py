@@ -25,7 +25,12 @@ asgi_app = Starlette(
             CORSMiddleware,
             allow_origins=["*"],
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-            allow_headers=["Content-Type", "Authorization", "Mcp-Session-Id"],
+            allow_headers=[
+                "Content-Type",
+                "Authorization",
+                "Mcp-Session-Id",
+                "Idempotency-Key",
+            ],
             expose_headers=["Mcp-Session-Id"],
         ),
     ],

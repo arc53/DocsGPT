@@ -80,7 +80,9 @@ class TestCreateConnectorFields:
         repo = _repo(pg_conn)
         when = datetime.datetime(2025, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
         doc = repo.create("src", user_id="u", date=when)
-        assert doc["date"] == when
+        # ``row_to_dict`` coerces datetimes to ISO strings at the SELECT
+        # boundary; round-trip via ``fromisoformat`` to compare values.
+        assert datetime.datetime.fromisoformat(doc["date"]) == when
 
     def test_persists_legacy_mongo_id(self, pg_conn):
         repo = _repo(pg_conn)

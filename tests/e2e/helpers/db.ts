@@ -1,5 +1,4 @@
 /**
- * Phase 1 helper — see e2e-plan.md §P1-B.
  * Thin pg wrapper + typed row helpers for DB assertions in specs.
  */
 

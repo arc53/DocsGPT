@@ -4,6 +4,7 @@ import agentPreviewReducer from './agents/agentPreviewSlice';
 import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
 import { conversationSlice } from './conversation/conversationSlice';
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
+import notificationsReducer from './notifications/notificationsSlice';
 import { getStoredRecentDocs } from './preferences/preferenceApi';
 import {
   Preference,
@@ -67,6 +68,7 @@ const store = configureStore({
     upload: uploadReducer,
     agentPreview: agentPreviewReducer,
     workflowPreview: workflowPreviewReducer,
+    notifications: notificationsReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(prefListenerMiddleware.middleware),

@@ -609,6 +609,7 @@
   },
   "agents": {
     "title": "Agentes",
+    "edit": "Editar",
     "description": "Descubre y crea versiones personalizadas de DocsGPT que combinan instrucciones, conocimiento adicional y cualquier combinación de habilidades",
     "newAgent": "Nuevo Agente",
     "backToAll": "Volver a todos los agentes",

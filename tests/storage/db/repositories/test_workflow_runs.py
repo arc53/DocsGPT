@@ -56,7 +56,9 @@ class TestCreate:
             started_at=now,
             legacy_mongo_id="507f1f77bcf86cd799439011",
         )
-        assert run["started_at"] == now
+        # ``row_to_dict`` coerces datetimes to ISO strings at the SELECT
+        # boundary; round-trip via ``fromisoformat`` to compare values.
+        assert datetime.fromisoformat(run["started_at"]) == now
         assert run["legacy_mongo_id"] == "507f1f77bcf86cd799439011"
 
 

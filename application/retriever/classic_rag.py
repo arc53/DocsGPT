@@ -60,6 +60,9 @@ class ClassicRAG(BaseRetriever):
             agent_id=self.agent_id,
             model_user_id=self.model_user_id,
         )
+        # Query-rephrase LLM is a side channel — tag it so its rows
+        # land as ``source='rag_condense'`` in cost-attribution.
+        self.llm._token_usage_source = "rag_condense"
 
         if "active_docs" in source and source["active_docs"] is not None:
             if isinstance(source["active_docs"], list):

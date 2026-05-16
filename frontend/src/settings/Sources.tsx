@@ -17,7 +17,7 @@ import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import Pagination from '../components/DocumentPagination';
 import DropdownMenu from '../components/DropdownMenu';
 import SkeletonLoader from '../components/SkeletonLoader';
-import { useDarkTheme, useLoaderState } from '../hooks';
+import { useDarkTheme, useDebouncedValue, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
@@ -58,7 +58,7 @@ export default function Sources({
   const token = useSelector(selectToken);
 
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState<string>('');
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, 500);
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
   const [isOnboarding, setIsOnboarding] = useState<boolean>(false);
   const [loading, setLoading] = useLoaderState(false);
@@ -116,14 +116,6 @@ export default function Sources({
     docId: null,
     document: null,
   });
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
 
   const refreshDocs = useCallback(
     (

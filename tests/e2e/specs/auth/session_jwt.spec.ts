@@ -1,5 +1,5 @@
 /**
- * Phase 1 — P1-C · session_jwt auth flow.
+ * P1-C · session_jwt auth flow.
  *
  * Covers e2e-plan.md §7.2: with `AUTH_TYPE=session_jwt` the backend issues a
  * fresh token via `/api/generate_token` on first load, the frontend stashes

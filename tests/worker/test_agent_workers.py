@@ -61,18 +61,34 @@ class TestAgentWebhookWorker:
         assert str(captured["config"]["id"]) == agent_id
         assert captured["input"] == '{"event": "ping"}'
 
-    def test_missing_agent_returns_error(
+    def test_missing_agent_raises(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
         from application import worker
 
-        # Run with an id that exists in no shape the resolver understands;
-        # ``looks_like_uuid`` is False so the UUID branch is skipped and
-        # the legacy lookup returns None. Task must yield a clean error
-        # result rather than raising.
         monkeypatch.setattr(worker, "run_agent_logic", lambda *a, **k: {})
-        result = worker.agent_webhook_worker(task_self, "no-such-agent", {})
-        assert result["status"] == "error"
+        with pytest.raises(ValueError, match="not found"):
+            worker.agent_webhook_worker(task_self, "no-such-agent", {})
+
+    def test_run_agent_logic_failure_propagates(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        from application import worker
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="hook-agent", status="active",
+            agent_type="classic", retriever="classic", chunks=2, key="sk-test-123",
+        )
+        agent_id = str(agent["id"])
+
+        def _boom(*a, **k):
+            raise RuntimeError("LLM exploded")
+
+        monkeypatch.setattr(worker, "run_agent_logic", _boom)
+
+        with pytest.raises(RuntimeError, match="LLM exploded"):
+            worker.agent_webhook_worker(task_self, agent_id, {"event": "ping"})
 
 
 @pytest.mark.unit

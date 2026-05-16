@@ -1,4 +1,4 @@
-// Phase 3 Tier-B · B15 artifact sidebar (todos / notes / memory) + legacy fallback.
+// Tier-B · B15 artifact sidebar (todos / notes / memory) + legacy fallback.
 /**
  * The UI's artifact sidebar (`frontend/src/components/ArtifactSidebar.tsx`)
  * opens on a question that triggered a tool call that wrote a `note` or a

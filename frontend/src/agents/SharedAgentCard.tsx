@@ -1,8 +1,18 @@
+import { useTranslation } from 'react-i18next';
+
+import EditIcon from '../assets/edit.svg';
 import AgentImage from '../components/AgentImage';
 import { getToolDisplayName } from '../utils/toolUtils';
 import { Agent } from './types';
 
-export default function SharedAgentCard({ agent }: { agent: Agent }) {
+export default function SharedAgentCard({
+  agent,
+  onEdit,
+}: {
+  agent: Agent;
+  onEdit?: () => void;
+}) {
+  const { t } = useTranslation();
   // Check if shared metadata exists and has properties (type is 'any' so we validate it's a non-empty object)
   const hasSharedMetadata =
     agent.shared_metadata &&
@@ -11,14 +21,14 @@ export default function SharedAgentCard({ agent }: { agent: Agent }) {
     Object.keys(agent.shared_metadata).length > 0;
   return (
     <div className="border-border dark:border-border flex w-full max-w-[720px] flex-col rounded-3xl border p-6 shadow-xs sm:w-fit sm:min-w-[480px]">
-      <div className="flex items-center gap-3">
+      <div className="flex items-start gap-3">
         <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full p-1">
           <AgentImage
             src={agent.image}
             className="h-full w-full rounded-full object-contain"
           />
         </div>
-        <div className="flex max-h-[92px] w-[80%] flex-col gap-px">
+        <div className="flex max-h-[92px] flex-1 flex-col gap-px">
           <h2 className="text-foreground text-base font-semibold sm:text-lg">
             {agent.name}
           </h2>
@@ -26,6 +36,17 @@ export default function SharedAgentCard({ agent }: { agent: Agent }) {
             {agent.description}
           </p>
         </div>
+        {onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="border-border hover:bg-accent text-foreground flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors"
+            aria-label={t('agents.edit')}
+          >
+            <img src={EditIcon} alt="" className="h-3.5 w-3.5" />
+            {t('agents.edit')}
+          </button>
+        )}
       </div>
       {hasSharedMetadata && (
         <div className="mt-4 flex items-center gap-8">

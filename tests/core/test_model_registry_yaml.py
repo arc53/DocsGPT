@@ -1,4 +1,4 @@
-"""Phase 1 regression tests for the YAML-driven ModelRegistry.
+"""Regression tests for the YAML-driven ModelRegistry.
 
 These tests encode the contract that persisted agent / workflow /
 conversation references depend on: every model id and core capability

@@ -159,6 +159,42 @@ class TestOpenAILLMHandler:
         assert message["tool_call_id"] == "call_456"
         assert message["content"] == result
 
+    def test_create_tool_message_with_pg_native_types(self):
+        # PostgresTool returns dicts containing datetime / UUID / Decimal
+        # / bytes when the user runs a SELECT against timestamptz / uuid /
+        # numeric / bytea columns. The shared PGNativeJSONEncoder handles
+        # all five types lossless — bytes round-trip through base64.
+        import base64
+        import json
+        from datetime import datetime, date, timezone
+        from decimal import Decimal
+        from uuid import UUID
+
+        handler = OpenAILLMHandler()
+        tool_call = ToolCall(id="call_pg", name="run_sql", arguments={})
+        result = {
+            "data": [
+                {
+                    "id": UUID("12345678-1234-5678-1234-567812345678"),
+                    "created_at": datetime(2026, 5, 2, 12, 14, 32, tzinfo=timezone.utc),
+                    "scheduled_for": date(2026, 6, 1),
+                    "amount": Decimal("123.45"),
+                    "blob": b"\x00\x01\xff",
+                }
+            ]
+        }
+
+        message = handler.create_tool_message(tool_call, result)
+
+        assert message["role"] == "tool"
+        decoded = json.loads(message["content"])
+        row = decoded["data"][0]
+        assert row["id"] == "12345678-1234-5678-1234-567812345678"
+        assert row["created_at"] == "2026-05-02T12:14:32+00:00"
+        assert row["scheduled_for"] == "2026-06-01"
+        assert row["amount"] == "123.45"
+        assert base64.b64decode(row["blob"]) == b"\x00\x01\xff"
+
     def test_iterate_stream(self):
         """Test stream iteration."""
         handler = OpenAILLMHandler()

@@ -248,32 +248,8 @@ export default function ConversationMessages({
       ? LAST_BUBBLE_MARGIN
       : DEFAULT_BUBBLE_MARGIN;
 
-    if (query.thought || query.response || query.tool_calls || query.research) {
-      const isCurrentlyStreaming =
-        status === 'loading' && index === queries.length - 1;
-      return (
-        <ConversationBubble
-          className={bubbleMargin}
-          key={`${index}-ANSWER`}
-          message={query.response}
-          type={'ANSWER'}
-          thought={query.thought}
-          sources={query.sources}
-          toolCalls={query.tool_calls}
-          research={query.research}
-          onOpenArtifact={onOpenArtifact}
-          onToolAction={onToolAction}
-          feedback={query.feedback}
-          isStreaming={isCurrentlyStreaming}
-          handleFeedback={
-            handleFeedback
-              ? (feedback) => handleFeedback(query, feedback, index)
-              : undefined
-          }
-        />
-      );
-    }
-
+    // Error first; reconciler-failed rows may carry partial thought/
+    // tool_calls and would otherwise fall into the answer branch.
     if (query.error) {
       const retryButton = (
         <button
@@ -299,6 +275,38 @@ export default function ConversationMessages({
           message={query.error}
           type="ERROR"
           retryBtn={retryButton}
+        />
+      );
+    }
+
+    // tool_calls.length, not tool_calls — empty arrays are JS-truthy.
+    const hasContent =
+      query.thought ||
+      query.response ||
+      (query.tool_calls && query.tool_calls.length > 0) ||
+      query.research;
+    if (hasContent) {
+      const isCurrentlyStreaming =
+        status === 'loading' && index === queries.length - 1;
+      return (
+        <ConversationBubble
+          className={bubbleMargin}
+          key={`${index}-ANSWER`}
+          message={query.response}
+          type={'ANSWER'}
+          thought={query.thought}
+          sources={query.sources}
+          toolCalls={query.tool_calls}
+          research={query.research}
+          onOpenArtifact={onOpenArtifact}
+          onToolAction={onToolAction}
+          feedback={query.feedback}
+          isStreaming={isCurrentlyStreaming}
+          handleFeedback={
+            handleFeedback
+              ? (feedback) => handleFeedback(query, feedback, index)
+              : undefined
+          }
         />
       );
     }

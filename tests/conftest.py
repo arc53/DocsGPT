@@ -15,9 +15,9 @@ their own conftest to point at a real, long-running Postgres instance
 tests and are marked with ``@pytest.mark.integration``.
 
 No mongomock. The ``mock_mongo_db`` fixture that used to live here was
-removed as part of the Phase 4/5 Mongo→Postgres cutover. Tests that
-still reference it will fail with "fixture not found" until the
-corresponding route handler is migrated to a repository read.
+removed as part of the Mongo→Postgres cutover. Tests that still
+reference it will fail with "fixture not found" until the corresponding
+route handler is migrated to a repository read.
 """
 
 from __future__ import annotations
@@ -224,6 +224,9 @@ def agent_base_params(decoded_token):
 def mock_tool():
     tool = Mock()
     tool.execute_action = Mock(return_value="Tool result")
+    # Skip artifact-id capture in default mock so the recorded JSONB matches
+    # what tests expect; per-tool tests can override.
+    tool.get_artifact_id = None
     tool.get_actions_metadata = Mock(
         return_value=[
             {

@@ -5,7 +5,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 
-from application.storage.db.repositories.conversations import ConversationsRepository
+from application.storage.db.repositories.conversations import (
+    ConversationsRepository,
+    MessageUpdateOutcome,
+)
 
 
 def _repo(conn) -> ConversationsRepository:
@@ -175,7 +178,9 @@ class TestAppendMessage:
             "response": "a",
             "timestamp": ts,
         })
-        assert msg["timestamp"] == ts
+        # ``row_to_dict`` coerces datetimes to ISO strings at the SELECT
+        # boundary; round-trip via ``fromisoformat`` to compare values.
+        assert datetime.fromisoformat(msg["timestamp"]) == ts
 
 
 class TestGetMessages:
@@ -228,7 +233,7 @@ class TestUpdateMessageAt:
         ) is True
         msg = repo.get_message_at(conv["id"], 0)
         assert msg["response"] == "new"
-        assert msg["timestamp"] == ts
+        assert datetime.fromisoformat(msg["timestamp"]) == ts
 
 
 class TestTruncateAfter:
@@ -442,11 +447,176 @@ class TestUpdateMessageFeedback:
         assert msg["feedback"] is None
 
 
+class TestReserveAndFinalizeMessage:
+    """Pre-persist (WAL) + finalisation primitives used by save_user_question /
+    finalize_message in the answer-streaming path."""
+
+    def test_reserve_message_inserts_pending_row(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"],
+            prompt="q1",
+            placeholder_response="placeholder",
+            request_id="req-1",
+        )
+        assert msg["position"] == 0
+        assert msg["status"] == "pending"
+        assert msg["request_id"] == "req-1"
+        assert msg["prompt"] == "q1"
+        assert msg["response"] == "placeholder"
+
+    def test_reserve_message_allocates_next_position(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        repo.append_message(conv["id"], {"prompt": "q0", "response": "a0"})
+        msg = repo.reserve_message(
+            conv["id"], prompt="q1", placeholder_response="ph",
+        )
+        assert msg["position"] == 1
+
+    def test_update_message_by_id_updates_response_and_status(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"], prompt="q", placeholder_response="ph",
+        )
+        outcome = repo.update_message_by_id(
+            msg["id"], {"response": "real answer", "status": "complete"},
+        )
+        assert outcome is MessageUpdateOutcome.UPDATED
+        refreshed = repo.get_message_at(conv["id"], 0)
+        assert refreshed["response"] == "real answer"
+        assert refreshed["status"] == "complete"
+
+    def test_update_message_by_id_writes_metadata_error(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"], prompt="q", placeholder_response="ph",
+        )
+        repo.update_message_by_id(
+            msg["id"],
+            {"status": "failed", "metadata": {"error": "RuntimeError: boom"}},
+        )
+        refreshed = repo.get_message_at(conv["id"], 0)
+        assert refreshed["status"] == "failed"
+        assert refreshed["metadata"]["error"] == "RuntimeError: boom"
+
+    def test_update_message_by_id_rejects_non_uuid(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert (
+            repo.update_message_by_id("not-a-uuid", {"status": "complete"})
+            is MessageUpdateOutcome.INVALID
+        )
+
+    def test_update_message_by_id_distinguishes_already_complete(self, pg_conn):
+        """When the row is already ``complete``, a subsequent
+        ``only_if_non_terminal=True`` finalize must report
+        ``ALREADY_COMPLETE`` — not ``UPDATED`` and not the generic
+        not-found case. The SSE abort handler relies on this to
+        journal ``end`` instead of a spurious ``error`` when the
+        normal-path finalize wins the race against a client
+        disconnect.
+        """
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"], prompt="q", placeholder_response="ph",
+        )
+        first = repo.update_message_by_id(
+            msg["id"], {"response": "ok", "status": "complete"},
+            only_if_non_terminal=True,
+        )
+        assert first is MessageUpdateOutcome.UPDATED
+        second = repo.update_message_by_id(
+            msg["id"], {"response": "ok again", "status": "complete"},
+            only_if_non_terminal=True,
+        )
+        assert second is MessageUpdateOutcome.ALREADY_COMPLETE
+        # The second attempt must NOT have overwritten anything.
+        refreshed = repo.get_message_at(conv["id"], 0)
+        assert refreshed["response"] == "ok"
+
+    def test_update_message_by_id_distinguishes_already_failed(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"], prompt="q", placeholder_response="ph",
+        )
+        assert repo.update_message_by_id(
+            msg["id"], {"response": "boom", "status": "failed"},
+            only_if_non_terminal=True,
+        ) is MessageUpdateOutcome.UPDATED
+        assert repo.update_message_by_id(
+            msg["id"], {"response": "late", "status": "complete"},
+            only_if_non_terminal=True,
+        ) is MessageUpdateOutcome.ALREADY_FAILED
+
+    def test_update_message_by_id_unknown_uuid_is_not_found(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.update_message_by_id(
+            "00000000-0000-0000-0000-000000000000",
+            {"status": "complete"},
+            only_if_non_terminal=True,
+        ) is MessageUpdateOutcome.NOT_FOUND
+
+    def test_update_message_status_only(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"], prompt="q", placeholder_response="ph",
+        )
+        assert repo.update_message_status(msg["id"], "streaming") is True
+        refreshed = repo.get_message_at(conv["id"], 0)
+        assert refreshed["status"] == "streaming"
+
+    def test_confirm_executed_tool_calls_flips_status(self, pg_conn):
+        from sqlalchemy import text as sql_text
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"], prompt="q", placeholder_response="ph",
+        )
+        # Insert two rows: one 'executed' (should flip), one 'proposed' (no-op).
+        pg_conn.execute(
+            sql_text(
+                "INSERT INTO tool_call_attempts "
+                "(call_id, message_id, tool_name, action_name, arguments, status) "
+                "VALUES (:cid, CAST(:mid AS uuid), 't', 'a', '{}'::jsonb, :status)"
+            ),
+            [
+                {"cid": "c-exec", "mid": msg["id"], "status": "executed"},
+                {"cid": "c-prop", "mid": msg["id"], "status": "proposed"},
+            ],
+        )
+        flipped = repo.confirm_executed_tool_calls(msg["id"])
+        assert flipped == 1
+        rows = pg_conn.execute(
+            sql_text(
+                "SELECT call_id, status FROM tool_call_attempts "
+                "WHERE message_id = CAST(:mid AS uuid) ORDER BY call_id"
+            ),
+            {"mid": msg["id"]},
+        ).fetchall()
+        as_dict = {r[0]: r[1] for r in rows}
+        assert as_dict == {"c-exec": "confirmed", "c-prop": "proposed"}
+
+    def test_confirm_executed_tool_calls_no_rows_is_zero(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-r", "c")
+        msg = repo.reserve_message(
+            conv["id"], prompt="q", placeholder_response="ph",
+        )
+        # No tool_call_attempts inserted — no-op
+        assert repo.confirm_executed_tool_calls(msg["id"]) == 0
+
+
 class TestConcurrentAppend:
     """Two threads appending to the same conversation must not race on
-    ``position``. The plan (migration-postgres.md §Phase 3) explicitly
-    calls this out as the single trickiest invariant, so we exercise it
-    directly with two parallel connections."""
+    ``position``. The migration plan explicitly calls this out as the
+    single trickiest invariant, so we exercise it directly with two
+    parallel connections."""
 
     def test_concurrent_appends_get_distinct_positions(self, pg_engine, pg_conn):
         import threading

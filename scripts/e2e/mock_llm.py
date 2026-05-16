@@ -286,8 +286,15 @@ def _stream_chat_response(
     content: str,
     tool_calls: list[dict[str, Any]] | None,
     finish_reason: str,
+    chunk_delay_ms: int = 0,
 ):
-    """Generator yielding SSE frames that match the OpenAI streaming protocol."""
+    """Generator yielding SSE frames that match the OpenAI streaming protocol.
+
+    ``chunk_delay_ms`` (controlled by ``X-Mock-LLM-Stream-Chunk-Delay-Ms``
+    header) sleeps that many milliseconds between successive SSE frames.
+    Used by durability E2E tests to simulate slow streams that survive a
+    mid-flight ``kill -9`` against the consumer.
+    """
 
     created = int(time.time())
     completion_id = f"chatcmpl-e2e-{digest[:12]}"
@@ -307,21 +314,58 @@ def _stream_chat_response(
             ],
         }
 
+    def _maybe_sleep() -> None:
+        if chunk_delay_ms > 0:
+            time.sleep(chunk_delay_ms / 1000.0)
+
     # Opening role delta — matches OpenAI's real behavior.
     yield _sse(_base_chunk({"role": "assistant", "content": ""}))
 
     if tool_calls:
         # Emit tool calls in one delta; content streaming is skipped when
         # tool_calls are present, matching what RAG code paths expect.
+        _maybe_sleep()
         yield _sse(_base_chunk({"tool_calls": tool_calls}))
         yield _sse(_base_chunk({}, final=True))
     else:
         chunks = _split_into_chunks(content, STREAM_CHUNK_COUNT)
         last_index = len(chunks) - 1
         for i, piece in enumerate(chunks):
+            _maybe_sleep()
             yield _sse(_base_chunk({"content": piece}, final=(i == last_index)))
 
     yield "data: [DONE]\n\n"
+
+
+def _read_int_header(name: str, default: int = 0, ceiling: int = 600_000) -> int:
+    """Parse an integer header with a sane upper bound (10 minutes)."""
+    raw = request.headers.get(name)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    if value < 0:
+        return default
+    return min(value, ceiling)
+
+
+def _read_int_env(name: str, default: int = 0, ceiling: int = 600_000) -> int:
+    """Same as ``_read_int_header`` but for env vars — the durability E2E
+    script sets ``MOCK_LLM_FORCE_*_DELAY_MS`` so it can drive slow streams
+    through DocsGPT's OpenAI client without injecting per-request
+    headers."""
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    if value < 0:
+        return default
+    return min(value, ceiling)
 
 
 @app.post("/v1/chat/completions")
@@ -333,6 +377,18 @@ def chat_completions() -> Response:
     digest = _compute_request_digest(payload)
     content, tool_calls, finish_reason, usage = _resolve_chat_response(payload, digest)
 
+    # Durability E2E hooks: per-request OR per-process delays so tests can
+    # simulate slow providers without touching fixtures or recompiling the
+    # stub. Headers win over env so a single fixture run can opt in/out.
+    upfront_delay_ms = _read_int_header("X-Mock-LLM-Total-Delay-Ms") or _read_int_env(
+        "MOCK_LLM_FORCE_TOTAL_DELAY_MS"
+    )
+    chunk_delay_ms = _read_int_header(
+        "X-Mock-LLM-Stream-Chunk-Delay-Ms"
+    ) or _read_int_env("MOCK_LLM_FORCE_STREAM_CHUNK_DELAY_MS")
+    if upfront_delay_ms > 0:
+        time.sleep(upfront_delay_ms / 1000.0)
+
     if stream:
         generator = _stream_chat_response(
             digest=digest,
@@ -340,6 +396,7 @@ def chat_completions() -> Response:
             content=content,
             tool_calls=tool_calls,
             finish_reason=finish_reason,
+            chunk_delay_ms=chunk_delay_ms,
         )
         response = Response(
             stream_with_context(generator),

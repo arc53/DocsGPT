@@ -1,4 +1,4 @@
-"""Tests for the continuation infrastructure (Phase 1).
+"""Tests for the continuation infrastructure.
 
 Covers ContinuationService, ToolExecutor.check_pause, handler pause
 signaling, BaseAgent.gen_continuation, and request validation.
@@ -755,3 +755,237 @@ class TestValidateRequest:
         data = {"conversation_id": "conv-1"}
         result = base.validate_request(data)
         assert result is not None  # Error — missing question
+
+
+# ---------------------------------------------------------------------------
+# Resume durability: mark_resuming on resume, delete only on success
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestResumeMarkResuming:
+    """Resumed runs must mark state ``resuming`` instead of deleting it
+    eagerly; the row stays in PG so a crashed resume can be retried."""
+
+    def test_resume_calls_mark_resuming_not_delete(self, monkeypatch):
+        """``resume_from_tool_actions`` flips the row to 'resuming' and
+        does not delete it before the run finishes."""
+        from application.api.answer.services import (
+            continuation_service as cont_mod,
+        )
+        from application.api.answer.services import stream_processor as sp_mod
+        from application.llm import llm_creator as llm_creator_mod
+        from application.llm.handlers import handler_creator as handler_mod
+
+        cont_service = MagicMock()
+        cont_service.load_state.return_value = {
+            "messages": [],
+            "pending_tool_calls": [],
+            "tools_dict": {},
+            "tool_schemas": [],
+            "agent_config": {
+                "model_id": "m1",
+                "model_user_id": None,
+                "llm_name": "openai",
+                "api_key": "k",
+                "user_api_key": None,
+                "agent_id": None,
+                "agent_type": "ClassicAgent",
+                "prompt": "",
+                "json_schema": None,
+                "retriever_config": None,
+            },
+            "client_tools": None,
+        }
+        cont_service.mark_resuming.return_value = True
+
+        monkeypatch.setattr(
+            cont_mod, "ContinuationService", lambda: cont_service
+        )
+        monkeypatch.setattr(
+            llm_creator_mod.LLMCreator,
+            "create_llm",
+            lambda *a, **kw: MagicMock(),
+        )
+        monkeypatch.setattr(
+            handler_mod.LLMHandlerCreator,
+            "create_handler",
+            lambda *a, **kw: MagicMock(),
+        )
+        from application.agents import agent_creator as ac_mod
+        from application.agents import tool_executor as te_mod
+
+        monkeypatch.setattr(
+            te_mod, "ToolExecutor", lambda **kw: MagicMock(client_tools=None)
+        )
+        monkeypatch.setattr(
+            ac_mod.AgentCreator, "create_agent", lambda *a, **kw: MagicMock()
+        )
+
+        sp = sp_mod.StreamProcessor.__new__(sp_mod.StreamProcessor)
+        sp.data = {}
+        sp.decoded_token = {"sub": "alice"}
+        sp.initial_user_id = "alice"
+        sp.conversation_id = "00000000-0000-0000-0000-000000000001"
+        sp.agent_config = {}
+
+        sp.resume_from_tool_actions(
+            tool_actions=[],
+            conversation_id="00000000-0000-0000-0000-000000000001",
+        )
+
+        cont_service.mark_resuming.assert_called_once_with(
+            "00000000-0000-0000-0000-000000000001", "alice"
+        )
+        cont_service.delete_state.assert_not_called()
+
+    def test_resume_extracts_reserved_message_id_from_agent_config(
+        self, monkeypatch
+    ):
+        """The WAL placeholder id stashed in ``agent_config`` at pause time
+        must be hoisted onto the processor so the resumed ``complete_stream``
+        finalises the same row instead of stranding it."""
+        from application.api.answer.services import (
+            continuation_service as cont_mod,
+        )
+        from application.api.answer.services import stream_processor as sp_mod
+        from application.llm import llm_creator as llm_creator_mod
+        from application.llm.handlers import handler_creator as handler_mod
+
+        reserved_id = "22222222-2222-2222-2222-222222222222"
+
+        cont_service = MagicMock()
+        cont_service.load_state.return_value = {
+            "messages": [],
+            "pending_tool_calls": [],
+            "tools_dict": {},
+            "tool_schemas": [],
+            "agent_config": {
+                "model_id": "m1",
+                "model_user_id": None,
+                "llm_name": "openai",
+                "api_key": "k",
+                "user_api_key": None,
+                "agent_id": None,
+                "agent_type": "ClassicAgent",
+                "prompt": "",
+                "json_schema": None,
+                "retriever_config": None,
+                "reserved_message_id": reserved_id,
+            },
+            "client_tools": None,
+        }
+        cont_service.mark_resuming.return_value = True
+        monkeypatch.setattr(cont_mod, "ContinuationService", lambda: cont_service)
+        monkeypatch.setattr(
+            llm_creator_mod.LLMCreator, "create_llm", lambda *a, **kw: MagicMock(),
+        )
+        monkeypatch.setattr(
+            handler_mod.LLMHandlerCreator, "create_handler",
+            lambda *a, **kw: MagicMock(),
+        )
+        from application.agents import agent_creator as ac_mod
+        from application.agents import tool_executor as te_mod
+
+        monkeypatch.setattr(
+            te_mod, "ToolExecutor", lambda **kw: MagicMock(client_tools=None)
+        )
+        monkeypatch.setattr(
+            ac_mod.AgentCreator, "create_agent", lambda *a, **kw: MagicMock()
+        )
+
+        sp = sp_mod.StreamProcessor.__new__(sp_mod.StreamProcessor)
+        sp.data = {}
+        sp.decoded_token = {"sub": "alice"}
+        sp.initial_user_id = "alice"
+        sp.conversation_id = "00000000-0000-0000-0000-000000000001"
+        sp.agent_config = {}
+        sp.reserved_message_id = None
+
+        sp.resume_from_tool_actions(
+            tool_actions=[],
+            conversation_id="00000000-0000-0000-0000-000000000001",
+        )
+
+        assert sp.reserved_message_id == reserved_id
+
+
+@pytest.mark.unit
+class TestContinuationServiceMarkResuming:
+    """``ContinuationService.mark_resuming`` is the thin wrapper used by
+    the resume path; it should flip the repository row in place."""
+
+    def test_mark_resuming_flips_pending_row(self, pg_engine, monkeypatch):
+        from contextlib import contextmanager
+
+        from application.api.answer.services import (
+            continuation_service as cont_mod,
+        )
+        from application.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+        from application.storage.db.repositories.pending_tool_state import (
+            PendingToolStateRepository,
+        )
+
+        with pg_engine.begin() as conn:
+            conv = ConversationsRepository(conn).create("alice", "c")
+            PendingToolStateRepository(conn).save_state(
+                conv["id"],
+                "alice",
+                messages=[],
+                pending_tool_calls=[],
+                tools_dict={},
+                tool_schemas=[],
+                agent_config={},
+            )
+
+        @contextmanager
+        def _session():
+            with pg_engine.begin() as conn:
+                yield conn
+
+        @contextmanager
+        def _readonly():
+            with pg_engine.connect() as conn:
+                yield conn
+
+        monkeypatch.setattr(cont_mod, "db_session", _session)
+        monkeypatch.setattr(cont_mod, "db_readonly", _readonly)
+
+        svc = cont_mod.ContinuationService()
+        flipped = svc.mark_resuming(conv["id"], "alice")
+        assert flipped is True
+
+        with pg_engine.connect() as conn:
+            row = PendingToolStateRepository(conn).load_state(
+                conv["id"], "alice"
+            )
+        assert row["status"] == "resuming"
+        assert row["resumed_at"] is not None
+
+    def test_mark_resuming_returns_false_for_unknown_conv(
+        self, pg_engine, monkeypatch
+    ):
+        from contextlib import contextmanager
+
+        from application.api.answer.services import (
+            continuation_service as cont_mod,
+        )
+
+        @contextmanager
+        def _session():
+            with pg_engine.begin() as conn:
+                yield conn
+
+        @contextmanager
+        def _readonly():
+            with pg_engine.connect() as conn:
+                yield conn
+
+        monkeypatch.setattr(cont_mod, "db_session", _session)
+        monkeypatch.setattr(cont_mod, "db_readonly", _readonly)
+
+        svc = cont_mod.ContinuationService()
+        # Not a UUID and no legacy row exists.
+        assert svc.mark_resuming("not-a-uuid", "alice") is False

@@ -15,24 +15,39 @@ export default function useAuth() {
   const generateNewToken = async () => {
     if (isGeneratingToken.current) return;
     isGeneratingToken.current = true;
-    const response = await userService.getNewToken();
-    const { token: newToken } = await response.json();
-    localStorage.setItem('authToken', newToken);
-    dispatch(setToken(newToken));
-    setIsAuthLoading(false);
-    return newToken;
+    try {
+      const response = await userService.getNewToken();
+      const { token: newToken } = await response.json();
+      localStorage.setItem('authToken', newToken);
+      dispatch(setToken(newToken));
+      setIsAuthLoading(false);
+      return newToken;
+    } finally {
+      // Reset so a subsequent ``setToken(null)`` (SSE 401 recovery)
+      // can trigger another generation. Without this the in-flight
+      // guard would latch true forever after the first call.
+      isGeneratingToken.current = false;
+    }
   };
 
   useEffect(() => {
+    // Re-fires when ``token`` flips to null mid-session (e.g.
+    // ``useEventStream`` dispatches ``setToken(null)`` after repeated
+    // SSE 401s) so ``session_jwt`` users get a fresh token without a
+    // hard reload. ``authType`` short-circuits on subsequent runs.
     const initializeAuth = async () => {
       try {
-        const configRes = await userService.getConfig();
-        const config = await configRes.json();
-        setAuthType(config.auth_type);
+        let resolvedAuthType = authType;
+        if (resolvedAuthType === null) {
+          const configRes = await userService.getConfig();
+          const config = await configRes.json();
+          resolvedAuthType = config.auth_type;
+          setAuthType(resolvedAuthType);
+        }
 
-        if (config.auth_type === 'session_jwt' && !token) {
+        if (resolvedAuthType === 'session_jwt' && !token) {
           await generateNewToken();
-        } else if (config.auth_type === 'simple_jwt' && !token) {
+        } else if (resolvedAuthType === 'simple_jwt' && !token) {
           setShowTokenModal(true);
           setIsAuthLoading(false);
         } else {
@@ -44,7 +59,7 @@ export default function useAuth() {
       }
     };
     initializeAuth();
-  }, []);
+  }, [token, authType]);
 
   const handleTokenSubmit = (enteredToken: string) => {
     localStorage.setItem('authToken', enteredToken);

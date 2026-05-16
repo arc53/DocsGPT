@@ -13,6 +13,8 @@ import json
 from datetime import datetime
 from typing import Optional
 
+from application.storage.db.serialization import PGNativeJSONEncoder
+
 from sqlalchemy import Connection, text
 
 
@@ -52,7 +54,7 @@ class StackLogsRepository:
                 "user_id": user_id,
                 "api_key": api_key,
                 "query": query,
-                "stacks": json.dumps(stacks or []),
+                "stacks": json.dumps(stacks or [], cls=PGNativeJSONEncoder),
                 "timestamp": timestamp,
             },
         )

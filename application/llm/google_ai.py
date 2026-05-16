@@ -6,6 +6,7 @@ from google.genai import types
 from application.core.settings import settings
 
 from application.llm.base import BaseLLM
+from application.llm.handlers.google import _decode_thought_signature
 from application.storage.storage_creator import StorageCreator
 
 
@@ -248,7 +249,7 @@ class GoogleLLM(BaseLLM):
                         except (_json.JSONDecodeError, TypeError):
                             args = {}
                     cleaned_args = self._remove_null_values(args)
-                    thought_sig = tc.get("thought_signature")
+                    thought_sig = _decode_thought_signature(tc.get("thought_signature"))
                     if thought_sig:
                         parts.append(
                             types.Part(
@@ -312,7 +313,9 @@ class GoogleLLM(BaseLLM):
                                             name=item["function_call"]["name"],
                                             args=cleaned_args,
                                         ),
-                                        thoughtSignature=item["thought_signature"],
+                                        thoughtSignature=_decode_thought_signature(
+                                            item["thought_signature"]
+                                        ),
                                     )
                                 )
                             else:

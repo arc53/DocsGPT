@@ -174,7 +174,7 @@ export default function AgentCard({
     if (section === 'user') {
       if (agent.status === 'published') {
         dispatch(setSelectedAgent(agent));
-        navigate(`/`);
+        navigate(agent.id ? `/agents/${agent.id}/c/new` : '/c/new');
       }
     }
     if (section === 'shared') {

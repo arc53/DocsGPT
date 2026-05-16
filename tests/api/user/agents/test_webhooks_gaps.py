@@ -55,7 +55,7 @@ class TestAgentWebhookListenerGaps:
         with patch(
             "application.api.user.agents.webhooks.process_agent_webhook"
         ) as mock_process:
-            mock_process.delay.return_value = mock_task
+            mock_process.apply_async.return_value = mock_task
             with app.test_request_context(
                 "/api/webhooks/agents/tok",
                 method="POST",
@@ -77,7 +77,7 @@ class TestAgentWebhookListenerGaps:
         with patch(
             "application.api.user.agents.webhooks.process_agent_webhook"
         ) as mock_process:
-            mock_process.delay.return_value = mock_task
+            mock_process.apply_async.return_value = mock_task
             with app.test_request_context(
                 "/api/webhooks/agents/tok",
                 method="GET",
@@ -90,8 +90,9 @@ class TestAgentWebhookListenerGaps:
                 )
 
         assert response.status_code == 200
-        call_kwargs = mock_process.delay.call_args[1]
-        assert call_kwargs["payload"] == {}
+        call_kwargs = mock_process.apply_async.call_args[1]
+        # apply_async wraps task args under ``kwargs=``.
+        assert call_kwargs["kwargs"]["payload"] == {}
 
     def test_enqueue_returns_task_id_in_response(self, app):
         """Success response body includes task_id from the Celery task."""
@@ -103,7 +104,7 @@ class TestAgentWebhookListenerGaps:
         with patch(
             "application.api.user.agents.webhooks.process_agent_webhook"
         ) as mock_process:
-            mock_process.delay.return_value = mock_task
+            mock_process.apply_async.return_value = mock_task
             with app.test_request_context(
                 "/api/webhooks/agents/tok",
                 method="POST",
@@ -122,7 +123,7 @@ class TestAgentWebhookListenerGaps:
         with patch(
             "application.api.user.agents.webhooks.process_agent_webhook"
         ) as mock_process:
-            mock_process.delay.side_effect = RuntimeError("celery is down")
+            mock_process.apply_async.side_effect = RuntimeError("celery is down")
             with app.test_request_context(
                 "/api/webhooks/agents/tok",
                 method="POST",
@@ -254,7 +255,7 @@ class TestAgentWebhookListener:
         fake_task = MagicMock(id="task-post")
 
         with patch(
-            "application.api.user.agents.webhooks.process_agent_webhook.delay",
+            "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/webhooks/agents/tk-enq", method="POST",
@@ -282,7 +283,7 @@ class TestAgentWebhookListener:
         fake_task = MagicMock(id="task-get")
 
         with patch(
-            "application.api.user.agents.webhooks.process_agent_webhook.delay",
+            "application.api.user.agents.webhooks.process_agent_webhook.apply_async",
             return_value=fake_task,
         ), app.test_request_context(
             "/api/webhooks/agents/tk-get?foo=bar&baz=42"

@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useSelector, useStore } from 'react-redux';
 import { selectToken } from '../preferences/preferenceSlice';
+import type { RootState } from '../store';
 import { formatBytes } from '../utils/stringUtils';
 import Chunks from './Chunks';
 import ContextMenu, { MenuOption } from './ContextMenu';
@@ -56,6 +57,7 @@ const FileTree: React.FC<FileTreeProps> = ({
   onBackToDocuments,
 }) => {
   const { t } = useTranslation();
+  const store = useStore<RootState>();
   const [loading, setLoading] = useLoaderState(true, 500);
   const [error, setError] = useState<string | null>(null);
   const [directoryStructure, setDirectoryStructure] =
@@ -95,6 +97,25 @@ const FileTree: React.FC<FileTreeProps> = ({
   const opQueueRef = useRef<QueuedOperation[]>([]);
   const processingRef = useRef(false);
   const [queueLength, setQueueLength] = useState(0);
+  const mountedRef = useRef(true);
+  const waitUnsubscribeRef = useRef<(() => void) | null>(null);
+  // Holds the 5-minute SSE-wait timer so the unmount cleanup can clear
+  // it — otherwise the timer fires up to 5 min after unmount and
+  // resolves an abandoned Promise.
+  const waitTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+      waitUnsubscribeRef.current?.();
+      waitUnsubscribeRef.current = null;
+      if (waitTimerRef.current !== null) {
+        window.clearTimeout(waitTimerRef.current);
+        waitTimerRef.current = null;
+      }
+    },
+    [],
+  );
 
   useOutsideAlerter(
     searchDropdownRef,
@@ -313,47 +334,103 @@ const FileTree: React.FC<FileTreeProps> = ({
         }
         console.log('Reingest task started:', result.reingest_task_id);
 
-        const maxAttempts = 30;
-        const pollInterval = 2000;
+        // SSE is the sole driver here. The backend's
+        // ``reingest_source_worker`` publishes ``source.ingest.*``
+        // keyed on the resolved ``source_id`` (the
+        // ``manage_source_files`` route returns it explicitly so we
+        // can match without consulting any slice). Subscribe to the
+        // store and resolve when a terminal event tagged with our
+        // source lands in ``notifications.recentEvents``. Re-checking
+        // on every dispatch (rather than polling on a timer) avoids
+        // races where a terminal could roll off the bounded ring
+        // before the next tick observes it in chatty sessions.
+        const reingestSourceId: string | undefined = result.source_id;
+        // Cutoff so we don't pick up terminal events from a *previous*
+        // reingest of the same source — the backend's
+        // ``source.ingest.*`` payload doesn't carry a Celery task id,
+        // so source_id alone is ambiguous when ops repeat.
+        const opStartedAt = Date.now();
+        const MAX_WAIT_MS = 5 * 60_000;
 
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-          try {
-            const statusResponse = await userService.getTaskStatus(
-              result.reingest_task_id,
-              token,
-            );
-            const statusData = await statusResponse.json();
-
-            console.log(
-              `Task status (attempt ${attempt + 1}):`,
-              statusData.status,
-            );
-
-            if (statusData.status === 'SUCCESS') {
-              console.log('Task completed successfully');
-
-              const structureResponse = await userService.getDirectoryStructure(
-                docId,
-                token,
-              );
-              const structureData = await structureResponse.json();
-
-              if (structureData && structureData.directory_structure) {
-                setDirectoryStructure(structureData.directory_structure);
-                currentOpRef.current = null;
-                return true;
-              }
-              break;
-            } else if (statusData.status === 'FAILURE') {
-              console.error('Task failed');
-              break;
-            }
-
-            await new Promise((resolve) => setTimeout(resolve, pollInterval));
-          } catch (error) {
-            console.error('Error polling task status:', error);
-            break;
+        const terminalFromSse = (): 'completed' | 'failed' | null => {
+          if (!reingestSourceId) return null;
+          const events = store.getState().notifications.recentEvents;
+          for (const event of events) {
+            if (event.scope?.id !== reingestSourceId) continue;
+            const ts = event.ts ? Date.parse(event.ts) : NaN;
+            if (!Number.isFinite(ts) || ts < opStartedAt) continue;
+            if (event.type === 'source.ingest.completed') return 'completed';
+            if (event.type === 'source.ingest.failed') return 'failed';
           }
+          return null;
+        };
+
+        const refreshStructure = async (): Promise<boolean> => {
+          const structureResponse = await userService.getDirectoryStructure(
+            docId,
+            token,
+          );
+          const structureData = await structureResponse.json();
+          if (!mountedRef.current) return false;
+          if (structureData && structureData.directory_structure) {
+            setDirectoryStructure(structureData.directory_structure);
+            currentOpRef.current = null;
+            return true;
+          }
+          return false;
+        };
+
+        const terminal = await new Promise<
+          'completed' | 'failed' | 'timeout' | 'unmounted'
+        >((resolve) => {
+          if (!mountedRef.current) {
+            resolve('unmounted');
+            return;
+          }
+          // Cover the race where the terminal event landed between
+          // the POST returning and the subscribe call.
+          const initial = terminalFromSse();
+          if (initial) {
+            resolve(initial);
+            return;
+          }
+          const timer = window.setTimeout(() => {
+            waitUnsubscribeRef.current?.();
+            waitUnsubscribeRef.current = null;
+            waitTimerRef.current = null;
+            resolve('timeout');
+          }, MAX_WAIT_MS);
+          waitTimerRef.current = timer;
+          waitUnsubscribeRef.current = store.subscribe(() => {
+            if (!mountedRef.current) {
+              window.clearTimeout(timer);
+              waitTimerRef.current = null;
+              waitUnsubscribeRef.current?.();
+              waitUnsubscribeRef.current = null;
+              resolve('unmounted');
+              return;
+            }
+            const next = terminalFromSse();
+            if (next) {
+              window.clearTimeout(timer);
+              waitTimerRef.current = null;
+              waitUnsubscribeRef.current?.();
+              waitUnsubscribeRef.current = null;
+              resolve(next);
+            }
+          });
+        });
+
+        if (!mountedRef.current) return false;
+
+        if (terminal === 'completed') {
+          if (await refreshStructure()) return true;
+        } else if (terminal === 'failed') {
+          console.error('Reingest task failed (per SSE)');
+        } else if (terminal === 'unmounted') {
+          return false;
+        } else {
+          console.error('Reingest timed out waiting for SSE terminal');
         }
       } else {
         throw new Error(
@@ -374,7 +451,7 @@ const FileTree: React.FC<FileTreeProps> = ({
             ? 'delete directory'
             : 'delete file(s)';
       console.error(`Error ${actionText}:`, error);
-      setError(`Failed to ${errorText}`);
+      if (mountedRef.current) setError(`Failed to ${errorText}`);
     } finally {
       currentOpRef.current = null;
     }
