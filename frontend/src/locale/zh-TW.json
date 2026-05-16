@@ -474,6 +474,11 @@
       "create": "建立",
       "option": "允許使用者進行更多查詢"
     },
+    "searchConversations": {
+      "searchPlaceholder": "搜尋對話",
+      "noResults": "未找到結果",
+      "loading": "載入中..."
+    },
     "configTool": {
       "title": "工具設定",
       "type": "類型",

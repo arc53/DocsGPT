@@ -110,6 +110,85 @@ class GetConversations(Resource):
         return make_response(jsonify(list_conversations), 200)
 
 
+@conversations_ns.route("/search_conversations")
+class SearchConversations(Resource):
+    @staticmethod
+    def _build_match_snippet(text_value: str, query: str, radius: int = 60) -> str:
+        if not text_value:
+            return ""
+        idx = text_value.lower().find(query.lower())
+        if idx == -1:
+            snippet = text_value[: radius * 2]
+            return snippet + ("…" if len(text_value) > len(snippet) else "")
+        start = max(0, idx - radius)
+        end = min(len(text_value), idx + len(query) + radius)
+        snippet = text_value[start:end]
+        if start > 0:
+            snippet = "…" + snippet
+        if end < len(text_value):
+            snippet = snippet + "…"
+        return snippet
+
+    @api.doc(
+        description=(
+            "Search the authenticated user's conversations by name or "
+            "message content (case-insensitive substring match). Mirrors "
+            "the visibility filter and response shape of /get_conversations, "
+            "and additionally returns ``match_field`` (``name``, ``prompt`` "
+            "or ``response``) and ``match_snippet`` (a short excerpt of the "
+            "matched text centered on the query) for each result."
+        ),
+        params={
+            "q": "Search term (required)",
+            "limit": "Maximum number of results to return (default 30, max 100)",
+        },
+    )
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        query = (request.args.get("q") or "").strip()
+        if not query:
+            return make_response(
+                jsonify({"success": False, "message": "q is required"}), 400
+            )
+        try:
+            limit = int(request.args.get("limit", 30))
+        except (TypeError, ValueError):
+            limit = 30
+        limit = max(1, min(limit, 100))
+        user_id = decoded_token.get("sub")
+        try:
+            with db_readonly() as conn:
+                conversations = ConversationsRepository(conn).search_for_user(
+                    user_id, query, limit=limit
+                )
+            list_conversations = [
+                {
+                    "id": str(conversation["id"]),
+                    "name": conversation["name"],
+                    "agent_id": (
+                        str(conversation["agent_id"])
+                        if conversation.get("agent_id")
+                        else None
+                    ),
+                    "is_shared_usage": conversation.get("is_shared_usage", False),
+                    "shared_token": conversation.get("shared_token", None),
+                    "match_field": conversation.get("match_field"),
+                    "match_snippet": self._build_match_snippet(
+                        conversation.get("match_text") or "", query
+                    ),
+                }
+                for conversation in conversations
+            ]
+        except Exception as err:
+            current_app.logger.error(
+                f"Error searching conversations: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(list_conversations), 200)
+
+
 @conversations_ns.route("/get_single_conversation")
 class GetSingleConversation(Resource):
     @api.doc(

@@ -15,6 +15,7 @@ import Github from './assets/git_nav.svg';
 import Hamburger from './assets/hamburger.svg';
 import openNewChat from './assets/openNewChat.svg';
 import Pin from './assets/pin.svg';
+import SearchIcon from './assets/search.svg';
 import AgentImage from './components/AgentImage';
 import SettingGear from './assets/settingGear.svg';
 import Spark from './assets/spark.svg';
@@ -35,6 +36,7 @@ import { useDarkTheme, useMediaQuery } from './hooks';
 import useTokenAuth from './hooks/useTokenAuth';
 import DeleteConvModal from './modals/DeleteConvModal';
 import JWTModal from './modals/JWTModal';
+import SearchConversationsModal from './modals/SearchConversationsModal';
 import { ActiveState } from './models/misc';
 import { getConversations } from './preferences/preferenceApi';
 import {
@@ -82,6 +84,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
   const [recentAgents, setRecentAgents] = useState<Agent[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const navRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -506,11 +509,23 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           )}
           {conversations?.data && conversations.data.length > 0 ? (
             <div className="mt-7">
-              <div className="mx-4 my-auto mt-2 flex h-6 items-center justify-between gap-4 rounded-3xl">
+              <div className="mx-4 my-auto mt-2 flex h-8 items-center justify-between gap-4 rounded-3xl">
                 <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
+                <button
+                  onClick={() => setSearchOpen(true)}
+                  className="hover:bg-sidebar-accent mr-2 flex h-7 w-7 items-center justify-center rounded-full"
+                  aria-label={t('modals.searchConversations.searchPlaceholder')}
+                  title={t('modals.searchConversations.searchPlaceholder')}
+                >
+                  <img
+                    src={SearchIcon}
+                    alt="search"
+                    className="h-4 w-4 opacity-70"
+                  />
+                </button>
               </div>
               <div className="conversations-container">
-                {conversations.data?.map((conversation) => (
+                {(conversations.data ?? []).map((conversation) => (
                   <ConversationTile
                     key={conversation.id}
                     conversation={conversation}
@@ -644,6 +659,17 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         modalState={showTokenModal ? 'ACTIVE' : 'INACTIVE'}
         handleTokenSubmit={handleTokenSubmit}
       />
+      {searchOpen && (
+        <SearchConversationsModal
+          close={() => setSearchOpen(false)}
+          conversations={conversations?.data ?? []}
+          token={token}
+          onSelectConversation={(id) => {
+            handleConversationClick(id);
+            if (isMobile || isTablet) setNavOpen(false);
+          }}
+        />
+      )}
     </>
   );
 }

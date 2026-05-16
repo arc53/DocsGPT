@@ -474,6 +474,11 @@
       "create": "Crear",
       "option": "Permitir a los usuarios realizar más consultas"
     },
+    "searchConversations": {
+      "searchPlaceholder": "Buscar conversaciones",
+      "noResults": "No se encontraron resultados",
+      "loading": "Cargando..."
+    },
     "configTool": {
       "title": "Configuración de la Herramienta",
       "type": "Tipo",

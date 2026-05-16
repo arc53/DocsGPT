@@ -95,6 +95,8 @@ const endpoints = {
     FEEDBACK: '/api/feedback',
     CONVERSATION: (id: string) => `/api/get_single_conversation?id=${id}`,
     CONVERSATIONS: '/api/get_conversations',
+    SEARCH_CONVERSATIONS: (q: string, limit = 30) =>
+      `/api/search_conversations?q=${encodeURIComponent(q)}&limit=${limit}`,
     MESSAGE_TAIL: (messageId: string) => `/api/messages/${messageId}/tail`,
     SHARE_CONVERSATION: (isPromptable: boolean) =>
       `/api/share?isPromptable=${isPromptable}`,
