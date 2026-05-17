@@ -31,3 +31,10 @@ worker_prefetch_multiplier = settings.CELERY_WORKER_PREFETCH_MULTIPLIER
 broker_transport_options = {"visibility_timeout": settings.CELERY_VISIBILITY_TIMEOUT}
 result_expires = 86400 * 7
 task_track_started = True
+
+# Recycle the prefork worker child to bound native-heap growth from
+# docling/torch parsing. Left unset (Celery's unlimited default) when 0.
+if settings.CELERY_WORKER_MAX_MEMORY_PER_CHILD > 0:
+    worker_max_memory_per_child = settings.CELERY_WORKER_MAX_MEMORY_PER_CHILD
+if settings.CELERY_WORKER_MAX_TASKS_PER_CHILD > 0:
+    worker_max_tasks_per_child = settings.CELERY_WORKER_MAX_TASKS_PER_CHILD

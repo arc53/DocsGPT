@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # and Dify defaults; long ingests can override via env.
     CELERY_WORKER_PREFETCH_MULTIPLIER: int = 1
     CELERY_VISIBILITY_TIMEOUT: int = 3600
+    # Recycle the prefork worker child once its resident size crosses this many
+    # kilobytes — backstops native-heap growth from docling/torch parsing. 0 disables.
+    CELERY_WORKER_MAX_MEMORY_PER_CHILD: int = 4194304
+    # Recycle the child after this many tasks; 0 disables (memory cap is the primary knob).
+    CELERY_WORKER_MAX_TASKS_PER_CHILD: int = 0
     # Only consulted when VECTOR_STORE=mongodb or when running scripts/db/backfill.py; user data lives in Postgres.
     MONGO_URI: Optional[str] = None
     # User-data Postgres DB.

@@ -8,7 +8,7 @@ RUN apt-get update && \
     add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
     apt-get install -y --no-install-recommends gcc g++ wget unzip libc6-dev python3.12 python3.12-venv python3.12-dev && \
-    rm -rf /var/lib/apt/lists/* 
+    rm -rf /var/lib/apt/lists/*
 
 # Verify Python installation and setup symlink
 RUN if [ -f /usr/bin/python3.12 ]; then \
@@ -73,7 +73,7 @@ COPY --from=builder /models /app/models
 COPY . /app/application
 
 # Change the ownership of the /app directory to the appuser
-	
+
 RUN mkdir -p /app/application/inputs/local
 RUN chown -R appuser:appuser /app
 
@@ -81,6 +81,11 @@ RUN chown -R appuser:appuser /app
 ENV FLASK_APP=app.py \
     FLASK_DEBUG=true \
     PATH="/venv/bin:$PATH"
+
+ENV MALLOC_ARENA_MAX=2 \
+    OMP_NUM_THREADS=4 \
+    MKL_NUM_THREADS=4 \
+    OPENBLAS_NUM_THREADS=4
 
 # Expose the port the app runs on
 EXPOSE 7091
