@@ -553,6 +553,35 @@ class TestSyncSource:
         assert response.status_code == 200
         assert response.json["task_id"] == "task-123"
 
+    def test_normalizes_dict_remote_data_before_dispatch(self, app, pg_conn):
+        """The route must hand the sync task the normalized URL string."""
+        from application.api.user.sources.routes import SyncSource
+
+        user = "u-normalize"
+        src = _seed_source(
+            pg_conn, user, name="crawl-src", type="crawler",
+            remote_data=json.dumps(
+                {"url": "https://example.com", "provider": "crawler"}
+            ),
+        )
+
+        fake_task = MagicMock(id="task-norm")
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.sync_source.delay",
+            return_value=fake_task,
+        ) as mock_delay, app.test_request_context(
+            "/api/sync_source",
+            method="POST",
+            json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SyncSource().post()
+
+        assert response.status_code == 200
+        assert mock_delay.call_args.kwargs["source_data"] == "https://example.com"
+        assert mock_delay.call_args.kwargs["loader"] == "crawler"
+
     def test_sync_task_raises_returns_400(self, app, pg_conn):
         from application.api.user.sources.routes import SyncSource
 
