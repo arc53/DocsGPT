@@ -103,6 +103,9 @@ def _stop_ingest_heartbeat(thread, stop_event):
 def metadata_from_filename(title):
     return {"title": title}
 
+IMAGE_MIME_TYPES = {
+    "image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"
+}
 
 def _normalize_file_name_map(file_name_map):
     if not file_name_map:
