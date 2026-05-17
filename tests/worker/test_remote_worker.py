@@ -148,6 +148,130 @@ class TestSyncWorker:
         assert captured[0]["loader"] == "url"
         assert captured[0]["doc_id"] == str(src["id"])
 
+    def test_connector_sources_are_skipped(
+        self,
+        pg_conn,
+        patch_worker_db,
+        task_self,
+        monkeypatch,
+    ):
+        """connector:* sources have no RemoteCreator loader — sync_worker
+        must skip them, not dispatch them into sync()."""
+        from application import worker
+
+        SourcesRepository(pg_conn).create(
+            "drive-folder",
+            user_id="dave",
+            type="connector:file",
+            retriever="classic",
+            sync_frequency="daily",
+            remote_data={
+                "provider": "google_drive",
+                "file_ids": ["f1"],
+                "folder_ids": [],
+                "recursive": False,
+            },
+        )
+
+        def _must_not_run(*args, **kwargs):
+            raise AssertionError("sync() must not run for connector sources")
+
+        monkeypatch.setattr(worker, "sync", _must_not_run)
+
+        result = worker.sync_worker(task_self, "daily")
+
+        assert result["total_sync_count"] == 1
+        assert result["sync_skipped"] == 1
+        assert result["sync_success"] == 0
+        assert result["sync_failure"] == 0
+
+    def test_dict_remote_data_is_normalized_before_loader(
+        self,
+        pg_conn,
+        patch_worker_db,
+        task_self,
+        monkeypatch,
+    ):
+        """Regression: remote_data reads back as a dict; sync_worker must
+        hand the loader the URL string, not the raw dict."""
+        from application import worker
+
+        SourcesRepository(pg_conn).create(
+            "docs-crawl",
+            user_id="erin",
+            type="crawler",
+            retriever="classic",
+            sync_frequency="weekly",
+            remote_data={"url": "https://example.com", "provider": "crawler"},
+        )
+
+        received: list = []
+        fake_loader = MagicMock(name="remote_loader")
+
+        def _capture(source_data):
+            received.append(source_data)
+            return [
+                Document(
+                    text="page body",
+                    extra_info={"file_path": "index.md", "title": "home"},
+                    doc_id="d1",
+                )
+            ]
+
+        fake_loader.load_data.side_effect = _capture
+        monkeypatch.setattr(
+            worker.RemoteCreator, "create_loader", lambda loader: fake_loader
+        )
+        monkeypatch.setattr(
+            worker,
+            "embed_and_store_documents",
+            lambda docs, full_path, source_id, task, **kw: None,
+        )
+        monkeypatch.setattr(
+            worker, "upload_index", lambda full_path, file_data: None
+        )
+
+        result = worker.sync_worker(task_self, "weekly")
+
+        assert result["total_sync_count"] == 1
+        assert result["sync_success"] == 1
+        assert result["sync_failure"] == 0
+        assert received == ["https://example.com"], (
+            "loader must receive the URL string, not the remote_data dict"
+        )
+
+    def test_unsyncable_remote_data_is_skipped(
+        self,
+        pg_conn,
+        patch_worker_db,
+        task_self,
+        monkeypatch,
+    ):
+        """A URL source whose remote_data dict has no URL key normalizes
+        to None — sync_worker must skip it, not dispatch a doomed sync()."""
+        from application import worker
+
+        SourcesRepository(pg_conn).create(
+            "broken-feed",
+            user_id="frank",
+            type="url",
+            retriever="classic",
+            sync_frequency="monthly",
+            remote_data={"provider": "url"},
+        )
+
+        def _must_not_run(*args, **kwargs):
+            raise AssertionError("sync() must not run for unsyncable sources")
+
+        monkeypatch.setattr(worker, "sync", _must_not_run)
+
+        result = worker.sync_worker(task_self, "monthly")
+
+        assert result["total_sync_count"] == 1
+        assert result["sync_skipped"] == 1
+        assert result["sync_failure"] == 0
+        assert result["sync_success"] == 0
+
 
 @pytest.mark.unit
 class TestRemoteWorkerPathTraversal:

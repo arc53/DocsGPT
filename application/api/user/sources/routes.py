@@ -9,6 +9,7 @@ from flask_restx import fields, Namespace, Resource
 from application.api import api
 from application.api.user.tasks import sync_source
 from application.core.settings import settings
+from application.parser.remote.remote_creator import normalize_remote_data
 from application.storage.db.repositories.sources import SourcesRepository
 from application.storage.db.session import db_readonly, db_session
 from application.storage.storage_creator import StorageCreator
@@ -322,7 +323,7 @@ class SyncSource(Resource):
                 ),
                 400,
             )
-        source_data = doc.get("remote_data")
+        source_data = normalize_remote_data(source_type, doc.get("remote_data"))
         if not source_data:
             return make_response(
                 jsonify({"success": False, "message": "Source is not syncable"}), 400

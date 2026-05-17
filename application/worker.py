@@ -29,7 +29,10 @@ from application.parser.embedding_pipeline import (
 )
 from application.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
 from application.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
-from application.parser.remote.remote_creator import RemoteCreator
+from application.parser.remote.remote_creator import (
+    RemoteCreator,
+    normalize_remote_data,
+)
 from application.parser.schema.base import Document
 from application.retriever.retriever_creator import RetrieverCreator
 
@@ -1431,19 +1434,35 @@ def sync_worker(self, frequency):
         name = doc.get("name")
         user = doc.get("user_id")
         source_type = doc.get("type")
-        source_data = doc.get("remote_data")
         retriever = doc.get("retriever")
         doc_id = str(doc.get("id"))
+
+        sync_counts["total_sync_count"] += 1
+
+        # Connector sources have no RemoteCreator loader and need an OAuth
+        # token to sync, which a scheduled task lacks — skip them.
+        if source_type and source_type.startswith("connector"):
+            sync_counts["sync_skipped"] += 1
+            continue
+
+        source_data = normalize_remote_data(source_type, doc.get("remote_data"))
+        if not source_data:
+            # No syncable URL/config — skip instead of dispatching a sync
+            # that can only fail (and emit a spurious failed event).
+            sync_counts["sync_skipped"] += 1
+            continue
+
         resp = sync(
             self, source_data, name, user, source_type, frequency, retriever, doc_id
         )
-        sync_counts["total_sync_count"] += 1
         sync_counts[
             "sync_success" if resp["status"] == "success" else "sync_failure"
         ] += 1
     return {
         key: sync_counts[key]
-        for key in ["total_sync_count", "sync_success", "sync_failure"]
+        for key in [
+            "total_sync_count", "sync_success", "sync_failure", "sync_skipped",
+        ]
     }
 
 
