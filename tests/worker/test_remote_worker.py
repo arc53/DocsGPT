@@ -240,6 +240,38 @@ class TestSyncWorker:
             "loader must receive the URL string, not the remote_data dict"
         )
 
+    def test_unsyncable_remote_data_is_skipped(
+        self,
+        pg_conn,
+        patch_worker_db,
+        task_self,
+        monkeypatch,
+    ):
+        """A URL source whose remote_data dict has no URL key normalizes
+        to None — sync_worker must skip it, not dispatch a doomed sync()."""
+        from application import worker
+
+        SourcesRepository(pg_conn).create(
+            "broken-feed",
+            user_id="frank",
+            type="url",
+            retriever="classic",
+            sync_frequency="monthly",
+            remote_data={"provider": "url"},
+        )
+
+        def _must_not_run(*args, **kwargs):
+            raise AssertionError("sync() must not run for unsyncable sources")
+
+        monkeypatch.setattr(worker, "sync", _must_not_run)
+
+        result = worker.sync_worker(task_self, "monthly")
+
+        assert result["total_sync_count"] == 1
+        assert result["sync_skipped"] == 1
+        assert result["sync_failure"] == 0
+        assert result["sync_success"] == 0
+
 
 @pytest.mark.unit
 class TestRemoteWorkerPathTraversal:

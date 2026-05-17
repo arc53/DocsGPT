@@ -52,8 +52,9 @@ def normalize_remote_data(source_type, remote_data):
         remote_data: The stored ``remote_data`` (dict, list, str, or None).
 
     Returns:
-        ``source_data`` for the loader: a URL string for url/crawler/
-        sitemap/github, a JSON string for reddit, a dict for s3.
+        Loader input: a URL string or list for url/crawler/sitemap/github,
+        a JSON string for reddit, a dict for s3; ``None`` when the row has
+        nothing syncable.
     """
     if remote_data is None:
         return None
@@ -65,6 +66,8 @@ def normalize_remote_data(source_type, remote_data):
             try:
                 remote_data = json.loads(stripped)
             except json.JSONDecodeError:
+                # Not actually JSON — leave remote_data as the original
+                # string; the per-loader branches below handle a string.
                 pass
 
     loader = (source_type or "").lower()

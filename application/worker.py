@@ -1446,6 +1446,11 @@ def sync_worker(self, frequency):
             continue
 
         source_data = normalize_remote_data(source_type, doc.get("remote_data"))
+        if not source_data:
+            # No syncable URL/config — skip instead of dispatching a sync
+            # that can only fail (and emit a spurious failed event).
+            sync_counts["sync_skipped"] += 1
+            continue
 
         resp = sync(
             self, source_data, name, user, source_type, frequency, retriever, doc_id
