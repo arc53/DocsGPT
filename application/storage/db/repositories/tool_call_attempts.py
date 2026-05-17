@@ -63,7 +63,8 @@ class ToolCallAttemptsRepository:
         message_id: Optional[str] = None,
         artifact_id: Optional[str] = None,
     ) -> None:
-        """Insert OR upgrade a row to ``executed``.
+        """Insert OR upgrade a row to ``executed`` — or ``confirmed`` when
+        there is no ``message_id``, as in ``mark_executed``.
 
         Used as a fallback when ``record_proposed`` failed (DB outage)
         and the tool ran anyway — preserves the journal so the
@@ -72,6 +73,7 @@ class ToolCallAttemptsRepository:
         result_payload: dict = {"result": result}
         if artifact_id:
             result_payload["artifact_id"] = artifact_id
+        status = "executed" if message_id is not None else "confirmed"
         self._conn.execute(
             text(
                 """
@@ -82,9 +84,9 @@ class ToolCallAttemptsRepository:
                     (:call_id, CAST(:tool_id AS uuid), :tool_name,
                      :action_name, CAST(:arguments AS jsonb),
                      CAST(:result AS jsonb), CAST(:message_id AS uuid),
-                     'executed')
+                     :status)
                 ON CONFLICT (call_id) DO UPDATE
-                   SET status     = 'executed',
+                   SET status     = :status,
                        result     = EXCLUDED.result,
                        message_id = COALESCE(EXCLUDED.message_id, tool_call_attempts.message_id)
                 """
@@ -97,6 +99,7 @@ class ToolCallAttemptsRepository:
                 "arguments": json.dumps(arguments if arguments is not None else {}, cls=PGNativeJSONEncoder),
                 "result": json.dumps(result_payload, cls=PGNativeJSONEncoder),
                 "message_id": message_id,
+                "status": status,
             },
         )
 
@@ -108,7 +111,9 @@ class ToolCallAttemptsRepository:
         message_id: Optional[str] = None,
         artifact_id: Optional[str] = None,
     ) -> bool:
-        """Flip ``proposed`` → ``executed`` with the tool result.
+        """Flip ``proposed`` → ``executed``, or straight to ``confirmed``
+        when there is no ``message_id`` (a ``save_conversation=False``
+        request reserves no message, so no finalize will confirm it).
 
         ``artifact_id`` (when present) is stored alongside ``result`` in
         the JSONB as audit data — the reconciler reads it for diagnostic
@@ -117,12 +122,14 @@ class ToolCallAttemptsRepository:
         result_payload: dict = {"result": result}
         if artifact_id:
             result_payload["artifact_id"] = artifact_id
+        status = "executed" if message_id is not None else "confirmed"
         sql = (
             "UPDATE tool_call_attempts SET "
-            "status = 'executed', result = CAST(:result AS jsonb)"
+            "status = :status, result = CAST(:result AS jsonb)"
         )
         params: dict[str, Any] = {
             "call_id": call_id,
+            "status": status,
             "result": json.dumps(result_payload, cls=PGNativeJSONEncoder),
         }
         if message_id is not None:
