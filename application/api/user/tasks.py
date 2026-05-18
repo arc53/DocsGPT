@@ -27,8 +27,42 @@ DURABLE_TASK = dict(
 )
 
 
+# operation tag for the poison-path source.ingest.failed event, per task.
+_INGEST_POISON_OPERATION = {
+    "ingest": "upload",
+    "ingest_remote": "upload",
+    "ingest_connector_task": "upload",
+    "reingest_source_task": "reingest",
+}
+
+
+def _emit_ingest_poison_event(task_name, bound):
+    """Publish a terminal ``source.ingest.failed`` when the poison-guard trips.
+
+    The guard returns before the worker runs, so the worker's own failed
+    event never fires — without this the upload toast spins on "training".
+    """
+    user = bound.get("user")
+    source_id = bound.get("source_id")
+    if not user or not source_id:
+        return
+    from application.events.publisher import publish_user_event
+
+    publish_user_event(
+        user,
+        "source.ingest.failed",
+        {
+            "source_id": str(source_id),
+            "filename": bound.get("filename") or "",
+            "operation": _INGEST_POISON_OPERATION.get(task_name, "upload"),
+            "error": "Ingestion stopped after repeated failures.",
+        },
+        scope={"kind": "source", "id": str(source_id)},
+    )
+
+
 @celery.task(**DURABLE_TASK)
-@with_idempotency(task_name="ingest")
+@with_idempotency(task_name="ingest", on_poison=_emit_ingest_poison_event)
 def ingest(
     self,
     directory,
@@ -57,7 +91,7 @@ def ingest(
 
 
 @celery.task(**DURABLE_TASK)
-@with_idempotency(task_name="ingest_remote")
+@with_idempotency(task_name="ingest_remote", on_poison=_emit_ingest_poison_event)
 def ingest_remote(
     self, source_data, job_name, user, loader,
     idempotency_key=None, source_id=None,
@@ -71,7 +105,9 @@ def ingest_remote(
 
 
 @celery.task(**DURABLE_TASK)
-@with_idempotency(task_name="reingest_source_task")
+@with_idempotency(
+    task_name="reingest_source_task", on_poison=_emit_ingest_poison_event,
+)
 def reingest_source_task(self, source_id, user, idempotency_key=None):
     from application.worker import reingest_source_worker
 
@@ -128,7 +164,9 @@ def process_agent_webhook(self, agent_id, payload, idempotency_key=None):
 
 
 @celery.task(**DURABLE_TASK)
-@with_idempotency(task_name="ingest_connector_task")
+@with_idempotency(
+    task_name="ingest_connector_task", on_poison=_emit_ingest_poison_event,
+)
 def ingest_connector_task(
     self,
     job_name,
