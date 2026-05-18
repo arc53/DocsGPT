@@ -70,6 +70,9 @@
       "sync": "Synchronisieren",
       "syncNow": "Jetzt synchronisieren",
       "syncing": "Synchronisiere...",
+      "reingest": "Erneut indexieren",
+      "ingestFailed": "Indexierung fehlgeschlagen",
+      "ingestProcessing": "Indexierung...",
       "syncConfirmation": "Bist du sicher, dass du \"{{sourceName}}\" synchronisieren möchtest? Dies aktualisiert den Inhalt mit deinem Cloud-Speicher und kann Änderungen an einzelnen Chunks überschreiben.",
       "syncFrequency": {
         "never": "Nie",
@@ -353,6 +356,8 @@
         "failed": "Upload fehlgeschlagen",
         "wait": "Dies kann einige Minuten dauern",
         "preparing": "Upload wird vorbereitet",
+        "parsing": "Dateien werden verarbeitet...",
+        "embedding": "Einbettung...",
         "tokenLimit": "Token-Limit überschritten, bitte lade ein kleineres Dokument hoch",
         "expandDetails": "Upload-Details erweitern",
         "collapseDetails": "Upload-Details einklappen",
