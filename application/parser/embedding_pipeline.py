@@ -154,6 +154,8 @@ def embed_and_store_documents(
     *,
     attempt_id: Optional[str] = None,
     user_id: Optional[str] = None,
+    progress_start: int = 0,
+    progress_end: int = 100,
 ) -> None:
     """Embeds documents and stores them in a vector store.
 
@@ -176,6 +178,11 @@ def embed_and_store_documents(
             published to ``user:{user_id}`` for the in-app upload toast.
             ``None`` is the safe default — workers without a user
             context (e.g. background syncs) skip the publish.
+        progress_start: Percent the reported progress maps to at chunk 0.
+            Lets a caller reserve the lower band for an earlier stage
+            (e.g. parsing). Defaults to ``0`` (embed owns the whole bar).
+        progress_end: Percent the reported progress maps to at the final
+            chunk. Defaults to ``100``.
 
     Returns:
         None
@@ -257,6 +264,7 @@ def embed_and_store_documents(
     failed_idx: int | None = None
     last_published_pct = -1
     source_id_str = str(source_id)
+    progress_span = progress_end - progress_start
     for idx in tqdm(
         range(loop_start, total_docs),
         desc="Embedding 🦖",
@@ -266,8 +274,10 @@ def embed_and_store_documents(
     ):
         doc = docs[idx]
         try:
-            # Update task status for progress tracking
-            progress = int(((idx + 1) / total_docs) * 100)
+            # Map the embed loop into [progress_start, progress_end].
+            progress = progress_start + int(
+                ((idx + 1) / total_docs) * progress_span
+            )
             task_status.update_state(state="PROGRESS", meta={"current": progress})
 
             # SSE push for sub-second upload-toast updates. Throttled to one

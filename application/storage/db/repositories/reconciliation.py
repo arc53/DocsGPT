@@ -107,7 +107,11 @@ class ReconciliationRepository:
     def find_and_lock_stalled_ingests(
         self, *, age_minutes: int = 30, limit: int = 100,
     ) -> list[dict]:
-        """Lock ingest checkpoints whose heartbeat hasn't ticked recently."""
+        """Lock still-active ingest checkpoints with a silent heartbeat.
+
+        The ``status = 'active'`` filter skips rows already escalated to
+        ``'stalled'``, so a dead ingest is alerted once, not every tick.
+        """
         result = self._conn.execute(
             text(
                 """
@@ -116,6 +120,7 @@ class ReconciliationRepository:
                 FROM ingest_chunk_progress
                 WHERE last_updated < now() - make_interval(mins => :age)
                   AND embedded_chunks < total_chunks
+                  AND status = 'active'
                 ORDER BY last_updated ASC
                 LIMIT :limit
                 FOR UPDATE SKIP LOCKED
@@ -125,11 +130,15 @@ class ReconciliationRepository:
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
-    def touch_ingest_progress(self, source_id: str) -> bool:
-        """Bump ``last_updated`` so a once-stalled ingest re-enters the watch window."""
+    def mark_ingest_stalled(self, source_id: str) -> bool:
+        """Escalate a stalled checkpoint to terminal ``status='stalled'``.
+
+        Drops the row out of the sweep so the reconciler alerts once;
+        ``init_progress`` flips it back to ``'active'`` on reingest.
+        """
         result = self._conn.execute(
             text(
-                "UPDATE ingest_chunk_progress SET last_updated = now() "
+                "UPDATE ingest_chunk_progress SET status = 'stalled' "
                 "WHERE source_id = CAST(:sid AS uuid)"
             ),
             {"sid": str(source_id)},

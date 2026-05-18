@@ -94,6 +94,35 @@ def test_embed_and_store_documents_non_faiss(tmp_path, mock_settings, mock_vecto
     assert folder_name.exists()
 
 
+def test_embed_and_store_documents_progress_band(
+    tmp_path, mock_settings, mock_vector_creator
+):
+    """progress_start/progress_end remap the embed loop into a sub-band
+    so an earlier stage (parsing) can own the lower part of the bar.
+    """
+    mock_settings.VECTOR_STORE = "chromadb"
+
+    docs = [MagicMock(page_content=f"d{i}", metadata={}) for i in range(4)]
+    task_status = MagicMock()
+    mock_vector_creator.create_vectorstore.return_value = MagicMock()
+
+    embed_and_store_documents(
+        docs, str(tmp_path / "store"), "sid", task_status,
+        progress_start=50, progress_end=100,
+    )
+
+    currents = [
+        call.kwargs["meta"]["current"]
+        for call in task_status.update_state.call_args_list
+        if "meta" in call.kwargs and "current" in call.kwargs["meta"]
+    ]
+    assert currents, "expected progress updates"
+    # Embedding stays in the upper band and tops out at 100.
+    assert min(currents) > 50
+    assert max(currents) == 100
+    assert currents == sorted(currents)
+
+
 @patch("application.parser.embedding_pipeline.add_text_to_store_with_retry")
 def test_embed_and_store_documents_partial_failure_raises(
     mock_add_retry, tmp_path, mock_settings, mock_vector_creator, caplog

@@ -70,6 +70,9 @@
       "sync": "同步",
       "syncNow": "立即同步",
       "syncing": "同步中...",
+      "reingest": "重新索引",
+      "ingestFailed": "索引失敗",
+      "ingestProcessing": "索引中...",
       "syncConfirmation": "您確定要同步 \"{{sourceName}}\" 嗎？這將使用您的雲端儲存更新內容，並可能覆蓋您對個別文本塊所做的任何編輯。",
       "syncFrequency": {
         "never": "從不",
@@ -353,6 +356,8 @@
         "failed": "上傳失敗",
         "wait": "這可能需要幾分鐘",
         "preparing": "準備上傳",
+        "parsing": "正在解析檔案...",
+        "embedding": "正在生成嵌入...",
         "tokenLimit": "超出令牌限制，請考慮上傳較小的文檔",
         "expandDetails": "展開上傳詳情",
         "collapseDetails": "摺疊上傳詳情",

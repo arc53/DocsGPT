@@ -114,11 +114,11 @@ def run_reconciliation() -> Dict[str, Any]:
                 },
             )
 
-    # Q4: ingest checkpoints whose heartbeat has gone silent. The
-    # reconciler only escalates (alerts) — it doesn't kill the worker
-    # or roll back the partial embed. The next dispatch resumes from
-    # ``last_index`` thanks to the per-chunk checkpoint, so this is an
-    # observability sweep, not a recovery action.
+    # Q4: ingest checkpoints whose heartbeat has gone silent. Each is
+    # escalated to terminal ``status='stalled'`` and alerted once — no
+    # worker kill, no rollback of the partial embed. The 'stalled' flag
+    # ends the re-alert loop and drives the "indexing failed" badge the
+    # sources list derives from this row.
     with engine.begin() as conn:
         repo = ReconciliationRepository(conn)
         for row in repo.find_and_lock_stalled_ingests():
@@ -134,8 +134,7 @@ def run_reconciliation() -> Dict[str, Any]:
                     "last_updated": str(row.get("last_updated")),
                 },
             )
-            # Bump the heartbeat so we don't re-alert every tick.
-            repo.touch_ingest_progress(str(row["source_id"]))
+            repo.mark_ingest_stalled(str(row["source_id"]))
 
     # Q5: idempotency rows whose lease expired with attempts exhausted.
     # The wrapper's poison-loop guard normally finalises these, but if

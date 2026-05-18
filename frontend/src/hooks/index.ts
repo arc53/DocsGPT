@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  RefObject,
-} from 'react';
+import { useCallback, useEffect, useRef, useState, RefObject } from 'react';
 
 export function useOutsideAlerter<T extends HTMLElement>(
   ref: RefObject<T | null>,

@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
-from sqlalchemy import Connection, func, select, text
+from sqlalchemy import case, Connection, func, select, text
 
 from application.storage.db.base_repository import looks_like_uuid, row_to_dict
-from application.storage.db.models import sources_table
+from application.storage.db.models import ingest_chunk_progress_table, sources_table
 
 
 _SCALAR_COLUMNS = {
@@ -59,6 +59,21 @@ def _coerce_jsonb(value: Any) -> Any:
         except json.JSONDecodeError:
             return {"raw": value}
     return value
+
+
+def _ingest_status_case():
+    """Derive a user-facing ingest status from the joined progress row.
+
+    ``failed`` — reconciler-escalated stall. ``processing`` — embed in
+    flight. ``None`` — no progress row, or the embed completed.
+    """
+    icp = ingest_chunk_progress_table
+    return case(
+        (icp.c.source_id.is_(None), None),
+        (icp.c.status == "stalled", "failed"),
+        (icp.c.embedded_chunks < icp.c.total_chunks, "processing"),
+        else_=None,
+    ).label("ingest_status")
 
 
 class SourcesRepository:
@@ -192,13 +207,25 @@ class SourcesRepository:
                 as ``"desc"``.
 
         Returns:
-            A list of source rows as plain dicts (via ``row_to_dict``).
+            A list of source rows as plain dicts (via ``row_to_dict``),
+            each carrying a derived ``ingest_status`` (``failed`` /
+            ``processing`` / ``None``) from the joined progress row.
         """
         column_name = sort_field if sort_field in _SORTABLE_COLUMNS else "date"
         sort_column = sources_table.c[column_name]
         ascending = sort_order.lower() == "asc"
 
-        stmt = select(sources_table).where(sources_table.c.user_id == user_id)
+        stmt = (
+            select(sources_table, _ingest_status_case())
+            .select_from(
+                sources_table.outerjoin(
+                    ingest_chunk_progress_table,
+                    ingest_chunk_progress_table.c.source_id
+                    == sources_table.c.id,
+                )
+            )
+            .where(sources_table.c.user_id == user_id)
+        )
         if search_term:
             stmt = stmt.where(
                 sources_table.c.name.ilike(

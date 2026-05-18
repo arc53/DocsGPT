@@ -70,6 +70,9 @@
       "sync": "Sync",
       "syncNow": "Sync now",
       "syncing": "Syncing...",
+      "reingest": "Reingest",
+      "ingestFailed": "Indexing failed",
+      "ingestProcessing": "Indexing…",
       "syncConfirmation": "Are you sure you want to sync \"{{sourceName}}\"? This will update the content with your cloud storage and may override any edits you made to individual chunks.",
       "syncFrequency": {
         "never": "Never",
@@ -365,6 +368,8 @@
         "failed": "Upload failed",
         "wait": "This may take several minutes",
         "preparing": "Preparing upload",
+        "parsing": "Parsing files…",
+        "embedding": "Embedding…",
         "tokenLimit": "Over the token limit, please consider uploading smaller document",
         "expandDetails": "Expand upload details",
         "collapseDetails": "Collapse upload details",

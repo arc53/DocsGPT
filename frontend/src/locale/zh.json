@@ -70,6 +70,9 @@
       "sync": "同步",
       "syncNow": "立即同步",
       "syncing": "同步中...",
+      "reingest": "重新索引",
+      "ingestFailed": "索引失败",
+      "ingestProcessing": "索引中...",
       "syncConfirmation": "您确定要同步 \"{{sourceName}}\" 吗？这将使用您的云存储更新内容，并可能覆盖您对单个文本块所做的任何编辑。",
       "syncFrequency": {
         "never": "从不",
@@ -353,6 +356,8 @@
         "failed": "上传失败",
         "wait": "这可能需要几分钟",
         "preparing": "准备上传",
+        "parsing": "正在解析文件...",
+        "embedding": "正在生成嵌入...",
         "tokenLimit": "超出令牌限制，请考虑上传较小的文档",
         "expandDetails": "展开上传详情",
         "collapseDetails": "折叠上传详情",
