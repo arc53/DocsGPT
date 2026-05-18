@@ -165,12 +165,19 @@ function UploadRow({
   return (
     <li className="border-border/50 border-b last:border-b-0">
       <div className="flex items-center justify-between px-5 py-3">
-        <p
-          className="font-inter dark:text-muted-foreground max-w-[200px] truncate text-[13px] leading-[16.5px] font-normal text-black"
-          title={task.fileName}
-        >
-          {task.fileName}
-        </p>
+        <div className="flex min-w-0 flex-col">
+          <p
+            className="font-inter dark:text-muted-foreground max-w-[200px] truncate text-[13px] leading-[16.5px] font-normal text-black"
+            title={task.fileName}
+          >
+            {task.fileName}
+          </p>
+          {task.status === 'training' && task.stage && (
+            <span className="font-inter text-muted-foreground mt-0.5 text-[11px] leading-[14px]">
+              {t(`modals.uploadDoc.progress.${task.stage}`)}
+            </span>
+          )}
+        </div>
 
         <div className="flex items-center gap-2">
           {showProgress && (

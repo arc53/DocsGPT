@@ -286,6 +286,26 @@ describe('source.ingest.progress', () => {
     state = reducer(state, ingest('source.ingest.progress', { current: -10 }));
     expect(state.tasks[0].progress).toBe(100);
   });
+
+  it('records the ingest stage from the payload', () => {
+    let state = stateWithTask(makeTask({ status: 'training' }));
+    state = reducer(
+      state,
+      ingest('source.ingest.progress', { current: 20, stage: 'parsing' }),
+    );
+    expect(state.tasks[0].stage).toBe('parsing');
+    state = reducer(
+      state,
+      ingest('source.ingest.progress', { current: 70, stage: 'embedding' }),
+    );
+    expect(state.tasks[0].stage).toBe('embedding');
+    // An unknown/absent stage leaves the last known value intact.
+    state = reducer(
+      state,
+      ingest('source.ingest.progress', { current: 80, stage: 'bogus' }),
+    );
+    expect(state.tasks[0].stage).toBe('embedding');
+  });
 });
 
 describe('source.ingest.completed', () => {

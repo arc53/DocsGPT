@@ -249,6 +249,26 @@ export default function Sources({
     }
   };
 
+  const handleReingest = async (doc: Doc) => {
+    if (!doc.id) {
+      return;
+    }
+    try {
+      const response = await userService.reingestSource(
+        { source_id: doc.id },
+        token,
+      );
+      const data = await response.json();
+      if (!data.success) {
+        console.error('Reingest failed:', data.error || data.message);
+        return;
+      }
+      refreshDocs(undefined, currentPage, rowsPerPage);
+    } catch (error) {
+      console.error('Error reingesting source:', error);
+    }
+  };
+
   const [documentToDelete, setDocumentToDelete] = useState<{
     index: number;
     document: Doc;
@@ -282,6 +302,19 @@ export default function Sources({
         variant: 'primary',
       },
     ];
+
+    if (document.ingestStatus === 'failed') {
+      actions.push({
+        icon: SyncIcon,
+        label: t('settings.sources.reingest'),
+        onClick: () => {
+          handleReingest(document);
+        },
+        iconWidth: 14,
+        iconHeight: 14,
+        variant: 'primary',
+      });
+    }
 
     if (document.syncFrequency) {
       actions.push({
@@ -483,6 +516,16 @@ export default function Sources({
                       </div>
 
                       <div className="flex flex-col items-start justify-start gap-1">
+                        {document.ingestStatus === 'failed' && (
+                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] leading-[16px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                            {t('settings.sources.ingestFailed')}
+                          </span>
+                        )}
+                        {document.ingestStatus === 'processing' && (
+                          <span className="bg-muted-foreground/10 text-muted-foreground rounded-full px-2 py-0.5 text-[11px] leading-[16px] font-medium">
+                            {t('settings.sources.ingestProcessing')}
+                          </span>
+                        )}
                         <div className="flex items-center gap-2">
                           <img
                             src={CalendarIcon}

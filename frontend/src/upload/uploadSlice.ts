@@ -67,6 +67,12 @@ export interface UploadTask {
   errorMessage?: string;
   dismissed?: boolean;
   /**
+   * Ingest phase from the latest ``source.ingest.progress`` event:
+   * ``parsing`` (parse/OCR, lower band of the bar) or ``embedding``
+   * (upper band). Drives the phase label in ``UploadToast``.
+   */
+  stage?: 'parsing' | 'embedding';
+  /**
    * Flipped when ``source.ingest.completed`` carries
    * ``payload.limited === true`` (the worker hit a token cap during
    * ingest). The slice routes such events to a failed status and
@@ -334,6 +340,9 @@ export const uploadSlice = createSlice({
           if (task.status === 'completed' || task.status === 'failed') break;
           task.status = 'training';
           if (clamped > task.progress) task.progress = clamped;
+          if (payload.stage === 'parsing' || payload.stage === 'embedding') {
+            task.stage = payload.stage;
+          }
           break;
         }
         case 'source.ingest.completed':

@@ -211,13 +211,22 @@ class SimpleDirectoryReader(BaseReader):
 
         return new_input_files
 
-    def load_data(self, concatenate: bool = False) -> List[Document]:
+    def load_data(
+        self,
+        concatenate: bool = False,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> List[Document]:
         """Load data from the input directory.
 
         Args:
             concatenate (bool): whether to concatenate all files into one document.
                 If set to True, file metadata is ignored.
                 False by default.
+            progress_callback (Optional[Callable[[int, int], None]]): Called
+                after each file is parsed with ``(files_done, total_files)``.
+                Lets callers surface parse/OCR progress before embedding
+                begins. Exceptions raised by the callback are swallowed so
+                progress reporting can never fail ingestion.
 
         Returns:
             List[Document]: A list of documents.
@@ -226,8 +235,9 @@ class SimpleDirectoryReader(BaseReader):
         data_list: List[str] = []
         metadata_list = []
         self.file_token_counts = {}
-        
-        for input_file in self.input_files:
+
+        total_files = len(self.input_files)
+        for file_index, input_file in enumerate(self.input_files):
             suffix_lower = input_file.suffix.lower()
             parser_metadata = {}
             if suffix_lower in self.file_extractor:
@@ -277,7 +287,15 @@ class SimpleDirectoryReader(BaseReader):
             else:
                 data_list.append(str(data))
                 metadata_list.append(base_metadata)
-        
+
+            if progress_callback is not None:
+                try:
+                    progress_callback(file_index + 1, total_files)
+                except Exception:
+                    logging.warning(
+                        "load_data progress callback failed", exc_info=True
+                    )
+
         # Build directory structure if input_dir is provided
         if hasattr(self, 'input_dir'):
             self.directory_structure = self.build_directory_structure(self.input_dir)

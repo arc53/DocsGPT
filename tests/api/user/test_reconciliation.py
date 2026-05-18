@@ -530,6 +530,142 @@ class TestStuckExecutedToolCalls:
 
 
 # ---------------------------------------------------------------------------
+# Q4 — stalled ingest checkpoints (escalate to terminal 'stalled' + alert)
+# ---------------------------------------------------------------------------
+
+
+def _seed_ingest_progress(
+    conn,
+    *,
+    source_id: str,
+    embedded: int,
+    total: int,
+    age_minutes: int = 31,
+    status: str = "active",
+) -> str:
+    """Insert an ingest_chunk_progress row with a backdated last_updated."""
+    conn.execute(
+        text(
+            """
+            INSERT INTO ingest_chunk_progress (
+                source_id, total_chunks, embedded_chunks, last_index,
+                last_updated, status
+            )
+            VALUES (
+                CAST(:sid AS uuid), :total, :embedded, :embedded - 1,
+                clock_timestamp() - make_interval(mins => :age),
+                :status
+            )
+            """
+        ),
+        {
+            "sid": source_id,
+            "total": total,
+            "embedded": embedded,
+            "age": age_minutes,
+            "status": status,
+        },
+    )
+    return source_id
+
+
+def _ingest_status(conn, source_id: str) -> str | None:
+    """Return the ``status`` of an ingest_chunk_progress row, or None."""
+    row = conn.execute(
+        text(
+            "SELECT status FROM ingest_chunk_progress "
+            "WHERE source_id = CAST(:sid AS uuid)"
+        ),
+        {"sid": source_id},
+    ).fetchone()
+    return row[0] if row is not None else None
+
+
+class TestStalledIngests:
+    @pytest.mark.unit
+    def test_stalled_ingest_escalated_with_alert(self, pg_conn, caplog):
+        from application.api.user.reconciliation import run_reconciliation
+
+        sid = "1a000000-0000-0000-0000-0000000000a1"
+        _seed_ingest_progress(pg_conn, source_id=sid, embedded=9, total=907)
+        before = _stack_logs_count(pg_conn, "reconciler_ingest_stalled")
+
+        with _route_engine_to(pg_conn), caplog.at_level(
+            logging.ERROR, logger="application.api.user.reconciliation",
+        ):
+            r = run_reconciliation()
+
+        assert r["ingests_stalled"] == 1
+        # Escalated to a terminal status so the next tick skips it.
+        assert _ingest_status(pg_conn, sid) == "stalled"
+        # Structured alert + stack_logs row both surface the failure.
+        assert any(
+            getattr(rec, "alert", None) == "reconciler_ingest_stalled"
+            and rec.levelname == "ERROR"
+            for rec in caplog.records
+        )
+        assert (
+            _stack_logs_count(pg_conn, "reconciler_ingest_stalled")
+            == before + 1
+        )
+
+    @pytest.mark.unit
+    def test_stalled_ingest_alerts_once_not_every_tick(self, pg_conn):
+        """The escalate-to-'stalled' write ends the re-alert loop: a
+        second tick neither re-counts nor re-logs the same dead ingest.
+        """
+        from application.api.user.reconciliation import run_reconciliation
+
+        sid = "1a000000-0000-0000-0000-0000000000a2"
+        _seed_ingest_progress(pg_conn, source_id=sid, embedded=1, total=95)
+        before = _stack_logs_count(pg_conn, "reconciler_ingest_stalled")
+
+        with _route_engine_to(pg_conn):
+            r1 = run_reconciliation()
+            r2 = run_reconciliation()
+
+        assert r1["ingests_stalled"] == 1
+        assert r2["ingests_stalled"] == 0
+        # Only the first tick wrote an alert row.
+        assert (
+            _stack_logs_count(pg_conn, "reconciler_ingest_stalled")
+            == before + 1
+        )
+
+    @pytest.mark.unit
+    def test_fresh_ingest_left_alone(self, pg_conn):
+        from application.api.user.reconciliation import run_reconciliation
+
+        sid = "1a000000-0000-0000-0000-0000000000a3"
+        # 2 minutes old — well under the 30-minute staleness threshold.
+        _seed_ingest_progress(
+            pg_conn, source_id=sid, embedded=3, total=20, age_minutes=2,
+        )
+
+        with _route_engine_to(pg_conn):
+            r = run_reconciliation()
+
+        assert r["ingests_stalled"] == 0
+        assert _ingest_status(pg_conn, sid) == "active"
+
+    @pytest.mark.unit
+    def test_completed_ingest_left_alone(self, pg_conn):
+        """A stale checkpoint that finished embedding (embedded == total)
+        is not a stall and must not be flagged.
+        """
+        from application.api.user.reconciliation import run_reconciliation
+
+        sid = "1a000000-0000-0000-0000-0000000000a4"
+        _seed_ingest_progress(pg_conn, source_id=sid, embedded=50, total=50)
+
+        with _route_engine_to(pg_conn):
+            r = run_reconciliation()
+
+        assert r["ingests_stalled"] == 0
+        assert _ingest_status(pg_conn, sid) == "active"
+
+
+# ---------------------------------------------------------------------------
 # Q5 — stuck idempotency pending rows (lease expired + attempts exhausted)
 # ---------------------------------------------------------------------------
 

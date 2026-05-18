@@ -514,6 +514,9 @@ ingest_chunk_progress_table = Table(
     # same task resumes from the checkpoint, but a separate invocation
     # (manual reingest, scheduled sync) resets to a clean re-index.
     Column("attempt_id", Text),
+    # Added in ``0008_ingest_progress_status``. The reconciler flips
+    # this to 'stalled'; ``init_progress`` resets it to 'active'.
+    Column("status", Text, nullable=False, server_default="active"),
 )
 
 

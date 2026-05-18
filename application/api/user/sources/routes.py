@@ -7,7 +7,7 @@ from flask import current_app, jsonify, make_response, redirect, request
 from flask_restx import fields, Namespace, Resource
 
 from application.api import api
-from application.api.user.tasks import sync_source
+from application.api.user.tasks import reingest_source_task, sync_source
 from application.core.settings import settings
 from application.parser.remote.remote_creator import normalize_remote_data
 from application.storage.db.repositories.sources import SourcesRepository
@@ -140,6 +140,8 @@ class PaginatedSources(Resource):
                         "provider": provider,
                         "isNested": bool(doc.get("directory_structure")),
                         "type": doc.get("type", "file"),
+                        # Derived in SourcesRepository.list_for_user.
+                        "ingestStatus": doc.get("ingest_status"),
                     }
                 )
             response = {
@@ -341,6 +343,55 @@ class SyncSource(Resource):
         except Exception as err:
             current_app.logger.error(
                 f"Error starting sync for source {source_id}: {err}",
+                exc_info=True,
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify({"success": True, "task_id": task.id}), 200)
+
+
+@sources_ns.route("/sources/reingest")
+class ReingestSource(Resource):
+    reingest_source_model = api.model(
+        "ReingestSourceModel",
+        {"source_id": fields.String(required=True, description="Source ID")},
+    )
+
+    @api.expect(reingest_source_model)
+    @api.doc(
+        description="Re-run ingestion for a source — e.g. to recover a "
+        "stalled embed flagged by the reconciler."
+    )
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json() or {}
+        missing_fields = check_required_fields(data, ["source_id"])
+        if missing_fields:
+            return missing_fields
+        source_id = data["source_id"]
+        try:
+            with db_readonly() as conn:
+                doc = SourcesRepository(conn).get_any(source_id, user)
+        except Exception as err:
+            current_app.logger.error(
+                f"Error looking up source: {err}", exc_info=True
+            )
+            return make_response(
+                jsonify({"success": False, "message": "Invalid source ID"}), 400
+            )
+        if not doc:
+            return make_response(
+                jsonify({"success": False, "message": "Source not found"}), 404
+            )
+        try:
+            task = reingest_source_task.delay(
+                source_id=str(doc["id"]), user=user,
+            )
+        except Exception as err:
+            current_app.logger.error(
+                f"Error starting reingest for source {source_id}: {err}",
                 exc_info=True,
             )
             return make_response(jsonify({"success": False}), 400)

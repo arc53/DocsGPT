@@ -342,6 +342,89 @@ class TestMarkToolCallFailed:
         assert row[1] == "oops"
 
 
+def _seed_ingest_progress(
+    conn,
+    *,
+    source_id: str,
+    embedded: int,
+    total: int,
+    age_minutes: int = 31,
+    status: str = "active",
+) -> None:
+    """Seed an ingest_chunk_progress row with a backdated last_updated."""
+    conn.execute(
+        text(
+            """
+            INSERT INTO ingest_chunk_progress (
+                source_id, total_chunks, embedded_chunks, last_index,
+                last_updated, status
+            )
+            VALUES (
+                CAST(:sid AS uuid), :total, :embedded, :embedded - 1,
+                clock_timestamp() - make_interval(mins => :age), :status
+            )
+            """
+        ),
+        {
+            "sid": source_id, "total": total, "embedded": embedded,
+            "age": age_minutes, "status": status,
+        },
+    )
+
+
+class TestFindAndLockStalledIngests:
+    def test_returns_stale_active_partial(self, pg_conn):
+        sid = "2b000000-0000-0000-0000-0000000000b1"
+        _seed_ingest_progress(pg_conn, source_id=sid, embedded=2, total=10)
+        rows = ReconciliationRepository(pg_conn).find_and_lock_stalled_ingests()
+        assert any(str(r["source_id"]) == sid for r in rows)
+
+    def test_excludes_already_stalled(self, pg_conn):
+        sid = "2b000000-0000-0000-0000-0000000000b2"
+        _seed_ingest_progress(
+            pg_conn, source_id=sid, embedded=2, total=10, status="stalled",
+        )
+        rows = ReconciliationRepository(pg_conn).find_and_lock_stalled_ingests()
+        assert all(str(r["source_id"]) != sid for r in rows)
+
+    def test_excludes_completed(self, pg_conn):
+        sid = "2b000000-0000-0000-0000-0000000000b3"
+        _seed_ingest_progress(pg_conn, source_id=sid, embedded=10, total=10)
+        rows = ReconciliationRepository(pg_conn).find_and_lock_stalled_ingests()
+        assert all(str(r["source_id"]) != sid for r in rows)
+
+    def test_excludes_under_age_threshold(self, pg_conn):
+        sid = "2b000000-0000-0000-0000-0000000000b4"
+        _seed_ingest_progress(
+            pg_conn, source_id=sid, embedded=2, total=10, age_minutes=2,
+        )
+        rows = ReconciliationRepository(pg_conn).find_and_lock_stalled_ingests()
+        assert all(str(r["source_id"]) != sid for r in rows)
+
+
+class TestMarkIngestStalled:
+    def test_flips_status_to_stalled(self, pg_conn):
+        sid = "2b000000-0000-0000-0000-0000000000b5"
+        _seed_ingest_progress(pg_conn, source_id=sid, embedded=2, total=10)
+        repo = ReconciliationRepository(pg_conn)
+        assert repo.mark_ingest_stalled(sid) is True
+        row = pg_conn.execute(
+            text(
+                "SELECT status FROM ingest_chunk_progress "
+                "WHERE source_id = CAST(:sid AS uuid)"
+            ),
+            {"sid": sid},
+        ).fetchone()
+        assert row[0] == "stalled"
+
+    def test_returns_false_for_missing_source(self, pg_conn):
+        repo = ReconciliationRepository(pg_conn)
+        assert (
+            repo.mark_ingest_stalled("2b000000-0000-0000-0000-0000000000bf")
+            is False
+        )
+
+
 def _seed_stuck_idempotency(
     conn,
     *,

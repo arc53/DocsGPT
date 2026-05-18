@@ -100,6 +100,44 @@ def _stop_ingest_heartbeat(thread, stop_event):
         thread.join(timeout=5)
 
 
+def _make_parse_progress_callback(task, user, source_id, start_pct, end_pct):
+    """Build a ``SimpleDirectoryReader.load_data`` progress callback.
+
+    Maps per-file parse progress into ``[start_pct, end_pct]`` and emits
+    both a Celery ``update_state`` (polling-fallback source of truth) and
+    a throttled ``source.ingest.progress`` SSE event tagged
+    ``stage='parsing'`` for the upload toast. Parsing owning the lower
+    band stops the bar from sitting frozen until embedding starts.
+    """
+    span = end_pct - start_pct
+    source_id_str = str(source_id)
+    state = {"last_pct": -1}
+
+    def _callback(files_done, total_files):
+        if not total_files:
+            return
+        pct = start_pct + int((files_done / total_files) * span)
+        task.update_state(
+            state="PROGRESS",
+            meta={"current": pct, "status": "Parsing files"},
+        )
+        if user and pct > state["last_pct"]:
+            publish_user_event(
+                user,
+                "source.ingest.progress",
+                {
+                    "current": pct,
+                    "total": total_files,
+                    "files_done": files_done,
+                    "stage": "parsing",
+                },
+                scope={"kind": "source", "id": source_id_str},
+            )
+            state["last_pct"] = pct
+
+    return _callback
+
+
 # Define a function to extract metadata from a given filename.
 
 
@@ -640,7 +678,12 @@ def ingest_worker(
                 exclude_hidden=exclude,
                 file_metadata=metadata_from_filename,
             )
-            raw_docs = reader.load_data()
+            # Parsing/OCR owns 1-50% of the bar; embedding takes 50-100%.
+            raw_docs = reader.load_data(
+                progress_callback=_make_parse_progress_callback(
+                    self, user, source_uuid, start_pct=1, end_pct=50,
+                )
+            )
 
             directory_structure = getattr(reader, "directory_structure", {})
             logging.info(f"Directory structure from reader: {directory_structure}")
@@ -680,6 +723,7 @@ def ingest_worker(
                     docs, vector_store_path, source_uuid, self,
                     attempt_id=getattr(self.request, "id", None),
                     user_id=user,
+                    progress_start=50, progress_end=100,
                 )
             finally:
                 _stop_ingest_heartbeat(heartbeat_thread, heartbeat_stop)
@@ -1804,14 +1848,15 @@ def ingest_connector(
                 exclude_hidden=True,
                 file_metadata=metadata_from_filename,
             )
-            raw_docs = reader.load_data()
+            # Parsing/OCR fills 40-60% of the bar; embedding takes 60-100%.
+            raw_docs = reader.load_data(
+                progress_callback=_make_parse_progress_callback(
+                    self, user, source_uuid, start_pct=40, end_pct=60,
+                )
+            )
             directory_structure = getattr(reader, "directory_structure", {})
 
             # Step 4: Process documents (chunking, embedding, etc.)
-            self.update_state(
-                state="PROGRESS", meta={"current": 60, "status": "Processing documents"}
-            )
-
             chunker = Chunker(
                 chunking_strategy="classic_chunk",
                 max_tokens=MAX_TOKENS,
@@ -1848,12 +1893,13 @@ def ingest_connector(
             os.makedirs(vector_store_path, exist_ok=True)
 
             self.update_state(
-                state="PROGRESS", meta={"current": 80, "status": "Storing documents"}
+                state="PROGRESS", meta={"current": 60, "status": "Storing documents"}
             )
             embed_and_store_documents(
                 docs, vector_store_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
                 user_id=user,
+                progress_start=60, progress_end=100,
             )
             assert_index_complete(source_uuid)
 

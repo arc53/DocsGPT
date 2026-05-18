@@ -41,6 +41,9 @@ class IngestChunkProgressRepository:
         rows with NULL ``attempt_id`` resume against another NULL
         caller (e.g. test fixtures), but get reset the moment a real
         ``attempt_id`` arrives.
+
+        Both branches also reset ``status`` to ``'active'``, clearing a
+        prior reconciler ``'stalled'`` escalation.
         """
         result = self._conn.execute(
             text(
@@ -68,7 +71,8 @@ class IngestChunkProgressRepository:
                         THEN ingest_chunk_progress.embedded_chunks
                         ELSE 0
                     END,
-                    attempt_id = EXCLUDED.attempt_id
+                    attempt_id = EXCLUDED.attempt_id,
+                    status = 'active'
                 RETURNING *
                 """
             ),
