@@ -695,6 +695,55 @@ class TestReingestSource:
         assert response.json["task_id"] == "reingest-task-1"
         assert mock_delay.call_args.kwargs["source_id"] == str(src["id"])
         assert mock_delay.call_args.kwargs["user"] == user
+        # Scoped idempotency key engages the task's lease so repeated
+        # clicks collapse onto one reingest instead of racing.
+        assert mock_delay.call_args.kwargs["idempotency_key"] == (
+            f"reingest-source:{user}:{src['id']}"
+        )
+
+    def test_clears_stalled_ingest_progress_row(self, app, pg_conn):
+        """Reingest drops the stale chunk-progress row so the sources
+        list stops deriving a 'failed' ingest status for the source.
+        """
+        from application.api.user.sources.routes import ReingestSource
+
+        user = "u-reingest-clear"
+        src = _seed_source(pg_conn, user, name="stalled-doc", type="file")
+        pg_conn.execute(
+            text(
+                """
+                INSERT INTO ingest_chunk_progress (
+                    source_id, total_chunks, embedded_chunks, last_index,
+                    status
+                )
+                VALUES (CAST(:sid AS uuid), 100, 9, 8, 'stalled')
+                """
+            ),
+            {"sid": str(src["id"])},
+        )
+
+        fake_task = MagicMock(id="reingest-task-2")
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.reingest_source_task.delay",
+            return_value=fake_task,
+        ), app.test_request_context(
+            "/api/sources/reingest",
+            method="POST",
+            json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ReingestSource().post()
+
+        assert response.status_code == 200
+        remaining = pg_conn.execute(
+            text(
+                "SELECT count(*) FROM ingest_chunk_progress "
+                "WHERE source_id = CAST(:sid AS uuid)"
+            ),
+            {"sid": str(src["id"])},
+        ).scalar()
+        assert remaining == 0
 
     def test_reingest_task_raises_returns_400(self, app, pg_conn):
         from application.api.user.sources.routes import ReingestSource

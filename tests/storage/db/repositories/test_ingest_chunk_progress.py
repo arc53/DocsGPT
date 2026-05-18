@@ -58,3 +58,17 @@ class TestInitProgressStatus:
 
         repo.init_progress(sid, 10, "att-1")
         assert _status(pg_conn, sid) == "active"
+
+
+class TestDelete:
+    def test_delete_removes_row(self, pg_conn):
+        sid = "3c000000-0000-0000-0000-0000000000d1"
+        repo = IngestChunkProgressRepository(pg_conn)
+        repo.init_progress(sid, 10, "att-1")
+
+        assert repo.delete(sid) is True
+        assert repo.get_progress(sid) is None
+
+    def test_delete_missing_row_returns_false(self, pg_conn):
+        repo = IngestChunkProgressRepository(pg_conn)
+        assert repo.delete("3c000000-0000-0000-0000-0000000000df") is False

@@ -117,6 +117,23 @@ class IngestChunkProgressRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def delete(self, source_id: str) -> bool:
+        """Delete the progress row for ``source_id``.
+
+        A manual reingest supersedes any prior ingest state — including a
+        reconciler ``'stalled'`` escalation — so dropping the row clears
+        the derived ``failed`` ingest status the sources list shows.
+        Returns ``True`` when a row was removed.
+        """
+        result = self._conn.execute(
+            text(
+                "DELETE FROM ingest_chunk_progress "
+                "WHERE source_id = CAST(:source_id AS uuid)"
+            ),
+            {"source_id": str(source_id)},
+        )
+        return result.rowcount > 0
+
     def bump_heartbeat(self, source_id: str) -> None:
         """Refresh ``last_updated`` so the row looks alive to the reconciler."""
         self._conn.execute(

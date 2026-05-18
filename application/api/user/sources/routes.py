@@ -10,6 +10,9 @@ from application.api import api
 from application.api.user.tasks import reingest_source_task, sync_source
 from application.core.settings import settings
 from application.parser.remote.remote_creator import normalize_remote_data
+from application.storage.db.repositories.ingest_chunk_progress import (
+    IngestChunkProgressRepository,
+)
 from application.storage.db.repositories.sources import SourcesRepository
 from application.storage.db.session import db_readonly, db_session
 from application.storage.storage_creator import StorageCreator
@@ -385,9 +388,24 @@ class ReingestSource(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Source not found"}), 404
             )
+        resolved_source_id = str(doc["id"])
+        # Drop the stale chunk-progress row so the sources list stops
+        # deriving a 'failed' status; reingest never rewrites it itself.
         try:
+            with db_session() as conn:
+                IngestChunkProgressRepository(conn).delete(resolved_source_id)
+        except Exception as err:
+            current_app.logger.warning(
+                f"Could not clear ingest progress for {resolved_source_id}: "
+                f"{err}",
+                exc_info=True,
+            )
+        try:
+            # Scoped key so repeated clicks collapse onto one reingest.
             task = reingest_source_task.delay(
-                source_id=str(doc["id"]), user=user,
+                source_id=resolved_source_id,
+                user=user,
+                idempotency_key=f"reingest-source:{user}:{resolved_source_id}",
             )
         except Exception as err:
             current_app.logger.error(

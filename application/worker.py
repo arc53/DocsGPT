@@ -101,13 +101,9 @@ def _stop_ingest_heartbeat(thread, stop_event):
 
 
 def _make_parse_progress_callback(task, user, source_id, start_pct, end_pct):
-    """Build a ``SimpleDirectoryReader.load_data`` progress callback.
-
-    Maps per-file parse progress into ``[start_pct, end_pct]`` and emits
-    both a Celery ``update_state`` (polling-fallback source of truth) and
-    a throttled ``source.ingest.progress`` SSE event tagged
-    ``stage='parsing'`` for the upload toast. Parsing owning the lower
-    band stops the bar from sitting frozen until embedding starts.
+    """Build a ``load_data`` callback mapping parse progress to
+    ``[start_pct, end_pct]`` via ``update_state`` + a throttled
+    ``stage='parsing'`` SSE event.
     """
     span = end_pct - start_pct
     source_id_str = str(source_id)
@@ -854,6 +850,8 @@ def reingest_source_worker(self, source_id, user):
                 {
                     "source_id": source_id,
                     "name": source_name,
+                    # ``filename`` labels the upload toast on auto-create.
+                    "filename": source_name,
                     "operation": "reingest",
                 },
                 scope={"kind": "source", "id": source_id},
@@ -961,6 +959,7 @@ def reingest_source_worker(self, source_id, user):
                         {
                             "source_id": source_id,
                             "name": source_name,
+                            "filename": source_name,
                             "operation": "reingest",
                             "no_changes": True,
                             "chunks_added": 0,
@@ -1148,6 +1147,7 @@ def reingest_source_worker(self, source_id, user):
                 completed_payload: dict = {
                     "source_id": source_id,
                     "name": source_name,
+                    "filename": source_name,
                     "operation": "reingest",
                     "chunks_added": added,
                     "chunks_deleted": deleted,
@@ -1187,6 +1187,7 @@ def reingest_source_worker(self, source_id, user):
             {
                 "source_id": str(source_id),
                 "name": source_name,
+                "filename": source_name,
                 "operation": "reingest",
                 "error": str(e)[:1024],
             },

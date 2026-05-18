@@ -274,9 +274,7 @@ def embed_and_store_documents(
     ):
         doc = docs[idx]
         try:
-            # Update task status for progress tracking. Maps the embed
-            # loop into [progress_start, progress_end] so an earlier
-            # stage (parsing) can own the lower band of the bar.
+            # Map the embed loop into [progress_start, progress_end].
             progress = progress_start + int(
                 ((idx + 1) / total_docs) * progress_span
             )
