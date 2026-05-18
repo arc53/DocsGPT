@@ -546,3 +546,63 @@ class TestIngestIdempotency:
         assert first == second
         assert first == {"status": "ok", "directory": "dir"}
         assert len(worker_calls) == 1
+
+
+class TestIngestPoisonEvent:
+    """The poison hook publishes a terminal source.ingest.failed so the
+    upload toast resolves instead of hanging on "training".
+    """
+
+    @pytest.mark.unit
+    def test_publishes_failed_event(self):
+        from application.api.user.tasks import _emit_ingest_poison_event
+
+        published = []
+
+        def _fake_publish(user, event_type, payload, *, scope=None):
+            published.append((user, event_type, payload, scope))
+
+        with patch(
+            "application.events.publisher.publish_user_event",
+            side_effect=_fake_publish,
+        ):
+            _emit_ingest_poison_event(
+                "ingest",
+                {"user": "u1", "source_id": "src-9", "filename": "doc.pdf"},
+            )
+
+        assert len(published) == 1
+        user, event_type, payload, scope = published[0]
+        assert user == "u1"
+        assert event_type == "source.ingest.failed"
+        assert payload["source_id"] == "src-9"
+        assert payload["filename"] == "doc.pdf"
+        assert payload["operation"] == "upload"
+        assert scope == {"kind": "source", "id": "src-9"}
+
+    @pytest.mark.unit
+    def test_skips_when_source_id_missing(self):
+        from application.api.user.tasks import _emit_ingest_poison_event
+
+        with patch(
+            "application.events.publisher.publish_user_event",
+        ) as mock_publish:
+            _emit_ingest_poison_event("ingest", {"user": "u1"})
+
+        mock_publish.assert_not_called()
+
+    @pytest.mark.unit
+    def test_reingest_uses_reingest_operation(self):
+        from application.api.user.tasks import _emit_ingest_poison_event
+
+        published = []
+        with patch(
+            "application.events.publisher.publish_user_event",
+            side_effect=lambda *a, **k: published.append((a, k)),
+        ):
+            _emit_ingest_poison_event(
+                "reingest_source_task",
+                {"user": "u1", "source_id": "src-r"},
+            )
+
+        assert published[0][0][2]["operation"] == "reingest"

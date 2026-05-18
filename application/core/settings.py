@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     PARSE_IMAGE_REMOTE: bool = False
     DOCLING_OCR_ENABLED: bool = False  # Enable OCR for docling parsers (PDF, images)
     DOCLING_OCR_ATTACHMENTS_ENABLED: bool = False  # Enable OCR for docling when parsing attachments
+    # Pages docling's threaded pipeline buffers in flight; the library
+    # default (100) drives worker RSS to ~3 GB on a mid-size PDF.
+    DOCLING_PIPELINE_QUEUE_MAX_SIZE: int = 2
     VECTOR_STORE: str = "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector"
     RETRIEVERS_ENABLED: list = ["classic_rag"]
     AGENT_NAME: str = "classic"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import inspect
 import logging
 import threading
 import uuid
@@ -26,13 +27,20 @@ LEASE_HEARTBEAT_INTERVAL = 30
 LEASE_RETRY_MAX = 10
 
 
-def with_idempotency(task_name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def with_idempotency(
+    task_name: str,
+    *,
+    on_poison: Optional[Callable[[str, dict], None]] = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Short-circuit on completed key; gate concurrent runs via a lease.
+
+    The guard key is the caller's ``idempotency_key``, or one synthesized
+    from ``source_id`` so a keyless dispatch is still poison-guarded.
 
     Entry short-circuits:
       - completed row → return cached result
       - live lease held → retry(countdown=LEASE_TTL_SECONDS)
-      - attempt_count > MAX_TASK_ATTEMPTS → poison-loop alert
+      - attempt_count > MAX_TASK_ATTEMPTS → poison alert; ``on_poison`` fires
     Success writes ``completed``; exceptions leave ``pending`` for
     autoretry until the poison-loop guard trips.
     """
@@ -40,7 +48,14 @@ def with_idempotency(task_name: str) -> Callable[[Callable[..., Any]], Callable[
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(fn)
         def wrapper(self, *args: Any, idempotency_key: Any = None, **kwargs: Any) -> Any:
-            key = idempotency_key if isinstance(idempotency_key, str) and idempotency_key else None
+            explicit_key = (
+                idempotency_key
+                if isinstance(idempotency_key, str) and idempotency_key
+                else None
+            )
+            # A keyless dispatch still gets the guard via a synthesized key;
+            # None means no anchor exists — run unguarded, as before.
+            key = explicit_key or _synthesize_guard_key(task_name, kwargs)
             if key is None:
                 return fn(self, *args, idempotency_key=idempotency_key, **kwargs)
 
@@ -88,6 +103,9 @@ def with_idempotency(task_name: str) -> Callable[[Callable[..., Any]], Callable[
                     "attempts": attempt,
                 }
                 _finalize(key, poisoned, status="failed")
+                _run_poison_hook(
+                    on_poison, task_name, fn, self, args, kwargs, idempotency_key,
+                )
                 return poisoned
 
             heartbeat_thread, heartbeat_stop = _start_lease_heartbeat(
@@ -107,6 +125,45 @@ def with_idempotency(task_name: str) -> Callable[[Callable[..., Any]], Callable[
         return wrapper
 
     return decorator
+
+
+def _synthesize_guard_key(task_name: str, kwargs: dict) -> Optional[str]:
+    """Derive a deterministic guard key from ``source_id`` for a keyless dispatch.
+
+    ``source_id`` is stable across broker redeliveries and unique per
+    upload, so the poison-loop counter survives an OOM SIGKILL. Returns
+    ``None`` when absent — the dispatch then runs unguarded as before.
+    """
+    source_id = kwargs.get("source_id")
+    if source_id:
+        return f"auto:{task_name}:{source_id}"
+    return None
+
+
+def _run_poison_hook(
+    on_poison: Optional[Callable[[str, dict], None]],
+    task_name: str,
+    fn: Callable[..., Any],
+    task_self: Any,
+    args: tuple,
+    kwargs: dict,
+    idempotency_key: Any,
+) -> None:
+    """Invoke a task's poison-path hook with named call args; swallow failures.
+
+    A hook failure must never change the poison-guard outcome.
+    """
+    if on_poison is None:
+        return
+    try:
+        bound = inspect.signature(fn).bind_partial(
+            task_self, *args, idempotency_key=idempotency_key, **kwargs,
+        )
+        on_poison(task_name, dict(bound.arguments))
+    except Exception:
+        logger.exception(
+            "idempotency: poison hook failed for task=%s", task_name,
+        )
 
 
 def _lookup_completed(key: str) -> Any:

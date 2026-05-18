@@ -16,6 +16,29 @@ from application.parser.file.base_parser import BaseParser
 logger = logging.getLogger(__name__)
 
 
+# Per-stage batch size for docling's threaded pipeline; 1 holds the
+# concurrent working set to a single page (see _apply_pipeline_caps).
+_PIPELINE_BATCH_SIZE = 1
+
+
+def _apply_pipeline_caps(pipeline_options) -> None:
+    """Cap docling's threaded-pipeline queue depth and batch sizes in place.
+
+    hasattr-guarded so docling builds without these knobs are unaffected.
+    """
+    from application.core.settings import settings
+
+    caps = {
+        "queue_max_size": max(1, settings.DOCLING_PIPELINE_QUEUE_MAX_SIZE),
+        "layout_batch_size": _PIPELINE_BATCH_SIZE,
+        "table_batch_size": _PIPELINE_BATCH_SIZE,
+        "ocr_batch_size": _PIPELINE_BATCH_SIZE,
+    }
+    for name, value in caps.items():
+        if hasattr(pipeline_options, name):
+            setattr(pipeline_options, name, value)
+
+
 class DoclingParser(BaseParser):
     """Parser using docling for advanced document processing.
 
@@ -86,6 +109,7 @@ class DoclingParser(BaseParser):
             do_ocr=self.ocr_enabled,
             do_table_structure=self.table_structure,
         )
+        _apply_pipeline_caps(pipeline_options)
 
         if self.ocr_enabled:
             ocr_options = self._get_ocr_options()
