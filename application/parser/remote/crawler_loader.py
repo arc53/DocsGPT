@@ -1,11 +1,11 @@
 import logging
 import os
-import requests
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
 from application.parser.remote.base import BaseRemote
 from application.parser.schema.base import Document
 from application.core.url_validation import validate_url, SSRFError
+from application.security.safe_url import UnsafeUserUrlError, pinned_request
 from langchain_community.document_loaders import WebBaseLoader
 
 class CrawlerLoader(BaseRemote):
@@ -35,14 +35,7 @@ class CrawlerLoader(BaseRemote):
             visited_urls.add(current_url)
 
             try:
-                # Validate each URL before making requests
-                try:
-                    validate_url(current_url)
-                except SSRFError as e:
-                    logging.warning(f"Skipping URL due to validation failure: {current_url} - {e}")
-                    continue
-
-                response = requests.get(current_url, timeout=30)
+                response = pinned_request("GET", current_url, timeout=30)
                 response.raise_for_status()
                 loader = self.loader([current_url])
                 docs = loader.load()

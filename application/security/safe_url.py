@@ -291,6 +291,55 @@ def _ip_to_url_host(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str:
     return str(ip)
 
 
+def pinned_request(
+    method: str,
+    url: str,
+    *,
+    data: Any = None,
+    json: Any = None,
+    headers: dict[str, str] | None = None,
+    timeout: float = 90.0,
+    allow_redirects: bool = False,
+) -> requests.Response:
+    """Send an HTTP request with the connection pinned to a validated IP,
+    closing the DNS-rebinding TOCTOU window left by the naive
+    validate-then-``requests`` pattern.
+
+    Raises:
+        UnsafeUserUrlError: If the URL fails the SSRF guard.
+        requests.RequestException: For network-level failures.
+    """
+
+    host, ip, parts = _validate_and_pick_ip(url)
+
+    netloc = _ip_to_url_host(ip)
+    if parts.port is not None:
+        netloc = f"{netloc}:{parts.port}"
+    pinned_url = urlunsplit(
+        (parts.scheme, netloc, parts.path, parts.query, parts.fragment)
+    )
+
+    request_headers = dict(headers or {})
+    host_header = host if parts.port is None else f"{host}:{parts.port}"
+    request_headers["Host"] = host_header
+
+    session = requests.Session()
+    if parts.scheme == "https":
+        session.mount("https://", _PinnedHostAdapter(host))
+    try:
+        return session.request(
+            method=method.upper(),
+            url=pinned_url,
+            data=data,
+            json=json,
+            headers=request_headers,
+            timeout=timeout,
+            allow_redirects=allow_redirects,
+        )
+    finally:
+        session.close()
+
+
 def pinned_post(
     url: str,
     *,
@@ -328,32 +377,14 @@ def pinned_post(
         requests.RequestException: For network-level failures.
     """
 
-    host, ip, parts = _validate_and_pick_ip(url)
-
-    netloc = _ip_to_url_host(ip)
-    if parts.port is not None:
-        netloc = f"{netloc}:{parts.port}"
-    pinned_url = urlunsplit(
-        (parts.scheme, netloc, parts.path, parts.query, parts.fragment)
+    return pinned_request(
+        "POST",
+        url,
+        json=json,
+        headers=headers,
+        timeout=timeout,
+        allow_redirects=allow_redirects,
     )
-
-    request_headers = dict(headers or {})
-    host_header = host if parts.port is None else f"{host}:{parts.port}"
-    request_headers["Host"] = host_header
-
-    session = requests.Session()
-    if parts.scheme == "https":
-        session.mount("https://", _PinnedHostAdapter(host))
-    try:
-        return session.post(
-            pinned_url,
-            json=json,
-            headers=request_headers,
-            timeout=timeout,
-            allow_redirects=allow_redirects,
-        )
-    finally:
-        session.close()
 
 
 class _PinnedHTTPSTransport(httpx.HTTPTransport):

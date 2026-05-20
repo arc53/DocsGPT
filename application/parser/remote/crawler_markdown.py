@@ -1,8 +1,8 @@
-import requests
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
 from application.parser.remote.base import BaseRemote
 from application.core.url_validation import validate_url, SSRFError
+from application.security.safe_url import UnsafeUserUrlError, pinned_request
 import re
 from markdownify import markdownify
 from application.parser.schema.base import Document
@@ -20,7 +20,6 @@ class CrawlerLoader(BaseRemote):
         """
         self.limit = limit
         self.allow_subdomains = allow_subdomains
-        self.session = requests.Session()
 
     def load_data(self, inputs):
         url = inputs
@@ -91,15 +90,13 @@ class CrawlerLoader(BaseRemote):
 
     def _fetch_page(self, url):
         try:
-            # Validate URL before fetching to prevent SSRF
-            validate_url(url)
-            response = self.session.get(url, timeout=10)
+            response = pinned_request("GET", url, timeout=10)
             response.raise_for_status()
             return response.text
-        except SSRFError as e:
+        except UnsafeUserUrlError as e:
             print(f"URL validation failed for {url}: {e}")
             return None
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             print(f"Error fetching URL {url}: {e}")
             return None
 
