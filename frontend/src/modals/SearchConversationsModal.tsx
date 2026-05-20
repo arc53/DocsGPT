@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 import SearchIcon from '../assets/search.svg';
@@ -34,7 +40,7 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
         part.toLowerCase() === trimmed.toLowerCase() ? (
           <mark
             key={idx}
-            className="bg-transparent font-semibold text-purple-30"
+            className="text-purple-30 bg-transparent font-semibold"
           >
             {part}
           </mark>
@@ -54,10 +60,12 @@ export default function SearchConversationsModal({
 }: SearchConversationsModalProps) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ConversationListItem[] | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -85,9 +93,57 @@ export default function SearchConversationsModal({
     return results ?? [];
   }, [query, results, conversations]);
 
+  useEffect(() => {
+    if (isSearching || visibleConversations.length === 0) {
+      setActiveIndex(-1);
+      return;
+    }
+
+    setActiveIndex((currentIndex) => {
+      if (currentIndex >= 0 && currentIndex < visibleConversations.length) {
+        return currentIndex;
+      }
+
+      return 0;
+    });
+  }, [isSearching, visibleConversations]);
+
+  useEffect(() => {
+    if (activeIndex < 0) return;
+
+    resultRefs.current[activeIndex]?.scrollIntoView({
+      block: 'nearest',
+    });
+  }, [activeIndex]);
+
   const handleSelect = (id: string) => {
     onSelectConversation(id);
     close();
+  };
+
+  const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (visibleConversations.length === 0 || isSearching) return;
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActiveIndex((currentIndex) =>
+        currentIndex < visibleConversations.length - 1 ? currentIndex + 1 : 0,
+      );
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveIndex((currentIndex) =>
+        currentIndex > 0 ? currentIndex - 1 : visibleConversations.length - 1,
+      );
+      return;
+    }
+
+    if (event.key === 'Enter' && activeIndex >= 0) {
+      event.preventDefault();
+      handleSelect(visibleConversations[activeIndex].id);
+    }
   };
 
   const showEmptyState =
@@ -107,12 +163,13 @@ export default function SearchConversationsModal({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleInputKeyDown}
             placeholder={t('modals.searchConversations.searchPlaceholder')}
             className="text-foreground placeholder:text-muted-foreground w-full bg-transparent text-sm outline-none"
           />
         </div>
 
-        <div className="max-h-[55vh] overflow-y-auto py-2">
+        <div className="max-h-[55vh] overflow-y-auto py-2" role="listbox">
           {isSearching && (
             <div className="text-muted-foreground px-5 py-3 text-xs">
               {t('modals.searchConversations.loading')}
@@ -124,18 +181,28 @@ export default function SearchConversationsModal({
             </div>
           )}
           {!isSearching &&
-            visibleConversations.map((conversation) => {
+            visibleConversations.map((conversation, index) => {
               const trimmedQuery = query.trim();
               const showSnippet =
                 !!trimmedQuery &&
                 !!conversation.match_snippet &&
                 conversation.match_field !== 'name';
+              const isActive = index === activeIndex;
+
               return (
                 <button
                   key={conversation.id}
                   type="button"
+                  ref={(element) => {
+                    resultRefs.current[index] = element;
+                  }}
                   onClick={() => handleSelect(conversation.id)}
-                  className="hover:bg-sidebar-accent text-foreground flex w-full flex-col items-start gap-0.5 px-5 py-2.5 text-left text-sm"
+                  onMouseEnter={() => setActiveIndex(index)}
+                  role="option"
+                  aria-selected={isActive}
+                  className={`text-foreground flex w-full flex-col items-start gap-0.5 px-5 py-2.5 text-left text-sm ${
+                    isActive ? 'bg-sidebar-accent' : 'hover:bg-sidebar-accent'
+                  }`}
                 >
                   <span className="w-full truncate">
                     {trimmedQuery ? (
