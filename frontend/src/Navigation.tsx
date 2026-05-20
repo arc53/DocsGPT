@@ -107,6 +107,19 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       };
     }
   }, [navOpen, isMobile, isTablet, setNavOpen]);
+
+  useEffect(() => {
+    function handleSearchShortcut(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setSearchOpen(true);
+      }
+    }
+
+    document.addEventListener('keydown', handleSearchShortcut);
+    return () => document.removeEventListener('keydown', handleSearchShortcut);
+  }, []);
+
   async function fetchRecentAgents() {
     try {
       const response = await userService.getPinnedAgents(token);

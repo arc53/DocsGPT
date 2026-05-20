@@ -29,7 +29,7 @@ import {
   selectToken,
 } from '../preferences/preferenceSlice';
 import Upload from '../upload/Upload';
-import { getOS, isTouchDevice } from '../utils/browserUtils';
+import { isTouchDevice } from '../utils/browserUtils';
 import SourcesPopup from './SourcesPopup';
 import ToolsPopup from './ToolsPopup';
 import { handleAbort } from '../conversation/conversationSlice';
@@ -335,7 +335,6 @@ export default function MessageInput({
   const voiceBaseValueRef = useRef('');
   const liveTranscriptRef = useRef('');
 
-  const browserOS = getOS();
   const isTouch = isTouchDevice();
 
   const stopMediaStream = () => {
@@ -383,25 +382,6 @@ export default function MessageInput({
     voiceBaseValueRef.current = '';
     liveTranscriptRef.current = '';
   };
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        ((browserOS === 'win' || browserOS === 'linux') &&
-          event.ctrlKey &&
-          event.key === 'k') ||
-        (browserOS === 'mac' && event.metaKey && event.key === 'k')
-      ) {
-        event.preventDefault();
-        setIsSourcesPopupOpen((s) => !s);
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [browserOS]);
 
   useEffect(() => {
     return () => {
@@ -1585,11 +1565,6 @@ export default function MessageInput({
                       : `${selectedDocs.length} sources selected`
                     : t('conversation.sources.title')}
                 </span>
-                {!isTouch && (
-                  <span className="ml-1 hidden text-[10px] text-gray-500 sm:inline-block dark:text-gray-400">
-                    {browserOS === 'mac' ? '(⌘K)' : '(ctrl+K)'}
-                  </span>
-                )}
               </button>
             )}
 
