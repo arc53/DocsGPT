@@ -3,6 +3,7 @@ import uuid
 from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 
+from application.agents.default_tools import resolve_tool_by_id, synthesized_default_tools
 from application.agents.tools.tool_action_parser import ToolActionParser
 from application.agents.tools.tool_manager import ToolManager
 from application.security.encryption import decrypt_credentials
@@ -12,6 +13,7 @@ from application.storage.db.repositories.tool_call_attempts import (
     ToolCallAttemptsRepository,
 )
 from application.storage.db.repositories.user_tools import UserToolsRepository
+from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
@@ -113,10 +115,12 @@ class ToolExecutor:
         user_api_key: Optional[str] = None,
         user: Optional[str] = None,
         decoded_token: Optional[Dict] = None,
+        agent_id: Optional[str] = None,
     ):
         self.user_api_key = user_api_key
         self.user = user
         self.decoded_token = decoded_token
+        self.agent_id = agent_id
         self.tool_calls: List[Dict] = []
         self._loaded_tools: Dict[str, object] = {}
         self.conversation_id: Optional[str] = None
@@ -140,29 +144,41 @@ class ToolExecutor:
         return tools
 
     def _get_tools_by_api_key(self, api_key: str) -> Dict[str, Dict]:
+        """Resolve an agent's toolset — exactly ``agents.tools``, no defaults."""
         # Per-operation session: the answer pipeline spans a long-lived
         # generator; wrapping it in a single connection would pin a PG
         # conn for the whole stream. Open, fetch, close.
         with db_readonly() as conn:
             agent_data = AgentsRepository(conn).find_by_key(api_key)
             tool_ids = agent_data.get("tools", []) if agent_data else []
-            if not tool_ids:
-                return {}
             tools_repo = UserToolsRepository(conn)
+            owner = (
+                (agent_data.get("user_id") or agent_data.get("user"))
+                if agent_data
+                else None
+            )
             tools: List[Dict] = []
-            owner = (agent_data.get("user_id") or agent_data.get("user")) if agent_data else None
             for tid in tool_ids:
-                row = None
-                if owner:
-                    row = tools_repo.get_any(str(tid), owner)
+                row = resolve_tool_by_id(tid, owner, user_tools_repo=tools_repo)
                 if row is not None:
                     tools.append(row)
-        return {str(tool["id"]): tool for tool in tools} if tools else {}
+        return {str(tool["id"]): tool for tool in tools}
 
     def _get_user_tools(self, user: str = "local") -> Dict[str, Dict]:
+        """Resolve an agentless chat's toolset: explicit user tools plus defaults."""
         with db_readonly() as conn:
             user_tools = UserToolsRepository(conn).list_active_for_user(user)
-        return {str(i): tool for i, tool in enumerate(user_tools)}
+            user_doc = (
+                UsersRepository(conn).get(user) if self.agent_id is None else None
+            )
+        # Index keys (ints) and synthetic uuid5 keys can't collide.
+        tools: Dict[str, Dict] = {
+            str(i): tool for i, tool in enumerate(user_tools)
+        }
+        if self.agent_id is None:
+            for default_row in synthesized_default_tools(user_doc):
+                tools[str(default_row["id"])] = default_row
+        return tools
 
     def merge_client_tools(
         self, tools_dict: Dict, client_tools: List[Dict]

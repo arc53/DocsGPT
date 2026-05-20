@@ -86,6 +86,22 @@ class MemoriesRepository:
         )
         return result.rowcount
 
+    def delete_orphans(self, keep_tool_ids: Optional[list[str]] = None) -> int:
+        """Delete memories whose tool_id has no user_tools row, except keep_tool_ids."""
+        keep = [str(tid) for tid in (keep_tool_ids or [])]
+        result = self._conn.execute(
+            text(
+                """
+                DELETE FROM memories
+                WHERE tool_id IS NOT NULL
+                  AND tool_id NOT IN (SELECT id FROM user_tools)
+                  AND NOT (tool_id = ANY(CAST(:keep AS uuid[])))
+                """
+            ),
+            {"keep": keep},
+        )
+        return result.rowcount
+
     def update_path(self, user_id: str, tool_id: str, old_path: str, new_path: str) -> bool:
         result = self._conn.execute(
             text(

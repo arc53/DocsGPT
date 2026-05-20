@@ -162,6 +162,7 @@
       "edit": "Edit",
       "delete": "Delete",
       "reconnect": "Reconnect",
+      "builtIn": "Built-in",
       "authStatus": {
         "connected": "Connected",
         "needsAuth": "Needs Auth",

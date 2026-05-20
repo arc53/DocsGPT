@@ -47,6 +47,7 @@ users_table = Table(
         nullable=False,
         server_default='{"pinned": [], "shared_with_me": []}',
     ),
+    Column("tool_preferences", JSONB, nullable=False, server_default="{}"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
@@ -254,7 +255,8 @@ memories_table = Table(
     metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
     Column("user_id", Text, nullable=False),
-    Column("tool_id", UUID(as_uuid=True), ForeignKey("user_tools.id", ondelete="CASCADE")),
+    # No FK since 0009 — delete-cascade preserved by trigger.
+    Column("tool_id", UUID(as_uuid=True)),
     Column("path", Text, nullable=False),
     Column("content", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),

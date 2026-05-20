@@ -47,6 +47,9 @@ export type UserToolType = {
   customName?: string;
   description: string;
   status: boolean;
+  // True for built-in default chat tools — managed via the opt-out list,
+  // not a user_tools row; not deletable.
+  default?: boolean;
   config: {
     [key: string]: any;
   };

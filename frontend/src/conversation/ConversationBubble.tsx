@@ -1023,7 +1023,7 @@ function ToolCalls({
   );
 
   return (
-    <div className="mb-4 relative flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+    <div className="relative mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
       {/* Approval bars — always visible, compact inline */}
       {awaitingCalls.length > 0 && (
         <div className="fade-in mt-4 ml-3 w-[90vw] md:w-[70vw] lg:w-full">

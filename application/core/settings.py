@@ -189,6 +189,9 @@ class Settings(BaseSettings):
     # Tool pre-fetch settings
     ENABLE_TOOL_PREFETCH: bool = True
 
+    # Config-free tools on by default in agentless chats.
+    DEFAULT_CHAT_TOOLS: list = ["memory", "read_webpage"]
+
     # Conversation Compression Settings
     ENABLE_CONVERSATION_COMPRESSION: bool = True
     COMPRESSION_THRESHOLD_PERCENTAGE: float = 0.8  # Trigger at 80% of context

@@ -3,6 +3,11 @@
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
+from application.agents.default_tools import (
+    default_tool_name_for_id,
+    default_tools_for_management,
+    is_default_tool_id,
+)
 from application.agents.tools.spec_parser import parse_spec
 from application.agents.tools.tool_manager import ToolManager
 from application.api import api
@@ -11,6 +16,7 @@ from application.security.encryption import decrypt_credentials, encrypt_credent
 from application.storage.db.repositories.notes import NotesRepository
 from application.storage.db.repositories.todos import TodosRepository
 from application.storage.db.repositories.user_tools import UserToolsRepository
+from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.session import db_readonly, db_session
 from application.utils import check_required_fields, validate_function_name
 
@@ -208,6 +214,7 @@ class GetTools(Resource):
             user = decoded_token.get("sub")
             with db_readonly() as conn:
                 rows = UserToolsRepository(conn).list_for_user(user)
+                user_doc = UsersRepository(conn).get(user)
             user_tools = []
             for row in rows:
                 tool_copy = _row_to_api(row)
@@ -227,6 +234,11 @@ class GetTools(Resource):
                     tool_copy["config"].pop("encrypted_credentials", None)
 
                 user_tools.append(tool_copy)
+
+            for default_row in default_tools_for_management(user_doc):
+                default_copy = _row_to_api(default_row)
+                default_copy["default"] = True
+                user_tools.append(default_copy)
         except Exception as err:
             current_app.logger.error(f"Error getting user tools: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -367,6 +379,31 @@ class UpdateTool(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        # Default tools: only ``status`` is mutable (via opt-out list).
+        if is_default_tool_id(data["id"]):
+            if "status" not in data:
+                return make_response(
+                    jsonify(
+                        {
+                            "success": False,
+                            "message": "Default tools are not editable; "
+                            "only their on/off status can be changed.",
+                        }
+                    ),
+                    400,
+                )
+            tool_name = default_tool_name_for_id(data["id"])
+            try:
+                with db_session() as conn:
+                    UsersRepository(conn).set_default_tool_enabled(
+                        user, tool_name, bool(data["status"])
+                    )
+            except Exception as err:
+                current_app.logger.error(
+                    f"Error updating default tool: {err}", exc_info=True
+                )
+                return make_response(jsonify({"success": False}), 400)
+            return make_response(jsonify({"success": True}), 200)
         try:
             update_data: dict = {}
             for key in ("name", "displayName", "customName", "description", "actions"):
@@ -471,6 +508,17 @@ class UpdateToolConfig(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        if is_default_tool_id(data["id"]):
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Default tools are config-free and "
+                        "cannot be configured.",
+                    }
+                ),
+                400,
+            )
         try:
             with db_session() as conn:
                 repo = UserToolsRepository(conn)
@@ -550,6 +598,16 @@ class UpdateToolActions(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        if is_default_tool_id(data["id"]):
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Default tools' actions are not editable.",
+                    }
+                ),
+                400,
+            )
         try:
             with db_session() as conn:
                 repo = UserToolsRepository(conn)
@@ -595,6 +653,13 @@ class UpdateToolStatus(Resource):
         if missing_fields:
             return missing_fields
         try:
+            if is_default_tool_id(data["id"]):
+                tool_name = default_tool_name_for_id(data["id"])
+                with db_session() as conn:
+                    UsersRepository(conn).set_default_tool_enabled(
+                        user, tool_name, bool(data["status"])
+                    )
+                return make_response(jsonify({"success": True}), 200)
             with db_session() as conn:
                 repo = UserToolsRepository(conn)
                 tool_doc = repo.get_any(data["id"], user)
@@ -633,6 +698,16 @@ class DeleteTool(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        if is_default_tool_id(data["id"]):
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Default tools cannot be deleted; disable them instead.",
+                    }
+                ),
+                400,
+            )
         try:
             with db_session() as conn:
                 repo = UserToolsRepository(conn)

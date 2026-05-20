@@ -161,6 +161,7 @@
       "manageTools": "Ir a Herramientas",
       "edit": "Editar",
       "delete": "Eliminar",
+      "builtIn": "Integrada",
       "deleteWarning": "¿Estás seguro de que deseas eliminar la herramienta \"{{toolName}}\"?",
       "unsavedChanges": "Tienes cambios sin guardar que se perderán si sales sin guardar.",
       "leaveWithoutSaving": "Salir sin Guardar",

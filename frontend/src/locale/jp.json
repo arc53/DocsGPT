@@ -161,6 +161,7 @@
       "manageTools": "ツールへ移動",
       "edit": "編集",
       "delete": "削除",
+      "builtIn": "ビルトイン",
       "deleteWarning": "ツール \"{{toolName}}\" を削除してもよろしいですか？",
       "unsavedChanges": "保存されていない変更があります。保存せずに離れると失われます。",
       "leaveWithoutSaving": "保存せずに離れる",

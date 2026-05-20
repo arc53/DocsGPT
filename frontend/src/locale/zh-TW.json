@@ -161,6 +161,7 @@
       "manageTools": "前往工具",
       "edit": "編輯",
       "delete": "刪除",
+      "builtIn": "內建",
       "deleteWarning": "您確定要刪除工具 \"{{toolName}}\" 嗎？",
       "unsavedChanges": "您有未儲存的變更，如果不儲存就離開將會遺失。",
       "leaveWithoutSaving": "不儲存離開",

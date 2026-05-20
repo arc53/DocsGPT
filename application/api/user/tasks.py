@@ -251,6 +251,11 @@ def setup_periodic_tasks(sender, **kwargs):
         cleanup_message_events.s(),
         name="cleanup-message-events",
     )
+    sender.add_periodic_task(
+        timedelta(hours=24),
+        cleanup_orphan_memories.s(),
+        name="cleanup-orphan-memories",
+    )
 
 
 @celery.task(bind=True)
@@ -337,6 +342,29 @@ def cleanup_message_events(self):
     with engine.begin() as conn:
         deleted = MessageEventsRepository(conn).cleanup_older_than(ttl_days)
     return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_orphan_memories(self):
+    """Sweep orphan memories left by the 0009 FK-to-trigger orphan window.
+
+    A ``memories`` INSERT for a real ``tool_id`` racing a ``user_tools``
+    DELETE leaves a permanent orphan the dropped FK would have rejected.
+    Default-tool synthetic ids are preserved (legitimate built-in data).
+    """
+    from application.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from application.agents.default_tools import default_tool_ids
+    from application.storage.db.engine import get_engine
+    from application.storage.db.repositories.memories import MemoriesRepository
+
+    keep_tool_ids = list(default_tool_ids().values())
+    engine = get_engine()
+    with engine.begin() as conn:
+        deleted = MemoriesRepository(conn).delete_orphans(keep_tool_ids)
+    return {"deleted": deleted}
 
 
 @celery.task(bind=True, acks_late=False)

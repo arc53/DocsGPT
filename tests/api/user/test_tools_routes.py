@@ -1066,6 +1066,7 @@ def _seed_tool(pg_conn, user="u-tools", name="read_webpage", config=None):
 
 class TestGetToolsHappy:
     def test_returns_user_tools(self, app, pg_conn):
+        from application.agents.default_tools import loaded_default_tools
         from application.api.user.tools.routes import GetTools
 
         user = "u-get-tools"
@@ -1079,7 +1080,12 @@ class TestGetToolsHappy:
             response = GetTools().get()
         assert response.status_code == 200
         assert response.json["success"] is True
-        assert len(response.json["tools"]) == 1
+        tools = response.json["tools"]
+        assert len(tools) == 1 + len(loaded_default_tools())
+        explicit = [t for t in tools if not t.get("default")]
+        defaults = [t for t in tools if t.get("default")]
+        assert len(explicit) == 1
+        assert len(defaults) == len(loaded_default_tools())
 
     def test_db_error_returns_400(self, app):
         from application.api.user.tools.routes import GetTools
@@ -1379,8 +1385,175 @@ class TestGetArtifactHappy:
         assert response.status_code == 404
 
 
+# ---------------------------------------------------------------------------
+# Default chat tools — synthetic-id branching in the tool endpoints
+# ---------------------------------------------------------------------------
+class TestDefaultToolsRoutes:
+    def test_get_tools_flags_defaults(self, app, pg_conn):
+        from application.agents.default_tools import (
+            default_tool_id,
+            loaded_default_tools,
+        )
+        from application.api.user.tools.routes import GetTools
 
+        user = "u-def-get"
+        with _patch_tools_db(pg_conn), app.test_request_context("/api/get_tools"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = GetTools().get()
+        assert response.status_code == 200
+        defaults = [t for t in response.json["tools"] if t.get("default")]
+        names = {t["name"] for t in defaults}
+        assert names == set(loaded_default_tools())
+        for tool in defaults:
+            assert tool["id"] == default_tool_id(tool["name"])
+            assert tool["status"] is True
 
+    def test_get_tools_status_reflects_opt_out(self, app, pg_conn):
+        from application.api.user.tools.routes import GetTools
+        from application.storage.db.repositories.users import UsersRepository
+
+        user = "u-def-optout"
+        UsersRepository(pg_conn).set_default_tool_enabled(
+            user, "read_webpage", False
+        )
+        with _patch_tools_db(pg_conn), app.test_request_context("/api/get_tools"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = GetTools().get()
+        by_name = {
+            t["name"]: t
+            for t in response.json["tools"]
+            if t.get("default")
+        }
+        assert by_name["read_webpage"]["status"] is False
+        assert by_name["memory"]["status"] is True
+
+    def test_update_tool_status_toggles_default_off(self, app, pg_conn):
+        from application.agents.default_tools import default_tool_id
+        from application.api.user.tools.routes import UpdateToolStatus
+        from application.storage.db.repositories.users import UsersRepository
+
+        user = "u-def-toggle"
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool_status",
+            method="POST",
+            json={"id": default_tool_id("memory"), "status": False},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateToolStatus().post()
+        assert response.status_code == 200
+        user_doc = UsersRepository(pg_conn).get(user)
+        assert user_doc["tool_preferences"]["disabled_default_tools"] == ["memory"]
+
+    def test_update_tool_status_toggles_default_back_on(self, app, pg_conn):
+        from application.agents.default_tools import default_tool_id
+        from application.api.user.tools.routes import UpdateToolStatus
+        from application.storage.db.repositories.users import UsersRepository
+
+        user = "u-def-on"
+        UsersRepository(pg_conn).set_default_tool_enabled(user, "memory", False)
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool_status",
+            method="POST",
+            json={"id": default_tool_id("memory"), "status": True},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateToolStatus().post()
+        assert response.status_code == 200
+        user_doc = UsersRepository(pg_conn).get(user)
+        assert user_doc["tool_preferences"]["disabled_default_tools"] == []
+
+    def test_update_tool_toggles_default_via_status(self, app, pg_conn):
+        from application.agents.default_tools import default_tool_id
+        from application.api.user.tools.routes import UpdateTool
+        from application.storage.db.repositories.users import UsersRepository
+
+        user = "u-def-updtool"
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool",
+            method="POST",
+            json={"id": default_tool_id("read_webpage"), "status": False},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateTool().post()
+        assert response.status_code == 200
+        user_doc = UsersRepository(pg_conn).get(user)
+        assert user_doc["tool_preferences"]["disabled_default_tools"] == [
+            "read_webpage"
+        ]
+
+    def test_delete_tool_rejects_default(self, app, pg_conn):
+        from application.agents.default_tools import default_tool_id
+        from application.api.user.tools.routes import DeleteTool
+
+        user = "u-def-del"
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/delete_tool",
+            method="POST",
+            json={"id": default_tool_id("memory")},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = DeleteTool().post()
+        assert response.status_code == 400
+        assert response.json["success"] is False
+
+    def test_update_tool_default_without_status_is_rejected(
+        self, app, pg_conn
+    ):
+        from application.agents.default_tools import default_tool_id
+        from application.api.user.tools.routes import UpdateTool
+
+        user = "u-def-noedit"
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool",
+            method="POST",
+            json={"id": default_tool_id("memory"), "displayName": "Renamed"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateTool().post()
+        assert response.status_code == 400
+        assert response.json["success"] is False
+        assert "not editable" in response.json["message"]
+
+    def test_update_tool_config_rejects_default(self, app, pg_conn):
+        from application.agents.default_tools import default_tool_id
+        from application.api.user.tools.routes import UpdateToolConfig
+
+        user = "u-def-cfg"
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool_config",
+            method="POST",
+            json={"id": default_tool_id("memory"), "config": {"x": 1}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateToolConfig().post()
+        assert response.status_code == 400
+        assert response.json["success"] is False
+        assert "config-free" in response.json["message"]
+
+    def test_update_tool_actions_rejects_default(self, app, pg_conn):
+        from application.agents.default_tools import default_tool_id
+        from application.api.user.tools.routes import UpdateToolActions
+
+        user = "u-def-act"
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool_actions",
+            method="POST",
+            json={"id": default_tool_id("memory"), "actions": []},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateToolActions().post()
+        assert response.status_code == 400
+        assert response.json["success"] is False
+        assert "not editable" in response.json["message"]
 
 
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
 from application.agents.agent_creator import AgentCreator
+from application.agents.default_tools import synthesized_default_tools
 from application.api.answer.services.compression import CompressionOrchestrator
 from application.api.answer.services.compression.token_counter import TokenCounter
 from application.api.answer.services.conversation_service import ConversationService
@@ -25,6 +26,7 @@ from application.storage.db.repositories.attachments import AttachmentsRepositor
 from application.storage.db.repositories.prompts import PromptsRepository
 from application.storage.db.repositories.sources import SourcesRepository
 from application.storage.db.repositories.user_tools import UserToolsRepository
+from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.session import db_readonly, db_session
 from application.retriever.retriever_creator import RetrieverCreator
 from application.utils import (
@@ -293,7 +295,7 @@ class StreamProcessor:
         return attachments
 
     def _validate_and_set_model(self):
-        """Validate and set model_id from request"""
+        """Pick model_id with agent authority on agent-bound chats."""
         from application.core.model_settings import ModelRegistry
 
         requested_model = self.data.get("model_id")
@@ -301,6 +303,20 @@ class StreamProcessor:
         # under the owner's layer (shared agents have caller != owner).
         caller_user_id = self.initial_user_id
         owner_user_id = self.agent_config.get("user_id") or caller_user_id
+
+        # Agent-bound: agent's default_model_id wins, body's model_id is dropped.
+        agent_bound = self._agent_data is not None
+        if agent_bound:
+            agent_default_model = self.agent_config.get("default_model_id", "")
+            if agent_default_model and validate_model_id(
+                agent_default_model, user_id=owner_user_id
+            ):
+                self.model_id = agent_default_model
+                self.model_user_id = owner_user_id
+            else:
+                self.model_id = get_default_model_id()
+                self.model_user_id = None
+            return
 
         if requested_model:
             if not validate_model_id(requested_model, user_id=caller_user_id):
@@ -321,15 +337,8 @@ class StreamProcessor:
             self.model_id = requested_model
             self.model_user_id = caller_user_id
         else:
-            agent_default_model = self.agent_config.get("default_model_id", "")
-            if agent_default_model and validate_model_id(
-                agent_default_model, user_id=owner_user_id
-            ):
-                self.model_id = agent_default_model
-                self.model_user_id = owner_user_id
-            else:
-                self.model_id = get_default_model_id()
-                self.model_user_id = None
+            self.model_id = get_default_model_id()
+            self.model_user_id = None
 
     def _get_agent_key(self, agent_id: Optional[str], user_id: Optional[str]) -> tuple:
         """Get API key for agent with access control."""
@@ -385,6 +394,7 @@ class StreamProcessor:
             raise
 
     def _get_data_from_api_key(self, api_key: str) -> Dict[str, Any]:
+        """Resolve agent metadata + the unioned source set for the given key."""
         with db_readonly() as conn:
             agent = AgentsRepository(conn).find_by_key(api_key)
             if not agent:
@@ -395,36 +405,66 @@ class StreamProcessor:
             data: Dict[str, Any] = dict(agent)
             data["user"] = agent.get("user_id")
 
-            # Resolve the primary source row (if any) for retriever/chunks.
-            source_id = agent.get("source_id")
-            if source_id:
-                source_doc = sources_repo.get(str(source_id), agent.get("user_id"))
+            # Active sources = primary ∪ extras, primary first, deduplicated.
+            # ``_configure_source`` ignores an empty ``data["sources"]``,
+            # so the primary must appear in the union too — not only in
+            # the legacy ``data["source"]`` slot.
+            sources_list: list = []
+            seen: set = set()
+            owner = agent.get("user_id")
+            primary_id = agent.get("source_id")
+            # ``sources`` row may have NULL ``retriever``/``chunks`` —
+            # fall back to the agent's value (``dict.get`` returns None
+            # even when the key exists with value None).
+            if primary_id:
+                source_doc = sources_repo.get(str(primary_id), owner)
                 if source_doc:
-                    data["source"] = str(source_doc["id"])
-                    data["retriever"] = source_doc.get(
-                        "retriever", data.get("retriever")
+                    sid = str(source_doc["id"])
+                    data["source"] = sid
+                    src_retriever = source_doc.get("retriever")
+                    if src_retriever:
+                        data["retriever"] = src_retriever
+                    src_chunks = source_doc.get("chunks")
+                    if src_chunks is not None:
+                        data["chunks"] = src_chunks
+                    sources_list.append(
+                        {
+                            "id": sid,
+                            "retriever": src_retriever or "classic",
+                            "chunks": (
+                                src_chunks if src_chunks is not None
+                                else data.get("chunks", "2")
+                            ),
+                        }
                     )
-                    data["chunks"] = source_doc.get("chunks", data.get("chunks"))
+                    seen.add(sid)
                 else:
                     data["source"] = None
             else:
                 data["source"] = None
 
-            sources_list = []
-            extra = agent.get("extra_source_ids") or []
-            if extra:
-                for sid in extra:
-                    source_doc = sources_repo.get(str(sid), agent.get("user_id"))
-                    if source_doc:
-                        sources_list.append(
-                            {
-                                "id": str(source_doc["id"]),
-                                "retriever": source_doc.get("retriever", "classic"),
-                                "chunks": source_doc.get(
-                                    "chunks", data.get("chunks", "2")
-                                ),
-                            }
-                        )
+            for sid_raw in agent.get("extra_source_ids") or []:
+                if not sid_raw:
+                    continue
+                source_doc = sources_repo.get(str(sid_raw), owner)
+                if not source_doc:
+                    continue
+                sid = str(source_doc["id"])
+                if sid in seen:
+                    continue
+                src_retriever = source_doc.get("retriever")
+                src_chunks = source_doc.get("chunks")
+                sources_list.append(
+                    {
+                        "id": sid,
+                        "retriever": src_retriever or "classic",
+                        "chunks": (
+                            src_chunks if src_chunks is not None
+                            else data.get("chunks", "2")
+                        ),
+                    }
+                )
+                seen.add(sid)
         data["sources"] = sources_list
         data["default_model_id"] = data.get("default_model_id", "")
         return data
@@ -589,7 +629,7 @@ class StreamProcessor:
             )
 
     def _configure_retriever(self):
-        """Assemble retriever config with precedence: request > agent > default."""
+        """Assemble retriever config; agent's values are authoritative when bound."""
         # BYOM scope: owner for shared-agent BYOM, caller for own BYOM,
         # None for built-ins. Without ``user_id`` here, the doc budget
         # falls back to settings.DEFAULT_LLM_TOKEN_LIMIT and overfills
@@ -598,12 +638,11 @@ class StreamProcessor:
             model_id=self.model_id, user_id=self.model_user_id
         )
 
-        # Start with defaults
         retriever_name = "classic"
         chunks = 2
 
-        # Layer agent-level config (if present)
-        if self._agent_data:
+        if self._agent_data is not None:
+            # Agent-bound: agent wins, body's retriever/chunks are dropped.
             if self._agent_data.get("retriever"):
                 retriever_name = self._agent_data["retriever"]
             if self._agent_data.get("chunks") is not None:
@@ -614,18 +653,17 @@ class StreamProcessor:
                         f"Invalid agent chunks value: {self._agent_data['chunks']}, "
                         "using default value 2"
                     )
-
-        # Explicit request values win over agent config
-        if "retriever" in self.data:
-            retriever_name = self.data["retriever"]
-        if "chunks" in self.data:
-            try:
-                chunks = int(self.data["chunks"])
-            except (ValueError, TypeError):
-                logger.warning(
-                    f"Invalid request chunks value: {self.data['chunks']}, "
-                    "using default value 2"
-                )
+        else:
+            if "retriever" in self.data:
+                retriever_name = self.data["retriever"]
+            if "chunks" in self.data:
+                try:
+                    chunks = int(self.data["chunks"])
+                except (ValueError, TypeError):
+                    logger.warning(
+                        f"Invalid request chunks value: {self.data['chunks']}, "
+                        "using default value 2"
+                    )
 
         self.retriever_config = {
             "retriever_name": retriever_name,
@@ -633,7 +671,7 @@ class StreamProcessor:
             "doc_token_limit": doc_token_limit,
         }
 
-        # isNoneDoc without an API key forces no retrieval
+        # isNoneDoc without an API key forces no retrieval (agentless only)
         api_key = self.data.get("api_key") or self.agent_key
         if not api_key and "isNoneDoc" in self.data and self.data["isNoneDoc"]:
             self.retriever_config["chunks"] = 0
@@ -708,17 +746,26 @@ class StreamProcessor:
 
         try:
             user_id = self.initial_user_id or "local"
+            agentless = self.agent_id is None
             with db_readonly() as conn:
                 user_tools = UserToolsRepository(conn).list_active_for_user(user_id)
+                user_doc = (
+                    UsersRepository(conn).get(user_id) if agentless else None
+                )
 
-            if not user_tools:
+            default_docs = (
+                synthesized_default_tools(user_doc) if agentless else []
+            )
+            tool_docs = list(user_tools) + default_docs
+            if not tool_docs:
                 return None
 
             tools_data = {}
 
-            for tool_doc in user_tools:
+            for tool_doc in tool_docs:
                 tool_name = tool_doc.get("name")
-                tool_id = str(tool_doc.get("_id"))
+                tool_id = str(tool_doc.get("_id") or tool_doc.get("id"))
+                is_default = bool(tool_doc.get("default"))
 
                 if filtering_enabled:
                     required_actions_by_name = required_tool_actions.get(
@@ -731,11 +778,18 @@ class StreamProcessor:
                     if not required_actions:
                         continue
                 else:
+                    # No template names a default tool, so running its
+                    # actions blind would only inject noise.
+                    if is_default:
+                        continue
                     required_actions = None
 
                 tool_data = self._fetch_tool_data(tool_doc, required_actions)
                 if tool_data:
-                    tools_data[tool_name] = tool_data
+                    # Defaults reachable by synthetic id only — the name
+                    # key stays bound to an explicit row of the same name.
+                    if not is_default:
+                        tools_data[tool_name] = tool_data
                     tools_data[tool_id] = tool_data
 
             return tools_data if tools_data else None
@@ -982,6 +1036,7 @@ class StreamProcessor:
             user_api_key=user_api_key,
             user=self.initial_user_id,
             decoded_token=self.decoded_token,
+            agent_id=agent_id,
         )
         tool_executor.conversation_id = conversation_id
         # Restore client tools so they stay available for subsequent LLM calls
@@ -1130,6 +1185,7 @@ class StreamProcessor:
             user_api_key=self.agent_config["user_api_key"],
             user=user,
             decoded_token=self.decoded_token,
+            agent_id=self.agent_id,
         )
         tool_executor.conversation_id = self.conversation_id
         # Pass client-side tools so they get merged in get_tools()
@@ -1137,7 +1193,6 @@ class StreamProcessor:
         if client_tools:
             tool_executor.client_tools = client_tools
 
-        # Base agent kwargs
         agent_kwargs = {
             "endpoint": "stream",
             "llm_name": provider or settings.LLM_PROVIDER,
