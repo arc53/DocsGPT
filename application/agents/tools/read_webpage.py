@@ -3,6 +3,9 @@ from markdownify import markdownify
 from application.agents.tools.base import Tool
 from application.core.url_validation import validate_url, SSRFError
 
+MAX_CONTENT_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
 class ReadWebpageTool(Tool):
     """
     Read Webpage (browser)
@@ -38,15 +41,36 @@ class ReadWebpageTool(Tool):
             return f"Error: URL validation failed - {e}"
 
         try:
-            response = requests.get(url, timeout=10, headers={'User-Agent': 'DocsGPT-Agent/1.0'})
-            response.raise_for_status()  # Raise an exception for HTTP errors (4xx or 5xx)
-            
-            html_content = response.text
-            #soup = BeautifulSoup(html_content, 'html.parser')
-            
-            
-            markdown_content = markdownify(html_content, heading_style="ATX", newline_style="BACKSLASH")
-            
+            response = requests.get(
+                url,
+                timeout=10,
+                headers={"User-Agent": "DocsGPT-Agent/1.0"},
+                stream=True,
+            )
+            response.raise_for_status()
+
+            content_length = response.headers.get("Content-Length")
+            if content_length and int(content_length) > MAX_CONTENT_BYTES:
+                response.close()
+                max_mb = MAX_CONTENT_BYTES // (1024 * 1024)
+                return f"Error: Response too large. Maximum allowed size is {max_mb} MB."
+
+            chunks = []
+            total_bytes = 0
+            for chunk in response.iter_content(chunk_size=8192):
+                total_bytes += len(chunk)
+                if total_bytes > MAX_CONTENT_BYTES:
+                    response.close()
+                    max_mb = MAX_CONTENT_BYTES // (1024 * 1024)
+                    return f"Error: Response too large. Maximum allowed size is {max_mb} MB."
+                chunks.append(chunk)
+
+            html_content = b"".join(chunks).decode(
+                response.encoding or "utf-8", errors="replace"
+            )
+            markdown_content = markdownify(
+                html_content, heading_style="ATX", newline_style="BACKSLASH"
+            )
             return markdown_content
 
         except requests.exceptions.RequestException as e:
