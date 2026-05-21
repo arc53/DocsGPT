@@ -42,6 +42,7 @@ class AgentsRepository:
             "chunks", "token_limit", "request_limit",
             "limited_token_mode", "limited_request_mode",
             "allow_system_prompt_override",
+            "guardrails_enabled", "input_guardrails", "output_guardrails",
             "shared", "shared_token", "shared_metadata",
             "tools", "json_schema", "models", "legacy_mongo_id",
             "created_at", "updated_at", "last_used_at",
@@ -61,6 +62,7 @@ class AgentsRepository:
             elif col in (
                 "limited_token_mode", "limited_request_mode",
                 "shared", "allow_system_prompt_override",
+                "guardrails_enabled", "input_guardrails", "output_guardrails",
             ):
                 values[col] = bool(val)
             elif col in ("source_id", "prompt_id", "folder_id", "workflow_id"):
@@ -164,6 +166,7 @@ class AgentsRepository:
             "limited_token_mode", "token_limit",
             "limited_request_mode", "request_limit",
             "allow_system_prompt_override",
+            "guardrails_enabled", "input_guardrails", "output_guardrails",
             "shared", "shared_token", "shared_metadata",
             "incoming_webhook_token", "last_used_at",
         }
@@ -184,6 +187,7 @@ class AgentsRepository:
             elif col in (
                 "limited_token_mode", "limited_request_mode",
                 "shared", "allow_system_prompt_override",
+                "guardrails_enabled", "input_guardrails", "output_guardrails",
             ):
                 values[col] = bool(val)
             else:

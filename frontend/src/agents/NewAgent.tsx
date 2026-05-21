@@ -50,10 +50,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const prompts = useSelector(selectPrompts);
   const agentFolders = useSelector(selectAgentFolders);
 
-  const [validatedFolderId, setValidatedFolderId] = useState<string | null>(
-    null,
-  );
-
+  const [validatedFolderId, setValidatedFolderId] = useState<string | null>(null);
   const [effectiveMode, setEffectiveMode] = useState(mode);
   const [agent, setAgent] = useState<Agent>({
     id: agentId || '',
@@ -74,6 +71,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     limited_request_mode: false,
     request_limit: undefined,
     allow_system_prompt_override: false,
+    guardrails_enabled: false,
+    input_guardrails: false,
+    output_guardrails: false,
     models: [],
     default_model_id: '',
   });
@@ -83,15 +83,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [isSourcePopupOpen, setIsSourcePopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [isModelsPopupOpen, setIsModelsPopupOpen] = useState(false);
-  const [selectedSourceIds, setSelectedSourceIds] = useState<
-    Set<string | number>
-  >(new Set());
+  const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string | number>>(new Set());
   const [selectedTools, setSelectedTools] = useState<ToolSummary[]>([]);
-  const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(
-    new Set(),
-  );
-  const [deleteConfirmation, setDeleteConfirmation] =
-    useState<ActiveState>('INACTIVE');
+  const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(new Set());
+  const [deleteConfirmation, setDeleteConfirmation] = useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
   const [addPromptModal, setAddPromptModal] = useState<ActiveState>('INACTIVE');
   const [hasChanges, setHasChanges] = useState(false);
@@ -99,8 +94,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [publishLoading, setPublishLoading] = useState(false);
   const [jsonSchemaText, setJsonSchemaText] = useState('');
   const [jsonSchemaValid, setJsonSchemaValid] = useState(true);
-  const [isAdvancedSectionExpanded, setIsAdvancedSectionExpanded] =
-    useState(false);
+  const [isAdvancedSectionExpanded, setIsAdvancedSectionExpanded] = useState(false);
 
   const initialAgentRef = useRef<Agent | null>(null);
   const sourceAnchorButtonRef = useRef<HTMLButtonElement>(null);
@@ -136,6 +130,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       trackChanges: false,
     },
   };
+
   const chunks = ['0', '2', '4', '6', '8', '10'];
   const agentTypes = [
     { label: t('agents.form.agentTypes.classic'), value: 'classic' },
@@ -146,27 +141,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const isPublishable = () => {
     const hasRequiredFields =
       agent.name && agent.description && agent.prompt_id && agent.agent_type;
-    const isJsonSchemaValidOrEmpty =
-      jsonSchemaText.trim() === '' || jsonSchemaValid;
+    const isJsonSchemaValidOrEmpty = jsonSchemaText.trim() === '' || jsonSchemaValid;
     const hasSource = selectedSourceIds.size > 0;
     return hasRequiredFields && isJsonSchemaValidOrEmpty && hasSource;
   };
 
-  const isJsonSchemaInvalid = () => {
-    return jsonSchemaText.trim() !== '' && !jsonSchemaValid;
-  };
+  const isJsonSchemaInvalid = () => jsonSchemaText.trim() !== '' && !jsonSchemaValid;
 
   const handleUpload = useCallback((files: File[]) => {
-    if (files && files.length > 0) {
-      const file = files[0];
-      setImageFile(file);
-    }
+    if (files && files.length > 0) setImageFile(files[0]);
   }, []);
 
   const navigateBackToAgents = useCallback(() => {
-    const targetPath = validatedFolderId
-      ? `/agents?folder=${validatedFolderId}`
-      : '/agents';
+    const targetPath = validatedFolderId ? `/agents?folder=${validatedFolderId}` : '/agents';
     navigate(targetPath);
   }, [navigate, validatedFolderId]);
 
@@ -181,7 +168,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     navigateBackToAgents();
   };
 
-  const handleSaveDraft = async () => {
+  const buildFormData = (status: string) => {
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
@@ -190,12 +177,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const sourcesArray = Array.from(selectedSourceIds)
         .map((id) => {
           const sourceDoc = sourceDocs?.find(
-            (source) =>
-              source.id === id || source.retriever === id || source.name === id,
+            (source) => source.id === id || source.retriever === id || source.name === id,
           );
-          if (sourceDoc?.name === 'Default' && !sourceDoc?.id) {
-            return 'default';
-          }
+          if (sourceDoc?.name === 'Default' && !sourceDoc?.id) return 'default';
           return sourceDoc?.id || id;
         })
         .filter(Boolean);
@@ -210,8 +194,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           source.name === singleSourceId,
       );
       let finalSourceId;
-      if (sourceDoc?.name === 'Default' && !sourceDoc?.id)
-        finalSourceId = 'default';
+      if (sourceDoc?.name === 'Default' && !sourceDoc?.id) finalSourceId = 'default';
       else finalSourceId = sourceDoc?.id || singleSourceId;
       formData.append('source', String(finalSourceId));
       formData.append('sources', JSON.stringify([]));
@@ -224,7 +207,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     formData.append('retriever', agent.retriever);
     formData.append('prompt_id', agent.prompt_id);
     formData.append('agent_type', agent.agent_type);
-    formData.append('status', 'draft');
+    formData.append('status', status);
 
     if (agent.limited_token_mode && agent.token_limit) {
       formData.append('limited_token_mode', 'True');
@@ -247,46 +230,40 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       agent.allow_system_prompt_override ? 'True' : 'False',
     );
 
-    if (imageFile) formData.append('image', imageFile);
+    // Guardrails fields
+    formData.append('guardrails_enabled', agent.guardrails_enabled ? 'True' : 'False');
+    formData.append('input_guardrails', agent.input_guardrails ? 'True' : 'False');
+    formData.append('output_guardrails', agent.output_guardrails ? 'True' : 'False');
 
+    if (imageFile) formData.append('image', imageFile);
     if (agent.tools && agent.tools.length > 0)
       formData.append('tools', JSON.stringify(agent.tools));
     else formData.append('tools', '[]');
 
-    if (agent.json_schema) {
-      formData.append('json_schema', JSON.stringify(agent.json_schema));
-    }
-
-    if (agent.models && agent.models.length > 0) {
+    if (agent.json_schema) formData.append('json_schema', JSON.stringify(agent.json_schema));
+    if (agent.models && agent.models.length > 0)
       formData.append('models', JSON.stringify(agent.models));
-    }
-    if (agent.default_model_id) {
-      formData.append('default_model_id', agent.default_model_id);
-    }
-    if (agent.agent_type === 'workflow' && agent.workflow) {
+    if (agent.default_model_id) formData.append('default_model_id', agent.default_model_id);
+    if (agent.agent_type === 'workflow' && agent.workflow)
       formData.append('workflow', JSON.stringify(agent.workflow));
-    }
-
-    if (effectiveMode === 'new' && validatedFolderId) {
+    if (effectiveMode === 'new' && validatedFolderId)
       formData.append('folder_id', validatedFolderId);
-    }
 
+    return formData;
+  };
+
+  const handleSaveDraft = async () => {
     try {
       setDraftLoading(true);
+      const formData = buildFormData('draft');
       const response =
         effectiveMode === 'new'
           ? await userService.createAgent(formData, token)
           : await userService.updateAgent(agent.id || '', formData, token);
       if (!response.ok) throw new Error('Failed to create agent draft');
       const data = await response.json();
-
-      const updatedAgent = {
-        ...agent,
-        id: data.id || agent.id,
-        image: data.image || agent.image,
-      };
+      const updatedAgent = { ...agent, id: data.id || agent.id, image: data.image || agent.image };
       setAgent(updatedAgent);
-
       if (effectiveMode === 'new') setEffectiveMode('draft');
     } catch (error) {
       console.error('Error saving draft:', error);
@@ -297,104 +274,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   };
 
   const handlePublish = async () => {
-    const formData = new FormData();
-    formData.append('name', agent.name);
-    formData.append('description', agent.description);
-
-    if (selectedSourceIds.size > 1) {
-      const sourcesArray = Array.from(selectedSourceIds)
-        .map((id) => {
-          const sourceDoc = sourceDocs?.find(
-            (source) =>
-              source.id === id || source.retriever === id || source.name === id,
-          );
-          if (sourceDoc?.name === 'Default' && !sourceDoc?.id) {
-            return 'default';
-          }
-          return sourceDoc?.id || id;
-        })
-        .filter(Boolean);
-      formData.append('sources', JSON.stringify(sourcesArray));
-      formData.append('source', '');
-    } else if (selectedSourceIds.size === 1) {
-      const singleSourceId = Array.from(selectedSourceIds)[0];
-      const sourceDoc = sourceDocs?.find(
-        (source) =>
-          source.id === singleSourceId ||
-          source.retriever === singleSourceId ||
-          source.name === singleSourceId,
-      );
-      let finalSourceId;
-      if (sourceDoc?.name === 'Default' && !sourceDoc?.id)
-        finalSourceId = 'default';
-      else finalSourceId = sourceDoc?.id || singleSourceId;
-      formData.append('source', String(finalSourceId));
-      formData.append('sources', JSON.stringify([]));
-    } else {
-      formData.append('source', '');
-      formData.append('sources', JSON.stringify([]));
-    }
-
-    formData.append('chunks', agent.chunks);
-    formData.append('retriever', agent.retriever);
-    formData.append('prompt_id', agent.prompt_id);
-    formData.append('agent_type', agent.agent_type);
-    formData.append('status', 'published');
-
-    if (imageFile) formData.append('image', imageFile);
-    if (agent.tools && agent.tools.length > 0)
-      formData.append('tools', JSON.stringify(agent.tools));
-    else formData.append('tools', '[]');
-
-    if (agent.json_schema) {
-      formData.append('json_schema', JSON.stringify(agent.json_schema));
-    }
-
-    // Always send the limited mode fields
-    if (agent.limited_token_mode && agent.token_limit) {
-      formData.append('limited_token_mode', 'True');
-      formData.append('token_limit', agent.token_limit.toString());
-    } else {
-      formData.append('limited_token_mode', 'False');
-      formData.append('token_limit', '0');
-    }
-
-    if (agent.limited_request_mode && agent.request_limit) {
-      formData.append('limited_request_mode', 'True');
-      formData.append('request_limit', agent.request_limit.toString());
-    } else {
-      formData.append('limited_request_mode', 'False');
-      formData.append('request_limit', '0');
-    }
-
-    formData.append(
-      'allow_system_prompt_override',
-      agent.allow_system_prompt_override ? 'True' : 'False',
-    );
-
-    if (agent.models && agent.models.length > 0) {
-      formData.append('models', JSON.stringify(agent.models));
-    }
-    if (agent.default_model_id) {
-      formData.append('default_model_id', agent.default_model_id);
-    }
-    if (agent.agent_type === 'workflow' && agent.workflow) {
-      formData.append('workflow', JSON.stringify(agent.workflow));
-    }
-
-    if (effectiveMode === 'new' && validatedFolderId) {
-      formData.append('folder_id', validatedFolderId);
-    }
-
     try {
       setPublishLoading(true);
+      const formData = buildFormData('published');
       const response =
         effectiveMode === 'new'
           ? await userService.createAgent(formData, token)
           : await userService.updateAgent(agent.id || '', formData, token);
       if (!response.ok) throw new Error('Failed to publish agent');
       const data = await response.json();
-
       const updatedAgent = {
         ...agent,
         id: data.id || agent.id,
@@ -404,7 +292,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       };
       setAgent(updatedAgent);
       initialAgentRef.current = updatedAgent;
-
       if (effectiveMode === 'new' || effectiveMode === 'draft') {
         setEffectiveMode('edit');
         setAgentDetails('ACTIVE');
@@ -453,18 +340,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const data = await response.json();
       const transformed = modelService.transformModels(data.models || []);
       setAvailableModels(transformed);
-
       if (mode === 'new' && transformed.length > 0) {
         const preferredDefaultModelId =
-          transformed.find((model) => model.id === data.default_model_id)?.id ||
-          transformed[0].id;
-
+          transformed.find((model) => model.id === data.default_model_id)?.id || transformed[0].id;
         if (preferredDefaultModelId) {
-          setSelectedModelIds((prevSelectedModelIds) =>
-            prevSelectedModelIds.size > 0
-              ? prevSelectedModelIds
-              : new Set([preferredDefaultModelId]),
-          );
+          setSelectedModelIds((prev) => (prev.size > 0 ? prev : new Set([preferredDefaultModelId])));
         }
       }
     };
@@ -472,14 +352,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     getModels();
   }, [token, mode]);
 
-  // Validate folder_id from URL against user's folders
   useEffect(() => {
     const validateAndSetFolder = async () => {
-      if (!folderIdFromUrl) {
-        setValidatedFolderId(null);
-        return;
-      }
-
+      if (!folderIdFromUrl) { setValidatedFolderId(null); return; }
       let folders = agentFolders;
       if (!folders) {
         try {
@@ -489,35 +364,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             folders = data.folders || [];
             dispatch(setAgentFolders(folders));
           }
-        } catch {
-          setValidatedFolderId(null);
-          return;
-        }
+        } catch { setValidatedFolderId(null); return; }
       }
-
       const folderExists = folders?.some((f) => f.id === folderIdFromUrl);
       setValidatedFolderId(folderExists ? folderIdFromUrl : null);
     };
-
     validateAndSetFolder();
   }, [folderIdFromUrl, agentFolders, token, dispatch]);
 
-  // Auto-select default source if none selected
   useEffect(() => {
     if (sourceDocs && sourceDocs.length > 0 && selectedSourceIds.size === 0) {
       const defaultSource = sourceDocs.find((s) => s.name === 'Default');
       if (defaultSource) {
-        setSelectedSourceIds(
-          new Set([
-            defaultSource.id || defaultSource.retriever || defaultSource.name,
-          ]),
-        );
+        setSelectedSourceIds(new Set([defaultSource.id || defaultSource.retriever || defaultSource.name]));
       } else {
-        setSelectedSourceIds(
-          new Set([
-            sourceDocs[0].id || sourceDocs[0].retriever || sourceDocs[0].name,
-          ]),
-        );
+        setSelectedSourceIds(new Set([sourceDocs[0].id || sourceDocs[0].retriever || sourceDocs[0].name]));
       }
     }
   }, [sourceDocs, selectedSourceIds.size]);
@@ -526,18 +387,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if ((mode === 'edit' || mode === 'draft') && agentId) {
       const getAgent = async () => {
         const response = await userService.getAgent(agentId, token);
-        if (!response.ok) {
-          navigate('/agents');
-          throw new Error('Failed to fetch agent');
-        }
+        if (!response.ok) { navigate('/agents'); throw new Error('Failed to fetch agent'); }
         const data = await response.json();
 
         if (data.sources && data.sources.length > 0) {
           const mappedSources = data.sources.map((sourceId: string) => {
             if (sourceId === 'default') {
-              const defaultSource = sourceDocs?.find(
-                (source) => source.name === 'Default',
-              );
+              const defaultSource = sourceDocs?.find((source) => source.name === 'Default');
               return defaultSource?.retriever || 'classic';
             }
             return sourceId;
@@ -545,12 +401,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           setSelectedSourceIds(new Set(mappedSources));
         } else if (data.source) {
           if (data.source === 'default') {
-            const defaultSource = sourceDocs?.find(
-              (source) => source.name === 'Default',
-            );
-            setSelectedSourceIds(
-              new Set([defaultSource?.retriever || 'classic']),
-            );
+            const defaultSource = sourceDocs?.find((source) => source.name === 'Default');
+            setSelectedSourceIds(new Set([defaultSource?.retriever || 'classic']));
           } else {
             setSelectedSourceIds(new Set([data.source]));
           }
@@ -561,13 +413,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         if (data.tool_details) setSelectedTools(data.tool_details);
         if (data.status === 'draft') setEffectiveMode('draft');
         if (data.json_schema) {
-          const jsonText = JSON.stringify(data.json_schema, null, 2);
-          setJsonSchemaText(jsonText);
+          setJsonSchemaText(JSON.stringify(data.json_schema, null, 2));
           setJsonSchemaValid(true);
         }
-        // Backfill required fields so older agents (created before
-        // agent_type / prompt_id / models existed) don't fail
-        // ``isPublishable()`` and leave Save permanently disabled.
+
         const normalized = {
           ...data,
           agent_type: data.agent_type || 'classic',
@@ -578,6 +427,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           sources: data.sources || [],
           models: data.models || [],
           default_model_id: data.default_model_id || '',
+          guardrails_enabled: data.guardrails_enabled || false,
+          input_guardrails: data.input_guardrails || false,
+          output_guardrails: data.output_guardrails || false,
         };
         setAgent(normalized);
         initialAgentRef.current = normalized;
@@ -589,9 +441,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   useEffect(() => {
     if (agent.models && agent.models.length > 0 && availableModels.length > 0) {
       const agentModelIds = new Set(agent.models);
-      if (agentModelIds.size > 0 && selectedModelIds.size === 0) {
-        setSelectedModelIds(agentModelIds);
-      }
+      if (agentModelIds.size > 0 && selectedModelIds.size === 0) setSelectedModelIds(agentModelIds);
     }
   }, [agent.models, availableModels.length]);
 
@@ -606,11 +456,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           : modelsArray[0],
       }));
     } else {
-      setAgent((prev) => ({
-        ...prev,
-        models: [],
-        default_model_id: '',
-      }));
+      setAgent((prev) => ({ ...prev, models: [], default_model_id: '' }));
     }
   }, [selectedModelIds]);
 
@@ -618,52 +464,25 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const selectedSources = Array.from(selectedSourceIds)
       .map((id) =>
         sourceDocs?.find(
-          (source) =>
-            source.id === id || source.retriever === id || source.name === id,
+          (source) => source.id === id || source.retriever === id || source.name === id,
         ),
       )
       .filter(Boolean);
 
-    if (selectedSources.length > 0) {
-      // Handle multiple sources
-      if (selectedSources.length > 1) {
-        // Multiple sources selected - store in sources array
-        const sourceIds = selectedSources
-          .map((source) => source?.id)
-          .filter((id): id is string => Boolean(id));
-        setAgent((prev) => ({
-          ...prev,
-          sources: sourceIds,
-          source: '', // Clear single source for multiple sources
-          retriever: '',
-        }));
+    if (selectedSources.length > 1) {
+      const sourceIds = selectedSources
+        .map((source) => source?.id)
+        .filter((id): id is string => Boolean(id));
+      setAgent((prev) => ({ ...prev, sources: sourceIds, source: '', retriever: '' }));
+    } else if (selectedSources.length === 1) {
+      const selectedSource = selectedSources[0];
+      if (selectedSource && 'id' in selectedSource) {
+        setAgent((prev) => ({ ...prev, source: selectedSource?.id || 'default', sources: [], retriever: '' }));
       } else {
-        // Single source selected - maintain backward compatibility
-        const selectedSource = selectedSources[0];
-        if (selectedSource && 'id' in selectedSource) {
-          setAgent((prev) => ({
-            ...prev,
-            source: selectedSource?.id || 'default',
-            sources: [], // Clear sources array for single source
-            retriever: '',
-          }));
-        } else {
-          setAgent((prev) => ({
-            ...prev,
-            source: '',
-            sources: [], // Clear sources array
-            retriever: selectedSource?.retriever || 'classic',
-          }));
-        }
+        setAgent((prev) => ({ ...prev, source: '', sources: [], retriever: selectedSource?.retriever || 'classic' }));
       }
     } else {
-      // No sources selected
-      setAgent((prev) => ({
-        ...prev,
-        source: '',
-        sources: [],
-        retriever: '',
-      }));
+      setAgent((prev) => ({ ...prev, source: '', sources: [], retriever: '' }));
     }
   }, [selectedSourceIds]);
 
@@ -678,26 +497,18 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   useEffect(() => {
     if (isPublishable()) dispatch(setSelectedAgent(agent));
-
-    if (!modeConfig[effectiveMode].trackChanges) {
-      setHasChanges(true);
-      return;
-    }
-    if (!initialAgentRef.current) {
-      setHasChanges(false);
-      return;
-    }
-
+    if (!modeConfig[effectiveMode].trackChanges) { setHasChanges(true); return; }
+    if (!initialAgentRef.current) { setHasChanges(false); return; }
     const initialJsonSchemaText = initialAgentRef.current.json_schema
       ? JSON.stringify(initialAgentRef.current.json_schema, null, 2)
       : '';
-
     const isChanged =
       !isEqual(agent, initialAgentRef.current) ||
       imageFile !== null ||
       jsonSchemaText !== initialJsonSchemaText;
     setHasChanges(isChanged);
   }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText]);
+
   return (
     <div className="flex flex-col px-4 pt-4 pb-2 max-[1179px]:min-h-dvh min-[1180px]:h-dvh md:px-12 md:pt-12 md:pb-3">
       <div className="flex items-center gap-3 px-4">
@@ -745,11 +556,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               onClick={handleSaveDraft}
             >
               <span className="flex items-center justify-center transition-all duration-200">
-                {draftLoading ? (
-                  <Spinner size="small" color="#976af3" />
-                ) : (
-                  t('agents.form.buttons.saveDraft')
-                )}
+                {draftLoading ? <Spinner size="small" color="#976af3" /> : t('agents.form.buttons.saveDraft')}
               </span>
             </button>
           )}
@@ -776,21 +583,18 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             onClick={handlePublish}
           >
             <span className="flex items-center justify-center transition-all duration-200">
-              {publishLoading ? (
-                <Spinner size="small" color="white" />
-              ) : (
-                modeConfig[effectiveMode].buttonText
-              )}
+              {publishLoading ? <Spinner size="small" color="white" /> : modeConfig[effectiveMode].buttonText}
             </span>
           </button>
         </div>
       </div>
+
       <div className="bg-muted dark:bg-background mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-[30px] p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden">
         <div className="scrollbar-overlay col-span-2 flex flex-col gap-5 max-[1179px]:overflow-visible min-[1180px]:max-h-full min-[1180px]:overflow-y-auto min-[1180px]:pr-3">
+
+          {/* Meta Section */}
           <div className="bg-card rounded-[30px] px-6 py-3">
-            <h2 className="text-lg font-semibold">
-              {t('agents.form.sections.meta')}
-            </h2>
+            <h2 className="text-lg font-semibold">{t('agents.form.sections.meta')}</h2>
             <input
               className="border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-3 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400"
               type="text"
@@ -802,9 +606,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               className="border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-3 h-32 w-full rounded-xl border px-5 py-4 text-sm outline-hidden placeholder:text-gray-400"
               placeholder={t('agents.form.placeholders.describeAgent')}
               value={agent.description}
-              onChange={(e) =>
-                setAgent({ ...agent, description: e.target.value })
-              }
+              onChange={(e) => setAgent({ ...agent, description: e.target.value })}
             />
             <div className="mt-3">
               <FileUpload
@@ -813,45 +615,32 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 onUpload={handleUpload}
                 onRemove={() => setImageFile(null)}
                 uploadText={[
-                  {
-                    text: t('agents.form.upload.clickToUpload'),
-                    colorClass: 'text-[#7D54D1]',
-                  },
-                  {
-                    text: t('agents.form.upload.dragAndDrop'),
-                    colorClass: 'text-[#525252]',
-                  },
+                  { text: t('agents.form.upload.clickToUpload'), colorClass: 'text-[#7D54D1]' },
+                  { text: t('agents.form.upload.dragAndDrop'), colorClass: 'text-[#525252]' },
                 ]}
               />
             </div>
           </div>
+
+          {/* Source Section */}
           <div className="bg-card rounded-[30px] px-6 py-3">
-            <h2 className="text-lg font-semibold">
-              {t('agents.form.sections.source')}
-            </h2>
+            <h2 className="text-lg font-semibold">{t('agents.form.sections.source')}</h2>
             <div className="mt-3">
               <div className="flex flex-wrap items-center gap-1">
                 <button
                   ref={sourceAnchorButtonRef}
                   onClick={() => setIsSourcePopupOpen(!isSourcePopupOpen)}
                   className={`border-border bg-card dark:border-border w-full truncate rounded-3xl border px-5 py-3 text-left text-sm ${
-                    selectedSourceIds.size > 0
-                      ? 'text-foreground dark:text-foreground'
-                      : 'dark:text-muted-foreground text-gray-400'
+                    selectedSourceIds.size > 0 ? 'text-foreground dark:text-foreground' : 'dark:text-muted-foreground text-gray-400'
                   }`}
                 >
                   {selectedSourceIds.size > 0
                     ? Array.from(selectedSourceIds)
                         .map((id) => {
                           const matchedDoc = sourceDocs?.find(
-                            (source) =>
-                              source.id === id ||
-                              source.name === id ||
-                              source.retriever === id,
+                            (source) => source.id === id || source.name === id || source.retriever === id,
                           );
-                          return (
-                            matchedDoc?.name || t('agents.form.externalKb')
-                          );
+                          return matchedDoc?.name || t('agents.form.externalKb');
                         })
                         .filter(Boolean)
                         .join(', ')
@@ -870,51 +659,27 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   }
                   selectedIds={selectedSourceIds}
                   onSelectionChange={(newSelectedIds: Set<string | number>) => {
-                    if (
-                      newSelectedIds.size === 0 &&
-                      sourceDocs &&
-                      sourceDocs.length > 0
-                    ) {
-                      const defaultSource = sourceDocs.find(
-                        (s) => s.name === 'Default',
-                      );
+                    if (newSelectedIds.size === 0 && sourceDocs && sourceDocs.length > 0) {
+                      const defaultSource = sourceDocs.find((s) => s.name === 'Default');
                       if (defaultSource) {
-                        setSelectedSourceIds(
-                          new Set([
-                            defaultSource.id ||
-                              defaultSource.retriever ||
-                              defaultSource.name,
-                          ]),
-                        );
+                        setSelectedSourceIds(new Set([defaultSource.id || defaultSource.retriever || defaultSource.name]));
                       } else {
-                        setSelectedSourceIds(
-                          new Set([
-                            sourceDocs[0].id ||
-                              sourceDocs[0].retriever ||
-                              sourceDocs[0].name,
-                          ]),
-                        );
+                        setSelectedSourceIds(new Set([sourceDocs[0].id || sourceDocs[0].retriever || sourceDocs[0].name]));
                       }
                     } else {
                       setSelectedSourceIds(newSelectedIds);
                     }
                   }}
                   title={t('agents.form.sourcePopup.title')}
-                  searchPlaceholder={t(
-                    'agents.form.sourcePopup.searchPlaceholder',
-                  )}
-                  noOptionsMessage={t(
-                    'agents.form.sourcePopup.noOptionsMessage',
-                  )}
+                  searchPlaceholder={t('agents.form.sourcePopup.searchPlaceholder')}
+                  noOptionsMessage={t('agents.form.sourcePopup.noOptionsMessage')}
                 />
               </div>
               <div className="mt-3">
                 <Dropdown
                   options={chunks}
                   selectedValue={agent.chunks ? agent.chunks : null}
-                  onSelect={(value: string) =>
-                    setAgent({ ...agent, chunks: value })
-                  }
+                  onSelect={(value: string) => setAgent({ ...agent, chunks: value })}
                   size="w-full"
                   rounded="3xl"
                   placeholder={t('agents.form.placeholders.chunksPerQuery')}
@@ -923,6 +688,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </div>
             </div>
           </div>
+
+          {/* Prompt Section */}
           <div className="bg-card rounded-[30px] px-6 py-3">
             <div className="flex flex-wrap items-end gap-1">
               <div className="min-w-20 grow basis-full sm:basis-0">
@@ -930,24 +697,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   prompts={prompts}
                   selectedPrompt={
                     prompts.find((prompt) => prompt.id === agent.prompt_id) ||
-                    prompts[0] || {
-                      name: 'default',
-                      id: 'default',
-                      type: 'public',
-                    }
+                    prompts[0] || { name: 'default', id: 'default', type: 'public' }
                   }
-                  onSelectPrompt={(name, id, type) =>
-                    setAgent({ ...agent, prompt_id: id })
-                  }
+                  onSelectPrompt={(name, id, type) => setAgent({ ...agent, prompt_id: id })}
                   setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
                   title={t('agents.form.sections.prompt')}
                   titleClassName="text-lg font-semibold"
                   showAddButton={false}
-                  dropdownProps={{
-                    size: 'w-full',
-                    rounded: '3xl',
-                    contentSize: 'text-sm',
-                  }}
+                  dropdownProps={{ size: 'w-full', rounded: '3xl', contentSize: 'text-sm' }}
                 />
               </div>
               <button
@@ -958,25 +715,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </button>
             </div>
           </div>
+
+          {/* Tools Section */}
           <div className="bg-card rounded-[30px] px-6 py-3">
-            <h2 className="text-lg font-semibold">
-              {t('agents.form.sections.tools')}
-            </h2>
+            <h2 className="text-lg font-semibold">{t('agents.form.sections.tools')}</h2>
             <div className="mt-3 flex flex-wrap items-center gap-1">
               <button
                 ref={toolAnchorButtonRef}
                 onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
                 className={`border-border bg-card dark:border-border w-full truncate rounded-3xl border px-5 py-3 text-left text-sm ${
-                  selectedTools.length > 0
-                    ? 'text-foreground dark:text-foreground'
-                    : 'dark:text-muted-foreground text-gray-400'
+                  selectedTools.length > 0 ? 'text-foreground dark:text-foreground' : 'dark:text-muted-foreground text-gray-400'
                 }`}
               >
                 {selectedTools.length > 0
-                  ? selectedTools
-                      .map((tool) => getToolDisplayName(tool))
-                      .filter(Boolean)
-                      .join(', ')
+                  ? selectedTools.map((tool) => getToolDisplayName(tool)).filter(Boolean).join(', ')
                   : t('agents.form.placeholders.selectTools')}
               </button>
               <MultiSelectPopup
@@ -991,33 +743,27 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       .filter((tool) => newSelectedIds.has(tool.id))
                       .map((tool) => ({
                         id: String(tool.id),
-                        name:
-                          typeof tool.name === 'string'
-                            ? tool.name
-                            : tool.label,
+                        name: typeof tool.name === 'string' ? tool.name : tool.label,
                         display_name: tool.label,
                       })),
                   )
                 }
                 title={t('agents.form.toolsPopup.title')}
-                searchPlaceholder={t(
-                  'agents.form.toolsPopup.searchPlaceholder',
-                )}
+                searchPlaceholder={t('agents.form.toolsPopup.searchPlaceholder')}
                 noOptionsMessage={t('agents.form.toolsPopup.noOptionsMessage')}
               />
             </div>
           </div>
+
+          {/* Agent Type Section */}
           <div className="bg-card rounded-[30px] px-6 py-3">
-            <h2 className="text-lg font-semibold">
-              {t('agents.form.sections.agentType')}
-            </h2>
+            <h2 className="text-lg font-semibold">{t('agents.form.sections.agentType')}</h2>
             <div className="mt-3">
               <Dropdown
                 options={agentTypes}
                 selectedValue={
                   agent.agent_type
-                    ? agentTypes.find((type) => type.value === agent.agent_type)
-                        ?.label || null
+                    ? agentTypes.find((type) => type.value === agent.agent_type)?.label || null
                     : null
                 }
                 onSelect={(option: { label: string; value: string }) =>
@@ -1030,25 +776,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               />
             </div>
           </div>
+
+          {/* Models Section */}
           <div className="bg-card rounded-[30px] px-6 py-3">
-            <h2 className="text-lg font-semibold">
-              {t('agents.form.sections.models')}
-            </h2>
+            <h2 className="text-lg font-semibold">{t('agents.form.sections.models')}</h2>
             <div className="mt-3 flex flex-col gap-3">
               <button
                 ref={modelAnchorButtonRef}
                 onClick={() => setIsModelsPopupOpen(!isModelsPopupOpen)}
                 className={`border-border bg-card dark:border-border w-full truncate rounded-3xl border px-5 py-3 text-left text-sm ${
-                  selectedModelIds.size > 0
-                    ? 'text-foreground dark:text-foreground'
-                    : 'dark:text-muted-foreground text-gray-400'
+                  selectedModelIds.size > 0 ? 'text-foreground dark:text-foreground' : 'dark:text-muted-foreground text-gray-400'
                 }`}
               >
                 {selectedModelIds.size > 0
-                  ? availableModels
-                      .filter((m) => selectedModelIds.has(m.id))
-                      .map((m) => m.display_name)
-                      .join(', ')
+                  ? availableModels.filter((m) => selectedModelIds.has(m.id)).map((m) => m.display_name).join(', ')
                   : t('agents.form.placeholders.selectModels')}
               </button>
               <MultiSelectPopup
@@ -1056,9 +797,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 onClose={() => setIsModelsPopupOpen(false)}
                 anchorRef={modelAnchorButtonRef}
                 options={(() => {
-                  const builtinLabel = t(
-                    'settings.customModels.modelsGroup.builtin',
-                  );
+                  const builtinLabel = t('settings.customModels.modelsGroup.builtin');
                   const userLabel = t('settings.customModels.modelsGroup.user');
                   const builtin: OptionType[] = [];
                   const user: OptionType[] = [];
@@ -1075,14 +814,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 })()}
                 selectedIds={selectedModelIds}
                 onSelectionChange={(newSelectedIds: Set<string | number>) =>
-                  setSelectedModelIds(
-                    new Set(Array.from(newSelectedIds).map(String)),
-                  )
+                  setSelectedModelIds(new Set(Array.from(newSelectedIds).map(String)))
                 }
                 title={t('agents.form.modelsPopup.title')}
-                searchPlaceholder={t(
-                  'agents.form.modelsPopup.searchPlaceholder',
-                )}
+                searchPlaceholder={t('agents.form.modelsPopup.searchPlaceholder')}
                 noOptionsMessage={t('agents.form.modelsPopup.noOptionsMessage')}
               />
               {selectedModelIds.size > 0 && (
@@ -1093,65 +828,48 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   <Dropdown
                     options={availableModels
                       .filter((m) => selectedModelIds.has(m.id))
-                      .map((m) => ({
-                        label: m.display_name,
-                        value: m.id,
-                      }))}
+                      .map((m) => ({ label: m.display_name, value: m.id }))}
                     selectedValue={
-                      availableModels.find(
-                        (m) => m.id === agent.default_model_id,
-                      )?.display_name || null
+                      availableModels.find((m) => m.id === agent.default_model_id)?.display_name || null
                     }
                     onSelect={(option: { label: string; value: string }) =>
                       setAgent({ ...agent, default_model_id: option.value })
                     }
                     size="w-full"
                     rounded="3xl"
-                    placeholder={t(
-                      'agents.form.placeholders.selectDefaultModel',
-                    )}
+                    placeholder={t('agents.form.placeholders.selectDefaultModel')}
                     contentSize="text-sm"
                   />
                 </div>
               )}
             </div>
           </div>
+
+          {/* Advanced Section */}
           <div className="bg-card rounded-[30px] px-6 py-3">
             <button
-              onClick={() =>
-                setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)
-              }
+              onClick={() => setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)}
               className="flex w-full items-center justify-between text-left focus:outline-none"
             >
-              <div>
-                <h2 className="text-lg font-semibold">
-                  {t('agents.form.sections.advanced')}
-                </h2>
-              </div>
+              <h2 className="text-lg font-semibold">{t('agents.form.sections.advanced')}</h2>
               <div className="ml-4 flex items-center">
                 <svg
-                  className={`h-5 w-5 transform transition-transform duration-200 ${
-                    isAdvancedSectionExpanded ? 'rotate-180' : ''
-                  }`}
+                  className={`h-5 w-5 transform transition-transform duration-200 ${isAdvancedSectionExpanded ? 'rotate-180' : ''}`}
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </div>
             </button>
+
             {isAdvancedSectionExpanded && (
               <div className="mt-3">
+
+                {/* JSON Schema */}
                 <div>
-                  <h2 className="text-sm font-medium">
-                    {t('agents.form.advanced.jsonSchema')}
-                  </h2>
+                  <h2 className="text-sm font-medium">{t('agents.form.advanced.jsonSchema')}</h2>
                   <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
                     {t('agents.form.advanced.jsonSchemaDescription')}
                   </p>
@@ -1159,45 +877,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 <textarea
                   value={jsonSchemaText}
                   onChange={(e) => validateAndSetJsonSchema(e.target.value)}
-                  placeholder={`{
-  "type": "object",
-  "properties": {
-    "name": {"type": "string"},
-    "email": {"type": "string"}
-  },
-  "required": ["name", "email"],
-  "additionalProperties": false
-}`}
+                  placeholder={`{\n  "type": "object",\n  "properties": {\n    "name": {"type": "string"},\n    "email": {"type": "string"}\n  },\n  "required": ["name", "email"],\n  "additionalProperties": false\n}`}
                   rows={9}
-                  className={`border-border text-foreground dark:text-foreground bg-card dark:border-border mt-2 w-full rounded-2xl border px-4 py-3 font-mono text-sm outline-hidden`}
+                  className="border-border text-foreground dark:text-foreground bg-card dark:border-border mt-2 w-full rounded-2xl border px-4 py-3 font-mono text-sm outline-hidden"
                 />
                 {jsonSchemaText.trim() !== '' && (
-                  <div
-                    className={`mt-2 flex items-center gap-2 text-sm ${
-                      jsonSchemaValid
-                        ? 'text-green-600 dark:text-green-400'
-                        : 'text-red-600 dark:text-red-400'
-                    }`}
-                  >
-                    <span
-                      className={`h-4 w-4 bg-contain bg-center bg-no-repeat ${
-                        jsonSchemaValid
-                          ? "bg-[url('/src/assets/circle-check.svg')]"
-                          : "bg-[url('/src/assets/circle-x.svg')]"
-                      }`}
-                    />
-                    {jsonSchemaValid
-                      ? t('agents.form.advanced.validJson')
-                      : t('agents.form.advanced.invalidJson')}
+                  <div className={`mt-2 flex items-center gap-2 text-sm ${jsonSchemaValid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                    <span className={`h-4 w-4 bg-contain bg-center bg-no-repeat ${jsonSchemaValid ? "bg-[url('/src/assets/circle-check.svg')]" : "bg-[url('/src/assets/circle-x.svg')]"}`} />
+                    {jsonSchemaValid ? t('agents.form.advanced.validJson') : t('agents.form.advanced.invalidJson')}
                   </div>
                 )}
 
+                {/* Token Limiting */}
                 <div className="mt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-sm font-medium">
-                        {t('agents.form.advanced.tokenLimiting')}
-                      </h2>
+                      <h2 className="text-sm font-medium">{t('agents.form.advanced.tokenLimiting')}</h2>
                       <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
                         {t('agents.form.advanced.tokenLimitingDescription')}
                       </p>
@@ -1205,55 +900,29 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     <button
                       onClick={() => {
                         const newTokenMode = !agent.limited_token_mode;
-                        setAgent({
-                          ...agent,
-                          limited_token_mode: newTokenMode,
-                          limited_request_mode: newTokenMode
-                            ? false
-                            : agent.limited_request_mode,
-                        });
+                        setAgent({ ...agent, limited_token_mode: newTokenMode, limited_request_mode: newTokenMode ? false : agent.limited_request_mode });
                       }}
-                      className={`relative h-6 w-11 rounded-full transition-colors ${
-                        agent.limited_token_mode
-                          ? 'bg-primary'
-                          : 'bg-gray-300 dark:bg-gray-600'
-                      }`}
+                      className={`relative h-6 w-11 rounded-full transition-colors ${agent.limited_token_mode ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'}`}
                     >
-                      <span
-                        className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          agent.limited_token_mode ? '' : '-translate-x-5'
-                        }`}
-                      />
+                      <span className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${agent.limited_token_mode ? '' : '-translate-x-5'}`} />
                     </button>
                   </div>
                   <input
                     type="number"
                     min="0"
                     value={agent.token_limit || ''}
-                    onChange={(e) =>
-                      setAgent({
-                        ...agent,
-                        token_limit: e.target.value
-                          ? parseInt(e.target.value)
-                          : undefined,
-                      })
-                    }
+                    onChange={(e) => setAgent({ ...agent, token_limit: e.target.value ? parseInt(e.target.value) : undefined })}
                     disabled={!agent.limited_token_mode}
                     placeholder={t('agents.form.placeholders.enterTokenLimit')}
-                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${
-                      !agent.limited_token_mode
-                        ? 'cursor-not-allowed opacity-50'
-                        : ''
-                    }`}
+                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${!agent.limited_token_mode ? 'cursor-not-allowed opacity-50' : ''}`}
                   />
                 </div>
 
+                {/* Request Limiting */}
                 <div className="mt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="text-sm font-medium">
-                        {t('agents.form.advanced.requestLimiting')}
-                      </h2>
+                      <h2 className="text-sm font-medium">{t('agents.form.advanced.requestLimiting')}</h2>
                       <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
                         {t('agents.form.advanced.requestLimitingDescription')}
                       </p>
@@ -1261,125 +930,132 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     <button
                       onClick={() => {
                         const newRequestMode = !agent.limited_request_mode;
-                        setAgent({
-                          ...agent,
-                          limited_request_mode: newRequestMode,
-                          limited_token_mode: newRequestMode
-                            ? false
-                            : agent.limited_token_mode,
-                        });
+                        setAgent({ ...agent, limited_request_mode: newRequestMode, limited_token_mode: newRequestMode ? false : agent.limited_token_mode });
                       }}
-                      className={`relative h-6 w-11 rounded-full transition-colors ${
-                        agent.limited_request_mode
-                          ? 'bg-primary'
-                          : 'bg-gray-300 dark:bg-gray-600'
-                      }`}
+                      className={`relative h-6 w-11 rounded-full transition-colors ${agent.limited_request_mode ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'}`}
                     >
-                      <span
-                        className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          agent.limited_request_mode ? '' : '-translate-x-5'
-                        }`}
-                      />
+                      <span className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${agent.limited_request_mode ? '' : '-translate-x-5'}`} />
                     </button>
                   </div>
                   <input
                     type="number"
                     min="0"
                     value={agent.request_limit || ''}
-                    onChange={(e) =>
-                      setAgent({
-                        ...agent,
-                        request_limit: e.target.value
-                          ? parseInt(e.target.value)
-                          : undefined,
-                      })
-                    }
+                    onChange={(e) => setAgent({ ...agent, request_limit: e.target.value ? parseInt(e.target.value) : undefined })}
                     disabled={!agent.limited_request_mode}
-                    placeholder={t(
-                      'agents.form.placeholders.enterRequestLimit',
-                    )}
-                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${
-                      !agent.limited_request_mode
-                        ? 'cursor-not-allowed opacity-50'
-                        : ''
-                    }`}
+                    placeholder={t('agents.form.placeholders.enterRequestLimit')}
+                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${!agent.limited_request_mode ? 'cursor-not-allowed opacity-50' : ''}`}
                   />
                 </div>
 
+                {/* System Prompt Override */}
                 <div className="mt-6">
                   <div className="flex items-center justify-between gap-4">
                     <div className="min-w-0 flex-1">
-                      <h2 className="text-sm font-medium">
-                        {t('agents.form.advanced.systemPromptOverride')}
-                      </h2>
+                      <h2 className="text-sm font-medium">{t('agents.form.advanced.systemPromptOverride')}</h2>
                       <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                        {t(
-                          'agents.form.advanced.systemPromptOverrideDescription',
-                        )}
+                        {t('agents.form.advanced.systemPromptOverrideDescription')}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setAgent({ ...agent, allow_system_prompt_override: !agent.allow_system_prompt_override })}
+                      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${agent.allow_system_prompt_override ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'}`}
+                    >
+                      <span className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${agent.allow_system_prompt_override ? '' : '-translate-x-5'}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* ✅ Guardrails Section */}
+                <div className="mt-6">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <h2 className="text-sm font-medium">Guardrails</h2>
+                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                        Enable safety guardrails to filter agent input and output.
                       </p>
                     </div>
                     <button
                       onClick={() =>
                         setAgent({
                           ...agent,
-                          allow_system_prompt_override:
-                            !agent.allow_system_prompt_override,
+                          guardrails_enabled: !agent.guardrails_enabled,
+                          input_guardrails: !agent.guardrails_enabled ? agent.input_guardrails : false,
+                          output_guardrails: !agent.guardrails_enabled ? agent.output_guardrails : false,
                         })
                       }
-                      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-                        agent.allow_system_prompt_override
-                          ? 'bg-primary'
-                          : 'bg-gray-300 dark:bg-gray-600'
-                      }`}
+                      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${agent.guardrails_enabled ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'}`}
                     >
-                      <span
-                        className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          agent.allow_system_prompt_override
-                            ? ''
-                            : '-translate-x-5'
-                        }`}
-                      />
+                      <span className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${agent.guardrails_enabled ? '' : '-translate-x-5'}`} />
                     </button>
                   </div>
+
+                  {agent.guardrails_enabled && (
+                    <div className="mt-3 flex flex-col gap-4 pl-2">
+                      {/* Input Guardrails */}
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <h2 className="text-sm font-medium">Input Guardrails</h2>
+                          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                            Filter and validate user input before processing.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setAgent({ ...agent, input_guardrails: !agent.input_guardrails })}
+                          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${agent.input_guardrails ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'}`}
+                        >
+                          <span className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${agent.input_guardrails ? '' : '-translate-x-5'}`} />
+                        </button>
+                      </div>
+
+                      {/* Output Guardrails */}
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <h2 className="text-sm font-medium">Output Guardrails</h2>
+                          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                            Filter and validate agent responses before delivery.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setAgent({ ...agent, output_guardrails: !agent.output_guardrails })}
+                          className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${agent.output_guardrails ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'}`}
+                        >
+                          <span className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${agent.output_guardrails ? '' : '-translate-x-5'}`} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
+
               </div>
             )}
           </div>
         </div>
+
+        {/* Preview Section */}
         <div className="col-span-3 flex flex-col gap-2 max-[1179px]:h-auto max-[1179px]:px-0 max-[1179px]:py-0 min-[1180px]:h-full min-[1180px]:py-2">
-          <h2 className="text-lg font-semibold">
-            {t('agents.form.sections.preview')}
-          </h2>
+          <h2 className="text-lg font-semibold">{t('agents.form.sections.preview')}</h2>
           <div className="flex-1 max-[1179px]:overflow-visible min-[1180px]:min-h-0 min-[1180px]:overflow-hidden">
             <AgentPreviewArea />
           </div>
         </div>
       </div>
+
       <ConfirmationModal
         message={t('agents.deleteConfirmation')}
         modalState={deleteConfirmation}
         setModalState={setDeleteConfirmation}
         submitLabel={t('agents.form.buttons.delete')}
-        handleSubmit={() => {
-          handleDelete(agent.id || '');
-          setDeleteConfirmation('INACTIVE');
-        }}
+        handleSubmit={() => { handleDelete(agent.id || ''); setDeleteConfirmation('INACTIVE'); }}
         cancelLabel={t('agents.form.buttons.cancel')}
         variant="danger"
       />
-      <AgentDetailsModal
-        agent={agent}
-        mode={effectiveMode}
-        modalState={agentDetails}
-        setModalState={setAgentDetails}
-      />
+      <AgentDetailsModal agent={agent} mode={effectiveMode} modalState={agentDetails} setModalState={setAgentDetails} />
       <AddPromptModal
         prompts={prompts}
         isOpen={addPromptModal}
         onClose={() => setAddPromptModal('INACTIVE')}
-        onSelect={(name: string, id: string, type: string) => {
-          setAgent({ ...agent, prompt_id: id });
-        }}
+        onSelect={(name: string, id: string, type: string) => setAgent({ ...agent, prompt_id: id })}
       />
     </div>
   );
@@ -1396,10 +1072,8 @@ function AgentPreviewArea() {
         </div>
       ) : (
         <div className="flex h-full w-full flex-col items-center justify-center gap-2">
-          <span className="block h-12 w-12 bg-[url('/src/assets/science-spark.svg')] bg-contain bg-center bg-no-repeat transition-all dark:bg-[url('/src/assets/science-spark-dark.svg')]" />{' '}
-          <p className="text-muted-foreground text-xs">
-            {t('agents.form.preview.publishedPreview')}
-          </p>
+          <span className="block h-12 w-12 bg-[url('/src/assets/science-spark.svg')] bg-contain bg-center bg-no-repeat transition-all dark:bg-[url('/src/assets/science-spark-dark.svg')]" />
+          <p className="text-muted-foreground text-xs">{t('agents.form.preview.publishedPreview')}</p>
         </div>
       )}
     </div>
@@ -1419,30 +1093,15 @@ function AddPromptModal({
 }) {
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
-
   const [newPromptName, setNewPromptName] = useState('');
   const [newPromptContent, setNewPromptContent] = useState('');
 
   const handleAddPrompt = async () => {
     try {
-      const response = await userService.createPrompt(
-        {
-          name: newPromptName,
-          content: newPromptContent,
-        },
-        token,
-      );
-      if (!response.ok) {
-        throw new Error('Failed to add prompt');
-      }
+      const response = await userService.createPrompt({ name: newPromptName, content: newPromptContent }, token);
+      if (!response.ok) throw new Error('Failed to add prompt');
       const newPrompt = await response.json();
-      // Update Redux store with new prompt
-      dispatch(
-        setPrompts([
-          ...prompts,
-          { name: newPromptName, id: newPrompt.id, type: 'private' },
-        ]),
-      );
+      dispatch(setPrompts([...prompts, { name: newPromptName, id: newPrompt.id, type: 'private' }]));
       onClose();
       setNewPromptName('');
       setNewPromptContent('');
@@ -1451,6 +1110,7 @@ function AddPromptModal({
       console.error('Error adding prompt:', error);
     }
   };
+
   return (
     <PromptsModal
       modalState={isOpen}
