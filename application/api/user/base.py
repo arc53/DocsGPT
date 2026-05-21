@@ -84,13 +84,14 @@ def resolve_tool_details(tool_ids):
     Resolve tool IDs to their display details.
 
     Accepts Postgres UUIDs, legacy Mongo ObjectId strings, or the
-    synthetic ids of default chat tools (mixed lists are supported).
-    Default-tool ids are resolved in memory; real ids are looked up via
-    ``get_any``. Unknown ids are silently skipped.
+    synthetic ids of default chat tools / agent-selectable builtins
+    (mixed lists are supported). Synthetic ids are resolved in memory;
+    real ids are looked up via ``get_any``. Unknown ids are silently
+    skipped.
 
     Args:
         tool_ids: List of tool IDs (UUIDs, legacy ObjectId strings, or
-            synthetic default-tool ids).
+            synthetic default-tool / builtin ids).
 
     Returns:
         List of tool details with ``id``, ``name``, and ``display_name``.
@@ -99,9 +100,9 @@ def resolve_tool_details(tool_ids):
         return []
 
     from application.agents.default_tools import (
-        is_default_tool_id,
-        synthesize_default_tool,
-        default_tool_name_for_id,
+        is_synthesized_tool_id,
+        synthesize_tool_by_name,
+        synthesized_tool_name_for_id,
     )
 
     uuid_ids: list[str] = []
@@ -111,8 +112,8 @@ def resolve_tool_details(tool_ids):
         if not tid:
             continue
         tid_str = str(tid)
-        if is_default_tool_id(tid_str):
-            synth = synthesize_default_tool(default_tool_name_for_id(tid_str))
+        if is_synthesized_tool_id(tid_str):
+            synth = synthesize_tool_by_name(synthesized_tool_name_for_id(tid_str))
             if synth is not None:
                 default_details.append(
                     {

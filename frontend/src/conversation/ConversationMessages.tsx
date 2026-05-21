@@ -44,6 +44,8 @@ type ConversationMessagesProps = {
     comment?: string,
   ) => void;
   isSplitView?: boolean;
+  /** Active agent id; threaded into SchedulerToolCallCard. */
+  agentId?: string;
 };
 
 export default function ConversationMessages({
@@ -57,6 +59,7 @@ export default function ConversationMessages({
   onOpenArtifact,
   onToolAction,
   isSplitView = false,
+  agentId,
 }: ConversationMessagesProps) {
   const [isDarkTheme] = useDarkTheme();
   const { t } = useTranslation();
@@ -302,6 +305,7 @@ export default function ConversationMessages({
           onToolAction={onToolAction}
           feedback={query.feedback}
           isStreaming={isCurrentlyStreaming}
+          agentId={agentId}
           handleFeedback={
             handleFeedback
               ? (feedback) => handleFeedback(query, feedback, index)

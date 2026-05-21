@@ -48,8 +48,13 @@ export type UserToolType = {
   description: string;
   status: boolean;
   // True for built-in default chat tools — managed via the opt-out list,
-  // not a user_tools row; not deletable.
+  // not a user_tools row; not deletable. ``scheduler`` is dual-registered
+  // (both ``default`` and ``builtin``).
   default?: boolean;
+  // True for agent-selectable builtins (e.g. ``scheduler``) — hidden
+  // from the Add-Tool modal; surfaced to the agent picker. May coexist
+  // with ``default`` for dual-registered tools.
+  builtin?: boolean;
   config: {
     [key: string]: any;
   };

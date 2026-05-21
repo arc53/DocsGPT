@@ -24,6 +24,11 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set([
   'mcp.oauth.completed',
   'mcp.oauth.failed',
   'tool.approval.required',
+  // Scheduler envelopes (scheduler_worker.py); consumed by schedulesSlice.
+  'schedule.run.completed',
+  'schedule.run.failed',
+  'schedule.autopaused',
+  'schedule.message.appended',
 ]);
 
 /**

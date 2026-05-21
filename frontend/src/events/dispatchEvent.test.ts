@@ -46,4 +46,15 @@ describe('dispatchSSEEvent', () => {
       'mystery.event',
     ]);
   });
+
+  it.each([
+    'schedule.run.completed',
+    'schedule.run.failed',
+    'schedule.autopaused',
+    'schedule.message.appended',
+  ])('treats %s as a known envelope (no debug noise)', (type) => {
+    const dispatch = vi.fn() as unknown as AppDispatch;
+    dispatchSSEEvent({ id: `e-${type}`, type }, dispatch);
+    expect(debugSpy).not.toHaveBeenCalled();
+  });
 });

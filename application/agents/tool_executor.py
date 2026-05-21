@@ -3,7 +3,11 @@ import uuid
 from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 
-from application.agents.default_tools import resolve_tool_by_id, synthesized_default_tools
+from application.agents.default_tools import (
+    is_headless_excluded_tool,
+    resolve_tool_by_id,
+    synthesized_default_tools,
+)
 from application.agents.tools.tool_action_parser import ToolActionParser
 from application.agents.tools.tool_manager import ToolManager
 from application.security.encryption import decrypt_credentials
@@ -116,11 +120,21 @@ class ToolExecutor:
         user: Optional[str] = None,
         decoded_token: Optional[Dict] = None,
         agent_id: Optional[str] = None,
+        *,
+        headless: bool = False,
+        tool_allowlist: Optional[List[str]] = None,
     ):
         self.user_api_key = user_api_key
         self.user = user
         self.decoded_token = decoded_token
         self.agent_id = agent_id
+        # Headless mode (scheduled / webhook): no human to resolve a pause,
+        # so check_pause returns headless_denied sentinels instead.
+        self.headless = bool(headless)
+        # Tool-instance ids pre-authorized for headless approval-gated execution.
+        self.tool_allowlist: set = (
+            {str(x) for x in tool_allowlist} if tool_allowlist else set()
+        )
         self.tool_calls: List[Dict] = []
         self._loaded_tools: Dict[str, object] = {}
         self.conversation_id: Optional[str] = None
@@ -128,6 +142,8 @@ class ToolExecutor:
         self.client_tools: Optional[List[Dict]] = None
         self._name_to_tool: Dict[str, Tuple[str, str]] = {}
         self._tool_to_name: Dict[Tuple[str, str], str] = {}
+        # Filled by the LLMHandler.handle_tool_calls headless loop.
+        self.headless_denials: List[Dict] = []
 
     def get_tools(self) -> Dict[str, Dict]:
         """Load tool configs from DB based on user context.
@@ -160,8 +176,13 @@ class ToolExecutor:
             tools: List[Dict] = []
             for tid in tool_ids:
                 row = resolve_tool_by_id(tid, owner, user_tools_repo=tools_repo)
-                if row is not None:
-                    tools.append(row)
+                if row is None:
+                    continue
+                # Headless runs (scheduled / webhook) drop chat-only tools
+                # like ``scheduler`` so a fire-time LLM can't chain schedules.
+                if self.headless and is_headless_excluded_tool(row.get("name")):
+                    continue
+                tools.append(row)
         return {str(tool["id"]): tool for tool in tools}
 
     def _get_user_tools(self, user: str = "local") -> Dict[str, Dict]:
@@ -171,12 +192,20 @@ class ToolExecutor:
             user_doc = (
                 UsersRepository(conn).get(user) if self.agent_id is None else None
             )
+        # Headless agentless runs (e.g. scheduled fire) drop chat-only
+        # tools (``scheduler``) from explicit user_tools too.
+        filtered_user_tools = [
+            t for t in user_tools
+            if not (self.headless and is_headless_excluded_tool(t.get("name")))
+        ]
         # Index keys (ints) and synthetic uuid5 keys can't collide.
         tools: Dict[str, Dict] = {
-            str(i): tool for i, tool in enumerate(user_tools)
+            str(i): tool for i, tool in enumerate(filtered_user_tools)
         }
         if self.agent_id is None:
-            for default_row in synthesized_default_tools(user_doc):
+            for default_row in synthesized_default_tools(
+                user_doc, headless=self.headless,
+            ):
                 tools[str(default_row["id"])] = default_row
         return tools
 
@@ -316,9 +345,11 @@ class ToolExecutor:
     def check_pause(
         self, tools_dict: Dict, call, llm_class_name: str
     ) -> Optional[Dict]:
-        """Check if a tool call requires pausing for approval or client execution.
+        """Return a pending-action dict (approval / client / headless_denied) or None.
 
-        Returns a dict describing the pending action if pause is needed, None otherwise.
+        In headless mode the dict's pause_type is ``headless_denied`` so the
+        upstream loop synthesizes a tool result instead of pausing (nothing can
+        resume a scheduled / webhook run).
         """
         parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
         tool_id, action_name, call_args = parser.parse_args(call)
@@ -329,9 +360,26 @@ class ToolExecutor:
             return None  # Will be handled as error by execute()
 
         tool_data = tools_dict[tool_id]
+        arguments = call_args if isinstance(call_args, dict) else {}
 
         # Client-side tools
         if tool_data.get("client_side"):
+            if self.headless:
+                return {
+                    "call_id": call_id,
+                    "name": llm_name,
+                    "tool_name": tool_data.get("name", "unknown"),
+                    "tool_id": tool_id,
+                    "action_name": action_name,
+                    "llm_name": llm_name,
+                    "arguments": arguments,
+                    "pause_type": "headless_denied",
+                    "deny_reason": (
+                        "Client-side tools cannot run in headless / scheduled runs."
+                    ),
+                    "error_type": "tool_not_allowed",
+                    "thought_signature": getattr(call, "thought_signature", None),
+                }
             return {
                 "call_id": call_id,
                 "name": llm_name,
@@ -339,7 +387,7 @@ class ToolExecutor:
                 "tool_id": tool_id,
                 "action_name": action_name,
                 "llm_name": llm_name,
-                "arguments": call_args if isinstance(call_args, dict) else {},
+                "arguments": arguments,
                 "pause_type": "requires_client_execution",
                 "thought_signature": getattr(call, "thought_signature", None),
             }
@@ -356,6 +404,27 @@ class ToolExecutor:
             )
 
         if action_data.get("require_approval"):
+            if self.headless:
+                tool_row_id = str(tool_data.get("id") or tool_id)
+                if tool_row_id in self.tool_allowlist:
+                    # Pre-authorized for headless execution — fall through.
+                    return None
+                return {
+                    "call_id": call_id,
+                    "name": llm_name,
+                    "tool_name": tool_data.get("name", "unknown"),
+                    "tool_id": tool_id,
+                    "action_name": action_name,
+                    "llm_name": llm_name,
+                    "arguments": arguments,
+                    "pause_type": "headless_denied",
+                    "deny_reason": (
+                        "This tool requires approval and is not in the run's "
+                        "tool_allowlist."
+                    ),
+                    "error_type": "tool_not_allowed",
+                    "thought_signature": getattr(call, "thought_signature", None),
+                }
             return {
                 "call_id": call_id,
                 "name": llm_name,
@@ -363,7 +432,7 @@ class ToolExecutor:
                 "tool_id": tool_id,
                 "action_name": action_name,
                 "llm_name": llm_name,
-                "arguments": call_args if isinstance(call_args, dict) else {},
+                "arguments": arguments,
                 "pause_type": "awaiting_approval",
                 "thought_signature": getattr(call, "thought_signature", None),
             }
@@ -639,6 +708,13 @@ class ToolExecutor:
             tool_config["tool_id"] = str(row_id)
             if self.conversation_id:
                 tool_config["conversation_id"] = self.conversation_id
+            if tool_data["name"] == "scheduler":
+                # Agent-bound: stamp schedules.agent_id. Agentless: the tool
+                # falls back to ``origin_conversation_id`` as the schedule's
+                # conversation home.
+                tool_config["agent_id"] = (
+                    str(self.agent_id) if self.agent_id else None
+                )
             if tool_data["name"] == "mcp_tool":
                 tool_config["query_mode"] = True
 

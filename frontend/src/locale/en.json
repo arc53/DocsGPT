@@ -670,6 +670,7 @@
         "cancel": "Cancel",
         "delete": "Delete",
         "logs": "Logs",
+        "schedules": "Schedules",
         "accessDetails": "Access Details",
         "add": "Add"
       },
@@ -703,7 +704,10 @@
       "toolsPopup": {
         "title": "Select Tools",
         "searchPlaceholder": "Search tools...",
-        "noOptionsMessage": "No tools available"
+        "noOptionsMessage": "No tools available",
+        "groupBuiltin": "Built-in",
+        "groupDefault": "Default",
+        "groupCustom": "Custom"
       },
       "modelsPopup": {
         "title": "Select Models",
@@ -743,6 +747,69 @@
       "lastUsedAt": "Last used at",
       "noUsageHistory": "No usage history",
       "tableHeader": "Agent endpoint logs"
+    },
+    "schedules": {
+      "title": "Agent Schedules",
+      "heading": "Schedules",
+      "newRecurring": "New schedule",
+      "closeForm": "Close form",
+      "edit": "Edit",
+      "recurring": "Recurring",
+      "oneTime": "One-time tasks",
+      "noRecurring": "No recurring schedules yet.",
+      "noOneTime": "No one-time tasks yet.",
+      "pause": "Pause",
+      "resume": "Resume",
+      "runNow": "Run now",
+      "delete": "Delete",
+      "cancel": "Cancel",
+      "showRuns": "Show runs",
+      "hideRuns": "Hide runs",
+      "modal": {
+        "titleCreate": "New schedule",
+        "titleEdit": "Edit schedule",
+        "namePlaceholder": "Name of task",
+        "frequency": {
+          "once": "Once",
+          "daily": "Daily",
+          "weekly": "Weekly",
+          "monthly": "Monthly",
+          "yearly": "Yearly"
+        },
+        "on": "On",
+        "at": "At",
+        "instructionsLabel": "Instructions",
+        "instructionsPlaceholder": "Enter prompt here.",
+        "create": "Create task",
+        "save": "Save changes",
+        "errors": {
+          "instructionRequired": "Instructions are required.",
+          "runAtInPast": "Pick a date/time in the future."
+        },
+        "days": {
+          "mon": "Mon",
+          "tue": "Tue",
+          "wed": "Wed",
+          "thu": "Thu",
+          "fri": "Fri",
+          "sat": "Sat",
+          "sun": "Sun"
+        },
+        "months": {
+          "jan": "Jan",
+          "feb": "Feb",
+          "mar": "Mar",
+          "apr": "Apr",
+          "may": "May",
+          "jun": "Jun",
+          "jul": "Jul",
+          "aug": "Aug",
+          "sep": "Sep",
+          "oct": "Oct",
+          "nov": "Nov",
+          "dec": "Dec"
+        }
+      }
     },
     "shared": {
       "notFound": "No agent found. Please ensure the agent is shared."

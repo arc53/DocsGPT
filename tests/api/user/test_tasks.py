@@ -222,7 +222,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 9
+        assert sender.add_periodic_task.call_count == 11
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -249,6 +249,11 @@ class TestSetupPeriodicTasks:
         # orphan memories sweep (24h)
         assert calls[8][0][0] == timedelta(hours=24)
         assert calls[8][1].get("name") == "cleanup-orphan-memories"
+        # scheduler dispatcher
+        assert calls[9][1].get("name") == "dispatch-scheduled-runs"
+        # schedule runs cleanup (24h)
+        assert calls[10][0][0] == timedelta(hours=24)
+        assert calls[10][1].get("name") == "cleanup-schedule-runs"
 
 
 class TestMcpOauthTask:

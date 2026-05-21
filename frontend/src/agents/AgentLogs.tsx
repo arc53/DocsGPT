@@ -37,6 +37,7 @@ export default function AgentLogs() {
   useEffect(() => {
     if (agentId) fetchAgent(agentId);
   }, [agentId, token]);
+
   return (
     <div className="p-4 md:p-12">
       <div className="flex items-center gap-3 px-4">
@@ -78,7 +79,6 @@ export default function AgentLogs() {
       )}
       {loadingAgent ? (
         <div className="flex h-[55vh] w-full items-center justify-center">
-          {' '}
           <Spinner />
         </div>
       ) : (

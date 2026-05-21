@@ -79,17 +79,27 @@ def _alembic_version(conn) -> str:
     return conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
 
 
+_0009_REVISION = "0009_tool_preferences"
+
+
 class TestMigration0009RoundTrip:
     def test_head_state_has_trigger_no_fk(self, pg_engine):
+        # The pg_engine fixture upgrades to ``head``; downgrade once to
+        # land back at the 0009 revision this test characterises.
+        url = pg_engine.url.render_as_string(hide_password=False)
+        _run_alembic(url, "downgrade", _0009_REVISION)
         with pg_engine.connect() as conn:
-            assert _alembic_version(conn) == "0009_tool_preferences"
+            assert _alembic_version(conn) == _0009_REVISION
             assert not _fk_exists(conn)
             assert _trigger_exists(conn)
             assert _function_exists(conn)
             assert _column_exists(conn, "users", "tool_preferences")
+        _run_alembic(url, "upgrade", "head")
 
     def test_downgrade_restores_fk_and_drops_trigger(self, pg_engine):
         url = pg_engine.url.render_as_string(hide_password=False)
+        # Drop down to 0009 first so the next downgrade hits 0009 → 0008.
+        _run_alembic(url, "downgrade", _0009_REVISION)
         _run_alembic(url, "downgrade", "-1")
         with pg_engine.connect() as conn:
             assert _alembic_version(conn) == "0008_ingest_progress_status"
@@ -97,23 +107,27 @@ class TestMigration0009RoundTrip:
             assert not _trigger_exists(conn)
             assert not _function_exists(conn)
             assert not _column_exists(conn, "users", "tool_preferences")
+        _run_alembic(url, "upgrade", "head")
 
     def test_full_round_trip_lands_back_at_head(self, pg_engine):
         url = pg_engine.url.render_as_string(hide_password=False)
-        _run_alembic(url, "downgrade", "-1")
-        _run_alembic(url, "upgrade", "head")
+        _run_alembic(url, "downgrade", "0008_ingest_progress_status")
+        _run_alembic(url, "upgrade", _0009_REVISION)
         with pg_engine.connect() as conn:
-            assert _alembic_version(conn) == "0009_tool_preferences"
+            assert _alembic_version(conn) == _0009_REVISION
             assert not _fk_exists(conn)
             assert _trigger_exists(conn)
             assert _function_exists(conn)
             assert _column_exists(conn, "users", "tool_preferences")
+        _run_alembic(url, "upgrade", "head")
 
     def test_downgrade_purges_synthetic_id_memory_rows(self, pg_engine):
         """Downgrade DELETEs synthetic-id memory rows so the FK can be restored."""
         from application.agents.default_tools import default_tool_id
 
         url = pg_engine.url.render_as_string(hide_password=False)
+        # Land on 0009 so synthetic-id rows are insertable (no FK yet).
+        _run_alembic(url, "downgrade", _0009_REVISION)
         synthetic_id = default_tool_id("memory")
         with pg_engine.begin() as conn:
             real_tool_id = str(
@@ -153,11 +167,16 @@ class TestMigration0009RoundTrip:
         _run_alembic(url, "upgrade", "head")
 
     def test_upgrade_is_idempotent(self, pg_engine):
-        """Re-running upgrade after stamping back succeeds."""
+        """Re-running upgrade after physically downgrading succeeds."""
         url = pg_engine.url.render_as_string(hide_password=False)
-        _run_alembic(url, "stamp", "0008_ingest_progress_status")
-        _run_alembic(url, "upgrade", "head")
+        # Physically downgrade so the next upgrade actually re-runs the
+        # 0009 DDL (a bare ``stamp`` would leave objects from later
+        # revisions in place and the re-upgrade would collide on them).
+        _run_alembic(url, "downgrade", "0008_ingest_progress_status")
+        _run_alembic(url, "upgrade", _0009_REVISION)
         with pg_engine.connect() as conn:
-            assert _alembic_version(conn) == "0009_tool_preferences"
+            assert _alembic_version(conn) == _0009_REVISION
             assert _trigger_exists(conn)
             assert _function_exists(conn)
+        # Restore full head for teardown.
+        _run_alembic(url, "upgrade", "head")

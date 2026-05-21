@@ -144,7 +144,15 @@ export default function Tools() {
         return res.json();
       })
       .then((data) => {
-        setUserTools(data.tools);
+        // Pure builtins (agent-only, e.g. a future builtin without an
+        // agentless path) carry no per-user state and only apply when
+        // added to an agent — hide them from the management page. Dual-
+        // registered tools (``scheduler``: builtin + default) stay visible
+        // here so the user can toggle the default off in agentless chats.
+        const filtered = (data.tools || []).filter(
+          (tool: UserToolType) => tool.default || !tool.builtin,
+        );
+        setUserTools(filtered);
         setLoading(false);
       })
       .catch((error) => {

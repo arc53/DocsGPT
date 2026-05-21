@@ -3,6 +3,7 @@ import 'reactflow/dist/style.css';
 import {
   AlertCircle,
   Bot,
+  CalendarClock,
   ChartColumn,
   Database,
   Flag,
@@ -1531,6 +1532,17 @@ function WorkflowBuilderInner() {
               >
                 <ChartColumn size={16} />
                 Logs
+              </button>
+            )}
+            {canManageAgent && (
+              <button
+                onClick={() =>
+                  navigate(`/agents/schedules/${effectiveAgentId}`)
+                }
+                className="border-border bg-card hover:bg-accent flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium text-gray-700 transition-colors dark:text-gray-200"
+              >
+                <CalendarClock size={16} />
+                Schedules
               </button>
             )}
             {canManageAgent && (

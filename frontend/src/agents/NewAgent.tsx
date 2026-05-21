@@ -439,12 +439,29 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const response = await userService.getUserTools(token);
       if (!response.ok) throw new Error('Failed to fetch tools');
       const data = await response.json();
+      // Group ordering: builtins -> defaults -> user tools (sorted via the
+      // MultiSelectPopup first-appearance grouping).
+      const groupFor = (tool: UserToolType): string => {
+        if (tool.builtin) return t('agents.form.toolsPopup.groupBuiltin');
+        if (tool.default) return t('agents.form.toolsPopup.groupDefault');
+        return t('agents.form.toolsPopup.groupCustom');
+      };
       const tools: OptionType[] = data.tools.map((tool: UserToolType) => ({
         id: tool.id,
         label: getToolDisplayName(tool),
         icon: `/toolIcons/tool_${tool.name}.svg`,
         name: tool.name,
+        group: groupFor(tool),
       }));
+      const groupOrder = [
+        t('agents.form.toolsPopup.groupBuiltin'),
+        t('agents.form.toolsPopup.groupDefault'),
+        t('agents.form.toolsPopup.groupCustom'),
+      ];
+      tools.sort(
+        (a, b) =>
+          groupOrder.indexOf(a.group || '') - groupOrder.indexOf(b.group || ''),
+      );
       setUserTools(tools);
     };
     const getModels = async () => {
@@ -760,6 +777,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             >
               <span className="block h-5 w-5 bg-[url('/src/assets/monitoring-purple.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/monitoring-white.svg')]" />
               {t('agents.form.buttons.logs')}
+            </button>
+          )}
+          {modeConfig[effectiveMode].showAccessDetails && (
+            <button
+              className="group border-primary text-primary hover:bg-primary/90 flex items-center gap-2 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
+              onClick={() => navigate(`/agents/schedules/${agent.id}`)}
+            >
+              <span className="block h-5 w-5 bg-[url('/src/assets/clock-purple.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/clock-white.svg')]" />
+              {t('agents.form.buttons.schedules')}
             </button>
           )}
           {modeConfig[effectiveMode].showAccessDetails && (

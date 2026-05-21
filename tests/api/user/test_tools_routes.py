@@ -1066,7 +1066,11 @@ def _seed_tool(pg_conn, user="u-tools", name="read_webpage", config=None):
 
 class TestGetToolsHappy:
     def test_returns_user_tools(self, app, pg_conn):
-        from application.agents.default_tools import loaded_default_tools
+        from application.agents.default_tools import (
+            BUILTIN_AGENT_TOOLS,
+            loaded_builtin_agent_tools,
+            loaded_default_tools,
+        )
         from application.api.user.tools.routes import GetTools
 
         user = "u-get-tools"
@@ -1081,11 +1085,25 @@ class TestGetToolsHappy:
         assert response.status_code == 200
         assert response.json["success"] is True
         tools = response.json["tools"]
-        assert len(tools) == 1 + len(loaded_default_tools())
-        explicit = [t for t in tools if not t.get("default")]
+        # Response shape: 1 explicit + every default + builtins not already
+        # surfaced as a default (dual-registered ``scheduler`` is dedup'd).
+        defaults_count = len(loaded_default_tools())
+        builtins_count = len(loaded_builtin_agent_tools())
+        dual = sum(
+            1 for name in loaded_default_tools() if name in BUILTIN_AGENT_TOOLS
+        )
+        assert len(tools) == 1 + defaults_count + (builtins_count - dual)
+        explicit = [
+            t for t in tools
+            if not t.get("default") and not t.get("builtin")
+        ]
         defaults = [t for t in tools if t.get("default")]
+        builtins = [t for t in tools if t.get("builtin")]
         assert len(explicit) == 1
-        assert len(defaults) == len(loaded_default_tools())
+        assert len(defaults) == defaults_count
+        # Dual-registered tools (scheduler) appear once with both flags;
+        # ``builtins`` here counts them via ``builtin=True``.
+        assert len(builtins) == (builtins_count - dual) + dual
 
     def test_db_error_returns_400(self, app):
         from application.api.user.tools.routes import GetTools
@@ -1409,6 +1427,27 @@ class TestDefaultToolsRoutes:
             assert tool["id"] == default_tool_id(tool["name"])
             assert tool["status"] is True
 
+    def test_get_tools_surfaces_scheduler_with_both_flags(self, app, pg_conn):
+        """Dual-registered scheduler appears once with default+builtin flags."""
+        from application.agents.default_tools import default_tool_id
+        from application.api.user.tools.routes import GetTools
+
+        user = "u-sched-dual"
+        with _patch_tools_db(pg_conn), app.test_request_context("/api/get_tools"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = GetTools().get()
+        assert response.status_code == 200
+        scheduler_id = default_tool_id("scheduler")
+        scheduler_rows = [
+            t for t in response.json["tools"] if t["id"] == scheduler_id
+        ]
+        assert len(scheduler_rows) == 1  # dedup at the routes layer
+        row = scheduler_rows[0]
+        assert row["default"] is True
+        assert row["builtin"] is True
+        assert row["name"] == "scheduler"
+
     def test_get_tools_status_reflects_opt_out(self, app, pg_conn):
         from application.api.user.tools.routes import GetTools
         from application.storage.db.repositories.users import UsersRepository
@@ -1555,5 +1594,100 @@ class TestDefaultToolsRoutes:
         assert response.json["success"] is False
         assert "not editable" in response.json["message"]
 
+
+# ---------------------------------------------------------------------------
+# Dual-registered tools (scheduler) — toggle MUST hit the default-tool path,
+# not the builtin "not editable" rejection. Regression for the iter-6 issue
+# where ``is_builtin_agent_tool_id`` was checked first, silently dropping the
+# write on a dual-registered uuid5.
+# ---------------------------------------------------------------------------
+class TestDualRegisteredToggle:
+    def test_update_tool_status_off_writes_disabled_default(self, app, pg_conn):
+        from application.agents.default_tools import default_tool_id
+        from application.api.user.tools.routes import UpdateToolStatus
+        from application.storage.db.repositories.users import UsersRepository
+
+        user = "u-sched-off"
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool_status",
+            method="POST",
+            json={"id": default_tool_id("scheduler"), "status": False},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateToolStatus().post()
+        assert response.status_code == 200
+        assert response.json["success"] is True
+        user_doc = UsersRepository(pg_conn).get(user)
+        assert "scheduler" in (
+            user_doc["tool_preferences"]["disabled_default_tools"]
+        )
+
+    def test_update_tool_status_on_removes_disabled_default(self, app, pg_conn):
+        from application.agents.default_tools import default_tool_id
+        from application.api.user.tools.routes import UpdateToolStatus
+        from application.storage.db.repositories.users import UsersRepository
+
+        user = "u-sched-on"
+        UsersRepository(pg_conn).set_default_tool_enabled(
+            user, "scheduler", False,
+        )
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool_status",
+            method="POST",
+            json={"id": default_tool_id("scheduler"), "status": True},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateToolStatus().post()
+        assert response.status_code == 200
+        assert response.json["success"] is True
+        user_doc = UsersRepository(pg_conn).get(user)
+        assert "scheduler" not in (
+            user_doc["tool_preferences"]["disabled_default_tools"]
+        )
+
+    def test_update_tool_status_round_trip(self, app, pg_conn):
+        """Off → on returns to the empty-list baseline."""
+        from application.agents.default_tools import default_tool_id
+        from application.api.user.tools.routes import UpdateToolStatus
+        from application.storage.db.repositories.users import UsersRepository
+
+        user = "u-sched-rt"
+        scheduler_id = default_tool_id("scheduler")
+        for status in (False, True):
+            with _patch_tools_db(pg_conn), app.test_request_context(
+                "/api/update_tool_status",
+                method="POST",
+                json={"id": scheduler_id, "status": status},
+            ):
+                from flask import request
+                request.decoded_token = {"sub": user}
+                response = UpdateToolStatus().post()
+            assert response.status_code == 200
+        user_doc = UsersRepository(pg_conn).get(user)
+        assert user_doc["tool_preferences"]["disabled_default_tools"] == []
+
+    def test_update_tool_with_status_writes_disabled_default(self, app, pg_conn):
+        """The /api/update_tool route also honours the default branch first."""
+        from application.agents.default_tools import default_tool_id
+        from application.api.user.tools.routes import UpdateTool
+        from application.storage.db.repositories.users import UsersRepository
+
+        user = "u-sched-upd"
+        with _patch_tools_db(pg_conn), app.test_request_context(
+            "/api/update_tool",
+            method="POST",
+            json={"id": default_tool_id("scheduler"), "status": False},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateTool().post()
+        assert response.status_code == 200
+        assert response.json["success"] is True
+        user_doc = UsersRepository(pg_conn).get(user)
+        assert "scheduler" in (
+            user_doc["tool_preferences"]["disabled_default_tools"]
+        )
 
 

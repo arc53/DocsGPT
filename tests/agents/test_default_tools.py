@@ -16,6 +16,8 @@ def _reset_tool_cache():
         default_tools._tool_cache.clear()
         default_tools._ids_cache.clear()
         default_tools._loaded_cache.clear()
+        default_tools._builtin_ids_cache.clear()
+        default_tools._builtin_loaded_cache.clear()
 
     _clear()
     yield
@@ -94,14 +96,14 @@ class TestValidation:
         monkeypatch.setattr(
             default_tools.settings,
             "DEFAULT_CHAT_TOOLS",
-            ["memory", "read_webpage", "scheduler"],
+            ["memory", "read_webpage", "future_tool_x"],
         )
         with caplog.at_level("DEBUG", logger="application.agents.default_tools"):
             usable = default_tools.validate_default_chat_tools()
-        assert "scheduler" not in usable
+        assert "future_tool_x" not in usable
         assert "memory" in usable and "read_webpage" in usable
         assert any(
-            "scheduler" in rec.message and rec.levelname == "DEBUG"
+            "future_tool_x" in rec.message and rec.levelname == "DEBUG"
             for rec in caplog.records
         )
         assert not any(rec.levelname == "WARNING" for rec in caplog.records)
@@ -111,7 +113,7 @@ class TestValidation:
         monkeypatch.setattr(
             default_tools.settings,
             "DEFAULT_CHAT_TOOLS",
-            ["memory", "read_webpage", "scheduler"],
+            ["memory", "read_webpage", "future_tool_x"],
         )
         with caplog.at_level("DEBUG", logger="application.agents.default_tools"):
             default_tools.loaded_default_tools()
@@ -149,6 +151,14 @@ class TestValidation:
             "read_webpage",
         ]
 
+    def test_scheduler_is_config_free(self, monkeypatch):
+        # Dual-registration only works if scheduler passes the config-free
+        # assertion — otherwise startup would reject DEFAULT_CHAT_TOOLS.
+        monkeypatch.setattr(
+            default_tools.settings, "DEFAULT_CHAT_TOOLS", ["scheduler"]
+        )
+        assert default_tools.validate_default_chat_tools() == ["scheduler"]
+
     def test_tool_with_required_config_is_rejected(self, monkeypatch):
         # ``brave`` needs an API key.
         monkeypatch.setattr(
@@ -161,7 +171,7 @@ class TestValidation:
         monkeypatch.setattr(
             default_tools.settings,
             "DEFAULT_CHAT_TOOLS",
-            ["memory", "read_webpage", "scheduler"],
+            ["memory", "read_webpage", "future_tool_x"],
         )
         assert default_tools.loaded_default_tools() == ["memory", "read_webpage"]
 
@@ -184,7 +194,7 @@ class TestSynthesize:
         assert isinstance(row["actions"], list) and row["actions"]
 
     def test_synthesize_unknown_tool_returns_none(self):
-        assert default_tools.synthesize_default_tool("scheduler") is None
+        assert default_tools.synthesize_default_tool("future_tool_x") is None
         assert default_tools.synthesize_default_tool("nope") is None
 
     def test_synthesize_includes_display_name(self):
@@ -287,9 +297,65 @@ class TestResolveToolById:
     def test_non_default_id_without_repo_returns_none(self):
         assert default_tools.resolve_tool_by_id(str(uuid.uuid4()), "user-x") is None
 
-    def test_unimplemented_default_resolves_to_none(self):
+    def test_builtin_agent_tool_id_resolves_in_memory(self):
+        """Dual-registered scheduler resolves with BOTH ``default`` and
+        ``builtin`` flags so either path can branch on the discriminator."""
         tool_id = default_tools.default_tool_id("scheduler")
-        assert default_tools.resolve_tool_by_id(tool_id, "user-x") is None
+        row = default_tools.resolve_tool_by_id(tool_id, "user-x")
+        assert row is not None
+        assert row["name"] == "scheduler"
+        assert row["builtin"] is True
+        assert row["default"] is True
+
+
+# ---------------------------------------------------------------------------
+# Agent-selectable builtins (scheduler) — synthesized like defaults but
+# hidden from agentless-chat synthesis and from /api/available_tools.
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+class TestBuiltinAgentTools:
+    def test_scheduler_is_a_builtin(self):
+        assert "scheduler" in default_tools.BUILTIN_AGENT_TOOLS
+
+    def test_scheduler_dual_registered_in_default_chat_tools(self):
+        # Revised decision #8: scheduler is dual-registered as a default
+        # chat tool (auto-on in agentless chats) AND a builtin agent tool
+        # (opt-in via the agent picker). Both registries share the same
+        # ``_DEFAULT_TOOL_NAMESPACE`` so the synthetic id is one stable uuid5.
+        assert "scheduler" in default_tools.settings.DEFAULT_CHAT_TOOLS
+
+    def test_dual_registration_produces_one_synthetic_id(self):
+        # Same uuid5 namespace → same id whether reached via defaults or builtins.
+        as_default = default_tools.default_tool_id("scheduler")
+        assert default_tools.is_default_tool_id(as_default)
+        assert default_tools.is_builtin_agent_tool_id(as_default)
+
+    def test_builtin_id_is_recognised(self):
+        tool_id = default_tools.default_tool_id("scheduler")
+        assert default_tools.is_builtin_agent_tool_id(tool_id)
+        assert default_tools.builtin_agent_tool_name_for_id(tool_id) == "scheduler"
+
+    def test_synthesize_builtin_marks_flags_correctly(self):
+        row = default_tools.synthesize_builtin_agent_tool("scheduler")
+        assert row is not None
+        assert row["name"] == "scheduler"
+        assert row["default"] is False
+        assert row["builtin"] is True
+        assert isinstance(row["actions"], list) and row["actions"]
+
+    def test_builtin_agent_tools_for_management_lists_scheduler(self):
+        rows = default_tools.builtin_agent_tools_for_management()
+        names = {r["name"] for r in rows}
+        assert "scheduler" in names
+        for row in rows:
+            assert row["builtin"] is True
+            assert row["default"] is False
+
+    def test_synthesized_default_chat_now_includes_scheduler(self):
+        # Revised decision #8: scheduler is dual-registered → it appears in
+        # ``synthesized_default_tools`` so agentless chats can use it.
+        rows = default_tools.synthesized_default_tools(None)
+        assert "scheduler" in {r["name"] for r in rows}
 
 
 # ---------------------------------------------------------------------------
