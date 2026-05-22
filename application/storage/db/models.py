@@ -47,6 +47,7 @@ users_table = Table(
         nullable=False,
         server_default='{"pinned": [], "shared_with_me": []}',
     ),
+    Column("tool_preferences", JSONB, nullable=False, server_default="{}"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
@@ -254,7 +255,8 @@ memories_table = Table(
     metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
     Column("user_id", Text, nullable=False),
-    Column("tool_id", UUID(as_uuid=True), ForeignKey("user_tools.id", ondelete="CASCADE")),
+    # No FK since 0009 — delete-cascade preserved by trigger.
+    Column("tool_id", UUID(as_uuid=True)),
     Column("path", Text, nullable=False),
     Column("content", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
@@ -597,4 +599,80 @@ workflow_runs_table = Table(
     Column("started_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("ended_at", DateTime(timezone=True)),
     Column("legacy_mongo_id", Text),
+)
+
+
+# --- Scheduler (migration 0010) ---------------------------------------------
+
+schedules_table = Table(
+    "schedules",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    # Nullable as of 0011: agentless chats create one-time schedules whose
+    # run is built ephemerally at fire time from system defaults.
+    Column(
+        "agent_id",
+        UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+    ),
+    Column("trigger_type", Text, nullable=False),
+    Column("name", Text),
+    Column("instruction", Text, nullable=False),
+    Column("status", Text, nullable=False, server_default="active"),
+    Column("cron", Text),
+    Column("run_at", DateTime(timezone=True)),
+    Column("timezone", Text, nullable=False, server_default="UTC"),
+    Column("next_run_at", DateTime(timezone=True)),
+    Column("last_run_at", DateTime(timezone=True)),
+    Column("end_at", DateTime(timezone=True)),
+    Column("tool_allowlist", JSONB, nullable=False, server_default="[]"),
+    Column("model_id", Text),
+    Column("token_budget", Integer),
+    Column(
+        "origin_conversation_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="SET NULL"),
+    ),
+    Column("created_via", Text, nullable=False, server_default="ui"),
+    Column("consecutive_failure_count", Integer, nullable=False, server_default="0"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+schedule_runs_table = Table(
+    "schedule_runs",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column(
+        "schedule_id",
+        UUID(as_uuid=True),
+        ForeignKey("schedules.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("user_id", Text, nullable=False),
+    # Nullable as of 0011 (mirrors ``schedules.agent_id``); FK CASCADE
+    # established in 0010 to match the direct ``agents`` reference.
+    Column(
+        "agent_id",
+        UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+    ),
+    Column("status", Text, nullable=False, server_default="pending"),
+    Column("scheduled_for", DateTime(timezone=True), nullable=False),
+    Column("trigger_source", Text, nullable=False, server_default="cron"),
+    Column("started_at", DateTime(timezone=True)),
+    Column("finished_at", DateTime(timezone=True)),
+    Column("output", Text),
+    Column("output_truncated", Boolean, nullable=False, server_default="false"),
+    Column("error", Text),
+    Column("error_type", Text),
+    Column("prompt_tokens", Integer, nullable=False, server_default="0"),
+    Column("generated_tokens", Integer, nullable=False, server_default="0"),
+    Column("conversation_id", UUID(as_uuid=True)),
+    Column("message_id", UUID(as_uuid=True)),
+    Column("celery_task_id", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint("schedule_id", "scheduled_for", name="schedule_runs_dedup_uidx"),
 )

@@ -47,4 +47,5 @@ export type AgentFolder = {
   updated_at?: string;
 };
 
+export * from './schedule';
 export * from './workflow';

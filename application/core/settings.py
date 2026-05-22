@@ -189,6 +189,11 @@ class Settings(BaseSettings):
     # Tool pre-fetch settings
     ENABLE_TOOL_PREFETCH: bool = True
 
+    # Config-free tools on by default in agentless chats. ``scheduler`` is
+    # dual-registered (also in ``BUILTIN_AGENT_TOOLS``) so the same synthetic id
+    # resolves whether reached via defaults or the agent picker.
+    DEFAULT_CHAT_TOOLS: list = ["memory", "read_webpage", "scheduler"]
+
     # Conversation Compression Settings
     ENABLE_CONVERSATION_COMPRESSION: bool = True
     COMPRESSION_THRESHOLD_PERCENTAGE: float = 0.8  # Trigger at 80% of context
@@ -231,6 +236,16 @@ class Settings(BaseSettings):
     # so 14 days is a generous default that covers paused/tool-action
     # flows without unbounded table growth.
     MESSAGE_EVENTS_RETENTION_DAYS: int = 14
+
+    # Scheduler (see scheduler.md).
+    SCHEDULE_DISPATCHER_INTERVAL: int = 30
+    SCHEDULE_MIN_INTERVAL: int = 900
+    SCHEDULE_MAX_PER_USER: int = 50
+    SCHEDULE_RUN_TIMEOUT: int = 600
+    SCHEDULE_MISFIRE_GRACE: int = 60
+    SCHEDULE_AUTOPAUSE_FAILURES: int = 3
+    SCHEDULE_ONCE_MAX_HORIZON: int = 31_536_000
+    SCHEDULE_RUN_OUTPUT_RETENTION_DAYS: int = 90
 
     @field_validator("POSTGRES_URI", mode="before")
     @classmethod

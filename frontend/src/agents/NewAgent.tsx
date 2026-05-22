@@ -1,12 +1,20 @@
 import isEqual from 'lodash/isEqual';
+import { MoreHorizontal } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
-import ArrowLeft from '../assets/arrow-left.svg';
 import SourceIcon from '../assets/source.svg';
 import Dropdown from '../components/Dropdown';
 import { FileUpload } from '../components/FileUpload';
@@ -29,6 +37,7 @@ import PromptsModal from '../preferences/PromptsModal';
 import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
 import { getToolDisplayName } from '../utils/toolUtils';
+import AgentPageHeader from './AgentPageHeader';
 import AgentPreview from './AgentPreview';
 import { Agent, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
@@ -113,7 +122,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       buttonText: t('agents.form.buttons.publish'),
       showDelete: false,
       showSaveDraft: true,
-      showLogs: false,
       showAccessDetails: false,
       trackChanges: false,
     },
@@ -122,7 +130,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       buttonText: t('agents.form.buttons.save'),
       showDelete: true,
       showSaveDraft: false,
-      showLogs: true,
       showAccessDetails: true,
       trackChanges: true,
     },
@@ -131,7 +138,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       buttonText: t('agents.form.buttons.publish'),
       showDelete: true,
       showSaveDraft: true,
-      showLogs: false,
       showAccessDetails: false,
       trackChanges: false,
     },
@@ -439,12 +445,29 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       const response = await userService.getUserTools(token);
       if (!response.ok) throw new Error('Failed to fetch tools');
       const data = await response.json();
+      // Group ordering: builtins -> defaults -> user tools (sorted via the
+      // MultiSelectPopup first-appearance grouping).
+      const groupFor = (tool: UserToolType): string => {
+        if (tool.builtin) return t('agents.form.toolsPopup.groupBuiltin');
+        if (tool.default) return t('agents.form.toolsPopup.groupDefault');
+        return t('agents.form.toolsPopup.groupCustom');
+      };
       const tools: OptionType[] = data.tools.map((tool: UserToolType) => ({
         id: tool.id,
         label: getToolDisplayName(tool),
         icon: `/toolIcons/tool_${tool.name}.svg`,
         name: tool.name,
+        group: groupFor(tool),
       }));
+      const groupOrder = [
+        t('agents.form.toolsPopup.groupBuiltin'),
+        t('agents.form.toolsPopup.groupDefault'),
+        t('agents.form.toolsPopup.groupCustom'),
+      ];
+      tools.sort(
+        (a, b) =>
+          groupOrder.indexOf(a.group || '') - groupOrder.indexOf(b.group || ''),
+      );
       setUserTools(tools);
     };
     const getModels = async () => {
@@ -698,42 +721,34 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       jsonSchemaText !== initialJsonSchemaText;
     setHasChanges(isChanged);
   }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText]);
+  // Only show the agent sub-nav once the agent has an id (i.e. not the bare
+  // ``new`` mode). The sub-nav links to Logs/Schedules which require an id.
+  const showAgentNav = effectiveMode === 'edit' && Boolean(agent.id);
+
   return (
     <div className="flex flex-col px-4 pt-4 pb-2 max-[1179px]:min-h-dvh min-[1180px]:h-dvh md:px-12 md:pt-12 md:pb-3">
-      <div className="flex items-center gap-3 px-4">
-        <button
-          className="border-border text-muted-foreground hover:bg-accent rounded-full border p-3 text-sm"
-          onClick={handleCancel}
-        >
-          <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-        </button>
-        <p className="text-foreground dark:text-foreground mt-px text-sm font-semibold">
-          {t('agents.backToAll')}
-        </p>
-      </div>
-      <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
-        <h1 className="text-foreground m-0 text-[32px] font-bold lg:text-[40px] dark:text-white">
-          {modeConfig[effectiveMode].heading}
-        </h1>
+      {showAgentNav ? (
+        <AgentPageHeader
+          agentId={agent.id}
+          agentName={agent.name}
+          agentEditPath={`/agents/edit/${agent.id}`}
+          currentPage="overview"
+          className="px-4"
+        />
+      ) : null}
+      <div className="mt-5 flex w-full flex-wrap items-center justify-end gap-2 px-4">
         {agent.agent_type === 'workflow' && (
           <div className="mt-4 w-full">
             <WorkflowBuilder />
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-1">
-          <button
-            className="text-primary dark:text-foreground mr-4 rounded-3xl py-2 text-sm font-medium"
-            onClick={handleCancel}
-          >
-            {t('agents.form.buttons.cancel')}
-          </button>
-          {modeConfig[effectiveMode].showDelete && agent.id && (
+        <div className="flex flex-wrap items-center gap-2">
+          {hasChanges && (
             <button
-              className="group border-destructive text-destructive hover:bg-destructive flex items-center gap-2 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
-              onClick={() => setDeleteConfirmation('ACTIVE')}
+              className="text-primary dark:text-foreground rounded-3xl px-2 py-2 text-sm font-medium"
+              onClick={handleCancel}
             >
-              <span className="block h-4 w-4 bg-[url('/src/assets/red-trash.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/white-trash.svg')]" />
-              {t('agents.form.buttons.delete')}
+              {t('agents.form.buttons.cancel')}
             </button>
           )}
           {modeConfig[effectiveMode].showSaveDraft && (
@@ -753,23 +768,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </span>
             </button>
           )}
-          {modeConfig[effectiveMode].showAccessDetails && (
-            <button
-              className="group border-primary text-primary hover:bg-primary/90 flex items-center gap-2 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
-              onClick={() => navigate(`/agents/logs/${agent.id}`)}
-            >
-              <span className="block h-5 w-5 bg-[url('/src/assets/monitoring-purple.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/monitoring-white.svg')]" />
-              {t('agents.form.buttons.logs')}
-            </button>
-          )}
-          {modeConfig[effectiveMode].showAccessDetails && (
-            <button
-              className="border-primary text-primary hover:bg-primary/90 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
-              onClick={() => setAgentDetails('ACTIVE')}
-            >
-              {t('agents.form.buttons.accessDetails')}
-            </button>
-          )}
           <button
             disabled={!isPublishable() || !hasChanges}
             className={`${!isPublishable() || !hasChanges ? 'cursor-not-allowed opacity-30' : ''} bg-primary hover:bg-primary/90 flex min-w-28 items-center justify-center rounded-3xl px-5 py-2 text-sm font-medium whitespace-nowrap text-white`}
@@ -783,6 +781,26 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               )}
             </span>
           </button>
+          {modeConfig[effectiveMode].showAccessDetails && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('agents.form.buttons.moreActions')}
+                  title={t('agents.form.buttons.moreActions')}
+                >
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setAgentDetails('ACTIVE')}>
+                  {t('agents.form.buttons.accessDetails')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
       <div className="bg-muted dark:bg-background mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-[30px] p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden">
@@ -1345,6 +1363,29 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </div>
             )}
           </div>
+          {modeConfig[effectiveMode].showDelete && agent.id && (
+            <div className="border-destructive/40 bg-destructive/5 rounded-[30px] border px-6 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-destructive text-lg font-semibold">
+                    {t('agents.form.dangerZone.heading')}
+                  </h2>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    {t('agents.form.dangerZone.description')}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDeleteConfirmation('ACTIVE')}
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0"
+                >
+                  {t('agents.form.dangerZone.deleteButton')}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
         <div className="col-span-3 flex flex-col gap-2 max-[1179px]:h-auto max-[1179px]:px-0 max-[1179px]:py-0 min-[1180px]:h-full min-[1180px]:py-2">
           <h2 className="text-lg font-semibold">

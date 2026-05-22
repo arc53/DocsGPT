@@ -204,8 +204,64 @@ def ingest_connector_task(
     return resp
 
 
+@celery.task(bind=True, acks_late=False)
+def dispatch_scheduled_runs(self):
+    """Beat-driven scheduler poller (body in scheduler_dispatcher)."""
+    from application.api.user.scheduler_dispatcher import dispatch_due_runs
+
+    return dispatch_due_runs()
+
+
+@celery.task(
+    bind=True,
+    acks_late=True,
+    # Not DURABLE_TASK: agent runs have side effects; blind retry would double them.
+    autoretry_for=(),
+    max_retries=0,
+)
+def execute_scheduled_run(self, run_id):
+    """Execute one scheduled run; soft-time-limit honors SCHEDULE_RUN_TIMEOUT."""
+    from application.api.user.scheduler_worker import execute_scheduled_run_body
+
+    return execute_scheduled_run_body(run_id, getattr(self.request, "id", None))
+
+
+# Bind runtime soft-time-limit so the prefork worker can raise mid-agent.
+try:
+    from application.core.settings import settings as _scheduler_settings
+    execute_scheduled_run.soft_time_limit = max(
+        30, int(_scheduler_settings.SCHEDULE_RUN_TIMEOUT),
+    )
+    execute_scheduled_run.time_limit = (
+        execute_scheduled_run.soft_time_limit + 60
+    )
+except Exception:
+    pass
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_schedule_runs(self):
+    """Trim ``schedule_runs`` per ``SCHEDULE_RUN_OUTPUT_RETENTION_DAYS``."""
+    from application.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from application.storage.db.engine import get_engine
+    from application.storage.db.repositories.schedule_runs import (
+        ScheduleRunsRepository,
+    )
+
+    ttl_days = settings.SCHEDULE_RUN_OUTPUT_RETENTION_DAYS
+    engine = get_engine()
+    with engine.begin() as conn:
+        deleted = ScheduleRunsRepository(conn).cleanup_older_than(ttl_days)
+    return {"deleted": deleted, "ttl_days": ttl_days}
+
+
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
+    from application.core.settings import settings
+
     sender.add_periodic_task(
         timedelta(days=1),
         schedule_syncs.s("daily"),
@@ -250,6 +306,22 @@ def setup_periodic_tasks(sender, **kwargs):
         timedelta(hours=24),
         cleanup_message_events.s(),
         name="cleanup-message-events",
+    )
+    sender.add_periodic_task(
+        timedelta(hours=24),
+        cleanup_orphan_memories.s(),
+        name="cleanup-orphan-memories",
+    )
+    # Scheduler dispatcher and run-log trim.
+    sender.add_periodic_task(
+        timedelta(seconds=max(15, settings.SCHEDULE_DISPATCHER_INTERVAL)),
+        dispatch_scheduled_runs.s(),
+        name="dispatch-scheduled-runs",
+    )
+    sender.add_periodic_task(
+        timedelta(hours=24),
+        cleanup_schedule_runs.s(),
+        name="cleanup-schedule-runs",
     )
 
 
@@ -337,6 +409,29 @@ def cleanup_message_events(self):
     with engine.begin() as conn:
         deleted = MessageEventsRepository(conn).cleanup_older_than(ttl_days)
     return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_orphan_memories(self):
+    """Sweep orphan memories left by the 0009 FK-to-trigger orphan window.
+
+    A ``memories`` INSERT for a real ``tool_id`` racing a ``user_tools``
+    DELETE leaves a permanent orphan the dropped FK would have rejected.
+    Default-tool synthetic ids are preserved (legitimate built-in data).
+    """
+    from application.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from application.agents.default_tools import default_tool_ids
+    from application.storage.db.engine import get_engine
+    from application.storage.db.repositories.memories import MemoriesRepository
+
+    keep_tool_ids = list(default_tool_ids().values())
+    engine = get_engine()
+    with engine.begin() as conn:
+        deleted = MemoriesRepository(conn).delete_orphans(keep_tool_ids)
+    return {"deleted": deleted}
 
 
 @celery.task(bind=True, acks_late=False)

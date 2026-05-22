@@ -333,6 +333,7 @@ export default function Conversation() {
             onOpenArtifact={handleOpenArtifact}
             onToolAction={handleToolAction}
             isSplitView={isSplitArtifactOpen}
+            agentId={selectedAgent?.id}
             headerContent={
               selectedAgent ? (
                 <div className="flex w-full items-center justify-center py-4">

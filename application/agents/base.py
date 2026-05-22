@@ -98,6 +98,7 @@ class BaseAgent(ABC):
                 user_api_key=user_api_key,
                 user=self.user,
                 decoded_token=decoded_token,
+                agent_id=agent_id,
             )
 
         self.attachments = attachments or []

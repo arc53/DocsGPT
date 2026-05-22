@@ -48,6 +48,12 @@ ensure_database_ready(
     logger=logging.getLogger("application.app"),
 )
 
+from application.agents.default_tools import (  # noqa: E402
+    validate_default_chat_tools,
+)
+
+validate_default_chat_tools()
+
 app = Flask(__name__)
 app.register_blueprint(user)
 app.register_blueprint(answer)

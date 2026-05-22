@@ -161,6 +161,7 @@
       "manageTools": "Ir a Herramientas",
       "edit": "Editar",
       "delete": "Eliminar",
+      "builtIn": "Integrada",
       "deleteWarning": "¿Estás seguro de que deseas eliminar la herramienta \"{{toolName}}\"?",
       "unsavedChanges": "Tienes cambios sin guardar que se perderán si sales sin guardar.",
       "leaveWithoutSaving": "Salir sin Guardar",
@@ -658,7 +659,8 @@
         "delete": "Eliminar",
         "logs": "Registros",
         "accessDetails": "Detalles de Acceso",
-        "add": "Agregar"
+        "add": "Agregar",
+        "moreActions": "Más acciones"
       },
       "sections": {
         "meta": "Meta",
@@ -722,6 +724,11 @@
       },
       "preview": {
         "publishedPreview": "Los agentes publicados se pueden previsualizar aquí"
+      },
+      "dangerZone": {
+        "heading": "Zona de peligro",
+        "description": "Eliminar este agente es permanente y eliminará todas sus programaciones e historial de ejecuciones.",
+        "deleteButton": "Eliminar agente"
       },
       "externalKb": "KB Externa"
     },

@@ -144,7 +144,15 @@ export default function Tools() {
         return res.json();
       })
       .then((data) => {
-        setUserTools(data.tools);
+        // Pure builtins (agent-only, e.g. a future builtin without an
+        // agentless path) carry no per-user state and only apply when
+        // added to an agent — hide them from the management page. Dual-
+        // registered tools (``scheduler``: builtin + default) stay visible
+        // here so the user can toggle the default off in agentless chats.
+        const filtered = (data.tools || []).filter(
+          (tool: UserToolType) => tool.default || !tool.builtin,
+        );
+        setUserTools(filtered);
         setLoading(false);
       })
       .catch((error) => {
@@ -282,32 +290,34 @@ export default function Tools() {
                           key={index}
                           className="bg-muted hover:bg-accent relative flex h-52 w-[300px] flex-col justify-between overflow-hidden rounded-2xl p-6"
                         >
-                          <div
-                            ref={menuRefs.current[tool.id]}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveMenuId(
-                                activeMenuId === tool.id ? null : tool.id,
-                              );
-                            }}
-                            className="absolute top-4 right-4 z-10 cursor-pointer"
-                          >
-                            <img
-                              src={ThreeDotsIcon}
-                              alt={t('settings.tools.settingsIconAlt')}
-                              className="h-[19px] w-[19px]"
-                            />
-                            <ContextMenu
-                              isOpen={activeMenuId === tool.id}
-                              setIsOpen={(isOpen) => {
-                                setActiveMenuId(isOpen ? tool.id : null);
+                          {!tool.default && (
+                            <div
+                              ref={menuRefs.current[tool.id]}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveMenuId(
+                                  activeMenuId === tool.id ? null : tool.id,
+                                );
                               }}
-                              options={getMenuOptions(tool)}
-                              anchorRef={menuRefs.current[tool.id]}
-                              position="bottom-right"
-                              offset={{ x: 0, y: 0 }}
-                            />
-                          </div>
+                              className="absolute top-4 right-4 z-10 cursor-pointer"
+                            >
+                              <img
+                                src={ThreeDotsIcon}
+                                alt={t('settings.tools.settingsIconAlt')}
+                                className="h-[19px] w-[19px]"
+                              />
+                              <ContextMenu
+                                isOpen={activeMenuId === tool.id}
+                                setIsOpen={(isOpen) => {
+                                  setActiveMenuId(isOpen ? tool.id : null);
+                                }}
+                                options={getMenuOptions(tool)}
+                                anchorRef={menuRefs.current[tool.id]}
+                                position="bottom-right"
+                                offset={{ x: 0, y: 0 }}
+                              />
+                            </div>
+                          )}
                           <div className="w-full">
                             <div className="flex w-full items-center gap-2 px-1">
                               <img
@@ -315,6 +325,11 @@ export default function Tools() {
                                 alt={`${tool.displayName} icon`}
                                 className="h-6 w-6"
                               />
+                              {tool.default && (
+                                <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] leading-none font-medium text-gray-600 dark:bg-gray-700/40 dark:text-gray-300">
+                                  {t('settings.tools.builtIn')}
+                                </span>
+                              )}
                               {tool.name === 'mcp_tool' &&
                                 mcpStatuses[tool.id] && (
                                   <span

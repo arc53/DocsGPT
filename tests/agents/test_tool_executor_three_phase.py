@@ -250,3 +250,39 @@ class TestRepository:
         row = _select_attempt(pg_conn, "c-y")
         assert row["status"] == "failed"
         assert row["error"] == "kaboom"
+
+
+@pytest.mark.unit
+class TestDefaultToolJournaling:
+    """A default tool's synthetic id round-trips through execute/journal."""
+
+    def test_synthetic_tool_id_is_journaled(
+        self, pg_conn, mock_tool_manager, monkeypatch
+    ):
+        from application.agents.default_tools import synthesize_default_tool
+
+        memory_row = synthesize_default_tool("memory")
+        assert memory_row is not None
+        tools_dict = {memory_row["id"]: memory_row}
+
+        executor = ToolExecutor(user="u")
+        monkeypatch.setattr(
+            "application.agents.tool_executor.ToolActionParser",
+            lambda _cls, **kw: Mock(
+                parse_args=Mock(
+                    return_value=(memory_row["id"], "view", {"path": "/"})
+                )
+            ),
+        )
+        _patch_db(monkeypatch, pg_conn)
+
+        events, result = _drain(
+            executor.execute(tools_dict, _make_call(call_id="c-def"), "MockLLM")
+        )
+        assert result[0] == "Tool result"
+
+        row = _select_attempt(pg_conn, "c-def")
+        assert row is not None
+        assert row["status"] == "confirmed"
+        assert row["tool_name"] == "memory"
+        assert str(row["tool_id"]) == memory_row["id"]

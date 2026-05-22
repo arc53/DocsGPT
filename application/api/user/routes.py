@@ -11,6 +11,7 @@ from .attachments import attachments_ns
 from .conversations import conversations_ns
 from .models import models_ns
 from .prompts import prompts_ns
+from .schedules import schedules_ns
 from .sharing import sharing_ns
 from .sources import sources_chunks_ns, sources_ns, sources_upload_ns
 from .tools import tools_mcp_ns, tools_ns
@@ -39,6 +40,9 @@ api.add_namespace(agents_folders_ns)
 
 # Prompts
 api.add_namespace(prompts_ns)
+
+# Schedules
+api.add_namespace(schedules_ns)
 
 # Sharing
 api.add_namespace(sharing_ns)

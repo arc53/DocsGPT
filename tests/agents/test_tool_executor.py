@@ -13,16 +13,21 @@ class TestToolExecutorInit:
         executor = ToolExecutor()
         assert executor.user_api_key is None
         assert executor.user is None
+        assert executor.agent_id is None
         assert executor.tool_calls == []
         assert executor._loaded_tools == {}
         assert executor.conversation_id is None
 
     def test_init_with_params(self):
         executor = ToolExecutor(
-            user_api_key="key", user="alice", decoded_token={"sub": "alice"}
+            user_api_key="key",
+            user="alice",
+            decoded_token={"sub": "alice"},
+            agent_id="agent-1",
         )
         assert executor.user_api_key == "key"
         assert executor.user == "alice"
+        assert executor.agent_id == "agent-1"
 
 
 @pytest.mark.unit
@@ -61,7 +66,8 @@ class TestToolExecutorGetTools:
         assert str(tool["id"]) in tools
         assert tools[str(tool["id"])]["id"] == tool["id"]
 
-    def test_get_tools_uses_user_when_no_api_key(self, pg_conn, monkeypatch):
+    def test_agentless_chat_synthesizes_defaults(self, pg_conn, monkeypatch):
+        from application.agents.default_tools import loaded_default_tools
         from application.storage.db.repositories.user_tools import UserToolsRepository
 
         UserToolsRepository(pg_conn).create(
@@ -72,15 +78,148 @@ class TestToolExecutorGetTools:
         executor = ToolExecutor(user="alice")
         tools = executor.get_tools()
         assert isinstance(tools, dict)
-        assert len(tools) == 1
+        assert len(tools) == 1 + len(loaded_default_tools())
+        names = {t["name"] for t in tools.values()}
+        assert "tool1" in names
+        assert "memory" in names
+
+    def test_agent_bound_chat_via_user_path_excludes_defaults(
+        self, pg_conn, monkeypatch
+    ):
+        """``agent_id`` forces ``agents.tools``-only; no defaults synthesized."""
+        from application.agents.default_tools import loaded_default_tools
+        from application.storage.db.repositories.user_tools import UserToolsRepository
+
+        UserToolsRepository(pg_conn).create(
+            user_id="alice", name="tool1", status=True
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        executor = ToolExecutor(user="alice", agent_id="agent-x")
+        tools = executor.get_tools()
+        names = {t["name"] for t in tools.values()}
+        assert "tool1" in names
+        assert not (set(loaded_default_tools()) & names)
 
     def test_get_tools_defaults_to_local(self, pg_conn, monkeypatch):
+        from application.agents.default_tools import loaded_default_tools
+
         self._patch_conn(monkeypatch, pg_conn)
 
         executor = ToolExecutor()
         tools = executor.get_tools()
         assert isinstance(tools, dict)
-        assert tools == {}
+        assert len(tools) == len(loaded_default_tools())
+        assert {t["name"] for t in tools.values()} == set(loaded_default_tools())
+
+    def test_api_key_path_excludes_defaults(self, pg_conn, monkeypatch):
+        """Agent-bound resolution returns exactly ``agents.tools``."""
+        from application.agents.default_tools import loaded_default_tools
+        from application.storage.db.repositories.agents import AgentsRepository
+        from application.storage.db.repositories.user_tools import UserToolsRepository
+
+        tool = UserToolsRepository(pg_conn).create(user_id="alice", name="tool1")
+        AgentsRepository(pg_conn).create(
+            user_id="alice",
+            name="a",
+            status="active",
+            key="key-agentbound",
+            tools=[str(tool["id"])],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        executor = ToolExecutor(user_api_key="key-agentbound", user="alice")
+        tools = executor.get_tools()
+        names = {t["name"] for t in tools.values()}
+        assert names == {"tool1"}
+        assert not (set(loaded_default_tools()) & names)
+
+    def test_api_key_path_empty_agent_tools_gets_nothing(
+        self, pg_conn, monkeypatch
+    ):
+        """Empty ``agents.tools`` invoked via API key yields no tools."""
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        AgentsRepository(pg_conn).create(
+            user_id="bob",
+            name="a",
+            status="active",
+            key="key-empty",
+            tools=[],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        executor = ToolExecutor(user_api_key="key-empty", user="bob")
+        assert executor.get_tools() == {}
+
+    def test_api_key_path_only_synthesizes_author_added_defaults(
+        self, pg_conn, monkeypatch
+    ):
+        """Only ``read_webpage`` in ``agents.tools`` -> exactly that; no other defaults bolted on."""
+        from application.agents.default_tools import default_tool_id
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        read_webpage_id = default_tool_id("read_webpage")
+        memory_id = default_tool_id("memory")
+        AgentsRepository(pg_conn).create(
+            user_id="erin",
+            name="a",
+            status="active",
+            key="key-only-read",
+            tools=[read_webpage_id],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        executor = ToolExecutor(
+            user_api_key="key-only-read", user="erin", agent_id="erin-agent"
+        )
+        tools = executor.get_tools()
+        assert set(tools) == {read_webpage_id}
+        assert tools[read_webpage_id]["name"] == "read_webpage"
+        assert memory_id not in tools
+        assert "memory" not in {t["name"] for t in tools.values()}
+
+    def test_explicit_default_on_agent_resolves(
+        self, pg_conn, monkeypatch
+    ):
+        """A default tool added explicitly to ``agents.tools`` resolves for every caller."""
+        from application.agents.default_tools import default_tool_id
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        memory_id = default_tool_id("memory")
+        AgentsRepository(pg_conn).create(
+            user_id="erin",
+            name="a",
+            status="active",
+            key="key-explicit-default",
+            tools=[memory_id],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        executor = ToolExecutor(
+            user_api_key="key-explicit-default", user="erin"
+        )
+        tools = executor.get_tools()
+        assert set(tools) == {memory_id}
+        assert tools[memory_id]["name"] == "memory"
+
+    def test_no_dedup_between_explicit_and_default_memory(
+        self, pg_conn, monkeypatch
+    ):
+        from application.storage.db.repositories.user_tools import UserToolsRepository
+
+        # Explicit ``memory`` row and the default ``memory`` coexist (separate stores).
+        UserToolsRepository(pg_conn).create(
+            user_id="dave", name="memory", status=True
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        executor = ToolExecutor(user="dave")
+        tools = executor.get_tools()
+        memory_entries = [t for t in tools.values() if t["name"] == "memory"]
+        assert len(memory_entries) == 2
+        ids = {t["id"] for t in memory_entries}
+        assert len(ids) == 2
 
 
 @pytest.mark.unit

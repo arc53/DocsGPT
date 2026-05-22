@@ -239,9 +239,14 @@ class TestBaseAgentTools:
         agent = ClassicAgent(**agent_base_params)
         tools = agent._get_user_tools("test_user")
 
-        assert len(tools) == 2
+        from application.agents.default_tools import loaded_default_tools
+
+        assert len(tools) == 2 + len(loaded_default_tools())
         assert "0" in tools
         assert "1" in tools
+        names = {t["name"] for t in tools.values()}
+        assert {"tool1", "tool2"}.issubset(names)
+        assert set(loaded_default_tools()).issubset(names)
 
     def test_get_user_tools_filters_by_status(
         self,
@@ -268,7 +273,12 @@ class TestBaseAgentTools:
         agent = ClassicAgent(**agent_base_params)
         tools = agent._get_user_tools("test_user")
 
-        assert len(tools) == 1
+        from application.agents.default_tools import loaded_default_tools
+
+        assert len(tools) == 1 + len(loaded_default_tools())
+        names = {t["name"] for t in tools.values()}
+        assert "tool1" in names
+        assert "tool2" not in names
 
     def test_get_tools_by_api_key(
         self,
@@ -305,7 +315,13 @@ class TestBaseAgentTools:
         agent = ClassicAgent(**agent_base_params)
         tools = agent._get_tools("api_key_123")
 
-        assert tool_id in tools
+        from application.agents.default_tools import loaded_default_tools
+
+        # Agent-bound: exactly agents.tools, no defaults.
+        assert set(tools) == {tool_id}
+        names = {t["name"] for t in tools.values()}
+        assert names == {"api_tool"}
+        assert not (set(loaded_default_tools()) & names)
 
     def test_build_tool_parameters(
         self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
