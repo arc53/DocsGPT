@@ -191,6 +191,10 @@ describe('schedulesSlice SSE event handling', () => {
     expect(stub.status).toBe('success');
     expect(stub.error).toBeNull();
     expect(stub.error_type).toBeNull();
+    // Agentless schedules carry agent_id=null (migration 0011); the stub
+    // must mirror that — the empty-string sentinel would fail any
+    // type-guarded select on the agent record downstream.
+    expect(stub.agent_id).toBeNull();
   });
 
   it('stub-insert seeds defaults for failed runs too', () => {

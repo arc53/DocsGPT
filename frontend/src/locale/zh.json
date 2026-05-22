@@ -659,7 +659,8 @@
         "delete": "删除",
         "logs": "日志",
         "accessDetails": "访问详情",
-        "add": "添加"
+        "add": "添加",
+        "moreActions": "更多操作"
       },
       "sections": {
         "meta": "元数据",
@@ -723,6 +724,11 @@
       },
       "preview": {
         "publishedPreview": "已发布的代理可以在此处预览"
+      },
+      "dangerZone": {
+        "heading": "危险区域",
+        "description": "删除此代理将无法恢复，并会移除其所有计划和运行历史。",
+        "deleteButton": "删除代理"
       },
       "externalKb": "外部知识库"
     },

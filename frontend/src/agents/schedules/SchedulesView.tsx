@@ -3,8 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useParams } from 'react-router-dom';
 
-import { Button } from '@/components/ui/button';
-
 import userService from '../../api/services/userService';
 import Spinner from '../../components/Spinner';
 import ConfirmationModal from '../../modals/ConfirmationModal';
@@ -21,6 +19,7 @@ import type {
 import RunDetailDrawer from './RunDetailDrawer';
 import RunLog from './RunLog';
 import ScheduleFormModal from './ScheduleFormModal';
+import ScheduleStatusBadge from './StatusBadge';
 import { formatCron } from './cronBuilder';
 import {
   createSchedule,
@@ -163,11 +162,6 @@ export default function SchedulesView() {
         currentPage="schedules"
         className="px-4"
       />
-      <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
-        <h1 className="text-foreground m-0 text-[32px] font-bold md:text-[40px] dark:text-white">
-          {t('agents.schedules.title')}
-        </h1>
-      </div>
       <div className="mt-6 flex flex-col gap-3 px-4">
         {agent && (
           <div className="flex flex-col gap-1">
@@ -218,29 +212,29 @@ export default function SchedulesView() {
                     >
                       <div className="flex items-start justify-between">
                         <div>
-                          <p className="font-semibold">
-                            {schedule.name || schedule.instruction.slice(0, 80)}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold">
+                              {schedule.name ||
+                                schedule.instruction.slice(0, 80)}
+                            </p>
+                            <ScheduleStatusBadge status={schedule.status} />
+                          </div>
                           <p className="text-muted-foreground text-xs">
                             {formatCron(schedule.cron)} · tz:{' '}
-                            {schedule.timezone} · status: {schedule.status} ·
-                            next: {formatTimestamp(schedule.next_run_at)}
+                            {schedule.timezone} · next:{' '}
+                            {formatTimestamp(schedule.next_run_at)}
                           </p>
                         </div>
-                        <div className="flex gap-1">
-                          <Button
+                        <div className="flex gap-2">
+                          <button
                             type="button"
-                            variant="outline"
-                            size="sm"
                             onClick={() => openEdit(schedule)}
-                            className="h-auto px-2 py-1 text-xs"
+                            className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
                           >
                             {t('agents.schedules.edit')}
-                          </Button>
-                          <Button
+                          </button>
+                          <button
                             type="button"
-                            variant="outline"
-                            size="sm"
                             onClick={() =>
                               dispatch(
                                 setSchedulePaused({
@@ -253,34 +247,30 @@ export default function SchedulesView() {
                                 }),
                               )
                             }
-                            className="h-auto px-2 py-1 text-xs"
+                            className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
                           >
                             {schedule.status === 'active'
                               ? t('agents.schedules.pause')
                               : t('agents.schedules.resume')}
-                          </Button>
-                          <Button
+                          </button>
+                          <button
                             type="button"
-                            variant="outline"
-                            size="sm"
                             onClick={() =>
                               dispatch(
                                 runScheduleNow({ id: schedule.id, token }),
                               )
                             }
-                            className="h-auto px-2 py-1 text-xs"
+                            className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
                           >
                             {t('agents.schedules.runNow')}
-                          </Button>
-                          <Button
+                          </button>
+                          <button
                             type="button"
-                            variant="outline"
-                            size="sm"
                             onClick={() => requestDelete(schedule)}
-                            className="text-destructive hover:bg-destructive/10 hover:text-destructive h-auto px-2 py-1 text-xs"
+                            className="rounded-full border border-solid border-red-500 px-5 py-1 text-sm text-red-500 transition-colors hover:bg-red-500 hover:text-white"
                           >
                             {t('agents.schedules.delete')}
-                          </Button>
+                          </button>
                         </div>
                       </div>
                       <button
@@ -326,36 +316,35 @@ export default function SchedulesView() {
                     >
                       <div className="flex items-start justify-between">
                         <div>
-                          <p className="font-semibold">
-                            {schedule.name || schedule.instruction.slice(0, 80)}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold">
+                              {schedule.name ||
+                                schedule.instruction.slice(0, 80)}
+                            </p>
+                            <ScheduleStatusBadge status={schedule.status} />
+                          </div>
                           <p className="text-muted-foreground text-xs">
-                            runs at {formatTimestamp(schedule.run_at)} · status:{' '}
-                            {schedule.status}
+                            runs at {formatTimestamp(schedule.run_at)}
                           </p>
                         </div>
-                        <div className="flex gap-1">
+                        <div className="flex gap-2">
                           {schedule.status === 'active' && (
-                            <Button
+                            <button
                               type="button"
-                              variant="outline"
-                              size="sm"
                               onClick={() => openEdit(schedule)}
-                              className="h-auto px-2 py-1 text-xs"
+                              className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
                             >
                               {t('agents.schedules.edit')}
-                            </Button>
+                            </button>
                           )}
                           {schedule.status === 'active' && (
-                            <Button
+                            <button
                               type="button"
-                              variant="outline"
-                              size="sm"
                               onClick={() => requestDelete(schedule)}
-                              className="text-destructive hover:bg-destructive/10 hover:text-destructive h-auto px-2 py-1 text-xs"
+                              className="rounded-full border border-solid border-red-500 px-5 py-1 text-sm text-red-500 transition-colors hover:bg-red-500 hover:text-white"
                             >
                               {t('agents.schedules.cancel')}
-                            </Button>
+                            </button>
                           )}
                         </div>
                       </div>

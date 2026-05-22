@@ -1,8 +1,17 @@
 import isEqual from 'lodash/isEqual';
+import { MoreHorizontal } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
@@ -727,29 +736,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           className="px-4"
         />
       ) : null}
-      <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
-        <h1 className="text-foreground m-0 text-[32px] font-bold lg:text-[40px] dark:text-white">
-          {modeConfig[effectiveMode].heading}
-        </h1>
+      <div className="mt-5 flex w-full flex-wrap items-center justify-end gap-2 px-4">
         {agent.agent_type === 'workflow' && (
           <div className="mt-4 w-full">
             <WorkflowBuilder />
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-1">
-          <button
-            className="text-primary dark:text-foreground mr-4 rounded-3xl py-2 text-sm font-medium"
-            onClick={handleCancel}
-          >
-            {t('agents.form.buttons.cancel')}
-          </button>
-          {modeConfig[effectiveMode].showDelete && agent.id && (
+        <div className="flex flex-wrap items-center gap-2">
+          {hasChanges && (
             <button
-              className="group border-destructive text-destructive hover:bg-destructive flex items-center gap-2 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
-              onClick={() => setDeleteConfirmation('ACTIVE')}
+              className="text-primary dark:text-foreground rounded-3xl px-2 py-2 text-sm font-medium"
+              onClick={handleCancel}
             >
-              <span className="block h-4 w-4 bg-[url('/src/assets/red-trash.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/white-trash.svg')]" />
-              {t('agents.form.buttons.delete')}
+              {t('agents.form.buttons.cancel')}
             </button>
           )}
           {modeConfig[effectiveMode].showSaveDraft && (
@@ -769,14 +768,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </span>
             </button>
           )}
-          {modeConfig[effectiveMode].showAccessDetails && (
-            <button
-              className="border-primary text-primary hover:bg-primary/90 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
-              onClick={() => setAgentDetails('ACTIVE')}
-            >
-              {t('agents.form.buttons.accessDetails')}
-            </button>
-          )}
           <button
             disabled={!isPublishable() || !hasChanges}
             className={`${!isPublishable() || !hasChanges ? 'cursor-not-allowed opacity-30' : ''} bg-primary hover:bg-primary/90 flex min-w-28 items-center justify-center rounded-3xl px-5 py-2 text-sm font-medium whitespace-nowrap text-white`}
@@ -790,6 +781,26 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               )}
             </span>
           </button>
+          {modeConfig[effectiveMode].showAccessDetails && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('agents.form.buttons.moreActions')}
+                  title={t('agents.form.buttons.moreActions')}
+                >
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setAgentDetails('ACTIVE')}>
+                  {t('agents.form.buttons.accessDetails')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
       <div className="bg-muted dark:bg-background mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-[30px] p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden">
@@ -1352,6 +1363,29 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </div>
             )}
           </div>
+          {modeConfig[effectiveMode].showDelete && agent.id && (
+            <div className="border-destructive/40 bg-destructive/5 rounded-[30px] border px-6 py-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-destructive text-lg font-semibold">
+                    {t('agents.form.dangerZone.heading')}
+                  </h2>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    {t('agents.form.dangerZone.description')}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDeleteConfirmation('ACTIVE')}
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0"
+                >
+                  {t('agents.form.dangerZone.deleteButton')}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
         <div className="col-span-3 flex flex-col gap-2 max-[1179px]:h-auto max-[1179px]:px-0 max-[1179px]:py-0 min-[1180px]:h-full min-[1180px]:py-2">
           <h2 className="text-lg font-semibold">

@@ -12,7 +12,7 @@ import {
 } from '../notifications/notificationsSlice';
 import { getConversations } from '../preferences/preferenceApi';
 import { setConversations } from '../preferences/preferenceSlice';
-import store from '../store';
+import type { RootState } from '../store';
 import {
   clearAttachments,
   selectCompletedAttachments,
@@ -1034,8 +1034,6 @@ export const conversationSlice = createSlice({
       });
   },
 });
-
-type RootState = ReturnType<typeof store.getState>;
 
 export const selectQueries = (state: RootState) => state.conversation.queries;
 

@@ -651,8 +651,13 @@ schedule_runs_table = Table(
         nullable=False,
     ),
     Column("user_id", Text, nullable=False),
-    # Nullable as of 0011 (mirrors ``schedules.agent_id``).
-    Column("agent_id", UUID(as_uuid=True)),
+    # Nullable as of 0011 (mirrors ``schedules.agent_id``); FK CASCADE
+    # established in 0010 to match the direct ``agents`` reference.
+    Column(
+        "agent_id",
+        UUID(as_uuid=True),
+        ForeignKey("agents.id", ondelete="CASCADE"),
+    ),
     Column("status", Text, nullable=False, server_default="pending"),
     Column("scheduled_for", DateTime(timezone=True), nullable=False),
     Column("trigger_source", Text, nullable=False, server_default="cron"),

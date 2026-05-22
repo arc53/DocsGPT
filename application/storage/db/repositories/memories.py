@@ -94,7 +94,9 @@ class MemoriesRepository:
                 """
                 DELETE FROM memories
                 WHERE tool_id IS NOT NULL
-                  AND tool_id NOT IN (SELECT id FROM user_tools)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM user_tools u WHERE u.id = memories.tool_id
+                  )
                   AND NOT (tool_id = ANY(CAST(:keep AS uuid[])))
                 """
             ),

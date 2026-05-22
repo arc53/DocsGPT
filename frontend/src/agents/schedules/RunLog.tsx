@@ -4,20 +4,12 @@ import { useDispatch, useSelector } from 'react-redux';
 import { selectToken } from '../../preferences/preferenceSlice';
 import type { AppDispatch, RootState } from '../../store';
 import type { ScheduleRun } from '../types/schedule';
+import ScheduleStatusBadge from './StatusBadge';
 import { loadRunsForSchedule, selectRunsForSchedule } from './schedulesSlice';
 
 export type RunLogProps = {
   scheduleId: string;
   onSelect?: (run: ScheduleRun) => void;
-};
-
-const STATUS_STYLES: Record<string, string> = {
-  success: 'text-green-600',
-  failed: 'text-destructive',
-  timeout: 'text-amber-600',
-  skipped: 'text-muted-foreground',
-  running: 'text-blue-600',
-  pending: 'text-muted-foreground',
 };
 
 const formatTimestamp = (value?: string | null): string => {
@@ -63,9 +55,15 @@ export default function RunLog({ scheduleId, onSelect }: RunLogProps) {
         {runs.map((run) => (
           <tr key={run.id} className="border-border border-t">
             <td className="py-2">{formatTimestamp(run.scheduled_for)}</td>
-            <td className={`py-2 ${STATUS_STYLES[run.status] ?? ''}`}>
-              {run.status}
-              {run.error_type ? ` (${run.error_type})` : ''}
+            <td className="py-2">
+              <div className="flex items-center gap-1.5">
+                <ScheduleStatusBadge status={run.status} />
+                {run.error_type && (
+                  <span className="text-muted-foreground text-xs">
+                    ({run.error_type})
+                  </span>
+                )}
+              </div>
             </td>
             <td className="py-2">{run.prompt_tokens + run.generated_tokens}</td>
             <td className="py-2">{run.trigger_source}</td>

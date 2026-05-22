@@ -51,11 +51,6 @@ export default function AgentLogs() {
         currentPage="logs"
         className="px-4"
       />
-      <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
-        <h1 className="text-foreground m-0 text-[32px] font-bold md:text-[40px] dark:text-white">
-          {t('agents.logs.title')}
-        </h1>
-      </div>
       <div className="mt-6 flex flex-col gap-3 px-4">
         {agent && (
           <div className="flex flex-col gap-1">

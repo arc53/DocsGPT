@@ -116,7 +116,7 @@ const stubRunDefaults = (
   return {
     schedule_id: scheduleId,
     user_id: '',
-    agent_id: '',
+    agent_id: null,
     scheduled_for: now,
     trigger_source: 'cron',
     started_at: now,

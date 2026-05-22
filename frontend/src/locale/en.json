@@ -684,7 +684,8 @@
         "logs": "Logs",
         "schedules": "Schedules",
         "accessDetails": "Access Details",
-        "add": "Add"
+        "add": "Add",
+        "moreActions": "More actions"
       },
       "sections": {
         "meta": "Meta",
@@ -751,6 +752,11 @@
       },
       "preview": {
         "publishedPreview": "Published agents can be previewed here"
+      },
+      "dangerZone": {
+        "heading": "Danger zone",
+        "description": "Deleting this agent is permanent and will remove all its schedules and run history.",
+        "deleteButton": "Delete agent"
       },
       "externalKb": "External KB"
     },

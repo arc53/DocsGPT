@@ -472,3 +472,37 @@ class TestRunList:
             request.decoded_token = {"sub": "u2"}
             resp = ScheduleRunList().get(str(s["id"]))
         assert resp.status_code == 404
+
+
+class TestUnexpectedExceptionMasked:
+    """Unexpected exceptions log full trace + return generic 500 (no leak)."""
+
+    def test_unexpected_repo_error_returns_generic_500(self, app, pg_conn):
+        from application.api.user.schedules.routes import ScheduleResource
+
+        agent_id = _make_agent(pg_conn)
+        s = SchedulesRepository(pg_conn).create(
+            user_id="u1", agent_id=agent_id, trigger_type="recurring",
+            instruction="i", cron="* * * * *",
+            next_run_at=_now() + timedelta(hours=1),
+        )
+
+        # Mock the repo's ``get`` to raise an unexpected RuntimeError carrying
+        # internal-sounding detail; the response must NOT echo that string.
+        def _boom(*args, **kwargs):
+            raise RuntimeError("internal detail: secret connection string")
+
+        with _patch_db(pg_conn), patch.object(
+            SchedulesRepository, "get", side_effect=_boom,
+        ), app.test_request_context(
+            f"/api/schedules/{s['id']}", method="GET",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u1"}
+            resp = ScheduleResource().get(str(s["id"]))
+        assert resp.status_code == 500
+        body = resp.get_json()
+        assert body["success"] is False
+        assert body["message"] == "internal error"
+        # Defensive: the internal-sounding detail must not leak through.
+        assert "secret connection string" not in resp.get_data(as_text=True)

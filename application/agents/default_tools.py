@@ -35,8 +35,10 @@ BUILTIN_AGENT_TOOLS: tuple = ("scheduler",)
 
 _tool_cache: Dict[str, Optional[Any]] = {}
 _ids_cache: Dict[tuple, Dict[str, str]] = {}
+_id_set_cache: Dict[tuple, frozenset] = {}
 _loaded_cache: Dict[tuple, List[str]] = {}
 _builtin_ids_cache: Dict[tuple, Dict[str, str]] = {}
+_builtin_id_set_cache: Dict[tuple, frozenset] = {}
 _builtin_loaded_cache: Dict[tuple, List[str]] = {}
 
 
@@ -89,7 +91,12 @@ def is_default_tool_id(tool_id: Any) -> bool:
     """Return True if ``tool_id`` is a synthetic default-tool id."""
     if not tool_id:
         return False
-    return str(tool_id) in set(default_tool_ids().values())
+    key = tuple(settings.DEFAULT_CHAT_TOOLS)
+    cached = _id_set_cache.get(key)
+    if cached is None:
+        cached = frozenset(default_tool_ids().values())
+        _id_set_cache[key] = cached
+    return str(tool_id) in cached
 
 
 def default_tool_name_for_id(tool_id: Any) -> Optional[str]:
@@ -115,7 +122,12 @@ def is_builtin_agent_tool_id(tool_id: Any) -> bool:
     """Return True if ``tool_id`` is an agent-selectable builtin synthetic id."""
     if not tool_id:
         return False
-    return str(tool_id) in set(builtin_agent_tool_ids().values())
+    key = tuple(BUILTIN_AGENT_TOOLS)
+    cached = _builtin_id_set_cache.get(key)
+    if cached is None:
+        cached = frozenset(builtin_agent_tool_ids().values())
+        _builtin_id_set_cache[key] = cached
+    return str(tool_id) in cached
 
 
 def builtin_agent_tool_name_for_id(tool_id: Any) -> Optional[str]:

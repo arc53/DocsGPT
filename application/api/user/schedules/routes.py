@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import Namespace, Resource, fields
@@ -43,6 +44,35 @@ def _ok(data: Any, status: int = 200):
 
 def _err(message: str, status: int = 400):
     return make_response(jsonify({"success": False, "message": message}), status)
+
+
+def _safe_route(func: Callable) -> Callable:
+    """Decorator: log + mask exceptions that escape a route body as 500.
+
+    ``ScheduleValidationError`` messages are explicitly surfaced via
+    ``_err(str(exc))`` at each call site (deliberate, user-safe). This
+    decorator only fires for *unexpected* exceptions (DB driver errors,
+    NPEs, etc.) that escape the route body. The full trace is logged
+    server-side; the response body carries no internal detail.
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:  # noqa: BLE001
+            try:
+                current_app.logger.exception(
+                    "unhandled exception in schedules route %s: %s",
+                    func.__qualname__, exc,
+                )
+            except RuntimeError:
+                # Out of Flask app context (rare in tests); use module logger.
+                logger.exception(
+                    "unhandled exception in schedules route %s: %s",
+                    func.__qualname__, exc,
+                )
+            return _err("internal error", 500)
+    return wrapper
 
 
 def _format_schedule(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -90,6 +120,7 @@ def _user_id() -> Optional[str]:
 @schedules_ns.route("/agents/<string:agent_id>/schedules")
 class AgentSchedules(Resource):
     @api.doc(description="List schedules for an agent (recurring + one-time).")
+    @_safe_route
     def get(self, agent_id):
         user_id = _user_id()
         if not user_id:
@@ -134,6 +165,7 @@ class AgentSchedules(Resource):
 
     @api.expect(create_model)
     @api.doc(description="Create a schedule (recurring or one-time) for an agent.")
+    @_safe_route
     def post(self, agent_id):
         user_id = _user_id()
         if not user_id:
@@ -263,6 +295,7 @@ class AgentSchedules(Resource):
 @schedules_ns.route("/schedules/<string:schedule_id>")
 class ScheduleResource(Resource):
     @api.doc(description="Get schedule by id.")
+    @_safe_route
     def get(self, schedule_id):
         user_id = _user_id()
         if not user_id:
@@ -276,6 +309,7 @@ class ScheduleResource(Resource):
         return _ok({"schedule": _format_schedule(row)})
 
     @api.doc(description="Edit a schedule's editable fields.")
+    @_safe_route
     def put(self, schedule_id):
         user_id = _user_id()
         if not user_id:
@@ -364,6 +398,7 @@ class ScheduleResource(Resource):
         return _ok({"schedule": _format_schedule(updated or {})})
 
     @api.doc(description="Pause / resume a schedule.")
+    @_safe_route
     def patch(self, schedule_id):
         user_id = _user_id()
         if not user_id:
@@ -436,6 +471,7 @@ class ScheduleResource(Resource):
         return _ok({"schedule": _format_schedule(updated or {})})
 
     @api.doc(description="Cancel / delete a schedule.")
+    @_safe_route
     def delete(self, schedule_id):
         user_id = _user_id()
         if not user_id:
@@ -452,6 +488,7 @@ class ScheduleResource(Resource):
 @schedules_ns.route("/schedules/<string:schedule_id>/run")
 class ScheduleRunNow(Resource):
     @api.doc(description="Run a schedule immediately (trigger_source='manual').")
+    @_safe_route
     def post(self, schedule_id):
         user_id = _user_id()
         if not user_id:
@@ -499,6 +536,7 @@ class ScheduleRunList(Resource):
         description="Paginated run log for a schedule.",
         params={"limit": "Page size (default 50)", "offset": "Page offset"},
     )
+    @_safe_route
     def get(self, schedule_id):
         user_id = _user_id()
         if not user_id:
@@ -532,6 +570,7 @@ class ScheduleRunList(Resource):
 @schedules_ns.route("/schedules/<string:schedule_id>/runs/<string:run_id>")
 class ScheduleRunDetail(Resource):
     @api.doc(description="Full output / error for a single run.")
+    @_safe_route
     def get(self, schedule_id, run_id):
         user_id = _user_id()
         if not user_id:

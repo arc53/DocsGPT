@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 
 import type { ScheduleRun } from '../types/schedule';
+import ScheduleStatusBadge from './StatusBadge';
 
 export type RunDetailDrawerProps = {
   run: ScheduleRun | null;
@@ -53,7 +54,9 @@ export default function RunDetailDrawer({
         </div>
         <dl className="mb-4 grid grid-cols-2 gap-2 text-sm">
           <dt className="text-muted-foreground">Status</dt>
-          <dd>{run.status}</dd>
+          <dd>
+            <ScheduleStatusBadge status={run.status} />
+          </dd>
           <dt className="text-muted-foreground">Scheduled for</dt>
           <dd>{formatTimestamp(run.scheduled_for)}</dd>
           <dt className="text-muted-foreground">Started</dt>

@@ -659,7 +659,8 @@
         "delete": "削除",
         "logs": "ログ",
         "accessDetails": "アクセス詳細",
-        "add": "追加"
+        "add": "追加",
+        "moreActions": "その他のアクション"
       },
       "sections": {
         "meta": "メタ",
@@ -723,6 +724,11 @@
       },
       "preview": {
         "publishedPreview": "公開されたエージェントはここでプレビューできます"
+      },
+      "dangerZone": {
+        "heading": "危険ゾーン",
+        "description": "このエージェントを削除すると元に戻せません。すべてのスケジュールと実行履歴も削除されます。",
+        "deleteButton": "エージェントを削除"
       },
       "externalKb": "外部KB"
     },

@@ -641,7 +641,8 @@
         "delete": "Löschen",
         "logs": "Protokolle",
         "accessDetails": "Zugangsdaten",
-        "add": "Hinzufügen"
+        "add": "Hinzufügen",
+        "moreActions": "Weitere Aktionen"
       },
       "sections": {
         "meta": "Meta",
@@ -705,6 +706,11 @@
       },
       "preview": {
         "publishedPreview": "Veröffentlichte Agenten können hier in der Vorschau angezeigt werden"
+      },
+      "dangerZone": {
+        "heading": "Gefahrenzone",
+        "description": "Das Löschen dieses Agenten ist endgültig und entfernt alle seine Zeitpläne und den Ausführungsverlauf.",
+        "deleteButton": "Agent löschen"
       },
       "externalKb": "Externe KB"
     },
