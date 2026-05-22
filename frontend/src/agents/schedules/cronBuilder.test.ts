@@ -5,9 +5,11 @@ import {
   browserTimezone,
   buildCron,
   buildRunAtUtc,
+  formatCron,
   parseCron,
   parseScheduleToFormValues,
   parseTime,
+  supportedTimezones,
 } from './cronBuilder';
 
 const baseValues = {
@@ -104,8 +106,45 @@ describe('buildRunAtUtc', () => {
     );
   });
 
+  it('Asia/Tokyo 09:00 (JST, UTC+9, no DST) → 00:00Z', () => {
+    // System tz is irrelevant here — the helper must honour the tz parameter.
+    expect(buildRunAtUtc('2026-06-15', '09:00', 'Asia/Tokyo')).toBe(
+      '2026-06-15T00:00:00.000Z',
+    );
+  });
+
+  it('Australia/Sydney 09:00 in Jul winter (AEST, UTC+10) → 23:00Z prev day', () => {
+    expect(buildRunAtUtc('2026-07-15', '09:00', 'Australia/Sydney')).toBe(
+      '2026-07-14T23:00:00.000Z',
+    );
+  });
+
+  it('honours an arbitrary picked tz independently of the system tz', () => {
+    // Picking Asia/Singapore (UTC+8, no DST) maps 10:00 local → 02:00Z.
+    expect(buildRunAtUtc('2026-03-10', '10:00', 'Asia/Singapore')).toBe(
+      '2026-03-10T02:00:00.000Z',
+    );
+  });
+
   it('throws on invalid date', () => {
     expect(() => buildRunAtUtc('not-a-date', '12:00', 'UTC')).toThrow();
+  });
+});
+
+describe('supportedTimezones', () => {
+  it('returns a non-empty list of IANA tz strings', () => {
+    const list = supportedTimezones();
+    expect(Array.isArray(list)).toBe(true);
+    expect(list.length).toBeGreaterThan(0);
+    // Common zones every fallback / modern engine should expose.
+    expect(list).toContain('UTC');
+  });
+
+  it('includes the browser zone when modern Intl is available', () => {
+    // happy-dom exposes Intl.supportedValuesOf; this is the modern path.
+    const list = supportedTimezones();
+    expect(list).toContain('Europe/Warsaw');
+    expect(list).toContain('Asia/Tokyo');
   });
 });
 
@@ -204,5 +243,83 @@ describe('parseScheduleToFormValues', () => {
     const s = makeSchedule({ cron: '0 9 * * 1-5' });
     const v = parseScheduleToFormValues(s, 'UTC');
     expect(v.frequency).toBe('daily');
+  });
+
+  it('round-trips weekly cron → form values → cron', () => {
+    const s = makeSchedule({ cron: '30 14 * * 4' });
+    const v = parseScheduleToFormValues(s, 'UTC');
+    expect(buildCron(v.frequency, v)).toBe('30 14 * * 4');
+  });
+
+  it('round-trips monthly cron → form values → cron', () => {
+    const s = makeSchedule({ cron: '5 7 22 * *' });
+    const v = parseScheduleToFormValues(s, 'UTC');
+    expect(buildCron(v.frequency, v)).toBe('5 7 22 * *');
+  });
+
+  it('round-trips yearly cron → form values → cron', () => {
+    const s = makeSchedule({ cron: '0 8 15 3 *' });
+    const v = parseScheduleToFormValues(s, 'UTC');
+    expect(buildCron(v.frequency, v)).toBe('0 8 15 3 *');
+  });
+
+  it('round-trips daily cron → form values → cron', () => {
+    const s = makeSchedule({ cron: '45 6 * * *' });
+    const v = parseScheduleToFormValues(s, 'UTC');
+    expect(buildCron(v.frequency, v)).toBe('45 6 * * *');
+  });
+
+  it('round-trips once schedule → run_at preserved through tz', () => {
+    const runAt = '2026-06-15T12:00:00.000Z';
+    const s = makeSchedule({
+      trigger_type: 'once',
+      cron: null,
+      run_at: runAt,
+    });
+    const v = parseScheduleToFormValues(s, 'UTC');
+    expect(buildRunAtUtc(v.date, v.time, 'UTC')).toBe(runAt);
+  });
+});
+
+describe('formatCron', () => {
+  it('renders daily 9:00 AM', () => {
+    expect(formatCron('0 9 * * *')).toBe('Daily at 9:00 AM');
+  });
+
+  it('renders daily 10:30 PM', () => {
+    expect(formatCron('30 22 * * *')).toBe('Daily at 10:30 PM');
+  });
+
+  it('renders weekly Monday 9:00 AM', () => {
+    expect(formatCron('0 9 * * 1')).toBe('Weekly on Monday at 9:00 AM');
+  });
+
+  it('renders weekly Sunday', () => {
+    expect(formatCron('15 7 * * 0')).toBe('Weekly on Sunday at 7:15 AM');
+  });
+
+  it('renders monthly day 15 at 10:00 AM', () => {
+    expect(formatCron('0 10 15 * *')).toBe('Monthly on day 15 at 10:00 AM');
+  });
+
+  it('renders yearly March 15 8:00 AM', () => {
+    expect(formatCron('0 8 15 3 *')).toBe('Yearly on March 15 at 8:00 AM');
+  });
+
+  it('renders midnight as 12:00 AM', () => {
+    expect(formatCron('0 0 * * *')).toBe('Daily at 12:00 AM');
+  });
+
+  it('renders noon as 12:00 PM', () => {
+    expect(formatCron('0 12 * * *')).toBe('Daily at 12:00 PM');
+  });
+
+  it('falls back to custom for unsupported cron', () => {
+    expect(formatCron('0 9 * * 1-5')).toBe('Custom: 0 9 * * 1-5');
+  });
+
+  it('returns empty string for null/undefined', () => {
+    expect(formatCron(null)).toBe('');
+    expect(formatCron(undefined)).toBe('');
   });
 });

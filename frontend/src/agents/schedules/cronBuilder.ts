@@ -41,6 +41,46 @@ export function browserTimezone(): string {
   }
 }
 
+// Minimal fallback list for engines without ``Intl.supportedValuesOf``.
+const FALLBACK_TIMEZONES: readonly string[] = [
+  'UTC',
+  'Europe/London',
+  'Europe/Berlin',
+  'Europe/Warsaw',
+  'Europe/Moscow',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/Sao_Paulo',
+  'Asia/Dubai',
+  'Asia/Kolkata',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+  'Pacific/Auckland',
+] as const;
+
+/** Full IANA timezone list via ``Intl.supportedValuesOf``; falls back for older engines. */
+export function supportedTimezones(): string[] {
+  try {
+    const intlAny = Intl as unknown as {
+      supportedValuesOf?: (key: 'timeZone') => string[];
+    };
+    if (typeof intlAny.supportedValuesOf === 'function') {
+      const values = intlAny.supportedValuesOf('timeZone');
+      if (Array.isArray(values) && values.length > 0) {
+        // ``supportedValuesOf`` omits the ``UTC`` alias on most engines; ensure it
+        // is always pickable as it's the universal default.
+        return values.includes('UTC') ? values : ['UTC', ...values];
+      }
+    }
+  } catch {
+    // fall through to the fallback list
+  }
+  return [...FALLBACK_TIMEZONES];
+}
+
 /** Build a 5-field cron expression for recurring frequencies; ``null`` for 'once'. */
 export function buildCron(
   frequency: ScheduleFrequency,
@@ -239,4 +279,56 @@ export function parseCron(expression: string): ParsedCron | null {
 export function todayDate(timezone: string): string {
   const p = formatInTimeZone(Date.now(), timezone);
   return `${p.year}-${pad2(p.month)}-${pad2(p.day)}`;
+}
+
+const DAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+];
+
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+const formatTime12h = (hour: number, minute: number): string => {
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h12}:${pad2(minute)} ${period}`;
+};
+
+/** Human-readable label for a cron string the form emits; falls back for custom shapes. */
+export function formatCron(expression?: string | null): string {
+  if (!expression) return '';
+  const parsed = parseCron(expression);
+  if (!parsed) return `Custom: ${expression}`;
+  const { frequency, hour, minute, dom, mon, dow } = parsed;
+  const time = formatTime12h(hour, minute);
+  switch (frequency) {
+    case 'daily':
+      return `Daily at ${time}`;
+    case 'weekly':
+      return `Weekly on ${DAY_NAMES[(dow ?? 0) % 7]} at ${time}`;
+    case 'monthly':
+      return `Monthly on day ${dom} at ${time}`;
+    case 'yearly':
+      return `Yearly on ${MONTH_NAMES[((mon ?? 1) - 1) % 12]} ${dom} at ${time}`;
+    default:
+      return `Custom: ${expression}`;
+  }
 }

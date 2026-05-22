@@ -1,5 +1,23 @@
+import { CalendarIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { TimePicker } from '@/components/ui/time-picker';
+import { cn } from '@/lib/utils';
 
 import WrapperModal from '../../modals/WrapperModal';
 import type { Schedule, ScheduleCreatePayload } from '../types/schedule';
@@ -8,10 +26,12 @@ import {
   buildCron,
   buildRunAtUtc,
   parseScheduleToFormValues,
+  supportedTimezones,
+  todayDate,
   type ScheduleFormValues,
   type ScheduleFrequency,
-  todayDate,
 } from './cronBuilder';
+import TimezoneCombobox from './TimezoneCombobox';
 
 export type ScheduleFormModalProps = {
   open: boolean;
@@ -56,6 +76,30 @@ const MONTH_KEYS = [
   'dec',
 ] as const;
 
+/** Parse ``YYYY-MM-DD`` into a local Date (no tz drift for calendar use). */
+const dateStringToDate = (value: string): Date | undefined => {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(value ?? '');
+  if (!m) return undefined;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+};
+
+const dateToDateString = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const formatDateLabel = (value: string): string => {
+  const d = dateStringToDate(value);
+  if (!d) return '';
+  return d.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+};
+
 /** Create/edit a Schedule via a modal dialog. */
 export default function ScheduleFormModal({
   open,
@@ -66,21 +110,25 @@ export default function ScheduleFormModal({
   submitting,
 }: ScheduleFormModalProps) {
   const { t } = useTranslation();
-  const timezone = useMemo<string>(() => browserTimezone(), []);
+  // Edit mode pre-populates from the saved schedule; create mode uses the browser tz.
+  const initialTimezone = useMemo<string>(
+    () => initial?.timezone || browserTimezone(),
+    [initial?.timezone],
+  );
 
   const defaults: ScheduleFormValues = useMemo(
     () =>
       initial
-        ? parseScheduleToFormValues(initial, timezone)
+        ? parseScheduleToFormValues(initial, initialTimezone)
         : {
             frequency: 'daily',
-            date: todayDate(timezone),
+            date: todayDate(initialTimezone),
             time: '09:00',
             dayOfWeek: 1,
             dayOfMonth: 1,
             month: 1,
           },
-    [initial, timezone],
+    [initial, initialTimezone],
   );
 
   const [name, setName] = useState<string>(initial?.name ?? '');
@@ -88,6 +136,13 @@ export default function ScheduleFormModal({
     initial?.instruction ?? '',
   );
   const [values, setValues] = useState<ScheduleFormValues>(defaults);
+  const [timezone, setTimezone] = useState<string>(initialTimezone);
+  const timezoneOptions = useMemo<string[]>(() => {
+    const list = supportedTimezones();
+    // Make sure the current selection is always present, even if absent from
+    // the engine's supported list (e.g. an exotic tz saved on the schedule).
+    return list.includes(timezone) ? list : [timezone, ...list];
+  }, [timezone]);
   const [error, setError] = useState<string | null>(null);
 
   if (!open) return null;
@@ -174,8 +229,28 @@ export default function ScheduleFormModal({
           labels={{
             on: t('agents.schedules.modal.on'),
             at: t('agents.schedules.modal.at'),
+            pickDate: t('agents.schedules.modal.pickDate'),
           }}
         />
+
+        <div className="border-border flex flex-wrap items-center justify-between gap-2 rounded-md border p-3">
+          <span className="text-foreground text-sm font-medium">
+            {t('agents.schedules.modal.timezone')}
+          </span>
+          <div className="w-full max-w-[16rem]">
+            <TimezoneCombobox
+              value={timezone}
+              options={timezoneOptions}
+              onChange={setTimezone}
+              placeholder={t('agents.schedules.modal.timezonePlaceholder')}
+              searchPlaceholder={t(
+                'agents.schedules.modal.timezoneSearchPlaceholder',
+              )}
+              emptyText={t('agents.schedules.modal.timezoneEmpty')}
+              ariaLabel={t('agents.schedules.modal.timezone')}
+            />
+          </div>
+        </div>
 
         <label className="flex flex-col gap-2">
           <span className="text-foreground text-sm font-medium">
@@ -193,18 +268,18 @@ export default function ScheduleFormModal({
         {error && <p className="text-destructive text-sm">{error}</p>}
 
         <div className="flex justify-end">
-          <button
+          <Button
             type="button"
             disabled={submitting}
             onClick={submit}
-            className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-full px-5 py-2 text-sm font-semibold disabled:opacity-60"
+            className="rounded-full px-5"
           >
             {submitting
               ? '…'
               : isEdit
                 ? t('agents.schedules.modal.save')
                 : t('agents.schedules.modal.create')}
-          </button>
+          </Button>
         </div>
       </div>
     </WrapperModal>
@@ -227,12 +302,12 @@ function FrequencyTabs({ frequency, onChange, labels }: FrequencyTabsProps) {
             key={f}
             type="button"
             onClick={() => onChange(f)}
-            className={[
+            className={cn(
               'flex-1 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
               active
                 ? 'bg-card text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground',
-            ].join(' ')}
+            )}
             aria-pressed={active}
           >
             {labels[f]}
@@ -248,36 +323,30 @@ type OnPickerProps = {
   onChange: (next: ScheduleFormValues) => void;
   tDay: (key: string) => string;
   tMonth: (key: string) => string;
-  labels: { on: string; at: string };
+  labels: { on: string; at: string; pickDate: string };
 };
 
 function OnPicker({ values, onChange, tDay, tMonth, labels }: OnPickerProps) {
   const set = (patch: Partial<ScheduleFormValues>) =>
     onChange({ ...values, ...patch });
-  const inputClass =
-    'border-border bg-background text-foreground rounded-md border px-2 py-1 text-sm outline-none focus:border-ring focus:ring-ring/40 focus:ring-2';
 
   return (
     <div className="border-border flex flex-col gap-3 rounded-md border p-3">
       {values.frequency === 'once' && (
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-foreground text-sm font-medium">
             {labels.on}
           </span>
           <div className="flex items-center gap-2">
-            <input
-              type="date"
+            <DatePicker
               value={values.date}
-              onChange={(e) => set({ date: e.target.value })}
-              className={inputClass}
-              aria-label={labels.on}
+              onChange={(date) => set({ date })}
+              placeholder={labels.pickDate}
             />
-            <input
-              type="time"
+            <TimeInput
               value={values.time}
-              onChange={(e) => set({ time: e.target.value })}
-              className={inputClass}
-              aria-label={labels.at}
+              onChange={(time) => set({ time })}
+              ariaLabel={labels.at}
             />
           </div>
         </div>
@@ -288,12 +357,10 @@ function OnPicker({ values, onChange, tDay, tMonth, labels }: OnPickerProps) {
           <span className="text-foreground text-sm font-medium">
             {labels.at}
           </span>
-          <input
-            type="time"
+          <TimeInput
             value={values.time}
-            onChange={(e) => set({ time: e.target.value })}
-            className={inputClass}
-            aria-label={labels.at}
+            onChange={(time) => set({ time })}
+            ariaLabel={labels.at}
           />
         </div>
       )}
@@ -304,20 +371,17 @@ function OnPicker({ values, onChange, tDay, tMonth, labels }: OnPickerProps) {
             {DAY_OPTIONS.map((d) => {
               const active = d.value === values.dayOfWeek;
               return (
-                <button
+                <Button
                   key={d.key}
                   type="button"
+                  size="sm"
+                  variant={active ? 'default' : 'outline'}
                   onClick={() => set({ dayOfWeek: d.value })}
-                  className={[
-                    'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-                    active
-                      ? 'bg-primary text-primary-foreground'
-                      : 'border-border text-muted-foreground hover:bg-accent border',
-                  ].join(' ')}
+                  className="rounded-full"
                   aria-pressed={active}
                 >
                   {tDay(d.key)}
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -325,86 +389,169 @@ function OnPicker({ values, onChange, tDay, tMonth, labels }: OnPickerProps) {
             <span className="text-foreground text-sm font-medium">
               {labels.at}
             </span>
-            <input
-              type="time"
+            <TimeInput
               value={values.time}
-              onChange={(e) => set({ time: e.target.value })}
-              className={inputClass}
-              aria-label={labels.at}
+              onChange={(time) => set({ time })}
+              ariaLabel={labels.at}
             />
           </div>
         </div>
       )}
 
       {values.frequency === 'monthly' && (
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-foreground text-sm font-medium">
             {labels.on}
           </span>
           <div className="flex items-center gap-2">
-            <select
+            <DayOfMonthSelect
               value={values.dayOfMonth}
-              onChange={(e) => set({ dayOfMonth: Number(e.target.value) })}
-              className={inputClass}
-              aria-label={labels.on}
-            >
-              {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-            <input
-              type="time"
+              onChange={(dayOfMonth) => set({ dayOfMonth })}
+              ariaLabel={labels.on}
+            />
+            <TimeInput
               value={values.time}
-              onChange={(e) => set({ time: e.target.value })}
-              className={inputClass}
-              aria-label={labels.at}
+              onChange={(time) => set({ time })}
+              ariaLabel={labels.at}
             />
           </div>
         </div>
       )}
 
       {values.frequency === 'yearly' && (
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-foreground text-sm font-medium">
             {labels.on}
           </span>
-          <div className="flex items-center gap-2">
-            <select
+          <div className="flex flex-wrap items-center gap-2">
+            <MonthSelect
               value={values.month}
-              onChange={(e) => set({ month: Number(e.target.value) })}
-              className={inputClass}
-              aria-label={labels.on}
-            >
-              {MONTH_KEYS.map((k, i) => (
-                <option key={k} value={i + 1}>
-                  {tMonth(k)}
-                </option>
-              ))}
-            </select>
-            <select
+              onChange={(month) => set({ month })}
+              tMonth={tMonth}
+              ariaLabel={labels.on}
+            />
+            <DayOfMonthSelect
               value={values.dayOfMonth}
-              onChange={(e) => set({ dayOfMonth: Number(e.target.value) })}
-              className={inputClass}
-              aria-label={labels.on}
-            >
-              {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-            <input
-              type="time"
+              onChange={(dayOfMonth) => set({ dayOfMonth })}
+              ariaLabel={labels.on}
+            />
+            <TimeInput
               value={values.time}
-              onChange={(e) => set({ time: e.target.value })}
-              className={inputClass}
-              aria-label={labels.at}
+              onChange={(time) => set({ time })}
+              ariaLabel={labels.at}
             />
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+type DatePickerProps = {
+  value: string;
+  onChange: (next: string) => void;
+  placeholder: string;
+};
+
+function DatePicker({ value, onChange, placeholder }: DatePickerProps) {
+  const [open, setOpen] = useState<boolean>(false);
+  const selected = dateStringToDate(value);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-label={placeholder}
+          className={cn(
+            'h-9 justify-start gap-2 px-3 font-normal',
+            !value && 'text-muted-foreground',
+          )}
+        >
+          <CalendarIcon className="size-4 opacity-70" />
+          {value ? formatDateLabel(value) : placeholder}
+        </Button>
+      </PopoverTrigger>
+      {/* z-200 keeps the popover above WrapperModal (z-100); matches SelectContent. */}
+      <PopoverContent className="z-200 w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={selected}
+          onSelect={(d) => {
+            if (!d) return;
+            onChange(dateToDateString(d));
+            setOpen(false);
+          }}
+          captionLayout="dropdown"
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+type TimeInputProps = {
+  value: string;
+  onChange: (next: string) => void;
+  ariaLabel: string;
+};
+
+// Theme-aware replacement for <input type="time"> (clock icon + hours/minutes selects).
+function TimeInput({ value, onChange, ariaLabel }: TimeInputProps) {
+  return <TimePicker value={value} onChange={onChange} ariaLabel={ariaLabel} />;
+}
+
+type DayOfMonthSelectProps = {
+  value: number;
+  onChange: (next: number) => void;
+  ariaLabel: string;
+};
+
+function DayOfMonthSelect({
+  value,
+  onChange,
+  ariaLabel,
+}: DayOfMonthSelectProps) {
+  return (
+    <Select value={String(value)} onValueChange={(v) => onChange(Number(v))}>
+      <SelectTrigger size="sm" aria-label={ariaLabel} className="h-9 w-[5rem]">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+          <SelectItem key={d} value={String(d)}>
+            {d}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+type MonthSelectProps = {
+  value: number;
+  onChange: (next: number) => void;
+  tMonth: (key: string) => string;
+  ariaLabel: string;
+};
+
+function MonthSelect({ value, onChange, tMonth, ariaLabel }: MonthSelectProps) {
+  return (
+    <Select value={String(value)} onValueChange={(v) => onChange(Number(v))}>
+      <SelectTrigger
+        size="sm"
+        aria-label={ariaLabel}
+        className="h-9 w-[6.5rem]"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {MONTH_KEYS.map((k, i) => (
+          <SelectItem key={k} value={String(i + 1)}>
+            {tMonth(k)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

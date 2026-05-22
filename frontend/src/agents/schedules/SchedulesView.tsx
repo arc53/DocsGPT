@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+
+import { Button } from '@/components/ui/button';
 
 import userService from '../../api/services/userService';
-import ArrowLeft from '../../assets/arrow-left.svg';
 import Spinner from '../../components/Spinner';
+import ConfirmationModal from '../../modals/ConfirmationModal';
+import { ActiveState } from '../../models/misc';
 import { selectToken } from '../../preferences/preferenceSlice';
 import type { AppDispatch, RootState } from '../../store';
+import AgentPageHeader from '../AgentPageHeader';
 import type { Agent } from '../types';
 import type {
   Schedule,
@@ -17,6 +21,7 @@ import type {
 import RunDetailDrawer from './RunDetailDrawer';
 import RunLog from './RunLog';
 import ScheduleFormModal from './ScheduleFormModal';
+import { formatCron } from './cronBuilder';
 import {
   createSchedule,
   deleteSchedule,
@@ -37,7 +42,6 @@ const formatTimestamp = (value?: string | null): string => {
 /** Standalone Schedules page for an agent: list, create, edit, pause, run, delete. */
 export default function SchedulesView() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const { agentId } = useParams();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
@@ -49,6 +53,11 @@ export default function SchedulesView() {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [activeRun, setActiveRun] = useState<ScheduleRun | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] =
+    useState<ActiveState>('INACTIVE');
+  const [scheduleToDelete, setScheduleToDelete] = useState<Schedule | null>(
+    null,
+  );
 
   const schedules = useSelector((state: RootState) =>
     selectSchedulesForAgent(state, agentId ?? ''),
@@ -109,6 +118,17 @@ export default function SchedulesView() {
     setEditing(null);
   };
 
+  const requestDelete = (schedule: Schedule) => {
+    setScheduleToDelete(schedule);
+    setDeleteConfirmation('ACTIVE');
+  };
+
+  const confirmDelete = () => {
+    if (!scheduleToDelete) return;
+    dispatch(deleteSchedule({ id: scheduleToDelete.id, token }));
+    setScheduleToDelete(null);
+  };
+
   const handleSubmit = async (payload: ScheduleCreatePayload) => {
     if (!agentId) return;
     setSubmitting(true);
@@ -129,19 +149,20 @@ export default function SchedulesView() {
     }
   };
 
+  const agentEditPath =
+    agent?.agent_type === 'workflow'
+      ? `/agents/workflow/edit/${agentId}`
+      : `/agents/edit/${agentId}`;
+
   return (
     <div className="p-4 md:p-12">
-      <div className="flex items-center gap-3 px-4">
-        <button
-          className="border-border text-muted-foreground hover:bg-accent rounded-full border p-3 text-sm"
-          onClick={() => navigate('/agents')}
-        >
-          <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-        </button>
-        <p className="text-foreground dark:text-foreground mt-px text-sm font-semibold">
-          {t('agents.backToAll')}
-        </p>
-      </div>
+      <AgentPageHeader
+        agentId={agentId}
+        agentName={agent?.name}
+        agentEditPath={agentEditPath}
+        currentPage="schedules"
+        className="px-4"
+      />
       <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
         <h1 className="text-foreground m-0 text-[32px] font-bold md:text-[40px] dark:text-white">
           {t('agents.schedules.title')}
@@ -201,22 +222,25 @@ export default function SchedulesView() {
                             {schedule.name || schedule.instruction.slice(0, 80)}
                           </p>
                           <p className="text-muted-foreground text-xs">
-                            cron:{' '}
-                            <span className="font-mono">{schedule.cron}</span> ·
-                            tz: {schedule.timezone} · status: {schedule.status}{' '}
-                            · next: {formatTimestamp(schedule.next_run_at)}
+                            {formatCron(schedule.cron)} · tz:{' '}
+                            {schedule.timezone} · status: {schedule.status} ·
+                            next: {formatTimestamp(schedule.next_run_at)}
                           </p>
                         </div>
                         <div className="flex gap-1">
-                          <button
+                          <Button
                             type="button"
+                            variant="outline"
+                            size="sm"
                             onClick={() => openEdit(schedule)}
-                            className="border-border rounded-md border px-2 py-1 text-xs"
+                            className="h-auto px-2 py-1 text-xs"
                           >
                             {t('agents.schedules.edit')}
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            variant="outline"
+                            size="sm"
                             onClick={() =>
                               dispatch(
                                 setSchedulePaused({
@@ -229,34 +253,34 @@ export default function SchedulesView() {
                                 }),
                               )
                             }
-                            className="border-border rounded-md border px-2 py-1 text-xs"
+                            className="h-auto px-2 py-1 text-xs"
                           >
                             {schedule.status === 'active'
                               ? t('agents.schedules.pause')
                               : t('agents.schedules.resume')}
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            variant="outline"
+                            size="sm"
                             onClick={() =>
                               dispatch(
                                 runScheduleNow({ id: schedule.id, token }),
                               )
                             }
-                            className="border-border rounded-md border px-2 py-1 text-xs"
+                            className="h-auto px-2 py-1 text-xs"
                           >
                             {t('agents.schedules.runNow')}
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
-                            onClick={() =>
-                              dispatch(
-                                deleteSchedule({ id: schedule.id, token }),
-                              )
-                            }
-                            className="text-destructive border-border rounded-md border px-2 py-1 text-xs"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => requestDelete(schedule)}
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive h-auto px-2 py-1 text-xs"
                           >
                             {t('agents.schedules.delete')}
-                          </button>
+                          </Button>
                         </div>
                       </div>
                       <button
@@ -312,26 +336,26 @@ export default function SchedulesView() {
                         </div>
                         <div className="flex gap-1">
                           {schedule.status === 'active' && (
-                            <button
+                            <Button
                               type="button"
+                              variant="outline"
+                              size="sm"
                               onClick={() => openEdit(schedule)}
-                              className="border-border rounded-md border px-2 py-1 text-xs"
+                              className="h-auto px-2 py-1 text-xs"
                             >
                               {t('agents.schedules.edit')}
-                            </button>
+                            </Button>
                           )}
                           {schedule.status === 'active' && (
-                            <button
+                            <Button
                               type="button"
-                              onClick={() =>
-                                dispatch(
-                                  deleteSchedule({ id: schedule.id, token }),
-                                )
-                              }
-                              className="text-destructive border-border rounded-md border px-2 py-1 text-xs"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => requestDelete(schedule)}
+                              className="text-destructive hover:bg-destructive/10 hover:text-destructive h-auto px-2 py-1 text-xs"
                             >
                               {t('agents.schedules.cancel')}
-                            </button>
+                            </Button>
                           )}
                         </div>
                       </div>
@@ -344,13 +368,25 @@ export default function SchedulesView() {
               run={activeRun}
               onClose={() => setActiveRun(null)}
             />
-            <ScheduleFormModal
-              open={modalOpen}
-              initial={editing}
-              agentToolIds={agentToolIds}
-              onClose={closeModal}
-              onSubmit={handleSubmit}
-              submitting={submitting}
+            {modalOpen && (
+              <ScheduleFormModal
+                key={editing?.id ?? 'create'}
+                open={modalOpen}
+                initial={editing}
+                agentToolIds={agentToolIds}
+                onClose={closeModal}
+                onSubmit={handleSubmit}
+                submitting={submitting}
+              />
+            )}
+            <ConfirmationModal
+              message={t('agents.schedules.deleteConfirm')}
+              modalState={deleteConfirmation}
+              setModalState={setDeleteConfirmation}
+              submitLabel={t('agents.schedules.delete')}
+              handleSubmit={confirmDelete}
+              handleCancel={() => setScheduleToDelete(null)}
+              variant="danger"
             />
           </div>
         )

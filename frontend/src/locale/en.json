@@ -631,6 +631,18 @@
     "description": "Discover and create custom versions of DocsGPT that combine instructions, extra knowledge, and any combination of skills",
     "newAgent": "New Agent",
     "backToAll": "Back to all agents",
+    "pageHeader": {
+      "crumbs": {
+        "agents": "Agents"
+      },
+      "tabs": {
+        "overview": "Overview",
+        "logs": "Logs",
+        "schedules": "Schedules"
+      },
+      "fallbackName": "Untitled agent",
+      "subnavAriaLabel": "Agent sub-navigation"
+    },
     "searchPlaceholder": "Search...",
     "noSearchResults": "No agents found",
     "tryDifferentSearch": "Try a different search term",
@@ -762,6 +774,7 @@
       "resume": "Resume",
       "runNow": "Run now",
       "delete": "Delete",
+      "deleteConfirm": "Delete this schedule? This will also delete its run history. This action cannot be undone.",
       "cancel": "Cancel",
       "showRuns": "Show runs",
       "hideRuns": "Hide runs",
@@ -778,6 +791,11 @@
         },
         "on": "On",
         "at": "At",
+        "pickDate": "Pick a date",
+        "timezone": "Timezone",
+        "timezonePlaceholder": "Select timezone",
+        "timezoneSearchPlaceholder": "Search timezone…",
+        "timezoneEmpty": "No timezone found.",
         "instructionsLabel": "Instructions",
         "instructionsPlaceholder": "Enter prompt here.",
         "create": "Create task",

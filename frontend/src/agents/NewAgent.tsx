@@ -6,7 +6,6 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
-import ArrowLeft from '../assets/arrow-left.svg';
 import SourceIcon from '../assets/source.svg';
 import Dropdown from '../components/Dropdown';
 import { FileUpload } from '../components/FileUpload';
@@ -29,6 +28,7 @@ import PromptsModal from '../preferences/PromptsModal';
 import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
 import { getToolDisplayName } from '../utils/toolUtils';
+import AgentPageHeader from './AgentPageHeader';
 import AgentPreview from './AgentPreview';
 import { Agent, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
@@ -113,7 +113,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       buttonText: t('agents.form.buttons.publish'),
       showDelete: false,
       showSaveDraft: true,
-      showLogs: false,
       showAccessDetails: false,
       trackChanges: false,
     },
@@ -122,7 +121,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       buttonText: t('agents.form.buttons.save'),
       showDelete: true,
       showSaveDraft: false,
-      showLogs: true,
       showAccessDetails: true,
       trackChanges: true,
     },
@@ -131,7 +129,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       buttonText: t('agents.form.buttons.publish'),
       showDelete: true,
       showSaveDraft: true,
-      showLogs: false,
       showAccessDetails: false,
       trackChanges: false,
     },
@@ -715,19 +712,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       jsonSchemaText !== initialJsonSchemaText;
     setHasChanges(isChanged);
   }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText]);
+  // Only show the agent sub-nav once the agent has an id (i.e. not the bare
+  // ``new`` mode). The sub-nav links to Logs/Schedules which require an id.
+  const showAgentNav = effectiveMode === 'edit' && Boolean(agent.id);
+
   return (
     <div className="flex flex-col px-4 pt-4 pb-2 max-[1179px]:min-h-dvh min-[1180px]:h-dvh md:px-12 md:pt-12 md:pb-3">
-      <div className="flex items-center gap-3 px-4">
-        <button
-          className="border-border text-muted-foreground hover:bg-accent rounded-full border p-3 text-sm"
-          onClick={handleCancel}
-        >
-          <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-        </button>
-        <p className="text-foreground dark:text-foreground mt-px text-sm font-semibold">
-          {t('agents.backToAll')}
-        </p>
-      </div>
+      {showAgentNav ? (
+        <AgentPageHeader
+          agentId={agent.id}
+          agentName={agent.name}
+          agentEditPath={`/agents/edit/${agent.id}`}
+          currentPage="overview"
+          className="px-4"
+        />
+      ) : null}
       <div className="mt-5 flex w-full flex-wrap items-center justify-between gap-2 px-4">
         <h1 className="text-foreground m-0 text-[32px] font-bold lg:text-[40px] dark:text-white">
           {modeConfig[effectiveMode].heading}
@@ -768,24 +767,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   t('agents.form.buttons.saveDraft')
                 )}
               </span>
-            </button>
-          )}
-          {modeConfig[effectiveMode].showAccessDetails && (
-            <button
-              className="group border-primary text-primary hover:bg-primary/90 flex items-center gap-2 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
-              onClick={() => navigate(`/agents/logs/${agent.id}`)}
-            >
-              <span className="block h-5 w-5 bg-[url('/src/assets/monitoring-purple.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/monitoring-white.svg')]" />
-              {t('agents.form.buttons.logs')}
-            </button>
-          )}
-          {modeConfig[effectiveMode].showAccessDetails && (
-            <button
-              className="group border-primary text-primary hover:bg-primary/90 flex items-center gap-2 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
-              onClick={() => navigate(`/agents/schedules/${agent.id}`)}
-            >
-              <span className="block h-5 w-5 bg-[url('/src/assets/clock-purple.svg')] bg-contain bg-center bg-no-repeat transition-all group-hover:bg-[url('/src/assets/clock-white.svg')]" />
-              {t('agents.form.buttons.schedules')}
             </button>
           )}
           {modeConfig[effectiveMode].showAccessDetails && (
