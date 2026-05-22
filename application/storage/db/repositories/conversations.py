@@ -262,6 +262,57 @@ class ConversationsRepository:
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
+    def search_for_user(
+        self, user_id: str, query: str, limit: int = 30,
+    ) -> list[dict]:
+        """Search a user's conversations by name or message content.
+
+        Same visibility filter as :meth:`list_for_user`. Matches against
+        ``conversations.name`` or any of the conversation's messages'
+        ``prompt`` / ``response`` columns (case-insensitive substring).
+
+        Each returned row includes ``match_field`` (one of ``name``,
+        ``prompt``, ``response``) and ``match_text`` (the full text of the
+        first matching field, ``name`` taking precedence over messages,
+        ``prompt`` over ``response``) so callers can render a snippet.
+        """
+        if not query:
+            return []
+        result = self._conn.execute(
+            text(
+                "SELECT c.*, mt.match_field, mt.match_text "
+                "FROM conversations c "
+                "JOIN LATERAL ( "
+                "  SELECT field AS match_field, txt AS match_text "
+                "  FROM ( "
+                "    SELECT 'name'::text AS field, c.name AS txt, 0 AS prio "
+                "    WHERE c.name ILIKE :pattern "
+                "    UNION ALL "
+                "    SELECT 'prompt'::text, m.prompt, 1 "
+                "    FROM conversation_messages m "
+                "    WHERE m.conversation_id = c.id "
+                "      AND m.prompt ILIKE :pattern "
+                "    UNION ALL "
+                "    SELECT 'response'::text, m.response, 2 "
+                "    FROM conversation_messages m "
+                "    WHERE m.conversation_id = c.id "
+                "      AND m.response ILIKE :pattern "
+                "  ) s "
+                "  ORDER BY prio "
+                "  LIMIT 1 "
+                ") mt ON TRUE "
+                "WHERE c.user_id = :user_id "
+                "AND (c.api_key IS NULL OR c.agent_id IS NOT NULL) "
+                "ORDER BY c.date DESC LIMIT :limit"
+            ),
+            {
+                "user_id": user_id,
+                "pattern": f"%{query}%",
+                "limit": limit,
+            },
+        )
+        return [row_to_dict(r) for r in result.fetchall()]
+
     def rename(self, conversation_id: str, user_id: str, name: str) -> bool:
         # Shape-gate so a non-UUID id (legacy Mongo ObjectId still floating
         # around in client-side state during the cutover) never reaches the
