@@ -25,7 +25,10 @@ logger = logging.getLogger(__name__)
 
 
 class SchedulerTool(Tool):
-    """Scheduling"""
+    """
+    Scheduling
+    Schedules a one-time task for the agent to run at a chosen time or delay.
+    """
 
     # internal=True keeps scheduler out of /api/available_tools and the
     # agentless Add-Tool modal; tool_manager.load_tool still lazy-loads it
