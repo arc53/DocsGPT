@@ -11,6 +11,7 @@ import AlertIcon from '../assets/alert.svg';
 import ClipIcon from '../assets/clip.svg';
 import DragFileUpload from '../assets/DragFileUpload.svg';
 import ExitIcon from '../assets/exit.svg';
+import RedirectIcon from '../assets/redirect.svg';
 import SendArrowIcon from './SendArrowIcon';
 import SourceIcon from '../assets/source.svg';
 import DocumentationDark from '../assets/documentation-dark.svg';
@@ -26,19 +27,25 @@ import {
 import { ActiveState, Doc } from '../models/misc';
 import {
   selectSelectedDocs,
+  selectSourceDocs,
   selectToken,
+  setSelectedDocs,
 } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
-import SourcesPopup from './SourcesPopup';
-import ToolsPopup from './ToolsPopup';
+import {
+  MultiSelectPopover,
+  type MultiSelectPopoverItem,
+} from './MultiSelectPopover';
 import { handleAbort } from '../conversation/conversationSlice';
 import {
   AUDIO_FILE_ACCEPT_ATTR,
   FILE_UPLOAD_ACCEPT,
   FILE_UPLOAD_ACCEPT_ATTR,
 } from '../constants/fileUpload';
+import { UserToolType } from '../settings/types';
+import { isChatToolVisible } from '../utils/toolUtils';
 
 const generateId = (): string =>
   `${Date.now()}-${Math.random().toString(36).substring(2)}`;
@@ -302,10 +309,10 @@ export default function MessageInput({
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const voiceFileInputRef = useRef<HTMLInputElement>(null);
-  const sourceButtonRef = useRef<HTMLButtonElement>(null);
-  const toolButtonRef = useRef<HTMLButtonElement>(null);
   const [isSourcesPopupOpen, setIsSourcesPopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
+  const [userTools, setUserTools] = useState<UserToolType[]>([]);
+  const [toolsLoading, setToolsLoading] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
   const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
@@ -313,6 +320,7 @@ export default function MessageInput({
   const [voiceError, setVoiceError] = useState<string | null>(null);
 
   const selectedDocs = useSelector(selectSelectedDocs);
+  const sourceDocs = useSelector(selectSourceDocs);
   const token = useSelector(selectToken);
   const attachments = useSelector(selectAttachments);
 
@@ -1377,8 +1385,89 @@ export default function MessageInput({
   };
 
   const handlePostDocumentSelect = (_docs: Doc[] | null) => {
-    // SourcesPopup updates Redux selection directly; this preserves the prop contract.
+    // Hook point for downstream side-effects after a source is toggled.
     void _docs;
+  };
+
+  // Stable id for matching selected sources: prefer ``id``, fall back to ``date``.
+  const sourceItemId = (doc: Doc): string => doc.id || doc.date;
+
+  const sourceItems: MultiSelectPopoverItem[] = (sourceDocs || []).map(
+    (doc) => ({
+      id: sourceItemId(doc),
+      label: doc.name,
+      icon: SourceIcon,
+    }),
+  );
+
+  const selectedSourceIds = (
+    selectedDocs && Array.isArray(selectedDocs) ? selectedDocs : []
+  ).map((doc) => sourceItemId(doc));
+
+  const handleToggleSource = (id: string) => {
+    if (!sourceDocs) return;
+    const current = Array.isArray(selectedDocs) ? selectedDocs : [];
+    const matched = current.find((doc) => sourceItemId(doc) === id);
+    let updated: Doc[];
+    if (matched) {
+      updated = current.filter((doc) => sourceItemId(doc) !== id);
+    } else {
+      const incoming = sourceDocs.find((doc) => sourceItemId(doc) === id);
+      if (!incoming) return;
+      updated = [...current, incoming];
+    }
+    dispatch(setSelectedDocs(updated.length > 0 ? updated : []));
+    handlePostDocumentSelect(updated.length > 0 ? updated : null);
+  };
+
+  const fetchUserTools = useCallback(() => {
+    setToolsLoading(true);
+    userService
+      .getUserTools(token)
+      .then((res) => res.json())
+      .then((data) => {
+        const filtered = (data.tools || []).filter(isChatToolVisible);
+        setUserTools(filtered);
+      })
+      .catch((error) => {
+        console.error('Error fetching tools:', error);
+      })
+      .finally(() => setToolsLoading(false));
+  }, [token]);
+
+  useEffect(() => {
+    if (isToolsPopupOpen) fetchUserTools();
+  }, [isToolsPopupOpen, fetchUserTools]);
+
+  const toolItems: MultiSelectPopoverItem[] = userTools.map((tool) => ({
+    id: tool.id,
+    label: tool.customName || tool.displayName,
+    icon: `/toolIcons/tool_${tool.name}.svg`,
+  }));
+
+  const selectedToolIds = userTools
+    .filter((tool) => tool.status)
+    .map((tool) => tool.id);
+
+  const handleToggleTool = (id: string) => {
+    const tool = userTools.find((t) => t.id === id);
+    if (!tool) return;
+    const newStatus = !tool.status;
+    userService
+      .updateToolStatus({ id, status: newStatus }, token)
+      .then(() => {
+        setUserTools((prev) =>
+          prev.map((t) => (t.id === id ? { ...t, status: newStatus } : t)),
+        );
+      })
+      .catch((error) => {
+        console.error('Failed to update tool status:', error);
+      });
+  };
+
+  const handleUploadClick = () => {
+    setUploadModalState('ACTIVE');
+    setIsSourcesPopupOpen(false);
   };
 
   const handleSubmit = () => {
@@ -1590,46 +1679,107 @@ export default function MessageInput({
         <div className="flex items-center px-2 pb-1.5 sm:px-3 sm:pb-2">
           <div className="flex grow flex-wrap gap-1 sm:gap-2">
             {showSourceButton && (
-              <button
-                ref={sourceButtonRef}
-                className="xs:px-3 xs:py-1.5 dark:border-border border-border hover:bg-accent dark:hover:bg-muted flex max-w-[130px] items-center rounded-[32px] border px-2 py-1 transition-colors sm:max-w-[150px]"
-                onClick={() => setIsSourcesPopupOpen(!isSourcesPopupOpen)}
-                title={
-                  selectedDocs && selectedDocs.length > 0
-                    ? selectedDocs.map((doc) => doc.name).join(', ')
-                    : t('conversation.sources.title')
+              <MultiSelectPopover
+                open={isSourcesPopupOpen}
+                onOpenChange={setIsSourcesPopupOpen}
+                title={t('conversation.sources.text')}
+                items={sourceItems}
+                selectedIds={selectedSourceIds}
+                onToggle={handleToggleSource}
+                searchPlaceholder={t('settings.sources.searchPlaceholder')}
+                emptyMessage={t('conversation.sources.noSourcesAvailable')}
+                footer={
+                  <div className="flex flex-col gap-3">
+                    <a
+                      href="/settings/sources"
+                      className="text-primary inline-flex items-center gap-2 text-base font-medium"
+                      onClick={() => setIsSourcesPopupOpen(false)}
+                    >
+                      {t('settings.sources.goToSources')}
+                      <img
+                        src={RedirectIcon}
+                        alt=""
+                        aria-hidden="true"
+                        className="h-3 w-3"
+                      />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={handleUploadClick}
+                      className="border-primary text-primary hover:bg-primary/90 w-auto self-start rounded-full border px-4 py-2 text-[14px] font-medium transition-colors duration-200 hover:text-white"
+                    >
+                      {t('settings.sources.uploadNew')}
+                    </button>
+                  </div>
                 }
-              >
-                <img
-                  src={SourceIcon}
-                  alt="Sources"
-                  className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4"
-                />
-                <span className="xs:text-[12px] dark:text-foreground text-muted-foreground truncate overflow-hidden text-[10px] font-medium sm:text-[14px]">
-                  {selectedDocs && selectedDocs.length > 0
-                    ? selectedDocs.length === 1
-                      ? selectedDocs[0].name
-                      : `${selectedDocs.length} sources selected`
-                    : t('conversation.sources.title')}
-                </span>
-              </button>
+                trigger={
+                  <button
+                    type="button"
+                    className="xs:px-3 xs:py-1.5 dark:border-border border-border hover:bg-accent dark:hover:bg-muted flex max-w-[130px] items-center rounded-[32px] border px-2 py-1 transition-colors sm:max-w-[150px]"
+                    title={
+                      selectedDocs && selectedDocs.length > 0
+                        ? selectedDocs.map((doc) => doc.name).join(', ')
+                        : t('conversation.sources.title')
+                    }
+                  >
+                    <img
+                      src={SourceIcon}
+                      alt="Sources"
+                      className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4"
+                    />
+                    <span className="xs:text-[12px] dark:text-foreground text-muted-foreground truncate overflow-hidden text-[10px] font-medium sm:text-[14px]">
+                      {selectedDocs && selectedDocs.length > 0
+                        ? selectedDocs.length === 1
+                          ? selectedDocs[0].name
+                          : `${selectedDocs.length} sources selected`
+                        : t('conversation.sources.title')}
+                    </span>
+                  </button>
+                }
+              />
             )}
 
             {showToolButton && (
-              <button
-                ref={toolButtonRef}
-                className="xs:px-3 xs:py-1.5 xs:max-w-[150px] dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex max-w-[130px] items-center rounded-[32px] border px-2 py-1 transition-colors"
-                onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
-              >
-                <img
-                  src={ToolIcon}
-                  alt="Tools"
-                  className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4 sm:w-4"
-                />
-                <span className="xs:text-[12px] dark:text-foreground text-muted-foreground truncate overflow-hidden text-[10px] font-medium sm:text-[14px]">
-                  {t('settings.tools.label')}
-                </span>
-              </button>
+              <MultiSelectPopover
+                open={isToolsPopupOpen}
+                onOpenChange={setIsToolsPopupOpen}
+                title={t('settings.tools.label')}
+                items={toolItems}
+                selectedIds={selectedToolIds}
+                onToggle={handleToggleTool}
+                searchPlaceholder={t('settings.tools.searchPlaceholder')}
+                emptyMessage={t('settings.tools.noToolsFound')}
+                loading={toolsLoading}
+                footer={
+                  <a
+                    href="/settings/tools"
+                    className="text-primary inline-flex items-center text-base font-medium"
+                  >
+                    {t('settings.tools.manageTools')}
+                    <img
+                      src={RedirectIcon}
+                      alt=""
+                      aria-hidden="true"
+                      className="ml-2 h-[11px] w-[11px]"
+                    />
+                  </a>
+                }
+                trigger={
+                  <button
+                    type="button"
+                    className="xs:px-3 xs:py-1.5 xs:max-w-[150px] dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex max-w-[130px] items-center rounded-[32px] border px-2 py-1 transition-colors"
+                  >
+                    <img
+                      src={ToolIcon}
+                      alt="Tools"
+                      className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4 sm:w-4"
+                    />
+                    <span className="xs:text-[12px] dark:text-foreground text-muted-foreground truncate overflow-hidden text-[10px] font-medium sm:text-[14px]">
+                      {t('settings.tools.label')}
+                    </span>
+                  </button>
+                }
+              />
             )}
             {ENABLE_VOICE_INPUT && (
               <button
@@ -1725,20 +1875,6 @@ export default function MessageInput({
           )}
         </div>
       </div>
-
-      <SourcesPopup
-        isOpen={isSourcesPopupOpen}
-        onClose={() => setIsSourcesPopupOpen(false)}
-        anchorRef={sourceButtonRef}
-        handlePostDocumentSelect={handlePostDocumentSelect}
-        setUploadModalState={setUploadModalState}
-      />
-
-      <ToolsPopup
-        isOpen={isToolsPopupOpen}
-        onClose={() => setIsToolsPopupOpen(false)}
-        anchorRef={toolButtonRef}
-      />
 
       {uploadModalState === 'ACTIVE' && (
         <Upload

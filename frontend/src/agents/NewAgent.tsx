@@ -18,7 +18,10 @@ import userService from '../api/services/userService';
 import SourceIcon from '../assets/source.svg';
 import Dropdown from '../components/Dropdown';
 import { FileUpload } from '../components/FileUpload';
-import MultiSelectPopup, { OptionType } from '../components/MultiSelectPopup';
+import {
+  MultiSelectPopover,
+  type MultiSelectPopoverItem,
+} from '../components/MultiSelectPopover';
 import Spinner from '../components/Spinner';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -87,14 +90,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     default_model_id: '',
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [userTools, setUserTools] = useState<OptionType[]>([]);
+  const [userTools, setUserTools] = useState<MultiSelectPopoverItem[]>([]);
+  const [rawUserTools, setRawUserTools] = useState<UserToolType[]>([]);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [isSourcePopupOpen, setIsSourcePopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [isModelsPopupOpen, setIsModelsPopupOpen] = useState(false);
-  const [selectedSourceIds, setSelectedSourceIds] = useState<
-    Set<string | number>
-  >(new Set());
+  const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [selectedTools, setSelectedTools] = useState<ToolSummary[]>([]);
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(
     new Set(),
@@ -446,19 +450,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       if (!response.ok) throw new Error('Failed to fetch tools');
       const data = await response.json();
       // Group ordering: builtins -> defaults -> user tools (sorted via the
-      // MultiSelectPopup first-appearance grouping).
+      // MultiSelectPopover first-appearance grouping).
       const groupFor = (tool: UserToolType): string => {
         if (tool.builtin) return t('agents.form.toolsPopup.groupBuiltin');
         if (tool.default) return t('agents.form.toolsPopup.groupDefault');
         return t('agents.form.toolsPopup.groupCustom');
       };
-      const tools: OptionType[] = data.tools.map((tool: UserToolType) => ({
-        id: tool.id,
-        label: getToolDisplayName(tool),
-        icon: `/toolIcons/tool_${tool.name}.svg`,
-        name: tool.name,
-        group: groupFor(tool),
-      }));
+      const tools: MultiSelectPopoverItem[] = data.tools.map(
+        (tool: UserToolType) => ({
+          id: tool.id,
+          label: getToolDisplayName(tool),
+          icon: `/toolIcons/tool_${tool.name}.svg`,
+          group: groupFor(tool),
+        }),
+      );
       const groupOrder = [
         t('agents.form.toolsPopup.groupBuiltin'),
         t('agents.form.toolsPopup.groupDefault'),
@@ -469,6 +474,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           groupOrder.indexOf(a.group || '') - groupOrder.indexOf(b.group || ''),
       );
       setUserTools(tools);
+      setRawUserTools(data.tools as UserToolType[]);
     };
     const getModels = async () => {
       const response = await modelService.getModels(token);
@@ -529,19 +535,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   useEffect(() => {
     if (sourceDocs && sourceDocs.length > 0 && selectedSourceIds.size === 0) {
       const defaultSource = sourceDocs.find((s) => s.name === 'Default');
-      if (defaultSource) {
-        setSelectedSourceIds(
-          new Set([
-            defaultSource.id || defaultSource.retriever || defaultSource.name,
-          ]),
-        );
-      } else {
-        setSelectedSourceIds(
-          new Set([
-            sourceDocs[0].id || sourceDocs[0].retriever || sourceDocs[0].name,
-          ]),
-        );
-      }
+      const fallback = defaultSource || sourceDocs[0];
+      setSelectedSourceIds(
+        new Set([String(fallback.id || fallback.retriever || fallback.name)]),
+      );
     }
   }, [sourceDocs, selectedSourceIds.size]);
 
@@ -853,83 +850,75 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             </h2>
             <div className="mt-3">
               <div className="flex flex-wrap items-center gap-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  ref={sourceAnchorButtonRef}
-                  onClick={() => setIsSourcePopupOpen(!isSourcePopupOpen)}
-                  className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
-                    selectedSourceIds.size > 0
-                      ? 'text-foreground dark:text-foreground'
-                      : 'dark:text-muted-foreground text-gray-400'
-                  }`}
-                >
-                  {selectedSourceIds.size > 0
-                    ? Array.from(selectedSourceIds)
-                        .map((id) => {
-                          const matchedDoc = sourceDocs?.find(
-                            (source) =>
-                              source.id === id ||
-                              source.name === id ||
-                              source.retriever === id,
-                          );
-                          return (
-                            matchedDoc?.name || t('agents.form.externalKb')
-                          );
-                        })
-                        .filter(Boolean)
-                        .join(', ')
-                    : t('agents.form.placeholders.selectSources')}
-                </Button>
-                <MultiSelectPopup
-                  isOpen={isSourcePopupOpen}
-                  onClose={() => setIsSourcePopupOpen(false)}
-                  anchorRef={sourceAnchorButtonRef}
-                  options={
+                <MultiSelectPopover
+                  open={isSourcePopupOpen}
+                  onOpenChange={setIsSourcePopupOpen}
+                  title={t('agents.form.sourcePopup.title')}
+                  items={
                     sourceDocs?.map((doc: Doc) => ({
-                      id: doc.id || doc.retriever || doc.name,
+                      id: String(doc.id || doc.retriever || doc.name),
                       label: doc.name,
                       icon: <img src={SourceIcon} alt="" />,
                     })) || []
                   }
-                  selectedIds={selectedSourceIds}
-                  onSelectionChange={(newSelectedIds: Set<string | number>) => {
+                  selectedIds={Array.from(selectedSourceIds)}
+                  onToggle={(id) => {
+                    const next = new Set(selectedSourceIds);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
                     if (
-                      newSelectedIds.size === 0 &&
+                      next.size === 0 &&
                       sourceDocs &&
                       sourceDocs.length > 0
                     ) {
                       const defaultSource = sourceDocs.find(
                         (s) => s.name === 'Default',
                       );
-                      if (defaultSource) {
-                        setSelectedSourceIds(
-                          new Set([
-                            defaultSource.id ||
-                              defaultSource.retriever ||
-                              defaultSource.name,
-                          ]),
-                        );
-                      } else {
-                        setSelectedSourceIds(
-                          new Set([
-                            sourceDocs[0].id ||
-                              sourceDocs[0].retriever ||
-                              sourceDocs[0].name,
-                          ]),
-                        );
-                      }
+                      const fallback = defaultSource || sourceDocs[0];
+                      setSelectedSourceIds(
+                        new Set([
+                          String(
+                            fallback.id || fallback.retriever || fallback.name,
+                          ),
+                        ]),
+                      );
                     } else {
-                      setSelectedSourceIds(newSelectedIds);
+                      setSelectedSourceIds(next);
                     }
                   }}
-                  title={t('agents.form.sourcePopup.title')}
                   searchPlaceholder={t(
                     'agents.form.sourcePopup.searchPlaceholder',
                   )}
-                  noOptionsMessage={t(
-                    'agents.form.sourcePopup.noOptionsMessage',
-                  )}
+                  emptyMessage={t('agents.form.sourcePopup.noOptionsMessage')}
+                  trigger={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      ref={sourceAnchorButtonRef}
+                      className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
+                        selectedSourceIds.size > 0
+                          ? 'text-foreground dark:text-foreground'
+                          : 'dark:text-muted-foreground text-gray-400'
+                      }`}
+                    >
+                      {selectedSourceIds.size > 0
+                        ? Array.from(selectedSourceIds)
+                            .map((id) => {
+                              const matchedDoc = sourceDocs?.find(
+                                (source) =>
+                                  source.id === id ||
+                                  source.name === id ||
+                                  source.retriever === id,
+                              );
+                              return (
+                                matchedDoc?.name || t('agents.form.externalKb')
+                              );
+                            })
+                            .filter(Boolean)
+                            .join(', ')
+                        : t('agents.form.placeholders.selectSources')}
+                    </Button>
+                  }
                 />
               </div>
               <div className="mt-3">
@@ -988,49 +977,53 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               {t('agents.form.sections.tools')}
             </h2>
             <div className="mt-3 flex flex-wrap items-center gap-1">
-              <Button
-                type="button"
-                variant="outline"
-                ref={toolAnchorButtonRef}
-                onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
-                className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
-                  selectedTools.length > 0
-                    ? 'text-foreground dark:text-foreground'
-                    : 'dark:text-muted-foreground text-gray-400'
-                }`}
-              >
-                {selectedTools.length > 0
-                  ? selectedTools
-                      .map((tool) => getToolDisplayName(tool))
-                      .filter(Boolean)
-                      .join(', ')
-                  : t('agents.form.placeholders.selectTools')}
-              </Button>
-              <MultiSelectPopup
-                isOpen={isToolsPopupOpen}
-                onClose={() => setIsToolsPopupOpen(false)}
-                anchorRef={toolAnchorButtonRef}
-                options={userTools}
-                selectedIds={new Set(selectedTools.map((tool) => tool.id))}
-                onSelectionChange={(newSelectedIds: Set<string | number>) =>
-                  setSelectedTools(
-                    userTools
-                      .filter((tool) => newSelectedIds.has(tool.id))
-                      .map((tool) => ({
-                        id: String(tool.id),
-                        name:
-                          typeof tool.name === 'string'
-                            ? tool.name
-                            : tool.label,
-                        display_name: tool.label,
-                      })),
-                  )
-                }
+              <MultiSelectPopover
+                open={isToolsPopupOpen}
+                onOpenChange={setIsToolsPopupOpen}
                 title={t('agents.form.toolsPopup.title')}
+                items={userTools}
+                selectedIds={selectedTools.map((tool) => tool.id)}
+                onToggle={(id) => {
+                  const exists = selectedTools.find((t) => t.id === id);
+                  if (exists) {
+                    setSelectedTools(selectedTools.filter((t) => t.id !== id));
+                    return;
+                  }
+                  const item = userTools.find((t) => t.id === id);
+                  const raw = rawUserTools.find((t) => t.id === id);
+                  if (!item) return;
+                  setSelectedTools([
+                    ...selectedTools,
+                    {
+                      id: item.id,
+                      name: raw?.name || item.label,
+                      display_name: item.label,
+                    },
+                  ]);
+                }}
                 searchPlaceholder={t(
                   'agents.form.toolsPopup.searchPlaceholder',
                 )}
-                noOptionsMessage={t('agents.form.toolsPopup.noOptionsMessage')}
+                emptyMessage={t('agents.form.toolsPopup.noOptionsMessage')}
+                trigger={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    ref={toolAnchorButtonRef}
+                    className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
+                      selectedTools.length > 0
+                        ? 'text-foreground dark:text-foreground'
+                        : 'dark:text-muted-foreground text-gray-400'
+                    }`}
+                  >
+                    {selectedTools.length > 0
+                      ? selectedTools
+                          .map((tool) => getToolDisplayName(tool))
+                          .filter(Boolean)
+                          .join(', ')
+                      : t('agents.form.placeholders.selectTools')}
+                  </Button>
+                }
               />
             </div>
           </div>
@@ -1062,37 +1055,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               {t('agents.form.sections.models')}
             </h2>
             <div className="mt-3 flex flex-col gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                ref={modelAnchorButtonRef}
-                onClick={() => setIsModelsPopupOpen(!isModelsPopupOpen)}
-                className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
-                  selectedModelIds.size > 0
-                    ? 'text-foreground dark:text-foreground'
-                    : 'dark:text-muted-foreground text-gray-400'
-                }`}
-              >
-                {selectedModelIds.size > 0
-                  ? availableModels
-                      .filter((m) => selectedModelIds.has(m.id))
-                      .map((m) => m.display_name)
-                      .join(', ')
-                  : t('agents.form.placeholders.selectModels')}
-              </Button>
-              <MultiSelectPopup
-                isOpen={isModelsPopupOpen}
-                onClose={() => setIsModelsPopupOpen(false)}
-                anchorRef={modelAnchorButtonRef}
-                options={(() => {
+              <MultiSelectPopover
+                open={isModelsPopupOpen}
+                onOpenChange={setIsModelsPopupOpen}
+                title={t('agents.form.modelsPopup.title')}
+                items={(() => {
                   const builtinLabel = t(
                     'settings.customModels.modelsGroup.builtin',
                   );
                   const userLabel = t('settings.customModels.modelsGroup.user');
-                  const builtin: OptionType[] = [];
-                  const user: OptionType[] = [];
+                  const builtin: MultiSelectPopoverItem[] = [];
+                  const user: MultiSelectPopoverItem[] = [];
                   availableModels.forEach((model) => {
-                    const opt: OptionType = {
+                    const opt: MultiSelectPopoverItem = {
                       id: model.id,
                       label: model.display_name,
                       group: model.source === 'user' ? userLabel : builtinLabel,
@@ -1102,17 +1077,36 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   });
                   return [...builtin, ...user];
                 })()}
-                selectedIds={selectedModelIds}
-                onSelectionChange={(newSelectedIds: Set<string | number>) =>
-                  setSelectedModelIds(
-                    new Set(Array.from(newSelectedIds).map(String)),
-                  )
-                }
-                title={t('agents.form.modelsPopup.title')}
+                selectedIds={Array.from(selectedModelIds)}
+                onToggle={(id) => {
+                  const next = new Set(selectedModelIds);
+                  if (next.has(id)) next.delete(id);
+                  else next.add(id);
+                  setSelectedModelIds(next);
+                }}
                 searchPlaceholder={t(
                   'agents.form.modelsPopup.searchPlaceholder',
                 )}
-                noOptionsMessage={t('agents.form.modelsPopup.noOptionsMessage')}
+                emptyMessage={t('agents.form.modelsPopup.noOptionsMessage')}
+                trigger={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    ref={modelAnchorButtonRef}
+                    className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
+                      selectedModelIds.size > 0
+                        ? 'text-foreground dark:text-foreground'
+                        : 'dark:text-muted-foreground text-gray-400'
+                    }`}
+                  >
+                    {selectedModelIds.size > 0
+                      ? availableModels
+                          .filter((m) => selectedModelIds.has(m.id))
+                          .map((m) => m.display_name)
+                          .join(', ')
+                      : t('agents.form.placeholders.selectModels')}
+                  </Button>
+                }
               />
               {selectedModelIds.size > 0 && (
                 <div>
