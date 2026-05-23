@@ -8,8 +8,8 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import SearchIcon from '../assets/search.svg';
+import { Modal } from '../components/ui/modal';
 import { searchConversations } from '../preferences/preferenceApi';
-import WrapperModal from './WrapperModal';
 
 type ConversationListItem = {
   id: string;
@@ -150,9 +150,15 @@ export default function SearchConversationsModal({
     !!query.trim() && !isSearching && visibleConversations.length === 0;
 
   return (
-    <WrapperModal
-      close={close}
-      className="w-[92vw] max-w-xl p-0"
+    <Modal
+      open={true}
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+      hideTitle
+      title={t('modals.searchConversations.searchPlaceholder')}
+      showCloseButton={false}
+      className="w-[92vw] !max-w-xl !p-0"
       contentClassName="max-h-[70vh]"
     >
       <div className="flex flex-col">
@@ -227,6 +233,6 @@ export default function SearchConversationsModal({
             })}
         </div>
       </div>
-    </WrapperModal>
+    </Modal>
   );
 }

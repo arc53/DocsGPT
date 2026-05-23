@@ -6,6 +6,7 @@ import conversationService from '../api/services/conversationService';
 import Spinner from '../assets/spinner.svg';
 import Dropdown from '../components/Dropdown';
 import ToggleSwitch from '../components/ToggleSwitch';
+import { Modal } from '../components/ui/modal';
 import { Doc } from '../models/misc';
 import {
   selectChunks,
@@ -14,7 +15,6 @@ import {
   selectSourceDocs,
   selectToken,
 } from '../preferences/preferenceSlice';
-import WrapperModal from './WrapperModal';
 
 type StatusType = 'loading' | 'idle' | 'fetched' | 'failed';
 
@@ -96,14 +96,17 @@ export const ShareConversationModal = ({
   };
 
   return (
-    <WrapperModal close={close} contentClassName="!overflow-visible">
-      <div className="flex w-[600px] max-w-[80vw] flex-col gap-2">
-        <h2 className="text-foreground dark:text-foreground text-xl font-medium">
-          {t('modals.shareConv.label')}
-        </h2>
-        <p className="text-foreground dark:text-muted-foreground/60 text-sm leading-relaxed">
-          {t('modals.shareConv.note')}
-        </p>
+    <Modal
+      open={true}
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+      size="xl"
+      title={t('modals.shareConv.label')}
+      description={t('modals.shareConv.note')}
+      contentClassName="!overflow-visible"
+    >
+      <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <span className="text-foreground text-lg dark:text-white">
             {t('modals.shareConv.option')}
@@ -157,6 +160,6 @@ export const ShareConversationModal = ({
           )}
         </div>
       </div>
-    </WrapperModal>
+    </Modal>
   );
 };

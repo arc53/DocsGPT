@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
-import WrapperModal from './WrapperModal';
 
 type FolderNameModalProps = {
   modalState: ActiveState;
@@ -42,31 +42,27 @@ export default function FolderNameModal({
     }
   };
 
-  if (modalState !== 'ACTIVE') return null;
+  const handleCancel = () => {
+    setModalState('INACTIVE');
+    setName('');
+  };
 
   return (
-    <WrapperModal close={() => setModalState('INACTIVE')}>
-      <div className="w-72">
-        <h2 className="text-foreground dark:text-foreground mb-4 text-lg font-semibold">
-          {mode === 'create'
-            ? t('agents.folders.newFolder')
-            : t('agents.folders.rename')}
-        </h2>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={t('agents.folders.folderName')}
-          autoFocus
-          className="border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none dark:text-white"
-        />
-        <div className="mt-6 flex justify-end gap-2">
+    <Modal
+      open={modalState === 'ACTIVE'}
+      onOpenChange={(open) => {
+        if (!open) handleCancel();
+      }}
+      size="sm"
+      title={
+        mode === 'create'
+          ? t('agents.folders.newFolder')
+          : t('agents.folders.rename')
+      }
+      footer={
+        <>
           <button
-            onClick={() => {
-              setModalState('INACTIVE');
-              setName('');
-            }}
+            onClick={handleCancel}
             className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium"
           >
             {t('cancel')}
@@ -80,8 +76,18 @@ export default function FolderNameModal({
               ? t('agents.folders.createFolder')
               : t('agents.folders.rename')}
           </button>
-        </div>
-      </div>
-    </WrapperModal>
+        </>
+      }
+    >
+      <input
+        type="text"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={t('agents.folders.folderName')}
+        autoFocus
+        className="border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none dark:text-white"
+      />
+    </Modal>
   );
 }

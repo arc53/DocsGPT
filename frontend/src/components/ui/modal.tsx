@@ -79,6 +79,14 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
       <DialogTitle>{title}</DialogTitle>
     );
 
+  const descriptionNode = description ? (
+    <DialogDescription>{description}</DialogDescription>
+  ) : (
+    <VisuallyHidden.Root>
+      <DialogDescription>{resolvedTitle}</DialogDescription>
+    </VisuallyHidden.Root>
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPortal>
@@ -95,9 +103,7 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
           )}
         >
           {titleNode}
-          {description ? (
-            <DialogDescription>{description}</DialogDescription>
-          ) : null}
+          {descriptionNode}
           <div
             className={cn(
               'no-scrollbar text-foreground overflow-y-auto',

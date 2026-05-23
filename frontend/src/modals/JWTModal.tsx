@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 
 import Input from '../components/Input';
+import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
-import WrapperModal from './WrapperModal';
 
 type JWTModalProps = {
   modalState: ActiveState;
@@ -15,20 +15,16 @@ export default function JWTModal({
 }: JWTModalProps) {
   const [jwtToken, setJwtToken] = useState<string>('');
 
-  if (modalState !== 'ACTIVE') return null;
-
   return (
-    <WrapperModal
-      className="p-4"
+    <Modal
+      open={modalState === 'ACTIVE'}
+      onOpenChange={() => {
+        /* uncloseable by design; P1.7 revisits */
+      }}
       isPerformingTask={true}
-      close={() => undefined}
+      title="Add JWT Token"
     >
       <div data-testid="jwt-modal">
-        <div className="mb-6">
-          <span className="text-foreground dark:text-foreground text-lg">
-            Add JWT Token
-          </span>
-        </div>
         <div className="relative mt-5 mb-4">
           <Input
             name="JWT Token"
@@ -49,6 +45,6 @@ export default function JWTModal({
           Save Token
         </button>
       </div>
-    </WrapperModal>
+    </Modal>
   );
 }
