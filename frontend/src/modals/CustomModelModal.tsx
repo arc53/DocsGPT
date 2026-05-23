@@ -289,7 +289,6 @@ export default function CustomModelModal({
     <Modal
       open={modalState === 'ACTIVE'}
       onOpenChange={(o) => !o && closeModal()}
-      isPerformingTask={saving}
       hideTitle
       title={
         isEditMode

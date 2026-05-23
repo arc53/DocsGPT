@@ -112,7 +112,6 @@ export default function SchedulesView() {
   };
 
   const closeModal = () => {
-    if (submitting) return;
     setModalOpen(false);
     setEditing(null);
   };

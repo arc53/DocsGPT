@@ -192,7 +192,6 @@ export default function ScheduleFormModal({
     <Modal
       open={open}
       onOpenChange={(o) => !o && onClose()}
-      isPerformingTask={submitting}
       hideTitle
       title={
         isEdit
