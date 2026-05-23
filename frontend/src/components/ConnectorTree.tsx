@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { SyntheticEvent, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector, useStore } from 'react-redux';
 
@@ -17,7 +17,6 @@ import { selectToken } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
 import { formatBytes } from '../utils/stringUtils';
 import Chunks from './Chunks';
-import ContextMenu, { MenuOption } from './ContextMenu';
 import SkeletonLoader from './SkeletonLoader';
 import {
   Table,
@@ -28,6 +27,21 @@ import {
   TableHeader,
   TableRow,
 } from './Table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
+
+type ConnectorTreeMenuOption = {
+  icon: string;
+  label: string;
+  onClick: (event: SyntheticEvent) => void;
+  variant: 'default' | 'destructive';
+  iconWidth?: number;
+  iconHeight?: number;
+};
 
 interface FileNode {
   type?: string;
@@ -66,10 +80,6 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   const [currentPath, setCurrentPath] = useState<string[]>([]);
   const token = useSelector(selectToken);
   const store = useStore<RootState>();
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-  const menuRefs = useRef<{
-    [key: string]: React.RefObject<HTMLDivElement | null>;
-  }>({});
   const [selectedFile, setSelectedFile] = useState<{
     id: string;
     name: string;
@@ -306,33 +316,18 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
     return current;
   };
 
-  const getMenuRef = (id: string) => {
-    if (!menuRefs.current[id]) {
-      menuRefs.current[id] = React.createRef();
-    }
-    return menuRefs.current[id];
-  };
-
-  const handleMenuClick = (
-    e: React.MouseEvent<HTMLButtonElement>,
-    id: string,
-  ) => {
-    e.stopPropagation();
-    setActiveMenuId(activeMenuId === id ? null : id);
-  };
-
   const getActionOptions = (
     name: string,
     isFile: boolean,
     _itemId: string,
     displayName?: string,
-  ): MenuOption[] => {
-    const options: MenuOption[] = [];
+  ): ConnectorTreeMenuOption[] => {
+    const options: ConnectorTreeMenuOption[] = [];
 
     options.push({
       icon: EyeView,
       label: t('settings.sources.view'),
-      onClick: (event: React.SyntheticEvent) => {
+      onClick: (event: SyntheticEvent) => {
         event.stopPropagation();
         if (isFile) {
           handleFileClick(name, displayName);
@@ -342,7 +337,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
       },
       iconWidth: 18,
       iconHeight: 18,
-      variant: 'primary',
+      variant: 'default',
     });
 
     return options;
@@ -500,7 +495,6 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
       .filter(([_, node]) => !node.type)
       .map(([name, node]) => {
         const itemId = `dir-${name}`;
-        const menuRef = getMenuRef(itemId);
 
         // Calculate directory stats
         const dirStats = calculateDirectoryStats(node as DirectoryStructure);
@@ -526,29 +520,41 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
               {dirStats.totalSize > 0 ? formatBytes(dirStats.totalSize) : '-'}
             </TableCell>
             <TableCell width="10%" align="right">
-              <div ref={menuRef} className="relative">
-                <button
-                  onClick={(e) => handleMenuClick(e, itemId)}
-                  className="dark:hover:bg-muted inline-flex h-[35px] w-6 shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
-                  aria-label={t('settings.sources.menuAlt')}
-                >
-                  <img
-                    src={ThreeDots}
-                    alt={t('settings.sources.menuAlt')}
-                    className="opacity-60 hover:opacity-100"
-                  />
-                </button>
-                <ContextMenu
-                  isOpen={activeMenuId === itemId}
-                  setIsOpen={(isOpen) =>
-                    setActiveMenuId(isOpen ? itemId : null)
-                  }
-                  options={getActionOptions(name, false, itemId)}
-                  anchorRef={menuRef}
-                  position="bottom-left"
-                  offset={{ x: -4, y: 4 }}
-                />
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={(e) => e.stopPropagation()}
+                    className="dark:hover:bg-muted inline-flex h-[35px] w-6 shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
+                    aria-label={t('settings.sources.menuAlt')}
+                  >
+                    <img
+                      src={ThreeDots}
+                      alt={t('settings.sources.menuAlt')}
+                      className="opacity-60 hover:opacity-100"
+                    />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[144px]">
+                  {getActionOptions(name, false, itemId).map((option, idx) => (
+                    <DropdownMenuItem
+                      key={idx}
+                      variant={option.variant}
+                      onSelect={(event) => {
+                        option.onClick(event as unknown as SyntheticEvent);
+                      }}
+                    >
+                      <img
+                        src={option.icon}
+                        alt=""
+                        width={option.iconWidth ?? 16}
+                        height={option.iconHeight ?? 16}
+                      />
+                      <span>{option.label}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </TableCell>
           </TableRow>
         );
@@ -559,7 +565,6 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
       .filter(([_, node]) => !!node.type)
       .map(([name, node]) => {
         const itemId = `file-${name}`;
-        const menuRef = getMenuRef(itemId);
         const displayName =
           typeof node.display_name === 'string' && node.display_name.trim()
             ? node.display_name
@@ -587,29 +592,43 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
               {node.size_bytes ? formatBytes(node.size_bytes) : '-'}
             </TableCell>
             <TableCell width="10%" align="right">
-              <div ref={menuRef} className="relative">
-                <button
-                  onClick={(e) => handleMenuClick(e, itemId)}
-                  className="dark:hover:bg-muted inline-flex h-[35px] w-6 shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
-                  aria-label={t('settings.sources.menuAlt')}
-                >
-                  <img
-                    src={ThreeDots}
-                    alt={t('settings.sources.menuAlt')}
-                    className="opacity-60 hover:opacity-100"
-                  />
-                </button>
-                <ContextMenu
-                  isOpen={activeMenuId === itemId}
-                  setIsOpen={(isOpen) =>
-                    setActiveMenuId(isOpen ? itemId : null)
-                  }
-                  options={getActionOptions(name, true, itemId, displayName)}
-                  anchorRef={menuRef}
-                  position="bottom-left"
-                  offset={{ x: -4, y: 4 }}
-                />
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={(e) => e.stopPropagation()}
+                    className="dark:hover:bg-muted inline-flex h-[35px] w-6 shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
+                    aria-label={t('settings.sources.menuAlt')}
+                  >
+                    <img
+                      src={ThreeDots}
+                      alt={t('settings.sources.menuAlt')}
+                      className="opacity-60 hover:opacity-100"
+                    />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[144px]">
+                  {getActionOptions(name, true, itemId, displayName).map(
+                    (option, idx) => (
+                      <DropdownMenuItem
+                        key={idx}
+                        variant={option.variant}
+                        onSelect={(event) => {
+                          option.onClick(event as unknown as SyntheticEvent);
+                        }}
+                      >
+                        <img
+                          src={option.icon}
+                          alt=""
+                          width={option.iconWidth ?? 16}
+                          height={option.iconHeight ?? 16}
+                        />
+                        <span>{option.label}</span>
+                      </DropdownMenuItem>
+                    ),
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </TableCell>
           </TableRow>
         );

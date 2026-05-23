@@ -1,9 +1,9 @@
 import {
   SyntheticEvent,
+  useCallback,
   useEffect,
   useRef,
   useState,
-  useCallback,
 } from 'react';
 import { useSelector } from 'react-redux';
 import Edit from '../assets/edit.svg';
@@ -18,8 +18,12 @@ import { selectConversationId } from '../preferences/preferenceSlice';
 import { ActiveState } from '../models/misc';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { useTranslation } from 'react-i18next';
-import ContextMenu from '../components/ContextMenu';
-import { MenuOption } from '../components/ContextMenu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import { useOutsideAlerter } from '../hooks';
 
 interface ConversationProps {
@@ -51,7 +55,6 @@ export default function ConversationTile({
   const [isHovered, setIsHovered] = useState(false);
   const [deleteModalState, setDeleteModalState] =
     useState<ActiveState>('INACTIVE');
-  const menuRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
   useEffect(() => {
     setConversationsName(conversation.name);
@@ -74,19 +77,6 @@ export default function ConversationTile({
       onClear();
     }
   }
-
-  const handleClickOutside = (event: MouseEvent) => {
-    if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-      setOpen(false);
-    }
-  };
-
-  useEffect(() => {
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
 
   const preventScroll = useCallback((event: WheelEvent | TouchEvent) => {
     event.preventDefault();
@@ -134,7 +124,16 @@ export default function ConversationTile({
     }
   };
 
-  const menuOptions: MenuOption[] = [
+  type ConversationMenuOption = {
+    icon: string;
+    label: string;
+    onClick: (event: SyntheticEvent) => void;
+    variant: 'default' | 'destructive';
+    iconWidth?: number;
+    iconHeight?: number;
+  };
+
+  const menuOptions: ConversationMenuOption[] = [
     {
       icon: Share,
       label: t('convTile.share'),
@@ -143,7 +142,7 @@ export default function ConversationTile({
         setShareModalState(true);
         setOpen(false);
       },
-      variant: 'primary',
+      variant: 'default',
       iconWidth: 14,
       iconHeight: 14,
     },
@@ -151,7 +150,7 @@ export default function ConversationTile({
       icon: Edit,
       label: t('convTile.rename'),
       onClick: handleEditConversation,
-      variant: 'primary',
+      variant: 'default',
     },
     {
       icon: Trash,
@@ -163,7 +162,7 @@ export default function ConversationTile({
       },
       iconWidth: 18,
       iconHeight: 18,
-      variant: 'danger',
+      variant: 'destructive',
     },
   ];
 
@@ -218,10 +217,7 @@ export default function ConversationTile({
           )}
         </div>
         {(conversationId === conversation.id || isHovered || isOpen) && (
-          <div
-            className="dark:text-muted-foreground flex text-white"
-            ref={menuRef}
-          >
+          <div className="dark:text-muted-foreground flex text-white">
             {isEdit ? (
               <div className="flex gap-1">
                 <img
@@ -249,24 +245,38 @@ export default function ConversationTile({
                 />
               </div>
             ) : (
-              <button
-                onClick={(event: SyntheticEvent) => {
-                  event.stopPropagation();
-                  setOpen(!isOpen);
-                }}
-                className="hover:bg-accent dark:hover:bg-accent mr-2 flex h-6 w-6 items-center justify-center rounded-full transition-colors duration-200"
-              >
-                <img src={threeDots} width={8} alt="menu" />
-              </button>
+              <DropdownMenu open={isOpen} onOpenChange={setOpen}>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    onClick={(event: SyntheticEvent) => {
+                      event.stopPropagation();
+                    }}
+                    className="hover:bg-accent dark:hover:bg-accent mr-2 flex h-6 w-6 items-center justify-center rounded-full transition-colors duration-200"
+                  >
+                    <img src={threeDots} width={8} alt="menu" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[144px]">
+                  {menuOptions.map((option, index) => (
+                    <DropdownMenuItem
+                      key={index}
+                      variant={option.variant}
+                      onSelect={(event) => {
+                        option.onClick(event as unknown as SyntheticEvent);
+                      }}
+                    >
+                      <img
+                        src={option.icon}
+                        alt=""
+                        width={option.iconWidth ?? 16}
+                        height={option.iconHeight ?? 16}
+                      />
+                      <span>{option.label}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
-            <ContextMenu
-              isOpen={isOpen}
-              setIsOpen={setOpen}
-              options={menuOptions}
-              anchorRef={tileRef}
-              position="bottom-right"
-              offset={{ x: 1, y: 8 }}
-            />
           </div>
         )}
       </div>

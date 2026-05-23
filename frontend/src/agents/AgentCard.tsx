@@ -1,4 +1,4 @@
-import { SyntheticEvent, useRef, useState } from 'react';
+import { SyntheticEvent, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -14,10 +14,24 @@ import Trash from '../assets/red-trash.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import UnPin from '../assets/unpin.svg';
 import AgentImage from '../components/AgentImage';
-import ContextMenu, { MenuOption } from '../components/ContextMenu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import MoveToFolderModal from '../modals/MoveToFolderModal';
 import { ActiveState } from '../models/misc';
+
+type AgentMenuOption = {
+  icon: string;
+  label: string;
+  onClick: (event: SyntheticEvent) => void;
+  variant: 'default' | 'destructive';
+  iconWidth?: number;
+  iconHeight?: number;
+};
 import {
   selectAgents,
   selectToken,
@@ -45,14 +59,11 @@ export default function AgentCard({
   const token = useSelector(selectToken);
   const userAgents = useSelector(selectAgents);
 
-  const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [moveModalState, setMoveModalState] = useState<ActiveState>('INACTIVE');
 
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  const menuOptionsConfig: Record<string, MenuOption[]> = {
+  const menuOptionsConfig: Record<string, AgentMenuOption[]> = {
     template: [
       {
         icon: Duplicate,
@@ -61,7 +72,7 @@ export default function AgentCard({
           e.stopPropagation();
           handleDuplicate();
         },
-        variant: 'primary',
+        variant: 'default',
         iconWidth: 18,
         iconHeight: 18,
       },
@@ -74,7 +85,7 @@ export default function AgentCard({
           e.stopPropagation();
           navigate(`/agents/logs/${agent.id}`);
         },
-        variant: 'primary',
+        variant: 'default',
         iconWidth: 14,
         iconHeight: 14,
       },
@@ -89,7 +100,7 @@ export default function AgentCard({
             navigate(`/agents/edit/${agent.id}`);
           }
         },
-        variant: 'primary',
+        variant: 'default',
         iconWidth: 14,
         iconHeight: 14,
       },
@@ -102,7 +113,7 @@ export default function AgentCard({
                 e.stopPropagation();
                 togglePin();
               },
-              variant: 'primary' as const,
+              variant: 'default' as const,
               iconWidth: 18,
               iconHeight: 18,
             },
@@ -114,9 +125,8 @@ export default function AgentCard({
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
           setMoveModalState('ACTIVE');
-          setIsMenuOpen(false);
         },
-        variant: 'primary',
+        variant: 'default',
         iconWidth: 16,
         iconHeight: 15,
       },
@@ -127,7 +137,7 @@ export default function AgentCard({
           e.stopPropagation();
           setDeleteConfirmation('ACTIVE');
         },
-        variant: 'danger',
+        variant: 'destructive',
         iconWidth: 13,
         iconHeight: 13,
       },
@@ -140,7 +150,7 @@ export default function AgentCard({
           e.stopPropagation();
           navigate(`/agents/shared/${agent.shared_token}`);
         },
-        variant: 'primary',
+        variant: 'default',
         iconWidth: 12,
         iconHeight: 12,
       },
@@ -151,7 +161,7 @@ export default function AgentCard({
           e.stopPropagation();
           togglePin();
         },
-        variant: 'primary',
+        variant: 'default',
         iconWidth: 18,
         iconHeight: 18,
       },
@@ -162,7 +172,7 @@ export default function AgentCard({
           e.stopPropagation();
           handleHideSharedAgent();
         },
-        variant: 'danger',
+        variant: 'destructive',
         iconWidth: 13,
         iconHeight: 13,
       },
@@ -257,24 +267,41 @@ export default function AgentCard({
         handleClick();
       }}
     >
-      <div
-        ref={menuRef}
-        onClick={(e) => {
-          e.stopPropagation();
-          setIsMenuOpen(true);
-        }}
-        className="absolute top-4 right-4 z-10 cursor-pointer"
-      >
-        <img src={ThreeDots} alt={'use-agent'} className="h-[19px] w-[19px]" />
-        <ContextMenu
-          isOpen={isMenuOpen}
-          setIsOpen={setIsMenuOpen}
-          options={menuOptions}
-          anchorRef={menuRef}
-          position="bottom-right"
-          offset={{ x: 0, y: 0 }}
-        />
-      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-4 right-4 z-10 cursor-pointer"
+            aria-label="agent-actions"
+          >
+            <img
+              src={ThreeDots}
+              alt={'use-agent'}
+              className="h-[19px] w-[19px]"
+            />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-[144px]">
+          {menuOptions.map((option, index) => (
+            <DropdownMenuItem
+              key={index}
+              variant={option.variant}
+              onSelect={(event) => {
+                option.onClick(event as unknown as SyntheticEvent);
+              }}
+            >
+              <img
+                src={option.icon}
+                alt=""
+                width={option.iconWidth ?? 16}
+                height={option.iconHeight ?? 16}
+              />
+              <span>{option.label}</span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
       <div className="w-full">
         <div className="flex w-full items-center gap-1 px-1">
           <AgentImage

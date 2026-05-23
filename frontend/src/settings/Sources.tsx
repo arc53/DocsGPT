@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -13,7 +13,6 @@ import SyncIcon from '../assets/sync.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import CalendarIcon from '../assets/calendar.svg';
 import DiscIcon from '../assets/disc.svg';
-import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import Pagination from '../components/DocumentPagination';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Button } from '../components/ui/button';
@@ -44,6 +43,15 @@ import { formatDate } from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import Chunks from '../components/Chunks';
+
+type SourceMenuOption = {
+  icon: string;
+  label: string;
+  onClick: () => void;
+  variant: 'default' | 'destructive';
+  iconWidth?: number;
+  iconHeight?: number;
+};
 
 const formatTokens = (tokens: number): string => {
   const roundToTwoDecimals = (num: number): string => {
@@ -83,34 +91,7 @@ export default function Sources({
   const [rowsPerPage, setRowsPerPage] = useState<number>(10);
   const [totalPages, setTotalPages] = useState<number>(1);
 
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-  const menuRefs = useRef<{
-    [key: string]: React.RefObject<HTMLDivElement | null>;
-  }>({});
-
-  // Create or get a ref for each document wrapper div (not the td)
-  const getMenuRef = (docId: string) => {
-    if (!menuRefs.current[docId]) {
-      menuRefs.current[docId] = React.createRef<HTMLDivElement>();
-    }
-    return menuRefs.current[docId];
-  };
-
-  const handleMenuClick = (e: React.MouseEvent, docId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const isAnyMenuOpen =
-      (syncMenuState.isOpen && syncMenuState.docId === docId) ||
-      activeMenuId === docId;
-
-    if (isAnyMenuOpen) {
-      setSyncMenuState((prev) => ({ ...prev, isOpen: false, docId: null }));
-      setActiveMenuId(null);
-      return;
-    }
-    setActiveMenuId(docId);
-  };
+  const [actionMenuDocId, setActionMenuDocId] = useState<string | null>(null);
 
   const currentDocuments = paginatedDocuments ?? [];
   const syncOptions = [
@@ -120,7 +101,6 @@ export default function Sources({
     { label: t('settings.sources.syncFrequency.monthly'), value: 'monthly' },
   ];
   const [documentToView, setDocumentToView] = useState<Doc>();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [syncMenuState, setSyncMenuState] = useState<{
     isOpen: boolean;
     docId: string | null;
@@ -334,8 +314,11 @@ export default function Sources({
     }
   };
 
-  const getActionOptions = (index: number, document: Doc): MenuOption[] => {
-    const actions: MenuOption[] = [
+  const getActionOptions = (
+    index: number,
+    document: Doc,
+  ): SourceMenuOption[] => {
+    const actions: SourceMenuOption[] = [
       {
         icon: EyeView,
         label: t('settings.sources.view'),
@@ -344,7 +327,7 @@ export default function Sources({
         },
         iconWidth: 18,
         iconHeight: 18,
-        variant: 'primary',
+        variant: 'default',
       },
     ];
 
@@ -357,7 +340,7 @@ export default function Sources({
         },
         iconWidth: 14,
         iconHeight: 14,
-        variant: 'primary',
+        variant: 'default',
       });
     }
 
@@ -374,7 +357,7 @@ export default function Sources({
         },
         iconWidth: 14,
         iconHeight: 14,
-        variant: 'primary',
+        variant: 'default',
       });
       actions.push({
         icon: SyncIcon,
@@ -384,7 +367,7 @@ export default function Sources({
         },
         iconWidth: 14,
         iconHeight: 14,
-        variant: 'primary',
+        variant: 'default',
       });
     }
 
@@ -396,7 +379,7 @@ export default function Sources({
       },
       iconWidth: 18,
       iconHeight: 18,
-      variant: 'danger',
+      variant: 'destructive',
     });
 
     return actions;
@@ -491,7 +474,8 @@ export default function Sources({
                   <div key={docId} className="relative">
                     <div
                       className={`bg-muted dark:bg-accent flex h-[130px] w-full flex-col rounded-2xl p-3 transition-all duration-200 ${
-                        activeMenuId === docId || syncMenuState.docId === docId
+                        actionMenuDocId === docId ||
+                        syncMenuState.docId === docId
                           ? 'scale-[1.05]'
                           : 'hover:scale-[1.05]'
                       }`}
@@ -504,10 +488,7 @@ export default function Sources({
                           >
                             {document.name}
                           </h3>
-                          <div
-                            ref={getMenuRef(docId)}
-                            className="relative flex items-center justify-end"
-                          >
+                          <div className="relative flex items-center justify-end">
                             {document.syncFrequency && (
                               <DropdownMenu
                                 open={
@@ -546,24 +527,52 @@ export default function Sources({
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             )}
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleMenuClick(e, docId);
-                              }}
-                              className="h-[35px] w-6"
-                              aria-label={t('settings.sources.menuAlt')}
-                              data-testid={`menu-button-${docId}`}
+                            <DropdownMenu
+                              open={actionMenuDocId === docId}
+                              onOpenChange={(open) =>
+                                setActionMenuDocId(open ? docId : null)
+                              }
                             >
-                              <img
-                                src={ThreeDots}
-                                alt={t('settings.sources.menuAlt')}
-                                className="opacity-60 hover:opacity-100"
-                              />
-                            </Button>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="h-[35px] w-6"
+                                  aria-label={t('settings.sources.menuAlt')}
+                                  data-testid={`menu-button-${docId}`}
+                                >
+                                  <img
+                                    src={ThreeDots}
+                                    alt={t('settings.sources.menuAlt')}
+                                    className="opacity-60 hover:opacity-100"
+                                  />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="end"
+                                className="min-w-[144px]"
+                              >
+                                {getActionOptions(index, document).map(
+                                  (option, idx) => (
+                                    <DropdownMenuItem
+                                      key={idx}
+                                      variant={option.variant}
+                                      onSelect={() => option.onClick()}
+                                    >
+                                      <img
+                                        src={option.icon}
+                                        alt=""
+                                        width={option.iconWidth ?? 16}
+                                        height={option.iconHeight ?? 16}
+                                      />
+                                      <span>{option.label}</span>
+                                    </DropdownMenuItem>
+                                  ),
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
                       </div>
@@ -599,17 +608,6 @@ export default function Sources({
                         </div>
                       </div>
                     </div>
-                    <ContextMenu
-                      isOpen={activeMenuId === docId}
-                      setIsOpen={(isOpen) => {
-                        setActiveMenuId(isOpen ? docId : null);
-                      }}
-                      options={getActionOptions(index, document)}
-                      anchorRef={getMenuRef(docId)}
-                      position="bottom-left"
-                      offset={{ x: -8, y: 8 }}
-                      className="z-50"
-                    />
                   </div>
                 );
               })}

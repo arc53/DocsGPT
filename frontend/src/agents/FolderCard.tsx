@@ -1,14 +1,28 @@
-import { SyntheticEvent, useRef, useState } from 'react';
+import { SyntheticEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import Edit from '../assets/edit.svg';
 import Trash from '../assets/red-trash.svg';
 import ThreeDots from '../assets/three-dots.svg';
-import ContextMenu, { MenuOption } from '../components/ContextMenu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import FolderNameModal from '../modals/FolderManagementModal';
 import { ActiveState } from '../models/misc';
 import { AgentFolder } from './types';
+
+type FolderMenuOption = {
+  icon: string;
+  label: string;
+  onClick: (event: SyntheticEvent) => void;
+  variant: 'default' | 'destructive';
+  iconWidth?: number;
+  iconHeight?: number;
+};
 
 type FolderCardProps = {
   folder: AgentFolder;
@@ -28,23 +42,20 @@ export default function FolderCard({
   onToggleExpand,
 }: FolderCardProps) {
   const { t } = useTranslation();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [renameModalState, setRenameModalState] =
     useState<ActiveState>('INACTIVE');
-  const menuRef = useRef<HTMLDivElement>(null);
 
-  const menuOptions: MenuOption[] = [
+  const menuOptions: FolderMenuOption[] = [
     {
       icon: Edit,
       label: t('agents.folders.rename'),
       onClick: (e: SyntheticEvent) => {
         e.stopPropagation();
         setRenameModalState('ACTIVE');
-        setIsMenuOpen(false);
       },
-      variant: 'primary',
+      variant: 'default',
       iconWidth: 14,
       iconHeight: 14,
     },
@@ -54,9 +65,8 @@ export default function FolderCard({
       onClick: (e: SyntheticEvent) => {
         e.stopPropagation();
         setDeleteConfirmation('ACTIVE');
-        setIsMenuOpen(false);
       },
-      variant: 'danger',
+      variant: 'destructive',
       iconWidth: 13,
       iconHeight: 13,
     },
@@ -82,24 +92,37 @@ export default function FolderCard({
             ({agentCount})
           </span>
         </div>
-        <div
-          ref={menuRef}
-          onClick={(e) => {
-            e.stopPropagation();
-            setIsMenuOpen(true);
-          }}
-          className="ml-2 shrink-0 cursor-pointer"
-        >
-          <img src={ThreeDots} alt="menu" className="h-4 w-4" />
-          <ContextMenu
-            isOpen={isMenuOpen}
-            setIsOpen={setIsMenuOpen}
-            options={menuOptions}
-            anchorRef={menuRef}
-            position="bottom-right"
-            offset={{ x: 0, y: 0 }}
-          />
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              onClick={(e) => e.stopPropagation()}
+              className="ml-2 shrink-0 cursor-pointer"
+              aria-label={t('agents.folders.rename')}
+            >
+              <img src={ThreeDots} alt="menu" className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[144px]">
+            {menuOptions.map((option, index) => (
+              <DropdownMenuItem
+                key={index}
+                variant={option.variant}
+                onSelect={(event) => {
+                  option.onClick(event as unknown as SyntheticEvent);
+                }}
+              >
+                <img
+                  src={option.icon}
+                  alt=""
+                  width={option.iconWidth ?? 16}
+                  height={option.iconHeight ?? 16}
+                />
+                <span>{option.label}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <ConfirmationModal
         message={t('agents.folders.deleteConfirm')}

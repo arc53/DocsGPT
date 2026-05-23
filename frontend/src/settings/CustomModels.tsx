@@ -1,4 +1,5 @@
 import { Globe, Tag, Trash } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -10,9 +11,14 @@ import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import SearchIcon from '../assets/search.svg';
 import ThreeDotsIcon from '../assets/three-dots.svg';
-import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Button } from '../components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
 import { useDarkTheme, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -24,6 +30,15 @@ import {
 } from '../preferences/preferenceSlice';
 
 import type { CustomModel } from '../models/types';
+
+type CustomModelMenuOption = {
+  icon: string | LucideIcon;
+  label: string;
+  onClick: () => void;
+  variant: 'default' | 'destructive';
+  iconWidth?: number;
+  iconHeight?: number;
+};
 
 const formatBaseUrlHost = (baseUrl: string): string => {
   if (!baseUrl) return '';
@@ -50,10 +65,6 @@ export default function CustomModels() {
   const [editingModel, setEditingModel] = React.useState<CustomModel | null>(
     null,
   );
-  const [activeMenuId, setActiveMenuId] = React.useState<string | null>(null);
-  const menuRefs = React.useRef<{
-    [key: string]: React.RefObject<HTMLDivElement | null>;
-  }>({});
   const [deleteState, setDeleteState] = React.useState<ActiveState>('INACTIVE');
   const [modelToDelete, setModelToDelete] = React.useState<CustomModel | null>(
     null,
@@ -78,14 +89,6 @@ export default function CustomModels() {
   React.useEffect(() => {
     fetchModelsRef.current();
   }, [token]);
-
-  React.useEffect(() => {
-    models.forEach((model) => {
-      if (!menuRefs.current[model.id]) {
-        menuRefs.current[model.id] = React.createRef<HTMLDivElement>();
-      }
-    });
-  }, [models]);
 
   const openAddModal = () => {
     setEditingModel(null);
@@ -141,12 +144,12 @@ export default function CustomModels() {
     }
   };
 
-  const getMenuOptions = (model: CustomModel): MenuOption[] => [
+  const getMenuOptions = (model: CustomModel): CustomModelMenuOption[] => [
     {
       icon: Edit,
       label: t('settings.customModels.actions.edit'),
       onClick: () => openEditModal(model),
-      variant: 'primary',
+      variant: 'default',
       iconWidth: 14,
       iconHeight: 14,
     },
@@ -154,7 +157,7 @@ export default function CustomModels() {
       icon: Trash,
       label: t('settings.customModels.actions.delete'),
       onClick: () => requestDelete(model),
-      variant: 'danger',
+      variant: 'destructive',
       iconWidth: 16,
       iconHeight: 16,
     },
@@ -225,34 +228,66 @@ export default function CustomModels() {
                     key={model.id}
                     className="bg-muted hover:bg-accent relative flex w-[300px] flex-col overflow-hidden rounded-2xl p-5"
                   >
-                    <div
-                      ref={menuRefs.current[model.id]}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveMenuId(
-                          activeMenuId === model.id ? null : model.id,
-                        );
-                      }}
-                      className="absolute top-3 right-3 z-10 cursor-pointer"
-                    >
-                      <img
-                        src={ThreeDotsIcon}
-                        alt={t('settings.customModels.actionsMenuAria', {
-                          modelName: model.display_name,
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={(e) => e.stopPropagation()}
+                          className="absolute top-3 right-3 z-10 cursor-pointer"
+                          aria-label={t(
+                            'settings.customModels.actionsMenuAria',
+                            { modelName: model.display_name },
+                          )}
+                        >
+                          <img
+                            src={ThreeDotsIcon}
+                            alt={t('settings.customModels.actionsMenuAria', {
+                              modelName: model.display_name,
+                            })}
+                            className="h-[19px] w-[19px]"
+                          />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="min-w-[144px]"
+                      >
+                        {getMenuOptions(model).map((option, index) => {
+                          const IconCmp =
+                            typeof option.icon !== 'string'
+                              ? option.icon
+                              : null;
+                          return (
+                            <DropdownMenuItem
+                              key={index}
+                              variant={option.variant}
+                              onSelect={() => option.onClick()}
+                            >
+                              {typeof option.icon === 'string' ? (
+                                <img
+                                  src={option.icon}
+                                  alt=""
+                                  width={option.iconWidth ?? 16}
+                                  height={option.iconHeight ?? 16}
+                                />
+                              ) : (
+                                IconCmp && (
+                                  <IconCmp
+                                    size={Math.max(
+                                      option.iconWidth ?? 16,
+                                      option.iconHeight ?? 16,
+                                    )}
+                                    strokeWidth={1.75}
+                                    aria-hidden="true"
+                                  />
+                                )
+                              )}
+                              <span>{option.label}</span>
+                            </DropdownMenuItem>
+                          );
                         })}
-                        className="h-[19px] w-[19px]"
-                      />
-                      <ContextMenu
-                        isOpen={activeMenuId === model.id}
-                        setIsOpen={(isOpen) => {
-                          setActiveMenuId(isOpen ? model.id : null);
-                        }}
-                        options={getMenuOptions(model)}
-                        anchorRef={menuRefs.current[model.id]}
-                        position="bottom-right"
-                        offset={{ x: 0, y: 0 }}
-                      />
-                    </div>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     <div className="w-full pr-7">
                       <div className="flex items-center gap-2">
                         <p

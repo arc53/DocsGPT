@@ -1,4 +1,5 @@
 import { RefreshCcw, Trash } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -9,10 +10,15 @@ import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import SearchIcon from '../assets/search.svg';
 import ThreeDotsIcon from '../assets/three-dots.svg';
-import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToggleSwitch from '../components/ToggleSwitch';
 import { Button } from '../components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
 import { useDarkTheme, useLoaderState } from '../hooks';
 import AddToolModal from '../modals/AddToolModal';
@@ -22,6 +28,16 @@ import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import ToolConfig from './ToolConfig';
 import { APIToolType, UserToolType } from './types';
+
+type ToolsMenuOption = {
+  icon: string | LucideIcon;
+  label: string;
+  onClick: () => void;
+  variant: 'default' | 'destructive';
+  iconWidth?: number;
+  iconHeight?: number;
+  iconClassName?: string;
+};
 
 export default function Tools() {
   const { t } = useTranslation();
@@ -36,10 +52,6 @@ export default function Tools() {
     UserToolType | APIToolType | null
   >(null);
   const [loading, setLoading] = useLoaderState(false);
-  const [activeMenuId, setActiveMenuId] = React.useState<string | null>(null);
-  const menuRefs = React.useRef<{
-    [key: string]: React.RefObject<HTMLDivElement | null>;
-  }>({});
   const [deleteModalState, setDeleteModalState] =
     React.useState<ActiveState>('INACTIVE');
   const [toolToDelete, setToolToDelete] = React.useState<UserToolType | null>(
@@ -51,14 +63,6 @@ export default function Tools() {
   const [mcpStatuses, setMcpStatuses] = React.useState<{
     [toolId: string]: string;
   }>({});
-
-  React.useEffect(() => {
-    userTools.forEach((tool) => {
-      if (!menuRefs.current[tool.id]) {
-        menuRefs.current[tool.id] = React.createRef<HTMLDivElement>();
-      }
-    });
-  }, [userTools]);
 
   const handleDeleteTool = (tool: UserToolType) => {
     setToolToDelete(tool);
@@ -93,13 +97,13 @@ export default function Tools() {
     setReconnectModalState('ACTIVE');
   };
 
-  const getMenuOptions = (tool: UserToolType): MenuOption[] => {
-    const options: MenuOption[] = [
+  const getMenuOptions = (tool: UserToolType): ToolsMenuOption[] => {
+    const options: ToolsMenuOption[] = [
       {
         icon: Edit,
         label: t('settings.tools.edit'),
         onClick: () => handleSettingsClick(tool),
-        variant: 'primary',
+        variant: 'default',
         iconWidth: 14,
         iconHeight: 14,
       },
@@ -107,7 +111,7 @@ export default function Tools() {
         icon: Trash,
         label: t('settings.tools.delete'),
         onClick: () => handleDeleteTool(tool),
-        variant: 'danger',
+        variant: 'destructive',
         iconWidth: 16,
         iconHeight: 16,
       },
@@ -117,7 +121,7 @@ export default function Tools() {
         icon: RefreshCcw,
         label: t('settings.tools.reconnect'),
         onClick: () => handleReconnect(tool),
-        variant: 'primary',
+        variant: 'default',
         iconWidth: 16,
         iconHeight: 16,
         iconClassName: 'text-[#747474]',
@@ -296,32 +300,65 @@ export default function Tools() {
                           className="bg-muted hover:bg-accent relative flex h-52 w-[300px] flex-col justify-between overflow-hidden rounded-2xl p-6"
                         >
                           {!tool.default && (
-                            <div
-                              ref={menuRefs.current[tool.id]}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveMenuId(
-                                  activeMenuId === tool.id ? null : tool.id,
-                                );
-                              }}
-                              className="absolute top-4 right-4 z-10 cursor-pointer"
-                            >
-                              <img
-                                src={ThreeDotsIcon}
-                                alt={t('settings.tools.settingsIconAlt')}
-                                className="h-[19px] w-[19px]"
-                              />
-                              <ContextMenu
-                                isOpen={activeMenuId === tool.id}
-                                setIsOpen={(isOpen) => {
-                                  setActiveMenuId(isOpen ? tool.id : null);
-                                }}
-                                options={getMenuOptions(tool)}
-                                anchorRef={menuRefs.current[tool.id]}
-                                position="bottom-right"
-                                offset={{ x: 0, y: 0 }}
-                              />
-                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="absolute top-4 right-4 z-10 cursor-pointer"
+                                  aria-label={t(
+                                    'settings.tools.settingsIconAlt',
+                                  )}
+                                >
+                                  <img
+                                    src={ThreeDotsIcon}
+                                    alt={t('settings.tools.settingsIconAlt')}
+                                    className="h-[19px] w-[19px]"
+                                  />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="end"
+                                className="min-w-[144px]"
+                              >
+                                {getMenuOptions(tool).map((option, idx) => {
+                                  const IconCmp =
+                                    typeof option.icon !== 'string'
+                                      ? option.icon
+                                      : null;
+                                  return (
+                                    <DropdownMenuItem
+                                      key={idx}
+                                      variant={option.variant}
+                                      onSelect={() => option.onClick()}
+                                    >
+                                      {typeof option.icon === 'string' ? (
+                                        <img
+                                          src={option.icon}
+                                          alt=""
+                                          width={option.iconWidth ?? 16}
+                                          height={option.iconHeight ?? 16}
+                                          className={option.iconClassName}
+                                        />
+                                      ) : (
+                                        IconCmp && (
+                                          <IconCmp
+                                            size={Math.max(
+                                              option.iconWidth ?? 16,
+                                              option.iconHeight ?? 16,
+                                            )}
+                                            strokeWidth={1.75}
+                                            aria-hidden="true"
+                                            className={option.iconClassName}
+                                          />
+                                        )
+                                      )}
+                                      <span>{option.label}</span>
+                                    </DropdownMenuItem>
+                                  );
+                                })}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           )}
                           <div className="w-full">
                             <div className="flex w-full items-center gap-2 px-1">

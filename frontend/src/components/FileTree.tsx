@@ -1,11 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { SyntheticEvent, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector, useStore } from 'react-redux';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
 import { formatBytes } from '../utils/stringUtils';
 import Chunks from './Chunks';
-import ContextMenu, { MenuOption } from './ContextMenu';
 import SkeletonLoader from './SkeletonLoader';
 import userService from '../api/services/userService';
 import FileIcon from '../assets/file.svg';
@@ -26,6 +25,21 @@ import {
   TableHeader,
   TableCell,
 } from './Table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
+
+type FileTreeMenuOption = {
+  icon: string;
+  label: string;
+  onClick: (event: SyntheticEvent) => void;
+  variant: 'default' | 'destructive';
+  iconWidth?: number;
+  iconHeight?: number;
+};
 
 interface FileNode {
   type?: string;
@@ -64,10 +78,6 @@ const FileTree: React.FC<FileTreeProps> = ({
     useState<DirectoryStructure | null>(null);
   const [currentPath, setCurrentPath] = useState<string[]>([]);
   const token = useSelector(selectToken);
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-  const menuRefs = useRef<{
-    [key: string]: React.RefObject<HTMLDivElement | null>;
-  }>({});
   const [selectedFile, setSelectedFile] = useState<{
     id: string;
     name: string;
@@ -215,36 +225,18 @@ const FileTree: React.FC<FileTreeProps> = ({
     }
   };
 
-  const getMenuRef = (itemId: string) => {
-    if (!menuRefs.current[itemId]) {
-      menuRefs.current[itemId] = React.createRef<HTMLDivElement>();
-    }
-    return menuRefs.current[itemId];
-  };
-
-  const handleMenuClick = (e: React.MouseEvent, itemId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (activeMenuId === itemId) {
-      setActiveMenuId(null);
-      return;
-    }
-    setActiveMenuId(itemId);
-  };
-
   const getActionOptions = (
     name: string,
     isFile: boolean,
     _itemId: string,
     displayName?: string,
-  ): MenuOption[] => {
-    const options: MenuOption[] = [];
+  ): FileTreeMenuOption[] => {
+    const options: FileTreeMenuOption[] = [];
 
     options.push({
       icon: EyeView,
       label: t('settings.sources.view'),
-      onClick: (event: React.SyntheticEvent) => {
+      onClick: (event: SyntheticEvent) => {
         event.stopPropagation();
         if (isFile) {
           handleFileClick(name, displayName);
@@ -254,19 +246,19 @@ const FileTree: React.FC<FileTreeProps> = ({
       },
       iconWidth: 18,
       iconHeight: 18,
-      variant: 'primary',
+      variant: 'default',
     });
 
     options.push({
       icon: Trash,
       label: t('convTile.delete'),
-      onClick: (event: React.SyntheticEvent) => {
+      onClick: (event: SyntheticEvent) => {
         event.stopPropagation();
         confirmDeleteItem(name, isFile);
       },
       iconWidth: 18,
       iconHeight: 18,
-      variant: 'danger',
+      variant: 'destructive',
     });
 
     return options;
@@ -275,7 +267,6 @@ const FileTree: React.FC<FileTreeProps> = ({
   const confirmDeleteItem = (name: string, isFile: boolean) => {
     setItemToDelete({ name, isFile });
     setDeleteModalState('ACTIVE');
-    setActiveMenuId(null);
   };
 
   const handleConfirmedDelete = async () => {
@@ -649,7 +640,6 @@ const FileTree: React.FC<FileTreeProps> = ({
       ...parentRow,
       ...directories.map(([name, node]) => {
         const itemId = `dir-${name}`;
-        const menuRef = getMenuRef(itemId);
         const dirStats = calculateDirectoryStats(node as DirectoryStructure);
 
         return (
@@ -673,36 +663,47 @@ const FileTree: React.FC<FileTreeProps> = ({
                 : '-'}
             </TableCell>
             <TableCell width="10%" align="right">
-              <div ref={menuRef} className="relative">
-                <button
-                  onClick={(e) => handleMenuClick(e, itemId)}
-                  className="dark:hover:bg-muted inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
-                  aria-label={t('settings.sources.menuAlt')}
-                >
-                  <img
-                    src={ThreeDots}
-                    alt={t('settings.sources.menuAlt')}
-                    className="opacity-60 hover:opacity-100"
-                  />
-                </button>
-                <ContextMenu
-                  isOpen={activeMenuId === itemId}
-                  setIsOpen={(isOpen) =>
-                    setActiveMenuId(isOpen ? itemId : null)
-                  }
-                  options={getActionOptions(name, false, itemId)}
-                  anchorRef={menuRef}
-                  position="bottom-left"
-                  offset={{ x: -4, y: 4 }}
-                />
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={(e) => e.stopPropagation()}
+                    className="dark:hover:bg-muted inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
+                    aria-label={t('settings.sources.menuAlt')}
+                  >
+                    <img
+                      src={ThreeDots}
+                      alt={t('settings.sources.menuAlt')}
+                      className="opacity-60 hover:opacity-100"
+                    />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[144px]">
+                  {getActionOptions(name, false, itemId).map((option, idx) => (
+                    <DropdownMenuItem
+                      key={idx}
+                      variant={option.variant}
+                      onSelect={(event) => {
+                        option.onClick(event as unknown as SyntheticEvent);
+                      }}
+                    >
+                      <img
+                        src={option.icon}
+                        alt=""
+                        width={option.iconWidth ?? 16}
+                        height={option.iconHeight ?? 16}
+                      />
+                      <span>{option.label}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </TableCell>
           </TableRow>
         );
       }),
       ...files.map(([name, node]) => {
         const itemId = `file-${name}`;
-        const menuRef = getMenuRef(itemId);
         const displayName =
           typeof node.display_name === 'string' && node.display_name.trim()
             ? node.display_name
@@ -730,29 +731,43 @@ const FileTree: React.FC<FileTreeProps> = ({
               {node.token_count?.toLocaleString() || '-'}
             </TableCell>
             <TableCell width="10%" align="right">
-              <div ref={menuRef} className="relative">
-                <button
-                  onClick={(e) => handleMenuClick(e, itemId)}
-                  className="dark:hover:bg-muted inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
-                  aria-label={t('settings.sources.menuAlt')}
-                >
-                  <img
-                    src={ThreeDots}
-                    alt={t('settings.sources.menuAlt')}
-                    className="opacity-60 hover:opacity-100"
-                  />
-                </button>
-                <ContextMenu
-                  isOpen={activeMenuId === itemId}
-                  setIsOpen={(isOpen) =>
-                    setActiveMenuId(isOpen ? itemId : null)
-                  }
-                  options={getActionOptions(name, true, itemId, displayName)}
-                  anchorRef={menuRef}
-                  position="bottom-left"
-                  offset={{ x: -4, y: 4 }}
-                />
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={(e) => e.stopPropagation()}
+                    className="dark:hover:bg-muted inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
+                    aria-label={t('settings.sources.menuAlt')}
+                  >
+                    <img
+                      src={ThreeDots}
+                      alt={t('settings.sources.menuAlt')}
+                      className="opacity-60 hover:opacity-100"
+                    />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[144px]">
+                  {getActionOptions(name, true, itemId, displayName).map(
+                    (option, idx) => (
+                      <DropdownMenuItem
+                        key={idx}
+                        variant={option.variant}
+                        onSelect={(event) => {
+                          option.onClick(event as unknown as SyntheticEvent);
+                        }}
+                      >
+                        <img
+                          src={option.icon}
+                          alt=""
+                          width={option.iconWidth ?? 16}
+                          height={option.iconHeight ?? 16}
+                        />
+                        <span>{option.label}</span>
+                      </DropdownMenuItem>
+                    ),
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </TableCell>
           </TableRow>
         );
