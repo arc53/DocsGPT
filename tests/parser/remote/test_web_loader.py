@@ -151,7 +151,15 @@ class TestWebLoaderLoadData:
     @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
     @patch("application.parser.remote.web_loader.pinned_request")
     def test_load_data_extracts_title_with_nested_markup(self, mock_pinned_request, mock_validate, web_loader):
-        """<title> with nested elements must still produce a usable title string."""
+        """<title> with nested-looking content must still produce a non-empty title.
+
+        BS4's `html.parser` differs across Python/bs4 versions: some treat
+        `<title>` as RAWTEXT (per HTML5 spec) and return the literal string
+        ``"Hello <span>World</span>"``; others parse the inner tag and return
+        ``"HelloWorld"``. The regression guarded here is that ``soup.title.string``
+        returns ``None`` in *either* case, dropping the title entirely — using
+        ``get_text`` keeps it. Assert only that the title survives.
+        """
         mock_pinned_request.return_value = _fake_response(
             "<html><head><title>Hello <span>World</span></title></head>"
             "<body><p>x</p></body></html>"
@@ -159,7 +167,9 @@ class TestWebLoaderLoadData:
 
         result = web_loader.load_data("https://example.com")
 
-        assert result[0].extra_info["title"] == "HelloWorld"
+        title = result[0].extra_info.get("title")
+        assert title, "title was dropped — soup.title.string regression?"
+        assert "Hello" in title
 
 
 class TestWebLoaderErrorHandling:
