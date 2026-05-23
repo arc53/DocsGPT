@@ -2,8 +2,14 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
-import Dropdown from '../components/Dropdown';
 import { Button } from '../components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import { useDarkTheme } from '../hooks';
 import {
   selectChunks,
@@ -65,54 +71,73 @@ export default function General() {
             dispatch(setPrompt({ name: name, id: id, type: type }))
           }
           setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
-          dropdownProps={{ size: 'w-56', rounded: '3xl' }}
         />
       </div>
       <div className="flex flex-col gap-4">
         <label className="text-foreground dark:text-foreground text-base font-medium">
           {t('settings.general.chunks')}
         </label>
-        <Dropdown
-          options={chunks}
-          selectedValue={selectedChunks}
-          onSelect={(value: string) => dispatch(setChunks(value))}
-          size="w-56"
-          rounded="3xl"
-        />
+        <Select
+          value={selectedChunks}
+          onValueChange={(value) => dispatch(setChunks(value))}
+        >
+          <SelectTrigger className="w-56 rounded-3xl px-5 py-3" size="lg">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {chunks.map((c) => (
+              <SelectItem key={c} value={c}>
+                {c}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div className="flex flex-col gap-4">
         <label className="text-foreground dark:text-foreground text-base font-medium">
           {t('settings.general.selectTheme')}
         </label>
-        <Dropdown
-          options={themes}
-          selectedValue={
-            themes.find((theme) => theme.value === selectedTheme) || null
-          }
-          onSelect={(option: { value: string; label: string }) => {
-            setSelectedTheme(option.value);
-            option.value !== selectedTheme && toggleTheme();
+        <Select
+          value={selectedTheme}
+          onValueChange={(value) => {
+            setSelectedTheme(value);
+            value !== selectedTheme && toggleTheme();
           }}
-          size="w-56"
-          rounded="3xl"
-        />
+        >
+          <SelectTrigger className="w-56 rounded-3xl px-5 py-3" size="lg">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {themes.map((theme) => (
+              <SelectItem key={theme.value} value={theme.value}>
+                {theme.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div className="flex flex-col gap-4">
         <label className="text-foreground dark:text-foreground text-base font-medium">
           {t('settings.general.selectLanguage')}
         </label>
-        <Dropdown
-          options={languageOptions.filter(
-            (languageOption) =>
-              languageOption.value !== selectedLanguage?.value,
-          )}
-          selectedValue={selectedLanguage ?? languageOptions[0]}
-          onSelect={(selectedOption: { label: string; value: string }) => {
-            setSelectedLanguage(selectedOption);
+        <Select
+          value={selectedLanguage?.value}
+          onValueChange={(value) => {
+            const opt = languageOptions.find((o) => o.value === value);
+            if (opt) setSelectedLanguage(opt);
           }}
-          size="w-56"
-          rounded="3xl"
-        />
+        >
+          <SelectTrigger className="w-56 rounded-3xl px-5 py-3" size="lg">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {languageOptions.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <hr className="border-border dark:border-border my-4 w-[calc(min(665px,100%))] border-t" />
       <div className="flex flex-col gap-2">

@@ -4,10 +4,16 @@ import { useSelector } from 'react-redux';
 
 import conversationService from '../api/services/conversationService';
 import Spinner from '../assets/spinner.svg';
-import Dropdown from '../components/Dropdown';
 import ToggleSwitch from '../components/ToggleSwitch';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import { Doc } from '../models/misc';
 import {
   selectChunks,
@@ -120,16 +126,26 @@ export const ShareConversationModal = ({
         </div>
         {allowPrompt && (
           <div className="my-4">
-            <Dropdown
-              placeholder={t('modals.createAPIKey.sourceDoc')}
-              selectedValue={sourcePath}
-              onSelect={(selection: { label: string; value: string }) =>
-                setSourcePath(selection)
-              }
-              options={extractDocPaths(sourceDocs ?? [])}
-              size="w-full"
-              rounded="xl"
-            />
+            <Select
+              value={sourcePath?.value}
+              onValueChange={(value) => {
+                const opt = extractDocPaths(sourceDocs ?? []).find(
+                  (o) => o.value === value,
+                );
+                if (opt) setSourcePath(opt);
+              }}
+            >
+              <SelectTrigger className="w-full rounded-xl px-5 py-3" size="lg">
+                <SelectValue placeholder={t('modals.createAPIKey.sourceDoc')} />
+              </SelectTrigger>
+              <SelectContent>
+                {extractDocPaths(sourceDocs ?? []).map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
         <div className="flex items-baseline justify-between gap-2">

@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react';
 import { ActiveState } from '../models/misc';
 import { Input } from '../components/ui/input';
 import { Link } from 'react-router-dom';
@@ -6,7 +7,12 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { Modal } from '../components/ui/modal';
-import Dropdown from '../components/Dropdown';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import BookIcon from '../assets/book.svg';
 import userService from '../api/services/userService';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -89,6 +95,78 @@ const buildSystemVariableOptions = (translate: (key: string) => string) =>
     value,
     label: translate(labelKey),
   }));
+
+type VariableMenuProps = {
+  options: { label: string; value: string }[];
+  label: string;
+  textareaId: string;
+  content: string;
+  setContent: (content: string) => void;
+  triggerClassName?: string;
+  contentClassName?: string;
+};
+
+function VariableMenu({
+  options,
+  label,
+  textareaId,
+  content,
+  setContent,
+  triggerClassName,
+  contentClassName,
+}: VariableMenuProps) {
+  const handleSelect = (value: string) => {
+    const textarea = document.getElementById(textareaId) as HTMLTextAreaElement;
+    if (!textarea) return;
+    const cursorPosition = textarea.selectionStart;
+    const textBefore = content.slice(0, cursorPosition);
+    const textAfter = content.slice(cursorPosition);
+
+    // Add leading space if needed
+    const needsSpace =
+      cursorPosition > 0 && content.charAt(cursorPosition - 1) !== ' ';
+
+    const newText =
+      textBefore + (needsSpace ? ' ' : '') + `{{ ${value} }}` + textAfter;
+    setContent(newText);
+
+    setTimeout(() => {
+      textarea.focus();
+      const insertedLen = value.length + 6 + (needsSpace ? 1 : 0);
+      textarea.setSelectionRange(
+        cursorPosition + insertedLen,
+        cursorPosition + insertedLen,
+      );
+    }, 0);
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={`border-border bg-card text-foreground hover:bg-accent flex items-center justify-between rounded-3xl border px-5 py-3 text-[12px] sm:text-[14px] ${triggerClassName ?? ''}`}
+        >
+          <span className="truncate">{label}</span>
+          <ChevronDown className="text-muted-foreground ml-2 h-4 w-4 shrink-0" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className={`max-h-72 overflow-y-auto ${contentClassName ?? ''}`}
+      >
+        {options.map((opt) => (
+          <DropdownMenuItem
+            key={opt.value}
+            onSelect={() => handleSelect(opt.value)}
+          >
+            {opt.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 type PromptTextareaProps = {
   id: string;
@@ -281,93 +359,22 @@ function AddPrompt({
         </p>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <Dropdown
+          <VariableMenu
             options={systemVariableOptions}
-            selectedValue={t('modals.prompts.systemVariablesDropdownLabel')}
-            onSelect={(option) => {
-              const textarea = document.getElementById(
-                'new-prompt-content',
-              ) as HTMLTextAreaElement;
-              if (textarea) {
-                const cursorPosition = textarea.selectionStart;
-                const textBefore = newPromptContent.slice(0, cursorPosition);
-                const textAfter = newPromptContent.slice(cursorPosition);
-
-                // Add leading space if needed
-                const needsSpace =
-                  cursorPosition > 0 &&
-                  newPromptContent.charAt(cursorPosition - 1) !== ' ';
-
-                const newText =
-                  textBefore +
-                  (needsSpace ? ' ' : '') +
-                  `{{ ${option.value} }}` +
-                  textAfter;
-                setNewPromptContent(newText);
-
-                setTimeout(() => {
-                  textarea.focus();
-                  textarea.setSelectionRange(
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                  );
-                }, 0);
-              }
-            }}
-            placeholder={t('modals.prompts.systemVariablesDropdownLabel')}
-            size="w-[140px] sm:w-[185px]"
-            rounded="3xl"
-            contentSize="text-[12px] sm:text-[14px]"
+            label={t('modals.prompts.systemVariablesDropdownLabel')}
+            textareaId="new-prompt-content"
+            content={newPromptContent}
+            setContent={setNewPromptContent}
+            triggerClassName="w-[140px] sm:w-[185px]"
           />
 
-          <Dropdown
+          <VariableMenu
             options={toolVariables}
-            selectedValue={'Tool Variables'}
-            onSelect={(option) => {
-              const textarea = document.getElementById(
-                'new-prompt-content',
-              ) as HTMLTextAreaElement;
-              if (textarea) {
-                const cursorPosition = textarea.selectionStart;
-                const textBefore = newPromptContent.slice(0, cursorPosition);
-                const textAfter = newPromptContent.slice(cursorPosition);
-
-                // Add leading space if needed
-                const needsSpace =
-                  cursorPosition > 0 &&
-                  newPromptContent.charAt(cursorPosition - 1) !== ' ';
-
-                const newText =
-                  textBefore +
-                  (needsSpace ? ' ' : '') +
-                  `{{ ${option.value} }}` +
-                  textAfter;
-                setNewPromptContent(newText);
-                setTimeout(() => {
-                  textarea.focus();
-                  textarea.setSelectionRange(
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                  );
-                }, 0);
-              }
-            }}
-            placeholder="Tool Variables"
-            size="w-[140px] sm:w-[171px]"
-            rounded="3xl"
-            contentSize="text-[12px] sm:text-[14px]"
+            label="Tool Variables"
+            textareaId="new-prompt-content"
+            content={newPromptContent}
+            setContent={setNewPromptContent}
+            triggerClassName="w-[140px] sm:w-[171px]"
           />
         </div>
       </div>
@@ -485,93 +492,22 @@ function EditPrompt({
         </p>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <Dropdown
+          <VariableMenu
             options={systemVariableOptions}
-            selectedValue={t('modals.prompts.systemVariablesDropdownLabel')}
-            onSelect={(option) => {
-              const textarea = document.getElementById(
-                'edit-prompt-content',
-              ) as HTMLTextAreaElement;
-              if (textarea) {
-                const cursorPosition = textarea.selectionStart;
-                const textBefore = editPromptContent.slice(0, cursorPosition);
-                const textAfter = editPromptContent.slice(cursorPosition);
-
-                // Add leading space if needed
-                const needsSpace =
-                  cursorPosition > 0 &&
-                  editPromptContent.charAt(cursorPosition - 1) !== ' ';
-
-                const newText =
-                  textBefore +
-                  (needsSpace ? ' ' : '') +
-                  `{{ ${option.value} }}` +
-                  textAfter;
-                setEditPromptContent(newText);
-
-                setTimeout(() => {
-                  textarea.focus();
-                  textarea.setSelectionRange(
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                  );
-                }, 0);
-              }
-            }}
-            placeholder={t('modals.prompts.systemVariablesDropdownLabel')}
-            size="w-[140px] sm:w-[185px]"
-            rounded="3xl"
-            contentSize="text-[12px] sm:text-[14px]"
+            label={t('modals.prompts.systemVariablesDropdownLabel')}
+            textareaId="edit-prompt-content"
+            content={editPromptContent}
+            setContent={setEditPromptContent}
+            triggerClassName="w-[140px] sm:w-[185px]"
           />
 
-          <Dropdown
+          <VariableMenu
             options={toolVariables}
-            selectedValue={'Tool Variables'}
-            onSelect={(option) => {
-              const textarea = document.getElementById(
-                'edit-prompt-content',
-              ) as HTMLTextAreaElement;
-              if (textarea) {
-                const cursorPosition = textarea.selectionStart;
-                const textBefore = editPromptContent.slice(0, cursorPosition);
-                const textAfter = editPromptContent.slice(cursorPosition);
-
-                // Add leading space if needed
-                const needsSpace =
-                  cursorPosition > 0 &&
-                  editPromptContent.charAt(cursorPosition - 1) !== ' ';
-
-                const newText =
-                  textBefore +
-                  (needsSpace ? ' ' : '') +
-                  `{{ ${option.value} }}` +
-                  textAfter;
-                setEditPromptContent(newText);
-                setTimeout(() => {
-                  textarea.focus();
-                  textarea.setSelectionRange(
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                  );
-                }, 0);
-              }
-            }}
-            placeholder="Tool Variables"
-            size="w-[140px] sm:w-[171px]"
-            rounded="3xl"
-            contentSize="text-[12px] sm:text-[14px]"
+            label="Tool Variables"
+            textareaId="edit-prompt-content"
+            content={editPromptContent}
+            setContent={setEditPromptContent}
+            triggerClassName="w-[140px] sm:w-[171px]"
           />
         </div>
       </div>

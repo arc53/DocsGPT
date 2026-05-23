@@ -13,8 +13,14 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import Dropdown from '../components/Dropdown';
 import SkeletonLoader from '../components/SkeletonLoader';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import { useLoaderState } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import { htmlLegendPlugin } from '../utils/chartUtils';
@@ -185,17 +191,29 @@ export default function Analytics({ agentId }: AnalyticsProps) {
             <p className="text-foreground dark:text-foreground font-bold">
               {t('settings.analytics.messages')}
             </p>
-            <Dropdown
-              size="w-[125px]"
-              options={filterOptions}
-              placeholder={t('settings.analytics.filterPlaceholder')}
-              onSelect={(selectedOption: { label: string; value: string }) => {
-                setMessagesFilter(selectedOption);
+            <Select
+              value={messagesFilter?.value}
+              onValueChange={(value) => {
+                const opt = filterOptions.find((o) => o.value === value);
+                if (opt) setMessagesFilter(opt);
               }}
-              selectedValue={messagesFilter ?? null}
-              rounded="3xl"
-              contentSize="text-sm"
-            />
+            >
+              <SelectTrigger
+                className="w-[125px] rounded-3xl px-5 py-3 text-sm"
+                size="lg"
+              >
+                <SelectValue
+                  placeholder={t('settings.analytics.filterPlaceholder')}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {filterOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="relative mt-px h-[245px] w-full">
             <div
@@ -232,17 +250,29 @@ export default function Analytics({ agentId }: AnalyticsProps) {
             <p className="text-foreground dark:text-foreground font-bold">
               {t('settings.analytics.tokenUsage')}
             </p>
-            <Dropdown
-              size="w-[125px]"
-              options={filterOptions}
-              placeholder={t('settings.analytics.filterPlaceholder')}
-              onSelect={(selectedOption: { label: string; value: string }) => {
-                setTokenUsageFilter(selectedOption);
+            <Select
+              value={tokenUsageFilter?.value}
+              onValueChange={(value) => {
+                const opt = filterOptions.find((o) => o.value === value);
+                if (opt) setTokenUsageFilter(opt);
               }}
-              selectedValue={tokenUsageFilter ?? null}
-              rounded="3xl"
-              contentSize="text-sm"
-            />
+            >
+              <SelectTrigger
+                className="w-[125px] rounded-3xl px-5 py-3 text-sm"
+                size="lg"
+              >
+                <SelectValue
+                  placeholder={t('settings.analytics.filterPlaceholder')}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {filterOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="relative mt-px h-[245px] w-full">
             <div
@@ -281,17 +311,29 @@ export default function Analytics({ agentId }: AnalyticsProps) {
             <p className="text-foreground dark:text-foreground font-bold">
               {t('settings.analytics.userFeedback')}
             </p>
-            <Dropdown
-              size="w-[125px]"
-              options={filterOptions}
-              placeholder={t('settings.analytics.filterPlaceholder')}
-              onSelect={(selectedOption: { label: string; value: string }) => {
-                setFeedbackFilter(selectedOption);
+            <Select
+              value={feedbackFilter?.value}
+              onValueChange={(value) => {
+                const opt = filterOptions.find((o) => o.value === value);
+                if (opt) setFeedbackFilter(opt);
               }}
-              selectedValue={feedbackFilter ?? null}
-              rounded="3xl"
-              contentSize="text-sm"
-            />
+            >
+              <SelectTrigger
+                className="w-[125px] rounded-3xl px-5 py-3 text-sm"
+                size="lg"
+              >
+                <SelectValue
+                  placeholder={t('settings.analytics.filterPlaceholder')}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {filterOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="relative mt-px h-[245px] w-full">
             <div

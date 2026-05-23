@@ -15,9 +15,14 @@ import CalendarIcon from '../assets/calendar.svg';
 import DiscIcon from '../assets/disc.svg';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import Pagination from '../components/DocumentPagination';
-import DropdownMenu from '../components/DropdownMenu';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Button } from '../components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
 import { useDarkTheme, useDebouncedValue, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -505,14 +510,7 @@ export default function Sources({
                           >
                             {document.syncFrequency && (
                               <DropdownMenu
-                                name={t('settings.sources.sync')}
-                                options={syncOptions}
-                                onSelect={(value: string) => {
-                                  handleManageSync(document, value);
-                                }}
-                                defaultValue={document.syncFrequency}
-                                icon={SyncIcon}
-                                isOpen={
+                                open={
                                   syncMenuState.docId === docId &&
                                   syncMenuState.isOpen
                                 }
@@ -524,11 +522,29 @@ export default function Sources({
                                     document: isOpen ? document : null,
                                   }));
                                 }}
-                                anchorRef={getMenuRef(docId)}
-                                position="bottom-left"
-                                offset={{ x: -8, y: 8 }}
-                                className="min-w-[120px]"
-                              />
+                              >
+                                <DropdownMenuTrigger asChild>
+                                  <span
+                                    aria-hidden
+                                    className="pointer-events-none absolute inset-0 opacity-0"
+                                  />
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent
+                                  align="end"
+                                  className="min-w-[120px]"
+                                >
+                                  {syncOptions.map((opt) => (
+                                    <DropdownMenuItem
+                                      key={opt.value}
+                                      onSelect={() =>
+                                        handleManageSync(document, opt.value)
+                                      }
+                                    >
+                                      {opt.label}
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             )}
                             <Button
                               type="button"

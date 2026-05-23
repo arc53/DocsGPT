@@ -11,8 +11,14 @@ import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import Trash from '../assets/trash.svg';
 import ConfigFields from '../components/ConfigFields';
-import Dropdown from '../components/Dropdown';
 import ToggleSwitch from '../components/ToggleSwitch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { useDarkTheme } from '../hooks';
@@ -1025,18 +1031,9 @@ function APIToolConfig({
                       <span className="text-muted-foreground bg-card absolute -top-2 left-5 z-10 px-2 text-xs">
                         {t('settings.tools.method')}
                       </span>
-                      <Dropdown
-                        options={[
-                          'GET',
-                          'POST',
-                          'PUT',
-                          'DELETE',
-                          'PATCH',
-                          'HEAD',
-                          'OPTIONS',
-                        ]}
-                        selectedValue={action.method}
-                        onSelect={(value: string) => {
+                      <Select
+                        value={action.method}
+                        onValueChange={(value) => {
                           setApiTool((prevApiTool) => {
                             const updatedActions = {
                               ...prevApiTool.config.actions,
@@ -1062,9 +1059,29 @@ function APIToolConfig({
                             };
                           });
                         }}
-                        size="w-56"
-                        rounded="3xl"
-                      />
+                      >
+                        <SelectTrigger
+                          className="w-56 rounded-3xl px-5 py-3"
+                          size="lg"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[
+                            'GET',
+                            'POST',
+                            'PUT',
+                            'DELETE',
+                            'PATCH',
+                            'HEAD',
+                            'OPTIONS',
+                          ].map((m) => (
+                            <SelectItem key={m} value={m}>
+                              {m}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                   <div className="mt-4 px-5 py-2">
@@ -1103,19 +1120,9 @@ function APIToolConfig({
                         <span className="text-muted-foreground bg-card absolute -top-2 left-5 z-10 px-2 text-xs">
                           {t('settings.tools.bodyContentType')}
                         </span>
-                        <Dropdown
-                          options={[
-                            'application/json',
-                            'application/x-www-form-urlencoded',
-                            'multipart/form-data',
-                            'text/plain',
-                            'application/xml',
-                            'application/octet-stream',
-                          ]}
-                          selectedValue={
-                            action.body_content_type || 'application/json'
-                          }
-                          onSelect={(value: string) => {
+                        <Select
+                          value={action.body_content_type || 'application/json'}
+                          onValueChange={(value) => {
                             setApiTool((prevApiTool) => {
                               const updatedActions = {
                                 ...prevApiTool.config.actions,
@@ -1140,9 +1147,28 @@ function APIToolConfig({
                               };
                             });
                           }}
-                          size="w-56"
-                          rounded="3xl"
-                        />
+                        >
+                          <SelectTrigger
+                            className="w-56 rounded-3xl px-5 py-3"
+                            size="lg"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {[
+                              'application/json',
+                              'application/x-www-form-urlencoded',
+                              'multipart/form-data',
+                              'text/plain',
+                              'application/xml',
+                              'application/octet-stream',
+                            ].map((ct) => (
+                              <SelectItem key={ct} value={ct}>
+                                {ct}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <p className="text-foreground dark:text-foreground mt-2 text-xs opacity-60">
                         {action.body_content_type === 'multipart/form-data' &&

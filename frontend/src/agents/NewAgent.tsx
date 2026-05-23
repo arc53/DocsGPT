@@ -13,10 +13,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
 import SourceIcon from '../assets/source.svg';
-import Dropdown from '../components/Dropdown';
 import { FileUpload } from '../components/FileUpload';
 import {
   MultiSelectPopover,
@@ -922,17 +929,28 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 />
               </div>
               <div className="mt-3">
-                <Dropdown
-                  options={chunks}
-                  selectedValue={agent.chunks ? agent.chunks : null}
-                  onSelect={(value: string) =>
+                <Select
+                  value={agent.chunks || undefined}
+                  onValueChange={(value) =>
                     setAgent({ ...agent, chunks: value })
                   }
-                  size="w-full"
-                  rounded="3xl"
-                  placeholder={t('agents.form.placeholders.chunksPerQuery')}
-                  contentSize="text-sm"
-                />
+                >
+                  <SelectTrigger
+                    className="w-full rounded-3xl px-5 py-3 text-sm"
+                    size="lg"
+                  >
+                    <SelectValue
+                      placeholder={t('agents.form.placeholders.chunksPerQuery')}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {chunks.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>
@@ -956,11 +974,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   title={t('agents.form.sections.prompt')}
                   titleClassName="text-lg font-semibold"
                   showAddButton={false}
-                  dropdownProps={{
-                    size: 'w-full',
-                    rounded: '3xl',
-                    contentSize: 'text-sm',
-                  }}
+                  dropdownProps={{ className: 'w-full' }}
                 />
               </div>
               <Button
@@ -1032,22 +1046,28 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               {t('agents.form.sections.agentType')}
             </h2>
             <div className="mt-3">
-              <Dropdown
-                options={agentTypes}
-                selectedValue={
-                  agent.agent_type
-                    ? agentTypes.find((type) => type.value === agent.agent_type)
-                        ?.label || null
-                    : null
+              <Select
+                value={agent.agent_type || undefined}
+                onValueChange={(value) =>
+                  setAgent({ ...agent, agent_type: value })
                 }
-                onSelect={(option: { label: string; value: string }) =>
-                  setAgent({ ...agent, agent_type: option.value })
-                }
-                size="w-full"
-                rounded="3xl"
-                placeholder={t('agents.form.placeholders.selectType')}
-                contentSize="text-sm"
-              />
+              >
+                <SelectTrigger
+                  className="w-full rounded-3xl px-5 py-3 text-sm"
+                  size="lg"
+                >
+                  <SelectValue
+                    placeholder={t('agents.form.placeholders.selectType')}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {agentTypes.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div className="bg-card rounded-[30px] px-6 py-3">
@@ -1113,28 +1133,32 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   <label className="mb-2 block text-sm font-medium">
                     {t('agents.form.labels.defaultModel')}
                   </label>
-                  <Dropdown
-                    options={availableModels
-                      .filter((m) => selectedModelIds.has(m.id))
-                      .map((m) => ({
-                        label: m.display_name,
-                        value: m.id,
-                      }))}
-                    selectedValue={
-                      availableModels.find(
-                        (m) => m.id === agent.default_model_id,
-                      )?.display_name || null
+                  <Select
+                    value={agent.default_model_id || undefined}
+                    onValueChange={(value) =>
+                      setAgent({ ...agent, default_model_id: value })
                     }
-                    onSelect={(option: { label: string; value: string }) =>
-                      setAgent({ ...agent, default_model_id: option.value })
-                    }
-                    size="w-full"
-                    rounded="3xl"
-                    placeholder={t(
-                      'agents.form.placeholders.selectDefaultModel',
-                    )}
-                    contentSize="text-sm"
-                  />
+                  >
+                    <SelectTrigger
+                      className="w-full rounded-3xl px-5 py-3 text-sm"
+                      size="lg"
+                    >
+                      <SelectValue
+                        placeholder={t(
+                          'agents.form.placeholders.selectDefaultModel',
+                        )}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableModels
+                        .filter((m) => selectedModelIds.has(m.id))
+                        .map((m) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            {m.display_name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
             </div>

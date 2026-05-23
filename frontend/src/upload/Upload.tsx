@@ -6,8 +6,14 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import type { RootState } from '../store';
 import { getSessionToken } from '../utils/providerUtils';
-import Dropdown from '../components/Dropdown';
 import { Input } from '../components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import ToggleSwitch from '../components/ToggleSwitch';
 import { Modal } from '../components/ui/modal';
 import { ActiveState, Doc } from '../models/misc';
@@ -140,30 +146,37 @@ function Upload({
             labelBgClassName="bg-card"
           />
         );
-      case 'enum':
+      case 'enum': {
+        const currentValue = String(
+          ingestor.config[field.name as keyof typeof ingestor.config] ?? '',
+        );
         return (
-          <Dropdown
+          <Select
             key={field.name}
-            options={field.options || []}
-            selectedValue={
-              field.options?.find(
-                (opt) =>
-                  opt.value ===
-                  ingestor.config[field.name as keyof typeof ingestor.config],
-              ) || null
-            }
-            onSelect={(selected: { label: string; value: string }) => {
+            value={currentValue || undefined}
+            onValueChange={(value) => {
               handleIngestorChange(
                 field.name as keyof IngestorConfig['config'],
-                selected.value,
+                value,
               );
             }}
-            size="w-full"
-            rounded="3xl"
-            placeholder={field.label}
-            contentSize="text-sm"
-          />
+          >
+            <SelectTrigger
+              className="w-full rounded-3xl px-5 py-3 text-sm"
+              size="lg"
+            >
+              <SelectValue placeholder={field.label} />
+            </SelectTrigger>
+            <SelectContent>
+              {(field.options || []).map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         );
+      }
       case 'boolean':
         return (
           <ToggleSwitch
