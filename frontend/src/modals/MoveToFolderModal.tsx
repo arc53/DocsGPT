@@ -212,7 +212,7 @@ export default function MoveToFolderModal({
                   }}
                   className={`dark:border-border flex w-full items-center gap-2 border-b border-gray-200 px-8 py-2 text-left text-[14px] ${
                     selectedFolderId === null
-                      ? 'bg-[#7D54D1] text-white'
+                      ? 'bg-primary text-white'
                       : 'bg-muted hover:bg-accent dark:bg-muted'
                   }`}
                 >
@@ -234,7 +234,7 @@ export default function MoveToFolderModal({
                   onClick={() => setSelectedFolderId(folder.id)}
                   className={`dark:border-border flex w-full cursor-pointer items-center justify-between border-b border-gray-200 px-8 py-2 text-left text-[14px] ${
                     selectedFolderId === folder.id
-                      ? 'bg-[#7D54D1] text-white'
+                      ? 'bg-primary text-white'
                       : 'bg-muted hover:bg-accent dark:bg-muted'
                   }`}
                 >
@@ -315,7 +315,7 @@ export default function MoveToFolderModal({
                 }
               }}
               placeholder={t('agents.folders.newFolder')}
-              className="dark:text-primary rounded-full border border-[#7D54D1] bg-transparent px-6 py-2 text-sm font-medium text-[#7D54D1] outline-none placeholder:text-[#7D54D1]/60 dark:placeholder:text-[#B794F4]/60"
+              className="border-primary text-primary placeholder:text-primary/60 rounded-full border bg-transparent px-6 py-2 text-sm font-medium outline-none"
               autoFocus
             />
           ) : (
@@ -325,7 +325,7 @@ export default function MoveToFolderModal({
                 setIsCreatingFolder(true);
                 setTimeout(() => newFolderInputRef.current?.focus(), 0);
               }}
-              className="rounded-full border border-[#7D54D1] bg-transparent px-6 py-2 text-sm font-medium text-[#7D54D1] hover:bg-[#E5DDF6]"
+              className="border-primary text-primary hover:bg-primary/10 rounded-full border bg-transparent px-6 py-2 text-sm font-medium"
             >
               {t('agents.folders.newFolder')}
             </button>

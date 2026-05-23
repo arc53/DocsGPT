@@ -384,7 +384,7 @@ function AddPrompt({
             to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm font-medium text-[#6A4DF4] hover:underline"
+            className="text-primary flex items-center gap-2 text-sm font-medium hover:underline"
           >
             <img
               src={BookIcon}
@@ -401,14 +401,14 @@ function AddPrompt({
         <div className="flex justify-end gap-2 sm:gap-4">
           <button
             onClick={() => setModalState('INACTIVE')}
-            className="rounded-3xl border border-[#D9534F] px-5 py-2 text-sm font-medium text-[#D9534F] transition-all hover:bg-[#D9534F] hover:text-white"
+            className="border-destructive text-destructive hover:bg-destructive rounded-3xl border px-5 py-2 text-sm font-medium transition-all hover:text-white"
           >
             {t('modals.prompts.cancel')}
           </button>
 
           <button
             onClick={handleAddPrompt}
-            className="rounded-3xl bg-[#6A4DF4] px-6 py-2 text-sm font-medium text-white transition-all hover:bg-[#563DD1] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#6A4DF4]"
+            className="bg-primary hover:bg-primary/90 disabled:hover:bg-primary rounded-3xl px-6 py-2 text-sm font-medium text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
             disabled={disableSave}
           >
             {t('modals.prompts.save')}
@@ -517,7 +517,7 @@ function EditPrompt({
             to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm font-medium text-[#6A4DF4] hover:underline"
+            className="text-primary flex items-center gap-2 text-sm font-medium hover:underline"
           >
             <img
               src={BookIcon}
@@ -534,7 +534,7 @@ function EditPrompt({
         <div className="flex justify-end gap-2 sm:gap-4">
           <button
             onClick={() => setModalState('INACTIVE')}
-            className="rounded-3xl border border-[#D9534F] px-5 py-2 text-sm font-medium text-[#D9534F] transition-all hover:bg-[#D9534F] hover:text-white"
+            className="border-destructive text-destructive hover:bg-destructive rounded-3xl border px-5 py-2 text-sm font-medium transition-all hover:text-white"
           >
             {t('modals.prompts.cancel')}
           </button>
@@ -544,7 +544,7 @@ function EditPrompt({
               handleEditPrompt &&
                 handleEditPrompt(currentPromptEdit.id, currentPromptEdit.type);
             }}
-            className="rounded-3xl bg-[#6A4DF4] px-6 py-2 text-sm font-medium text-white transition-all hover:bg-[#563DD1] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#6A4DF4]"
+            className="bg-primary hover:bg-primary/90 disabled:hover:bg-primary rounded-3xl px-6 py-2 text-sm font-medium text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
             disabled={
               currentPromptEdit.type === 'public' ||
               disableSave ||

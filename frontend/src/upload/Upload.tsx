@@ -859,7 +859,7 @@ function Upload({
             key={option.value}
             className={`relative mx-auto flex h-[91.2px] w-full cursor-pointer flex-col justify-between gap-2 rounded-2xl border border-solid pt-[21.1px] pr-[21px] pb-[15px] pl-[21px] transition-colors duration-300 ease-out ${
               ingestor.type === option.value
-                ? 'border-[#7D54D1] bg-[#7D54D1] text-white'
+                ? 'border-primary bg-primary text-white'
                 : 'border-border hover:bg-accent/30 dark:border-border/30 bg-transparent transition-shadow duration-300 hover:shadow-[0_0_15px_0_#00000026]'
             }`}
             onClick={() =>

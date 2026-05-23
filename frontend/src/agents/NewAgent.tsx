@@ -768,7 +768,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             >
               <span className="flex items-center justify-center transition-all duration-200">
                 {draftLoading ? (
-                  <Spinner size="small" color="#976af3" />
+                  <Spinner size="small" />
                 ) : (
                   t('agents.form.buttons.saveDraft')
                 )}
@@ -783,7 +783,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           >
             <span className="flex items-center justify-center transition-all duration-200">
               {publishLoading ? (
-                <Spinner size="small" color="white" />
+                <Spinner size="small" />
               ) : (
                 modeConfig[effectiveMode].buttonText
               )}
@@ -841,7 +841,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 uploadText={[
                   {
                     text: t('agents.form.upload.clickToUpload'),
-                    colorClass: 'text-[#7D54D1]',
+                    colorClass: 'text-primary',
                   },
                   {
                     text: t('agents.form.upload.dragAndDrop'),

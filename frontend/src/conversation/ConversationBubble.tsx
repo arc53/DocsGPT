@@ -876,9 +876,7 @@ function AllSources(sources: AllSourcesProps) {
               <p
                 title={source.title}
                 className={`ellipsis-text text-left text-sm font-semibold wrap-break-word ${
-                  isExternalSource
-                    ? 'group-hover/card:text-primary dark:group-hover/card:text-[#8C67D7]'
-                    : ''
+                  isExternalSource ? 'group-hover/card:text-primary' : ''
                 }`}
               >
                 {`${index + 1}. ${source.title}`}

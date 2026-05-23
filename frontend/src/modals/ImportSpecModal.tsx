@@ -182,7 +182,7 @@ export default function ImportSpecModal({
               disabled={!file || loading}
               className="w-20 rounded-3xl px-5 disabled:cursor-not-allowed"
             >
-              {loading && <Spinner size="small" color="white" />}
+              {loading && <Spinner size="small" />}
               {!loading && t('modals.importSpec.parse')}
             </Button>
           ) : (

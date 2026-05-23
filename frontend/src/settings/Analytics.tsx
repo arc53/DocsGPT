@@ -7,7 +7,7 @@ import {
   Title,
   Tooltip,
 } from 'chart.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -21,10 +21,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
-import { useLoaderState } from '../hooks';
+import { useDarkTheme, useLoaderState } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import { htmlLegendPlugin } from '../utils/chartUtils';
 import { formatDate } from '../utils/dateTimeUtils';
+
+/**
+ * Resolve a CSS custom property on `:root` to a concrete color string.
+ *
+ * Chart.js renders to a canvas, so it can't consume Tailwind classes or CSS
+ * variables directly. Read the resolved value at render time and pass that
+ * concrete string. Falls back when running outside a browser (SSR / tests).
+ */
+function readCssVar(name: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback;
+  // The `.dark` class lives on document.body (see useDarkTheme), so query
+  // body — querying documentElement would always resolve the :root value.
+  const value = getComputedStyle(document.body).getPropertyValue(name).trim();
+  return value || fallback;
+}
 
 import type { ChartData } from 'chart.js';
 ChartJS.register(
@@ -101,6 +116,13 @@ export default function Analytics({ agentId }: AnalyticsProps) {
   const [loadingMessages, setLoadingMessages] = useLoaderState(true);
   const [loadingTokens, setLoadingTokens] = useLoaderState(true);
   const [loadingFeedback, setLoadingFeedback] = useLoaderState(true);
+  const [isDarkTheme] = useDarkTheme();
+  const primaryColor = useMemo(
+    () => readCssVar('--primary', '#7d54d1'),
+    // isDarkTheme drives the `.dark` class on document.body and changes the
+    // resolved value of `--primary`; re-read whenever it flips.
+    [isDarkTheme],
+  );
 
   const fetchMessagesData = async (agent_id?: string, filter?: string) => {
     setLoadingMessages(true);
@@ -232,7 +254,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                     {
                       label: t('settings.analytics.messages'),
                       data: Object.values(messagesData || {}),
-                      backgroundColor: '#7D54D1',
+                      backgroundColor: primaryColor,
                     },
                   ],
                 }}
@@ -291,7 +313,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                     {
                       label: t('settings.analytics.tokenUsage'),
                       data: Object.values(tokenUsageData || {}),
-                      backgroundColor: '#7D54D1',
+                      backgroundColor: primaryColor,
                     },
                   ],
                 }}
@@ -354,7 +376,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                       data: Object.values(feedbackData || {}).map(
                         (item) => item.positive,
                       ),
-                      backgroundColor: '#7D54D1',
+                      backgroundColor: primaryColor,
                     },
                     {
                       label: t('settings.analytics.negativeFeedback'),

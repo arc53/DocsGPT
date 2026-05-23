@@ -315,7 +315,7 @@ const Chunks: React.FC<ChunksProps> = ({
 
           <div className="flex flex-wrap items-center">
             {/* Removed the directory icon */}
-            <span className="font-semibold wrap-break-word text-[#7D54D1]">
+            <span className="text-primary font-semibold wrap-break-word">
               {documentName}
             </span>
 
@@ -327,7 +327,7 @@ const Chunks: React.FC<ChunksProps> = ({
                     <span
                       className={`wrap-break-word ${
                         index < pathParts.length - 1
-                          ? 'font-medium text-[#7D54D1]'
+                          ? 'text-primary font-medium'
                           : 'text-gray-700 dark:text-gray-300'
                       }`}
                     >

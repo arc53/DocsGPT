@@ -161,7 +161,7 @@ export default function ToolApprovalToast() {
                   dispatch(dismissToolApproval(eventId));
                   navigate(`/c/${conversationId}`);
                 }}
-                className="rounded-full bg-[#7D54D1] px-3 py-1 text-[12px] font-medium text-white shadow-sm hover:bg-[#6a45b8]"
+                className="bg-primary hover:bg-primary/90 rounded-full px-3 py-1 text-[12px] font-medium text-white shadow-sm"
               >
                 Review
               </button>

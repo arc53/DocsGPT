@@ -135,7 +135,7 @@ export default function AgentDetailsModal({
                 className="border-primary text-primary hover:bg-primary/90 w-28 rounded-3xl border-solid px-5 hover:text-white"
               >
                 {loadingStates.publicLink ? (
-                  <Spinner size="small" color="#976af3" />
+                  <Spinner size="small" />
                 ) : (
                   t('modals.agentDetails.generate')
                 )}
@@ -228,7 +228,7 @@ export default function AgentDetailsModal({
                 className="border-primary text-primary hover:bg-primary/90 w-28 rounded-3xl border-solid px-5 hover:text-white"
               >
                 {loadingStates.webhook ? (
-                  <Spinner size="small" color="#976af3" />
+                  <Spinner size="small" />
                 ) : (
                   t('modals.agentDetails.generate')
                 )}

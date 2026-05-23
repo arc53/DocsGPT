@@ -752,6 +752,12 @@ Avoid over-scrolling in mobile browsers
       transform: translateY(0);
     }
   }
+
+  @keyframes spinner-rotate {
+    100% {
+      transform: rotate(1turn);
+    }
+  }
 }
 
 /*

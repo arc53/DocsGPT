@@ -525,7 +525,7 @@ const FileTree: React.FC<FileTreeProps> = ({
           </button>
 
           <div className="flex flex-wrap items-center">
-            <span className="font-semibold break-words text-[#7D54D1]">
+            <span className="text-primary font-semibold break-words">
               {sourceName}
             </span>
             {currentPath.length > 0 && (

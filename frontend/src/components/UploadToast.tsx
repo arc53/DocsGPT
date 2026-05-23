@@ -190,7 +190,7 @@ function UploadRow({
               width="24"
               height="24"
               viewBox="0 0 24 24"
-              className="h-6 w-6 shrink-0 text-[#7D54D1]"
+              className="text-primary h-6 w-6 shrink-0"
               role="progressbar"
               aria-valuemin={0}
               aria-valuemax={100}
@@ -209,7 +209,7 @@ function UploadRow({
                 fill="none"
               />
               <circle
-                className="text-[#7D54D1]"
+                className="text-primary"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"

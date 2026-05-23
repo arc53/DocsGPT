@@ -390,7 +390,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
           </button>
 
           <div className="flex flex-wrap items-center">
-            <span className="font-semibold wrap-break-word text-[#7D54D1]">
+            <span className="text-primary font-semibold wrap-break-word">
               {sourceName}
             </span>
             {currentPath.length > 0 && (
