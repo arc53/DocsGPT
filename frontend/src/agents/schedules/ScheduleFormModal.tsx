@@ -19,7 +19,7 @@ import {
 import { TimePicker } from '@/components/ui/time-picker';
 import { cn } from '@/lib/utils';
 
-import WrapperModal from '../../modals/WrapperModal';
+import { Modal } from '../../components/ui/modal';
 import type { Schedule, ScheduleCreatePayload } from '../types/schedule';
 import {
   browserTimezone,
@@ -145,8 +145,6 @@ export default function ScheduleFormModal({
   }, [timezone]);
   const [error, setError] = useState<string | null>(null);
 
-  if (!open) return null;
-
   const setFrequency = (frequency: ScheduleFrequency) =>
     setValues((current) => ({ ...current, frequency }));
 
@@ -191,11 +189,19 @@ export default function ScheduleFormModal({
   const isEdit = Boolean(initial?.id);
 
   return (
-    <WrapperModal
+    <Modal
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      isPerformingTask={submitting}
+      hideTitle
+      title={
+        isEdit
+          ? t('agents.schedules.modal.save')
+          : t('agents.schedules.modal.create')
+      }
+      size="md"
       className="w-[min(560px,92vw)] sm:p-6"
       contentClassName="max-h-[80vh]"
-      close={onClose}
-      isPerformingTask={submitting}
     >
       <div className="flex flex-col gap-5">
         <div className="flex items-start gap-3 pr-6">
@@ -282,7 +288,7 @@ export default function ScheduleFormModal({
           </Button>
         </div>
       </div>
-    </WrapperModal>
+    </Modal>
   );
 }
 
@@ -473,7 +479,7 @@ function DatePicker({ value, onChange, placeholder }: DatePickerProps) {
           {value ? formatDateLabel(value) : placeholder}
         </Button>
       </PopoverTrigger>
-      {/* z-200 keeps the popover above WrapperModal (z-100); matches SelectContent. */}
+      {/* z-200 keeps the popover above Modal (z-50); matches SelectContent. */}
       <PopoverContent className="z-200 w-auto p-0" align="start">
         <Calendar
           mode="single"

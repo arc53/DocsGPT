@@ -17,7 +17,7 @@ import {
 import { ActiveState } from '../models/misc';
 import { selectRecentEvents } from '../notifications/notificationsSlice';
 import { selectToken } from '../preferences/preferenceSlice';
-import WrapperComponent from './WrapperModal';
+import { Modal } from '../components/ui/modal';
 
 interface MCPServerModalProps {
   modalState: ActiveState;
@@ -576,255 +576,251 @@ export default function MCPServerModal({
   };
 
   return (
-    modalState === 'ACTIVE' && (
-      <WrapperComponent
-        close={() => {
+    <Modal
+      open={modalState === 'ACTIVE'}
+      onOpenChange={(o) => {
+        if (!o) {
           setModalState('INACTIVE');
           resetForm();
-        }}
-        className="max-w-[600px] md:w-[80vw] lg:w-[60vw]"
-      >
-        <div className="flex h-full flex-col">
-          <div className="px-6 py-4">
-            <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
-              {server
-                ? t('settings.tools.mcp.reconnectServer', {
-                    defaultValue: 'Reconnect Server',
-                  })
-                : t('settings.tools.mcp.addServer')}
-            </h2>
-          </div>
-          <div className="flex-1 px-6">
-            <div className="flex flex-col gap-4 px-0.5 py-4">
-              {server?.has_encrypted_credentials &&
-                formData.auth_type !== 'oauth' && (
-                  <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                    {t('settings.tools.mcp.reenterCredentials', {
-                      defaultValue:
-                        'Re-enter your credentials to test and update the connection.',
-                    })}
-                  </div>
-                )}
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="mcp-name">
-                  {t('settings.tools.mcp.serverName')}
-                  <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="mcp-name"
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => handleInputChange('name', e.target.value)}
-                  placeholder={t('settings.tools.mcp.serverName')}
-                  aria-invalid={!!errors.name || undefined}
-                  className="rounded-xl"
-                />
-                {errors.name && (
-                  <p className="text-destructive text-xs">{errors.name}</p>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="mcp-url">
-                  {t('settings.tools.mcp.serverUrl')}
-                  <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="mcp-url"
-                  type="text"
-                  value={formData.server_url}
-                  onChange={(e) =>
-                    handleInputChange('server_url', e.target.value)
-                  }
-                  placeholder="https://example.com/mcp"
-                  aria-invalid={!!errors.server_url || undefined}
-                  className="rounded-xl"
-                />
-                {errors.server_url && (
-                  <p className="text-destructive text-xs">
-                    {errors.server_url}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <Label>{t('settings.tools.mcp.authType')}</Label>
-                <Select
-                  value={formData.auth_type}
-                  onValueChange={(v) => handleInputChange('auth_type', v)}
-                >
-                  <SelectTrigger
-                    variant="ghost"
-                    size="lg"
-                    className="w-full rounded-xl"
-                  >
-                    <SelectValue
-                      placeholder={t('settings.tools.mcp.authType')}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {authTypes.map((type) => (
-                      <SelectItem key={type.value} value={type.value}>
-                        {type.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {renderAuthFields()}
-
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="mcp-timeout">
-                  {t('settings.tools.mcp.timeout')}
-                </Label>
-                <Input
-                  id="mcp-timeout"
-                  type="number"
-                  value={formData.timeout}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    if (value === '') {
-                      handleInputChange('timeout', '');
-                    } else {
-                      const numValue = parseInt(value);
-                      if (!isNaN(numValue) && numValue >= 1) {
-                        handleInputChange('timeout', numValue);
-                      }
-                    }
-                  }}
-                  placeholder="30"
-                  min={1}
-                  max={300}
-                  aria-invalid={!!errors.timeout || undefined}
-                  className="rounded-xl"
-                />
-                {errors.timeout && (
-                  <p className="text-destructive text-xs">{errors.timeout}</p>
-                )}
-              </div>
-
-              {testResult && (
-                <div
-                  className={`rounded-xl p-4 text-sm ${
-                    testResult.success
-                      ? 'bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                      : 'bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                  }`}
-                >
-                  <p>{testResult.message}</p>
-                  {testResult.authorization_url && (
-                    <a
-                      href={testResult.authorization_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        const popup = window.open(
-                          testResult.authorization_url,
-                          'oauthPopup',
-                          'width=600,height=700',
-                        );
-                        if (popup) oauthPopupRef.current = popup;
-                      }}
-                      className="mt-1.5 inline-block font-medium underline"
-                    >
-                      {t('settings.tools.mcp.openAuthPage', {
-                        defaultValue: 'Open authorization page',
-                      })}
-                    </a>
-                  )}
+        }
+      }}
+      title={
+        server
+          ? t('settings.tools.mcp.reconnectServer', {
+              defaultValue: 'Reconnect Server',
+            })
+          : t('settings.tools.mcp.addServer')
+      }
+      size="lg"
+      className="max-w-[600px] md:w-[80vw] lg:w-[60vw]"
+    >
+      <div className="flex h-full flex-col">
+        <div className="flex-1 px-6">
+          <div className="flex flex-col gap-4 px-0.5 py-4">
+            {server?.has_encrypted_credentials &&
+              formData.auth_type !== 'oauth' && (
+                <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                  {t('settings.tools.mcp.reenterCredentials', {
+                    defaultValue:
+                      'Re-enter your credentials to test and update the connection.',
+                  })}
                 </div>
               )}
-
-              {discoveredTools.length > 0 && testResult?.success && (
-                <div className="border-border dark:border-border rounded-xl border p-4">
-                  <h4 className="mb-2 text-sm font-medium text-gray-900 dark:text-white">
-                    {t('settings.tools.mcp.discoveredTools', {
-                      count: discoveredTools.length,
-                      defaultValue: `Discovered Actions (${discoveredTools.length})`,
-                    })}
-                  </h4>
-                  <ul className="flex max-h-40 flex-col gap-1.5 overflow-y-auto">
-                    {discoveredTools.map((tool) => (
-                      <li
-                        key={tool.name}
-                        className="flex items-start gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-white/5"
-                      >
-                        <span className="text-primary mt-0.5">&#9679;</span>
-                        <div className="min-w-0">
-                          <span className="font-medium text-gray-900 dark:text-white">
-                            {tool.name}
-                          </span>
-                          {tool.description && (
-                            <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                              {tool.description}
-                            </p>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {errors.general && (
-                <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-300">
-                  {errors.general}
-                </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="mcp-name">
+                {t('settings.tools.mcp.serverName')}
+                <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="mcp-name"
+                type="text"
+                value={formData.name}
+                onChange={(e) => handleInputChange('name', e.target.value)}
+                placeholder={t('settings.tools.mcp.serverName')}
+                aria-invalid={!!errors.name || undefined}
+                className="rounded-xl"
+              />
+              {errors.name && (
+                <p className="text-destructive text-xs">{errors.name}</p>
               )}
             </div>
-          </div>
 
-          <div className="px-6 py-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
-              <button
-                onClick={testConnection}
-                disabled={testing}
-                className="border-border dark:border-border dark:text-foreground hover:bg-accent dark:hover:bg-muted/50 w-full rounded-3xl border px-6 py-2 text-sm font-medium transition-all disabled:opacity-50 sm:w-auto"
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="mcp-url">
+                {t('settings.tools.mcp.serverUrl')}
+                <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="mcp-url"
+                type="text"
+                value={formData.server_url}
+                onChange={(e) =>
+                  handleInputChange('server_url', e.target.value)
+                }
+                placeholder="https://example.com/mcp"
+                aria-invalid={!!errors.server_url || undefined}
+                className="rounded-xl"
+              />
+              {errors.server_url && (
+                <p className="text-destructive text-xs">{errors.server_url}</p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label>{t('settings.tools.mcp.authType')}</Label>
+              <Select
+                value={formData.auth_type}
+                onValueChange={(v) => handleInputChange('auth_type', v)}
               >
-                {testing ? (
+                <SelectTrigger
+                  variant="ghost"
+                  size="lg"
+                  className="w-full rounded-xl"
+                >
+                  <SelectValue placeholder={t('settings.tools.mcp.authType')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {authTypes.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {renderAuthFields()}
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="mcp-timeout">
+                {t('settings.tools.mcp.timeout')}
+              </Label>
+              <Input
+                id="mcp-timeout"
+                type="number"
+                value={formData.timeout}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === '') {
+                    handleInputChange('timeout', '');
+                  } else {
+                    const numValue = parseInt(value);
+                    if (!isNaN(numValue) && numValue >= 1) {
+                      handleInputChange('timeout', numValue);
+                    }
+                  }
+                }}
+                placeholder="30"
+                min={1}
+                max={300}
+                aria-invalid={!!errors.timeout || undefined}
+                className="rounded-xl"
+              />
+              {errors.timeout && (
+                <p className="text-destructive text-xs">{errors.timeout}</p>
+              )}
+            </div>
+
+            {testResult && (
+              <div
+                className={`rounded-xl p-4 text-sm ${
+                  testResult.success
+                    ? 'bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                    : 'bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                }`}
+              >
+                <p>{testResult.message}</p>
+                {testResult.authorization_url && (
+                  <a
+                    href={testResult.authorization_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const popup = window.open(
+                        testResult.authorization_url,
+                        'oauthPopup',
+                        'width=600,height=700',
+                      );
+                      if (popup) oauthPopupRef.current = popup;
+                    }}
+                    className="mt-1.5 inline-block font-medium underline"
+                  >
+                    {t('settings.tools.mcp.openAuthPage', {
+                      defaultValue: 'Open authorization page',
+                    })}
+                  </a>
+                )}
+              </div>
+            )}
+
+            {discoveredTools.length > 0 && testResult?.success && (
+              <div className="border-border dark:border-border rounded-xl border p-4">
+                <h4 className="mb-2 text-sm font-medium text-gray-900 dark:text-white">
+                  {t('settings.tools.mcp.discoveredTools', {
+                    count: discoveredTools.length,
+                    defaultValue: `Discovered Actions (${discoveredTools.length})`,
+                  })}
+                </h4>
+                <ul className="flex max-h-40 flex-col gap-1.5 overflow-y-auto">
+                  {discoveredTools.map((tool) => (
+                    <li
+                      key={tool.name}
+                      className="flex items-start gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-white/5"
+                    >
+                      <span className="text-primary mt-0.5">&#9679;</span>
+                      <div className="min-w-0">
+                        <span className="font-medium text-gray-900 dark:text-white">
+                          {tool.name}
+                        </span>
+                        {tool.description && (
+                          <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                            {tool.description}
+                          </p>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {errors.general && (
+              <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                {errors.general}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="px-6 py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
+            <button
+              onClick={testConnection}
+              disabled={testing}
+              className="border-border dark:border-border dark:text-foreground hover:bg-accent dark:hover:bg-muted/50 w-full rounded-3xl border px-6 py-2 text-sm font-medium transition-all disabled:opacity-50 sm:w-auto"
+            >
+              {testing ? (
+                <div className="flex items-center justify-center">
+                  <Spinner size="small" />
+                  <span className="ml-2">
+                    {t('settings.tools.mcp.testing')}
+                  </span>
+                </div>
+              ) : (
+                t('settings.tools.mcp.testConnection')
+              )}
+            </button>
+
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:gap-3">
+              <button
+                onClick={() => {
+                  setModalState('INACTIVE');
+                  resetForm();
+                }}
+                className="dark:text-foreground hover:bg-accent dark:hover:bg-muted/50 w-full cursor-pointer rounded-3xl px-6 py-2 text-sm font-medium sm:w-auto"
+              >
+                {t('settings.tools.mcp.cancel')}
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={loading || !saveActive}
+                className="bg-primary hover:bg-primary/90 w-full rounded-3xl px-6 py-2 text-sm font-medium text-white transition-all disabled:opacity-50 sm:w-auto"
+              >
+                {loading ? (
                   <div className="flex items-center justify-center">
                     <Spinner size="small" />
                     <span className="ml-2">
-                      {t('settings.tools.mcp.testing')}
+                      {t('settings.tools.mcp.saving')}
                     </span>
                   </div>
                 ) : (
-                  t('settings.tools.mcp.testConnection')
+                  t('settings.tools.mcp.save')
                 )}
               </button>
-
-              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:gap-3">
-                <button
-                  onClick={() => {
-                    setModalState('INACTIVE');
-                    resetForm();
-                  }}
-                  className="dark:text-foreground hover:bg-accent dark:hover:bg-muted/50 w-full cursor-pointer rounded-3xl px-6 py-2 text-sm font-medium sm:w-auto"
-                >
-                  {t('settings.tools.mcp.cancel')}
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={loading || !saveActive}
-                  className="bg-primary hover:bg-primary/90 w-full rounded-3xl px-6 py-2 text-sm font-medium text-white transition-all disabled:opacity-50 sm:w-auto"
-                >
-                  {loading ? (
-                    <div className="flex items-center justify-center">
-                      <Spinner size="small" />
-                      <span className="ml-2">
-                        {t('settings.tools.mcp.saving')}
-                      </span>
-                    </div>
-                  ) : (
-                    t('settings.tools.mcp.save')
-                  )}
-                </button>
-              </div>
             </div>
           </div>
         </div>
-      </WrapperComponent>
-    )
+      </div>
+    </Modal>
   );
 }

@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import WrapperModal from '../modals/WrapperModal';
+import { Modal } from '../components/ui/modal';
 import Dropdown from '../components/Dropdown';
 import BookIcon from '../assets/book.svg';
 import userService from '../api/services/userService';
@@ -750,19 +750,25 @@ export default function PromptsModal({
     view = <></>;
   }
 
-  return modalState === 'ACTIVE' ? (
-    <WrapperModal
-      close={() => {
-        setModalState('INACTIVE');
-        if (type === 'ADD') {
-          setNewPromptName('');
-          setNewPromptContent('');
+  return (
+    <Modal
+      open={modalState === 'ACTIVE'}
+      onOpenChange={(o) => {
+        if (!o) {
+          setModalState('INACTIVE');
+          if (type === 'ADD') {
+            setNewPromptName('');
+            setNewPromptContent('');
+          }
         }
       }}
+      hideTitle
+      title={type === 'ADD' ? 'Add Prompt' : 'Edit Prompt'}
+      size="lg"
       className="bg-card dark:bg-card mx-4 mt-16 w-[95vw] max-w-[650px] rounded-2xl px-4 py-4 sm:px-6 sm:py-6 md:max-w-[860px] md:px-8 md:py-6 lg:max-w-[980px]"
       contentClassName="!overflow-visible"
     >
       {view}
-    </WrapperModal>
-  ) : null;
+    </Modal>
+  );
 }

@@ -9,7 +9,7 @@ import { getSessionToken } from '../utils/providerUtils';
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
 import ToggleSwitch from '../components/ToggleSwitch';
-import WrapperModal from '../modals/WrapperModal';
+import { Modal } from '../components/ui/modal';
 import { ActiveState, Doc } from '../models/misc';
 
 import { getDocs } from '../preferences/preferenceApi';
@@ -875,8 +875,12 @@ function Upload({
     );
   };
   return (
-    <WrapperModal
-      close={handleClose}
+    <Modal
+      open={true}
+      onOpenChange={(o) => !o && handleClose()}
+      hideTitle
+      title={t('modals.uploadDoc.label')}
+      size="lg"
       className="max-h-[90vh] w-11/12 sm:max-h-none sm:w-auto sm:min-w-[600px] md:min-w-[700px]"
       contentClassName="max-h-[80vh] sm:max-h-none"
     >
@@ -961,7 +965,7 @@ function Upload({
           )}
         </div>
       </div>
-    </WrapperModal>
+    </Modal>
   );
 }
 

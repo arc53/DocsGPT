@@ -9,7 +9,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
-import WrapperComponent from './WrapperModal';
+import { Modal } from '../components/ui/modal';
 
 import type { CreateCustomModelPayload, CustomModel } from '../models/types';
 
@@ -285,12 +285,18 @@ export default function CustomModelModal({
     }
   };
 
-  if (modalState !== 'ACTIVE') return null;
-
   return (
-    <WrapperComponent
-      close={closeModal}
+    <Modal
+      open={modalState === 'ACTIVE'}
+      onOpenChange={(o) => !o && closeModal()}
       isPerformingTask={saving}
+      hideTitle
+      title={
+        isEditMode
+          ? t('settings.customModels.editTitle')
+          : t('settings.customModels.addTitle')
+      }
+      size="lg"
       className="max-w-[600px] md:w-[80vw] lg:w-[60vw]"
     >
       <div className="flex h-full flex-col">
@@ -567,7 +573,7 @@ export default function CustomModelModal({
           </div>
         </div>
       </div>
-    </WrapperComponent>
+    </Modal>
   );
 }
 
