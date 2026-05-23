@@ -103,7 +103,7 @@ export default function ToolApprovalToast() {
         ({ eventId, conversationId }) => (
           <div
             key={eventId}
-            className="border-border bg-card w-[271px] overflow-hidden rounded-2xl border shadow-[0px_24px_48px_0px_#00000029]"
+            className="border-border bg-card shadow-toast w-[271px] overflow-hidden rounded-2xl border"
           >
             <div className="bg-accent/50 dark:bg-muted flex items-center justify-between px-4 py-3">
               <h3 className="font-inter dark:text-foreground text-[14px] leading-[16.5px] font-medium text-black">

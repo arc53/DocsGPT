@@ -1738,7 +1738,7 @@ function WorkflowBuilderInner() {
                   className="absolute inset-0 z-10"
                   onClick={handlePanelBackdropClick}
                 />
-                <div className="border-border bg-card absolute top-4 right-4 z-20 w-96 rounded-2xl border shadow-[0px_4px_40px_-3px_#0000001A]">
+                <div className="border-border bg-card shadow-modal absolute top-4 right-4 z-20 w-96 rounded-2xl border">
                   <div className="border-border flex items-center justify-between border-b p-4">
                     <h3 className="font-semibold text-gray-900 dark:text-white">
                       {selectedNode.type === 'start' && 'Start Node'}

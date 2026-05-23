@@ -12,6 +12,8 @@ layer(base);
   --font-mono:
     'IBMPlexMono-Medium', ui-monospace, SFMono-Regular, Menlo, Consolas,
     monospace;
+  --shadow-modal: 0px 4px 40px -3px #0000001a;
+  --shadow-toast: 0px 24px 48px 0px #00000029;
 }
 
 /*

@@ -66,7 +66,7 @@ export default function UploadToast() {
       aria-atomic="false"
     >
       <div
-        className={`border-border bg-card w-[271px] overflow-hidden rounded-2xl border shadow-[0px_24px_48px_0px_#00000029] transition-all duration-300`}
+        className={`border-border bg-card shadow-toast w-[271px] overflow-hidden rounded-2xl border transition-all duration-300`}
       >
         <div
           className={`flex items-center justify-between px-4 py-3 ${
