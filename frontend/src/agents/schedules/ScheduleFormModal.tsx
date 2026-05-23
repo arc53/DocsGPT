@@ -303,20 +303,22 @@ function FrequencyTabs({ frequency, onChange, labels }: FrequencyTabsProps) {
       {FREQUENCIES.map((f) => {
         const active = f === frequency;
         return (
-          <button
+          <Button
             key={f}
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => onChange(f)}
             className={cn(
-              'flex-1 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+              'h-auto flex-1 rounded-full px-3 py-1.5 text-xs font-medium',
               active
-                ? 'bg-card text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground',
+                ? 'bg-card text-foreground hover:bg-card shadow-sm'
+                : 'text-muted-foreground hover:text-foreground hover:bg-transparent',
             )}
             aria-pressed={active}
           >
             {labels[f]}
-          </button>
+          </Button>
         );
       })}
     </div>

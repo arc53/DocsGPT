@@ -744,20 +744,23 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         )}
         <div className="flex flex-wrap items-center gap-2">
           {hasChanges && (
-            <button
-              className="text-primary dark:text-foreground rounded-3xl px-2 py-2 text-sm font-medium"
+            <Button
+              type="button"
+              variant="ghost"
               onClick={handleCancel}
+              className="text-primary dark:text-foreground rounded-3xl px-2 hover:bg-transparent"
             >
               {t('agents.form.buttons.cancel')}
-            </button>
+            </Button>
           )}
           {modeConfig[effectiveMode].showSaveDraft && (
-            <button
+            <Button
+              type="button"
               disabled={isJsonSchemaInvalid()}
-              className={`border-primary text-primary hover:bg-primary/90 flex min-w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-white ${
-                isJsonSchemaInvalid() ? 'cursor-not-allowed opacity-30' : ''
-              }`}
               onClick={handleSaveDraft}
+              className={`border-primary text-primary hover:bg-primary/90 min-w-28 rounded-3xl border border-solid bg-transparent px-5 whitespace-nowrap hover:text-white ${
+                isJsonSchemaInvalid() ? 'disabled:opacity-30' : ''
+              }`}
             >
               <span className="flex items-center justify-center transition-all duration-200">
                 {draftLoading ? (
@@ -766,12 +769,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   t('agents.form.buttons.saveDraft')
                 )}
               </span>
-            </button>
+            </Button>
           )}
-          <button
+          <Button
+            type="button"
             disabled={!isPublishable() || !hasChanges}
-            className={`${!isPublishable() || !hasChanges ? 'cursor-not-allowed opacity-30' : ''} bg-primary hover:bg-primary/90 flex min-w-28 items-center justify-center rounded-3xl px-5 py-2 text-sm font-medium whitespace-nowrap text-white`}
             onClick={handlePublish}
+            className={`${!isPublishable() || !hasChanges ? 'disabled:opacity-30' : ''} min-w-28 rounded-3xl px-5 whitespace-nowrap text-white`}
           >
             <span className="flex items-center justify-center transition-all duration-200">
               {publishLoading ? (
@@ -780,7 +784,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 modeConfig[effectiveMode].buttonText
               )}
             </span>
-          </button>
+          </Button>
           {modeConfig[effectiveMode].showAccessDetails && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -849,10 +853,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             </h2>
             <div className="mt-3">
               <div className="flex flex-wrap items-center gap-1">
-                <button
+                <Button
+                  type="button"
+                  variant="outline"
                   ref={sourceAnchorButtonRef}
                   onClick={() => setIsSourcePopupOpen(!isSourcePopupOpen)}
-                  className={`border-border bg-card dark:border-border w-full truncate rounded-3xl border px-5 py-3 text-left text-sm ${
+                  className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
                     selectedSourceIds.size > 0
                       ? 'text-foreground dark:text-foreground'
                       : 'dark:text-muted-foreground text-gray-400'
@@ -874,7 +880,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         .filter(Boolean)
                         .join(', ')
                     : t('agents.form.placeholders.selectSources')}
-                </button>
+                </Button>
                 <MultiSelectPopup
                   isOpen={isSourcePopupOpen}
                   onClose={() => setIsSourcePopupOpen(false)}
@@ -968,12 +974,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   }}
                 />
               </div>
-              <button
-                className="border-primary text-primary hover:bg-primary/90 min-w-20 shrink-0 basis-full rounded-3xl border border-solid px-5 py-3 text-sm whitespace-nowrap transition-colors hover:text-white sm:basis-auto"
+              <Button
+                type="button"
                 onClick={() => setAddPromptModal('ACTIVE')}
+                className="border-primary text-primary hover:bg-primary/90 h-auto min-w-20 shrink-0 basis-full rounded-3xl border border-solid bg-transparent px-5 py-3 whitespace-nowrap hover:text-white sm:basis-auto"
               >
                 {t('agents.form.buttons.add')}
-              </button>
+              </Button>
             </div>
           </div>
           <div className="bg-card rounded-[30px] px-6 py-3">
@@ -981,10 +988,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               {t('agents.form.sections.tools')}
             </h2>
             <div className="mt-3 flex flex-wrap items-center gap-1">
-              <button
+              <Button
+                type="button"
+                variant="outline"
                 ref={toolAnchorButtonRef}
                 onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
-                className={`border-border bg-card dark:border-border w-full truncate rounded-3xl border px-5 py-3 text-left text-sm ${
+                className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
                   selectedTools.length > 0
                     ? 'text-foreground dark:text-foreground'
                     : 'dark:text-muted-foreground text-gray-400'
@@ -996,7 +1005,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       .filter(Boolean)
                       .join(', ')
                   : t('agents.form.placeholders.selectTools')}
-              </button>
+              </Button>
               <MultiSelectPopup
                 isOpen={isToolsPopupOpen}
                 onClose={() => setIsToolsPopupOpen(false)}
@@ -1053,10 +1062,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               {t('agents.form.sections.models')}
             </h2>
             <div className="mt-3 flex flex-col gap-3">
-              <button
+              <Button
+                type="button"
+                variant="outline"
                 ref={modelAnchorButtonRef}
                 onClick={() => setIsModelsPopupOpen(!isModelsPopupOpen)}
-                className={`border-border bg-card dark:border-border w-full truncate rounded-3xl border px-5 py-3 text-left text-sm ${
+                className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
                   selectedModelIds.size > 0
                     ? 'text-foreground dark:text-foreground'
                     : 'dark:text-muted-foreground text-gray-400'
@@ -1068,7 +1079,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       .map((m) => m.display_name)
                       .join(', ')
                   : t('agents.form.placeholders.selectModels')}
-              </button>
+              </Button>
               <MultiSelectPopup
                 isOpen={isModelsPopupOpen}
                 onClose={() => setIsModelsPopupOpen(false)}
@@ -1135,11 +1146,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             </div>
           </div>
           <div className="bg-card rounded-[30px] px-6 py-3">
-            <button
+            <Button
+              type="button"
+              variant="ghost"
               onClick={() =>
                 setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)
               }
-              className="flex w-full items-center justify-between text-left focus:outline-none"
+              className="h-auto w-full justify-between px-0 py-0 text-left hover:bg-transparent"
             >
               <div>
                 <h2 className="text-lg font-semibold">
@@ -1148,7 +1161,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </div>
               <div className="ml-4 flex items-center">
                 <svg
-                  className={`h-5 w-5 transform transition-transform duration-200 ${
+                  className={`size-5 transform transition-transform duration-200 ${
                     isAdvancedSectionExpanded ? 'rotate-180' : ''
                   }`}
                   fill="none"
@@ -1163,7 +1176,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   />
                 </svg>
               </div>
-            </button>
+            </Button>
             {isAdvancedSectionExpanded && (
               <div className="mt-3">
                 <div>
@@ -1376,10 +1389,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 </div>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="destructive-outline"
                   size="sm"
                   onClick={() => setDeleteConfirmation('ACTIVE')}
-                  className="text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0"
+                  className="shrink-0"
                 >
                   {t('agents.form.dangerZone.deleteButton')}
                 </Button>

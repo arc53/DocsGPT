@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
+import { Button } from '../../components/ui/button';
 import { selectToken } from '../../preferences/preferenceSlice';
 import type { AppDispatch, RootState } from '../../store';
 import type { ScheduleRun } from '../types/schedule';
@@ -69,13 +70,15 @@ export default function RunLog({ scheduleId, onSelect }: RunLogProps) {
             <td className="py-2">{run.trigger_source}</td>
             <td className="py-2">
               {onSelect && (
-                <button
+                <Button
                   type="button"
+                  variant="link"
+                  size="sm"
                   onClick={() => onSelect(run)}
-                  className="text-primary text-xs underline"
+                  className="h-auto p-0 text-xs underline"
                 >
                   Details
-                </button>
+                </Button>
               )}
             </td>
           </tr>

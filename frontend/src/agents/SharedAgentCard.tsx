@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 
 import EditIcon from '../assets/edit.svg';
 import AgentImage from '../components/AgentImage';
+import { Button } from '../components/ui/button';
 import { getToolDisplayName } from '../utils/toolUtils';
 import { Agent } from './types';
 
@@ -37,15 +38,17 @@ export default function SharedAgentCard({
           </p>
         </div>
         {onEdit && (
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={onEdit}
-            className="border-border hover:bg-accent text-foreground flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors"
+            className="shrink-0 gap-1.5 rounded-full"
             aria-label={t('agents.edit')}
           >
             <img src={EditIcon} alt="" className="h-3.5 w-3.5" />
             {t('agents.edit')}
-          </button>
+          </Button>
         )}
       </div>
       {hasSharedMetadata && (

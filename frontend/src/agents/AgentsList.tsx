@@ -6,6 +6,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import userService from '../api/services/userService';
 import Search from '../assets/search.svg';
 import Spinner from '../components/Spinner';
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import {
   setConversation,
@@ -183,17 +184,19 @@ export default function AgentsList() {
 
         <div className="flex flex-wrap gap-2">
           {FILTER_TABS.map((tab) => (
-            <button
+            <Button
               key={tab.id}
+              type="button"
+              variant="ghost"
               onClick={() => setActiveFilter(tab.id)}
-              className={`rounded-full px-4 py-2 text-sm transition-colors ${
+              className={`rounded-full ${
                 activeFilter === tab.id
                   ? 'bg-border text-foreground dark:bg-accent dark:text-white'
-                  : 'dark:text-gray text-muted-foreground hover:bg-accent/50 bg-transparent'
+                  : 'dark:text-gray text-muted-foreground hover:bg-accent/50'
               }`}
             >
               {t(tab.labelKey)}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -410,15 +413,16 @@ function AgentSection({
       <div className="text-muted-foreground mt-12 flex flex-col items-center justify-center gap-3">
         <p>{t(`agents.sections.${config.id}.emptyState`)}</p>
         {config.showNewAgentButton && (
-          <button
-            className="bg-primary hover:bg-primary/90 rounded-full px-4 py-2 text-sm text-white"
+          <Button
+            type="button"
+            className="rounded-full text-white"
             onClick={() => {
               setModalFolderId(null);
               setShowAgentTypeModal(true);
             }}
           >
             {t('agents.newAgent')}
-          </button>
+          </Button>
         )}
       </div>
     );
@@ -458,24 +462,28 @@ function AgentSection({
           <h2 className="text-foreground flex flex-wrap items-center gap-2 text-[18px] font-semibold">
             {config.id === 'user' && folderPath.length > 0 ? (
               <>
-                <button
+                <Button
+                  type="button"
+                  variant="link"
                   onClick={() => handleNavigateToPath(-1)}
-                  className="text-muted-foreground hover:text-foreground dark:hover:text-white"
+                  className="text-muted-foreground hover:text-foreground h-auto p-0 text-[18px] font-semibold no-underline hover:no-underline dark:hover:text-white"
                 >
                   {t(`agents.sections.${config.id}.title`)}
-                </button>
+                </Button>
                 {breadcrumbItems.map((item, index) => (
                   <span key={item.id} className="flex items-center gap-2">
                     <ChevronIcon />
                     {index === breadcrumbItems.length - 1 ? (
                       <span>{item.name}</span>
                     ) : (
-                      <button
+                      <Button
+                        type="button"
+                        variant="link"
                         onClick={() => handleNavigateToPath(index)}
-                        className="text-muted-foreground hover:text-foreground dark:hover:text-white"
+                        className="text-muted-foreground hover:text-foreground h-auto p-0 text-[18px] font-semibold no-underline hover:no-underline dark:hover:text-white"
                       >
                         {item.name}
-                      </button>
+                      </Button>
                     )}
                   </span>
                 ))}
@@ -516,26 +524,29 @@ function AgentSection({
                 autoFocus
               />
             ) : (
-              <button
-                className="border-border bg-card text-foreground hover:bg-accent shrink-0 rounded-full border px-4 py-2 text-sm whitespace-nowrap"
+              <Button
+                type="button"
+                variant="outline"
+                className="bg-card shrink-0 rounded-full whitespace-nowrap"
                 onClick={() => {
                   setIsCreatingFolder(true);
                   setTimeout(() => newFolderInputRef.current?.focus(), 0);
                 }}
               >
                 {t('agents.folders.newFolder')}
-              </button>
+              </Button>
             ))}
           {config.showNewAgentButton && (
-            <button
-              className="bg-primary hover:bg-primary/90 shrink-0 rounded-full px-4 py-2 text-sm whitespace-nowrap text-white"
+            <Button
+              type="button"
+              className="shrink-0 rounded-full whitespace-nowrap text-white"
               onClick={() => {
                 setModalFolderId(currentFolderId);
                 setShowAgentTypeModal(true);
               }}
             >
               {t('agents.newAgent')}
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -585,15 +596,16 @@ function AgentSection({
                     : t(`agents.sections.${config.id}.emptyState`)}
                 </p>
                 {config.showNewAgentButton && !currentFolderId && (
-                  <button
-                    className="bg-primary hover:bg-primary/90 ml-2 rounded-full px-4 py-2 text-sm text-white"
+                  <Button
+                    type="button"
+                    className="ml-2 rounded-full text-white"
                     onClick={() => {
                       setModalFolderId(currentFolderId);
                       setShowAgentTypeModal(true);
                     }}
                   >
                     {t('agents.newAgent')}
-                  </button>
+                  </Button>
                 )}
               </div>
             ) : null}

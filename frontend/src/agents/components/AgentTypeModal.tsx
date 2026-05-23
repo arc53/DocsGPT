@@ -37,8 +37,9 @@ export default function AgentTypeModal({
     >
       <div className="flex flex-col gap-4">
         <button
+          type="button"
           onClick={() => handleSelect('normal')}
-          className="hover:border-primary hover:bg-primary/5 dark:hover:border-primary dark:hover:bg-primary/10 group dark:border-border flex items-start gap-5 rounded-xl border-2 border-gray-200 p-5 text-left transition-all"
+          className="hover:border-primary hover:bg-primary/5 dark:hover:border-primary dark:hover:bg-primary/10 focus-visible:border-ring focus-visible:ring-ring/50 group dark:border-border flex items-start gap-5 rounded-xl border-2 border-gray-200 p-5 text-left transition-all outline-none focus-visible:ring-[3px]"
         >
           <div className="dark:bg-primary/20 bg-primary/10 text-primary group-hover:bg-primary/90 flex h-14 w-14 shrink-0 items-center justify-center rounded-xl transition-colors group-hover:text-white dark:text-purple-300">
             <Bot size={28} />
@@ -55,8 +56,9 @@ export default function AgentTypeModal({
         </button>
 
         <button
+          type="button"
           onClick={() => handleSelect('workflow')}
-          className="hover:border-primary hover:bg-primary/5 dark:hover:border-primary dark:hover:bg-primary/10 group dark:border-border flex items-start gap-5 rounded-xl border-2 border-gray-200 p-5 text-left transition-all"
+          className="hover:border-primary hover:bg-primary/5 dark:hover:border-primary dark:hover:bg-primary/10 focus-visible:border-ring focus-visible:ring-ring/50 group dark:border-border flex items-start gap-5 rounded-xl border-2 border-gray-200 p-5 text-left transition-all outline-none focus-visible:ring-[3px]"
         >
           <div className="dark:bg-primary/20 bg-primary/10 text-primary group-hover:bg-primary flex h-14 w-14 shrink-0 items-center justify-center rounded-xl transition-colors group-hover:text-white dark:text-purple-300">
             <Workflow size={28} />
