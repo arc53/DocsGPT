@@ -34,7 +34,7 @@ import {
 import ConversationTile from './conversation/ConversationTile';
 import { useDarkTheme, useMediaQuery } from './hooks';
 import useTokenAuth from './hooks/useTokenAuth';
-import DeleteConvModal from './modals/DeleteConvModal';
+import ConfirmationModal from './modals/ConfirmationModal';
 import JWTModal from './modals/JWTModal';
 import SearchConversationsModal from './modals/SearchConversationsModal';
 import { ActiveState } from './models/misc';
@@ -654,10 +654,13 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </div>
         </div>
       </div>
-      <DeleteConvModal
+      <ConfirmationModal
+        message={t('modals.deleteConv.confirm')}
         modalState={modalStateDeleteConv}
-        setModalState={setModalStateDeleteConv}
-        handleDeleteAllConv={handleDeleteAllConversations}
+        setModalState={(state) => dispatch(setModalStateDeleteConv(state))}
+        submitLabel={t('modals.deleteConv.delete')}
+        handleSubmit={handleDeleteAllConversations}
+        variant="danger"
       />
       {uploadModalState === 'ACTIVE' && (
         <Upload
