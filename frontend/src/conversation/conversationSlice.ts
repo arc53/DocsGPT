@@ -1,9 +1,18 @@
-import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
+import {
+  createAsyncThunk,
+  createListenerMiddleware,
+  createSlice,
+  PayloadAction,
+} from '@reduxjs/toolkit';
 
 import conversationService from '../api/services/conversationService';
+import {
+  sseEventReceived,
+  type SSEEvent,
+} from '../notifications/notificationsSlice';
 import { getConversations } from '../preferences/preferenceApi';
 import { setConversations } from '../preferences/preferenceSlice';
-import store from '../store';
+import type { RootState } from '../store';
 import {
   clearAttachments,
   selectCompletedAttachments,
@@ -1026,8 +1035,6 @@ export const conversationSlice = createSlice({
   },
 });
 
-type RootState = ReturnType<typeof store.getState>;
-
 export const selectQueries = (state: RootState) => state.conversation.queries;
 
 export const selectStatus = (state: RootState) => state.conversation.status;
@@ -1052,3 +1059,45 @@ export const {
   updateMessageMeta,
 } = conversationSlice.actions;
 export default conversationSlice.reducer;
+
+// Listener (not a reducer) so a scheduled message appended to the open
+// chat can dispatch loadConversation + sidebar refresh.
+export const conversationListenerMiddleware = createListenerMiddleware();
+
+conversationListenerMiddleware.startListening({
+  actionCreator: sseEventReceived,
+  effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
+    const envelope = action.payload;
+    if (envelope.type !== 'schedule.message.appended') return;
+    const payload = (envelope.payload || {}) as Record<string, unknown>;
+    const conversationId =
+      (payload.conversation_id as string | undefined) || '';
+    if (!conversationId) return;
+
+    const state = listenerApi.getState() as RootState;
+    const token = state.preference.token;
+
+    // Skip mid-stream: loadConversation -> updateConversationId flips status
+    // to 'idle', and the next SSE chunk dies on the 'idle' guard in
+    // updateStreamingQuery. Defer the refresh to the user's next navigation.
+    if (
+      state.conversation.conversationId === conversationId &&
+      state.conversation.status !== 'loading'
+    ) {
+      listenerApi.dispatch(
+        loadConversation({ id: conversationId, force: true }),
+      );
+    }
+
+    // Refresh sidebar; server reorders by updated_at which just bumped.
+    try {
+      const fetched = await getConversations(token);
+      listenerApi.dispatch(setConversations(fetched));
+    } catch (error) {
+      console.error(
+        'schedule.message.appended: conversations refresh failed',
+        error,
+      );
+    }
+  },
+});

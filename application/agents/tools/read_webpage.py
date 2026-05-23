@@ -1,7 +1,6 @@
-import requests
 from markdownify import markdownify
 from application.agents.tools.base import Tool
-from application.core.url_validation import validate_url, SSRFError
+from application.security.safe_url import UnsafeUserUrlError, pinned_request
 
 class ReadWebpageTool(Tool):
     """
@@ -31,28 +30,24 @@ class ReadWebpageTool(Tool):
         if not url:
             return "Error: URL parameter is missing."
 
-        # Validate URL to prevent SSRF attacks
         try:
-            url = validate_url(url)
-        except SSRFError as e:
-            return f"Error: URL validation failed - {e}"
+            response = pinned_request(
+                "GET",
+                url,
+                headers={'User-Agent': 'DocsGPT-Agent/1.0'},
+                timeout=10,
+            )
+            response.raise_for_status()
 
-        try:
-            response = requests.get(url, timeout=10, headers={'User-Agent': 'DocsGPT-Agent/1.0'})
-            response.raise_for_status()  # Raise an exception for HTTP errors (4xx or 5xx)
-            
             html_content = response.text
-            #soup = BeautifulSoup(html_content, 'html.parser')
-            
-            
             markdown_content = markdownify(html_content, heading_style="ATX", newline_style="BACKSLASH")
-            
+
             return markdown_content
 
-        except requests.exceptions.RequestException as e:
-            return f"Error fetching URL {url}: {e}"
+        except UnsafeUserUrlError as e:
+            return f"Error: URL validation failed - {e}"
         except Exception as e:
-            return f"Error processing URL {url}: {e}"
+            return f"Error fetching URL {url}: {e}"
 
     def get_actions_metadata(self):
         """

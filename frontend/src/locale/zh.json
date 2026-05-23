@@ -161,6 +161,7 @@
       "manageTools": "前往工具",
       "edit": "编辑",
       "delete": "删除",
+      "builtIn": "内置",
       "deleteWarning": "您确定要删除工具 \"{{toolName}}\" 吗？",
       "unsavedChanges": "您有未保存的更改，如果不保存就离开将会丢失。",
       "leaveWithoutSaving": "不保存离开",
@@ -479,6 +480,11 @@
       "create": "创建",
       "option": "允许用户进行更多查询。"
     },
+    "searchConversations": {
+      "searchPlaceholder": "搜索对话",
+      "noResults": "未找到结果",
+      "loading": "加载中..."
+    },
     "configTool": {
       "title": "工具配置",
       "type": "类型",
@@ -658,7 +664,8 @@
         "delete": "删除",
         "logs": "日志",
         "accessDetails": "访问详情",
-        "add": "添加"
+        "add": "添加",
+        "moreActions": "更多操作"
       },
       "sections": {
         "meta": "元数据",
@@ -722,6 +729,11 @@
       },
       "preview": {
         "publishedPreview": "已发布的代理可以在此处预览"
+      },
+      "dangerZone": {
+        "heading": "危险区域",
+        "description": "删除此代理将无法恢复，并会移除其所有计划和运行历史。",
+        "deleteButton": "删除代理"
       },
       "externalKb": "外部知识库"
     },

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from sqlalchemy import Connection
 
@@ -15,6 +16,9 @@ from application.storage.db.repositories.reconciliation import (
     ReconciliationRepository,
 )
 from application.storage.db.repositories.stack_logs import StackLogsRepository
+
+if TYPE_CHECKING:
+    from application.storage.db.repositories.schedules import SchedulesRepository
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +50,7 @@ def run_reconciliation() -> Dict[str, Any]:
         "tool_calls_failed": 0,
         "ingests_stalled": 0,
         "idempotency_pending_failed": 0,
+        "schedule_runs_failed": 0,
     }
 
     with engine.begin() as conn:
@@ -169,7 +174,99 @@ def run_reconciliation() -> Dict[str, Any]:
                 },
             )
 
+    # Q6: scheduler runs stuck in 'running' past the soft-time-limit window.
+    from application.storage.db.repositories.schedule_runs import (
+        ScheduleRunsRepository,
+    )
+    from application.storage.db.repositories.schedules import SchedulesRepository
+    from application.core.settings import settings as _settings
+
+    stuck_age = max(
+        15, int(_settings.SCHEDULE_RUN_TIMEOUT // 60) + 5,
+    )
+    with engine.begin() as conn:
+        runs_repo = ScheduleRunsRepository(conn)
+        schedules_repo = SchedulesRepository(conn)
+        for run in runs_repo.list_stuck_running(age_minutes=stuck_age):
+            runs_repo.update(
+                run["id"],
+                {
+                    "status": "timeout",
+                    "finished_at": datetime.now(timezone.utc),
+                    "error_type": "timeout",
+                    "error": (
+                        "reconciler: schedule_run stuck in 'running' past "
+                        f"{stuck_age} min"
+                    ),
+                },
+            )
+            schedules_repo.bump_failure_count(str(run["schedule_id"]))
+            _terminal_flip_once_schedule(
+                schedules_repo, str(run["schedule_id"]),
+            )
+            summary["schedule_runs_failed"] += 1
+            _emit_alert(
+                conn,
+                name="reconciler_schedule_run_timeout",
+                user_id=run.get("user_id"),
+                detail={
+                    "run_id": str(run["id"]),
+                    "schedule_id": str(run["schedule_id"]),
+                },
+            )
+
+    # Q7: scheduler runs orphaned in 'pending' — dispatcher committed but
+    # apply_async failed (broker outage / crash mid-dispatch).
+    with engine.begin() as conn:
+        runs_repo = ScheduleRunsRepository(conn)
+        schedules_repo = SchedulesRepository(conn)
+        for run in runs_repo.list_stuck_pending(age_minutes=stuck_age):
+            runs_repo.update(
+                run["id"],
+                {
+                    "status": "failed",
+                    "finished_at": datetime.now(timezone.utc),
+                    "error_type": "internal",
+                    "error": (
+                        "reconciler: schedule_run stuck in 'pending' past "
+                        f"{stuck_age} min (worker_never_started)"
+                    ),
+                },
+            )
+            schedules_repo.bump_failure_count(str(run["schedule_id"]))
+            _terminal_flip_once_schedule(
+                schedules_repo, str(run["schedule_id"]),
+            )
+            summary["schedule_runs_failed"] += 1
+            _emit_alert(
+                conn,
+                name="reconciler_schedule_run_pending",
+                user_id=run.get("user_id"),
+                detail={
+                    "run_id": str(run["id"]),
+                    "schedule_id": str(run["schedule_id"]),
+                },
+            )
+
     return summary
+
+
+def _terminal_flip_once_schedule(
+    schedules_repo: "SchedulesRepository", schedule_id: str,
+) -> None:
+    """Flip a once-schedule to 'completed' after its run terminates.
+
+    Recurring schedules keep firing; once-schedules would otherwise read
+    'active forever' since next_run_at is already NULL.
+    """
+    schedule = schedules_repo.get_internal(schedule_id)
+    if schedule is None or schedule.get("trigger_type") != "once":
+        return
+    if schedule.get("status") in {"completed", "cancelled"}:
+        return
+    schedules_repo.update_internal(
+        schedule_id, {"status": "completed", "next_run_at": None},
+    )
 
 
 def _emit_alert(

@@ -325,6 +325,17 @@ class BaseAnswerResource:
                     "Could not set tool_executor.message_id; tool-call correlation will be missing for message_id=%s",
                     reserved_message_id,
                 )
+        # The reservation above may create the conversation row (first turn in
+        # a new chat). Propagate that fresh id to the tool_executor so tools
+        # that need a conversation home (e.g. ``scheduler`` in agentless chats)
+        # see it on the very first call instead of waiting for the next turn.
+        if conversation_id and getattr(agent, "tool_executor", None):
+            try:
+                agent.tool_executor.conversation_id = str(conversation_id)
+            except Exception:
+                logger.debug(
+                    "Could not set tool_executor.conversation_id post-reserve",
+                )
 
         # Per-stream monotonic SSE event id. Allocated by ``_emit`` and
         # threaded through both the wire format (``id: <seq>\\n``) and

@@ -84,6 +84,13 @@ const endpoints = {
     CUSTOM_MODEL: (id: string) => `/api/user/models/${id}`,
     CUSTOM_MODEL_TEST: (id: string) => `/api/user/models/${id}/test`,
     CUSTOM_MODEL_TEST_PAYLOAD: '/api/user/models/test',
+    AGENT_SCHEDULES: (agentId: string) => `/api/agents/${agentId}/schedules`,
+    SCHEDULE: (id: string) => `/api/schedules/${id}`,
+    SCHEDULE_RUN_NOW: (id: string) => `/api/schedules/${id}/run`,
+    SCHEDULE_RUNS: (id: string, limit?: number, offset?: number) =>
+      `/api/schedules/${id}/runs?limit=${limit ?? 50}&offset=${offset ?? 0}`,
+    SCHEDULE_RUN: (id: string, runId: string) =>
+      `/api/schedules/${id}/runs/${runId}`,
   },
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',
@@ -96,6 +103,8 @@ const endpoints = {
     FEEDBACK: '/api/feedback',
     CONVERSATION: (id: string) => `/api/get_single_conversation?id=${id}`,
     CONVERSATIONS: '/api/get_conversations',
+    SEARCH_CONVERSATIONS: (q: string, limit = 30) =>
+      `/api/search_conversations?q=${encodeURIComponent(q)}&limit=${limit}`,
     MESSAGE_TAIL: (messageId: string) => `/api/messages/${messageId}/tail`,
     SHARE_CONVERSATION: (isPromptable: boolean) =>
       `/api/share?isPromptable=${isPromptable}`,

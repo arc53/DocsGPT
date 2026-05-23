@@ -25,48 +25,42 @@ class TestReadWebpageExecuteAction:
         assert "Error" in result
         assert "URL parameter is missing" in result
 
-    @patch("application.agents.tools.read_webpage.validate_url")
-    @patch("application.agents.tools.read_webpage.requests.get")
-    def test_successful_fetch(self, mock_get, mock_validate, tool):
-        mock_validate.return_value = "https://example.com"
+    @patch("application.agents.tools.read_webpage.pinned_request")
+    def test_successful_fetch(self, mock_pinned_request, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.text = "<html><body><h1>Title</h1><p>Content</p></body></html>"
-        mock_get.return_value = mock_resp
+        mock_pinned_request.return_value = mock_resp
 
         result = tool.execute_action("read_webpage", url="https://example.com")
 
         assert "Title" in result
         assert "Content" in result
 
-    @patch("application.agents.tools.read_webpage.validate_url")
-    @patch("application.agents.tools.read_webpage.requests.get")
-    def test_request_error(self, mock_get, mock_validate, tool):
-        mock_validate.return_value = "https://example.com"
-        mock_get.side_effect = requests.exceptions.ConnectionError("refused")
+    @patch("application.agents.tools.read_webpage.pinned_request")
+    def test_request_error(self, mock_pinned_request, tool):
+        mock_pinned_request.side_effect = requests.exceptions.ConnectionError("refused")
 
         result = tool.execute_action("read_webpage", url="https://example.com")
 
         assert "Error fetching URL" in result
 
-    @patch("application.agents.tools.read_webpage.validate_url")
-    def test_ssrf_blocked(self, mock_validate, tool):
-        from application.core.url_validation import SSRFError
+    @patch("application.agents.tools.read_webpage.pinned_request")
+    def test_ssrf_blocked(self, mock_pinned_request, tool):
+        from application.security.safe_url import UnsafeUserUrlError
 
-        mock_validate.side_effect = SSRFError("blocked")
+        mock_pinned_request.side_effect = UnsafeUserUrlError("blocked")
 
         result = tool.execute_action("read_webpage", url="http://169.254.169.254/")
 
         assert "Error" in result
         assert "validation failed" in result
 
-    @patch("application.agents.tools.read_webpage.validate_url")
-    @patch("application.agents.tools.read_webpage.requests.get")
-    def test_http_error(self, mock_get, mock_validate, tool):
-        mock_validate.return_value = "https://example.com/404"
+    @patch("application.agents.tools.read_webpage.pinned_request")
+    def test_http_error(self, mock_pinned_request, tool):
         mock_resp = MagicMock()
         mock_resp.raise_for_status.side_effect = requests.exceptions.HTTPError("404")
-        mock_get.return_value = mock_resp
+        mock_pinned_request.return_value = mock_resp
 
         result = tool.execute_action("read_webpage", url="https://example.com/404")
 

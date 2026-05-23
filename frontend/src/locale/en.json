@@ -162,6 +162,7 @@
       "edit": "Edit",
       "delete": "Delete",
       "reconnect": "Reconnect",
+      "builtIn": "Built-in",
       "authStatus": {
         "connected": "Connected",
         "needsAuth": "Needs Auth",
@@ -491,6 +492,11 @@
       "create": "Create",
       "option": "Allow users to prompt further"
     },
+    "searchConversations": {
+      "searchPlaceholder": "Search conversations",
+      "noResults": "No results found",
+      "loading": "Loading..."
+    },
     "configTool": {
       "title": "Tool Config",
       "type": "Type",
@@ -630,6 +636,18 @@
     "description": "Discover and create custom versions of DocsGPT that combine instructions, extra knowledge, and any combination of skills",
     "newAgent": "New Agent",
     "backToAll": "Back to all agents",
+    "pageHeader": {
+      "crumbs": {
+        "agents": "Agents"
+      },
+      "tabs": {
+        "overview": "Overview",
+        "logs": "Logs",
+        "schedules": "Schedules"
+      },
+      "fallbackName": "Untitled agent",
+      "subnavAriaLabel": "Agent sub-navigation"
+    },
     "searchPlaceholder": "Search...",
     "noSearchResults": "No agents found",
     "tryDifferentSearch": "Try a different search term",
@@ -669,8 +687,10 @@
         "cancel": "Cancel",
         "delete": "Delete",
         "logs": "Logs",
+        "schedules": "Schedules",
         "accessDetails": "Access Details",
-        "add": "Add"
+        "add": "Add",
+        "moreActions": "More actions"
       },
       "sections": {
         "meta": "Meta",
@@ -702,7 +722,10 @@
       "toolsPopup": {
         "title": "Select Tools",
         "searchPlaceholder": "Search tools...",
-        "noOptionsMessage": "No tools available"
+        "noOptionsMessage": "No tools available",
+        "groupBuiltin": "Built-in",
+        "groupDefault": "Default",
+        "groupCustom": "Custom"
       },
       "modelsPopup": {
         "title": "Select Models",
@@ -735,6 +758,11 @@
       "preview": {
         "publishedPreview": "Published agents can be previewed here"
       },
+      "dangerZone": {
+        "heading": "Danger zone",
+        "description": "Deleting this agent is permanent and will remove all its schedules and run history.",
+        "deleteButton": "Delete agent"
+      },
       "externalKb": "External KB"
     },
     "logs": {
@@ -742,6 +770,75 @@
       "lastUsedAt": "Last used at",
       "noUsageHistory": "No usage history",
       "tableHeader": "Agent endpoint logs"
+    },
+    "schedules": {
+      "title": "Agent Schedules",
+      "heading": "Schedules",
+      "newRecurring": "New schedule",
+      "closeForm": "Close form",
+      "edit": "Edit",
+      "recurring": "Recurring",
+      "oneTime": "One-time tasks",
+      "noRecurring": "No recurring schedules yet.",
+      "noOneTime": "No one-time tasks yet.",
+      "pause": "Pause",
+      "resume": "Resume",
+      "runNow": "Run now",
+      "delete": "Delete",
+      "deleteConfirm": "Delete this schedule? This will also delete its run history. This action cannot be undone.",
+      "cancel": "Cancel",
+      "showRuns": "Show runs",
+      "hideRuns": "Hide runs",
+      "modal": {
+        "titleCreate": "New schedule",
+        "titleEdit": "Edit schedule",
+        "namePlaceholder": "Name of task",
+        "frequency": {
+          "once": "Once",
+          "daily": "Daily",
+          "weekly": "Weekly",
+          "monthly": "Monthly",
+          "yearly": "Yearly"
+        },
+        "on": "On",
+        "at": "At",
+        "pickDate": "Pick a date",
+        "timezone": "Timezone",
+        "timezonePlaceholder": "Select timezone",
+        "timezoneSearchPlaceholder": "Search timezone…",
+        "timezoneEmpty": "No timezone found.",
+        "instructionsLabel": "Instructions",
+        "instructionsPlaceholder": "Enter prompt here.",
+        "create": "Create task",
+        "save": "Save changes",
+        "errors": {
+          "instructionRequired": "Instructions are required.",
+          "runAtInPast": "Pick a date/time in the future."
+        },
+        "days": {
+          "mon": "Mon",
+          "tue": "Tue",
+          "wed": "Wed",
+          "thu": "Thu",
+          "fri": "Fri",
+          "sat": "Sat",
+          "sun": "Sun"
+        },
+        "months": {
+          "jan": "Jan",
+          "feb": "Feb",
+          "mar": "Mar",
+          "apr": "Apr",
+          "may": "May",
+          "jun": "Jun",
+          "jul": "Jul",
+          "aug": "Aug",
+          "sep": "Sep",
+          "oct": "Oct",
+          "nov": "Nov",
+          "dec": "Dec"
+        }
+      }
     },
     "shared": {
       "notFound": "No agent found. Please ensure the agent is shared."

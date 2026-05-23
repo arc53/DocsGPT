@@ -12,6 +12,15 @@ import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import CheckmarkIcon from '../assets/checkmark.svg';
 import { useDarkTheme } from '../hooks';
 
+// Chat-popup visibility rule: show defaults (so users can toggle the
+// agentless chat tools on/off) plus any non-builtin user_tools row. Hide
+// pure builtins (agent-only). Dual-registered tools like ``scheduler``
+// carry BOTH flags and stay visible via the ``default`` branch.
+export const isChatToolVisible = (tool: {
+  default?: boolean;
+  builtin?: boolean;
+}): boolean => Boolean(tool.default) || !tool.builtin;
+
 interface ToolsPopupProps {
   isOpen: boolean;
   onClose: () => void;
@@ -104,7 +113,8 @@ export default function ToolsPopup({
         return res.json();
       })
       .then((data) => {
-        setUserTools(data.tools);
+        const filtered = (data.tools || []).filter(isChatToolVisible);
+        setUserTools(filtered);
         setLoading(false);
       })
       .catch((error) => {

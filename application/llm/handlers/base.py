@@ -850,6 +850,79 @@ class LLMHandler(ABC):
                 tools_dict, call, llm_class
             )
             if pause_info:
+                # Headless (scheduled / webhook): synthesize a denial tool message
+                # so the LLM finishes gracefully instead of stalling on a pause
+                # nobody will resolve, then journal so the reconciler sees it.
+                if pause_info.get("pause_type") == "headless_denied":
+                    deny_reason = pause_info.get(
+                        "deny_reason", "Tool blocked in headless mode."
+                    )
+                    args_str = (
+                        json.dumps(call.arguments)
+                        if isinstance(call.arguments, dict)
+                        else (call.arguments or "{}")
+                    )
+                    tool_call_obj = {
+                        "id": pause_info["call_id"],
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": args_str,
+                        },
+                    }
+                    if getattr(call, "thought_signature", None):
+                        tool_call_obj["thought_signature"] = call.thought_signature
+                    updated_messages.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [tool_call_obj],
+                    })
+                    denial_call = ToolCall(
+                        id=pause_info["call_id"],
+                        name=call.name,
+                        arguments=call.arguments,
+                    )
+                    updated_messages.append(
+                        self.create_tool_message(
+                            denial_call,
+                            f"Tool denied (headless): {deny_reason}",
+                        )
+                    )
+                    if hasattr(agent.tool_executor, "headless_denials"):
+                        agent.tool_executor.headless_denials.append(pause_info)
+                    from application.agents.tool_executor import (
+                        _mark_failed,
+                        _record_proposed,
+                    )
+
+                    _record_proposed(
+                        pause_info["call_id"],
+                        pause_info["tool_name"],
+                        pause_info["action_name"],
+                        pause_info.get("arguments") or {},
+                        tool_id=pause_info.get("tool_id"),
+                    )
+                    _mark_failed(
+                        pause_info["call_id"],
+                        f"headless: {deny_reason}",
+                    )
+                    yield {
+                        "type": "tool_call",
+                        "data": {
+                            "tool_name": pause_info["tool_name"],
+                            "call_id": pause_info["call_id"],
+                            "action_name": pause_info.get(
+                                "llm_name", pause_info["name"]
+                            ),
+                            "arguments": pause_info["arguments"],
+                            "status": "denied",
+                            "error": deny_reason,
+                            "error_type": pause_info.get(
+                                "error_type", "tool_not_allowed"
+                            ),
+                        },
+                    }
+                    continue
                 # Yield pause event so the client knows this tool is waiting
                 yield {
                     "type": "tool_call",

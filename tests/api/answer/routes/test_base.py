@@ -246,6 +246,68 @@ class TestCompleteStreamMethod:
                 mock_reserve.assert_called_once()
                 mock_finalize.assert_called_once()
 
+    def test_tool_executor_conversation_id_set_after_reserve(
+        self, mock_mongo_db, flask_app,
+    ):
+        """Regression: ``save_user_question`` may mint a fresh
+        ``conversation_id`` (first turn). The propagation MUST land on
+        ``agent.tool_executor.conversation_id`` BEFORE ``agent.gen`` runs,
+        so tools needing a conversation home (``scheduler`` in an agentless
+        chat) see it on the very first call.
+        """
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+
+            fresh_conv_id = str(uuid.uuid4())
+            seen_conv_id_on_gen: dict = {}
+
+            mock_agent = MagicMock()
+            tool_executor = MagicMock()
+            # Start with no conversation_id — the propagation must set it.
+            tool_executor.conversation_id = None
+            mock_agent.tool_executor = tool_executor
+
+            def _gen(**_kwargs):
+                # Capture the executor's id at the exact moment gen runs;
+                # this is what tools see when called from the agent loop.
+                seen_conv_id_on_gen["value"] = (
+                    mock_agent.tool_executor.conversation_id
+                )
+                yield {"answer": "ok"}
+
+            mock_agent.gen.side_effect = _gen
+            mock_agent.gen.return_value = None  # use side_effect instead
+
+            with patch.object(
+                resource.conversation_service, "save_user_question"
+            ) as mock_reserve, patch.object(
+                resource.conversation_service, "finalize_message",
+                return_value=True,
+            ):
+                mock_reserve.return_value = {
+                    "conversation_id": fresh_conv_id,
+                    "message_id": str(uuid.uuid4()),
+                    "request_id": "req-prop",
+                }
+
+                list(
+                    resource.complete_stream(
+                        question="schedule something",
+                        agent=mock_agent,
+                        conversation_id=None,  # caller had no conv yet
+                        user_api_key=None,
+                        decoded_token={"sub": "user-prop"},
+                        should_save_conversation=True,
+                    )
+                )
+
+            # The fresh id reserved by save_user_question must reach the
+            # tool_executor before agent.gen consumes it.
+            assert seen_conv_id_on_gen["value"] == fresh_conv_id
+            assert tool_executor.conversation_id == fresh_conv_id
+
 
 
 @pytest.mark.unit

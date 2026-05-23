@@ -161,6 +161,7 @@
       "manageTools": "前往工具",
       "edit": "編輯",
       "delete": "刪除",
+      "builtIn": "內建",
       "deleteWarning": "您確定要刪除工具 \"{{toolName}}\" 嗎？",
       "unsavedChanges": "您有未儲存的變更，如果不儲存就離開將會遺失。",
       "leaveWithoutSaving": "不儲存離開",
@@ -479,6 +480,11 @@
       "create": "建立",
       "option": "允許使用者進行更多查詢"
     },
+    "searchConversations": {
+      "searchPlaceholder": "搜尋對話",
+      "noResults": "未找到結果",
+      "loading": "載入中..."
+    },
     "configTool": {
       "title": "工具設定",
       "type": "類型",
@@ -658,7 +664,8 @@
         "delete": "刪除",
         "logs": "日誌",
         "accessDetails": "存取詳情",
-        "add": "新增"
+        "add": "新增",
+        "moreActions": "更多操作"
       },
       "sections": {
         "meta": "中繼資料",
@@ -722,6 +729,11 @@
       },
       "preview": {
         "publishedPreview": "已發佈的代理可以在此處預覽"
+      },
+      "dangerZone": {
+        "heading": "危險區域",
+        "description": "刪除此代理將無法復原，並會移除其所有排程和執行歷史。",
+        "deleteButton": "刪除代理"
       },
       "externalKb": "外部知識庫"
     },

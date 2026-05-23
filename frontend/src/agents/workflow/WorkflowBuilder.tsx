@@ -3,7 +3,6 @@ import 'reactflow/dist/style.css';
 import {
   AlertCircle,
   Bot,
-  ChartColumn,
   Database,
   Flag,
   GitBranch,
@@ -52,7 +51,6 @@ import { Sheet, SheetContent } from '@/components/ui/sheet';
 
 import modelService from '../../api/services/modelService';
 import userService from '../../api/services/userService';
-import ArrowLeft from '../../assets/arrow-left.svg';
 import { FileUpload } from '../../components/FileUpload';
 import AgentDetailsModal from '../../modals/AgentDetailsModal';
 import ConfirmationModal from '../../modals/ConfirmationModal';
@@ -62,6 +60,7 @@ import {
   selectToken,
 } from '../../preferences/preferenceSlice';
 import { getToolDisplayName } from '../../utils/toolUtils';
+import AgentPageHeader from '../AgentPageHeader';
 import { Agent } from '../types';
 import { ConditionCase, WorkflowNode } from '../types/workflow';
 import MobileBlocker from './components/MobileBlocker';
@@ -1373,12 +1372,22 @@ function WorkflowBuilderInner() {
       <div className="bg-background fixed inset-0 z-50 hidden h-screen w-full flex-col md:flex">
         <div className="border-border bg-card dark:bg-background flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-4">
-            <button
-              onClick={navigateBackToAgents}
-              className="border-border text-muted-foreground hover:bg-accent rounded-full border p-3 text-sm"
-            >
-              <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-            </button>
+            {canManageAgent ? (
+              <AgentPageHeader
+                agentId={effectiveAgentId}
+                agentName={workflowName}
+                agentEditPath={`/agents/workflow/edit/${effectiveAgentId}`}
+                currentPage="overview"
+                inline
+              />
+            ) : (
+              <button
+                onClick={navigateBackToAgents}
+                className="border-border text-muted-foreground hover:bg-accent rounded-full border px-4 py-2 text-sm"
+              >
+                {t('agents.backToAll')}
+              </button>
+            )}
             <div className="group relative flex items-center gap-2">
               <div>
                 <div
@@ -1524,15 +1533,6 @@ function WorkflowBuilderInner() {
               <Settings2 size={16} />
               Details
             </button>
-            {canManageAgent && (
-              <button
-                onClick={() => navigate(`/agents/logs/${effectiveAgentId}`)}
-                className="border-border bg-card hover:bg-accent flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium text-gray-700 transition-colors dark:text-gray-200"
-              >
-                <ChartColumn size={16} />
-                Logs
-              </button>
-            )}
             {canManageAgent && (
               <button
                 onClick={() => setAgentDetails('ACTIVE')}

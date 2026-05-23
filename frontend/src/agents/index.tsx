@@ -3,6 +3,7 @@ import { Route, Routes } from 'react-router-dom';
 import AgentLogs from './AgentLogs';
 import AgentsList from './AgentsList';
 import NewAgent from './NewAgent';
+import SchedulesView from './schedules/SchedulesView';
 import SharedAgent from './SharedAgent';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
 
@@ -13,6 +14,7 @@ export default function Agents() {
       <Route path="/new" element={<NewAgent mode="new" />} />
       <Route path="/edit/:agentId" element={<NewAgent mode="edit" />} />
       <Route path="/logs/:agentId" element={<AgentLogs />} />
+      <Route path="/schedules/:agentId" element={<SchedulesView />} />
       <Route path="/shared/:agentId" element={<SharedAgent />} />
       <Route path="/workflow/new" element={<WorkflowBuilder />} />
       <Route path="/workflow/edit/:agentId" element={<WorkflowBuilder />} />

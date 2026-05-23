@@ -16,9 +16,6 @@ from urllib.parse import urljoin
 
 import requests
 
-from application.agents.agent_creator import AgentCreator
-from application.api.answer.services.stream_processor import get_prompt
-
 from application.core.settings import settings
 from application.events.publisher import publish_user_event
 from application.parser.chunking import Chunker
@@ -34,7 +31,6 @@ from application.parser.remote.remote_creator import (
     normalize_remote_data,
 )
 from application.parser.schema.base import Document
-from application.retriever.retriever_creator import RetrieverCreator
 
 from application.storage.db.base_repository import looks_like_uuid
 from application.storage.db.repositories.agents import AgentsRepository
@@ -389,146 +385,6 @@ def upload_index(full_path, file_data):
         if settings.VECTOR_STORE == "faiss" and files is not None:
             for file in files.values():
                 file.close()
-
-
-def run_agent_logic(agent_config, input_data):
-    try:
-        from application.core.model_utils import (
-            get_api_key_for_provider,
-            get_default_model_id,
-            get_provider_from_model_id,
-            validate_model_id,
-        )
-        from application.utils import calculate_doc_token_budget
-
-        retriever = agent_config.get("retriever", "classic")
-        # agent_config is a PG row dict: ``source_id`` is a UUID, and the
-        # retriever/chunks live on the source row. Resolve source row for
-        # its retriever/chunks if the agent points at one.
-        source_id = agent_config.get("source_id") or agent_config.get("source")
-        source_active = {}
-        if source_id:
-            with db_readonly() as conn:
-                src_row = SourcesRepository(conn).get(
-                    str(source_id),
-                    agent_config.get("user_id") or agent_config.get("user"),
-                )
-            if src_row:
-                source_active = str(src_row["id"])
-                retriever = src_row.get("retriever", retriever)
-        source = {"active_docs": source_active}
-        chunks = int(agent_config.get("chunks", 2) or 2)
-        prompt_id = agent_config.get("prompt_id", "default")
-        user_api_key = agent_config["key"]
-        agent_id = (
-            str(agent_config.get("id"))
-            if agent_config.get("id")
-            else (str(agent_config.get("_id")) if agent_config.get("_id") else None)
-        )
-        agent_type = agent_config.get("agent_type", "classic")
-        owner = agent_config.get("user_id") or agent_config.get("user")
-        decoded_token = {"sub": owner}
-        json_schema = agent_config.get("json_schema")
-        prompt = get_prompt(prompt_id)
-
-        # Determine model_id: check agent's default_model_id, fallback to system default
-        agent_default_model = agent_config.get("default_model_id", "")
-        if agent_default_model and validate_model_id(
-            agent_default_model, user_id=owner
-        ):
-            model_id = agent_default_model
-        else:
-            model_id = get_default_model_id()
-            if agent_default_model:
-                # Stored model_id no longer resolves in the registry. Log so
-                # operators can detect bad YAML edits before users complain;
-                # behavior matches the historical silent fallback.
-                logging.warning(
-                    "Agent %s references unknown model_id %r; falling back to %r",
-                    agent_id,
-                    agent_default_model,
-                    model_id,
-                )
-
-        # Get provider and API key for the selected model
-        provider = (
-            get_provider_from_model_id(model_id, user_id=owner)
-            if model_id
-            else settings.LLM_PROVIDER
-        )
-        system_api_key = get_api_key_for_provider(provider or settings.LLM_PROVIDER)
-
-        # Calculate proper doc_token_limit based on model's context window
-        doc_token_limit = calculate_doc_token_budget(
-            model_id=model_id, user_id=owner
-        )
-
-        retriever = RetrieverCreator.create_retriever(
-            retriever,
-            source=source,
-            chat_history=[],
-            prompt=prompt,
-            chunks=chunks,
-            doc_token_limit=doc_token_limit,
-            model_id=model_id,
-            user_api_key=user_api_key,
-            agent_id=agent_id,
-            decoded_token=decoded_token,
-        )
-
-        # Pre-fetch documents using the retriever
-        retrieved_docs = []
-        try:
-            docs = retriever.search(input_data)
-            if docs:
-                retrieved_docs = docs
-        except Exception as e:
-            logging.warning(f"Failed to retrieve documents: {e}")
-
-        agent = AgentCreator.create_agent(
-            agent_type,
-            endpoint="webhook",
-            llm_name=provider or settings.LLM_PROVIDER,
-            model_id=model_id,
-            api_key=system_api_key,
-            agent_id=agent_id,
-            user_api_key=user_api_key,
-            prompt=prompt,
-            chat_history=[],
-            retrieved_docs=retrieved_docs,
-            decoded_token=decoded_token,
-            attachments=[],
-            json_schema=json_schema,
-        )
-        answer = agent.gen(query=input_data)
-        response_full = ""
-        thought = ""
-        source_log_docs = []
-        tool_calls = []
-
-        for line in answer:
-            if "answer" in line:
-                response_full += str(line["answer"])
-            elif "sources" in line:
-                source_log_docs.extend(line["sources"])
-            elif "tool_calls" in line:
-                tool_calls.extend(line["tool_calls"])
-            elif "thought" in line:
-                thought += line["thought"]
-        result = {
-            "answer": response_full,
-            "sources": source_log_docs,
-            "tool_calls": tool_calls,
-            "thought": thought,
-        }
-        # Per-activity summary fields (answer_length, thought_length,
-        # source_count, tool_call_count) now ride on the inner
-        # ``activity_finished`` event emitted by ``log_activity`` around
-        # ``Agent.gen`` above; no separate ``agent_response`` log needed.
-        return result
-    except Exception as e:
-        logging.error(f"Error in run_agent_logic: {e}", exc_info=True)
-        raise
 
 
 # Define the main function for ingesting and processing documents.
@@ -1685,7 +1541,21 @@ def agent_webhook_worker(self, agent_id, payload):
         raise
     self.update_state(state="PROGRESS", meta={"current": 50})
     try:
-        result = run_agent_logic(agent_config, input_data)
+        # Shared headless path with the scheduler; approval-gated tools auto-deny.
+        from application.agents.headless_runner import run_agent_headless
+
+        outcome = run_agent_headless(
+            agent_config,
+            input_data,
+            tool_allowlist=_webhook_tool_allowlist(agent_config),
+            endpoint="webhook",
+        )
+        result = {
+            "answer": outcome.get("answer", ""),
+            "sources": outcome.get("sources", []),
+            "tool_calls": outcome.get("tool_calls", []),
+            "thought": outcome.get("thought", ""),
+        }
     except Exception as e:
         logging.error(f"Error running agent logic: {e}", exc_info=True)
         raise
@@ -1696,6 +1566,11 @@ def agent_webhook_worker(self, agent_id, payload):
         return {"status": "success", "result": result}
     finally:
         self.update_state(state="PROGRESS", meta={"current": 100})
+
+
+def _webhook_tool_allowlist(agent_config):
+    """Deny-all on approval-gated tools for webhooks (per-agent opt-in is TBD)."""
+    return []
 
 
 def ingest_connector(

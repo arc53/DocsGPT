@@ -581,11 +581,13 @@ class TestReadWebpageErrors:
         from application.agents.tools.read_webpage import ReadWebpageTool
 
         tool = ReadWebpageTool({})
-        with patch("application.agents.tools.read_webpage.requests.get") as mock_get:
+        with patch(
+            "application.agents.tools.read_webpage.pinned_request"
+        ) as mock_pinned_request:
             mock_response = MagicMock()
             mock_response.raise_for_status.return_value = None
             mock_response.text = "<html><body>test</body></html>"
-            mock_get.return_value = mock_response
+            mock_pinned_request.return_value = mock_response
             with patch(
                 "application.agents.tools.read_webpage.markdownify",
                 side_effect=Exception("parse error"),

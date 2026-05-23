@@ -304,3 +304,55 @@ class TestAgentPrefsRemediation:
         assert before == after
         # No further updates in the second pass.
         assert stats2["updated"] == 0 or stats2["updated"] <= stats1["updated"]
+
+
+# ------------------------------------------------------------------
+# Default chat tools — tool_preferences opt-out list
+# ------------------------------------------------------------------
+class TestDefaultToolPreferences:
+    def test_new_user_has_empty_tool_preferences(self, pg_conn):
+        doc = _repo(pg_conn).upsert("u-tp-new")
+        assert doc["tool_preferences"] == {}
+
+    def test_disable_adds_to_opt_out_list(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.set_default_tool_enabled("u-tp-dis", "memory", False)
+        doc = repo.get("u-tp-dis")
+        assert doc["tool_preferences"]["disabled_default_tools"] == ["memory"]
+
+    def test_disable_is_idempotent(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.set_default_tool_enabled("u-tp-idem", "memory", False)
+        repo.set_default_tool_enabled("u-tp-idem", "memory", False)
+        doc = repo.get("u-tp-idem")
+        assert doc["tool_preferences"]["disabled_default_tools"] == ["memory"]
+
+    def test_enable_removes_from_opt_out_list(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.set_default_tool_enabled("u-tp-en", "memory", False)
+        repo.set_default_tool_enabled("u-tp-en", "read_webpage", False)
+        repo.set_default_tool_enabled("u-tp-en", "memory", True)
+        doc = repo.get("u-tp-en")
+        assert doc["tool_preferences"]["disabled_default_tools"] == [
+            "read_webpage"
+        ]
+
+    def test_enable_when_not_disabled_is_noop(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.set_default_tool_enabled("u-tp-noop", "memory", True)
+        doc = repo.get("u-tp-noop")
+        assert doc["tool_preferences"].get("disabled_default_tools", []) == []
+
+    def test_toggle_creates_missing_user_row(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.set_default_tool_enabled("u-tp-fresh", "memory", False)
+        assert repo.get("u-tp-fresh") is not None
+
+    def test_disable_preserves_agent_preferences(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.upsert("u-tp-mix")
+        repo.add_pinned("u-tp-mix", "agent-99")
+        repo.set_default_tool_enabled("u-tp-mix", "memory", False)
+        doc = repo.get("u-tp-mix")
+        assert doc["agent_preferences"]["pinned"] == ["agent-99"]
+        assert doc["tool_preferences"]["disabled_default_tools"] == ["memory"]

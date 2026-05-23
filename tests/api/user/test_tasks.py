@@ -222,7 +222,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 8
+        assert sender.add_periodic_task.call_count == 11
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -246,6 +246,14 @@ class TestSetupPeriodicTasks:
         # message_events retention sweep (24h)
         assert calls[7][0][0] == timedelta(hours=24)
         assert calls[7][1].get("name") == "cleanup-message-events"
+        # orphan memories sweep (24h)
+        assert calls[8][0][0] == timedelta(hours=24)
+        assert calls[8][1].get("name") == "cleanup-orphan-memories"
+        # scheduler dispatcher
+        assert calls[9][1].get("name") == "dispatch-scheduled-runs"
+        # schedule runs cleanup (24h)
+        assert calls[10][0][0] == timedelta(hours=24)
+        assert calls[10][1].get("name") == "cleanup-schedule-runs"
 
 
 class TestMcpOauthTask:
@@ -296,6 +304,7 @@ class TestDurableTaskRetryPolicy:
             "cleanup_pending_tool_state",
             "reconciliation_task",
             "version_check_task",
+            "cleanup_orphan_memories",
         ],
     )
     def test_short_periodic_tasks_have_no_retry_config(self, task_name):
@@ -513,6 +522,72 @@ class TestCleanupMessageEventsTask:
         # Only the fresh row survives.
         rows = repo.read_after(str(msg_id))
         assert [r["sequence_no"] for r in rows] == [1]
+
+
+class TestCleanupOrphanMemoriesTask:
+    """Sweeps orphan memories from the FK-to-trigger orphan window."""
+
+    @pytest.mark.unit
+    def test_skips_when_postgres_uri_missing(self, monkeypatch):
+        from application.api.user.tasks import cleanup_orphan_memories
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "POSTGRES_URI", None, raising=False)
+
+        result = cleanup_orphan_memories.run()
+        assert result == {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    @pytest.mark.unit
+    def test_deletes_orphan_keeps_synthetic_and_live(
+        self, pg_conn, monkeypatch
+    ):
+        import uuid
+
+        from sqlalchemy import text as _text
+
+        from application.agents.default_tools import default_tool_id
+        from application.api.user.tasks import cleanup_orphan_memories
+        from application.core.settings import settings
+        from application.storage.db.repositories.memories import (
+            MemoriesRepository,
+        )
+
+        repo = MemoriesRepository(pg_conn)
+        synthetic_id = default_tool_id("memory")
+        live_id = str(
+            pg_conn.execute(
+                _text(
+                    "INSERT INTO user_tools (user_id, name) "
+                    "VALUES ('u-task-mem', 'memory') RETURNING id"
+                )
+            ).scalar()
+        )
+        orphan_id = str(uuid.uuid4())
+        repo.upsert("u-task-mem", synthetic_id, "/syn.txt", "keep")
+        repo.upsert("u-task-mem", live_id, "/live.txt", "keep")
+        repo.upsert("u-task-mem", orphan_id, "/orphan.txt", "drop")
+
+        monkeypatch.setattr(
+            settings, "POSTGRES_URI", "postgresql://stub", raising=False
+        )
+
+        @contextmanager
+        def _fake_begin():
+            yield pg_conn
+
+        fake_engine = MagicMock()
+        fake_engine.begin = _fake_begin
+
+        with patch(
+            "application.storage.db.engine.get_engine",
+            return_value=fake_engine,
+        ):
+            result = cleanup_orphan_memories.run()
+
+        assert result == {"deleted": 1}
+        assert repo.get_by_path("u-task-mem", synthetic_id, "/syn.txt")
+        assert repo.get_by_path("u-task-mem", live_id, "/live.txt")
+        assert repo.get_by_path("u-task-mem", orphan_id, "/orphan.txt") is None
 
 
 class TestIngestIdempotency:
