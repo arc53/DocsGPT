@@ -1,3 +1,4 @@
+import { Pencil } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -138,6 +139,22 @@ export default function Prompts({
     }
   };
 
+  const openEditPrompt = ({
+    id,
+    name,
+    type,
+  }: {
+    id: string;
+    name: string;
+    type?: string;
+  }) => {
+    setModalType('EDIT');
+    setEditPromptName(name);
+    handleFetchPromptContent(id);
+    setCurrentPromptEdit({ id, name, type: type ?? '' });
+    setModalState('ACTIVE');
+  };
+
   const handleSaveChanges = (id: string, type: string) => {
     userService
       .updatePrompt(
@@ -178,6 +195,19 @@ export default function Prompts({
         console.error(error);
       });
   };
+  const promptOptions = prompts.map((prompt: any) =>
+    typeof prompt === 'string'
+      ? { name: prompt, id: prompt, type: '' }
+      : prompt,
+  );
+
+  const selectedPromptForEdit = promptOptions.find(
+    (prompt) => prompt.id === selectedPrompt?.id,
+  );
+
+  const canEditSelectedPrompt =
+    selectedPromptForEdit?.id && selectedPromptForEdit.type !== 'public';
+
   return (
     <>
       <div>
@@ -188,34 +218,27 @@ export default function Prompts({
           <div className="flex flex-row flex-wrap items-end justify-start gap-6">
             <Dropdown
               searchable
-              options={prompts.map((prompt: any) =>
-                typeof prompt === 'string'
-                  ? { name: prompt, id: prompt, type: '' }
-                  : prompt,
-              )}
+              options={promptOptions}
               selectedValue={selectedPrompt ? selectedPrompt.name : ''}
               onSelect={handleSelectPrompt}
               showEdit
               showDelete={(prompt) => prompt.type !== 'public'}
-              onEdit={({
-                id,
-                name,
-                type,
-              }: {
-                id: string;
-                name: string;
-                type?: string;
-              }) => {
-                setModalType('EDIT');
-                setEditPromptName(name);
-                handleFetchPromptContent(id);
-                setCurrentPromptEdit({ id: id, name: name, type: type ?? '' });
-                setModalState('ACTIVE');
-              }}
+              onEdit={openEditPrompt}
               onDelete={handleDeletePrompt}
               placeholder={'Select a prompt'}
               {...dropdownProps}
             />
+            {canEditSelectedPrompt && selectedPromptForEdit && (
+              <button
+                type="button"
+                onClick={() => openEditPrompt(selectedPromptForEdit)}
+                aria-label={t('modals.prompts.editPrompt')}
+                title={t('modals.prompts.editPrompt')}
+                className="border-border bg-card text-muted-foreground hover:bg-accent flex h-11 w-11 items-center justify-center rounded-3xl border transition-colors"
+              >
+                <Pencil className="h-4 w-4" />
+              </button>
+            )}
             {showAddButton && (
               <button
                 className="border-primary text-primary hover:bg-primary/90 w-20 rounded-3xl border border-solid py-3 text-sm transition-colors hover:text-white"
