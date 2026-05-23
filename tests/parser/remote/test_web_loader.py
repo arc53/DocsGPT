@@ -148,6 +148,19 @@ class TestWebLoaderLoadData:
         assert result[0].text == "Bare body"
         assert result[0].extra_info == {"source": "https://example.com"}
 
+    @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
+    @patch("application.parser.remote.web_loader.pinned_request")
+    def test_load_data_extracts_title_with_nested_markup(self, mock_pinned_request, mock_validate, web_loader):
+        """<title> with nested elements must still produce a usable title string."""
+        mock_pinned_request.return_value = _fake_response(
+            "<html><head><title>Hello <span>World</span></title></head>"
+            "<body><p>x</p></body></html>"
+        )
+
+        result = web_loader.load_data("https://example.com")
+
+        assert result[0].extra_info["title"] == "HelloWorld"
+
 
 class TestWebLoaderErrorHandling:
     """Test WebLoader error handling."""

@@ -97,6 +97,8 @@ class SitemapLoader(BaseRemote):
 
         urls = []
         for loc in root.findall('.//url/loc'):
+            if not loc.text:
+                continue
             urls.append(loc.text)
 
         # Check for nested sitemaps

@@ -137,6 +137,19 @@ class TestParseSitemap:
         urls = loader._parse_sitemap(sitemap_xml)
         assert urls == []
 
+    def test_parse_skips_empty_loc_entries(self):
+        """Empty or self-closing <loc> tags must not yield None URLs."""
+        loader = SitemapLoader()
+        sitemap_xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+        <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+            <url><loc></loc></url>
+            <url><loc>https://example.com/p</loc></url>
+            <url><loc/></url>
+        </urlset>"""
+
+        urls = loader._parse_sitemap(sitemap_xml)
+        assert urls == ["https://example.com/p"]
+
 
 # =====================================================================
 # _extract_urls

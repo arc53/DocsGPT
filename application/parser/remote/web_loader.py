@@ -38,8 +38,10 @@ class WebLoader(BaseRemote):
                 response.raise_for_status()
                 soup = BeautifulSoup(response.text, "html.parser")
                 metadata = {"source": url}
-                if soup.title and soup.title.string:
-                    metadata["title"] = soup.title.string.strip()
+                if soup.title:
+                    title = soup.title.get_text(strip=True)
+                    if title:
+                        metadata["title"] = title
                 html_tag = soup.find("html")
                 if html_tag and html_tag.get("lang"):
                     metadata["language"] = html_tag.get("lang")
