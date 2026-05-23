@@ -64,7 +64,7 @@ const ConversationBubble = forwardRef<
       updated?: boolean,
       index?: number,
     ) => void;
-    filesAttached?: { id: string; fileName: string }[];
+    filesAttached?: { id: string; fileName: string, previewUrl?: string }[];
     onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
     onToolAction?: (
       callId: string,
@@ -148,6 +148,21 @@ const ConversationBubble = forwardRef<
         <div className="flex flex-col items-end">
           {filesAttached && filesAttached.length > 0 && (
             <div className="mr-12 mb-4 flex flex-wrap justify-end gap-2">
+              {filesAttached.some((f) => f.previewUrl) && (
+                <div className="mb-1 flex w-full flex-wrap justify-end gap-2">
+                  {filesAttached
+                    .filter((f) => f.previewUrl)
+                    .map((f) => (
+                      <img
+                        key={f.id}
+                        src={f.previewUrl}
+                        alt={f.fileName}
+                        title={f.fileName}
+                        className="max-h-48 max-w-xs rounded-xl object-contain"
+                      />
+                    ))}
+                </div>
+              )}
               {filesAttached.map((file, index) => (
                 <div
                   key={index}

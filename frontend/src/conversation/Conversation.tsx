@@ -173,7 +173,7 @@ export default function Conversation() {
 
       const filesAttached = completedAttachments
         .filter((a) => a.id)
-        .map((a) => ({ id: a.id as string, fileName: a.fileName }));
+        .map((a) => ({ id: a.id as string, fileName: a.fileName, previewUrl: a.previewUrl }));
 
       if (index !== undefined) {
         dispatch(

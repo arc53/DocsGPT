@@ -34,6 +34,7 @@ export interface Attachment {
   progress: number;
   status: 'uploading' | 'processing' | 'completed' | 'failed';
   taskId: string; // Server-assigned celery task ID (used for API calls)
+  previewUrl?: string; // Local object URL for image preview (images only)
   /**
    * Server-assigned attachment id (stable across the lifecycle —
    * ``attachment.*`` SSE events use this in ``scope.id``). Set as

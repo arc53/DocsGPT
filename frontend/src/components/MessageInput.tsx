@@ -485,6 +485,8 @@ export default function MessageInput({
         files.forEach((file, i) => {
           formData.append('file', file);
           const uiId = generateId();
+          const isImage = file.type.startsWith('image/');
+          const previewUrl = isImage ? URL.createObjectURL(file) : undefined;
           indexToUiId[i] = uiId;
           dispatch(
             addAttachment({
@@ -493,6 +495,7 @@ export default function MessageInput({
               progress: 0,
               status: 'uploading' as const,
               taskId: '',
+              previewUrl,
             }),
           );
         });
@@ -759,6 +762,8 @@ export default function MessageInput({
         formData.append('file', file);
         const xhr = new XMLHttpRequest();
         const uniqueId = generateId();
+        const isImage = file.type.startsWith('image/');
+        const previewUrl = isImage ? URL.createObjectURL(file) : undefined;
 
         const newAttachment = {
           id: uniqueId,
@@ -766,6 +771,7 @@ export default function MessageInput({
           progress: 0,
           status: 'uploading' as const,
           taskId: '',
+          previewUrl,
         };
 
         dispatch(addAttachment(newAttachment));
@@ -1407,6 +1413,29 @@ export default function MessageInput({
   };
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<{
+    src: string;
+    alt: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!previewImage) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setPreviewImage(null);
+      }
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [previewImage]);
 
   const findIndexById = (id: string) =>
     attachments.findIndex((a) => a.id === id);
@@ -1468,6 +1497,7 @@ export default function MessageInput({
       <div className="border-border bg-card relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
         <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
           {attachments.map((attachment) => {
+            const isImagePreview = Boolean(attachment.previewUrl);
             return (
               <div
                 key={attachment.id}
@@ -1486,61 +1516,87 @@ export default function MessageInput({
                 }`}
                 title={attachment.fileName}
               >
-                <div className="bg-primary mr-2 flex h-8 w-8 items-center justify-center rounded-md p-1">
-                  {attachment.status === 'completed' && (
+                <div
+                  className={`mr-2 flex shrink-0 items-center justify-center overflow-hidden rounded-md ${
+                    isImagePreview
+                      ? 'h-16 w-16 sm:h-20 sm:w-20'
+                      : 'h-8 w-8'
+                  }`}
+                >
+                  {isImagePreview ? (
                     <img
-                      src={DocumentationDark}
-                      alt="Attachment"
-                      className="h-[15px] w-[15px] object-fill"
+                      src={attachment.previewUrl}
+                      alt={attachment.fileName}
+                      className="h-full w-full cursor-zoom-in object-cover"
+                      onClick={() =>
+                        setPreviewImage({
+                          src: attachment.previewUrl as string,
+                          alt: attachment.fileName,
+                        })
+                      }
                     />
-                  )}
-
-                  {attachment.status === 'failed' && (
-                    <img
-                      src={AlertIcon}
-                      alt="Failed"
-                      className="h-[15px] w-[15px] object-fill"
-                    />
-                  )}
-
-                  {(attachment.status === 'uploading' ||
-                    attachment.status === 'processing') && (
-                    <div className="flex h-[15px] w-[15px] items-center justify-center">
-                      <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
-                        <circle
-                          className="opacity-0"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="transparent"
-                          strokeWidth="4"
-                          fill="none"
+                  ) : (
+                    <div className="bg-primary flex h-full w-full items-center justify-center p-1">
+                      {attachment.status === 'completed' && (
+                        <img
+                          src={DocumentationDark}
+                          alt="Attachment"
+                          className="h-[15px] w-[15px] object-fill"
                         />
-                        <circle
-                          className="text-[#ECECF1]"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                          fill="none"
-                          strokeDasharray="62.83"
-                          strokeDashoffset={
-                            62.83 * (1 - attachment.progress / 100)
-                          }
-                          transform="rotate(-90 12 12)"
+                      )}
+                      {attachment.status === 'failed' && (
+                        <img
+                          src={AlertIcon}
+                          alt="Failed"
+                          className="h-[15px] w-[15px] object-fill"
                         />
-                      </svg>
+                      )}
+                      {(attachment.status === 'uploading' ||
+                        attachment.status === 'processing') && (
+                        <div className="flex h-[15px] w-[15px] items-center justify-center">
+                          <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
+                            <circle
+                              className="opacity-0"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="transparent"
+                              strokeWidth="4"
+                              fill="none"
+                            />
+                            <circle
+                              className="text-[#ECECF1]"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                              fill="none"
+                              strokeDasharray="62.83"
+                              strokeDashoffset={
+                                62.83 * (1 - attachment.progress / 100)
+                              }
+                              transform="rotate(-90 12 12)"
+                            />
+                          </svg>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
 
-                <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
-                  {attachment.fileName}
-                </span>
+                {!isImagePreview && (
+                  <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
+                    {attachment.fileName}
+                  </span>
+                )}
 
                 <button
-                  className="ml-1.5 flex items-center justify-center rounded-full p-1"
+                  className={`flex items-center justify-center rounded-full p-1 ${
+                    isImagePreview
+                      ? 'absolute right-1 top-1 bg-black/50 text-white hover:bg-black/70'
+                      : 'ml-1.5'
+                  }`}
                   onClick={() => {
                     dispatch(removeAttachment(attachment.id));
                   }}
@@ -1556,6 +1612,36 @@ export default function MessageInput({
             );
           })}
         </div>
+
+        {previewImage &&
+          createPortal(
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+              onClick={() => setPreviewImage(null)}
+              role="dialog"
+              aria-modal="true"
+            >
+              <button
+                type="button"
+                className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                onClick={() => setPreviewImage(null)}
+                aria-label={t('conversation.attachments.remove')}
+              >
+                <img
+                  src={ExitIcon}
+                  alt={t('conversation.attachments.remove')}
+                  className="h-3.5 w-3.5"
+                />
+              </button>
+              <img
+                src={previewImage.src}
+                alt={previewImage.alt}
+                className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain shadow-xl"
+                onClick={(event) => event.stopPropagation()}
+              />
+            </div>,
+            document.body,
+          )}
 
         {voiceError && (
           <div className="px-2 pb-1 text-xs text-[#B42318] sm:px-3">

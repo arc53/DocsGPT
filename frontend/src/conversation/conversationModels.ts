@@ -63,7 +63,7 @@ export interface Query {
   sources?: { title: string; text: string; link: string }[];
   tool_calls?: ToolCallsType[];
   error?: string;
-  attachments?: { id: string; fileName: string }[];
+  attachments?: { id: string; fileName: string; previewUrl?: string }[];
   structured?: boolean;
   schema?: object;
   research?: ResearchState;
