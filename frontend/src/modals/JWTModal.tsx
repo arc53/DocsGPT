@@ -39,7 +39,7 @@ export default function JWTModal({
         <button
           disabled={jwtToken.length === 0}
           onClick={handleTokenSubmit.bind(null, jwtToken)}
-          className="bg-primary float-right mt-4 rounded-full px-5 py-2 text-sm text-white hover:bg-[#6F3FD1] disabled:opacity-50"
+          className="bg-primary float-right mt-4 rounded-3xl px-5 py-2 text-sm font-medium text-white hover:bg-[#6F3FD1] disabled:opacity-50"
           data-testid="jwt-token-submit"
         >
           Save Token

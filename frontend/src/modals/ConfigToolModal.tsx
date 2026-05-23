@@ -122,14 +122,14 @@ export default function ConfigToolModal({
         <>
           <button
             onClick={handleClose}
-            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-full px-5 py-2 text-sm font-medium"
+            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium"
           >
             {t('modals.configTool.closeButton')}
           </button>
           <button
             onClick={handleAddTool}
             disabled={saving}
-            className="bg-primary hover:bg-primary/90 rounded-full px-5 py-2 text-sm font-medium text-white transition-colors disabled:opacity-60"
+            className="bg-primary hover:bg-primary/90 rounded-3xl px-5 py-2 text-sm font-medium text-white transition-colors disabled:opacity-60"
           >
             {saving
               ? t('modals.configTool.addButton') + '…'

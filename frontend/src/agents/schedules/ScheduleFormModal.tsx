@@ -277,7 +277,7 @@ export default function ScheduleFormModal({
             type="button"
             disabled={submitting}
             onClick={submit}
-            className="rounded-full px-5"
+            className="rounded-3xl px-5"
           >
             {submitting
               ? '…'
