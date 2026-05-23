@@ -29,8 +29,8 @@ import Accordion from '../components/Accordion';
 import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
 import MermaidRenderer from '../components/MermaidRenderer';
-import Sidebar from '../components/Sidebar';
 import Spinner from '../components/Spinner';
+import { Sheet, SheetContent } from '../components/ui/sheet';
 import SpeakButton from '../components/TextToSpeechButton';
 import { useDarkTheme, useOutsideAlerter } from '../hooks';
 import {
@@ -824,14 +824,16 @@ const ConversationBubble = forwardRef<
           </div>
         )}
         {sources && (
-          <Sidebar
-            isOpen={isSidebarOpen}
-            toggleState={(state: boolean) => {
-              setIsSidebarOpen(state);
-            }}
-          >
-            <AllSources sources={sources} />
-          </Sidebar>
+          <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
+            <SheetContent
+              side="right"
+              className="bg-card w-64 border-l border-[#9ca3af]/10 sm:w-80 sm:max-w-none"
+            >
+              <div className="flex h-full flex-col items-center gap-2 px-6 py-4 text-center">
+                <AllSources sources={sources} />
+              </div>
+            </SheetContent>
+          </Sheet>
         )}
       </div>
     );

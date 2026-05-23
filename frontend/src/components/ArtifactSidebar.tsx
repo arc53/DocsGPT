@@ -14,6 +14,7 @@ import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import CopyButton from './CopyButton';
 import Spinner from './Spinner';
+import { Sheet, SheetContent } from './ui/sheet';
 
 type TodoItem = {
   todo_id: number;
@@ -276,7 +277,6 @@ export default function ArtifactSidebar({
   conversationId,
   variant = 'overlay',
 }: ArtifactSidebarProps) {
-  const sidebarRef = React.useRef<HTMLDivElement>(null);
   const lastSuccessfulTodoArtifactIdRef = React.useRef<string | null>(null);
   const currentFetchIdRef = React.useRef<string | null>(null);
   const token = useSelector(selectToken);
@@ -385,22 +385,6 @@ export default function ArtifactSidebar({
       });
   }, [isOpen, effectiveArtifactId, token, toolName, conversationId]);
 
-  const handleClickOutside = (event: MouseEvent) => {
-    if (
-      sidebarRef.current &&
-      !sidebarRef.current.contains(event.target as Node)
-    ) {
-      onClose();
-    }
-  };
-
-  useEffect(() => {
-    if (variant === 'overlay' && isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, variant]);
-
   const renderContent = () => {
     if (loading) {
       return (
@@ -471,11 +455,16 @@ export default function ArtifactSidebar({
   }
 
   return (
-    <div ref={sidebarRef} className="h-vh relative">
-      <div
-        className={`dark:bg-card bg-card fixed top-0 right-0 z-50 flex h-full w-80 transform flex-col shadow-xl transition-all duration-300 sm:w-96 ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
-        } border-l border-[#9ca3af]/10`}
+    <Sheet
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        className="dark:bg-card bg-card flex h-full w-80 flex-col gap-0 border-l border-[#9ca3af]/10 p-0 sm:w-96 sm:max-w-none"
       >
         <div className="flex w-full items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
           <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
@@ -493,7 +482,7 @@ export default function ArtifactSidebar({
           </button>
         </div>
         <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 }
