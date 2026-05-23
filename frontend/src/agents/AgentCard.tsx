@@ -261,7 +261,7 @@ export default function AgentCard({
   };
   return (
     <div
-      className={`bg-muted hover:bg-accent relative flex h-44 flex-col justify-between rounded-[1.2rem] px-4 py-5 sm:w-48 sm:px-6 ${agent.status === 'published' && 'cursor-pointer'}`}
+      className={`bg-muted hover:bg-accent relative flex h-44 flex-col justify-between rounded-2xl px-4 py-5 sm:w-48 sm:px-6 ${agent.status === 'published' && 'cursor-pointer'}`}
       onClick={(e) => {
         e.stopPropagation();
         handleClick();

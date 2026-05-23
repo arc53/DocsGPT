@@ -182,7 +182,7 @@ const ConversationBubble = forwardRef<
             {!isEditClicked && (
               <>
                 <div className="relative mr-2 flex w-full flex-col">
-                  <div className="mr-2 ml-2 flex max-w-full items-start gap-2 rounded-[28px] bg-linear-to-b from-violet-500 to-violet-600 px-5 py-4 text-sm leading-normal wrap-break-word whitespace-pre-wrap text-white sm:text-base">
+                  <div className="mr-2 ml-2 flex max-w-full items-start gap-2 rounded-3xl bg-linear-to-b from-violet-500 to-violet-600 px-5 py-4 text-sm leading-normal wrap-break-word whitespace-pre-wrap text-white sm:text-base">
                     <div
                       ref={messageRef}
                       className={`${isQuestionCollapsed ? 'line-clamp-4' : ''} w-full`}
@@ -493,7 +493,7 @@ const ConversationBubble = forwardRef<
               </p>
             </div>
             <div
-              className={`fade-in-bubble bg-answer-bubble mr-5 flex max-w-full rounded-[18px] px-6 py-4.5 ${
+              className={`fade-in-bubble bg-answer-bubble mr-5 flex max-w-full rounded-2xl px-6 py-4.5 ${
                 type === 'ERROR'
                   ? 'text-destructive/80 dark:border-destructive dark:bg-destructive/15 relative flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 py-5 text-sm font-normal dark:text-white'
                   : 'flex-col rounded-3xl'
@@ -572,7 +572,7 @@ const ConversationBubble = forwardRef<
                                 const language = match ? match[1] : '';
 
                                 return match ? (
-                                  <div className="group border-border relative overflow-hidden rounded-[14px] border">
+                                  <div className="group border-border relative overflow-hidden rounded-xl border">
                                     <div className="bg-muted flex items-center justify-between px-2 py-1">
                                       <span className="text-foreground dark:text-foreground text-xs font-medium">
                                         {language}
@@ -601,7 +601,7 @@ const ConversationBubble = forwardRef<
                                     </SyntaxHighlighter>
                                   </div>
                                 ) : (
-                                  <code className="dark:bg-accent dark:text-foreground rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
+                                  <code className="dark:bg-accent dark:text-foreground rounded-md bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
                                     {children}
                                   </code>
                                 );
@@ -1204,7 +1204,7 @@ function Thought({
       </div>
       {isThoughtOpen && (
         <div className="fade-in mr-5 ml-2 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
-          <div className="bg-muted dark:bg-answer-bubble rounded-[28px] px-7 py-4.5">
+          <div className="bg-muted dark:bg-answer-bubble rounded-3xl px-7 py-4.5">
             <ReactMarkdown
               className="fade-in leading-normal wrap-break-word whitespace-pre-wrap"
               remarkPlugins={[remarkGfm, remarkMath]}
@@ -1216,7 +1216,7 @@ function Thought({
                   const language = match ? match[1] : '';
 
                   return match ? (
-                    <div className="group border-border relative overflow-hidden rounded-[14px] border">
+                    <div className="group border-border relative overflow-hidden rounded-xl border">
                       <div className="bg-muted flex items-center justify-between px-2 py-1">
                         <span className="text-foreground dark:text-foreground text-xs font-medium">
                           {language}
@@ -1240,7 +1240,7 @@ function Thought({
                       </SyntaxHighlighter>
                     </div>
                   ) : (
-                    <code className="dark:bg-accent dark:text-foreground rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
+                    <code className="dark:bg-accent dark:text-foreground rounded-md bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
                       {children}
                     </code>
                   );

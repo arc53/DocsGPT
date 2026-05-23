@@ -263,7 +263,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   const errorRender = !isCurrentlyLoading && error;
 
   return (
-    <div className="w-inherit group border-border bg-card relative overflow-hidden rounded-[14px] border">
+    <div className="w-inherit group border-border bg-card relative overflow-hidden rounded-xl border">
       <div className="bg-muted flex items-center justify-between px-2 py-1">
         <span className="text-foreground dark:text-foreground text-xs font-medium">
           mermaid

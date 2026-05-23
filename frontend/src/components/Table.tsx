@@ -43,10 +43,10 @@ const TableContainer = React.forwardRef<HTMLDivElement, TableContainerProps>(
     ref: React.ForwardedRef<HTMLDivElement>,
   ) {
     return (
-      <div className={`relative rounded-[6px] ${className}`}>
+      <div className={`relative rounded-md ${className}`}>
         <div
           ref={ref}
-          className={`w-full overflow-x-auto rounded-[6px] bg-transparent ${bordered ? 'border-border dark:border-border border' : ''}`}
+          className={`w-full overflow-x-auto rounded-md bg-transparent ${bordered ? 'border-border dark:border-border border' : ''}`}
           style={{
             maxHeight: height === 'auto' ? undefined : height,
             overflowY: height === 'auto' ? 'hidden' : 'auto',

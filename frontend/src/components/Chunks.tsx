@@ -487,13 +487,13 @@ const Chunks: React.FC<ChunksProps> = ({
             onChange={(e) => handleFileSearchChange(e.target.value)}
             placeholder={t('settings.sources.searchFiles')}
             className={`border-border dark:border-border h-[38px] w-full border py-2 pr-4 pl-10 ${
-              fileSearchQuery ? 'rounded-t-[6px]' : 'rounded-[6px]'
+              fileSearchQuery ? 'rounded-t-md' : 'rounded-md'
             } bg-transparent transition-all duration-200 focus:outline-none`}
           />
         </div>
 
         {fileSearchQuery && (
-          <div className="border-border bg-card dark:border-border dark:bg-card absolute z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-[6px] border border-t-0 shadow-lg">
+          <div className="border-border bg-card dark:border-border dark:bg-card absolute z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-md border border-t-0 shadow-lg">
             <div className="max-h-[calc(100vh-200px)] overflow-x-hidden overflow-y-auto">
               {fileSearchResults.length === 0 ? (
                 <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -595,7 +595,7 @@ const Chunks: React.FC<ChunksProps> = ({
                     filteredChunks.map((chunk, index) => (
                       <div
                         key={index}
-                        className="border-border dark:border-border relative flex h-[197px] w-full max-w-[487px] transform cursor-pointer flex-col justify-between overflow-hidden rounded-[5.86px] border transition-transform duration-200 hover:scale-105"
+                        className="border-border dark:border-border relative flex h-[197px] w-full max-w-[487px] transform cursor-pointer flex-col justify-between overflow-hidden rounded-md border transition-transform duration-200 hover:scale-105"
                         onClick={() => {
                           setEditingChunk(chunk);
                           setEditingTitle(chunk.metadata?.title || '');
@@ -637,7 +637,7 @@ const Chunks: React.FC<ChunksProps> = ({
           ) : (
             editingChunk && (
               <div className="w-full">
-                <div className="border-border dark:border-border relative flex w-full flex-col overflow-hidden rounded-[5.86px] border">
+                <div className="border-border dark:border-border relative flex w-full flex-col overflow-hidden rounded-md border">
                   <div className="border-border bg-muted dark:border-border dark:bg-card flex w-full items-center justify-between border-b px-4 py-3">
                     <div className="dark:text-muted-foreground text-sm text-[#59636E]">
                       {editingChunk.metadata.token_count

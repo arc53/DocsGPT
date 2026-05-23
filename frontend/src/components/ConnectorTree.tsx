@@ -707,7 +707,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
             }
           }}
           placeholder={t('settings.sources.searchFiles')}
-          className={`border-border dark:border-border h-[38px] w-full border px-4 py-2 ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'} bg-transparent focus:outline-none`}
+          className={`border-border dark:border-border h-[38px] w-full border px-4 py-2 ${searchQuery ? 'rounded-t-3xl' : 'rounded-3xl'} bg-transparent focus:outline-none`}
         />
 
         {searchQuery && (

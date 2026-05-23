@@ -180,7 +180,7 @@ function NoteView({ data }: { data: NoteArtifactData }) {
                 const language = match ? match[1] : '';
 
                 return match ? (
-                  <div className="group border-border relative my-2 overflow-hidden rounded-[14px] border">
+                  <div className="group border-border relative my-2 overflow-hidden rounded-xl border">
                     <div className="bg-muted flex items-center justify-between px-2 py-1">
                       <span className="text-foreground dark:text-foreground text-xs font-medium">
                         {language}
@@ -205,7 +205,7 @@ function NoteView({ data }: { data: NoteArtifactData }) {
                   </div>
                 ) : (
                   <code
-                    className="dark:bg-accent dark:text-foreground rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal"
+                    className="dark:bg-accent dark:text-foreground rounded-md bg-gray-200 px-2 py-1 text-xs font-normal"
                     {...rest}
                   >
                     {children}

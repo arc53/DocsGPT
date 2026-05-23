@@ -364,7 +364,7 @@ export default function Conversation() {
               : 'max-w-[1300px] md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12'
           }`}
         >
-          <div className="flex w-full items-center rounded-[40px] px-2">
+          <div className="flex w-full items-center rounded-full px-2">
             <MessageInput
               key={conversationId || 'new'}
               onSubmit={(text) => {

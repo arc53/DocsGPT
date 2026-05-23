@@ -162,7 +162,7 @@ export default function AgentDetailsModal({
                   {!apiKey.includes('...') && (
                     <a
                       href={`https://widget.docsgpt.cloud/?api-key=${apiKey}`}
-                      className="group border-primary text-primary hover:bg-primary/90 ml-8 flex w-[101px] items-center justify-center gap-1 rounded-[62px] border py-1.5 text-sm font-medium transition-colors hover:text-white"
+                      className="group border-primary text-primary hover:bg-primary/90 ml-8 flex w-[101px] items-center justify-center gap-1 rounded-full border py-1.5 text-sm font-medium transition-colors hover:text-white"
                       target="_blank"
                       rel="noopener noreferrer"
                     >

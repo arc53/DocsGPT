@@ -811,9 +811,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
         </div>
       </div>
-      <div className="bg-muted dark:bg-background mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-[30px] p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden">
+      <div className="bg-muted dark:bg-background mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-2xl p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden">
         <div className="scrollbar-overlay col-span-2 flex flex-col gap-5 max-[1179px]:overflow-visible min-[1180px]:max-h-full min-[1180px]:overflow-y-auto min-[1180px]:pr-3">
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.meta')}
             </h2>
@@ -851,7 +851,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               />
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.source')}
             </h2>
@@ -954,7 +954,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </div>
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <div className="flex flex-wrap items-end gap-1">
               <div className="min-w-20 grow basis-full sm:basis-0">
                 <Prompts
@@ -986,7 +986,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </Button>
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.tools')}
             </h2>
@@ -1041,7 +1041,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               />
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.agentType')}
             </h2>
@@ -1070,7 +1070,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </Select>
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.models')}
             </h2>
@@ -1163,7 +1163,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               )}
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <Button
               type="button"
               variant="ghost"
@@ -1395,7 +1395,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             )}
           </div>
           {modeConfig[effectiveMode].showDelete && agent.id && (
-            <div className="border-destructive/40 bg-destructive/5 rounded-[30px] border px-6 py-4">
+            <div className="border-destructive/40 bg-destructive/5 rounded-2xl border px-6 py-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <h2 className="text-destructive text-lg font-semibold">
@@ -1461,9 +1461,9 @@ function AgentPreviewArea() {
   const { t } = useTranslation();
   const selectedAgent = useSelector(selectSelectedAgent);
   return (
-    <div className="bg-card border-border w-full rounded-[30px] border max-[1179px]:h-[600px] min-[1180px]:h-full">
+    <div className="bg-card border-border w-full rounded-2xl border max-[1179px]:h-[600px] min-[1180px]:h-full">
       {selectedAgent?.status === 'published' ? (
-        <div className="flex h-full w-full flex-col overflow-hidden rounded-[30px]">
+        <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl">
           <AgentPreview />
         </div>
       ) : (

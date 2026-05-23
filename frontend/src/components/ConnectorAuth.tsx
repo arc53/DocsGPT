@@ -194,7 +194,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
 
       {isConnected ? (
         <div className="mb-4">
-          <div className="flex w-full items-center justify-between rounded-[10px] bg-[#8FDD51] px-4 py-2 text-sm font-medium text-black">
+          <div className="flex w-full items-center justify-between rounded-lg bg-[#8FDD51] px-4 py-2 text-sm font-medium text-black">
             <div className="flex max-w-[500px] items-center gap-2">
               <svg className="h-4 w-4" viewBox="0 0 24 24">
                 <path

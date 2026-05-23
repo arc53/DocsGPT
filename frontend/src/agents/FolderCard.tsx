@@ -79,7 +79,7 @@ export default function FolderCard({
   return (
     <>
       <div
-        className={`relative flex cursor-pointer items-center justify-between rounded-[1.2rem] px-4 py-3 sm:w-48 ${
+        className={`relative flex cursor-pointer items-center justify-between rounded-2xl px-4 py-3 sm:w-48 ${
           isExpanded ? 'bg-accent' : 'bg-muted hover:bg-accent'
         }`}
         onClick={() => onToggleExpand(folder.id)}

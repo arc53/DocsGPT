@@ -1554,7 +1554,7 @@ export default function MessageInput({
         onChange={handleVoiceFileAttachment}
       />
 
-      <div className="border-border bg-card relative flex w-full flex-col rounded-[23px] border dark:bg-transparent">
+      <div className="border-border bg-card relative flex w-full flex-col rounded-3xl border dark:bg-transparent">
         <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
           {attachments.map((attachment) => {
             return (
@@ -1668,7 +1668,7 @@ export default function MessageInput({
             }
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            className="inputbox-style no-scrollbar dark:text-foreground dark:placeholder:text-muted-foreground/50 w-full overflow-x-hidden overflow-y-auto rounded-t-[23px] bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3"
+            className="inputbox-style no-scrollbar dark:text-foreground dark:placeholder:text-muted-foreground/50 w-full overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3"
             onInput={handleInput}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
@@ -1715,7 +1715,7 @@ export default function MessageInput({
                 trigger={
                   <button
                     type="button"
-                    className="xs:px-3 xs:py-1.5 dark:border-border border-border hover:bg-accent dark:hover:bg-muted flex max-w-[130px] items-center rounded-[32px] border px-2 py-1 transition-colors sm:max-w-[150px]"
+                    className="xs:px-3 xs:py-1.5 dark:border-border border-border hover:bg-accent dark:hover:bg-muted flex max-w-[130px] items-center rounded-full border px-2 py-1 transition-colors sm:max-w-[150px]"
                     title={
                       selectedDocs && selectedDocs.length > 0
                         ? selectedDocs.map((doc) => doc.name).join(', ')
@@ -1767,7 +1767,7 @@ export default function MessageInput({
                 trigger={
                   <button
                     type="button"
-                    className="xs:px-3 xs:py-1.5 xs:max-w-[150px] dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex max-w-[130px] items-center rounded-[32px] border px-2 py-1 transition-colors"
+                    className="xs:px-3 xs:py-1.5 xs:max-w-[150px] dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex max-w-[130px] items-center rounded-full border px-2 py-1 transition-colors"
                   >
                     <img
                       src={ToolIcon}
@@ -1790,7 +1790,7 @@ export default function MessageInput({
                 aria-label={voiceButtonLabel}
                 title={voiceButtonLabel}
                 disabled={loading || recordingState === 'transcribing'}
-                className={`xs:px-3 xs:py-1.5 dark:border-border flex items-center rounded-[32px] border px-2 py-1 transition-colors ${
+                className={`xs:px-3 xs:py-1.5 dark:border-border flex items-center rounded-full border px-2 py-1 transition-colors ${
                   recordingState === 'recording'
                     ? 'border-[#B42318] bg-[#FEE4E2] text-[#B42318] dark:bg-[#4A2323]'
                     : 'border-border dark:hover:bg-accent hover:bg-gray-100'
@@ -1818,7 +1818,7 @@ export default function MessageInput({
                 </span>
               </button>
             )}
-            <label className="xs:px-3 xs:py-1.5 dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex cursor-pointer items-center rounded-[32px] border px-2 py-1 transition-colors">
+            <label className="xs:px-3 xs:py-1.5 dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex cursor-pointer items-center rounded-full border px-2 py-1 transition-colors">
               <img
                 src={ClipIcon}
                 alt="Attach"
@@ -1845,7 +1845,7 @@ export default function MessageInput({
               className={`bg-primary ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white sm:h-9 sm:w-9`}
               disabled={!loading}
             >
-              <div className="flex h-3 w-3 items-center justify-center rounded-[3px] bg-white sm:h-3.5 sm:w-3.5" />
+              <div className="flex h-3 w-3 items-center justify-center rounded-sm bg-white sm:h-3.5 sm:w-3.5" />
             </button>
           ) : (
             <button
