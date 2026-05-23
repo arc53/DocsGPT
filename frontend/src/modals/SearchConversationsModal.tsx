@@ -8,6 +8,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import SearchIcon from '../assets/search.svg';
+import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
 import { searchConversations } from '../preferences/preferenceApi';
 
@@ -164,14 +165,14 @@ export default function SearchConversationsModal({
       <div className="flex flex-col">
         <div className="border-sidebar-border flex items-center gap-2 border-b px-5 py-4">
           <img src={SearchIcon} alt="search" className="h-4 w-4 opacity-60" />
-          <input
+          <Input
             ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleInputKeyDown}
             placeholder={t('modals.searchConversations.searchPlaceholder')}
-            className="text-foreground placeholder:text-muted-foreground w-full bg-transparent text-sm outline-none"
+            className="h-auto rounded-none border-none px-0 py-0 text-sm shadow-none focus-visible:ring-0"
           />
         </div>
 

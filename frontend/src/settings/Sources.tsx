@@ -17,6 +17,7 @@ import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import Pagination from '../components/DocumentPagination';
 import DropdownMenu from '../components/DropdownMenu';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { Input } from '../components/ui/input';
 import { useDarkTheme, useDebouncedValue, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
@@ -429,30 +430,23 @@ export default function Sources({
           {t('settings.sources.subtitle')}
         </p>
         <div className="mb-6 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-          <div className="w-full sm:w-auto">
-            <label htmlFor="document-search-input" className="sr-only">
-              {t('settings.sources.searchPlaceholder')}
-            </label>
-            <div className="relative w-full max-w-md">
-              <img
-                src={SearchIcon}
-                alt=""
-                className="absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 opacity-40"
-              />
-              <input
-                maxLength={256}
-                placeholder={t('settings.sources.searchPlaceholder')}
-                name="Document-search-input"
-                type="text"
-                id="document-search-input"
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="border-border bg-card text-foreground placeholder:text-muted-foreground h-11 w-full rounded-full border py-2 pr-5 pl-11 text-sm shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow outline-none focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-none"
-              />
-            </div>
+          <div className="w-full max-w-md sm:w-auto">
+            <Input
+              maxLength={256}
+              label={t('settings.sources.searchPlaceholder')}
+              name="Document-search-input"
+              type="text"
+              id="document-search-input"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+              labelBgClassName="bg-background"
+              leftIcon={
+                <img src={SearchIcon} alt="" className="h-4 w-4 opacity-40" />
+              }
+            />
           </div>
           <button
             className="bg-primary hover:bg-primary/90 flex h-11 min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white"

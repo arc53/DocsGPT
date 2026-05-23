@@ -25,4 +25,3 @@ export type AvailableToolType = {
     parameters: object;
   }[];
 };
-

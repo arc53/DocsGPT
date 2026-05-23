@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 
@@ -79,14 +80,13 @@ export default function FolderNameModal({
         </>
       }
     >
-      <input
+      <Input
         type="text"
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={t('agents.folders.folderName')}
         autoFocus
-        className="border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none dark:text-white"
       />
     </Modal>
   );

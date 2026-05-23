@@ -6,6 +6,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import userService from '../api/services/userService';
 import Search from '../assets/search.svg';
 import Spinner from '../components/Spinner';
+import { Input } from '../components/ui/input';
 import {
   setConversation,
   updateConversationId,
@@ -167,18 +168,16 @@ export default function AgentsList() {
       </p>
 
       <div className="mt-6 flex flex-col gap-4 pb-4">
-        <div className="relative w-full max-w-md">
-          <img
-            src={Search}
-            alt=""
-            className="absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 opacity-40"
-          />
-          <input
+        <div className="w-full max-w-md">
+          <Input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('agents.searchPlaceholder')}
-            className="border-border bg-card text-foreground placeholder:text-muted-foreground h-11 w-full rounded-full border py-2 pr-5 pl-11 text-sm shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow outline-none focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-none"
+            label={t('agents.searchPlaceholder')}
+            labelBgClassName="bg-background"
+            leftIcon={
+              <img src={Search} alt="" className="h-4 w-4 opacity-40" />
+            }
           />
         </div>
 
@@ -492,7 +491,7 @@ function AgentSection({
         <div className="flex items-center gap-2">
           {config.id === 'user' &&
             (isCreatingFolder ? (
-              <input
+              <Input
                 ref={newFolderInputRef}
                 type="text"
                 value={newFolderName}
@@ -513,7 +512,7 @@ function AgentSection({
                   }
                 }}
                 placeholder={t('agents.folders.newFolder')}
-                className="border-border bg-card text-foreground placeholder:text-muted-foreground w-28 rounded-full border px-4 py-2 text-sm outline-none sm:w-auto"
+                className="w-28 sm:w-auto"
                 autoFocus
               />
             ) : (

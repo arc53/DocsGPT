@@ -12,6 +12,7 @@ import ThreeDotsIcon from '../assets/three-dots.svg';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToggleSwitch from '../components/ToggleSwitch';
+import { Input } from '../components/ui/input';
 import { useDarkTheme, useLoaderState } from '../hooks';
 import AddToolModal from '../modals/AddToolModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -222,21 +223,23 @@ export default function Tools() {
               {t('settings.tools.subtitle')}
             </p>
             <div className="my-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="relative w-full max-w-md">
-                <img
-                  src={SearchIcon}
-                  alt=""
-                  className="absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 opacity-40"
-                />
-                <input
+              <div className="w-full max-w-md">
+                <Input
                   maxLength={256}
-                  placeholder={t('settings.tools.searchPlaceholder')}
+                  label={t('settings.tools.searchPlaceholder')}
                   name="Document-search-input"
                   type="text"
                   id="tool-search-input"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="border-border bg-card text-foreground placeholder:text-muted-foreground h-11 w-full rounded-full border py-2 pr-5 pl-11 text-sm shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow outline-none focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-none"
+                  labelBgClassName="bg-background"
+                  leftIcon={
+                    <img
+                      src={SearchIcon}
+                      alt=""
+                      className="h-4 w-4 opacity-40"
+                    />
+                  }
                 />
               </div>
               <button
