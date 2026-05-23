@@ -1,14 +1,16 @@
 import logging
 import re
+
 import defusedxml.ElementTree as ET
+from bs4 import BeautifulSoup
+
 from application.parser.remote.base import BaseRemote
+from application.parser.schema.base import Document
 from application.core.url_validation import validate_url, SSRFError
 from application.security.safe_url import UnsafeUserUrlError, pinned_request
 
 class SitemapLoader(BaseRemote):
     def __init__(self, limit=20):
-        from langchain_community.document_loaders import WebBaseLoader
-        self.loader = WebBaseLoader
         self.limit = limit  # Adding limit to control the number of URLs to process
 
     def load_data(self, inputs):
@@ -42,8 +44,15 @@ class SitemapLoader(BaseRemote):
                 logging.error(f"URL validation failed for sitemap entry {url}: {e}")
                 continue
             try:
-                loader = self.loader([url])
-                documents.extend(loader.load())
+                response = pinned_request("GET", url, timeout=30)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, "html.parser")
+                documents.append(
+                    Document(
+                        soup.get_text(separator="\n", strip=True),
+                        extra_info={"source": url},
+                    )
+                )
                 processed_urls += 1  # Increment the counter after processing each URL
             except Exception as e:
                 logging.error(f"Error processing URL {url}: {e}", exc_info=True)

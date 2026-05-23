@@ -15,44 +15,31 @@ def _mock_validate_url(url):
     return url
 
 
+def _fake_response(html: str) -> MagicMock:
+    """Build a MagicMock that quacks like a requests.Response for our purposes."""
+    response = MagicMock()
+    response.text = html
+    response.raise_for_status.return_value = None
+    return response
+
+
 @pytest.fixture
 def web_loader():
     return WebLoader()
 
 
-@pytest.fixture
-def mock_langchain_document():
-    """Create a mock LangChain document."""
-    doc = MagicMock(spec=LCDocument)
-    doc.page_content = "Test web page content"
-    doc.metadata = {"source": "https://example.com", "title": "Test Page"}
-    return doc
-
-
-@pytest.fixture
-def mock_web_base_loader():
-    """Create a mock WebBaseLoader class."""
-    mock_loader_class = MagicMock()
-    mock_loader_instance = MagicMock()
-    mock_loader_class.return_value = mock_loader_instance
-    return mock_loader_class, mock_loader_instance
-
-
 class TestWebLoaderInitialization:
     """Test WebLoader initialization."""
 
-    def test_init(self, web_loader):
-        """Test WebLoader initialization."""
-        assert web_loader.loader is not None
-        from langchain_community.document_loaders import WebBaseLoader
-        assert web_loader.loader == WebBaseLoader
+    def test_init_has_no_loader_attribute(self, web_loader):
+        """Post-pinned-request migration, WebLoader no longer keeps a langchain loader class."""
+        assert not hasattr(web_loader, "loader")
 
 
 class TestWebLoaderHeaders:
     """Test WebLoader headers configuration."""
 
     def test_headers_defined(self):
-        """Test that headers are properly defined."""
         assert isinstance(headers, dict)
         assert "User-Agent" in headers
         assert "Accept" in headers
@@ -63,7 +50,6 @@ class TestWebLoaderHeaders:
         assert "Upgrade-Insecure-Requests" in headers
 
     def test_headers_values(self):
-        """Test header values are reasonable."""
         assert headers["User-Agent"] == "Mozilla/5.0"
         assert "text/html" in headers["Accept"]
         assert headers["Referer"] == "https://www.google.com/"
@@ -75,49 +61,34 @@ class TestWebLoaderLoadData:
     """Test WebLoader load_data method."""
 
     @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    def test_load_data_single_url_string(self, mock_validate, web_loader, mock_langchain_document):
-        """Test loading data from a single URL passed as string."""
-
-        mock_loader_instance = MagicMock()
-        mock_loader_instance.load.return_value = [mock_langchain_document]
-
-        mock_web_base_loader_class = MagicMock()
-        mock_web_base_loader_class.return_value = mock_loader_instance
-
-        web_loader.loader = mock_web_base_loader_class
+    @patch("application.parser.remote.web_loader.pinned_request")
+    def test_load_data_single_url_string(self, mock_pinned_request, mock_validate, web_loader):
+        mock_pinned_request.return_value = _fake_response(
+            "<html lang='en'><head><title>Test Page</title></head>"
+            "<body><p>Test web page content</p></body></html>"
+        )
 
         result = web_loader.load_data("https://example.com")
 
         assert len(result) == 1
         assert isinstance(result[0], Document)
-        assert result[0].text == "Test web page content"
-        assert result[0].extra_info == {"source": "https://example.com", "title": "Test Page"}
-
-        mock_web_base_loader_class.assert_called_once_with(["https://example.com"], header_template=headers)
-        mock_loader_instance.load.assert_called_once()
+        assert result[0].text == "Test Page\nTest web page content"
+        assert result[0].extra_info == {
+            "source": "https://example.com",
+            "title": "Test Page",
+            "language": "en",
+        }
+        mock_pinned_request.assert_called_once_with(
+            "GET", "https://example.com", headers=headers, timeout=30
+        )
 
     @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    def test_load_data_multiple_urls_list(self, mock_validate, web_loader):
-        """Test loading data from multiple URLs passed as list."""
-
-        doc1 = MagicMock(spec=LCDocument)
-        doc1.page_content = "Content from site 1"
-        doc1.metadata = {"source": "https://site1.com"}
-
-        doc2 = MagicMock(spec=LCDocument)
-        doc2.page_content = "Content from site 2"
-        doc2.metadata = {"source": "https://site2.com"}
-
-        mock_loader_instance1 = MagicMock()
-        mock_loader_instance1.load.return_value = [doc1]
-
-        mock_loader_instance2 = MagicMock()
-        mock_loader_instance2.load.return_value = [doc2]
-
-        mock_web_base_loader_class = MagicMock()
-        mock_web_base_loader_class.side_effect = [mock_loader_instance1, mock_loader_instance2]
-
-        web_loader.loader = mock_web_base_loader_class
+    @patch("application.parser.remote.web_loader.pinned_request")
+    def test_load_data_multiple_urls_list(self, mock_pinned_request, mock_validate, web_loader):
+        mock_pinned_request.side_effect = [
+            _fake_response("<html><body>Content from site 1</body></html>"),
+            _fake_response("<html><body>Content from site 2</body></html>"),
+        ]
 
         urls = ["https://site1.com", "https://site2.com"]
         result = web_loader.load_data(urls)
@@ -129,121 +100,85 @@ class TestWebLoaderLoadData:
         assert result[0].extra_info == {"source": "https://site1.com"}
         assert result[1].extra_info == {"source": "https://site2.com"}
 
-        assert mock_web_base_loader_class.call_count == 2
-        mock_web_base_loader_class.assert_any_call(["https://site1.com"], header_template=headers)
-        mock_web_base_loader_class.assert_any_call(["https://site2.com"], header_template=headers)
+        assert mock_pinned_request.call_count == 2
+        mock_pinned_request.assert_any_call(
+            "GET", "https://site1.com", headers=headers, timeout=30
+        )
+        mock_pinned_request.assert_any_call(
+            "GET", "https://site2.com", headers=headers, timeout=30
+        )
 
     @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    def test_load_data_url_without_scheme(self, mock_validate, web_loader, mock_langchain_document):
-        """Test loading data from URL without scheme (should add http://)."""
-        mock_loader_instance = MagicMock()
-        mock_loader_instance.load.return_value = [mock_langchain_document]
-
-        mock_web_base_loader_class = MagicMock()
-        mock_web_base_loader_class.return_value = mock_loader_instance
-
-        web_loader.loader = mock_web_base_loader_class
+    @patch("application.parser.remote.web_loader.pinned_request")
+    def test_load_data_url_without_scheme(self, mock_pinned_request, mock_validate, web_loader):
+        mock_pinned_request.return_value = _fake_response(
+            "<html><body>Schemeless</body></html>"
+        )
 
         result = web_loader.load_data("example.com")
 
         assert len(result) == 1
-        assert isinstance(result[0], Document)
-
-        # Verify WebBaseLoader was called with http:// prefix
-        mock_web_base_loader_class.assert_called_once_with(["http://example.com"], header_template=headers)
+        mock_pinned_request.assert_called_once_with(
+            "GET", "http://example.com", headers=headers, timeout=30
+        )
 
     @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    def test_load_data_url_with_scheme(self, mock_validate, web_loader, mock_langchain_document):
-        """Test loading data from URL with scheme (should not modify)."""
-        mock_loader_instance = MagicMock()
-        mock_loader_instance.load.return_value = [mock_langchain_document]
-
-        mock_web_base_loader_class = MagicMock()
-        mock_web_base_loader_class.return_value = mock_loader_instance
-
-        web_loader.loader = mock_web_base_loader_class
+    @patch("application.parser.remote.web_loader.pinned_request")
+    def test_load_data_url_with_scheme(self, mock_pinned_request, mock_validate, web_loader):
+        mock_pinned_request.return_value = _fake_response(
+            "<html><body>Schemed</body></html>"
+        )
 
         result = web_loader.load_data("https://example.com")
 
         assert len(result) == 1
-
-        # Verify WebBaseLoader was called with original URL
-        mock_web_base_loader_class.assert_called_once_with(["https://example.com"], header_template=headers)
+        mock_pinned_request.assert_called_once_with(
+            "GET", "https://example.com", headers=headers, timeout=30
+        )
 
     @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    def test_load_data_multiple_documents_per_url(self, mock_validate, web_loader):
-        """Test loading multiple documents from a single URL."""
-        doc1 = MagicMock(spec=LCDocument)
-        doc1.page_content = "First document content"
-        doc1.metadata = {"source": "https://example.com", "section": "intro"}
-
-        doc2 = MagicMock(spec=LCDocument)
-        doc2.page_content = "Second document content"
-        doc2.metadata = {"source": "https://example.com", "section": "main"}
-
-        mock_loader_instance = MagicMock()
-        mock_loader_instance.load.return_value = [doc1, doc2]
-
-        mock_web_base_loader_class = MagicMock()
-        mock_web_base_loader_class.return_value = mock_loader_instance
-
-        web_loader.loader = mock_web_base_loader_class
+    @patch("application.parser.remote.web_loader.pinned_request")
+    def test_load_data_skips_pages_without_title(self, mock_pinned_request, mock_validate, web_loader):
+        """A page without <title> or <html lang=...> still loads, just with bare metadata."""
+        mock_pinned_request.return_value = _fake_response("<p>Bare body</p>")
 
         result = web_loader.load_data("https://example.com")
 
-        assert len(result) == 2
-        assert result[0].text == "First document content"
-        assert result[1].text == "Second document content"
-        assert result[0].extra_info == {"source": "https://example.com", "section": "intro"}
-        assert result[1].extra_info == {"source": "https://example.com", "section": "main"}
+        assert len(result) == 1
+        assert result[0].text == "Bare body"
+        assert result[0].extra_info == {"source": "https://example.com"}
 
 
 class TestWebLoaderErrorHandling:
     """Test WebLoader error handling."""
 
     @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    @patch('application.parser.remote.web_loader.logging')
-    def test_load_data_single_url_error(self, mock_logging, mock_validate, web_loader):
-        """Test error handling for single URL that fails to load."""
-        mock_loader_instance = MagicMock()
-        mock_loader_instance.load.side_effect = Exception("Network error")
-
-        mock_web_base_loader_class = MagicMock()
-        mock_web_base_loader_class.return_value = mock_loader_instance
-
-        web_loader.loader = mock_web_base_loader_class
+    @patch("application.parser.remote.web_loader.pinned_request")
+    @patch("application.parser.remote.web_loader.logging")
+    def test_load_data_single_url_error(self, mock_logging, mock_pinned_request, mock_validate, web_loader):
+        mock_pinned_request.side_effect = Exception("Network error")
 
         result = web_loader.load_data("https://invalid-url.com")
 
-        assert result == []  # Should return empty list on error
+        assert result == []
         mock_logging.error.assert_called_once()
         error_call = mock_logging.error.call_args
         assert "Error processing URL https://invalid-url.com" in error_call[0][0]
         assert error_call[1]["exc_info"] is True
 
     @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    @patch('application.parser.remote.web_loader.logging')
-    def test_load_data_partial_failure(self, mock_logging, mock_validate, web_loader):
-        """Test partial failure - some URLs succeed, some fail."""
-        doc1 = MagicMock(spec=LCDocument)
-        doc1.page_content = "Success content"
-        doc1.metadata = {"source": "https://good-url.com"}
-
-        mock_loader_instance1 = MagicMock()
-        mock_loader_instance1.load.return_value = [doc1]
-
-        mock_loader_instance2 = MagicMock()
-        mock_loader_instance2.load.side_effect = Exception("Network error")
-
-        mock_web_base_loader_class = MagicMock()
-        mock_web_base_loader_class.side_effect = [mock_loader_instance1, mock_loader_instance2]
-
-        web_loader.loader = mock_web_base_loader_class
+    @patch("application.parser.remote.web_loader.pinned_request")
+    @patch("application.parser.remote.web_loader.logging")
+    def test_load_data_partial_failure(self, mock_logging, mock_pinned_request, mock_validate, web_loader):
+        mock_pinned_request.side_effect = [
+            _fake_response("<html><body>Success content</body></html>"),
+            Exception("Network error"),
+        ]
 
         urls = ["https://good-url.com", "https://bad-url.com"]
         result = web_loader.load_data(urls)
 
-        assert len(result) == 1  # Only successful URL should be in results
+        assert len(result) == 1
         assert result[0].text == "Success content"
         assert result[0].extra_info == {"source": "https://good-url.com"}
 
@@ -256,26 +191,22 @@ class TestWebLoaderSSRF:
     """Test WebLoader SSRF protection."""
 
     @patch("application.parser.remote.web_loader.validate_url")
-    def test_load_data_skips_url_failing_ssrf_validation(self, mock_validate, web_loader):
+    @patch("application.parser.remote.web_loader.pinned_request")
+    def test_load_data_skips_url_failing_ssrf_validation(self, mock_pinned_request, mock_validate, web_loader):
         """A URL that fails SSRF validation must be skipped, never reaching the fetcher."""
         mock_validate.side_effect = SSRFError("Access to private/internal IP addresses is not allowed.")
-
-        mock_web_base_loader_class = MagicMock()
-        web_loader.loader = mock_web_base_loader_class
 
         result = web_loader.load_data("http://169.254.169.254/latest/meta-data/")
 
         assert result == []
         mock_validate.assert_called_once_with("http://169.254.169.254/latest/meta-data/")
-        mock_web_base_loader_class.assert_not_called()
+        mock_pinned_request.assert_not_called()
 
     @patch("application.parser.remote.web_loader.validate_url")
     @patch("application.parser.remote.web_loader.logging")
     def test_load_data_logs_warning_on_ssrf_failure(self, mock_logging, mock_validate, web_loader):
-        """SSRF rejections should be logged as warnings, not errors."""
         mock_validate.side_effect = SSRFError("blocked")
 
-        web_loader.loader = MagicMock()
         web_loader.load_data("http://127.0.0.1")
 
         mock_logging.warning.assert_called_once()
@@ -284,65 +215,52 @@ class TestWebLoaderSSRF:
         assert "127.0.0.1" in warning_msg
 
     @patch("application.parser.remote.web_loader.validate_url")
-    def test_load_data_mixed_safe_and_unsafe_urls(self, mock_validate, web_loader):
-        """In a list of URLs, unsafe ones are skipped while safe ones still load."""
+    @patch("application.parser.remote.web_loader.pinned_request")
+    def test_load_data_mixed_safe_and_unsafe_urls(self, mock_pinned_request, mock_validate, web_loader):
         def validate(url):
             if "169.254.169.254" in url:
                 raise SSRFError("metadata blocked")
             return url
 
         mock_validate.side_effect = validate
-
-        safe_doc = MagicMock(spec=LCDocument)
-        safe_doc.page_content = "Public page"
-        safe_doc.metadata = {"source": "https://example.com"}
-
-        safe_loader_instance = MagicMock()
-        safe_loader_instance.load.return_value = [safe_doc]
-
-        mock_web_base_loader_class = MagicMock(return_value=safe_loader_instance)
-        web_loader.loader = mock_web_base_loader_class
+        mock_pinned_request.return_value = _fake_response(
+            "<html><body>Public page</body></html>"
+        )
 
         urls = ["https://example.com", "http://169.254.169.254/latest/meta-data/"]
         result = web_loader.load_data(urls)
 
         assert len(result) == 1
         assert result[0].text == "Public page"
-        # Only the safe URL should have been fetched
-        mock_web_base_loader_class.assert_called_once_with(["https://example.com"], header_template=headers)
+        mock_pinned_request.assert_called_once_with(
+            "GET", "https://example.com", headers=headers, timeout=30
+        )
 
 
 class TestWebLoaderEdgeCases:
     """Test WebLoader edge cases."""
 
     def test_load_data_empty_list(self, web_loader):
-        """Test loading data with empty URL list."""
         result = web_loader.load_data([])
         assert result == []
 
     @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    def test_load_data_empty_response(self, mock_validate, web_loader):
-        """Test loading data when WebBaseLoader returns empty list."""
-        mock_loader_instance = MagicMock()
-        mock_loader_instance.load.return_value = []
-
-        mock_web_base_loader_class = MagicMock()
-        mock_web_base_loader_class.return_value = mock_loader_instance
-
-        web_loader.loader = mock_web_base_loader_class
+    @patch("application.parser.remote.web_loader.pinned_request")
+    def test_load_data_empty_response_body(self, mock_pinned_request, mock_validate, web_loader):
+        mock_pinned_request.return_value = _fake_response("")
 
         result = web_loader.load_data("https://empty-page.com")
 
-        assert result == []
+        assert len(result) == 1
+        assert result[0].text == ""
+        assert result[0].extra_info == {"source": "https://empty-page.com"}
 
     def test_url_scheme_detection(self):
         """Test URL scheme detection logic."""
-        # Test URLs with schemes
         assert urlparse("https://example.com").scheme == "https"
         assert urlparse("http://example.com").scheme == "http"
         assert urlparse("ftp://example.com").scheme == "ftp"
 
-        # Test URLs without schemes
         assert urlparse("example.com").scheme == ""
         assert urlparse("www.example.com").scheme == ""
 
@@ -351,29 +269,25 @@ class TestWebLoaderIntegration:
     """Test WebLoader integration with base class."""
 
     def test_inherits_from_base_remote(self, web_loader):
-        """Test that WebLoader inherits from BaseRemote."""
         from application.parser.remote.base import BaseRemote
         assert isinstance(web_loader, BaseRemote)
 
     def test_implements_load_data_method(self, web_loader):
-        """Test that WebLoader implements required load_data method."""
-        assert hasattr(web_loader, 'load_data')
+        assert hasattr(web_loader, "load_data")
         assert callable(web_loader.load_data)
 
     @patch("application.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    def test_load_langchain_documents_method(self, mock_validate, web_loader, mock_langchain_document):
-        """Test inherited load_langchain_documents method."""
-        mock_loader_instance = MagicMock()
-        mock_loader_instance.load.return_value = [mock_langchain_document]
-
-        mock_web_base_loader_class = MagicMock()
-        mock_web_base_loader_class.return_value = mock_loader_instance
-
-        web_loader.loader = mock_web_base_loader_class
+    @patch("application.parser.remote.web_loader.pinned_request")
+    def test_load_langchain_documents_method(self, mock_pinned_request, mock_validate, web_loader):
+        mock_pinned_request.return_value = _fake_response(
+            "<html><head><title>Test Page</title></head>"
+            "<body><p>Test web page content</p></body></html>"
+        )
 
         result = web_loader.load_langchain_documents(inputs="https://example.com")
 
         assert len(result) == 1
         assert isinstance(result[0], LCDocument)
-        assert result[0].page_content == "Test web page content"
-        assert result[0].metadata == {"source": "https://example.com", "title": "Test Page"}
+        assert "Test web page content" in result[0].page_content
+        assert result[0].metadata["source"] == "https://example.com"
+        assert result[0].metadata["title"] == "Test Page"

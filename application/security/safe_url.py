@@ -291,6 +291,14 @@ def _ip_to_url_host(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str:
     return str(ip)
 
 
+def _url_userinfo_prefix(netloc: str) -> str:
+    """Return the exact ``userinfo@`` prefix from a URL netloc, if present."""
+
+    if "@" not in netloc:
+        return ""
+    return f"{netloc.rsplit('@', 1)[0]}@"
+
+
 def pinned_request(
     method: str,
     url: str,
@@ -312,7 +320,7 @@ def pinned_request(
 
     host, ip, parts = _validate_and_pick_ip(url)
 
-    netloc = _ip_to_url_host(ip)
+    netloc = f"{_url_userinfo_prefix(parts.netloc)}{_ip_to_url_host(ip)}"
     if parts.port is not None:
         netloc = f"{netloc}:{parts.port}"
     pinned_url = urlunsplit(
