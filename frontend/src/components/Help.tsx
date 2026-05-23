@@ -3,6 +3,7 @@ import Info from '../assets/info.svg';
 import PageIcon from '../assets/documentation.svg';
 import EmailIcon from '../assets/envelope.svg';
 import { useTranslation } from 'react-i18next';
+import { Button } from './ui/button';
 const Help = () => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -33,14 +34,16 @@ const Help = () => {
 
   return (
     <div className="relative inline-block text-sm" ref={dropdownRef}>
-      <button
+      <Button
+        type="button"
+        variant="ghost"
         ref={buttonRef}
         onClick={toggleDropdown}
-        className="hover:bg-sidebar-accent mx-4 my-auto flex h-9 w-full items-center gap-4 rounded-3xl"
+        className="hover:bg-sidebar-accent mx-4 my-auto w-full justify-start gap-4 rounded-3xl px-0"
       >
         <img src={Info} alt="info" className="ml-2 w-5 filter dark:invert" />
         {t('help')}
-      </button>
+      </Button>
       {isOpen && (
         <div
           className={`dark:bg-card bg-card absolute z-10 w-48 translate-x-4 -translate-y-28 rounded-xl shadow-lg`}

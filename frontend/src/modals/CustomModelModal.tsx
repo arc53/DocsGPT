@@ -5,6 +5,7 @@ import { useSelector } from 'react-redux';
 
 import customModelsService from '../api/services/customModelsService';
 import Spinner from '../components/Spinner';
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { ActiveState } from '../models/misc';
@@ -524,12 +525,13 @@ export default function CustomModelModal({
 
         <div className="px-2 py-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={handleTest}
               disabled={!canTest || testing || saving}
               title={testDisabledHint}
-              className="border-border dark:border-border dark:text-foreground hover:bg-accent dark:hover:bg-muted/50 w-full rounded-3xl border px-6 py-2 text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              className="w-full rounded-3xl px-6 disabled:cursor-not-allowed sm:w-auto"
             >
               {testing ? (
                 <div className="flex items-center justify-center">
@@ -541,21 +543,22 @@ export default function CustomModelModal({
               ) : (
                 t('settings.customModels.testConnection')
               )}
-            </button>
+            </Button>
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:gap-3">
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 onClick={closeModal}
                 disabled={saving}
-                className="dark:text-foreground hover:bg-accent dark:hover:bg-muted/50 w-full cursor-pointer rounded-3xl px-6 py-2 text-sm font-medium disabled:opacity-50 sm:w-auto"
+                className="w-full rounded-3xl px-6 sm:w-auto"
               >
                 {t('cancel')}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 onClick={handleSave}
                 disabled={saving}
-                className="bg-primary hover:bg-primary/90 w-full rounded-3xl px-6 py-2 text-sm font-medium text-white transition-all disabled:opacity-50 sm:w-auto"
+                className="w-full rounded-3xl px-6 sm:w-auto"
               >
                 {saving ? (
                   <div className="flex items-center justify-center">
@@ -567,7 +570,7 @@ export default function CustomModelModal({
                 ) : (
                   t('settings.customModels.save')
                 )}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -584,19 +587,20 @@ interface CapabilityChipProps {
 
 function CapabilityChip({ label, active, onClick }: CapabilityChipProps) {
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
       role="switch"
       aria-checked={active}
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+      className={`h-auto rounded-full border px-3 py-1.5 shadow-none ${
         active
-          ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-400/10 dark:text-emerald-300'
-          : 'border-border text-muted-foreground hover:bg-accent dark:hover:bg-muted/40'
+          ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-400/10 dark:text-emerald-300 dark:hover:bg-emerald-400/10 dark:hover:text-emerald-300'
+          : 'text-muted-foreground'
       }`}
     >
       {active && <Check size={14} strokeWidth={2.5} />}
       {label}
-    </button>
+    </Button>
   );
 }

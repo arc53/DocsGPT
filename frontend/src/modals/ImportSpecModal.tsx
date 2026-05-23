@@ -5,6 +5,7 @@ import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import Upload from '../assets/upload.svg';
 import Spinner from '../components/Spinner';
+import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -166,29 +167,33 @@ export default function ImportSpecModal({
       contentClassName="max-h-[70vh]"
       footer={
         <>
-          <button
+          <Button
+            type="button"
+            variant="ghost"
             onClick={handleClose}
-            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium"
+            className="rounded-3xl px-5"
           >
             {t('modals.importSpec.cancel')}
-          </button>
+          </Button>
           {!parsedResult ? (
-            <button
+            <Button
+              type="button"
               onClick={handleParse}
               disabled={!file || loading}
-              className="bg-primary hover:bg-primary/90 flex w-20 items-center justify-center gap-2 rounded-3xl px-5 py-2 text-sm text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-20 rounded-3xl px-5 disabled:cursor-not-allowed"
             >
               {loading && <Spinner size="small" color="white" />}
               {!loading && t('modals.importSpec.parse')}
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
+              type="button"
               onClick={handleImport}
               disabled={selectedActions.size === 0}
-              className="bg-primary hover:bg-primary/90 rounded-3xl px-5 py-2 text-sm text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-3xl px-5 disabled:cursor-not-allowed"
             >
               {t('modals.importSpec.import', { count: selectedActions.size })}
-            </button>
+            </Button>
           )}
         </>
       }
@@ -265,14 +270,17 @@ export default function ImportSpecModal({
                   count: parsedResult.actions.length,
                 })}
               </p>
-              <button
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
                 onClick={toggleAll}
-                className="text-primary hover:text-primary text-sm"
+                className="h-auto p-0"
               >
                 {selectedActions.size === parsedResult.actions.length
                   ? t('modals.importSpec.deselectAll')
                   : t('modals.importSpec.selectAll')}
-              </button>
+              </Button>
             </div>
 
             <div className="max-h-72 space-y-2 overflow-y-auto px-1">

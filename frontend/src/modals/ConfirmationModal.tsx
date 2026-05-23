@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
+import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 
@@ -24,11 +25,6 @@ export default function ConfirmationModal({
 }) {
   const { t } = useTranslation();
 
-  const submitButtonClasses =
-    variant === 'danger'
-      ? 'rounded-3xl bg-destructive px-5 py-2 text-sm text-white transition-all hover:bg-destructive/90 hover:font-bold tracking-[0.019em] hover:tracking-normal'
-      : 'rounded-3xl bg-primary px-5 py-2 text-sm text-white transition-all hover:bg-primary/90';
-
   const handleSubmitClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -52,15 +48,22 @@ export default function ConfirmationModal({
       title={message}
       footer={
         <>
-          <button
+          <Button
+            type="button"
+            variant="ghost"
             onClick={handleCancelClick}
-            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium"
+            className="rounded-3xl px-5"
           >
             {cancelLabel ? cancelLabel : t('cancel')}
-          </button>
-          <button onClick={handleSubmitClick} className={submitButtonClasses}>
+          </Button>
+          <Button
+            type="button"
+            variant={variant === 'danger' ? 'destructive' : 'default'}
+            onClick={handleSubmitClick}
+            className="rounded-3xl px-5"
+          >
             {submitLabel}
-          </button>
+          </Button>
         </>
       }
     >

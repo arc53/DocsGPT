@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import ArrowLeft from '../assets/arrow-left.svg';
 import ArrowRight from '../assets/arrow-right.svg';
+import { Button } from './ui/button';
 
 type HiddenGradientType = 'left' | 'right' | undefined;
 
@@ -59,13 +60,16 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
       ></div>
 
       <div className="z-10 md:hidden">
-        <button
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
           onClick={() => scrollTabs(-1)}
-          className="hover:bg-muted dark:hover:bg-accent flex h-6 w-6 items-center justify-center rounded-full transition-all"
+          className="hover:bg-muted dark:hover:bg-accent h-6 w-6 rounded-full"
           aria-label={t('settings.scrollTabsLeft')}
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3" />
-        </button>
+        </Button>
       </div>
       <div
         ref={containerRef}
@@ -74,10 +78,12 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
         aria-label={t('settings.tabsAriaLabel')}
       >
         {tabs.map((tab, index) => (
-          <button
+          <Button
             key={index}
+            type="button"
+            variant="ghost"
             onClick={() => setActiveTab(tab)}
-            className={`h-9 snap-start rounded-3xl px-4 font-bold transition-colors ${
+            className={`snap-start rounded-3xl px-4 font-bold ${
               activeTab === tab
                 ? 'bg-muted text-foreground dark:bg-accent dark:text-white'
                 : 'text-muted-foreground hover:text-foreground dark:text-neutral-400 dark:hover:text-white'
@@ -88,17 +94,20 @@ const SettingsBar = ({ setActiveTab, activeTab }: SettingsBarProps) => {
             id={`${tab.toLowerCase()}-tab`}
           >
             {tab}
-          </button>
+          </Button>
         ))}
       </div>
       <div className="z-10 md:hidden">
-        <button
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
           onClick={() => scrollTabs(1)}
-          className="hover:bg-muted dark:hover:bg-accent flex h-6 w-6 items-center justify-center rounded-full"
+          className="hover:bg-muted dark:hover:bg-accent h-6 w-6 rounded-full"
           aria-label={t('settings.scrollTabsRight')}
         >
           <img src={ArrowRight} alt="right-arrow" className="h-3" />
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import userService from '../api/services/userService';
 import ExternalLinkIcon from '../assets/external-link.svg';
 import CopyButton from '../components/CopyButton';
 import Spinner from '../components/Spinner';
+import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -127,16 +128,18 @@ export default function AgentDetailsModal({
                 </a>
               </div>
             ) : (
-              <button
-                className="border-primary text-primary hover:bg-primary/90 flex w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
+              <Button
+                type="button"
+                variant="outline"
                 onClick={handleGeneratePublicLink}
+                className="border-primary text-primary hover:bg-primary/90 w-28 rounded-3xl border-solid px-5 hover:text-white"
               >
                 {loadingStates.publicLink ? (
                   <Spinner size="small" color="#976af3" />
                 ) : (
                   t('modals.agentDetails.generate')
                 )}
-              </button>
+              </Button>
             )}
           </div>
           <div className="flex flex-col gap-3">
@@ -174,9 +177,13 @@ export default function AgentDetailsModal({
                 </div>
               </div>
             ) : (
-              <button className="border-primary text-primary hover:bg-primary/90 w-28 rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white">
+              <Button
+                type="button"
+                variant="outline"
+                className="border-primary text-primary hover:bg-primary/90 w-28 rounded-3xl border-solid px-5 hover:text-white"
+              >
                 {t('modals.agentDetails.generate')}
-              </button>
+              </Button>
             )}
           </div>
           <div className="flex flex-col gap-3">
@@ -214,16 +221,18 @@ export default function AgentDetailsModal({
                 </a>
               </div>
             ) : (
-              <button
-                className="border-primary text-primary hover:bg-primary/90 flex w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium transition-colors hover:text-white"
+              <Button
+                type="button"
+                variant="outline"
                 onClick={handleGenerateWebhook}
+                className="border-primary text-primary hover:bg-primary/90 w-28 rounded-3xl border-solid px-5 hover:text-white"
               >
                 {loadingStates.webhook ? (
                   <Spinner size="small" color="#976af3" />
                 ) : (
                   t('modals.agentDetails.generate')
                 )}
-              </button>
+              </Button>
             )}
           </div>
         </div>

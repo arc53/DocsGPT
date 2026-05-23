@@ -4,6 +4,7 @@ import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import ConfigFields from '../components/ConfigFields';
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Modal } from '../components/ui/modal';
@@ -120,21 +121,24 @@ export default function ConfigToolModal({
       size="lg"
       footer={
         <>
-          <button
+          <Button
+            type="button"
+            variant="ghost"
             onClick={handleClose}
-            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium"
+            className="rounded-3xl px-5"
           >
             {t('modals.configTool.closeButton')}
-          </button>
-          <button
+          </Button>
+          <Button
+            type="button"
             onClick={handleAddTool}
             disabled={saving}
-            className="bg-primary hover:bg-primary/90 rounded-3xl px-5 py-2 text-sm font-medium text-white transition-colors disabled:opacity-60"
+            className="rounded-3xl px-5"
           >
             {saving
               ? t('modals.configTool.addButton') + '…'
               : t('modals.configTool.addButton')}
-          </button>
+          </Button>
         </>
       }
     >

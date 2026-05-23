@@ -10,6 +10,7 @@ import {
   selectUploadTasks,
   type UploadTask,
 } from '../upload/uploadSlice';
+import { Button } from './ui/button';
 
 const PROGRESS_RADIUS = 10;
 const PROGRESS_CIRCUMFERENCE = 2 * Math.PI * PROGRESS_RADIUS;
@@ -78,15 +79,17 @@ export default function UploadToast() {
             {headerLabel}
           </h3>
           <div className="flex items-center gap-1">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={() => setCollapsed((prev) => !prev)}
               aria-label={
                 collapsed
                   ? t('modals.uploadDoc.progress.expandDetails')
                   : t('modals.uploadDoc.progress.collapseDetails')
               }
-              className="flex h-8 items-center justify-center p-0 text-black opacity-70 transition-opacity hover:opacity-100 dark:text-white"
+              className="text-black opacity-70 hover:bg-transparent hover:opacity-100 dark:text-white dark:hover:bg-transparent"
             >
               <img
                 src={ChevronDown}
@@ -95,11 +98,13 @@ export default function UploadToast() {
                   collapsed ? 'rotate-180' : ''
                 }`}
               />
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={dismissAll}
-              className="flex h-8 items-center justify-center p-0 text-black opacity-70 transition-opacity hover:opacity-100 dark:text-white"
+              className="text-black opacity-70 hover:bg-transparent hover:opacity-100 dark:text-white dark:hover:bg-transparent"
               aria-label={t('modals.uploadDoc.progress.dismiss')}
             >
               <svg
@@ -125,7 +130,7 @@ export default function UploadToast() {
                   strokeLinejoin="round"
                 />
               </svg>
-            </button>
+            </Button>
           </div>
         </div>
 

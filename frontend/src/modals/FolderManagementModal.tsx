@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
@@ -62,21 +63,24 @@ export default function FolderNameModal({
       }
       footer={
         <>
-          <button
+          <Button
+            type="button"
+            variant="ghost"
             onClick={handleCancel}
-            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium"
+            className="rounded-3xl px-5"
           >
             {t('cancel')}
-          </button>
-          <button
+          </Button>
+          <Button
+            type="button"
             onClick={handleSubmit}
             disabled={!name.trim()}
-            className="bg-primary hover:bg-primary/90 rounded-3xl px-5 py-2 text-sm text-white disabled:opacity-50"
+            className="rounded-3xl px-5"
           >
             {mode === 'create'
               ? t('agents.folders.createFolder')
               : t('agents.folders.rename')}
-          </button>
+          </Button>
         </>
       }
     >

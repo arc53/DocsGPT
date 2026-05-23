@@ -8,6 +8,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import SearchIcon from '../assets/search.svg';
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
 import { searchConversations } from '../preferences/preferenceApi';
@@ -197,9 +198,10 @@ export default function SearchConversationsModal({
               const isActive = index === activeIndex;
 
               return (
-                <button
+                <Button
                   key={conversation.id}
                   type="button"
+                  variant="ghost"
                   ref={(element) => {
                     resultRefs.current[index] = element;
                   }}
@@ -207,7 +209,7 @@ export default function SearchConversationsModal({
                   onMouseEnter={() => setActiveIndex(index)}
                   role="option"
                   aria-selected={isActive}
-                  className={`text-foreground flex w-full flex-col items-start gap-0.5 px-5 py-2.5 text-left text-sm ${
+                  className={`text-foreground flex h-auto w-full flex-col items-start gap-0.5 rounded-none px-5 py-2.5 text-left ${
                     isActive ? 'bg-sidebar-accent' : 'hover:bg-sidebar-accent'
                   }`}
                 >
@@ -229,7 +231,7 @@ export default function SearchConversationsModal({
                       />
                     </span>
                   )}
-                </button>
+                </Button>
               );
             })}
         </div>

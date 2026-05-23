@@ -6,6 +6,7 @@ import conversationService from '../api/services/conversationService';
 import Spinner from '../assets/spinner.svg';
 import Dropdown from '../components/Dropdown';
 import ToggleSwitch from '../components/ToggleSwitch';
+import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import { Doc } from '../models/misc';
 import {
@@ -136,15 +137,19 @@ export const ShareConversationModal = ({
             {`${domain}/share/${identifier ?? '....'}`}
           </span>
           {status === 'fetched' ? (
-            <button
-              className="bg-primary hover:bg-primary/90 my-1 h-10 w-28 rounded-3xl p-2 text-sm font-medium text-white"
+            <Button
+              type="button"
+              size="lg"
+              className="my-1 w-28 rounded-3xl"
               onClick={() => handleCopyKey(`${domain}/share/${identifier}`)}
             >
               {isCopied ? t('modals.saveKey.copied') : t('modals.saveKey.copy')}
-            </button>
+            </Button>
           ) : (
-            <button
-              className="bg-primary hover:bg-primary/90 my-1 flex h-10 w-28 items-center justify-evenly rounded-3xl p-2 text-center text-sm font-medium text-white"
+            <Button
+              type="button"
+              size="lg"
+              className="my-1 w-28 justify-evenly rounded-3xl text-center"
               onClick={() => {
                 shareCoversationPublicly(allowPrompt);
               }}
@@ -156,7 +161,7 @@ export const ShareConversationModal = ({
                   className="inline animate-spin cursor-pointer bg-transparent filter dark:invert"
                 ></img>
               )}
-            </button>
+            </Button>
           )}
         </div>
       </div>

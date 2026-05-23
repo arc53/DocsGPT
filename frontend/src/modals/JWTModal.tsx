@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
@@ -35,14 +36,15 @@ export default function JWTModal({
             data-testid="jwt-token-input"
           />
         </div>
-        <button
+        <Button
+          type="button"
           disabled={jwtToken.length === 0}
           onClick={handleTokenSubmit.bind(null, jwtToken)}
-          className="bg-primary float-right mt-4 rounded-3xl px-5 py-2 text-sm font-medium text-white hover:bg-[#6F3FD1] disabled:opacity-50"
+          className="float-right mt-4 rounded-3xl px-5"
           data-testid="jwt-token-submit"
         >
           Save Token
-        </button>
+        </Button>
       </div>
     </Modal>
   );

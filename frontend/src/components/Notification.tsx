@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import close from '../assets/cross.svg';
+import { Button } from './ui/button';
 
 interface NotificationProps {
   notificationText: string;
@@ -118,8 +119,10 @@ export default function Notification({
           </svg>
         </span>
 
-        <button
-          className="absolute top-2 right-2 z-30 h-4 w-4 hover:opacity-70"
+        <Button
+          type="button"
+          variant="ghost"
+          className="absolute top-2 right-2 z-30 h-4 w-4 rounded-none bg-transparent p-0 hover:bg-transparent hover:opacity-70"
           aria-label={t('notification.closeAriaLabel')}
           onClick={(e) => {
             e.stopPropagation();
@@ -128,7 +131,7 @@ export default function Notification({
           }}
         >
           <img className="w-full" src={close} alt="Close notification" />
-        </button>
+        </Button>
       </a>
     </>
   );

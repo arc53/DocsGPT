@@ -5,6 +5,7 @@ import { useSelector } from 'react-redux';
 import { baseURL } from '../api/client';
 import userService from '../api/services/userService';
 import Spinner from '../components/Spinner';
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import {
@@ -774,10 +775,12 @@ export default function MCPServerModal({
 
         <div className="px-6 py-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
-            <button
+            <Button
+              type="button"
+              variant="outline"
               onClick={testConnection}
               disabled={testing}
-              className="border-border dark:border-border dark:text-foreground hover:bg-accent dark:hover:bg-muted/50 w-full rounded-3xl border px-6 py-2 text-sm font-medium transition-all disabled:opacity-50 sm:w-auto"
+              className="w-full rounded-3xl px-6 sm:w-auto"
             >
               {testing ? (
                 <div className="flex items-center justify-center">
@@ -789,22 +792,25 @@ export default function MCPServerModal({
               ) : (
                 t('settings.tools.mcp.testConnection')
               )}
-            </button>
+            </Button>
 
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:gap-3">
-              <button
+              <Button
+                type="button"
+                variant="ghost"
                 onClick={() => {
                   setModalState('INACTIVE');
                   resetForm();
                 }}
-                className="dark:text-foreground hover:bg-accent dark:hover:bg-muted/50 w-full cursor-pointer rounded-3xl px-6 py-2 text-sm font-medium sm:w-auto"
+                className="w-full rounded-3xl px-6 sm:w-auto"
               >
                 {t('settings.tools.mcp.cancel')}
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
                 onClick={handleSave}
                 disabled={loading || !saveActive}
-                className="bg-primary hover:bg-primary/90 w-full rounded-3xl px-6 py-2 text-sm font-medium text-white transition-all disabled:opacity-50 sm:w-auto"
+                className="w-full rounded-3xl px-6 sm:w-auto"
               >
                 {loading ? (
                   <div className="flex items-center justify-center">
@@ -816,7 +822,7 @@ export default function MCPServerModal({
                 ) : (
                   t('settings.tools.mcp.save')
                 )}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

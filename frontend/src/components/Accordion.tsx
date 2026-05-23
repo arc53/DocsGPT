@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 
 import ChevronDown from '../assets/chevron-down.svg';
+import { Button } from './ui/button';
 
 type AccordionProps = {
   title: string;
@@ -33,9 +34,11 @@ export default function Accordion({
   };
   return (
     <div className={`overflow-hidden shadow-xs ${className}`}>
-      <button
-        className={`flex w-full items-center justify-between focus:outline-hidden ${titleClassName}`}
+      <Button
+        type="button"
+        variant="ghost"
         onClick={toggleAccordion}
+        className={`h-auto w-full justify-between rounded-none bg-transparent p-0 hover:bg-transparent ${titleClassName}`}
       >
         <p className="wrap-break-word">{title}</p>
         <img
@@ -45,7 +48,7 @@ export default function Accordion({
           }`}
           aria-hidden="true"
         />
-      </button>
+      </Button>
 
       <div
         ref={contentRef}
