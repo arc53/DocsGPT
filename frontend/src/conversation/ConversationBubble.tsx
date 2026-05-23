@@ -1097,10 +1097,8 @@ function ToolCalls({
                     >
                       <div className="flex flex-col gap-1">
                         <div className="border-border flex flex-col rounded-2xl border">
-                          <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
-                            <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                              Arguments
-                            </span>{' '}
+                          <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 font-mono text-sm font-semibold wrap-break-word">
+                            <span>Arguments</span>{' '}
                             <CopyButton
                               textToCopy={JSON.stringify(
                                 toolCall.arguments,
@@ -1110,19 +1108,14 @@ function ToolCalls({
                             />
                           </p>
                           <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                            <span
-                              className="dark:text-muted-foreground leading-5.75 text-black"
-                              style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                            >
+                            <span className="dark:text-muted-foreground leading-5.75 text-black">
                               {JSON.stringify(toolCall.arguments, null, 2)}
                             </span>
                           </p>
                         </div>
                         <div className="border-border flex flex-col rounded-2xl border">
-                          <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
-                            <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                              Response
-                            </span>{' '}
+                          <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 font-mono text-sm font-semibold wrap-break-word">
+                            <span>Response</span>{' '}
                             <CopyButton
                               textToCopy={
                                 toolCall.status === 'error'
@@ -1138,30 +1131,21 @@ function ToolCalls({
                           )}
                           {toolCall.status === 'completed' && (
                             <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                              <span
-                                className="dark:text-muted-foreground leading-5.75 text-black"
-                                style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                              >
+                              <span className="dark:text-muted-foreground leading-5.75 text-black">
                                 {JSON.stringify(toolCall.result, null, 2)}
                               </span>
                             </p>
                           )}
                           {toolCall.status === 'error' && (
                             <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                              <span
-                                className="text-destructive leading-5.75"
-                                style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                              >
+                              <span className="text-destructive leading-5.75">
                                 {toolCall.error}
                               </span>
                             </p>
                           )}
                           {toolCall.status === 'denied' && (
                             <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                              <span
-                                className="text-muted-foreground leading-5.75"
-                                style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                              >
+                              <span className="text-muted-foreground leading-5.75">
                                 Denied by user
                               </span>
                             </p>

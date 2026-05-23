@@ -9,6 +9,9 @@ layer(base);
 
 @theme {
   --font-roboto: Roboto, sans-serif;
+  --font-mono:
+    'IBMPlexMono-Medium', ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
 }
 
 /*
@@ -683,7 +686,7 @@ Avoid over-scrolling in mobile browsers
   }
 
   .logs-table {
-    font-family: 'IBMPlexMono-Medium', system-ui;
+    font-family: var(--font-mono);
   }
 
   .fade-in {
