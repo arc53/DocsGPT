@@ -146,11 +146,11 @@ export default function AddToolModal({
                         <div className="mt-[9px]">
                           <p
                             title={tool.displayName}
-                            className="text-foreground dark:text-foreground truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
+                            className="text-foreground dark:text-foreground truncate px-1 text-sm leading-relaxed font-semibold capitalize"
                           >
                             {tool.displayName}
                           </p>
-                          <p className="text-muted-foreground mt-1 h-24 overflow-auto px-1 text-[12px] leading-relaxed">
+                          <p className="text-muted-foreground mt-1 h-24 overflow-auto px-1 text-xs leading-relaxed">
                             {tool.description}
                           </p>
                         </div>

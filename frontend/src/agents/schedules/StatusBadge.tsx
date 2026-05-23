@@ -46,7 +46,7 @@ export default function ScheduleStatusBadge({
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] leading-[16px] font-medium',
+        'inline-flex items-center rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium',
         getStatusClasses(status),
         className,
       )}

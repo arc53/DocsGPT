@@ -571,7 +571,7 @@ const FileTree: React.FC<FileTreeProps> = ({
           {!processingRef.current && (
             <button
               onClick={handleAddFile}
-              className="bg-primary hover:bg-primary/90 flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] font-medium whitespace-nowrap text-white"
+              className="bg-primary hover:bg-primary/90 flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm font-medium whitespace-nowrap text-white"
               title={t('settings.sources.addFile')}
             >
               {t('settings.sources.addFile')}

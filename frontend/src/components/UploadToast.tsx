@@ -75,7 +75,7 @@ export default function UploadToast() {
               : 'bg-destructive/10 dark:bg-destructive/10'
           }`}
         >
-          <h3 className="font-inter dark:text-foreground text-[14px] leading-[16.5px] font-medium text-black">
+          <h3 className="dark:text-foreground text-sm leading-[16.5px] font-medium text-black">
             {headerLabel}
           </h3>
           <div className="flex items-center gap-1">
@@ -172,13 +172,13 @@ function UploadRow({
       <div className="flex items-center justify-between px-5 py-3">
         <div className="flex min-w-0 flex-col">
           <p
-            className="font-inter dark:text-muted-foreground max-w-[200px] truncate text-[13px] leading-[16.5px] font-normal text-black"
+            className="dark:text-muted-foreground max-w-[200px] truncate text-sm leading-[16.5px] font-normal text-black"
             title={task.fileName}
           >
             {task.fileName}
           </p>
           {task.status === 'training' && task.stage && (
-            <span className="font-inter text-muted-foreground mt-0.5 text-[11px] leading-[14px]">
+            <span className="text-muted-foreground mt-0.5 text-xs leading-[14px]">
               {t(`modals.uploadDoc.progress.${task.stage}`)}
             </span>
           )}

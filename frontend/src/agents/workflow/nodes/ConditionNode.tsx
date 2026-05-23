@@ -61,7 +61,7 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
           >
             {title}
           </div>
-          <div className="text-[10px] text-gray-500 uppercase">
+          <div className="text-xs text-gray-500 uppercase">
             {data.config?.mode || 'simple'}
           </div>
         </div>

@@ -347,7 +347,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 />
               </button>
             )}
-            <div className="text-muted-foreground text-[20px] font-medium">
+            <div className="text-muted-foreground text-xl font-medium">
               DocsGPT
             </div>
           </div>
@@ -649,7 +649,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               className="w-7 filter dark:invert"
             />
           </button>
-          <div className="text-muted-foreground text-[20px] font-medium">
+          <div className="text-muted-foreground text-xl font-medium">
             DocsGPT
           </div>
         </div>

@@ -241,7 +241,7 @@ function VariableListWithSearch({
         ) : (
           Array.from(grouped.entries()).map(([section, vars]) => (
             <div key={section}>
-              <div className="text-muted-foreground truncate px-3 pt-2.5 pb-1 text-[10px] font-semibold tracking-wider uppercase">
+              <div className="text-muted-foreground truncate px-3 pt-2.5 pb-1 text-xs font-semibold tracking-wider uppercase">
                 {section}
               </div>
               {vars.map((v) => (

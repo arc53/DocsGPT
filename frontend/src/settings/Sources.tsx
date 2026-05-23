@@ -415,7 +415,7 @@ export default function Sources({
   ) : (
     <div className="mt-8 flex w-full max-w-full flex-col overflow-hidden">
       <div className="relative flex grow flex-col">
-        <p className="text-muted-foreground mb-5 text-[15px] leading-6">
+        <p className="text-muted-foreground mb-5 text-sm leading-6">
           {t('settings.sources.subtitle')}
         </p>
         <div className="mb-6 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
@@ -483,7 +483,7 @@ export default function Sources({
                       <div className="w-full flex-1">
                         <div className="flex w-full items-center justify-between gap-2">
                           <h3
-                            className="font-inter dark:text-foreground text-foreground line-clamp-3 text-[13px] leading-[18px] font-semibold wrap-break-word"
+                            className="dark:text-foreground text-foreground line-clamp-3 text-sm leading-[18px] font-semibold wrap-break-word"
                             title={document.name}
                           >
                             {document.name}
@@ -579,12 +579,12 @@ export default function Sources({
 
                       <div className="flex flex-col items-start justify-start gap-1">
                         {document.ingestStatus === 'failed' && (
-                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] leading-[16px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs leading-[16px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
                             {t('settings.sources.ingestFailed')}
                           </span>
                         )}
                         {document.ingestStatus === 'processing' && (
-                          <span className="bg-muted-foreground/10 text-muted-foreground rounded-full px-2 py-0.5 text-[11px] leading-[16px] font-medium">
+                          <span className="bg-muted-foreground/10 text-muted-foreground rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium">
                             {t('settings.sources.ingestProcessing')}
                           </span>
                         )}
@@ -594,13 +594,13 @@ export default function Sources({
                             alt=""
                             className="h-3.5 w-3.5"
                           />
-                          <span className="font-inter text-muted-foreground text-[12px] leading-[18px] font-medium">
+                          <span className="text-muted-foreground text-xs leading-[18px] font-medium">
                             {document.date ? formatDate(document.date) : ''}
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
                           <img src={DiscIcon} alt="" className="h-3.5 w-3.5" />
-                          <span className="font-inter text-muted-foreground text-[12px] leading-[18px] font-medium">
+                          <span className="text-muted-foreground text-xs leading-[18px] font-medium">
                             {document.tokens
                               ? formatTokens(+document.tokens)
                               : ''}

@@ -140,16 +140,16 @@ export const SharedConversation = () => {
       />
       <div className="bg-background flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden">
         <div className="border-b-border w-full max-w-[1200px] border-b p-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
-          <h1 className="font-semi-bold text-foreground dark:text-foreground text-4xl">
+          <h1 className="text-foreground dark:text-foreground text-4xl font-semibold">
             {title}
           </h1>
-          <h2 className="font-semi-bold text-foreground dark:text-foreground text-base">
+          <h2 className="text-foreground dark:text-foreground text-base font-semibold">
             {t('sharedConv.subtitle')}{' '}
             <a href="/" className="text-[#007DFF]">
               DocsGPT
             </a>
           </h2>
-          <h2 className="font-semi-bold text-foreground dark:text-foreground text-base">
+          <h2 className="text-foreground dark:text-foreground text-base font-semibold">
             {date}
           </h2>
         </div>

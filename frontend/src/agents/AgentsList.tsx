@@ -161,10 +161,10 @@ export default function AgentsList() {
 
   return (
     <div className="p-4 md:p-12">
-      <h1 className="text-foreground mb-0 text-[32px] font-bold lg:text-[40px]">
+      <h1 className="text-foreground mb-0 text-3xl font-bold lg:text-4xl">
         {t('agents.title')}
       </h1>
-      <p className="text-muted-foreground mt-5 text-[15px] leading-6">
+      <p className="text-muted-foreground mt-5 text-sm leading-6">
         {t('agents.description')}
       </p>
 
@@ -459,14 +459,14 @@ function AgentSection({
     <div className="mt-8 flex flex-col gap-4">
       <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2">
-          <h2 className="text-foreground flex flex-wrap items-center gap-2 text-[18px] font-semibold">
+          <h2 className="text-foreground flex flex-wrap items-center gap-2 text-lg font-semibold">
             {config.id === 'user' && folderPath.length > 0 ? (
               <>
                 <Button
                   type="button"
                   variant="link"
                   onClick={() => handleNavigateToPath(-1)}
-                  className="text-muted-foreground hover:text-foreground h-auto p-0 text-[18px] font-semibold no-underline hover:no-underline dark:hover:text-white"
+                  className="text-muted-foreground hover:text-foreground h-auto p-0 text-lg font-semibold no-underline hover:no-underline dark:hover:text-white"
                 >
                   {t(`agents.sections.${config.id}.title`)}
                 </Button>
@@ -480,7 +480,7 @@ function AgentSection({
                         type="button"
                         variant="link"
                         onClick={() => handleNavigateToPath(index)}
-                        className="text-muted-foreground hover:text-foreground h-auto p-0 text-[18px] font-semibold no-underline hover:no-underline dark:hover:text-white"
+                        className="text-muted-foreground hover:text-foreground h-auto p-0 text-lg font-semibold no-underline hover:no-underline dark:hover:text-white"
                       >
                         {item.name}
                       </Button>
@@ -492,7 +492,7 @@ function AgentSection({
               t(`agents.sections.${config.id}.title`)
             )}
           </h2>
-          <p className="text-muted-foreground text-[13px]">
+          <p className="text-muted-foreground text-sm">
             {t(`agents.sections.${config.id}.description`)}
           </p>
         </div>

@@ -316,11 +316,11 @@ export default function AgentCard({
         <div className="mt-2">
           <p
             title={agent.name}
-            className="text-foreground truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
+            className="text-foreground truncate px-1 text-sm leading-relaxed font-semibold capitalize"
           >
             {agent.name}
           </p>
-          <p className="dark:text-muted-foreground text-muted-foreground mt-1 h-20 overflow-auto px-1 text-[12px] leading-relaxed">
+          <p className="dark:text-muted-foreground text-muted-foreground mt-1 h-20 overflow-auto px-1 text-xs leading-relaxed">
             {agent.description}
           </p>
         </div>

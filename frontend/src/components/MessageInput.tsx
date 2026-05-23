@@ -1564,7 +1564,7 @@ export default function MessageInput({
                 onDragStart={(e) => handleDragStart(e, attachment.id)}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDropOn(e, attachment.id)}
-                className={`group dark:text-foreground bg-muted text-muted-foreground dark:bg-accent relative flex items-center rounded-xl px-2 py-1 text-[12px] sm:px-3 sm:py-1.5 sm:text-[14px] ${
+                className={`group dark:text-foreground bg-muted text-muted-foreground dark:bg-accent relative flex items-center rounded-xl px-2 py-1 text-xs sm:px-3 sm:py-1.5 sm:text-sm ${
                   attachment.status !== 'completed'
                     ? 'opacity-70'
                     : 'opacity-100'
@@ -1706,7 +1706,7 @@ export default function MessageInput({
                     <button
                       type="button"
                       onClick={handleUploadClick}
-                      className="border-primary text-primary hover:bg-primary/90 w-auto self-start rounded-full border px-4 py-2 text-[14px] font-medium transition-colors duration-200 hover:text-white"
+                      className="border-primary text-primary hover:bg-primary/90 w-auto self-start rounded-full border px-4 py-2 text-sm font-medium transition-colors duration-200 hover:text-white"
                     >
                       {t('settings.sources.uploadNew')}
                     </button>
@@ -1727,7 +1727,7 @@ export default function MessageInput({
                       alt="Sources"
                       className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4"
                     />
-                    <span className="xs:text-[12px] dark:text-foreground text-muted-foreground truncate overflow-hidden text-[10px] font-medium sm:text-[14px]">
+                    <span className="xs:text-xs dark:text-foreground text-muted-foreground truncate overflow-hidden text-xs font-medium sm:text-sm">
                       {selectedDocs && selectedDocs.length > 0
                         ? selectedDocs.length === 1
                           ? selectedDocs[0].name
@@ -1774,7 +1774,7 @@ export default function MessageInput({
                       alt="Tools"
                       className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4 sm:w-4"
                     />
-                    <span className="xs:text-[12px] dark:text-foreground text-muted-foreground truncate overflow-hidden text-[10px] font-medium sm:text-[14px]">
+                    <span className="xs:text-xs dark:text-foreground text-muted-foreground truncate overflow-hidden text-xs font-medium sm:text-sm">
                       {t('settings.tools.label')}
                     </span>
                   </button>
@@ -1808,7 +1808,7 @@ export default function MessageInput({
                   <Mic className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4" />
                 )}
                 <span
-                  className={`xs:text-[12px] dark:text-foreground text-[10px] font-medium sm:text-[14px] ${
+                  className={`xs:text-xs dark:text-foreground text-xs font-medium sm:text-sm ${
                     recordingState === 'recording'
                       ? 'text-[#B42318]'
                       : 'text-muted-foreground'
@@ -1824,7 +1824,7 @@ export default function MessageInput({
                 alt="Attach"
                 className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4"
               />
-              <span className="xs:text-[12px] dark:text-foreground text-muted-foreground text-[10px] font-medium sm:text-[14px]">
+              <span className="xs:text-xs dark:text-foreground text-muted-foreground text-xs font-medium sm:text-sm">
                 {t('conversation.attachments.attach')}
               </span>
               <input

@@ -1474,7 +1474,7 @@ function WorkflowBuilderInner() {
                       ]}
                       className="border-border rounded-lg border-2 border-dashed p-3 text-center transition-colors"
                     />
-                    <p className="text-muted-foreground mt-1 text-[11px]">
+                    <p className="text-muted-foreground mt-1 text-xs">
                       Image updates are included the next time you save.
                     </p>
                   </div>
@@ -1484,7 +1484,7 @@ function WorkflowBuilderInner() {
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                           {t('agents.form.advanced.systemPromptOverride')}
                         </label>
-                        <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                           {t(
                             'agents.form.advanced.systemPromptOverrideDescription',
                           )}
@@ -1684,7 +1684,7 @@ function WorkflowBuilderInner() {
                     <span className="text-foreground text-sm font-medium">
                       Set State
                     </span>
-                    <span className="text-muted-foreground text-[10px]">
+                    <span className="text-muted-foreground text-xs">
                       Modify workflow variables
                     </span>
                   </div>
@@ -1701,7 +1701,7 @@ function WorkflowBuilderInner() {
                     <span className="text-foreground text-sm font-medium">
                       If / Else
                     </span>
-                    <span className="text-muted-foreground text-[10px]">
+                    <span className="text-muted-foreground text-xs">
                       Conditional branching
                     </span>
                   </div>
@@ -2178,7 +2178,7 @@ function WorkflowBuilderInner() {
                                         rows={2}
                                         placeholder="input.foo + 1"
                                       />
-                                      <p className="text-muted-foreground mb-3 text-[10px]">
+                                      <p className="text-muted-foreground mb-3 text-xs">
                                         Use Common Expression Language to create
                                         a custom expression.{' '}
                                         <a
@@ -2513,7 +2513,7 @@ function WorkflowBuilderInner() {
                                             rows={2}
                                             placeholder="Enter condition, e.g. input == 5"
                                           />
-                                          <p className="text-muted-foreground mt-1 text-[10px]">
+                                          <p className="text-muted-foreground mt-1 text-xs">
                                             Use Common Expression Language to
                                             create a custom expression.{' '}
                                             <a

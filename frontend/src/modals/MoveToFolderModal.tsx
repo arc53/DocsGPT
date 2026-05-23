@@ -197,7 +197,7 @@ export default function MoveToFolderModal({
         <div className="dark:border-border max-h-60 min-h-[200px] overflow-y-auto border-t border-gray-200">
           {isLoading ? (
             <div className="flex h-[200px] items-center justify-center">
-              <span className="text-muted-foreground text-[14px]">
+              <span className="text-muted-foreground text-sm">
                 {t('loading')}...
               </span>
             </div>
@@ -210,7 +210,7 @@ export default function MoveToFolderModal({
                     e.stopPropagation();
                     setSelectedFolderId(null);
                   }}
-                  className={`dark:border-border flex w-full items-center gap-2 border-b border-gray-200 px-8 py-2 text-left text-[14px] ${
+                  className={`dark:border-border flex w-full items-center gap-2 border-b border-gray-200 px-8 py-2 text-left text-sm ${
                     selectedFolderId === null
                       ? 'bg-primary text-white'
                       : 'bg-muted hover:bg-accent dark:bg-muted'
@@ -232,7 +232,7 @@ export default function MoveToFolderModal({
                 <button
                   key={folder.id}
                   onClick={() => setSelectedFolderId(folder.id)}
-                  className={`dark:border-border flex w-full cursor-pointer items-center justify-between border-b border-gray-200 px-8 py-2 text-left text-[14px] ${
+                  className={`dark:border-border flex w-full cursor-pointer items-center justify-between border-b border-gray-200 px-8 py-2 text-left text-sm ${
                     selectedFolderId === folder.id
                       ? 'bg-primary text-white'
                       : 'bg-muted hover:bg-accent dark:bg-muted'

@@ -145,7 +145,7 @@ function VariableMenu({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className={`border-border bg-card text-foreground hover:bg-accent flex items-center justify-between rounded-3xl border px-5 py-3 text-[12px] sm:text-[14px] ${triggerClassName ?? ''}`}
+          className={`border-border bg-card text-foreground hover:bg-accent flex items-center justify-between rounded-3xl border px-5 py-3 text-xs sm:text-sm ${triggerClassName ?? ''}`}
         >
           <span className="truncate">{label}</span>
           <ChevronDown className="text-muted-foreground ml-2 h-4 w-4 shrink-0" />
@@ -353,7 +353,7 @@ function AddPrompt({
           <span className="font-bold">
             {t('modals.prompts.variablesLabel')}
           </span>
-          <span className="text-muted-foreground text-xs text-[10px] font-medium">
+          <span className="text-muted-foreground text-xs font-medium">
             {t('modals.prompts.variablesDescription')}
           </span>
         </p>
@@ -378,7 +378,7 @@ function AddPrompt({
           />
         </div>
       </div>
-      <div className="mt-4 flex flex-col justify-between gap-4 text-[14px] sm:flex-row sm:gap-0">
+      <div className="mt-4 flex flex-col justify-between gap-4 text-sm sm:flex-row sm:gap-0">
         <div className="flex justify-start">
           <Link
             to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
@@ -392,7 +392,7 @@ function AddPrompt({
               className="flex h-4 w-3 shrink-0 items-center justify-center"
               aria-hidden="true"
             />
-            <span className="text-[14px] font-bold">
+            <span className="text-sm font-bold">
               {t('modals.prompts.learnAboutPrompts')}
             </span>
           </Link>
@@ -486,7 +486,7 @@ function EditPrompt({
           <span className="font-bold">
             {t('modals.prompts.variablesLabel')}
           </span>
-          <span className="text-muted-foreground text-xs text-[10px] font-medium">
+          <span className="text-muted-foreground text-xs font-medium">
             {t('modals.prompts.variablesDescription')}
           </span>
         </p>
@@ -511,7 +511,7 @@ function EditPrompt({
           />
         </div>
       </div>
-      <div className="mt-4 flex flex-col justify-between gap-4 text-[14px] sm:flex-row sm:gap-0">
+      <div className="mt-4 flex flex-col justify-between gap-4 text-sm sm:flex-row sm:gap-0">
         <div className="flex justify-start">
           <Link
             to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
@@ -525,7 +525,7 @@ function EditPrompt({
               className="flex h-4 w-3 shrink-0 items-center justify-center"
               aria-hidden="true"
             />
-            <span className="text-[14px] font-bold">
+            <span className="text-sm font-bold">
               {t('modals.prompts.learnAboutPrompts')}
             </span>
           </Link>

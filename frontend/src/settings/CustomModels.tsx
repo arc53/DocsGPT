@@ -187,7 +187,7 @@ export default function CustomModels() {
   return (
     <div className="mt-8">
       <div className="relative flex flex-col">
-        <p className="text-muted-foreground mb-5 text-[15px] leading-6">
+        <p className="text-muted-foreground mb-5 text-sm leading-6">
           {t('settings.customModels.subtitle')}
         </p>
         <div className="my-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -292,12 +292,12 @@ export default function CustomModels() {
                       <div className="flex items-center gap-2">
                         <p
                           title={model.display_name}
-                          className="text-foreground dark:text-foreground truncate text-[15px] leading-snug font-semibold"
+                          className="text-foreground dark:text-foreground truncate text-sm leading-snug font-semibold"
                         >
                           {model.display_name}
                         </p>
                         {!model.enabled && (
-                          <span className="bg-muted-foreground/15 text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-[10px] leading-none font-medium">
+                          <span className="bg-muted-foreground/15 text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-xs leading-none font-medium">
                             {t('settings.customModels.disabledBadge')}
                           </span>
                         )}

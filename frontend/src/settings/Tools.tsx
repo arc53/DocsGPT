@@ -224,7 +224,7 @@ export default function Tools() {
       ) : (
         <div className="mt-8">
           <div className="relative flex flex-col">
-            <p className="text-muted-foreground mb-5 text-[15px] leading-6">
+            <p className="text-muted-foreground mb-5 text-sm leading-6">
               {t('settings.tools.subtitle')}
             </p>
             <div className="my-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -368,14 +368,14 @@ export default function Tools() {
                                 className="h-6 w-6"
                               />
                               {tool.default && (
-                                <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] leading-none font-medium text-gray-600 dark:bg-gray-700/40 dark:text-gray-300">
+                                <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs leading-none font-medium text-gray-600 dark:bg-gray-700/40 dark:text-gray-300">
                                   {t('settings.tools.builtIn')}
                                 </span>
                               )}
                               {tool.name === 'mcp_tool' &&
                                 mcpStatuses[tool.id] && (
                                   <span
-                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] leading-none font-medium ${
+                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs leading-none font-medium ${
                                       mcpStatuses[tool.id] === 'connected'
                                         ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
                                         : mcpStatuses[tool.id] === 'needs_auth'
@@ -398,12 +398,12 @@ export default function Tools() {
                             <div className="mt-[9px]">
                               <p
                                 title={tool.customName || tool.displayName}
-                                className="text-foreground dark:text-foreground truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
+                                className="text-foreground dark:text-foreground truncate px-1 text-sm leading-relaxed font-semibold capitalize"
                               >
                                 {tool.customName || tool.displayName}
                               </p>
                               <p
-                                className="text-muted-foreground mt-1 line-clamp-4 max-h-24 overflow-hidden px-1 text-[12px] leading-relaxed break-all"
+                                className="text-muted-foreground mt-1 line-clamp-4 max-h-24 overflow-hidden px-1 text-xs leading-relaxed break-all"
                                 title={tool.description}
                               >
                                 {tool.description}

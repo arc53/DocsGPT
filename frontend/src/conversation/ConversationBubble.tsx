@@ -152,7 +152,7 @@ const ConversationBubble = forwardRef<
                 <div
                   key={index}
                   title={file.fileName}
-                  className="dark:text-foreground dark:bg-accent text-muted-foreground bg-muted flex items-center rounded-xl p-2 text-[14px]"
+                  className="dark:text-foreground dark:bg-accent text-muted-foreground bg-muted flex items-center rounded-xl p-2 text-sm"
                 >
                   <div className="bg-primary mr-2 items-center justify-center rounded-lg p-[5.5px]">
                     <img

@@ -348,7 +348,7 @@ function WorkflowMiniMap({
                 {getNodeDisplayName(node)}
               </div>
               {getNodeSubtitle(node) && (
-                <div className="truncate text-[10px] text-gray-500 dark:text-gray-400">
+                <div className="truncate text-xs text-gray-500 dark:text-gray-400">
                   {getNodeSubtitle(node)}
                 </div>
               )}

@@ -106,7 +106,7 @@ export default function ToolApprovalToast() {
             className="border-border bg-card shadow-toast w-[271px] overflow-hidden rounded-2xl border"
           >
             <div className="bg-accent/50 dark:bg-muted flex items-center justify-between px-4 py-3">
-              <h3 className="font-inter dark:text-foreground text-[14px] leading-[16.5px] font-medium text-black">
+              <h3 className="dark:text-foreground text-sm leading-[16.5px] font-medium text-black">
                 Tool approval needed
               </h3>
               <button
@@ -149,7 +149,7 @@ export default function ToolApprovalToast() {
                   aria-hidden="true"
                 />
                 <p
-                  className="font-inter dark:text-muted-foreground max-w-[140px] truncate text-[13px] leading-[16.5px] font-normal text-black"
+                  className="dark:text-muted-foreground max-w-[140px] truncate text-sm leading-[16.5px] font-normal text-black"
                   title={conversationName(conversationId)}
                 >
                   {conversationName(conversationId)}
@@ -161,7 +161,7 @@ export default function ToolApprovalToast() {
                   dispatch(dismissToolApproval(eventId));
                   navigate(`/c/${conversationId}`);
                 }}
-                className="bg-primary hover:bg-primary/90 rounded-full px-3 py-1 text-[12px] font-medium text-white shadow-sm"
+                className="bg-primary hover:bg-primary/90 rounded-full px-3 py-1 text-xs font-medium text-white shadow-sm"
               >
                 Review
               </button>

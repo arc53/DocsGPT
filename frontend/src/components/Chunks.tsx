@@ -348,13 +348,13 @@ const Chunks: React.FC<ChunksProps> = ({
             !isEditing ? (
               <>
                 <button
-                  className="bg-primary hover:bg-primary/90 flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] font-medium whitespace-nowrap text-white"
+                  className="bg-primary hover:bg-primary/90 flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm font-medium whitespace-nowrap text-white"
                   onClick={() => setIsEditing(true)}
                 >
                   {t('modals.chunk.edit')}
                 </button>
                 <button
-                  className="flex h-[38px] min-w-[108px] items-center justify-center rounded-full border border-solid border-red-500 px-4 py-1 text-[14px] font-medium text-nowrap text-red-500 hover:bg-red-500 hover:text-white"
+                  className="flex h-[38px] min-w-[108px] items-center justify-center rounded-full border border-solid border-red-500 px-4 py-1 text-sm font-medium text-nowrap text-red-500 hover:bg-red-500 hover:text-white"
                   onClick={() => {
                     confirmDeleteChunk(editingChunk);
                   }}
@@ -396,7 +396,7 @@ const Chunks: React.FC<ChunksProps> = ({
                     (editingTitle === (editingChunk?.metadata?.title || '') &&
                       editingText === (editingChunk?.text || ''))
                   }
-                  className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 py-1 text-[14px] font-medium text-nowrap text-white transition-all ${
+                  className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 py-1 text-sm font-medium text-nowrap text-white transition-all ${
                     editingText.trim() &&
                     (editingTitle !== (editingChunk?.metadata?.title || '') ||
                       editingText !== (editingChunk?.text || ''))
@@ -424,7 +424,7 @@ const Chunks: React.FC<ChunksProps> = ({
                   }
                 }}
                 disabled={!editingText.trim()}
-                className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 py-1 text-[14px] font-medium text-nowrap text-white transition-all ${
+                className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 py-1 text-sm font-medium text-nowrap text-white transition-all ${
                   editingText.trim()
                     ? 'bg-primary hover:bg-primary/90 cursor-pointer'
                     : 'cursor-not-allowed bg-gray-400'
@@ -565,7 +565,7 @@ const Chunks: React.FC<ChunksProps> = ({
                   </div>
                 </div>
                 <button
-                  className="bg-primary hover:bg-primary/90 flex h-[38px] w-full min-w-[108px] shrink-0 items-center justify-center rounded-full px-4 text-[14px] font-medium whitespace-normal text-white sm:w-auto"
+                  className="bg-primary hover:bg-primary/90 flex h-[38px] w-full min-w-[108px] shrink-0 items-center justify-center rounded-full px-4 text-sm font-medium whitespace-normal text-white sm:w-auto"
                   title={t('settings.sources.addChunk')}
                   onClick={() => {
                     setIsAddingChunk(true);
