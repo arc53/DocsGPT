@@ -131,7 +131,7 @@ export default function Hero({
   }>;
 
   return (
-    <div className="text-black-1000 dark:text-foreground flex h-full w-full flex-col items-center justify-between">
+    <div className="text-foreground flex h-full w-full flex-col items-center justify-between">
       {/* Header Section */}
       <div className="flex grow flex-col items-center justify-center pt-8 md:pt-0">
         <div className="mb-px flex items-center">
@@ -156,7 +156,7 @@ export default function Hero({
                   onClick={() => handleQuestion({ question: demo.query })}
                   className={`border-border text-foreground hover:bg-muted dark:hover:bg-muted/50 bg-card w-full rounded-[66px] border px-6 py-3.5 text-left transition-colors dark:bg-transparent ${key >= 2 ? 'hidden md:block' : ''}`}
                 >
-                  <p className="text-black-1000 dark:text-foreground mb-2 font-semibold">
+                  <p className="text-foreground mb-2 font-semibold">
                     {demo.header}
                   </p>
                   <span className="line-clamp-2 text-gray-700 opacity-60 dark:text-gray-300">

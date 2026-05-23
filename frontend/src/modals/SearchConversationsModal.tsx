@@ -40,10 +40,7 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
     <>
       {parts.map((part, idx) =>
         part.toLowerCase() === trimmed.toLowerCase() ? (
-          <mark
-            key={idx}
-            className="text-purple-30 bg-transparent font-semibold"
-          >
+          <mark key={idx} className="text-primary bg-transparent font-semibold">
             {part}
           </mark>
         ) : (

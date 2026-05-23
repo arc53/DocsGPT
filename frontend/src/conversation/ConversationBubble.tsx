@@ -182,7 +182,7 @@ const ConversationBubble = forwardRef<
             {!isEditClicked && (
               <>
                 <div className="relative mr-2 flex w-full flex-col">
-                  <div className="from-medium-purple to-slate-blue mr-2 ml-2 flex max-w-full items-start gap-2 rounded-[28px] bg-linear-to-b px-5 py-4 text-sm leading-normal wrap-break-word whitespace-pre-wrap text-white sm:text-base">
+                  <div className="mr-2 ml-2 flex max-w-full items-start gap-2 rounded-[28px] bg-linear-to-b from-violet-500 to-violet-600 px-5 py-4 text-sm leading-normal wrap-break-word whitespace-pre-wrap text-white sm:text-base">
                     <div
                       ref={messageRef}
                       className={`${isQuestionCollapsed ? 'line-clamp-4' : ''} w-full`}
@@ -238,7 +238,7 @@ const ConversationBubble = forwardRef<
                 }}
                 rows={5}
                 value={editInputBox}
-                className="border-border text-carbon dark:border-philippine-grey dark:text-foreground w-full resize-none rounded-3xl border px-4 py-3 text-base leading-relaxed focus:outline-hidden"
+                className="border-border text-foreground dark:border-border dark:text-foreground w-full resize-none rounded-3xl border px-4 py-3 text-base leading-relaxed focus:outline-hidden"
               />
               <div className="flex items-center justify-end gap-2">
                 <button
@@ -573,7 +573,7 @@ const ConversationBubble = forwardRef<
 
                                 return match ? (
                                   <div className="group border-border relative overflow-hidden rounded-[14px] border">
-                                    <div className="bg-platinum dark:bg-muted flex items-center justify-between px-2 py-1">
+                                    <div className="bg-muted flex items-center justify-between px-2 py-1">
                                       <span className="text-foreground dark:text-foreground text-xs font-medium">
                                         {language}
                                       </span>
@@ -1235,7 +1235,7 @@ function Thought({
 
                   return match ? (
                     <div className="group border-border relative overflow-hidden rounded-[14px] border">
-                      <div className="bg-platinum dark:bg-muted flex items-center justify-between px-2 py-1">
+                      <div className="bg-muted flex items-center justify-between px-2 py-1">
                         <span className="text-foreground dark:text-foreground text-xs font-medium">
                           {language}
                         </span>

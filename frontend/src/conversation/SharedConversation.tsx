@@ -139,7 +139,7 @@ export const SharedConversation = () => {
         twitterDescription="Shared conversations with DocsGPT"
       />
       <div className="bg-background flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden">
-        <div className="dark:border-b-silver w-full max-w-[1200px] border-b p-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
+        <div className="border-b-border w-full max-w-[1200px] border-b p-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
           <h1 className="font-semi-bold text-foreground dark:text-foreground text-4xl">
             {title}
           </h1>

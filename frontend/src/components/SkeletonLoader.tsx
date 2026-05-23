@@ -244,7 +244,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       {Array.from({ length: count }).map((_, idx) => (
         <div
           key={`add-tool-skel-${idx}`}
-          className="border-light-gainsboro dark:border-arsenic flex h-52 w-full animate-pulse flex-col justify-between rounded-2xl border p-6"
+          className="border-border flex h-52 w-full animate-pulse flex-col justify-between rounded-2xl border p-6"
         >
           <div className="w-full">
             <div className="flex w-full items-center justify-between px-1">

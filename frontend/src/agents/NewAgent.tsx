@@ -818,14 +818,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               {t('agents.form.sections.meta')}
             </h2>
             <input
-              className="border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-3 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400"
+              className="border-border text-foreground dark:text-foreground dark:placeholder:text-muted-foreground bg-card dark:border-border mt-3 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400"
               type="text"
               value={agent.name}
               placeholder={t('agents.form.placeholders.agentName')}
               onChange={(e) => setAgent({ ...agent, name: e.target.value })}
             />
             <textarea
-              className="border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-3 h-32 w-full rounded-xl border px-5 py-4 text-sm outline-hidden placeholder:text-gray-400"
+              className="border-border text-foreground dark:text-foreground dark:placeholder:text-muted-foreground bg-card dark:border-border mt-3 h-32 w-full rounded-xl border px-5 py-4 text-sm outline-hidden placeholder:text-gray-400"
               placeholder={t('agents.form.placeholders.describeAgent')}
               value={agent.description}
               onChange={(e) =>
@@ -1289,7 +1289,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     }
                     disabled={!agent.limited_token_mode}
                     placeholder={t('agents.form.placeholders.enterTokenLimit')}
-                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${
+                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-muted-foreground bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${
                       !agent.limited_token_mode
                         ? 'cursor-not-allowed opacity-50'
                         : ''
@@ -1347,7 +1347,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     placeholder={t(
                       'agents.form.placeholders.enterRequestLimit',
                     )}
-                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${
+                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-muted-foreground bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${
                       !agent.limited_request_mode
                         ? 'cursor-not-allowed opacity-50'
                         : ''

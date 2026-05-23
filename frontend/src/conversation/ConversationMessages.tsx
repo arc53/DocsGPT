@@ -333,7 +333,7 @@ export default function ConversationMessages({
                 {t('conversation.answer')}
               </p>
             </div>
-            <div className="bg-gray-1000 dark:bg-gun-metal mr-5 flex rounded-3xl px-6 py-5">
+            <div className="bg-muted mr-5 flex rounded-3xl px-6 py-5">
               <div className="thinking-dots">
                 <span></span>
                 <span></span>
