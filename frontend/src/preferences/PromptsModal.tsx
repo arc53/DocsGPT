@@ -1,5 +1,5 @@
 import { ActiveState } from '../models/misc';
-import Input from '../components/Input';
+import { Input } from '../components/ui/input';
 import { Link } from 'react-router-dom';
 
 import React from 'react';
@@ -244,15 +244,12 @@ function AddPrompt({
       </p>
       <div>
         <Input
-          placeholder={t('modals.prompts.promptName')}
+          label={t('modals.prompts.promptName')}
           type="text"
           className="mb-5"
-          edgeRoundness="rounded"
-          textSize="medium"
           value={newPromptName}
           onChange={(e) => setNewPromptName(e.target.value)}
           labelBgClassName="bg-card"
-          borderVariant="thick"
         />
 
         <div className="relative w-full">
@@ -451,15 +448,12 @@ function EditPrompt({
       </p>
       <div>
         <Input
-          placeholder={t('modals.prompts.promptName')}
+          label={t('modals.prompts.promptName')}
           type="text"
           className="mb-5"
-          edgeRoundness="rounded"
-          textSize="medium"
           value={editPromptName}
           onChange={(e) => setEditPromptName(e.target.value)}
           labelBgClassName="bg-card"
-          borderVariant="thick"
         />
 
         <div className="relative w-full">

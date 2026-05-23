@@ -5,7 +5,7 @@ import { useSelector } from 'react-redux';
 import { selectToken } from '../preferences/preferenceSlice';
 import userService from '../api/services/userService';
 import { UserToolType } from '../settings/types';
-import Input from './Input';
+import { Input } from './ui/input';
 import RedirectIcon from '../assets/redirect.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
@@ -172,9 +172,8 @@ export default function ToolsPopup({
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder={t('settings.tools.searchPlaceholder')}
+            label={t('settings.tools.searchPlaceholder')}
             labelBgClassName="bg-background dark:bg-card"
-            borderVariant="thin"
             className="mb-4"
           />
         </div>

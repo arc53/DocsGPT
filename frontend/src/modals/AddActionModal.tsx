@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import Input from '../components/Input';
+import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 
@@ -75,9 +75,8 @@ export default function AddActionModal({
             setActionName(value);
             setFunctionNameError(!isValidFunctionName(value));
           }}
-          borderVariant="thin"
           labelBgClassName="bg-card"
-          placeholder={t('modals.addAction.actionNamePlaceholder')}
+          label={t('modals.addAction.actionNamePlaceholder')}
           required={true}
         />
         <p

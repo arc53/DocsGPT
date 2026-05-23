@@ -6,7 +6,7 @@ import { Doc } from '../models/misc';
 import SourceIcon from '../assets/source.svg';
 import CheckIcon from '../assets/checkmark.svg';
 import RedirectIcon from '../assets/redirect.svg';
-import Input from './Input';
+import { Input } from './ui/input';
 import {
   selectSourceDocs,
   selectSelectedDocs,
@@ -132,8 +132,7 @@ export default function SourcesPopup({
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder={t('settings.sources.searchPlaceholder')}
-            borderVariant="thin"
+            label={t('settings.sources.searchPlaceholder')}
             className="mb-4"
             labelBgClassName="bg-background dark:bg-card"
           />

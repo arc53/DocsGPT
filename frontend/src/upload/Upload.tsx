@@ -7,7 +7,7 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 import type { RootState } from '../store';
 import { getSessionToken } from '../utils/providerUtils';
 import Dropdown from '../components/Dropdown';
-import Input from '../components/Input';
+import { Input } from '../components/ui/input';
 import ToggleSwitch from '../components/ToggleSwitch';
 import { Modal } from '../components/ui/modal';
 import { ActiveState, Doc } from '../models/misc';
@@ -104,7 +104,7 @@ function Upload({
         return (
           <Input
             key={field.name}
-            placeholder={field.label}
+            label={field.label}
             type="text"
             name={field.name}
             value={String(
@@ -116,9 +116,7 @@ function Upload({
                 e.target.value,
               )
             }
-            borderVariant="thin"
             required={isRequired}
-            colorVariant="silver"
             labelBgClassName="bg-card"
           />
         );
@@ -126,7 +124,7 @@ function Upload({
         return (
           <Input
             key={field.name}
-            placeholder={field.label}
+            label={field.label}
             type="number"
             name={field.name}
             value={String(
@@ -138,9 +136,7 @@ function Upload({
                 Number(e.target.value),
               )
             }
-            borderVariant="thin"
             required={isRequired}
-            colorVariant="silver"
             labelBgClassName="bg-card"
           />
         );
@@ -915,7 +911,6 @@ function Upload({
 
                 <Input
                   type="text"
-                  colorVariant="silver"
                   value={ingestor.name}
                   onChange={(e) => {
                     setNameTouched(true);
@@ -924,8 +919,7 @@ function Upload({
                       name: e.target.value,
                     }));
                   }}
-                  borderVariant="thin"
-                  placeholder={t('modals.uploadDoc.name')}
+                  label={t('modals.uploadDoc.name')}
                   required={true}
                   labelBgClassName="bg-card"
                   className="w-full"

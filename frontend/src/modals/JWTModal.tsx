@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-import Input from '../components/Input';
+import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 
@@ -32,7 +32,6 @@ export default function JWTModal({
             className="rounded-md"
             value={jwtToken}
             onChange={(e) => setJwtToken(e.target.value)}
-            borderVariant="thin"
             data-testid="jwt-token-input"
           />
         </div>

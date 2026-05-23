@@ -5,7 +5,7 @@ import CheckmarkIcon from '../assets/checkmark.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import { useDarkTheme } from '../hooks';
-import Input from './Input';
+import { Input } from './ui/input';
 
 export type OptionType = {
   id: string | number;
@@ -195,14 +195,12 @@ export default function MultiSelectPopup({
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder={
+              label={
                 searchPlaceholder ||
                 t('settings.tools.searchPlaceholder', 'Search...')
               }
               labelBgClassName="bg-background dark:bg-card"
-              borderVariant="thin"
               className="mb-4"
-              textSize="small"
             />
           )}
         </div>

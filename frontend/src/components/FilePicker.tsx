@@ -13,7 +13,7 @@ import FileIcon from '../assets/file.svg';
 import FolderIcon from '../assets/folder.svg';
 import CheckIcon from '../assets/checkmark.svg';
 import SearchIcon from '../assets/search.svg';
-import Input from './Input';
+import { Input } from './ui/input';
 import {
   Table,
   TableContainer,
@@ -480,11 +480,9 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
               <div className="mb-3 max-w-md">
                 <Input
                   type="text"
-                  placeholder={t('filePicker.searchPlaceholder')}
+                  label={t('filePicker.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
-                  colorVariant="silver"
-                  borderVariant="thin"
                   labelBgClassName="bg-[#EEE6FF78] dark:bg-muted"
                   leftIcon={
                     <img src={SearchIcon} alt="Search" width={16} height={16} />

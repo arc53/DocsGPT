@@ -12,9 +12,8 @@ import NoFilesIcon from '../assets/no-files.svg';
 import Trash from '../assets/trash.svg';
 import ConfigFields from '../components/ConfigFields';
 import Dropdown from '../components/Dropdown';
-import Input from '../components/Input';
 import ToggleSwitch from '../components/ToggleSwitch';
-import { Input as ShadInput } from '../components/ui/input';
+import { Input } from '../components/ui/input';
 import { useDarkTheme } from '../hooks';
 import AddActionModal from '../modals/AddActionModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -357,7 +356,7 @@ export default function ToolConfig({
           {t('settings.tools.customName')}
         </p>
         <div className="relative mt-4 w-full max-w-96">
-          <ShadInput
+          <Input
             type="text"
             value={customName}
             onChange={(e) => setCustomName(e.target.value)}
@@ -538,9 +537,7 @@ export default function ToolConfig({
                             <Input
                               type="text"
                               className="w-full"
-                              placeholder={t(
-                                'settings.tools.descriptionPlaceholder',
-                              )}
+                              label={t('settings.tools.descriptionPlaceholder')}
                               value={action.description}
                               onChange={(e) => {
                                 setTool({
@@ -556,7 +553,6 @@ export default function ToolConfig({
                                   }),
                                 });
                               }}
-                              borderVariant="thin"
                             />
                           </div>
                           <div className="px-5 py-4">
@@ -1012,8 +1008,7 @@ function APIToolConfig({
                           };
                         });
                       }}
-                      borderVariant="thin"
-                      placeholder={t('settings.tools.urlPlaceholder')}
+                      label={t('settings.tools.urlPlaceholder')}
                     />
                   </div>
                   <div className="mt-4 px-5 py-2">
@@ -1086,8 +1081,7 @@ function APIToolConfig({
                           };
                         });
                       }}
-                      borderVariant="thin"
-                      placeholder={t('settings.tools.descriptionPlaceholder')}
+                      label={t('settings.tools.descriptionPlaceholder')}
                     />
                   </div>
                   {(action.method === 'POST' ||
