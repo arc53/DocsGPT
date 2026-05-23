@@ -4,6 +4,7 @@ import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import Dropdown, { DropdownProps } from '../components/Dropdown';
+import { Button } from '../components/ui/button';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, PromptProps } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -217,15 +218,17 @@ export default function Prompts({
               {...dropdownProps}
             />
             {showAddButton && (
-              <button
-                className="border-primary text-primary hover:bg-primary/90 w-20 rounded-3xl border border-solid py-3 text-sm transition-colors hover:text-white"
+              <Button
+                type="button"
+                variant="outline"
+                className="border-primary text-primary hover:bg-primary hover:text-primary-foreground w-20 rounded-3xl py-3"
                 onClick={() => {
                   setModalType('ADD');
                   setModalState('ACTIVE');
                 }}
               >
                 {t('settings.general.add')}
-              </button>
+              </Button>
             )}
           </div>
         </div>

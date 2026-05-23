@@ -12,6 +12,7 @@ import ThreeDotsIcon from '../assets/three-dots.svg';
 import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToggleSwitch from '../components/ToggleSwitch';
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { useDarkTheme, useLoaderState } from '../hooks';
 import AddToolModal from '../modals/AddToolModal';
@@ -242,14 +243,15 @@ export default function Tools() {
                   }
                 />
               </div>
-              <button
-                className="bg-primary hover:bg-primary/90 flex h-11 min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white"
+              <Button
+                type="button"
+                className="h-11 min-w-[108px] rounded-full whitespace-normal text-white"
                 onClick={() => {
                   setAddToolModalState('ACTIVE');
                 }}
               >
                 {t('settings.tools.addTool')}
-              </button>
+              </Button>
             </div>
             <div className="border-border dark:border-border mt-5 mb-8 border-b" />
             {loading ? (

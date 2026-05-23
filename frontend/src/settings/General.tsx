@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import Dropdown from '../components/Dropdown';
+import { Button } from '../components/ui/button';
 import { useDarkTheme } from '../hooks';
 import {
   selectChunks,
@@ -115,13 +116,15 @@ export default function General() {
       </div>
       <hr className="border-border dark:border-border my-4 w-[calc(min(665px,100%))] border-t" />
       <div className="flex flex-col gap-2">
-        <button
+        <Button
+          type="button"
+          variant="destructive-outline"
           title={t('settings.general.deleteAllLabel')}
-          className="border-destructive text-destructive hover:bg-destructive flex w-fit cursor-pointer items-center justify-between rounded-3xl border border-solid bg-transparent px-5 py-3 text-sm font-medium tracking-[0.015em] transition-colors hover:font-bold hover:tracking-normal hover:text-white"
+          className="w-fit rounded-3xl px-5 py-3 tracking-[0.015em] hover:font-bold hover:tracking-normal"
           onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
         >
           {t('settings.general.deleteAllBtn')}
-        </button>
+        </Button>
       </div>
     </div>
   );

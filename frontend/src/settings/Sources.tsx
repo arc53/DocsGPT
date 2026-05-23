@@ -17,6 +17,7 @@ import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import Pagination from '../components/DocumentPagination';
 import DropdownMenu from '../components/DropdownMenu';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { useDarkTheme, useDebouncedValue, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -448,8 +449,9 @@ export default function Sources({
               }
             />
           </div>
-          <button
-            className="bg-primary hover:bg-primary/90 flex h-11 min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white"
+          <Button
+            type="button"
+            className="h-11 min-w-[108px] rounded-full whitespace-normal text-white"
             title={t('settings.sources.addSource')}
             onClick={() => {
               setIsOnboarding(false);
@@ -457,7 +459,7 @@ export default function Sources({
             }}
           >
             {t('settings.sources.addSource')}
-          </button>
+          </Button>
         </div>
         <div className="relative w-full">
           {loading ? (
@@ -528,12 +530,15 @@ export default function Sources({
                                 className="min-w-[120px]"
                               />
                             )}
-                            <button
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleMenuClick(e, docId);
                               }}
-                              className="dark:hover:bg-muted inline-flex h-[35px] w-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB]"
+                              className="h-[35px] w-6"
                               aria-label={t('settings.sources.menuAlt')}
                               data-testid={`menu-button-${docId}`}
                             >
@@ -542,7 +547,7 @@ export default function Sources({
                                 alt={t('settings.sources.menuAlt')}
                                 className="opacity-60 hover:opacity-100"
                               />
-                            </button>
+                            </Button>
                           </div>
                         </div>
                       </div>

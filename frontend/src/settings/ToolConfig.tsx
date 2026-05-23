@@ -13,6 +13,7 @@ import Trash from '../assets/trash.svg';
 import ConfigFields from '../components/ConfigFields';
 import Dropdown from '../components/Dropdown';
 import ToggleSwitch from '../components/ToggleSwitch';
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { useDarkTheme } from '../hooks';
 import AddActionModal from '../modals/AddActionModal';
@@ -330,21 +331,25 @@ export default function ToolConfig({
     <div className="scrollbar-overlay mt-8 flex flex-col gap-4">
       <div className="mb-4 flex items-center justify-between">
         <div className="text-foreground dark:text-foreground flex items-center gap-3 text-sm">
-          <button
-            className="border-border text-muted-foreground hover:bg-accent rounded-full border p-3 text-sm"
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="text-muted-foreground rounded-full p-3"
             onClick={handleBackClick}
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-          </button>
+          </Button>
           <p className="mt-px">{t('settings.tools.backToAllTools')}</p>
         </div>
-        <button
-          className="bg-primary hover:bg-primary/90 rounded-full px-3 py-2 text-xs text-nowrap text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:py-2"
+        <Button
+          type="button"
+          className="rounded-full px-3 py-2 text-xs text-nowrap text-white sm:px-4 sm:py-2"
           onClick={handleSaveChanges}
           disabled={!hasUnsavedChanges || saving}
         >
           {saving ? t('settings.tools.saving') : t('settings.tools.save')}
-        </button>
+        </Button>
       </div>
       {saveError && (
         <div className="mb-2 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
@@ -395,18 +400,22 @@ export default function ToolConfig({
           </p>
           {tool.name === 'api_tool' && (
             <div className="flex gap-2">
-              <button
+              <Button
+                type="button"
+                variant="outline"
                 onClick={() => setImportModalState('ACTIVE')}
-                className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
+                className="border-primary text-primary hover:bg-primary hover:text-primary-foreground rounded-full px-5 py-1"
               >
                 {t('settings.tools.importSpec')}
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
                 onClick={() => setActionModalState('ACTIVE')}
-                className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
+                className="border-primary text-primary hover:bg-primary hover:text-primary-foreground rounded-full px-5 py-1"
               >
                 {t('settings.tools.addAction')}
-              </button>
+              </Button>
             </div>
           )}
         </div>
