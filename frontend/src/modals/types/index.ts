@@ -26,9 +26,3 @@ export type AvailableToolType = {
   }[];
 };
 
-export type WrapperModalPropsType = {
-  children?: React.ReactNode;
-  isPerformingTask?: boolean;
-  close: () => void;
-  className?: string;
-};
