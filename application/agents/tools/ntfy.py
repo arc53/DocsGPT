@@ -1,5 +1,5 @@
-import requests
 from application.agents.tools.base import Tool
+from application.security.safe_url import UnsafeUserUrlError, pinned_request
 
 class NtfyTool(Tool):
     """
@@ -71,7 +71,12 @@ class NtfyTool(Tool):
         if self.token:
             headers["Authorization"] = f"Basic {self.token}"
         data = message.encode("utf-8")
-        response = requests.post(url, headers=headers, data=data, timeout=100)
+        try:
+            response = pinned_request(
+                "POST", url, data=data, headers=headers, timeout=100,
+            )
+        except UnsafeUserUrlError as e:
+            return {"status_code": None, "message": f"URL validation error: {e}"}
         return {"status_code": response.status_code, "message": "Message sent"}
 
     def get_actions_metadata(self):

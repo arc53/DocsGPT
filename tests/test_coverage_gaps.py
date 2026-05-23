@@ -1276,11 +1276,7 @@ class TestCrawlerMarkdownEdge:
 
         loader = CrawlerLoader()
         with patch(
-            "application.parser.remote.crawler_markdown.validate_url",
-            side_effect=lambda u: u,
-        ), patch.object(
-            loader.session,
-            "get",
+            "application.parser.remote.crawler_markdown.pinned_request",
             side_effect=requests.exceptions.ConnectionError("fail"),
         ):
             result = loader._fetch_page("http://fail.com")

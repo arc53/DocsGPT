@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from typing import Any, Dict, Optional
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import requests
 
@@ -11,7 +11,7 @@ from application.agents.tools.api_body_serializer import (
     RequestBodySerializer,
 )
 from application.agents.tools.base import Tool
-from application.core.url_validation import validate_url, SSRFError
+from application.security.safe_url import UnsafeUserUrlError, pinned_request
 
 logger = logging.getLogger(__name__)
 
@@ -70,18 +70,16 @@ class APITool(Tool):
         Returns:
             Dict with status_code, data, and message
         """
+        _VALID_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
+
         request_url = url
         request_headers = headers.copy() if headers else {}
         response = None
 
-        # Validate URL to prevent SSRF attacks
-        try:
-            validate_url(request_url)
-        except SSRFError as e:
-            logger.error(f"URL validation failed: {e}")
+        if method.upper() not in _VALID_METHODS:
             return {
                 "status_code": None,
-                "message": f"URL validation error: {e}",
+                "message": f"Unsupported HTTP method: {method}",
                 "data": None,
             }
 
@@ -91,8 +89,9 @@ class APITool(Tool):
                 for match in re.finditer(r"\{([^}]+)\}", request_url):
                     param_name = match.group(1)
                     if param_name in query_params:
+                        safe_value = quote(str(query_params[param_name]), safe="")
                         request_url = request_url.replace(
-                            f"{{{param_name}}}", str(query_params[param_name])
+                            f"{{{param_name}}}", safe_value
                         )
                         path_params_used.add(param_name)
             remaining_params = {
@@ -102,19 +101,6 @@ class APITool(Tool):
                 query_string = urlencode(remaining_params)
                 separator = "&" if "?" in request_url else "?"
                 request_url = f"{request_url}{separator}{query_string}"
-
-            # Re-validate URL after parameter substitution to prevent SSRF via path params
-            try:
-                validate_url(request_url)
-            except SSRFError as e:
-                logger.error(f"URL validation failed after parameter substitution: {e}")
-                return {
-                    "status_code": None,
-                    "message": f"URL validation error: {e}",
-                    "data": None,
-                }
-
-            # Serialize body based on content type
 
             if body and body != {}:
                 try:
@@ -141,49 +127,13 @@ class APITool(Tool):
                 f"API Call: {method} {request_url} | Content-Type: {request_headers.get('Content-Type', 'N/A')}"
             )
 
-            if method.upper() == "GET":
-                response = requests.get(
-                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
-                )
-            elif method.upper() == "POST":
-                response = requests.post(
-                    request_url,
-                    data=serialized_body,
-                    headers=request_headers,
-                    timeout=DEFAULT_TIMEOUT,
-                )
-            elif method.upper() == "PUT":
-                response = requests.put(
-                    request_url,
-                    data=serialized_body,
-                    headers=request_headers,
-                    timeout=DEFAULT_TIMEOUT,
-                )
-            elif method.upper() == "DELETE":
-                response = requests.delete(
-                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
-                )
-            elif method.upper() == "PATCH":
-                response = requests.patch(
-                    request_url,
-                    data=serialized_body,
-                    headers=request_headers,
-                    timeout=DEFAULT_TIMEOUT,
-                )
-            elif method.upper() == "HEAD":
-                response = requests.head(
-                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
-                )
-            elif method.upper() == "OPTIONS":
-                response = requests.options(
-                    request_url, headers=request_headers, timeout=DEFAULT_TIMEOUT
-                )
-            else:
-                return {
-                    "status_code": None,
-                    "message": f"Unsupported HTTP method: {method}",
-                    "data": None,
-                }
+            response = pinned_request(
+                method,
+                request_url,
+                data=serialized_body,
+                headers=request_headers,
+                timeout=DEFAULT_TIMEOUT,
+            )
             response.raise_for_status()
 
             data = self._parse_response(response)
@@ -192,6 +142,13 @@ class APITool(Tool):
                 "status_code": response.status_code,
                 "data": data,
                 "message": "API call successful.",
+            }
+        except UnsafeUserUrlError as e:
+            logger.error(f"URL validation failed: {e}")
+            return {
+                "status_code": None,
+                "message": f"URL validation error: {e}",
+                "data": None,
             }
         except requests.exceptions.Timeout:
             logger.error(f"Request timeout for {request_url}")

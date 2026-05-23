@@ -355,6 +355,23 @@ def test_pinned_post_preserves_explicit_port(monkeypatch):
 
 
 @pytest.mark.unit
+def test_pinned_post_preserves_url_userinfo(monkeypatch):
+    captured = _capture_send(monkeypatch)
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("93.184.216.34")):
+        pinned_post(
+            "https://user:pass@api.example.com:8443/v1/test",
+            json={},
+            headers={},
+            timeout=5,
+            allow_redirects=False,
+        )
+    prepared = captured["prepared"]
+    assert prepared.url == "https://user:pass@93.184.216.34:8443/v1/test"
+    assert prepared.headers["Host"] == "api.example.com:8443"
+    assert prepared.headers["Authorization"] == "Basic dXNlcjpwYXNz"
+
+
+@pytest.mark.unit
 def test_pinned_post_handles_ip_literal_url_without_dns(monkeypatch):
     """If the URL already has an IP literal, no DNS lookup happens."""
 
