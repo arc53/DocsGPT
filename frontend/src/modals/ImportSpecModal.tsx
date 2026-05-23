@@ -5,10 +5,10 @@ import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import Upload from '../assets/upload.svg';
 import Spinner from '../components/Spinner';
+import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { APIActionType } from '../settings/types';
-import WrapperModal from './WrapperModal';
 
 interface ImportSpecModalProps {
   modalState: ActiveState;
@@ -157,19 +157,43 @@ export default function ImportSpecModal({
     handleClose();
   };
 
-  if (modalState !== 'ACTIVE') return null;
-
   return (
-    <WrapperModal
-      close={handleClose}
-      className="w-full max-w-2xl"
+    <Modal
+      open={modalState === 'ACTIVE'}
+      onOpenChange={(o) => !o && handleClose()}
+      title={t('modals.importSpec.title')}
+      size="lg"
       contentClassName="max-h-[70vh]"
+      footer={
+        <>
+          <button
+            onClick={handleClose}
+            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium"
+          >
+            {t('modals.importSpec.cancel')}
+          </button>
+          {!parsedResult ? (
+            <button
+              onClick={handleParse}
+              disabled={!file || loading}
+              className="bg-primary hover:bg-primary/90 flex w-20 items-center justify-center gap-2 rounded-3xl px-5 py-2 text-sm text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading && <Spinner size="small" color="white" />}
+              {!loading && t('modals.importSpec.parse')}
+            </button>
+          ) : (
+            <button
+              onClick={handleImport}
+              disabled={selectedActions.size === 0}
+              className="bg-primary hover:bg-primary/90 rounded-3xl px-5 py-2 text-sm text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {t('modals.importSpec.import', { count: selectedActions.size })}
+            </button>
+          )}
+        </>
+      }
     >
       <div className="flex flex-col gap-4">
-        <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
-          {t('modals.importSpec.title')}
-        </h2>
-
         {!parsedResult ? (
           <div className="flex flex-col gap-4">
             <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -288,34 +312,7 @@ export default function ImportSpecModal({
             </div>
           </div>
         )}
-
-        <div className="mt-2 flex flex-row-reverse gap-2">
-          {!parsedResult ? (
-            <button
-              onClick={handleParse}
-              disabled={!file || loading}
-              className="bg-primary hover:bg-primary/90 flex w-20 items-center justify-center gap-2 rounded-3xl px-5 py-2 text-sm text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading && <Spinner size="small" color="white" />}
-              {!loading && t('modals.importSpec.parse')}
-            </button>
-          ) : (
-            <button
-              onClick={handleImport}
-              disabled={selectedActions.size === 0}
-              className="bg-primary hover:bg-primary/90 rounded-3xl px-5 py-2 text-sm text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {t('modals.importSpec.import', { count: selectedActions.size })}
-            </button>
-          )}
-          <button
-            onClick={handleClose}
-            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium"
-          >
-            {t('modals.importSpec.cancel')}
-          </button>
-        </div>
       </div>
-    </WrapperModal>
+    </Modal>
   );
 }

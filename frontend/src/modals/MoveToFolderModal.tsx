@@ -6,9 +6,9 @@ import { AgentFolder } from '../agents/types';
 import userService from '../api/services/userService';
 import ChevronRight from '../assets/chevron-right.svg';
 import FolderIcon from '../assets/folder.svg';
+import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken, setAgentFolders } from '../preferences/preferenceSlice';
-import WrapperModal from './WrapperModal';
 
 type MoveToFolderModalProps = {
   modalState: ActiveState;
@@ -132,11 +132,17 @@ export default function MoveToFolderModal({
     }
   };
 
-  if (modalState !== 'ACTIVE') return null;
-
   return (
-    <WrapperModal close={() => setModalState('INACTIVE')} className="p-0!">
-      <div className="w-[800px] max-w-[90vw]">
+    <Modal
+      open={modalState === 'ACTIVE'}
+      onOpenChange={(o) => !o && setModalState('INACTIVE')}
+      size="md"
+      className="w-[800px] max-w-[90vw] p-0! sm:max-w-[90vw]"
+      contentClassName="overflow-visible"
+      hideTitle
+      title={`${t('agents.folders.move')} "${agentName}" to`}
+    >
+      <div>
         <div className="px-6 pt-4">
           <h2
             className="text-foreground dark:text-foreground mb-2 font-semibold"
@@ -369,6 +375,6 @@ export default function MoveToFolderModal({
           </div>
         </div>
       </div>
-    </WrapperModal>
+    </Modal>
   );
 }

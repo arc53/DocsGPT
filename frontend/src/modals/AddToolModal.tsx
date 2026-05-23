@@ -1,16 +1,16 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import SkeletonLoader from '../components/SkeletonLoader';
-import { useLoaderState, useOutsideAlerter } from '../hooks';
+import { Modal } from '../components/ui/modal';
+import { useLoaderState } from '../hooks';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import ConfigToolModal from './ConfigToolModal';
 import MCPServerModal from './MCPServerModal';
 import { AvailableToolType } from './types';
-import WrapperComponent from './WrapperModal';
 
 export default function AddToolModal({
   message,
@@ -27,7 +27,6 @@ export default function AddToolModal({
 }) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
-  const modalRef = useRef<HTMLDivElement>(null);
   const [availableTools, setAvailableTools] = React.useState<
     AvailableToolType[]
   >([]);
@@ -38,12 +37,6 @@ export default function AddToolModal({
   const [mcpModalState, setMcpModalState] =
     React.useState<ActiveState>('INACTIVE');
   const [loading, setLoading] = useLoaderState(false);
-
-  useOutsideAlerter(modalRef, () => {
-    if (modalState === 'ACTIVE') {
-      setModalState('INACTIVE');
-    }
-  }, [modalState]);
 
   const getAvailableTools = () => {
     setLoading(true);
@@ -109,69 +102,67 @@ export default function AddToolModal({
 
   return (
     <>
-      {modalState === 'ACTIVE' && (
-        <WrapperComponent
-          close={() => setModalState('INACTIVE')}
-          className="h-[85vh] w-[90vw] max-w-[950px] md:w-[85vw] lg:w-[75vw]"
-        >
-          <div className="flex h-full flex-col">
-            <div>
-              <h2 className="text-foreground dark:text-foreground px-3 text-xl font-semibold">
-                {t('settings.tools.selectToolSetup')}
-              </h2>
-              <div className="mt-5 h-[73vh] overflow-auto px-3 py-px">
-                {loading ? (
-                  <div className="grid auto-rows-fr grid-cols-1 gap-4 pb-2 sm:grid-cols-2 lg:grid-cols-3">
-                    <SkeletonLoader component="addToolCards" count={6} />
-                  </div>
-                ) : (
-                  <div className="grid auto-rows-fr grid-cols-1 gap-4 pb-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {availableTools.map((tool, index) => (
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        key={index}
-                        className="border-border bg-card hover:bg-accent hover:border-border/80 flex h-52 w-full cursor-pointer flex-col justify-between rounded-2xl border p-6"
-                        onClick={() => {
+      <Modal
+        open={modalState === 'ACTIVE'}
+        onOpenChange={(o) => !o && setModalState('INACTIVE')}
+        title={t('settings.tools.selectToolSetup')}
+        size="xl"
+        className="h-[85vh] w-[90vw] sm:max-w-[950px] md:w-[85vw] lg:w-[75vw]"
+      >
+        <div className="flex h-full flex-col">
+          <div>
+            <div className="mt-5 h-[73vh] overflow-auto px-3 py-px">
+              {loading ? (
+                <div className="grid auto-rows-fr grid-cols-1 gap-4 pb-2 sm:grid-cols-2 lg:grid-cols-3">
+                  <SkeletonLoader component="addToolCards" count={6} />
+                </div>
+              ) : (
+                <div className="grid auto-rows-fr grid-cols-1 gap-4 pb-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {availableTools.map((tool, index) => (
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      key={index}
+                      className="border-border bg-card hover:bg-accent hover:border-border/80 flex h-52 w-full cursor-pointer flex-col justify-between rounded-2xl border p-6"
+                      onClick={() => {
+                        setSelectedTool(tool);
+                        handleAddTool(tool);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
                           setSelectedTool(tool);
                           handleAddTool(tool);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            setSelectedTool(tool);
-                            handleAddTool(tool);
-                          }
-                        }}
-                      >
-                        <div className="w-full">
-                          <div className="flex w-full items-center justify-between px-1">
-                            <img
-                              src={`/toolIcons/tool_${tool.name}.svg`}
-                              className="h-6 w-6"
-                              alt={`${tool.name} icon`}
-                            />
-                          </div>
-                          <div className="mt-[9px]">
-                            <p
-                              title={tool.displayName}
-                              className="text-foreground dark:text-foreground truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
-                            >
-                              {tool.displayName}
-                            </p>
-                            <p className="text-muted-foreground mt-1 h-24 overflow-auto px-1 text-[12px] leading-relaxed">
-                              {tool.description}
-                            </p>
-                          </div>
+                        }
+                      }}
+                    >
+                      <div className="w-full">
+                        <div className="flex w-full items-center justify-between px-1">
+                          <img
+                            src={`/toolIcons/tool_${tool.name}.svg`}
+                            className="h-6 w-6"
+                            alt={`${tool.name} icon`}
+                          />
+                        </div>
+                        <div className="mt-[9px]">
+                          <p
+                            title={tool.displayName}
+                            className="text-foreground dark:text-foreground truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
+                          >
+                            {tool.displayName}
+                          </p>
+                          <p className="text-muted-foreground mt-1 h-24 overflow-auto px-1 text-[12px] leading-relaxed">
+                            {tool.description}
+                          </p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
-        </WrapperComponent>
-      )}
+        </div>
+      </Modal>
       <ConfigToolModal
         modalState={configModalState}
         setModalState={setConfigModalState}

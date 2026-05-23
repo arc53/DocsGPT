@@ -7,9 +7,9 @@ import userService from '../api/services/userService';
 import ExternalLinkIcon from '../assets/external-link.svg';
 import CopyButton from '../components/CopyButton';
 import Spinner from '../components/Spinner';
+import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
-import WrapperModal from './WrapperModal';
 
 const baseURL = import.meta.env.VITE_BASE_URL;
 
@@ -79,18 +79,14 @@ export default function AgentDetailsModal({
     setApiKey(agent.key ?? null);
   }, [agent]);
 
-  if (modalState !== 'ACTIVE') return null;
   return (
-    <WrapperModal
-      className="sm:w-lg"
-      close={() => {
-        setModalState('INACTIVE');
-      }}
+    <Modal
+      open={modalState === 'ACTIVE'}
+      onOpenChange={(o) => !o && setModalState('INACTIVE')}
+      title={t('modals.agentDetails.title')}
+      size="md"
     >
       <div>
-        <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
-          {t('modals.agentDetails.title')}
-        </h2>
         <div className="mt-8 flex flex-col gap-6">
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
@@ -232,6 +228,6 @@ export default function AgentDetailsModal({
           </div>
         </div>
       </div>
-    </WrapperModal>
+    </Modal>
   );
 }
