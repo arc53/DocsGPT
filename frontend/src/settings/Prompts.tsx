@@ -211,7 +211,11 @@ export default function Prompts({
           <div className="flex flex-row flex-wrap items-end justify-start gap-6">
             <Popover open={open} onOpenChange={setOpen}>
               <PopoverTrigger asChild>
-                <button type="button" className={triggerClassName}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={cn('h-auto justify-between', triggerClassName)}
+                >
                   <span
                     className={cn(
                       'truncate',
@@ -226,7 +230,7 @@ export default function Prompts({
                       open && 'rotate-180',
                     )}
                   />
-                </button>
+                </Button>
               </PopoverTrigger>
               <PopoverContent
                 align="start"
@@ -255,8 +259,10 @@ export default function Prompts({
                           <span className="truncate">{prompt.name}</span>
                           <div className="flex shrink-0 items-center gap-1">
                             {prompt.type !== 'public' && (
-                              <button
+                              <Button
                                 type="button"
+                                variant="ghost"
+                                size="icon-sm"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setModalType('EDIT');
@@ -270,24 +276,26 @@ export default function Prompts({
                                   setModalState('ACTIVE');
                                   setOpen(false);
                                 }}
-                                className="hover:bg-accent rounded p-1"
+                                className="h-auto w-auto rounded p-1"
                                 aria-label="Edit prompt"
                               >
                                 <Pencil className="text-muted-foreground h-3.5 w-3.5" />
-                              </button>
+                              </Button>
                             )}
                             {canDelete && (
-                              <button
+                              <Button
                                 type="button"
+                                variant="ghost"
+                                size="icon-sm"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDeletePrompt(prompt.id);
                                 }}
-                                className="hover:bg-accent rounded p-1"
+                                className="h-auto w-auto rounded p-1"
                                 aria-label="Delete prompt"
                               >
                                 <Trash2 className="text-muted-foreground h-3.5 w-3.5" />
-                              </button>
+                              </Button>
                             )}
                           </div>
                         </CommandItem>

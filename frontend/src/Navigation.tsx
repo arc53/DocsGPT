@@ -17,6 +17,7 @@ import openNewChat from './assets/openNewChat.svg';
 import Pin from './assets/pin.svg';
 import SearchIcon from './assets/search.svg';
 import { Avatar } from './components/ui/avatar';
+import { Button } from './components/ui/button';
 import SettingGear from './assets/settingGear.svg';
 import Spark from './assets/spark.svg';
 import Spinner from './components/Spinner';
@@ -318,32 +319,40 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         <div className="absolute top-3 left-3 z-20 hidden transition-all duration-300 ease-in-out lg:block">
           <div className="flex items-center gap-3">
             {!navOpen && (
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
                 onClick={() => {
                   setNavOpen(!navOpen);
                 }}
-                className="transition-transform duration-200 hover:scale-110"
+                className="h-auto w-auto p-0 transition-transform duration-200 hover:scale-110 hover:bg-transparent"
+                aria-label="Open navigation menu"
               >
                 <img
                   src={PanelLeftOpen}
                   alt="Open navigation menu"
                   className="m-auto transition-all duration-300 ease-in-out"
                 />
-              </button>
+              </Button>
             )}
             {queries?.length > 0 && (
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
                 onClick={() => {
                   newChat();
                 }}
-                className="transition-transform duration-200 hover:scale-110"
+                className="h-auto w-auto p-0 transition-transform duration-200 hover:scale-110 hover:bg-transparent"
+                aria-label="Start new chat"
               >
                 <img
                   src={openNewChat}
                   alt="Start new chat"
                   className="cursor-pointer"
                 />
-              </button>
+              </Button>
             )}
             <div className="text-muted-foreground text-xl font-medium">
               DocsGPT
@@ -373,18 +382,22 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               <p className="my-auto text-2xl font-semibold">DocsGPT</p>
             </a>
           </div>
-          <button
-            className="float-right mr-5"
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="float-right mr-5 h-auto w-auto p-0 hover:bg-transparent"
             onClick={() => {
               setNavOpen(!navOpen);
             }}
+            aria-label={navOpen ? 'Collapse sidebar' : 'Expand sidebar'}
           >
             <img
               src={navOpen ? PanelLeftClose : PanelLeftOpen}
               alt={navOpen ? 'Collapse sidebar' : 'Expand sidebar'}
               className="m-auto transition-all duration-300 ease-in-out hover:scale-110"
             />
-          </button>
+          </Button>
         </div>
         <NavLink
           to={'/c/new'}
@@ -456,18 +469,24 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                       <div
                         className={`${isMobile || isTablet ? 'flex' : 'invisible flex group-hover:visible'} items-center px-3`}
                       >
-                        <button
-                          className="rounded-full hover:opacity-75"
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="h-auto w-auto rounded-full p-0 hover:bg-transparent hover:opacity-75"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleTogglePin(agent);
                           }}
+                          aria-label={
+                            agent.pinned ? 'Unpin agent' : 'Pin agent'
+                          }
                         >
                           <img
                             src={agent.pinned ? UnPin : Pin}
                             className="h-4 w-4"
                           ></img>
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -522,9 +541,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <div className="mt-7">
               <div className="mx-4 my-auto mt-2 flex h-8 items-center justify-between gap-4 rounded-3xl">
                 <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => setSearchOpen(true)}
-                  className="hover:bg-sidebar-accent mr-2 flex h-7 w-7 items-center justify-center rounded-full"
+                  className="hover:bg-sidebar-accent mr-2 h-7 w-7 rounded-full"
                   aria-label={t('modals.searchConversations.searchPlaceholder')}
                   title={t('modals.searchConversations.searchPlaceholder')}
                 >
@@ -533,7 +555,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     alt="search"
                     className="h-4 w-4 opacity-70"
                   />
-                </button>
+                </Button>
               </div>
               <div className="conversations-container">
                 {(conversations.data ?? []).map((conversation) => (
@@ -637,16 +659,20 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       </div>
       <div className="dark:border-b-sidebar-border bg-sidebar sticky z-10 h-16 w-full border-b-2 lg:hidden">
         <div className="ml-6 flex h-full items-center gap-6">
-          <button
-            className="h-6 w-6 lg:hidden"
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="h-6 w-6 p-0 hover:bg-transparent lg:hidden"
             onClick={() => setNavOpen(true)}
+            aria-label="Toggle mobile menu"
           >
             <img
               src={Hamburger}
               alt="Toggle mobile menu"
               className="w-7 filter dark:invert"
             />
-          </button>
+          </Button>
           <div className="text-muted-foreground text-xl font-medium">
             DocsGPT
           </div>

@@ -6,6 +6,7 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import type { RootState } from '../store';
 import { getSessionToken } from '../utils/providerUtils';
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import {
@@ -911,9 +912,11 @@ function Upload({
             {!ingestor.type && renderIngestorSelection()}
             {ingestor.type && (
               <div className="flex flex-col gap-4">
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
                   onClick={() => handleIngestorTypeChange(null)}
-                  className="flex w-fit items-center gap-2 text-[#777777] hover:text-[#555555]"
+                  className="h-auto w-fit gap-2 px-0 py-0 text-[#777777] hover:bg-transparent hover:text-[#555555]"
                 >
                   <img
                     src={ChevronRight}
@@ -921,7 +924,7 @@ function Upload({
                     className="h-3 w-3 rotate-180 transform"
                   />
                   <span>{t('modals.uploadDoc.back')}</span>
-                </button>
+                </Button>
 
                 <h2 className="text-foreground text-2xl leading-7 font-semibold tracking-[0.15px]">
                   {ingestor.type &&
@@ -951,30 +954,33 @@ function Upload({
               getIngestorSchema(ingestor.type as IngestorType)?.fields.some(
                 (field: FormField) => field.advanced,
               ) && (
-                <button
+                <Button
+                  type="button"
+                  variant="link"
                   onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                  className="text-primary bg-transparent py-2 pl-0 text-left text-sm font-normal hover:cursor-pointer"
+                  className="h-auto w-fit justify-start px-0 py-2 text-sm font-normal hover:no-underline"
                 >
                   {showAdvancedOptions
                     ? t('modals.uploadDoc.hideAdvanced')
                     : t('modals.uploadDoc.showAdvanced')}
-                </button>
+                </Button>
               )}
           </>
         )}
         <div className="flex justify-end gap-4">
           {activeTab && ingestor.type && (
-            <button
+            <Button
+              type="button"
               onClick={handleUpload}
               disabled={isUploadDisabled()}
-              className={`rounded-3xl px-4 py-2 text-sm font-medium ${
+              className={`h-auto rounded-3xl px-4 py-2 text-sm font-medium ${
                 isUploadDisabled()
-                  ? 'dark:bg-muted dark:text-muted-foreground cursor-not-allowed bg-gray-300 text-gray-500'
-                  : 'bg-primary hover:bg-primary/90 cursor-pointer text-white'
+                  ? 'dark:bg-muted dark:text-muted-foreground bg-gray-300 text-gray-500'
+                  : ''
               }`}
             >
               {t('modals.uploadDoc.train')}
-            </button>
+            </Button>
           )}
         </div>
       </div>

@@ -7,6 +7,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { Modal } from '../components/ui/modal';
+import { Button } from '../components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -143,13 +144,14 @@ function VariableMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
+        <Button
           type="button"
-          className={`border-border bg-card text-foreground hover:bg-accent flex items-center justify-between rounded-3xl border px-5 py-3 text-xs sm:text-sm ${triggerClassName ?? ''}`}
+          variant="outline"
+          className={`border-border bg-card text-foreground hover:bg-accent h-auto justify-between rounded-3xl px-5 py-3 text-xs sm:text-sm ${triggerClassName ?? ''}`}
         >
           <span className="truncate">{label}</span>
           <ChevronDown className="text-muted-foreground ml-2 h-4 w-4 shrink-0" />
-        </button>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
@@ -399,20 +401,23 @@ function AddPrompt({
         </div>
 
         <div className="flex justify-end gap-2 sm:gap-4">
-          <button
+          <Button
+            type="button"
+            variant="destructive-outline"
             onClick={() => setModalState('INACTIVE')}
-            className="border-destructive text-destructive hover:bg-destructive rounded-3xl border px-5 py-2 text-sm font-medium transition-all hover:text-white"
+            className="h-auto rounded-3xl px-5 py-2 text-sm font-medium"
           >
             {t('modals.prompts.cancel')}
-          </button>
+          </Button>
 
-          <button
+          <Button
+            type="button"
             onClick={handleAddPrompt}
-            className="bg-primary hover:bg-primary/90 disabled:hover:bg-primary rounded-3xl px-6 py-2 text-sm font-medium text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-auto rounded-3xl px-6 py-2 text-sm font-medium text-white"
             disabled={disableSave}
           >
             {t('modals.prompts.save')}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -532,19 +537,22 @@ function EditPrompt({
         </div>
 
         <div className="flex justify-end gap-2 sm:gap-4">
-          <button
+          <Button
+            type="button"
+            variant="destructive-outline"
             onClick={() => setModalState('INACTIVE')}
-            className="border-destructive text-destructive hover:bg-destructive rounded-3xl border px-5 py-2 text-sm font-medium transition-all hover:text-white"
+            className="h-auto rounded-3xl px-5 py-2 text-sm font-medium"
           >
             {t('modals.prompts.cancel')}
-          </button>
+          </Button>
 
-          <button
+          <Button
+            type="button"
             onClick={() => {
               handleEditPrompt &&
                 handleEditPrompt(currentPromptEdit.id, currentPromptEdit.type);
             }}
-            className="bg-primary hover:bg-primary/90 disabled:hover:bg-primary rounded-3xl px-6 py-2 text-sm font-medium text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-auto rounded-3xl px-6 py-2 text-sm font-medium text-white"
             disabled={
               currentPromptEdit.type === 'public' ||
               disableSave ||
@@ -557,7 +565,7 @@ function EditPrompt({
             }
           >
             {t('modals.prompts.save')}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

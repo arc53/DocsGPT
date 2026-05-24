@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useMatch, useNavigate } from 'react-router-dom';
 
 import WarnIcon from '../assets/warn.svg';
+import { Button } from '../components/ui/button';
 import type { RootState } from '../store';
 
 import {
@@ -110,14 +111,16 @@ export default function ToolApprovalToast() {
               <h3 className="dark:text-foreground text-sm leading-[16.5px] font-medium text-black">
                 Tool approval needed
               </h3>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => dispatch(dismissToolApproval(eventId))}
-                className="flex h-8 items-center justify-center p-0 text-black opacity-70 transition-opacity hover:opacity-100 dark:text-white"
+                className="h-8 w-8 p-0 text-black opacity-70 transition-opacity hover:bg-transparent hover:opacity-100 dark:text-white"
                 aria-label="Dismiss"
               >
                 <X className="h-4 w-4" />
-              </button>
+              </Button>
             </div>
             <div className="flex items-center justify-between gap-3 px-5 py-3">
               <div className="flex min-w-0 items-center gap-2">
@@ -134,16 +137,17 @@ export default function ToolApprovalToast() {
                   {conversationName(conversationId)}
                 </p>
               </div>
-              <button
+              <Button
                 type="button"
+                size="sm"
                 onClick={() => {
                   dispatch(dismissToolApproval(eventId));
                   navigate(`/c/${conversationId}`);
                 }}
-                className="bg-primary hover:bg-primary/90 rounded-full px-3 py-1 text-xs font-medium text-white shadow-sm"
+                className="h-auto rounded-full px-3 py-1 text-xs font-medium text-white shadow-sm"
               >
                 Review
-              </button>
+              </Button>
             </div>
           </div>
         ),
