@@ -44,7 +44,7 @@ export default function Notification({
         }
       `}</style>
       <a
-        className="group absolute right-2 bottom-6 z-20 flex w-3/4 items-center justify-center gap-2 overflow-hidden rounded-lg px-2 py-4 sm:right-4 md:w-2/5 lg:w-1/3 xl:w-1/4 2xl:w-1/5"
+        className="group absolute right-2 bottom-24 z-20 flex w-3/4 items-center justify-center gap-2 overflow-hidden rounded-lg px-2 py-4 sm:right-4 sm:bottom-6 md:w-2/5 lg:w-1/3 xl:w-1/4 2xl:w-1/5"
         style={{
           background:
             'linear-gradient(90deg, #390086 0%, #6222B7 100%), linear-gradient(90deg, rgba(57, 0, 134, 0) 0%, #6222B7 53.02%, rgba(57, 0, 134, 0) 100%)',
