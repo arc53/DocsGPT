@@ -1633,7 +1633,7 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'agent')}
                 >
-                  <div className="text-primary group-hover:bg-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 transition-colors group-hover:text-white">
+                  <div className="text-primary group-hover:bg-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 transition-colors group-hover:text-white dark:bg-purple-900/40">
                     <Bot size={18} />
                   </div>
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -1645,7 +1645,7 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'end')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600 transition-colors group-hover:bg-green-600 group-hover:text-white">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600 transition-colors group-hover:bg-green-600 group-hover:text-white dark:bg-green-900/40 dark:text-green-300">
                     <Flag size={18} />
                   </div>
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -1657,7 +1657,7 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'note')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-600 transition-colors group-hover:bg-yellow-500 group-hover:text-white">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-600 transition-colors group-hover:bg-yellow-500 group-hover:text-white dark:bg-yellow-900/40 dark:text-yellow-300">
                     <StickyNote size={18} />
                   </div>
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -1677,7 +1677,7 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'state')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white dark:bg-blue-900/40 dark:text-blue-300">
                     <Database size={18} />
                   </div>
                   <div className="flex flex-col">
@@ -1694,7 +1694,7 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'condition')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 transition-colors group-hover:bg-orange-600 group-hover:text-white">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 transition-colors group-hover:bg-orange-600 group-hover:text-white dark:bg-orange-900/40 dark:text-orange-300">
                     <GitBranch size={18} />
                   </div>
                   <div className="flex flex-col">
