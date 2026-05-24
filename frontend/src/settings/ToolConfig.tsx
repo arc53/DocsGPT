@@ -939,9 +939,12 @@ function APIToolConfig({
                   className="flex items-center gap-2"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <button
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => handleDeleteActionClick(actionName)}
-                    className="mr-2 flex h-6 w-6 items-center justify-center rounded-full"
+                    className="mr-2 h-6 w-6 rounded-full"
                     title={t('convTile.delete')}
                   >
                     <img
@@ -949,7 +952,7 @@ function APIToolConfig({
                       alt="delete"
                       className="h-4 w-4 opacity-40 transition-opacity hover:opacity-100"
                     />
-                  </button>
+                  </Button>
                   <div className="flex items-center gap-1">
                     <span className="text-xs text-gray-500 dark:text-gray-400">
                       {t('settings.tools.requireApproval', 'Approval')}
@@ -1418,7 +1421,10 @@ function APIActionTable({
                       }}
                     />
                     <div className="mt-1">
-                      <button
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
                         onClick={handleRenameProperty}
                         className="mr-1 h-5 w-5"
                       >
@@ -1427,13 +1433,16 @@ function APIActionTable({
                           alt="check"
                           className="h-5 w-5"
                         />
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
                         onClick={handleRenamePropertyCancel}
                         className="h-5 w-5"
                       >
                         <img src={CircleX} alt="cancel" className="h-5 w-5" />
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ) : (
@@ -1507,12 +1516,15 @@ function APIActionTable({
               <td
                 className={`border-border dark:border-border border-b ${NARROW_CELL}`}
               >
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => handlePorpertyDelete(section, key)}
                   className="h-4 w-4 opacity-60 hover:opacity-100"
                 >
                   <img src={Trash} alt="delete" className="h-4 w-4"></img>
-                </button>
+                </Button>
               </td>
             </tr>
           ),
@@ -1545,30 +1557,39 @@ function APIActionTable({
               </select>
             </td>
             <td colSpan={3} className="text-right">
-              <button
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
                 onClick={handleAddProperty}
-                className="bg-primary hover:bg-primary/90 mr-1 rounded-full px-5 py-1 text-sm text-white"
+                className="mr-1 rounded-full px-5 text-white"
               >
                 {t('settings.tools.add')}
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
+                variant="destructive-outline"
+                size="sm"
                 onClick={handleAddPropertyCancel}
-                className="rounded-full border border-solid border-red-500 px-5 py-1 text-sm text-red-500 hover:bg-red-500 hover:text-white"
+                className="rounded-full px-5"
               >
                 {t('settings.tools.cancel')}
-              </button>
+              </Button>
             </td>
             <td className={NARROW_CELL}></td>
           </tr>
         ) : (
           <tr>
             <td colSpan={5}>
-              <button
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => handleAddPropertyStart(section)}
-                className="border-primary text-primary hover:bg-primary/90 flex items-start rounded-full border border-solid px-5 py-1 text-sm text-nowrap transition-colors hover:text-white"
+                className="border-primary text-primary hover:bg-primary/90 rounded-full px-5 text-nowrap hover:text-white"
               >
                 {t('settings.tools.addNew')}
-              </button>
+              </Button>
             </td>
             <td className={NARROW_CELL}></td>
           </tr>
@@ -1598,7 +1619,10 @@ function APIActionTable({
                       }}
                     />
                     <div className="mt-1">
-                      <button
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
                         onClick={handleRenameProperty}
                         className="mr-1 h-5 w-5"
                       >
@@ -1607,13 +1631,16 @@ function APIActionTable({
                           alt="check"
                           className="h-5 w-5"
                         />
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
                         onClick={handleRenamePropertyCancel}
                         className="h-5 w-5"
                       >
                         <img src={CircleX} alt="cancel" className="h-5 w-5" />
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ) : (
@@ -1657,12 +1684,15 @@ function APIActionTable({
               <td
                 className={`border-border dark:border-border border-b ${NARROW_CELL}`}
               >
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => handlePorpertyDelete('headers', key)}
                   className="h-4 w-4 opacity-60 hover:opacity-100"
                 >
                   <img src={Trash} alt="delete" className="h-4 w-4"></img>
-                </button>
+                </Button>
               </td>
             </tr>
           ),
@@ -1683,30 +1713,39 @@ function APIActionTable({
               />
             </td>
             <td colSpan={2} className="text-right">
-              <button
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
                 onClick={handleAddProperty}
-                className="bg-primary hover:bg-primary/90 mr-1 rounded-full px-5 py-1 text-sm text-white"
+                className="mr-1 rounded-full px-5 text-white"
               >
                 {t('settings.tools.add')}
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
+                variant="destructive-outline"
+                size="sm"
                 onClick={handleAddPropertyCancel}
-                className="rounded-full border border-solid border-red-500 px-5 py-1 text-sm text-red-500 hover:bg-red-500 hover:text-white"
+                className="rounded-full px-5"
               >
                 {t('settings.tools.cancel')}
-              </button>
+              </Button>
             </td>
             <td className={NARROW_CELL}></td>
           </tr>
         ) : (
           <tr>
             <td colSpan={3}>
-              <button
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => handleAddPropertyStart('headers')}
-                className="border-primary text-primary hover:bg-primary/90 flex items-start rounded-full border border-solid px-5 py-1 text-sm text-nowrap transition-colors hover:text-white"
+                className="border-primary text-primary hover:bg-primary/90 rounded-full px-5 text-nowrap hover:text-white"
               >
                 {t('settings.tools.addNew')}
-              </button>
+              </Button>
             </td>
             <td className={NARROW_CELL}></td>
           </tr>
