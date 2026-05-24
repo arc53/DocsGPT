@@ -297,7 +297,7 @@ export default function Tools() {
                       filtered.map((tool, index) => (
                         <div
                           key={index}
-                          className="bg-muted hover:bg-accent relative flex h-52 w-[300px] flex-col justify-between overflow-hidden rounded-2xl p-6"
+                          className="bg-muted hover:bg-accent relative flex h-52 w-[300px] flex-col justify-between overflow-hidden rounded-2xl p-5"
                         >
                           {!tool.default && (
                             <DropdownMenu>

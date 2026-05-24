@@ -473,7 +473,7 @@ export default function Sources({
                 return (
                   <div key={docId} className="relative">
                     <div
-                      className={`bg-muted dark:bg-accent flex h-[130px] w-full flex-col rounded-2xl p-3 transition-all duration-200 ${
+                      className={`bg-muted dark:bg-accent flex h-[130px] w-full flex-col rounded-2xl p-5 transition-all duration-200 ${
                         actionMenuDocId === docId ||
                         syncMenuState.docId === docId
                           ? 'scale-[1.05]'
