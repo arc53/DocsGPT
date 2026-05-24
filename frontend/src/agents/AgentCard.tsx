@@ -261,10 +261,22 @@ export default function AgentCard({
   };
   return (
     <div
-      className={`bg-muted hover:bg-accent relative flex h-44 flex-col justify-between rounded-2xl px-4 py-5 sm:w-48 sm:px-6 ${agent.status === 'published' && 'cursor-pointer'}`}
+      role={agent.status === 'published' ? 'button' : undefined}
+      tabIndex={agent.status === 'published' ? 0 : undefined}
+      aria-label={agent.status === 'published' ? agent.name : undefined}
+      className={`bg-muted hover:bg-accent focus-visible:ring-ring/50 focus-visible:border-ring relative flex h-44 flex-col justify-between rounded-2xl px-4 py-5 outline-none focus-visible:ring-[3px] sm:w-48 sm:px-6 ${agent.status === 'published' && 'cursor-pointer'}`}
       onClick={(e) => {
         e.stopPropagation();
         handleClick();
+      }}
+      onKeyDown={(e) => {
+        if (
+          agent.status === 'published' &&
+          (e.key === 'Enter' || e.key === ' ')
+        ) {
+          e.preventDefault();
+          handleClick();
+        }
       }}
     >
       <DropdownMenu>

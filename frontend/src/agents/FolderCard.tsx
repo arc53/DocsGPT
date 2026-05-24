@@ -79,10 +79,19 @@ export default function FolderCard({
   return (
     <>
       <div
-        className={`relative flex cursor-pointer items-center justify-between rounded-2xl px-4 py-3 sm:w-48 ${
+        role="button"
+        tabIndex={0}
+        aria-pressed={isExpanded}
+        className={`focus-visible:ring-ring/50 focus-visible:border-ring relative flex cursor-pointer items-center justify-between rounded-2xl px-4 py-3 outline-none focus-visible:ring-[3px] sm:w-48 ${
           isExpanded ? 'bg-accent' : 'bg-muted hover:bg-accent'
         }`}
         onClick={() => onToggleExpand(folder.id)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggleExpand(folder.id);
+          }
+        }}
       >
         <div className="flex items-center gap-2 overflow-hidden">
           <span className="text-foreground truncate text-sm font-medium">
