@@ -45,7 +45,7 @@ function MainLayout() {
       <div
         className={`h-[calc(100dvh-64px)] overflow-auto transition-all duration-300 ease-in-out lg:h-screen ${
           !(isMobile || isTablet)
-            ? `${navOpen ? 'lg:ml-72' : 'lg:ml-0'}`
+            ? `${navOpen ? 'lg:ml-72' : 'lg:ml-14'}`
             : 'ml-0 lg:ml-16'
         }`}
       >

@@ -315,51 +315,79 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         />
       )}
 
-      {
-        <div className="absolute top-3 left-3 z-20 hidden transition-all duration-300 ease-in-out lg:block">
-          <div className="flex items-center gap-3">
-            {!navOpen && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  setNavOpen(!navOpen);
-                }}
-                className="h-auto w-auto p-0 transition-transform duration-200 hover:scale-110 hover:bg-transparent"
-                aria-label="Open navigation menu"
-              >
-                <img
-                  src={PanelLeftOpen}
-                  alt="Open navigation menu"
-                  className="m-auto transition-all duration-300 ease-in-out"
-                />
-              </Button>
-            )}
-            {queries?.length > 0 && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  newChat();
-                }}
-                className="h-auto w-auto p-0 transition-transform duration-200 hover:scale-110 hover:bg-transparent"
-                aria-label="Start new chat"
-              >
-                <img
-                  src={openNewChat}
-                  alt="Start new chat"
-                  className="cursor-pointer"
-                />
-              </Button>
-            )}
-            <div className="text-muted-foreground text-xl font-medium">
-              DocsGPT
-            </div>
+      {/* Icon rail (desktop only, when sidebar collapsed) */}
+      {!navOpen && !isMobile && !isTablet && (
+        <div className="bg-sidebar border-border fixed top-0 left-0 z-10 hidden h-full w-14 flex-col items-center gap-2 border-r py-3 lg:flex">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setNavOpen(true)}
+            aria-label="Open navigation menu"
+          >
+            <img
+              src={PanelLeftOpen}
+              alt=""
+              className="transition-all duration-300 ease-in-out"
+            />
+          </Button>
+          {queries?.length > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => newChat()}
+              aria-label="Start new chat"
+            >
+              <img src={openNewChat} alt="" />
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setSearchOpen(true)}
+            aria-label={t('modals.searchConversations.searchPlaceholder')}
+            title={t('modals.searchConversations.searchPlaceholder')}
+          >
+            <img
+              src={SearchIcon}
+              alt=""
+              className="h-5 w-5 filter dark:invert"
+            />
+          </Button>
+          <div className="mt-auto flex flex-col items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                dispatch(setSelectedAgent(null));
+                navigate('/agents');
+              }}
+              aria-label={t('manageAgents')}
+            >
+              <img src={Spark} alt="" className="h-5 w-5" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                resetConversation();
+                navigate('/settings');
+              }}
+              aria-label={t('settings.label')}
+            >
+              <img
+                src={SettingGear}
+                alt=""
+                className="h-5 w-5 filter dark:invert"
+              />
+            </Button>
           </div>
         </div>
-      }
+      )}
       <div
         ref={navRef}
         className={`${
