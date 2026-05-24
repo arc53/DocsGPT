@@ -96,7 +96,7 @@ function HeroModelSelect() {
       >
         <SelectValue placeholder="Select Model" />
       </SelectTrigger>
-      <SelectContent className="bg-muted dark:bg-card border-0 shadow-md">
+      <SelectContent className="bg-muted dark:bg-card rounded-t-none rounded-b-4xl border-0 shadow-md data-[side=bottom]:translate-y-0">
         {hasModels ? (
           availableModels?.map((model: Model) => (
             <SelectItem key={model.id} value={model.id}>
