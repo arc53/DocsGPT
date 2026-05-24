@@ -33,6 +33,7 @@ import {
 import type { RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
+import { Button } from './ui/button';
 import {
   MultiSelectPopover,
   type MultiSelectPopoverItem,
@@ -1627,8 +1628,11 @@ export default function MessageInput({
                   {attachment.fileName}
                 </span>
 
-                <button
-                  className="ml-1.5 flex items-center justify-center rounded-full p-1"
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="ml-1.5 h-auto w-auto rounded-full p-1"
                   onClick={() => {
                     dispatch(removeAttachment(attachment.id));
                   }}
@@ -1638,7 +1642,7 @@ export default function MessageInput({
                     aria-label={t('conversation.attachments.remove')}
                     className="h-2.5 w-2.5"
                   />
-                </button>
+                </Button>
               </div>
             );
           })}
@@ -1701,19 +1705,22 @@ export default function MessageInput({
                         className="h-3 w-3"
                       />
                     </a>
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
                       onClick={handleUploadClick}
-                      className="border-primary text-primary hover:bg-primary/90 w-auto self-start rounded-full border px-4 py-2 text-sm font-medium transition-colors duration-200 hover:text-white"
+                      className="border-primary text-primary hover:bg-primary/90 h-auto w-auto self-start rounded-full border bg-transparent px-4 py-2 text-sm font-medium shadow-none transition-colors duration-200 hover:text-white"
                     >
                       {t('settings.sources.uploadNew')}
-                    </button>
+                    </Button>
                   </div>
                 }
                 trigger={
-                  <button
+                  <Button
                     type="button"
-                    className="xs:px-3 xs:py-1.5 dark:border-border border-border hover:bg-accent dark:hover:bg-muted flex max-w-[130px] items-center rounded-full border px-2 py-1 transition-colors sm:max-w-[150px]"
+                    variant="outline"
+                    size="sm"
+                    className="xs:px-3 xs:py-1.5 dark:border-border border-border hover:bg-accent dark:hover:bg-muted flex h-auto max-w-[130px] items-center justify-start rounded-full border bg-transparent px-2 py-1 shadow-none transition-colors sm:max-w-[150px]"
                     title={
                       selectedDocs && selectedDocs.length > 0
                         ? selectedDocs.map((doc) => doc.name).join(', ')
@@ -1732,7 +1739,7 @@ export default function MessageInput({
                           : `${selectedDocs.length} sources selected`
                         : t('conversation.sources.title')}
                     </span>
-                  </button>
+                  </Button>
                 }
               />
             )}
@@ -1763,9 +1770,11 @@ export default function MessageInput({
                   </a>
                 }
                 trigger={
-                  <button
+                  <Button
                     type="button"
-                    className="xs:px-3 xs:py-1.5 xs:max-w-[150px] dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex max-w-[130px] items-center rounded-full border px-2 py-1 transition-colors"
+                    variant="outline"
+                    size="sm"
+                    className="xs:px-3 xs:py-1.5 xs:max-w-[150px] dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex h-auto max-w-[130px] items-center justify-start rounded-full border bg-transparent px-2 py-1 shadow-none transition-colors"
                   >
                     <img
                       src={ToolIcon}
@@ -1775,20 +1784,22 @@ export default function MessageInput({
                     <span className="xs:text-xs dark:text-foreground text-muted-foreground truncate overflow-hidden text-xs font-medium sm:text-sm">
                       {t('settings.tools.label')}
                     </span>
-                  </button>
+                  </Button>
                 }
               />
             )}
             {ENABLE_VOICE_INPUT && (
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => {
                   void handleVoiceInput();
                 }}
                 aria-label={voiceButtonLabel}
                 title={voiceButtonLabel}
                 disabled={loading || recordingState === 'transcribing'}
-                className={`xs:px-3 xs:py-1.5 dark:border-border flex items-center rounded-full border px-2 py-1 transition-colors ${
+                className={`xs:px-3 xs:py-1.5 dark:border-border flex h-auto items-center justify-start rounded-full border bg-transparent px-2 py-1 shadow-none transition-colors ${
                   recordingState === 'recording'
                     ? 'border-[#B42318] bg-[#FEE4E2] text-[#B42318] dark:bg-[#4A2323]'
                     : 'border-border dark:hover:bg-accent hover:bg-gray-100'
@@ -1814,7 +1825,7 @@ export default function MessageInput({
                 >
                   {voiceButtonText}
                 </span>
-              </button>
+              </Button>
             )}
             <label className="xs:px-3 xs:py-1.5 dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex cursor-pointer items-center rounded-full border px-2 py-1 transition-colors">
               <img
@@ -1837,19 +1848,25 @@ export default function MessageInput({
           </div>
 
           {loading ? (
-            <button
+            <Button
+              type="button"
+              variant="default"
+              size="icon"
               onClick={handleCancel}
               aria-label={t('cancel')}
-              className={`bg-primary ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white sm:h-9 sm:w-9`}
+              className="bg-primary ml-auto h-7 w-7 shrink-0 rounded-full text-white sm:h-9 sm:w-9"
               disabled={!loading}
             >
               <div className="flex h-3 w-3 items-center justify-center rounded-sm bg-white sm:h-3.5 sm:w-3.5" />
-            </button>
+            </Button>
           ) : (
-            <button
+            <Button
+              type="button"
+              variant="default"
+              size="icon"
               onClick={handleSubmit}
               aria-label={t('send')}
-              className={`ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ease-in-out sm:h-9 sm:w-9 ${
+              className={`ml-auto h-7 w-7 shrink-0 rounded-full transition-colors duration-300 ease-in-out sm:h-9 sm:w-9 ${
                 value.trim() &&
                 !loading &&
                 recordingState !== 'recording' &&
@@ -1869,7 +1886,7 @@ export default function MessageInput({
                 aria-label={t('send')}
                 role="img"
               />
-            </button>
+            </Button>
           )}
         </div>
       </div>
