@@ -1,20 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { LoaderCircle, Mic, Square, X } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import endpoints from '../api/endpoints';
 import userService from '../api/services/userService';
-import AlertIcon from '../assets/alert.svg';
-import ClipIcon from '../assets/clip.svg';
 import DragFileUpload from '../assets/DragFileUpload.svg';
-import RedirectIcon from '../assets/redirect.svg';
 import SendArrow from '../assets/send.svg?react';
 import SourceIcon from '../assets/source.svg';
-import DocumentationDark from '../assets/documentation-dark.svg';
-import ToolIcon from '../assets/tool.svg';
 import {
   addAttachment,
   removeAttachment,
@@ -34,23 +28,25 @@ import type { RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
 import { Button } from './ui/button';
+import { type MultiSelectPopoverItem } from './MultiSelectPopover';
 import {
-  MultiSelectPopover,
-  type MultiSelectPopoverItem,
-} from './MultiSelectPopover';
+  AttachFileButton,
+  AttachmentChipList,
+  MicButton,
+  type RecordingState,
+  SourcesTrigger,
+  ToolsTrigger,
+} from './message-input';
 import { handleAbort } from '../conversation/conversationSlice';
 import {
   AUDIO_FILE_ACCEPT_ATTR,
   FILE_UPLOAD_ACCEPT,
-  FILE_UPLOAD_ACCEPT_ATTR,
 } from '../constants/fileUpload';
 import { UserToolType } from '../settings/types';
 import { isChatToolVisible } from '../utils/toolUtils';
 
 const generateId = (): string =>
   `${Date.now()}-${Math.random().toString(36).substring(2)}`;
-
-type RecordingState = 'idle' | 'recording' | 'transcribing' | 'error';
 
 const LIVE_TRANSCRIPTION_TIMESLICE_MS = 1000;
 const LIVE_CAPTURE_SAMPLE_RATE = 16000;
@@ -1528,19 +1524,6 @@ export default function MessageInput({
     setDraggingId(null);
   };
 
-  const voiceButtonLabel =
-    recordingState === 'recording'
-      ? 'Stop recording'
-      : recordingState === 'transcribing'
-        ? 'Transcribing audio'
-        : 'Voice input';
-  const voiceButtonText =
-    recordingState === 'recording'
-      ? 'Stop'
-      : recordingState === 'transcribing'
-        ? 'Transcribing'
-        : 'Voice';
-
   return (
     <div {...getRootProps()} className="flex w-full flex-col">
       {/* react-dropzone input (for drag/drop) */}
@@ -1555,98 +1538,14 @@ export default function MessageInput({
       />
 
       <div className="border-border bg-card relative flex w-full flex-col rounded-3xl border dark:bg-transparent">
-        <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
-          {attachments.map((attachment) => {
-            return (
-              <div
-                key={attachment.id}
-                draggable={true}
-                onDragStart={(e) => handleDragStart(e, attachment.id)}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDropOn(e, attachment.id)}
-                className={`group dark:text-foreground bg-muted text-muted-foreground dark:bg-accent relative flex items-center rounded-xl px-2 py-1 text-xs sm:px-3 sm:py-1.5 sm:text-sm ${
-                  attachment.status !== 'completed'
-                    ? 'opacity-70'
-                    : 'opacity-100'
-                } ${
-                  draggingId === attachment.id
-                    ? 'ring-dashed opacity-60 ring-2 ring-purple-200'
-                    : ''
-                }`}
-                title={attachment.fileName}
-              >
-                <div className="bg-primary mr-2 flex h-8 w-8 items-center justify-center rounded-md p-1">
-                  {attachment.status === 'completed' && (
-                    <img
-                      src={DocumentationDark}
-                      alt="Attachment"
-                      className="h-[15px] w-[15px] object-fill"
-                    />
-                  )}
-
-                  {attachment.status === 'failed' && (
-                    <img
-                      src={AlertIcon}
-                      alt="Failed"
-                      className="h-[15px] w-[15px] object-fill"
-                    />
-                  )}
-
-                  {(attachment.status === 'uploading' ||
-                    attachment.status === 'processing') && (
-                    <div className="flex h-[15px] w-[15px] items-center justify-center">
-                      <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
-                        <circle
-                          className="opacity-0"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="transparent"
-                          strokeWidth="4"
-                          fill="none"
-                        />
-                        <circle
-                          className="text-[#ECECF1]"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                          fill="none"
-                          strokeDasharray="62.83"
-                          strokeDashoffset={
-                            62.83 * (1 - attachment.progress / 100)
-                          }
-                          transform="rotate(-90 12 12)"
-                        />
-                      </svg>
-                    </div>
-                  )}
-                </div>
-
-                <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
-                  {attachment.fileName}
-                </span>
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="ml-1.5 h-auto w-auto rounded-full p-1"
-                  onClick={() => {
-                    dispatch(removeAttachment(attachment.id));
-                  }}
-                  aria-label={t('conversation.attachments.remove')}
-                >
-                  <X
-                    aria-label={t('conversation.attachments.remove')}
-                    className="h-2.5 w-2.5"
-                  />
-                </Button>
-              </div>
-            );
-          })}
-        </div>
+        <AttachmentChipList
+          attachments={attachments}
+          draggingId={draggingId}
+          onRemove={(id) => dispatch(removeAttachment(id))}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDropOn={handleDropOn}
+        />
 
         {voiceError && (
           <div className="px-2 pb-1 text-xs text-[#B42318] sm:px-3">
@@ -1681,169 +1580,37 @@ export default function MessageInput({
         <div className="flex items-center px-2 pb-1.5 sm:px-3 sm:pb-2">
           <div className="flex grow flex-wrap gap-1 sm:gap-2">
             {showSourceButton && (
-              <MultiSelectPopover
+              <SourcesTrigger
                 open={isSourcesPopupOpen}
                 onOpenChange={setIsSourcesPopupOpen}
-                title={t('conversation.sources.text')}
                 items={sourceItems}
                 selectedIds={selectedSourceIds}
                 onToggle={handleToggleSource}
-                searchPlaceholder={t('settings.sources.searchPlaceholder')}
-                emptyMessage={t('conversation.sources.noSourcesAvailable')}
-                footer={
-                  <div className="flex flex-col gap-3">
-                    <a
-                      href="/settings/sources"
-                      className="text-primary inline-flex items-center gap-2 text-base font-medium"
-                      onClick={() => setIsSourcesPopupOpen(false)}
-                    >
-                      {t('settings.sources.goToSources')}
-                      <img
-                        src={RedirectIcon}
-                        alt=""
-                        aria-hidden="true"
-                        className="h-3 w-3"
-                      />
-                    </a>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleUploadClick}
-                      className="border-primary text-primary hover:bg-primary/90 h-auto w-auto self-start rounded-full border bg-transparent px-4 py-2 text-sm font-medium shadow-none transition-colors duration-200 hover:text-white"
-                    >
-                      {t('settings.sources.uploadNew')}
-                    </Button>
-                  </div>
-                }
-                trigger={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="xs:px-3 xs:py-1.5 dark:border-border border-border hover:bg-accent dark:hover:bg-muted flex h-auto max-w-[130px] items-center justify-start rounded-full border bg-transparent px-2 py-1 shadow-none transition-colors sm:max-w-[150px]"
-                    title={
-                      selectedDocs && selectedDocs.length > 0
-                        ? selectedDocs.map((doc) => doc.name).join(', ')
-                        : t('conversation.sources.title')
-                    }
-                  >
-                    <img
-                      src={SourceIcon}
-                      alt="Sources"
-                      className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4"
-                    />
-                    <span className="xs:text-xs dark:text-foreground text-muted-foreground truncate overflow-hidden text-xs font-medium sm:text-sm">
-                      {selectedDocs && selectedDocs.length > 0
-                        ? selectedDocs.length === 1
-                          ? selectedDocs[0].name
-                          : `${selectedDocs.length} sources selected`
-                        : t('conversation.sources.title')}
-                    </span>
-                  </Button>
-                }
+                selectedDocs={selectedDocs}
+                onUploadClick={handleUploadClick}
               />
             )}
 
             {showToolButton && (
-              <MultiSelectPopover
+              <ToolsTrigger
                 open={isToolsPopupOpen}
                 onOpenChange={setIsToolsPopupOpen}
-                title={t('settings.tools.label')}
                 items={toolItems}
                 selectedIds={selectedToolIds}
                 onToggle={handleToggleTool}
-                searchPlaceholder={t('settings.tools.searchPlaceholder')}
-                emptyMessage={t('settings.tools.noToolsFound')}
                 loading={toolsLoading}
-                footer={
-                  <a
-                    href="/settings/tools"
-                    className="text-primary inline-flex items-center text-base font-medium"
-                  >
-                    {t('settings.tools.manageTools')}
-                    <img
-                      src={RedirectIcon}
-                      alt=""
-                      aria-hidden="true"
-                      className="ml-2 h-[11px] w-[11px]"
-                    />
-                  </a>
-                }
-                trigger={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="xs:px-3 xs:py-1.5 xs:max-w-[150px] dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex h-auto max-w-[130px] items-center justify-start rounded-full border bg-transparent px-2 py-1 shadow-none transition-colors"
-                  >
-                    <img
-                      src={ToolIcon}
-                      alt="Tools"
-                      className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4 sm:w-4"
-                    />
-                    <span className="xs:text-xs dark:text-foreground text-muted-foreground truncate overflow-hidden text-xs font-medium sm:text-sm">
-                      {t('settings.tools.label')}
-                    </span>
-                  </Button>
-                }
               />
             )}
             {ENABLE_VOICE_INPUT && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
+              <MicButton
+                recordingState={recordingState}
+                loading={loading}
                 onClick={() => {
                   void handleVoiceInput();
                 }}
-                aria-label={voiceButtonLabel}
-                title={voiceButtonLabel}
-                disabled={loading || recordingState === 'transcribing'}
-                className={`xs:px-3 xs:py-1.5 dark:border-border flex h-auto items-center justify-start rounded-full border bg-transparent px-2 py-1 shadow-none transition-colors ${
-                  recordingState === 'recording'
-                    ? 'border-[#B42318] bg-[#FEE4E2] text-[#B42318] dark:bg-[#4A2323]'
-                    : 'border-border dark:hover:bg-accent hover:bg-gray-100'
-                } ${
-                  loading || recordingState === 'transcribing'
-                    ? 'cursor-not-allowed opacity-60'
-                    : ''
-                }`}
-              >
-                {recordingState === 'transcribing' ? (
-                  <LoaderCircle className="mr-1 h-3.5 w-3.5 animate-spin sm:mr-1.5 sm:h-4 sm:w-4" />
-                ) : recordingState === 'recording' ? (
-                  <Square className="mr-1 h-3.5 w-3.5 fill-current sm:mr-1.5 sm:h-4 sm:w-4" />
-                ) : (
-                  <Mic className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4" />
-                )}
-                <span
-                  className={`xs:text-xs dark:text-foreground text-xs font-medium sm:text-sm ${
-                    recordingState === 'recording'
-                      ? 'text-[#B42318]'
-                      : 'text-muted-foreground'
-                  }`}
-                >
-                  {voiceButtonText}
-                </span>
-              </Button>
+              />
             )}
-            <label className="xs:px-3 xs:py-1.5 dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex cursor-pointer items-center rounded-full border px-2 py-1 transition-colors">
-              <img
-                src={ClipIcon}
-                alt="Attach"
-                className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4"
-              />
-              <span className="xs:text-xs dark:text-foreground text-muted-foreground text-xs font-medium sm:text-sm">
-                {t('conversation.attachments.attach')}
-              </span>
-              <input
-                type="file"
-                className="hidden"
-                multiple
-                accept={FILE_UPLOAD_ACCEPT_ATTR}
-                onChange={handleFileAttachment}
-              />
-            </label>
+            <AttachFileButton onChange={handleFileAttachment} />
             {/* Additional badges can be added here in the future */}
           </div>
 
