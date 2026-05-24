@@ -33,6 +33,7 @@ import {
   AccordionTrigger,
 } from '../components/ui/accordion';
 import { Avatar } from '../components/ui/avatar';
+import { Button } from '../components/ui/button';
 import MermaidRenderer from '../components/MermaidRenderer';
 import Spinner from '../components/Spinner';
 import { Sheet, SheetContent } from '../components/ui/sheet';
@@ -191,12 +192,15 @@ const ConversationBubble = forwardRef<
                       {message}
                     </div>
                     {shouldShowToggle && (
-                      <button
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
                         onClick={(e) => {
                           e.stopPropagation();
                           setIsQuestionCollapsed(!isQuestionCollapsed);
                         }}
-                        className="ml-1 rounded-full p-2 hover:bg-[#D9D9D933]"
+                        className="ml-1 h-auto w-auto rounded-full bg-transparent p-2 hover:bg-[#D9D9D933]"
                       >
                         <img
                           src={ChevronDown}
@@ -205,19 +209,22 @@ const ConversationBubble = forwardRef<
                           height={24}
                           className={`transform invert transition-transform duration-200 ${isQuestionCollapsed ? '' : 'rotate-180'}`}
                         />
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => {
                     setIsEditClicked(true);
                     setEditInputBox(message ?? '');
                   }}
-                  className={`hover:bg-accent dark:hover:bg-accent mt-3 flex h-fit shrink-0 cursor-pointer items-center rounded-full p-2 pt-1.5 pl-1.5 ${isEditClicked ? 'visible' : 'invisible group-hover:visible'}`}
+                  className={`mt-3 h-fit w-auto shrink-0 cursor-pointer rounded-full p-2 pt-1.5 pl-1.5 ${isEditClicked ? 'visible' : 'invisible group-hover:visible'}`}
                 >
                   <img src={Edit} alt="Edit" className="cursor-pointer" />
-                </button>
+                </Button>
               </>
             )}
           </div>
@@ -242,14 +249,17 @@ const ConversationBubble = forwardRef<
                 className="border-border text-foreground dark:border-border dark:text-foreground w-full resize-none rounded-3xl border px-4 py-3 text-base leading-relaxed focus:outline-hidden"
               />
               <div className="flex items-center justify-end gap-2">
-                <button
-                  className="text-primary hover:bg-muted hover:text-foreground dark:hover:bg-accent dark:hover:text-foreground rounded-full px-4 py-2 text-sm font-semibold transition-colors"
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-primary hover:bg-muted hover:text-foreground dark:hover:bg-accent dark:hover:text-foreground h-auto rounded-full px-4 py-2 text-sm font-semibold"
                   onClick={() => setIsEditClicked(false)}
                 >
                   {t('conversation.edit.cancel')}
-                </button>
-                <button
-                  className="bg-primary not-disabled:hover:bg-primary/90 not-disabled:dark:hover:bg-primary/90 disabled:bg-primary/30 rounded-full px-4 py-2 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed"
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-primary not-disabled:hover:bg-primary/90 not-disabled:dark:hover:bg-primary/90 disabled:bg-primary/30 h-auto rounded-full px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-100"
                   onClick={handleEditClick}
                   disabled={
                     !editInputBox.trim() ||
@@ -257,7 +267,7 @@ const ConversationBubble = forwardRef<
                   }
                 >
                   {t('conversation.edit.update')}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -432,7 +442,7 @@ const ConversationBubble = forwardRef<
         )}
         {!message && primaryArtifactCall?.artifact_id && onOpenArtifact && (
           <div className="my-2 ml-2 flex justify-start">
-            <button
+            <Button
               type="button"
               onClick={() =>
                 onOpenArtifact({
@@ -440,7 +450,7 @@ const ConversationBubble = forwardRef<
                   toolName: primaryArtifactCall.tool_name,
                 })
               }
-              className="flex items-center gap-2 rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+              className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
             >
               <svg
                 className="h-4 w-4"
@@ -466,7 +476,7 @@ const ConversationBubble = forwardRef<
                 : artifactCount > 1
                   ? `View artifacts (${artifactCount})`
                   : 'View artifact'}
-            </button>
+            </Button>
           </div>
         )}
         {thought && (
@@ -509,7 +519,7 @@ const ConversationBubble = forwardRef<
                                   const num = href.replace('#cite-', '');
                                   const sourceIdx = parseInt(num, 10) - 1;
                                   return (
-                                    <button
+                                    <Button
                                       type="button"
                                       onClick={() => {
                                         const el = document.getElementById(
@@ -534,11 +544,11 @@ const ConversationBubble = forwardRef<
                                           );
                                         }
                                       }}
-                                      className="mx-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-purple-100 px-1.5 text-xs font-semibold text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
+                                      className="mx-0.5 h-5 min-w-5 rounded-full bg-purple-100 px-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
                                       title={`Jump to source ${num}`}
                                     >
                                       {num}
-                                    </button>
+                                    </Button>
                                   );
                                 }
                                 return (
@@ -683,7 +693,7 @@ const ConversationBubble = forwardRef<
               <>
                 {primaryArtifactCall?.artifact_id && onOpenArtifact && (
                   <div className="relative mr-2 flex items-center justify-center">
-                    <button
+                    <Button
                       type="button"
                       onClick={() =>
                         onOpenArtifact({
@@ -691,7 +701,7 @@ const ConversationBubble = forwardRef<
                           toolName: primaryArtifactCall.tool_name,
                         })
                       }
-                      className="flex items-center gap-2 rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+                      className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
                       aria-label="View artifacts"
                     >
                       <svg
@@ -718,7 +728,7 @@ const ConversationBubble = forwardRef<
                         : artifactCount > 1
                           ? `Artifacts (${artifactCount})`
                           : 'Artifact'}
-                    </button>
+                    </Button>
                   </div>
                 )}
                 {!isStreaming && (
@@ -728,8 +738,10 @@ const ConversationBubble = forwardRef<
                     </div>
                     {research && message && (
                       <div className="relative mr-2 block items-center justify-center">
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon-sm"
                           onClick={() => {
                             const blob = new Blob([message], {
                               type: 'text/markdown',
@@ -741,7 +753,7 @@ const ConversationBubble = forwardRef<
                             link.click();
                             URL.revokeObjectURL(url);
                           }}
-                          className="bg-card dark:hover:bg-accent hover:bg-muted flex cursor-pointer items-center justify-center rounded-full p-2 dark:bg-transparent"
+                          className="bg-card hover:bg-muted dark:hover:bg-accent h-auto w-auto cursor-pointer rounded-full p-2 dark:bg-transparent"
                           aria-label="Export as Markdown"
                           title="Export as Markdown"
                         >
@@ -757,7 +769,7 @@ const ConversationBubble = forwardRef<
                               d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
                             />
                           </svg>
-                        </button>
+                        </Button>
                       </div>
                     )}
                     <div className="relative mr-2 block items-center justify-center">
@@ -766,9 +778,11 @@ const ConversationBubble = forwardRef<
                     {handleFeedback && (
                       <>
                         <div className="relative mr-2 flex items-center justify-center">
-                          <button
+                          <Button
                             type="button"
-                            className="hover:bg-accent flex cursor-pointer items-center justify-center rounded-full bg-transparent p-2"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="h-auto w-auto cursor-pointer rounded-full bg-transparent p-2"
                             onClick={() => {
                               if (feedback === 'LIKE') {
                                 handleFeedback?.(null);
@@ -783,13 +797,15 @@ const ConversationBubble = forwardRef<
                             <Like
                               className={`${feedback === 'LIKE' ? 'stroke-primary fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`}
                             ></Like>
-                          </button>
+                          </Button>
                         </div>
 
                         <div className="relative mr-2 flex items-center justify-center">
-                          <button
+                          <Button
                             type="button"
-                            className="hover:bg-accent flex cursor-pointer items-center justify-center rounded-full bg-transparent p-2"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="h-auto w-auto cursor-pointer rounded-full bg-transparent p-2"
                             onClick={() => {
                               if (feedback === 'DISLIKE') {
                                 handleFeedback?.(null);
@@ -806,7 +822,7 @@ const ConversationBubble = forwardRef<
                             <Dislike
                               className={`${feedback === 'DISLIKE' ? 'stroke-destructive fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`}
                             ></Dislike>
-                          </button>
+                          </Button>
                         </div>
                       </>
                     )}
@@ -934,10 +950,11 @@ function ToolCallApprovalBar({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            className={`rounded-full px-4 py-1 text-xs font-medium transition-colors ${
+          <Button
+            type="button"
+            className={`h-auto rounded-full px-4 py-1 text-xs font-medium ${
               comment
-                ? 'bg-muted text-muted-foreground cursor-default opacity-50'
+                ? 'bg-muted text-muted-foreground hover:bg-muted cursor-default opacity-50'
                 : 'bg-primary hover:bg-primary/90 text-white'
             }`}
             onClick={() => {
@@ -945,12 +962,14 @@ function ToolCallApprovalBar({
             }}
           >
             Approve
-          </button>
-          <button
-            className={`rounded-full border px-4 py-1 text-xs font-medium transition-colors ${
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className={`h-auto rounded-full border bg-transparent px-4 py-1 text-xs font-medium shadow-none ${
               comment
-                ? 'border-destructive bg-destructive/10 text-destructive font-semibold'
-                : 'hover:bg-accent text-muted-foreground'
+                ? 'border-destructive bg-destructive/10 text-destructive hover:bg-destructive/10 font-semibold'
+                : 'hover:bg-accent text-muted-foreground dark:bg-transparent'
             }`}
             onClick={() => {
               if (expanded && comment) {
@@ -963,9 +982,12 @@ function ToolCallApprovalBar({
             }}
           >
             Deny
-          </button>
-          <button
-            className="text-muted-foreground hover:text-foreground flex h-6 w-6 items-center justify-center rounded-full transition-colors"
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground hover:text-foreground h-6 w-6 rounded-full"
             onClick={() => setExpanded(!expanded)}
             title="Details"
           >
@@ -974,7 +996,7 @@ function ToolCallApprovalBar({
               alt="expand"
               className={`h-3.5 w-3.5 transition-transform duration-200 dark:invert ${expanded ? 'rotate-180' : ''}`}
             />
-          </button>
+          </Button>
         </div>
       </div>
       {expanded && (
@@ -1050,8 +1072,11 @@ function ToolCalls({
               className="h-6.5 w-7.5 text-xl"
               imgClassName="h-full w-full object-fill"
             />
-            <button
-              className="flex flex-row items-center gap-2"
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-auto bg-transparent px-0 py-0 font-normal hover:bg-transparent"
               onClick={() => setIsToolCallsOpen(!isToolCallsOpen)}
             >
               <p className="text-base font-semibold">Tool Calls</p>
@@ -1060,7 +1085,7 @@ function ToolCalls({
                 alt="ChevronDown"
                 className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isToolCallsOpen ? 'rotate-180' : ''}`}
               />
-            </button>
+            </Button>
           </div>
           {isToolCallsOpen && (
             <div className="fade-in mr-5 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
@@ -1180,8 +1205,11 @@ function Thought({
           className="h-6.5 w-7.5 text-xl"
           imgClassName="h-full w-full object-fill"
         />
-        <button
-          className="flex flex-row items-center gap-2"
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-auto bg-transparent px-0 py-0 font-normal hover:bg-transparent"
           onClick={() => setIsThoughtOpen(!isThoughtOpen)}
         >
           <p className="text-base font-semibold">
@@ -1192,7 +1220,7 @@ function Thought({
             alt="ChevronDown"
             className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${isThoughtOpen ? 'rotate-180' : ''}`}
           />
-        </button>
+        </Button>
       </div>
       {isThoughtOpen && (
         <div className="fade-in mr-5 ml-2 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">

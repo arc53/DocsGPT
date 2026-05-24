@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import ResearchIcon from '../assets/research.svg';
 import { Avatar } from '../components/ui/avatar';
+import { Button } from '../components/ui/button';
 import { ResearchState } from './conversationModels';
 
 const SmallCheck = () => (
@@ -105,8 +106,11 @@ export default function ResearchProgress({
           className="h-[26px] w-[30px] text-xl"
           imgClassName="h-full w-full object-fill"
         />
-        <button
-          className="flex flex-row items-center gap-2"
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-auto bg-transparent px-0 py-0 font-normal hover:bg-transparent"
           onClick={() => setIsExpanded(!isExpanded)}
         >
           <p className="text-sm font-semibold">
@@ -125,7 +129,7 @@ export default function ResearchProgress({
               d="M19 9l-7 7-7-7"
             />
           </svg>
-        </button>
+        </Button>
         {status && <StatusText status={status} elapsed={elapsed_seconds} />}
       </div>
 

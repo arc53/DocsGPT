@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import ArrowDown from '../assets/arrow-down.svg';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
 import Retry from '../assets/retry.svg?react';
+import { Button } from '../components/ui/button';
 import Hero from '../Hero';
 import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
@@ -245,8 +246,10 @@ export default function ConversationMessages({
     // tool_calls and would otherwise fall into the answer branch.
     if (query.error) {
       const retryButton = (
-        <button
-          className="dark:text-foreground flex items-center justify-center gap-3 self-center rounded-full px-5 py-3 text-lg text-gray-500 transition-colors delay-100 hover:border-gray-500 disabled:cursor-not-allowed"
+        <Button
+          type="button"
+          variant="ghost"
+          className="dark:text-foreground h-auto self-center rounded-full px-5 py-3 text-lg text-gray-500 delay-100 hover:border-gray-500"
           disabled={status === 'loading'}
           onClick={() => {
             const questionToRetry = queries[index].prompt;
@@ -263,7 +266,7 @@ export default function ConversationMessages({
             height={12}
             className="text-gray-500 dark:text-[#ECECF1]"
           />
-        </button>
+        </Button>
       );
       return (
         <ConversationBubble
@@ -351,14 +354,17 @@ export default function ConversationMessages({
       className="flex h-full w-full justify-center overflow-y-auto will-change-scroll sm:pt-6 lg:pt-12"
     >
       {queries.length > 0 && (
-        <button
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
           onClick={() => {
             userInterruptedRef.current = false;
             setInterrupted(false);
             scrollConversationToBottom();
           }}
           aria-label={t('Scroll to bottom') || 'Scroll to bottom'}
-          className={`border-border bg-card fixed bottom-40 left-1/2 z-10 flex h-7 w-7 -translate-x-1/2 items-center justify-center rounded-full border transition-all duration-300 ease-in-out md:right-14 md:left-auto md:h-9 md:w-9 md:translate-x-0 ${
+          className={`bg-card fixed bottom-40 left-1/2 z-10 h-7 w-7 -translate-x-1/2 rounded-full transition-all duration-300 ease-in-out md:right-14 md:left-auto md:h-9 md:w-9 md:translate-x-0 ${
             scrollButtonVisible
               ? 'pointer-events-auto scale-100 opacity-100'
               : 'pointer-events-none scale-75 opacity-0'
@@ -369,7 +375,7 @@ export default function ConversationMessages({
             alt="arrow down"
             className="h-4 w-4 opacity-50 filter md:h-5 md:w-5 dark:invert"
           />
-        </button>
+        </Button>
       )}
 
       <div

@@ -5,6 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import conversationService from '../api/services/conversationService';
 import MessageInput from '../components/MessageInput';
+import { Button } from '../components/ui/button';
 import { selectToken } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import { formatDate } from '../utils/dateTimeUtils';
@@ -172,12 +173,13 @@ export const SharedConversation = () => {
               />
             </div>
           ) : (
-            <button
+            <Button
+              type="button"
               onClick={() => navigate('/')}
-              className="bg-primary hover:bg-primary/90 mb-14 w-fit rounded-full px-5 py-3 text-white shadow-xl transition-colors duration-200 sm:mb-0"
+              className="mb-14 h-auto w-fit rounded-full px-5 py-3 text-white shadow-xl sm:mb-0"
             >
               {t('sharedConv.button')}
-            </button>
+            </Button>
           )}
 
           <p className="text-muted-foreground hidden w-screen self-center bg-transparent py-2 text-center text-xs md:inline md:w-full">

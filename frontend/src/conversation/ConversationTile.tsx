@@ -18,6 +18,7 @@ import { selectConversationId } from '../preferences/preferenceSlice';
 import { ActiveState } from '../models/misc';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { useTranslation } from 'react-i18next';
+import { Button } from '../components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -233,30 +234,35 @@ export default function ConversationTile({
                     });
                   }}
                 />
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   aria-label="Exit"
                   id={`img-${conversation.id}`}
-                  className="mt-px mr-4 inline-flex cursor-pointer hover:opacity-50"
+                  className="mt-px mr-4 h-auto w-auto bg-transparent p-0 hover:bg-transparent hover:opacity-50"
                   onClick={(event: SyntheticEvent) => {
                     event.stopPropagation();
                     onClear();
                   }}
                 >
                   <X className="h-3 w-3" />
-                </button>
+                </Button>
               </div>
             ) : (
               <DropdownMenu open={isOpen} onOpenChange={setOpen}>
                 <DropdownMenuTrigger asChild>
-                  <button
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={(event: SyntheticEvent) => {
                       event.stopPropagation();
                     }}
-                    className="hover:bg-accent dark:hover:bg-accent mr-2 flex h-6 w-6 items-center justify-center rounded-full transition-colors duration-200"
+                    className="mr-2 h-6 w-6 rounded-full"
                   >
                     <img src={threeDots} width={8} alt="menu" />
-                  </button>
+                  </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="min-w-[144px]">
                   {menuOptions.map((option, index) => (
