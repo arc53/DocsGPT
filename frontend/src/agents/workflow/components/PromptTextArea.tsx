@@ -2,6 +2,7 @@ import { Braces, Plus, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Edge, Node } from 'reactflow';
 
+import { Button } from '@/components/ui/button';
 import {
   Popover,
   PopoverContent,
@@ -245,20 +246,22 @@ function VariableListWithSearch({
                 {section}
               </div>
               {vars.map((v) => (
-                <button
+                <Button
                   key={`${section}-${v.templatePath}`}
+                  type="button"
+                  variant="ghost"
                   onMouseDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     onSelect(v.templatePath);
                   }}
-                  className="hover:bg-accent flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors"
+                  className="h-auto w-full justify-start gap-2 rounded-none px-3 py-1.5 text-left text-sm font-normal"
                 >
                   <Braces className="text-primary h-3.5 w-3.5 shrink-0" />
                   <span className="truncate font-medium text-gray-800 dark:text-gray-200">
                     {v.label}
                   </span>
-                </button>
+                </Button>
               ))}
             </div>
           ))
@@ -461,13 +464,14 @@ export default function PromptTextArea({
         <div className="absolute right-4 bottom-1.5 z-10">
           <Popover open={contextOpen} onOpenChange={setContextOpen}>
             <PopoverTrigger asChild>
-              <button
+              <Button
                 type="button"
-                className="text-primary hover:bg-primary/10 flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors"
+                variant="ghost"
+                className="text-primary hover:bg-primary/10 h-auto gap-1 px-2 py-1 text-xs font-medium"
               >
                 <Plus className="h-3 w-3" />
                 Add context
-              </button>
+              </Button>
             </PopoverTrigger>
             <PopoverContent
               align="end"

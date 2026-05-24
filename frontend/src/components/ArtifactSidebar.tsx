@@ -14,6 +14,7 @@ import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import CopyButton from './CopyButton';
 import Spinner from './Spinner';
+import { Button } from './ui/button';
 import { Sheet, SheetContent } from './ui/sheet';
 
 type TodoItem = {
@@ -437,13 +438,16 @@ export default function ArtifactSidebar({
             <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
               {title}
             </span>
-            <button
-              className="hover:bg-accent dark:hover:bg-accent rounded-full p-1"
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="rounded-full"
               onClick={onClose}
               aria-label="Close"
             >
               <X className="h-3 w-3" />
-            </button>
+            </Button>
           </div>
           <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>
         </div>
@@ -467,13 +471,16 @@ export default function ArtifactSidebar({
           <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
             {title}
           </span>
-          <button
-            className="hover:bg-accent rounded-full p-2"
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
             onClick={onClose}
             aria-label="Close"
           >
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
         <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>
       </SheetContent>

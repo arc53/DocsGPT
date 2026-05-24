@@ -19,6 +19,7 @@ import ThreeDots from '../../assets/three-dots.svg';
 import { useLoaderState, useOutsideAlerter } from '../../hooks';
 import Chunks from '../Chunks';
 import SkeletonLoader from '../SkeletonLoader';
+import { Button } from '../ui/button';
 import {
   Table,
   TableBody,
@@ -438,10 +439,11 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
   ) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
+        <Button
           type="button"
+          variant="ghost"
           onClick={(e) => e.stopPropagation()}
-          className="dark:hover:bg-muted inline-flex h-[35px] w-6 shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
+          className="dark:hover:bg-muted h-[35px] w-6 shrink-0 p-0 hover:bg-[#EBEBEB]"
           aria-label={t('settings.sources.menuAlt')}
         >
           <img
@@ -449,7 +451,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
             alt={t('settings.sources.menuAlt')}
             className="opacity-60 hover:opacity-100"
           />
-        </button>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[144px]">
         {resolveRowMenuOptions(name, isFile, itemId, displayName).map(
@@ -670,12 +672,15 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
   const renderPathNavigation = () => (
     <div className="mb-0 flex min-h-[38px] flex-col gap-2 text-base sm:flex-row sm:items-center sm:justify-between">
       <div className="flex w-full items-center sm:w-auto">
-        <button
-          className="text-muted-foreground mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm font-medium dark:border-0"
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          className="text-muted-foreground mr-3 h-[29px] w-[29px] rounded-full p-2 dark:border-0"
           onClick={handleBackNavigation}
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-        </button>
+        </Button>
 
         <div className="flex flex-wrap items-center">
           <span className="text-primary font-semibold wrap-break-word">

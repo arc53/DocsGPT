@@ -13,6 +13,7 @@ import FileIcon from '../assets/file.svg';
 import FolderIcon from '../assets/folder.svg';
 import CheckIcon from '../assets/checkmark.svg';
 import SearchIcon from '../assets/search.svg';
+import { Button } from './ui/button';
 import { Input } from './ui/input';
 import {
   Table,
@@ -432,26 +433,30 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
           <div className="border-border dark:border-border rounded-t-lg">
             {provider === 'share_point' && allowsSharedContent && (
               <div className="border-border dark:border-border flex border-b">
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
                   onClick={() => handleTabChange('my_files')}
-                  className={`px-4 py-2 text-sm font-medium ${
+                  className={`h-auto rounded-none px-4 py-2 text-sm font-medium ${
                     activeTab === 'my_files'
-                      ? 'border-b-2 border-[#A076F6] text-[#A076F6]'
+                      ? 'border-b-2 border-[#A076F6] text-[#A076F6] hover:bg-transparent hover:text-[#A076F6]'
                       : 'text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
                   }`}
                 >
                   {t('filePicker.myFiles')}
-                </button>
-                <button
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
                   onClick={() => handleTabChange('shared')}
-                  className={`px-4 py-2 text-sm font-medium ${
+                  className={`h-auto rounded-none px-4 py-2 text-sm font-medium ${
                     activeTab === 'shared'
-                      ? 'border-b-2 border-[#A076F6] text-[#A076F6]'
+                      ? 'border-b-2 border-[#A076F6] text-[#A076F6] hover:bg-transparent hover:text-[#A076F6]'
                       : 'text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
                   }`}
                 >
                   {t('filePicker.sharedWithMe')}
-                </button>
+                </Button>
               </div>
             )}
             <div className="dark:bg-muted rounded-t-lg bg-[#EEE6FF78] px-4 pt-4">
@@ -462,13 +467,16 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                     className="flex items-center gap-1"
                   >
                     {index > 0 && <span className="text-gray-400">/</span>}
-                    <button
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
                       onClick={() => navigateBack(index)}
-                      className="text-sm text-[#A076F6] hover:text-[#8A5FD4] hover:underline"
+                      className="h-auto p-0 text-sm text-[#A076F6] underline-offset-2 hover:text-[#8A5FD4]"
                       disabled={index === folderPath.length - 1}
                     >
                       {path.name}
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>

@@ -22,6 +22,7 @@ import { selectToken } from '../preferences/preferenceSlice';
 import { ChunkType } from '../settings/types';
 import Pagination from './DocumentPagination';
 import SkeletonLoader from './SkeletonLoader';
+import { Button } from './ui/button';
 
 interface LineNumberedTextareaProps {
   value: string;
@@ -300,8 +301,11 @@ const Chunks: React.FC<ChunksProps> = ({
     return (
       <div className="mb-0 flex min-h-[38px] flex-col gap-2 text-base sm:flex-row sm:items-center sm:justify-between">
         <div className="flex w-full items-center sm:w-auto">
-          <button
-            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm font-medium text-gray-400 transition-all duration-200 dark:border-0 dark:text-gray-500"
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            className="mr-3 h-[29px] w-[29px] rounded-full p-2 text-gray-400 dark:border-0 dark:text-gray-500"
             onClick={
               editingChunk
                 ? () => setEditingChunk(null)
@@ -311,7 +315,7 @@ const Chunks: React.FC<ChunksProps> = ({
             }
           >
             <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-          </button>
+          </Button>
 
           <div className="flex flex-wrap items-center">
             {/* Removed the directory icon */}
@@ -347,32 +351,38 @@ const Chunks: React.FC<ChunksProps> = ({
           {editingChunk ? (
             !isEditing ? (
               <>
-                <button
-                  className="bg-primary hover:bg-primary/90 flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm font-medium whitespace-nowrap text-white"
+                <Button
+                  type="button"
+                  className="h-[38px] min-w-[108px] rounded-full px-4 text-sm font-medium whitespace-nowrap"
                   onClick={() => setIsEditing(true)}
                 >
                   {t('modals.chunk.edit')}
-                </button>
-                <button
-                  className="flex h-[38px] min-w-[108px] items-center justify-center rounded-full border border-solid border-red-500 px-4 py-1 text-sm font-medium text-nowrap text-red-500 hover:bg-red-500 hover:text-white"
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive-outline"
+                  className="h-[38px] min-w-[108px] rounded-full px-4 py-1 text-sm font-medium text-nowrap"
                   onClick={() => {
                     confirmDeleteChunk(editingChunk);
                   }}
                 >
                   {t('modals.chunk.delete')}
-                </button>
+                </Button>
               </>
             ) : (
               <>
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
                   onClick={() => {
                     setIsEditing(false);
                   }}
-                  className="dark:text-foreground hover:bg-accent dark:hover:bg-accent flex h-[38px] min-w-[108px] cursor-pointer items-center justify-center rounded-full px-4 py-1 text-sm font-medium text-nowrap"
+                  className="dark:text-foreground h-[38px] min-w-[108px] cursor-pointer rounded-full px-4 py-1 text-sm font-medium text-nowrap"
                 >
                   {t('modals.chunk.cancel')}
-                </button>
-                <button
+                </Button>
+                <Button
+                  type="button"
                   onClick={() => {
                     if (editingText.trim()) {
                       const hasChanges =
@@ -396,27 +406,30 @@ const Chunks: React.FC<ChunksProps> = ({
                     (editingTitle === (editingChunk?.metadata?.title || '') &&
                       editingText === (editingChunk?.text || ''))
                   }
-                  className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 py-1 text-sm font-medium text-nowrap text-white transition-all ${
+                  className={`h-[38px] min-w-[108px] rounded-full px-4 py-1 text-sm font-medium text-nowrap transition-all ${
                     editingText.trim() &&
                     (editingTitle !== (editingChunk?.metadata?.title || '') ||
                       editingText !== (editingChunk?.text || ''))
-                      ? 'bg-primary hover:bg-primary/90 cursor-pointer'
-                      : 'cursor-not-allowed bg-gray-400'
+                      ? 'cursor-pointer'
+                      : 'cursor-not-allowed bg-gray-400 text-white hover:bg-gray-400'
                   }`}
                 >
                   {t('modals.chunk.save')}
-                </button>
+                </Button>
               </>
             )
           ) : isAddingChunk ? (
             <>
-              <button
+              <Button
+                type="button"
+                variant="ghost"
                 onClick={() => setIsAddingChunk(false)}
-                className="dark:text-foreground hover:bg-accent dark:hover:bg-accent flex h-[38px] min-w-[108px] cursor-pointer items-center justify-center rounded-full px-4 py-1 text-sm font-medium text-nowrap"
+                className="dark:text-foreground h-[38px] min-w-[108px] cursor-pointer rounded-full px-4 py-1 text-sm font-medium text-nowrap"
               >
                 {t('modals.chunk.cancel')}
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
                 onClick={() => {
                   if (editingText.trim()) {
                     handleAddChunk(editingTitle, editingText);
@@ -424,14 +437,14 @@ const Chunks: React.FC<ChunksProps> = ({
                   }
                 }}
                 disabled={!editingText.trim()}
-                className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 py-1 text-sm font-medium text-nowrap text-white transition-all ${
+                className={`h-[38px] min-w-[108px] rounded-full px-4 py-1 text-sm font-medium text-nowrap transition-all ${
                   editingText.trim()
-                    ? 'bg-primary hover:bg-primary/90 cursor-pointer'
-                    : 'cursor-not-allowed bg-gray-400'
+                    ? 'cursor-pointer'
+                    : 'cursor-not-allowed bg-gray-400 text-white hover:bg-gray-400'
                 }`}
               >
                 {t('modals.chunk.add')}
-              </button>
+              </Button>
             </>
           ) : null}
         </div>
@@ -564,8 +577,9 @@ const Chunks: React.FC<ChunksProps> = ({
                     />
                   </div>
                 </div>
-                <button
-                  className="bg-primary hover:bg-primary/90 flex h-[38px] w-full min-w-[108px] shrink-0 items-center justify-center rounded-full px-4 text-sm font-medium whitespace-normal text-white sm:w-auto"
+                <Button
+                  type="button"
+                  className="h-[38px] w-full min-w-[108px] shrink-0 rounded-full px-4 text-sm font-medium whitespace-normal sm:w-auto"
                   title={t('settings.sources.addChunk')}
                   onClick={() => {
                     setIsAddingChunk(true);
@@ -574,7 +588,7 @@ const Chunks: React.FC<ChunksProps> = ({
                   }}
                 >
                   {t('settings.sources.addChunk')}
-                </button>
+                </Button>
               </div>
               {loading ? (
                 <div className="grid w-full grid-cols-1 justify-items-start gap-4 sm:grid-cols-[repeat(auto-fit,minmax(400px,1fr))]">
