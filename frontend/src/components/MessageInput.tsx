@@ -12,7 +12,7 @@ import ClipIcon from '../assets/clip.svg';
 import DragFileUpload from '../assets/DragFileUpload.svg';
 import ExitIcon from '../assets/exit.svg';
 import RedirectIcon from '../assets/redirect.svg';
-import SendArrowIcon from './SendArrowIcon';
+import SendArrow from '../assets/send.svg?react';
 import SourceIcon from '../assets/source.svg';
 import DocumentationDark from '../assets/documentation-dark.svg';
 import ToolIcon from '../assets/tool.svg';
@@ -1866,7 +1866,7 @@ export default function MessageInput({
                 recordingState === 'transcribing'
               }
             >
-              <SendArrowIcon
+              <SendArrow
                 className="mx-auto my-auto block h-3.5 w-3.5 sm:h-4 sm:w-4"
                 aria-label={t('send')}
                 role="img"

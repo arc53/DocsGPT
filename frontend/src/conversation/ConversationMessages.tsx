@@ -10,9 +10,8 @@ import { useTranslation } from 'react-i18next';
 
 import ArrowDown from '../assets/arrow-down.svg';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
-import RetryIcon from '../components/RetryIcon';
+import Retry from '../assets/retry.svg?react';
 import Hero from '../Hero';
-import { useDarkTheme } from '../hooks';
 import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
 
@@ -61,7 +60,6 @@ export default function ConversationMessages({
   isSplitView = false,
   agentId,
 }: ConversationMessagesProps) {
-  const [isDarkTheme] = useDarkTheme();
   const { t } = useTranslation();
 
   const conversationRef = useRef<HTMLDivElement>(null);
@@ -237,14 +235,6 @@ export default function ConversationMessages({
     };
   }, [handleScroll]);
 
-  const retryIconProps = {
-    width: 12,
-    height: 12,
-    fill: isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)',
-    stroke: isDarkTheme ? 'rgb(236 236 241)' : 'rgb(107 114 120)',
-    strokeWidth: 10,
-  };
-
   const renderResponseView = (query: Query, index: number) => {
     const isLastMessage = index === queries.length - 1;
     const bubbleMargin = isLastMessage
@@ -268,7 +258,11 @@ export default function ConversationMessages({
           }}
           aria-label={t('Retry') || 'Retry'}
         >
-          <RetryIcon {...retryIconProps} />
+          <Retry
+            width={12}
+            height={12}
+            className="text-gray-500 dark:text-[#ECECF1]"
+          />
         </button>
       );
       return (
