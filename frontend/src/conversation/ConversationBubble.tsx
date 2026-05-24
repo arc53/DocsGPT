@@ -247,7 +247,7 @@ const ConversationBubble = forwardRef<
                 }}
                 rows={5}
                 value={editInputBox}
-                className="border-border text-foreground dark:border-border dark:text-foreground w-full resize-none rounded-3xl border px-4 py-3 text-base leading-relaxed focus:outline-hidden"
+                className="border-border text-foreground dark:border-border dark:text-foreground focus-visible:ring-ring/50 focus-visible:border-ring w-full resize-none rounded-3xl border px-4 py-3 text-base leading-relaxed focus:outline-hidden focus-visible:ring-[3px]"
               />
               <div className="flex items-center justify-end gap-2">
                 <Button

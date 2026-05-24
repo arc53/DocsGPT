@@ -214,7 +214,7 @@ function PromptTextarea({
       </div>
       <textarea
         id={id}
-        className="peer border-border dark:border-border relative z-10 h-48 w-full resize-none rounded border-2 bg-transparent px-3 py-2 text-base text-gray-800 outline-none md:h-64 lg:h-80 dark:text-white"
+        className="peer border-border dark:border-border focus-visible:ring-ring/50 focus-visible:border-ring relative z-10 h-48 w-full resize-none rounded border-2 bg-transparent px-3 py-2 text-base text-gray-800 outline-none focus-visible:ring-[3px] md:h-64 lg:h-80 dark:text-white"
         value={value}
         onChange={onChange}
         onScroll={handleScroll}

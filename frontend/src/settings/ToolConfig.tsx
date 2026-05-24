@@ -1464,7 +1464,7 @@ function APIActionTable({
                       e.target.value as 'string' | 'integer',
                     )
                   }
-                  className="border-border dark:border-border rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                  className="border-border dark:border-border focus-visible:ring-ring/50 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden focus-visible:ring-2"
                 >
                   <option value="string">string</option>
                   <option value="integer">integer</option>
@@ -1550,7 +1550,7 @@ function APIActionTable({
                 onChange={(e) =>
                   setNewPropertyType(e.target.value as 'string' | 'integer')
                 }
-                className="border-border dark:border-border rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                className="border-border dark:border-border focus-visible:ring-ring/50 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden focus-visible:ring-2"
               >
                 <option value="string">string</option>
                 <option value="integer">integer</option>

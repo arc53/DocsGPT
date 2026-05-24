@@ -266,7 +266,7 @@ export default function ScheduleFormModal({
             onChange={(e) => setInstruction(e.target.value)}
             placeholder={t('agents.schedules.modal.instructionsPlaceholder')}
             rows={5}
-            className="border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-ring focus:ring-ring/40 rounded-md border px-3 py-2 text-sm outline-none focus:ring-2"
+            className="border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 rounded-md border px-3 py-2 text-sm outline-none focus-visible:ring-2"
           />
         </label>
 

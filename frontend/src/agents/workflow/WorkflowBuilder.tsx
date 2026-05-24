@@ -1442,7 +1442,7 @@ function WorkflowBuilderInner() {
                     <textarea
                       value={workflowDescription}
                       onChange={(e) => setWorkflowDescription(e.target.value)}
-                      className="focus:ring-ring border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 dark:text-white"
+                      className="focus-visible:ring-ring/50 focus-visible:border-ring border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none focus-visible:ring-2 dark:text-white"
                       rows={3}
                       placeholder="Describe what this workflow does"
                     />
@@ -1946,7 +1946,7 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className="border-border focus:ring-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                     rows={3}
                                     placeholder="System prompt for the agent"
                                   />
@@ -2082,7 +2082,7 @@ function WorkflowBuilderInner() {
                                         e.target.value,
                                       )
                                     }
-                                    className="border-border focus:ring-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus:ring-2 dark:text-white"
+                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
                                     rows={8}
                                     placeholder={`{
   "type": "object",
@@ -2122,7 +2122,7 @@ function WorkflowBuilderInner() {
                                       content: e.target.value,
                                     })
                                   }
-                                  className="border-border focus:ring-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                  className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                   rows={4}
                                   placeholder="Enter note content"
                                 />
@@ -2200,7 +2200,7 @@ function WorkflowBuilderInner() {
                                             },
                                           });
                                         }}
-                                        className="border-border focus:ring-ring bg-card dark:bg-accent mb-1 w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                        className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card dark:bg-accent mb-1 w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                         rows={2}
                                         placeholder="input.foo + 1"
                                       />
@@ -2545,7 +2545,7 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="border-border focus:ring-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                            className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                             rows={2}
                                             placeholder="Enter condition, e.g. input == 5"
                                           />

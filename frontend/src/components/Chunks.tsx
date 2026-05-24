@@ -78,7 +78,7 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
         ))}
       </div>
       <textarea
-        className={`text-foreground w-full resize-none overflow-hidden border-none bg-transparent pl-8 font-['Inter'] text-[13.68px] leading-[19.93px] outline-none lg:pl-12 dark:text-white ${isMobile ? 'min-h-[calc(100vh-200px)]' : 'min-h-[calc(100vh-300px)]'} ${!editable ? 'select-none' : ''}`}
+        className={`text-foreground focus-visible:ring-ring/50 focus-visible:border-ring w-full resize-none overflow-hidden border-none bg-transparent pl-8 font-['Inter'] text-[13.68px] leading-[19.93px] outline-none focus-visible:ring-[3px] lg:pl-12 dark:text-white ${isMobile ? 'min-h-[calc(100vh-200px)]' : 'min-h-[calc(100vh-300px)]'} ${!editable ? 'select-none' : ''}`}
         value={value}
         onChange={editable ? handleChange : undefined}
         onDoubleClick={onDoubleClick}

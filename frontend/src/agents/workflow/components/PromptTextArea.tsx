@@ -452,7 +452,7 @@ export default function PromptTextArea({
               overlayRef.current.scrollTop = textareaRef.current.scrollTop;
             }
           }}
-          className="relative w-full rounded-xl bg-transparent px-3 pt-2 pb-8 text-sm caret-black outline-none dark:caret-white"
+          className="focus-visible:ring-ring/50 focus-visible:border-ring relative w-full rounded-xl bg-transparent px-3 pt-2 pb-8 text-sm caret-black outline-none focus-visible:ring-[3px] dark:caret-white"
           style={{
             color: 'transparent',
             WebkitTextFillColor: 'transparent',
