@@ -1,68 +1,31 @@
-import React, { SyntheticEvent, useEffect, useRef, useState } from 'react';
+import React, { SyntheticEvent, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector, useStore } from 'react-redux';
-import { selectToken } from '../preferences/preferenceSlice';
-import type { RootState } from '../store';
-import { formatBytes } from '../utils/stringUtils';
-import Chunks from './Chunks';
-import SkeletonLoader from './SkeletonLoader';
+import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
-import FileIcon from '../assets/file.svg';
-import FolderIcon from '../assets/folder.svg';
-import ArrowLeft from '../assets/arrow-left.svg';
-import ThreeDots from '../assets/three-dots.svg';
-import EyeView from '../assets/eye-view.svg';
 import Trash from '../assets/red-trash.svg';
 import { SOURCE_FILE_TREE_ACCEPT_ATTR } from '../constants/fileUpload';
-import { useOutsideAlerter, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
-import {
-  Table,
-  TableContainer,
-  TableHead,
-  TableBody,
-  TableRow,
-  TableHeader,
-  TableCell,
-} from './ui/table';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from './ui/dropdown-menu';
+import { selectToken } from '../preferences/preferenceSlice';
+import TreeBrowser from './tree/TreeBrowser';
+import type {
+  RowMenuContext,
+  TreeBrowserController,
+  TreeMenuOption,
+} from './tree/types';
+import { useReingestSseWaiter } from './tree/useReingestWait';
 
-type FileTreeMenuOption = {
-  icon: string;
-  label: string;
-  onClick: (event: SyntheticEvent) => void;
-  variant: 'default' | 'destructive';
-  iconWidth?: number;
-  iconHeight?: number;
+type QueuedOperation = {
+  operation: 'add' | 'remove' | 'remove_directory';
+  files?: File[];
+  filePath?: string;
+  directoryPath?: string;
+  parentDirPath?: string;
 };
-
-interface FileNode {
-  type?: string;
-  token_count?: number;
-  size_bytes?: number;
-  display_name?: string;
-  [key: string]: any;
-}
-
-interface DirectoryStructure {
-  [key: string]: FileNode;
-}
 
 interface FileTreeProps {
   docId: string;
   sourceName: string;
   onBackToDocuments: () => void;
-}
-
-interface SearchResult {
-  name: string;
-  path: string;
-  isFile: boolean;
 }
 
 const FileTree: React.FC<FileTreeProps> = ({
@@ -71,23 +34,10 @@ const FileTree: React.FC<FileTreeProps> = ({
   onBackToDocuments,
 }) => {
   const { t } = useTranslation();
-  const store = useStore<RootState>();
-  const [loading, setLoading] = useLoaderState(true, 500);
-  const [error, setError] = useState<string | null>(null);
-  const [directoryStructure, setDirectoryStructure] =
-    useState<DirectoryStructure | null>(null);
-  const [currentPath, setCurrentPath] = useState<string[]>([]);
   const token = useSelector(selectToken);
-  const [selectedFile, setSelectedFile] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const searchDropdownRef = useRef<HTMLDivElement>(null);
-  const currentOpRef = useRef<null | 'add' | 'remove' | 'remove_directory'>(
-    null,
-  );
+
+  const controllerRef = useRef<TreeBrowserController | null>(null);
+  const currentPathRef = useRef<string[]>([]);
 
   const [deleteModalState, setDeleteModalState] = useState<
     'ACTIVE' | 'INACTIVE'
@@ -97,190 +47,15 @@ const FileTree: React.FC<FileTreeProps> = ({
     isFile: boolean;
   } | null>(null);
 
-  type QueuedOperation = {
-    operation: 'add' | 'remove' | 'remove_directory';
-    files?: File[];
-    filePath?: string;
-    directoryPath?: string;
-    parentDirPath?: string;
-  };
+  const currentOpRef = useRef<null | 'add' | 'remove' | 'remove_directory'>(
+    null,
+  );
   const opQueueRef = useRef<QueuedOperation[]>([]);
   const processingRef = useRef(false);
-  const [queueLength, setQueueLength] = useState(0);
-  const mountedRef = useRef(true);
-  const waitUnsubscribeRef = useRef<(() => void) | null>(null);
-  // Holds the 5-minute SSE-wait timer so the unmount cleanup can clear
-  // it — otherwise the timer fires up to 5 min after unmount and
-  // resolves an abandoned Promise.
-  const waitTimerRef = useRef<number | null>(null);
+  const [, setQueueLength] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  useEffect(
-    () => () => {
-      mountedRef.current = false;
-      waitUnsubscribeRef.current?.();
-      waitUnsubscribeRef.current = null;
-      if (waitTimerRef.current !== null) {
-        window.clearTimeout(waitTimerRef.current);
-        waitTimerRef.current = null;
-      }
-    },
-    [],
-  );
-
-  useOutsideAlerter(
-    searchDropdownRef,
-    () => {
-      setSearchQuery('');
-      setSearchResults([]);
-    },
-    [],
-    false,
-  );
-
-  const handleFileClick = (fileName: string, displayName?: string) => {
-    const fullPath = [...currentPath, fileName].join('/');
-    setSelectedFile({
-      id: fullPath,
-      name: displayName ?? fileName,
-    });
-  };
-
-  useEffect(() => {
-    const fetchDirectoryStructure = async () => {
-      try {
-        setLoading(true);
-        const response = await userService.getDirectoryStructure(docId, token);
-        const data = await response.json();
-
-        if (data && data.directory_structure) {
-          setDirectoryStructure(data.directory_structure);
-        } else {
-          setError('Invalid response format');
-        }
-      } catch (err) {
-        setError('Failed to load directory structure');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (docId) {
-      fetchDirectoryStructure();
-    }
-  }, [docId, token]);
-
-  const navigateToDirectory = (dirName: string) => {
-    setCurrentPath((prev) => [...prev, dirName]);
-  };
-
-  const navigateUp = () => {
-    setCurrentPath((prev) => prev.slice(0, -1));
-  };
-
-  const getCurrentDirectory = (): DirectoryStructure => {
-    if (!directoryStructure) return {};
-
-    let structure = directoryStructure;
-    if (typeof structure === 'string') {
-      try {
-        structure = JSON.parse(structure);
-      } catch (e) {
-        console.error(
-          'Error parsing directory structure in getCurrentDirectory:',
-          e,
-        );
-        return {};
-      }
-    }
-
-    if (typeof structure !== 'object' || structure === null) {
-      return {};
-    }
-
-    let current: any = structure;
-    for (const dir of currentPath) {
-      if (
-        current[dir] &&
-        typeof current[dir] === 'object' &&
-        !current[dir].type
-      ) {
-        current = current[dir];
-      } else {
-        return {};
-      }
-    }
-    return current;
-  };
-
-  const handleBackNavigation = () => {
-    if (selectedFile) {
-      setSelectedFile(null);
-    } else if (currentPath.length === 0) {
-      if (onBackToDocuments) {
-        onBackToDocuments();
-      }
-    } else {
-      navigateUp();
-    }
-  };
-
-  const getActionOptions = (
-    name: string,
-    isFile: boolean,
-    _itemId: string,
-    displayName?: string,
-  ): FileTreeMenuOption[] => {
-    const options: FileTreeMenuOption[] = [];
-
-    options.push({
-      icon: EyeView,
-      label: t('settings.sources.view'),
-      onClick: (event: SyntheticEvent) => {
-        event.stopPropagation();
-        if (isFile) {
-          handleFileClick(name, displayName);
-        } else {
-          navigateToDirectory(name);
-        }
-      },
-      iconWidth: 18,
-      iconHeight: 18,
-      variant: 'default',
-    });
-
-    options.push({
-      icon: Trash,
-      label: t('convTile.delete'),
-      onClick: (event: SyntheticEvent) => {
-        event.stopPropagation();
-        confirmDeleteItem(name, isFile);
-      },
-      iconWidth: 18,
-      iconHeight: 18,
-      variant: 'destructive',
-    });
-
-    return options;
-  };
-
-  const confirmDeleteItem = (name: string, isFile: boolean) => {
-    setItemToDelete({ name, isFile });
-    setDeleteModalState('ACTIVE');
-  };
-
-  const handleConfirmedDelete = async () => {
-    if (itemToDelete) {
-      await handleDeleteFile(itemToDelete.name, itemToDelete.isFile);
-      setDeleteModalState('INACTIVE');
-      setItemToDelete(null);
-    }
-  };
-
-  const handleCancelDelete = () => {
-    setDeleteModalState('INACTIVE');
-    setItemToDelete(null);
-  };
+  const { waitForTerminal, mountedRef } = useReingestSseWaiter();
 
   const manageSource = async (
     operation: 'add' | 'remove' | 'remove_directory',
@@ -297,8 +72,10 @@ const FileTree: React.FC<FileTreeProps> = ({
       formData.append('operation', operation);
 
       if (operation === 'add' && files && files.length) {
-        formData.append('parent_dir', parentDirPath ?? currentPath.join('/'));
-
+        formData.append(
+          'parent_dir',
+          parentDirPath ?? currentPathRef.current.join('/'),
+        );
         for (let i = 0; i < files.length; i++) {
           formData.append('file', files[i]);
         }
@@ -313,109 +90,17 @@ const FileTree: React.FC<FileTreeProps> = ({
       const result = await response.json();
 
       if (result.success && result.reingest_task_id) {
-        if (operation === 'add') {
-          console.log('Files uploaded successfully:', result.added_files);
-        } else if (operation === 'remove') {
-          console.log('Files deleted successfully:', result.removed_files);
-        } else if (operation === 'remove_directory') {
-          console.log(
-            'Directory deleted successfully:',
-            result.removed_directory,
-          );
-        }
-        console.log('Reingest task started:', result.reingest_task_id);
-
-        // SSE is the sole driver here. The backend's
-        // ``reingest_source_worker`` publishes ``source.ingest.*``
-        // keyed on the resolved ``source_id`` (the
-        // ``manage_source_files`` route returns it explicitly so we
-        // can match without consulting any slice). Subscribe to the
-        // store and resolve when a terminal event tagged with our
-        // source lands in ``notifications.recentEvents``. Re-checking
-        // on every dispatch (rather than polling on a timer) avoids
-        // races where a terminal could roll off the bounded ring
-        // before the next tick observes it in chatty sessions.
         const reingestSourceId: string | undefined = result.source_id;
-        // Cutoff so we don't pick up terminal events from a *previous*
-        // reingest of the same source — the backend's
-        // ``source.ingest.*`` payload doesn't carry a Celery task id,
-        // so source_id alone is ambiguous when ops repeat.
         const opStartedAt = Date.now();
-        const MAX_WAIT_MS = 5 * 60_000;
 
-        const terminalFromSse = (): 'completed' | 'failed' | null => {
-          if (!reingestSourceId) return null;
-          const events = store.getState().notifications.recentEvents;
-          for (const event of events) {
-            if (event.scope?.id !== reingestSourceId) continue;
-            const ts = event.ts ? Date.parse(event.ts) : NaN;
-            if (!Number.isFinite(ts) || ts < opStartedAt) continue;
-            if (event.type === 'source.ingest.completed') return 'completed';
-            if (event.type === 'source.ingest.failed') return 'failed';
-          }
-          return null;
-        };
-
-        const refreshStructure = async (): Promise<boolean> => {
-          const structureResponse = await userService.getDirectoryStructure(
-            docId,
-            token,
-          );
-          const structureData = await structureResponse.json();
-          if (!mountedRef.current) return false;
-          if (structureData && structureData.directory_structure) {
-            setDirectoryStructure(structureData.directory_structure);
-            currentOpRef.current = null;
-            return true;
-          }
-          return false;
-        };
-
-        const terminal = await new Promise<
-          'completed' | 'failed' | 'timeout' | 'unmounted'
-        >((resolve) => {
-          if (!mountedRef.current) {
-            resolve('unmounted');
-            return;
-          }
-          // Cover the race where the terminal event landed between
-          // the POST returning and the subscribe call.
-          const initial = terminalFromSse();
-          if (initial) {
-            resolve(initial);
-            return;
-          }
-          const timer = window.setTimeout(() => {
-            waitUnsubscribeRef.current?.();
-            waitUnsubscribeRef.current = null;
-            waitTimerRef.current = null;
-            resolve('timeout');
-          }, MAX_WAIT_MS);
-          waitTimerRef.current = timer;
-          waitUnsubscribeRef.current = store.subscribe(() => {
-            if (!mountedRef.current) {
-              window.clearTimeout(timer);
-              waitTimerRef.current = null;
-              waitUnsubscribeRef.current?.();
-              waitUnsubscribeRef.current = null;
-              resolve('unmounted');
-              return;
-            }
-            const next = terminalFromSse();
-            if (next) {
-              window.clearTimeout(timer);
-              waitTimerRef.current = null;
-              waitUnsubscribeRef.current?.();
-              waitUnsubscribeRef.current = null;
-              resolve(next);
-            }
-          });
-        });
-
+        const terminal = await waitForTerminal(reingestSourceId, opStartedAt);
         if (!mountedRef.current) return false;
 
         if (terminal === 'completed') {
-          if (await refreshStructure()) return true;
+          if (await controllerRef.current?.refreshDirectory()) {
+            currentOpRef.current = null;
+            return true;
+          }
         } else if (terminal === 'failed') {
           console.error('Reingest task failed (per SSE)');
         } else if (terminal === 'unmounted') {
@@ -435,14 +120,7 @@ const FileTree: React.FC<FileTreeProps> = ({
           : operation === 'remove_directory'
             ? 'deleting directory'
             : 'deleting file(s)';
-      const errorText =
-        operation === 'add'
-          ? 'upload'
-          : operation === 'remove_directory'
-            ? 'delete directory'
-            : 'delete file(s)';
       console.error(`Error ${actionText}:`, error);
-      if (mountedRef.current) setError(`Failed to ${errorText}`);
     } finally {
       currentOpRef.current = null;
     }
@@ -453,6 +131,7 @@ const FileTree: React.FC<FileTreeProps> = ({
   const processQueue = async () => {
     if (processingRef.current) return;
     processingRef.current = true;
+    setIsProcessing(true);
     try {
       while (opQueueRef.current.length > 0) {
         const nextOp = opQueueRef.current.shift()!;
@@ -467,6 +146,7 @@ const FileTree: React.FC<FileTreeProps> = ({
       }
     } finally {
       processingRef.current = false;
+      setIsProcessing(false);
     }
   };
 
@@ -484,532 +164,117 @@ const FileTree: React.FC<FileTreeProps> = ({
     fileInput.multiple = true;
     fileInput.accept = SOURCE_FILE_TREE_ACCEPT_ATTR;
 
-    fileInput.onchange = async (event) => {
+    fileInput.onchange = (event) => {
       const fileList = (event.target as HTMLInputElement).files;
       if (!fileList || fileList.length === 0) return;
       const files = Array.from(fileList);
       enqueueOperation({
         operation: 'add',
         files,
-        parentDirPath: currentPath.join('/'),
+        parentDirPath: currentPathRef.current.join('/'),
       });
     };
 
     fileInput.click();
   };
 
-  const handleDeleteFile = async (name: string, isFile: boolean) => {
-    // Construct the full path to the file or directory
-    const itemPath = [...currentPath, name].join('/');
-
-    if (isFile) {
-      enqueueOperation({ operation: 'remove', filePath: itemPath });
-    } else {
-      enqueueOperation({
-        operation: 'remove_directory',
-        directoryPath: itemPath,
-      });
-    }
+  const confirmDeleteItem = (name: string, isFile: boolean) => {
+    setItemToDelete({ name, isFile });
+    setDeleteModalState('ACTIVE');
   };
 
-  const renderPathNavigation = () => {
-    return (
-      <div className="mb-0 flex min-h-[38px] flex-col gap-2 text-base sm:flex-row sm:items-center sm:justify-between">
-        {/* Left side with path navigation */}
-        <div className="flex w-full items-center sm:w-auto">
-          <button
-            className="mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm font-medium text-gray-400 dark:border-0 dark:text-gray-500"
-            onClick={handleBackNavigation}
-          >
-            <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-          </button>
-
-          <div className="flex flex-wrap items-center">
-            <span className="text-primary font-semibold break-words">
-              {sourceName}
-            </span>
-            {currentPath.length > 0 && (
-              <>
-                <span className="mx-1 flex-shrink-0 text-gray-500">/</span>
-                {currentPath.map((dir, index) => (
-                  <React.Fragment key={index}>
-                    <span className="break-words text-gray-700 dark:text-gray-300">
-                      {dir}
-                    </span>
-                    {index < currentPath.length - 1 && (
-                      <span className="mx-1 flex-shrink-0 text-gray-500">
-                        /
-                      </span>
-                    )}
-                  </React.Fragment>
-                ))}
-              </>
-            )}
-            {selectedFile && (
-              <>
-                <span className="mx-1 flex-shrink-0 text-gray-500">/</span>
-                <span className="break-words text-gray-700 dark:text-gray-300">
-                  {selectedFile.name}
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="relative mt-2 flex w-full flex-row flex-nowrap items-center justify-end gap-2 sm:mt-0 sm:w-auto">
-          {processingRef.current && (
-            <div className="text-sm text-gray-500">
-              {currentOpRef.current === 'add'
-                ? t('settings.sources.uploadingFilesTitle')
-                : t('settings.sources.deletingTitle')}
-            </div>
-          )}
-
-          {renderFileSearch()}
-
-          {/* Add file button */}
-          {!processingRef.current && (
-            <button
-              onClick={handleAddFile}
-              className="bg-primary hover:bg-primary/90 flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm font-medium whitespace-nowrap text-white"
-              title={t('settings.sources.addFile')}
-            >
-              {t('settings.sources.addFile')}
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  };
-  const calculateDirectoryStats = (
-    structure: DirectoryStructure,
-  ): { totalSize: number; totalTokens: number } => {
-    let totalSize = 0;
-    let totalTokens = 0;
-
-    Object.entries(structure).forEach(([_, node]) => {
-      if (node.type) {
-        // It's a file
-        totalSize += node.size_bytes || 0;
-        totalTokens += node.token_count || 0;
+  const handleConfirmedDelete = async () => {
+    if (itemToDelete) {
+      const itemPath = [...currentPathRef.current, itemToDelete.name].join('/');
+      if (itemToDelete.isFile) {
+        enqueueOperation({ operation: 'remove', filePath: itemPath });
       } else {
-        // It's a directory, recurse
-        const stats = calculateDirectoryStats(node);
-        totalSize += stats.totalSize;
-        totalTokens += stats.totalTokens;
-      }
-    });
-
-    return { totalSize, totalTokens };
-  };
-
-  const renderFileTree = (structure: DirectoryStructure): React.ReactNode[] => {
-    // Separate directories and files
-    const entries = Object.entries(structure);
-    const directories = entries.filter(([_, node]) => !node.type);
-    const files = entries.filter(([_, node]) => node.type);
-
-    // Create parent directory row
-    const parentRow =
-      currentPath.length > 0
-        ? [
-            <TableRow key="parent-dir" onClick={navigateUp}>
-              <TableCell width="40%" align="left">
-                <div className="flex items-center">
-                  <img
-                    src={FolderIcon}
-                    alt={t('settings.sources.parentFolderAlt')}
-                    className="mr-2 h-4 w-4 flex-shrink-0"
-                  />
-                  <span className="truncate">..</span>
-                </div>
-              </TableCell>
-              <TableCell width="30%" align="left">
-                -
-              </TableCell>
-              <TableCell width="20%" align="right">
-                -
-              </TableCell>
-              <TableCell width="10%" align="right"></TableCell>
-            </TableRow>,
-          ]
-        : [];
-
-    // Render directories first, then files
-    return [
-      ...parentRow,
-      ...directories.map(([name, node]) => {
-        const itemId = `dir-${name}`;
-        const dirStats = calculateDirectoryStats(node as DirectoryStructure);
-
-        return (
-          <TableRow key={itemId} onClick={() => navigateToDirectory(name)}>
-            <TableCell width="40%" align="left">
-              <div className="flex min-w-0 items-center">
-                <img
-                  src={FolderIcon}
-                  alt={t('settings.sources.folderAlt')}
-                  className="mr-2 h-4 w-4 flex-shrink-0"
-                />
-                <span className="truncate">{name}</span>
-              </div>
-            </TableCell>
-            <TableCell width="30%" align="left">
-              {dirStats.totalSize > 0 ? formatBytes(dirStats.totalSize) : '-'}
-            </TableCell>
-            <TableCell width="20%" align="right">
-              {dirStats.totalTokens > 0
-                ? dirStats.totalTokens.toLocaleString()
-                : '-'}
-            </TableCell>
-            <TableCell width="10%" align="right">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={(e) => e.stopPropagation()}
-                    className="dark:hover:bg-muted inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
-                    aria-label={t('settings.sources.menuAlt')}
-                  >
-                    <img
-                      src={ThreeDots}
-                      alt={t('settings.sources.menuAlt')}
-                      className="opacity-60 hover:opacity-100"
-                    />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-[144px]">
-                  {getActionOptions(name, false, itemId).map((option, idx) => (
-                    <DropdownMenuItem
-                      key={idx}
-                      variant={option.variant}
-                      onSelect={(event) => {
-                        option.onClick(event as unknown as SyntheticEvent);
-                      }}
-                    >
-                      <img
-                        src={option.icon}
-                        alt=""
-                        width={option.iconWidth ?? 16}
-                        height={option.iconHeight ?? 16}
-                      />
-                      <span>{option.label}</span>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </TableCell>
-          </TableRow>
-        );
-      }),
-      ...files.map(([name, node]) => {
-        const itemId = `file-${name}`;
-        const displayName =
-          typeof node.display_name === 'string' && node.display_name.trim()
-            ? node.display_name
-            : name;
-
-        return (
-          <TableRow
-            key={itemId}
-            onClick={() => handleFileClick(name, displayName)}
-          >
-            <TableCell width="40%" align="left">
-              <div className="flex min-w-0 items-center">
-                <img
-                  src={FileIcon}
-                  alt={t('settings.sources.fileAlt')}
-                  className="mr-2 h-4 w-4 flex-shrink-0"
-                />
-                <span className="truncate">{displayName}</span>
-              </div>
-            </TableCell>
-            <TableCell width="30%" align="left">
-              {node.size_bytes ? formatBytes(node.size_bytes) : '-'}
-            </TableCell>
-            <TableCell width="20%" align="right">
-              {node.token_count?.toLocaleString() || '-'}
-            </TableCell>
-            <TableCell width="10%" align="right">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={(e) => e.stopPropagation()}
-                    className="dark:hover:bg-muted inline-flex h-[35px] w-[24px] shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
-                    aria-label={t('settings.sources.menuAlt')}
-                  >
-                    <img
-                      src={ThreeDots}
-                      alt={t('settings.sources.menuAlt')}
-                      className="opacity-60 hover:opacity-100"
-                    />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-[144px]">
-                  {getActionOptions(name, true, itemId, displayName).map(
-                    (option, idx) => (
-                      <DropdownMenuItem
-                        key={idx}
-                        variant={option.variant}
-                        onSelect={(event) => {
-                          option.onClick(event as unknown as SyntheticEvent);
-                        }}
-                      >
-                        <img
-                          src={option.icon}
-                          alt=""
-                          width={option.iconWidth ?? 16}
-                          height={option.iconHeight ?? 16}
-                        />
-                        <span>{option.label}</span>
-                      </DropdownMenuItem>
-                    ),
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </TableCell>
-          </TableRow>
-        );
-      }),
-    ];
-  };
-  const currentDirectory = getCurrentDirectory();
-
-  const searchFiles = (
-    query: string,
-    structure: DirectoryStructure,
-    currentPath: string[] = [],
-  ): SearchResult[] => {
-    let results: SearchResult[] = [];
-
-    Object.entries(structure).forEach(([name, node]) => {
-      const fullPath = [...currentPath, name].join('/');
-      const displayName =
-        typeof node.display_name === 'string' && node.display_name.trim()
-          ? node.display_name
-          : '';
-      const queryLower = query.toLowerCase();
-      const matchTarget = displayName ? `${name} ${displayName}` : name;
-
-      if (matchTarget.toLowerCase().includes(queryLower)) {
-        results.push({
-          name: displayName || name,
-          path: fullPath,
-          isFile: !!node.type,
+        enqueueOperation({
+          operation: 'remove_directory',
+          directoryPath: itemPath,
         });
       }
+      setDeleteModalState('INACTIVE');
+      setItemToDelete(null);
+    }
+  };
 
-      if (!node.type) {
-        // If it's a directory, search recursively
-        results = [
-          ...results,
-          ...searchFiles(query, node as DirectoryStructure, [
-            ...currentPath,
-            name,
-          ]),
-        ];
+  const handleCancelDelete = () => {
+    setDeleteModalState('INACTIVE');
+    setItemToDelete(null);
+  };
+
+  const getRowMenuOptions = ({
+    name,
+    isFile,
+    defaultViewOption,
+  }: RowMenuContext): TreeMenuOption[] => {
+    return [
+      defaultViewOption,
+      {
+        icon: Trash,
+        label: t('convTile.delete'),
+        onClick: (event: SyntheticEvent) => {
+          event.stopPropagation();
+          confirmDeleteItem(name, isFile);
+        },
+        iconWidth: 18,
+        iconHeight: 18,
+        variant: 'destructive',
+      },
+    ];
+  };
+
+  const statusLabel = isProcessing
+    ? currentOpRef.current === 'add'
+      ? t('settings.sources.uploadingFilesTitle')
+      : t('settings.sources.deletingTitle')
+    : null;
+
+  const topRightAction = !isProcessing ? (
+    <button
+      onClick={handleAddFile}
+      className="bg-primary hover:bg-primary/90 flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm font-medium whitespace-nowrap text-white"
+      title={t('settings.sources.addFile')}
+    >
+      {t('settings.sources.addFile')}
+    </button>
+  ) : null;
+
+  const extraContent = (
+    <ConfirmationModal
+      message={
+        itemToDelete?.isFile
+          ? t('settings.sources.confirmDelete')
+          : t('settings.sources.deleteDirectoryWarning', {
+              name: itemToDelete?.name,
+            })
       }
-    });
-
-    return results;
-  };
-
-  const handleSearchSelect = (result: SearchResult) => {
-    if (result.isFile) {
-      const pathParts = result.path.split('/');
-      const fileName = pathParts.pop() || '';
-      setCurrentPath(pathParts);
-
-      setSelectedFile({
-        id: result.path,
-        name: result.name || fileName,
-      });
-    } else {
-      setCurrentPath(result.path.split('/'));
-      setSelectedFile(null);
-    }
-    setSearchQuery('');
-    setSearchResults([]);
-  };
-
-  const renderFileSearch = () => {
-    return (
-      <div className="relative w-52" ref={searchDropdownRef}>
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => {
-            setSearchQuery(e.target.value);
-            if (directoryStructure) {
-              setSearchResults(searchFiles(e.target.value, directoryStructure));
-            }
-          }}
-          placeholder={t('settings.sources.searchFiles')}
-          className={`border-border dark:border-border h-[38px] w-full border px-4 py-2 ${searchQuery ? 'rounded-t-3xl' : 'rounded-3xl'} bg-transparent focus:outline-none`}
-        />
-
-        {searchQuery && (
-          <div className="border-border bg-card dark:border-border dark:bg-card absolute top-full right-0 left-0 z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-xl border border-t-0 shadow-lg transition-all duration-200">
-            <div className="max-h-[calc(100vh-200px)] overflow-x-hidden overflow-y-auto overscroll-contain">
-              {searchResults.length === 0 ? (
-                <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
-                  {t('settings.sources.noResults')}
-                </div>
-              ) : (
-                searchResults.map((result, index) => (
-                  <div
-                    key={index}
-                    onClick={() => handleSearchSelect(result)}
-                    title={result.path}
-                    className={`hover:bg-muted dark:hover:bg-muted flex min-w-0 cursor-pointer items-center px-3 py-2 ${
-                      index !== searchResults.length - 1
-                        ? 'border-border dark:border-border border-b'
-                        : ''
-                    }`}
-                  >
-                    <img
-                      src={result.isFile ? FileIcon : FolderIcon}
-                      alt={
-                        result.isFile
-                          ? t('settings.sources.fileAlt')
-                          : t('settings.sources.folderAlt')
-                      }
-                      className="mr-2 h-4 w-4 flex-shrink-0"
-                    />
-                    <span className="flex-1 truncate text-sm">
-                      {result.name}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const handleFileSearch = (searchQuery: string) => {
-    if (directoryStructure) {
-      return searchFiles(searchQuery, directoryStructure);
-    }
-    return [];
-  };
-
-  const getDisplayNameForPath = (path: string) => {
-    if (!directoryStructure) {
-      return path.split('/').pop() || path;
-    }
-    let structure: any = directoryStructure;
-    if (typeof structure === 'string') {
-      try {
-        structure = JSON.parse(structure);
-      } catch (e) {
-        return path.split('/').pop() || path;
-      }
-    }
-    if (typeof structure !== 'object' || structure === null) {
-      return path.split('/').pop() || path;
-    }
-    const parts = path.split('/').filter(Boolean);
-    let current: any = structure;
-    for (const part of parts) {
-      if (!current || typeof current !== 'object') {
-        return parts[parts.length - 1] || path;
-      }
-      current = current[part];
-    }
-    if (
-      current &&
-      typeof current === 'object' &&
-      typeof current.display_name === 'string' &&
-      current.display_name.trim()
-    ) {
-      return current.display_name;
-    }
-    return parts[parts.length - 1] || path;
-  };
-
-  const handleFileSelect = (path: string) => {
-    const pathParts = path.split('/');
-    const fileName = pathParts.pop() || '';
-    setCurrentPath(pathParts);
-    setSelectedFile({
-      id: path,
-      name: getDisplayNameForPath(path) || fileName,
-    });
-  };
+      modalState={deleteModalState}
+      setModalState={setDeleteModalState}
+      handleSubmit={handleConfirmedDelete}
+      handleCancel={handleCancelDelete}
+      submitLabel={t('convTile.delete')}
+      variant="danger"
+    />
+  );
 
   return (
-    <div>
-      {selectedFile ? (
-        <div className="flex">
-          <div className="flex-1">
-            <Chunks
-              documentId={docId}
-              documentName={sourceName}
-              handleGoBack={() => setSelectedFile(null)}
-              path={selectedFile.id}
-              displayPath={[...currentPath, selectedFile.name].join('/')}
-              onFileSearch={handleFileSearch}
-              onFileSelect={handleFileSelect}
-            />
-          </div>
-        </div>
-      ) : (
-        <div className="flex w-full max-w-full flex-col overflow-hidden">
-          <div className="mb-2">{renderPathNavigation()}</div>
-
-          <div className="w-full">
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableHeader width="40%" align="left">
-                      {t('settings.sources.fileName')}
-                    </TableHeader>
-                    <TableHeader width="30%" align="left">
-                      {t('settings.sources.size')}
-                    </TableHeader>
-                    <TableHeader width="20%" align="right">
-                      {t('settings.sources.tokens')}
-                    </TableHeader>
-                    <TableHeader width="10%" align="right">
-                      <span className="sr-only">
-                        {t('settings.sources.actions')}
-                      </span>
-                    </TableHeader>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {loading ? (
-                    <SkeletonLoader component="fileTable" />
-                  ) : (
-                    renderFileTree(currentDirectory)
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </div>
-        </div>
-      )}
-      <ConfirmationModal
-        message={
-          itemToDelete?.isFile
-            ? t('settings.sources.confirmDelete')
-            : t('settings.sources.deleteDirectoryWarning', {
-                name: itemToDelete?.name,
-              })
-        }
-        modalState={deleteModalState}
-        setModalState={setDeleteModalState}
-        handleSubmit={handleConfirmedDelete}
-        handleCancel={handleCancelDelete}
-        submitLabel={t('convTile.delete')}
-        variant="danger"
-      />
-    </div>
+    <TreeBrowser
+      docId={docId}
+      sourceName={sourceName}
+      onBackToDocuments={onBackToDocuments}
+      columnOrder="size-first"
+      sortEntries={false}
+      controllerRef={controllerRef}
+      topRightAction={topRightAction}
+      statusLabel={statusLabel}
+      getRowMenuOptions={getRowMenuOptions}
+      extraContent={extraContent}
+      onCurrentPathChange={(path) => {
+        currentPathRef.current = path;
+      }}
+    />
   );
 };
 
