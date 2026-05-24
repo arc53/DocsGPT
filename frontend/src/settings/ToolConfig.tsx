@@ -11,7 +11,6 @@ import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import Trash from '../assets/trash.svg';
 import ConfigFields from '../components/ConfigFields';
-import ToggleSwitch from '../components/ToggleSwitch';
 import {
   Select,
   SelectContent,
@@ -21,6 +20,7 @@ import {
 } from '../components/ui/select';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { Switch } from '../components/ui/switch';
 import { useDarkTheme } from '../hooks';
 import AddActionModal from '../modals/AddActionModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -508,9 +508,9 @@ export default function ToolConfig({
                             <span className="text-xs text-gray-500 dark:text-gray-400">
                               {t('settings.tools.requireApproval', 'Approval')}
                             </span>
-                            <ToggleSwitch
+                            <Switch
                               checked={action.require_approval ?? false}
-                              onChange={(checked) => {
+                              onCheckedChange={(checked) => {
                                 setTool({
                                   ...tool,
                                   actions: tool.actions.map((act, index) => {
@@ -524,13 +524,12 @@ export default function ToolConfig({
                                   }),
                                 });
                               }}
-                              size="small"
                               id={`approvalToggle-${originalIndex}`}
                             />
                           </div>
-                          <ToggleSwitch
+                          <Switch
                             checked={action.active}
-                            onChange={(checked) => {
+                            onCheckedChange={(checked) => {
                               setTool({
                                 ...tool,
                                 actions: tool.actions.map((act, index) => {
@@ -541,7 +540,6 @@ export default function ToolConfig({
                                 }),
                               });
                             }}
-                            size="small"
                             id={`actionToggle-${originalIndex}`}
                           />
                         </div>
@@ -965,9 +963,9 @@ function APIToolConfig({
                     <span className="text-xs text-gray-500 dark:text-gray-400">
                       {t('settings.tools.requireApproval', 'Approval')}
                     </span>
-                    <ToggleSwitch
+                    <Switch
                       checked={action.require_approval ?? false}
-                      onChange={() => {
+                      onCheckedChange={() => {
                         setApiTool((prevApiTool) => {
                           const updatedActions = {
                             ...prevApiTool.config.actions,
@@ -986,14 +984,12 @@ function APIToolConfig({
                           };
                         });
                       }}
-                      size="small"
                       id={`approvalToggle-${actionIndex}`}
                     />
                   </div>
-                  <ToggleSwitch
+                  <Switch
                     checked={action.active}
-                    onChange={() => handleActionToggle(actionName)}
-                    size="small"
+                    onCheckedChange={() => handleActionToggle(actionName)}
                     id={`actionToggle-${actionIndex}`}
                   />
                 </div>

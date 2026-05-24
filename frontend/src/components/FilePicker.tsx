@@ -22,7 +22,7 @@ import {
   TableRow,
   TableHeader,
   TableCell,
-} from './Table';
+} from './ui/table';
 import { useDebouncedCallback } from '../hooks';
 
 interface CloudFile {

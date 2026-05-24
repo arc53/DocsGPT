@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
@@ -1251,29 +1252,18 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         {t('agents.form.advanced.tokenLimitingDescription')}
                       </p>
                     </div>
-                    <button
-                      onClick={() => {
-                        const newTokenMode = !agent.limited_token_mode;
+                    <Switch
+                      checked={agent.limited_token_mode}
+                      onCheckedChange={(checked) => {
                         setAgent({
                           ...agent,
-                          limited_token_mode: newTokenMode,
-                          limited_request_mode: newTokenMode
+                          limited_token_mode: checked,
+                          limited_request_mode: checked
                             ? false
                             : agent.limited_request_mode,
                         });
                       }}
-                      className={`relative h-6 w-11 rounded-full transition-colors ${
-                        agent.limited_token_mode
-                          ? 'bg-primary'
-                          : 'bg-gray-300 dark:bg-gray-600'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          agent.limited_token_mode ? '' : '-translate-x-5'
-                        }`}
-                      />
-                    </button>
+                    />
                   </div>
                   <input
                     type="number"
@@ -1307,29 +1297,18 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         {t('agents.form.advanced.requestLimitingDescription')}
                       </p>
                     </div>
-                    <button
-                      onClick={() => {
-                        const newRequestMode = !agent.limited_request_mode;
+                    <Switch
+                      checked={agent.limited_request_mode}
+                      onCheckedChange={(checked) => {
                         setAgent({
                           ...agent,
-                          limited_request_mode: newRequestMode,
-                          limited_token_mode: newRequestMode
+                          limited_request_mode: checked,
+                          limited_token_mode: checked
                             ? false
                             : agent.limited_token_mode,
                         });
                       }}
-                      className={`relative h-6 w-11 rounded-full transition-colors ${
-                        agent.limited_request_mode
-                          ? 'bg-primary'
-                          : 'bg-gray-300 dark:bg-gray-600'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          agent.limited_request_mode ? '' : '-translate-x-5'
-                        }`}
-                      />
-                    </button>
+                    />
                   </div>
                   <input
                     type="number"
@@ -1367,28 +1346,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         )}
                       </p>
                     </div>
-                    <button
-                      onClick={() =>
+                    <Switch
+                      className="shrink-0"
+                      checked={agent.allow_system_prompt_override}
+                      onCheckedChange={(checked) =>
                         setAgent({
                           ...agent,
-                          allow_system_prompt_override:
-                            !agent.allow_system_prompt_override,
+                          allow_system_prompt_override: checked,
                         })
                       }
-                      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-                        agent.allow_system_prompt_override
-                          ? 'bg-primary'
-                          : 'bg-gray-300 dark:bg-gray-600'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          agent.allow_system_prompt_override
-                            ? ''
-                            : '-translate-x-5'
-                        }`}
-                      />
-                    </button>
+                    />
                   </div>
                 </div>
               </div>

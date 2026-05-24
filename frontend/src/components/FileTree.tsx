@@ -24,7 +24,7 @@ import {
   TableRow,
   TableHeader,
   TableCell,
-} from './Table';
+} from './ui/table';
 import {
   DropdownMenu,
   DropdownMenuContent,

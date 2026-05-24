@@ -25,8 +25,13 @@ import Like from '../assets/like.svg?react';
 import Link from '../assets/link.svg';
 import Sources from '../assets/sources.svg';
 import UserIcon from '../assets/user.svg';
-import Accordion from '../components/Accordion';
 import CopyButton from '../components/CopyButton';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '../components/ui/accordion';
 import { Avatar } from '../components/ui/avatar';
 import MermaidRenderer from '../components/MermaidRenderer';
 import Spinner from '../components/Spinner';
@@ -1075,67 +1080,74 @@ function ToolCalls({
                   return (
                     <Accordion
                       key={`tool-call-${index}`}
-                      title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
+                      type="single"
+                      collapsible
                       className="bg-muted dark:bg-answer-bubble w-full rounded-4xl"
-                      titleClassName="px-6 py-2 text-sm font-semibold"
                     >
-                      <div className="flex flex-col gap-1">
-                        <div className="border-border flex flex-col rounded-2xl border">
-                          <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 font-mono text-sm font-semibold wrap-break-word">
-                            <span>Arguments</span>{' '}
-                            <CopyButton
-                              textToCopy={JSON.stringify(
-                                toolCall.arguments,
-                                null,
-                                2,
+                      <AccordionItem value="tool-call">
+                        <AccordionTrigger className="px-6 py-2 text-sm font-semibold">
+                          {`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
+                        </AccordionTrigger>
+                        <AccordionContent>
+                          <div className="flex flex-col gap-1">
+                            <div className="border-border flex flex-col rounded-2xl border">
+                              <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 font-mono text-sm font-semibold wrap-break-word">
+                                <span>Arguments</span>{' '}
+                                <CopyButton
+                                  textToCopy={JSON.stringify(
+                                    toolCall.arguments,
+                                    null,
+                                    2,
+                                  )}
+                                />
+                              </p>
+                              <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                                <span className="dark:text-muted-foreground leading-5.75 text-black">
+                                  {JSON.stringify(toolCall.arguments, null, 2)}
+                                </span>
+                              </p>
+                            </div>
+                            <div className="border-border flex flex-col rounded-2xl border">
+                              <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 font-mono text-sm font-semibold wrap-break-word">
+                                <span>Response</span>{' '}
+                                <CopyButton
+                                  textToCopy={
+                                    toolCall.status === 'error'
+                                      ? toolCall.error || 'Unknown error'
+                                      : JSON.stringify(toolCall.result, null, 2)
+                                  }
+                                />
+                              </p>
+                              {toolCall.status === 'pending' && (
+                                <span className="dark:bg-card flex w-full items-center justify-center rounded-b-2xl p-2">
+                                  <Spinner size="small" />
+                                </span>
                               )}
-                            />
-                          </p>
-                          <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                            <span className="dark:text-muted-foreground leading-5.75 text-black">
-                              {JSON.stringify(toolCall.arguments, null, 2)}
-                            </span>
-                          </p>
-                        </div>
-                        <div className="border-border flex flex-col rounded-2xl border">
-                          <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 font-mono text-sm font-semibold wrap-break-word">
-                            <span>Response</span>{' '}
-                            <CopyButton
-                              textToCopy={
-                                toolCall.status === 'error'
-                                  ? toolCall.error || 'Unknown error'
-                                  : JSON.stringify(toolCall.result, null, 2)
-                              }
-                            />
-                          </p>
-                          {toolCall.status === 'pending' && (
-                            <span className="dark:bg-card flex w-full items-center justify-center rounded-b-2xl p-2">
-                              <Spinner size="small" />
-                            </span>
-                          )}
-                          {toolCall.status === 'completed' && (
-                            <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                              <span className="dark:text-muted-foreground leading-5.75 text-black">
-                                {JSON.stringify(toolCall.result, null, 2)}
-                              </span>
-                            </p>
-                          )}
-                          {toolCall.status === 'error' && (
-                            <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                              <span className="text-destructive leading-5.75">
-                                {toolCall.error}
-                              </span>
-                            </p>
-                          )}
-                          {toolCall.status === 'denied' && (
-                            <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                              <span className="text-muted-foreground leading-5.75">
-                                Denied by user
-                              </span>
-                            </p>
-                          )}
-                        </div>
-                      </div>
+                              {toolCall.status === 'completed' && (
+                                <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                                  <span className="dark:text-muted-foreground leading-5.75 text-black">
+                                    {JSON.stringify(toolCall.result, null, 2)}
+                                  </span>
+                                </p>
+                              )}
+                              {toolCall.status === 'error' && (
+                                <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                                  <span className="text-destructive leading-5.75">
+                                    {toolCall.error}
+                                  </span>
+                                </p>
+                              )}
+                              {toolCall.status === 'denied' && (
+                                <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                                  <span className="text-muted-foreground leading-5.75">
+                                    Denied by user
+                                  </span>
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
                     </Accordion>
                   );
                 })}

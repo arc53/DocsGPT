@@ -7,6 +7,7 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 import type { RootState } from '../store';
 import { getSessionToken } from '../utils/providerUtils';
 import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
 import {
   Select,
   SelectContent,
@@ -14,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
-import ToggleSwitch from '../components/ToggleSwitch';
+import { Switch } from '../components/ui/switch';
 import { Modal } from '../components/ui/modal';
 import { ActiveState, Doc } from '../models/misc';
 
@@ -179,21 +180,26 @@ function Upload({
       }
       case 'boolean':
         return (
-          <ToggleSwitch
+          <div
             key={field.name}
-            label={field.label}
-            checked={Boolean(
-              ingestor.config[field.name as keyof typeof ingestor.config],
-            )}
-            onChange={(checked: boolean) => {
-              handleIngestorChange(
-                field.name as keyof IngestorConfig['config'],
-                checked,
-              );
-            }}
-            size="small"
-            className={`mt-2 text-base`}
-          />
+            className="mt-2 flex flex-row items-center gap-3 text-base"
+          >
+            <Label htmlFor={`field-${field.name}`} className="text-foreground">
+              {field.label}
+            </Label>
+            <Switch
+              id={`field-${field.name}`}
+              checked={Boolean(
+                ingestor.config[field.name as keyof typeof ingestor.config],
+              )}
+              onCheckedChange={(checked: boolean) => {
+                handleIngestorChange(
+                  field.name as keyof IngestorConfig['config'],
+                  checked,
+                );
+              }}
+            />
+          </div>
         );
       case 'local_file_picker':
         return (

@@ -11,8 +11,8 @@ import NoFilesIcon from '../assets/no-files.svg';
 import SearchIcon from '../assets/search.svg';
 import ThreeDotsIcon from '../assets/three-dots.svg';
 import SkeletonLoader from '../components/SkeletonLoader';
-import ToggleSwitch from '../components/ToggleSwitch';
 import { Button } from '../components/ui/button';
+import { Switch } from '../components/ui/switch';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -411,14 +411,13 @@ export default function Tools() {
                             </div>
                           </div>
                           <div className="absolute right-4 bottom-4">
-                            <ToggleSwitch
+                            <Switch
                               checked={tool.status}
-                              onChange={(checked) =>
+                              onCheckedChange={(checked) =>
                                 updateToolStatus(tool.id, checked)
                               }
-                              size="small"
                               id={`toolToggle-${index}`}
-                              ariaLabel={t('settings.tools.toggleToolAria', {
+                              aria-label={t('settings.tools.toggleToolAria', {
                                 toolName: tool.customName || tool.displayName,
                               })}
                             />

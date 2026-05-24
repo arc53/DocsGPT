@@ -4,7 +4,6 @@ import { useSelector } from 'react-redux';
 
 import conversationService from '../api/services/conversationService';
 import Spinner from '../components/Spinner';
-import ToggleSwitch from '../components/ToggleSwitch';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import {
@@ -14,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { Switch } from '../components/ui/switch';
 import { Doc } from '../models/misc';
 import {
   selectChunks,
@@ -118,10 +118,9 @@ export const ShareConversationModal = ({
           <span className="text-foreground text-lg dark:text-white">
             {t('modals.shareConv.option')}
           </span>
-          <ToggleSwitch
+          <Switch
             checked={allowPrompt}
-            onChange={togglePromptPermission}
-            size="medium"
+            onCheckedChange={togglePromptPermission}
           />
         </div>
         {allowPrompt && (
