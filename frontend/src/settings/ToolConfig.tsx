@@ -27,20 +27,15 @@ import ConfirmationModal from '../modals/ConfirmationModal';
 import ImportSpecModal from '../modals/ImportSpecModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
+import { getMethodColorClass } from '../utils/httpMethodColors';
 import { areObjectsEqual } from '../utils/objectUtils';
 import { APIActionType, APIToolType, UserToolType } from './types';
 
-const METHOD_COLORS: Record<string, string> = {
-  GET: 'bg-[#D1FAE5] text-[#065F46] dark:bg-[#064E3B]/60 dark:text-[#6EE7B7]',
-  POST: 'bg-[#DBEAFE] text-[#1E40AF] dark:bg-[#1E3A8A]/60 dark:text-[#93C5FD]',
-  PUT: 'bg-[#FEF3C7] text-[#92400E] dark:bg-[#78350F]/60 dark:text-[#FCD34D]',
-  DELETE:
-    'bg-[#FEE2E2] text-[#991B1B] dark:bg-[#7F1D1D]/60 dark:text-[#FCA5A5]',
-  PATCH: 'bg-[#EDE9FE] text-[#5B21B6] dark:bg-[#4C1D95]/60 dark:text-[#C4B5FD]',
-  HEAD: 'bg-[#F3F4F6] text-[#374151] dark:bg-[#374151]/60 dark:text-[#D1D5DB]',
-  OPTIONS:
-    'bg-[#F3F4F6] text-[#374151] dark:bg-[#374151]/60 dark:text-[#D1D5DB]',
-};
+// The `!` suffix is required because the surrounding `@utility table-default`
+// rules in index.css (min-w 150px, max-w 320px, p-4 / px-4 py-2) out-specify
+// plain Tailwind utility classes. Inline style={{...}} used to win on
+// specificity; the `!` keeps that behaviour without resorting to inline styles.
+const NARROW_CELL = 'w-[50px]! min-w-[50px]! max-w-[50px]! p-0!';
 
 export default function ToolConfig({
   tool,
@@ -879,10 +874,6 @@ function APIToolConfig({
     setTool(apiTool);
   }, [apiTool]);
 
-  const getMethodColor = (method: string) => {
-    return METHOD_COLORS[method.toUpperCase()] || METHOD_COLORS.GET;
-  };
-
   return (
     <div className="scrollbar-overlay flex flex-col gap-4">
       <div className="relative">
@@ -931,7 +922,7 @@ function APIToolConfig({
                     className={`h-4 w-4 opacity-60 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
                   />
                   <span
-                    className={`rounded px-2 py-0.5 text-xs font-medium ${getMethodColor(action.method)}`}
+                    className={`rounded px-2 py-0.5 text-xs font-medium ${getMethodColorClass(action.method)}`}
                   >
                     {action.method}
                   </span>
@@ -1514,13 +1505,7 @@ function APIActionTable({
                 ></input>
               </td>
               <td
-                style={{
-                  width: '50px',
-                  minWidth: '50px',
-                  maxWidth: '50px',
-                  padding: '0',
-                }}
-                className="border-border dark:border-border border-b"
+                className={`border-border dark:border-border border-b ${NARROW_CELL}`}
               >
                 <button
                   onClick={() => handlePorpertyDelete(section, key)}
@@ -1573,14 +1558,7 @@ function APIActionTable({
                 {t('settings.tools.cancel')}
               </button>
             </td>
-            <td
-              style={{
-                width: '50px',
-                minWidth: '50px',
-                maxWidth: '50px',
-                padding: '0',
-              }}
-            ></td>
+            <td className={NARROW_CELL}></td>
           </tr>
         ) : (
           <tr>
@@ -1592,14 +1570,7 @@ function APIActionTable({
                 {t('settings.tools.addNew')}
               </button>
             </td>
-            <td
-              style={{
-                width: '50px',
-                minWidth: '50px',
-                maxWidth: '50px',
-                padding: '0',
-              }}
-            ></td>
+            <td className={NARROW_CELL}></td>
           </tr>
         )}
       </>
@@ -1684,13 +1655,7 @@ function APIActionTable({
                 />
               </td>
               <td
-                style={{
-                  width: '50px',
-                  minWidth: '50px',
-                  maxWidth: '50px',
-                  padding: '0',
-                }}
-                className="border-border dark:border-border border-b"
+                className={`border-border dark:border-border border-b ${NARROW_CELL}`}
               >
                 <button
                   onClick={() => handlePorpertyDelete('headers', key)}
@@ -1731,14 +1696,7 @@ function APIActionTable({
                 {t('settings.tools.cancel')}
               </button>
             </td>
-            <td
-              style={{
-                width: '50px',
-                minWidth: '50px',
-                maxWidth: '50px',
-                padding: '0',
-              }}
-            ></td>
+            <td className={NARROW_CELL}></td>
           </tr>
         ) : (
           <tr>
@@ -1750,14 +1708,7 @@ function APIActionTable({
                 {t('settings.tools.addNew')}
               </button>
             </td>
-            <td
-              style={{
-                width: '50px',
-                minWidth: '50px',
-                maxWidth: '50px',
-                padding: '0',
-              }}
-            ></td>
+            <td className={NARROW_CELL}></td>
           </tr>
         )}
       </>
@@ -1782,14 +1733,7 @@ function APIActionTable({
               <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.description')}
               </th>
-              <th
-                style={{
-                  width: '50px',
-                  minWidth: '50px',
-                  maxWidth: '50px',
-                  padding: '0',
-                }}
-              ></th>
+              <th className={NARROW_CELL}></th>
             </tr>
           </thead>
           <tbody>{renderHeadersTable()}</tbody>
@@ -1817,14 +1761,7 @@ function APIActionTable({
               <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.value')}
               </th>
-              <th
-                style={{
-                  width: '50px',
-                  minWidth: '50px',
-                  maxWidth: '50px',
-                  padding: '0',
-                }}
-              ></th>
+              <th className={NARROW_CELL}></th>
             </tr>
           </thead>
           <tbody>{renderPropertiesTable('query_params')}</tbody>
@@ -1852,14 +1789,7 @@ function APIActionTable({
               <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.value')}
               </th>
-              <th
-                style={{
-                  width: '50px',
-                  minWidth: '50px',
-                  maxWidth: '50px',
-                  padding: '0',
-                }}
-              ></th>
+              <th className={NARROW_CELL}></th>
             </tr>
           </thead>
           <tbody>{renderPropertiesTable('body')}</tbody>
