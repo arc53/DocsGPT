@@ -144,22 +144,11 @@ export default function MoveToFolderModal({
     >
       <div>
         <div className="px-6 pt-4">
-          <h2
-            className="text-foreground dark:text-foreground mb-2 font-semibold"
-            style={{
-              fontFamily: 'Inter, sans-serif',
-              fontSize: '22px',
-              lineHeight: '28px',
-              letterSpacing: '0.15px',
-            }}
-          >
+          <h2 className="text-foreground dark:text-foreground mb-2 text-2xl leading-7 font-semibold tracking-[0.15px]">
             {t('agents.folders.move')} &quot;{agentName}&quot; to
           </h2>
         </div>
-        <div
-          className="bg-muted dark:bg-muted flex items-center gap-1 px-8 py-2 text-xs font-semibold text-[#59636E] dark:text-gray-400"
-          style={{ fontFamily: "'Segoe UI', sans-serif" }}
-        >
+        <div className="bg-muted dark:bg-muted text-muted-foreground flex items-center gap-1 px-8 py-2 text-xs font-semibold">
           <button
             onClick={() => handleNavigateToPath(-1)}
             className={`hover:text-foreground dark:hover:text-white ${folderPath.length > 0 ? 'opacity-70' : ''}`}
@@ -265,7 +254,7 @@ export default function MoveToFolderModal({
                           handleNavigateIntoFolder(folder.id);
                         }
                       }}
-                      className="ml-2 flex h-6 w-6 items-center justify-center rounded-full hover:bg-[#FFFFFF2B]"
+                      className="hover:bg-accent ml-2 flex h-6 w-6 items-center justify-center rounded-full"
                     >
                       <img
                         src={ChevronRight}
