@@ -19,8 +19,7 @@ import SearchIcon from './assets/search.svg';
 import AgentImage from './components/AgentImage';
 import SettingGear from './assets/settingGear.svg';
 import Spark from './assets/spark.svg';
-import SpinnerDark from './assets/spinner-dark.svg';
-import Spinner from './assets/spinner.svg';
+import Spinner from './components/Spinner';
 import Twitter from './assets/TwitterX.svg';
 import UnPin from './assets/unpin.svg';
 import Help from './components/Help';
@@ -32,7 +31,7 @@ import {
   updateConversationId,
 } from './conversation/conversationSlice';
 import ConversationTile from './conversation/ConversationTile';
-import { useDarkTheme, useMediaQuery } from './hooks';
+import { useMediaQuery } from './hooks';
 import useTokenAuth from './hooks/useTokenAuth';
 import ConfirmationModal from './modals/ConfirmationModal';
 import JWTModal from './modals/JWTModal';
@@ -77,7 +76,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const selectedAgent = useSelector(selectSelectedAgent);
 
   const { isMobile, isTablet } = useMediaQuery();
-  const [isDarkTheme] = useDarkTheme();
   const { showTokenModal, handleTokenSubmit } = useTokenAuth();
 
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
@@ -416,12 +414,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           className="scrollbar-overlay mb-auto h-[78vh] overflow-x-hidden overflow-y-auto dark:text-white"
         >
           {conversations?.loading && !isDeletingConversation && (
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform">
-              <img
-                src={isDarkTheme ? Spinner : SpinnerDark}
-                className="animate-spin cursor-pointer bg-transparent"
-                alt="Loading conversations"
-              />
+            <div
+              className="text-foreground absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform dark:text-white"
+              role="status"
+              aria-label="Loading conversations"
+            >
+              <Spinner size="small" />
             </div>
           )}
           {recentAgents?.length > 0 ? (

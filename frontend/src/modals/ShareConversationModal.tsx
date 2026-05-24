@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import conversationService from '../api/services/conversationService';
-import Spinner from '../assets/spinner.svg';
+import Spinner from '../components/Spinner';
 import ToggleSwitch from '../components/ToggleSwitch';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
@@ -171,12 +171,7 @@ export const ShareConversationModal = ({
               }}
             >
               {t('modals.shareConv.create')}
-              {status === 'loading' && (
-                <img
-                  src={Spinner}
-                  className="inline animate-spin cursor-pointer bg-transparent filter dark:invert"
-                ></img>
-              )}
+              {status === 'loading' && <Spinner size="small" />}
             </Button>
           )}
         </div>

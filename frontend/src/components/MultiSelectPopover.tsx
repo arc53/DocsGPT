@@ -6,6 +6,7 @@ import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import { useDarkTheme } from '../hooks';
 import { cn } from '@/lib/utils';
+import Spinner from './Spinner';
 import {
   Command,
   CommandEmpty,
@@ -203,8 +204,8 @@ export function MultiSelectPopover({
           )}
 
           {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-gray-900 dark:border-white" />
+            <div className="text-foreground flex items-center justify-center py-8 dark:text-white">
+              <Spinner size="small" />
             </div>
           ) : (
             <div className="dark:border-border mx-4 my-4 grow overflow-hidden rounded-md border border-[#D9D9D9]">
