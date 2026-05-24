@@ -454,12 +454,12 @@ export default function ToolConfig({
                     <circle cx="11" cy="11" r="8" />
                     <path strokeLinecap="round" d="m21 21-4.35-4.35" />
                   </svg>
-                  <input
+                  <Input
                     type="text"
                     value={userActionsSearch}
                     onChange={(e) => setUserActionsSearch(e.target.value)}
                     placeholder={t('settings.tools.searchActions')}
-                    className="border-border text-foreground placeholder:text-muted-foreground h-10 w-full rounded-full border bg-transparent pr-4 pl-10 text-sm outline-none"
+                    className="h-10 rounded-full pr-4 pl-10 text-sm md:text-sm"
                   />
                 </div>
 
@@ -611,10 +611,10 @@ export default function ToolConfig({
                                         </label>
                                       </td>
                                       <td className="w-10">
-                                        <input
+                                        <Input
                                           key={uniqueKey}
                                           value={param[1].description}
-                                          className="border-border dark:border-border rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                                          className="h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
                                           onChange={(e) => {
                                             setTool({
                                               ...tool,
@@ -645,14 +645,14 @@ export default function ToolConfig({
                                               ),
                                             });
                                           }}
-                                        ></input>
+                                        />
                                       </td>
                                       <td>
-                                        <input
+                                        <Input
                                           value={param[1].value}
                                           key={uniqueKey}
                                           disabled={param[1].filled_by_llm}
-                                          className={`border-border dark:border-border rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden ${param[1].filled_by_llm ? 'opacity-50' : ''}`}
+                                          className={`h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm ${param[1].filled_by_llm ? 'opacity-50' : ''}`}
                                           onChange={(e) => {
                                             setTool({
                                               ...tool,
@@ -683,7 +683,7 @@ export default function ToolConfig({
                                               ),
                                             });
                                           }}
-                                        ></input>
+                                        />
                                       </td>
                                     </tr>
                                   );
@@ -888,12 +888,12 @@ function APIToolConfig({
           <circle cx="11" cy="11" r="8" />
           <path strokeLinecap="round" d="m21 21-4.35-4.35" />
         </svg>
-        <input
+        <Input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder={t('settings.tools.searchActions')}
-          className="border-border text-foreground placeholder:text-muted-foreground h-10 w-full rounded-full border bg-transparent pr-4 pl-10 text-sm outline-none"
+          className="h-10 rounded-full pr-4 pl-10 text-sm md:text-sm"
         />
       </div>
 
@@ -1410,9 +1410,9 @@ function APIActionTable({
                 {editingPropertyKey.section === section &&
                 editingPropertyKey.oldKey === key ? (
                   <div className="flex flex-row items-center justify-between gap-2">
-                    <input
+                    <Input
                       value={newPropertyKey}
-                      className="border-border dark:border-border flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                      className="h-auto min-w-[130.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
                       onChange={(e) => setNewPropertyKey(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -1446,9 +1446,9 @@ function APIActionTable({
                     </div>
                   </div>
                 ) : (
-                  <input
+                  <Input
                     value={key}
-                    className="border-border dark:border-border flex w-full min-w-[175.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                    className="h-auto min-w-[175.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
                     onFocus={() => handleRenamePropertyStart(section, key)}
                     readOnly
                   />
@@ -1490,9 +1490,9 @@ function APIActionTable({
                 </label>
               </td>
               <td className="w-10">
-                <input
+                <Input
                   value={param.description}
-                  className="border-border dark:border-border rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                  className="h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
                   onChange={(e) =>
                     handlePropertyChange(
                       section,
@@ -1501,17 +1501,17 @@ function APIActionTable({
                       e.target.value,
                     )
                   }
-                ></input>
+                />
               </td>
               <td>
-                <input
+                <Input
                   value={param.value}
                   disabled={param.filled_by_llm}
                   onChange={(e) =>
                     handlePropertyChange(section, key, 'value', e.target.value)
                   }
-                  className={`border-border dark:border-border rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden ${param.filled_by_llm ? 'opacity-50' : ''}`}
-                ></input>
+                  className={`h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm ${param.filled_by_llm ? 'opacity-50' : ''}`}
+                />
               </td>
               <td
                 className={`border-border dark:border-border border-b ${NARROW_CELL}`}
@@ -1532,7 +1532,7 @@ function APIActionTable({
         {addingPropertySection === section ? (
           <tr>
             <td>
-              <input
+              <Input
                 value={newPropertyKey}
                 onChange={(e) => setNewPropertyKey(e.target.value)}
                 onKeyDown={(e) => {
@@ -1541,7 +1541,7 @@ function APIActionTable({
                   }
                 }}
                 placeholder={t('settings.tools.propertyName')}
-                className="border-border dark:border-border flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                className="h-auto min-w-[130.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
               />
             </td>
             <td>
@@ -1608,9 +1608,9 @@ function APIActionTable({
                 {editingPropertyKey.section === 'headers' &&
                 editingPropertyKey.oldKey === key ? (
                   <div className="flex flex-row items-center justify-between gap-2">
-                    <input
+                    <Input
                       value={newPropertyKey}
-                      className="border-border dark:border-border flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                      className="h-auto min-w-[130.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
                       onChange={(e) => setNewPropertyKey(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -1644,16 +1644,16 @@ function APIActionTable({
                     </div>
                   </div>
                 ) : (
-                  <input
+                  <Input
                     value={key}
-                    className="border-border dark:border-border flex w-full min-w-[175.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                    className="h-auto min-w-[175.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
                     onFocus={() => handleRenamePropertyStart('headers', key)}
                     readOnly
                   />
                 )}
               </td>
               <td>
-                <input
+                <Input
                   value={param.value}
                   onChange={(e) =>
                     handlePropertyChange(
@@ -1664,13 +1664,13 @@ function APIActionTable({
                     )
                   }
                   placeholder="e.g., application/json"
-                  className="border-border dark:border-border w-full rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                  className="h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
                 />
               </td>
               <td>
-                <input
+                <Input
                   value={param.description}
-                  className="border-border dark:border-border rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                  className="h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
                   onChange={(e) =>
                     handlePropertyChange(
                       'headers',
@@ -1700,7 +1700,7 @@ function APIActionTable({
         {addingPropertySection === 'headers' ? (
           <tr>
             <td>
-              <input
+              <Input
                 value={newPropertyKey}
                 onChange={(e) => setNewPropertyKey(e.target.value)}
                 onKeyDown={(e) => {
@@ -1709,7 +1709,7 @@ function APIActionTable({
                   }
                 }}
                 placeholder={t('settings.tools.propertyName')}
-                className="border-border dark:border-border flex w-full min-w-[130.5px] items-start rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden"
+                className="h-auto min-w-[130.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
               />
             </td>
             <td colSpan={2} className="text-right">

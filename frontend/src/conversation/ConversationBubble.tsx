@@ -34,6 +34,7 @@ import {
 } from '../components/ui/accordion';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import MermaidRenderer from '../components/MermaidRenderer';
 import Spinner from '../components/Spinner';
 import { Sheet, SheetContent } from '../components/ui/sheet';
@@ -1007,10 +1008,10 @@ function ToolCallApprovalBar({
           <pre className="bg-background dark:bg-background/50 mb-2 max-h-40 overflow-auto rounded-lg p-2 font-mono text-xs">
             {JSON.stringify(toolCall.arguments, null, 2)}
           </pre>
-          <input
+          <Input
             type="text"
             placeholder="Optional reason for denying..."
-            className="border-border bg-background w-full rounded-lg border px-3 py-1.5 text-sm"
+            className="bg-background h-8 rounded-lg px-3 py-1.5 text-sm md:text-sm"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             onKeyDown={(e) => {

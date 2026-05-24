@@ -7,6 +7,7 @@ import userService from '../api/services/userService';
 import ChevronRight from '../assets/chevron-right.svg';
 import FolderIcon from '../assets/folder.svg';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken, setAgentFolders } from '../preferences/preferenceSlice';
@@ -292,7 +293,7 @@ export default function MoveToFolderModal({
 
         <div className="dark:border-border flex items-center justify-between border-t border-gray-200 px-8 py-4">
           {isCreatingFolder ? (
-            <input
+            <Input
               ref={newFolderInputRef}
               type="text"
               value={newFolderName}
@@ -313,7 +314,7 @@ export default function MoveToFolderModal({
                 }
               }}
               placeholder={t('agents.folders.newFolder')}
-              className="border-primary text-primary placeholder:text-primary/60 rounded-full border bg-transparent px-6 py-2 text-sm font-medium outline-none"
+              className="border-primary text-primary placeholder:text-primary/60 dark:placeholder:text-primary/60 dark:text-primary dark:border-primary h-auto rounded-full px-6 py-2 text-sm font-medium"
               autoFocus
             />
           ) : (

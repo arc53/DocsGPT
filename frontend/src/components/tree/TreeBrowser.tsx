@@ -20,6 +20,7 @@ import { useLoaderState, useOutsideAlerter } from '../../hooks';
 import Chunks from '../Chunks';
 import SkeletonLoader from '../SkeletonLoader';
 import { Button } from '../ui/button';
+import { Input } from '../ui/input';
 import {
   Table,
   TableBody,
@@ -618,7 +619,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
 
   const renderFileSearch = () => (
     <div className="relative w-52" ref={searchDropdownRef}>
-      <input
+      <Input
         type="text"
         value={searchQuery}
         onChange={(e) => {
@@ -628,7 +629,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
           }
         }}
         placeholder={t('settings.sources.searchFiles')}
-        className={`border-border dark:border-border h-[38px] w-full border px-4 py-2 ${searchQuery ? 'rounded-t-3xl' : 'rounded-3xl'} bg-transparent focus:outline-none`}
+        className={`h-[38px] px-4 py-2 ${searchQuery ? 'rounded-t-3xl' : 'rounded-3xl'}`}
       />
 
       {searchQuery && (

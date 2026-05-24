@@ -6,6 +6,7 @@ import userService from '../api/services/userService';
 import Upload from '../assets/upload.svg';
 import Spinner from '../components/Spinner';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -241,11 +242,11 @@ export default function ImportSpecModal({
                 <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
                   {t('modals.importSpec.baseUrl')}
                 </label>
-                <input
+                <Input
                   type="text"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  className="border-border dark:border-border text-foreground dark:text-foreground bg-card w-full rounded-lg border px-3 py-2 text-sm outline-hidden"
+                  className="bg-card h-auto rounded-lg px-3 py-2 text-sm md:text-sm"
                   placeholder={
                     parsedResult.metadata.base_url || 'https://api.example.com'
                   }

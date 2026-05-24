@@ -12,6 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
 
 import {
   Select,
@@ -818,8 +819,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.meta')}
             </h2>
-            <input
-              className="border-border text-foreground dark:text-foreground dark:placeholder:text-muted-foreground bg-card dark:border-border mt-3 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400"
+            <Input
+              className="bg-card mt-3 h-auto rounded-3xl px-5 py-3 text-sm placeholder:text-gray-400 md:text-sm"
               type="text"
               value={agent.name}
               placeholder={t('agents.form.placeholders.agentName')}
@@ -1265,7 +1266,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       }}
                     />
                   </div>
-                  <input
+                  <Input
                     type="number"
                     min="0"
                     value={agent.token_limit || ''}
@@ -1279,7 +1280,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     }
                     disabled={!agent.limited_token_mode}
                     placeholder={t('agents.form.placeholders.enterTokenLimit')}
-                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-muted-foreground bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${
+                    className={`bg-card mt-2 h-auto rounded-3xl px-5 py-3 text-sm placeholder:text-gray-400 md:text-sm ${
                       !agent.limited_token_mode
                         ? 'cursor-not-allowed opacity-50'
                         : ''
@@ -1310,7 +1311,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       }}
                     />
                   </div>
-                  <input
+                  <Input
                     type="number"
                     min="0"
                     value={agent.request_limit || ''}
@@ -1326,7 +1327,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     placeholder={t(
                       'agents.form.placeholders.enterRequestLimit',
                     )}
-                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-muted-foreground bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${
+                    className={`bg-card mt-2 h-auto rounded-3xl px-5 py-3 text-sm placeholder:text-gray-400 md:text-sm ${
                       !agent.limited_request_mode
                         ? 'cursor-not-allowed opacity-50'
                         : ''

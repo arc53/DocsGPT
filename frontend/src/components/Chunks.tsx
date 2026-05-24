@@ -23,6 +23,7 @@ import { ChunkType } from '../settings/types';
 import Pagination from './DocumentPagination';
 import SkeletonLoader from './SkeletonLoader';
 import { Button } from './ui/button';
+import { Input } from './ui/input';
 
 interface LineNumberedTextareaProps {
   value: string;
@@ -494,14 +495,14 @@ const Chunks: React.FC<ChunksProps> = ({
           <div className="pointer-events-none absolute left-3">
             <img src={SearchIcon} alt="Search" className="h-4 w-4" />
           </div>
-          <input
+          <Input
             type="text"
             value={fileSearchQuery}
             onChange={(e) => handleFileSearchChange(e.target.value)}
             placeholder={t('settings.sources.searchFiles')}
-            className={`border-border dark:border-border h-[38px] w-full border py-2 pr-4 pl-10 ${
+            className={`h-[38px] py-2 pr-4 pl-10 ${
               fileSearchQuery ? 'rounded-t-md' : 'rounded-md'
-            } bg-transparent transition-all duration-200 focus:outline-none`}
+            } transition-all duration-200`}
           />
         </div>
 
@@ -568,12 +569,12 @@ const Chunks: React.FC<ChunksProps> = ({
                   </div>
                   <div className="bg-border dark:bg-border h-full w-px"></div>
                   <div className="h-full flex-1">
-                    <input
+                    <Input
                       type="text"
                       placeholder={t('settings.sources.searchPlaceholder')}
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="h-full w-full border-none bg-transparent px-3 py-2 text-[13.56px] leading-[100%] font-normal outline-none"
+                      className="h-full rounded-none border-0 px-3 py-2 text-[13.56px] leading-[100%] font-normal shadow-none focus-visible:ring-0 md:text-[13.56px] dark:border-0"
                     />
                   </div>
                 </div>

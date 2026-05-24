@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Edge, Node } from 'reactflow';
 
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Popover,
   PopoverContent,
@@ -225,12 +226,12 @@ function VariableListWithSearch({
     <div className="flex w-full flex-col overflow-hidden">
       <div className="border-border flex items-center gap-2 border-b px-3 py-2">
         <Search className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
-        <input
+        <Input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search variables..."
-          className="placeholder:text-muted-foreground w-full bg-transparent text-sm text-gray-800 outline-none dark:text-gray-200"
+          className="h-auto rounded-none border-0 px-0 py-0 text-sm text-gray-800 shadow-none focus-visible:ring-0 md:text-sm dark:border-0 dark:text-gray-200"
         />
       </div>
 

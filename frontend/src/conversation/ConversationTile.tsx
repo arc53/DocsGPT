@@ -19,6 +19,7 @@ import { ActiveState } from '../models/misc';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -203,10 +204,10 @@ export default function ConversationTile({
       >
         <div className={`flex w-10/12 gap-4`}>
           {isEdit ? (
-            <input
+            <Input
               autoFocus
               type="text"
-              className="h-6 w-full rounded-2xl bg-transparent px-1 text-sm leading-6 font-normal outline-none"
+              className="h-6 w-full rounded-2xl border-0 px-1 text-sm leading-6 font-normal shadow-none focus-visible:ring-0 md:text-sm dark:border-0"
               value={conversationName}
               onChange={(e) => setConversationsName(e.target.value)}
               onKeyDown={handleRenameKeyDown}
