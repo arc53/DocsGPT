@@ -300,8 +300,7 @@ export default function Prompts({
             {showAddButton && (
               <Button
                 type="button"
-                variant="outline"
-                className="border-primary text-primary hover:bg-primary hover:text-primary-foreground w-20 rounded-3xl py-3"
+                className="w-20 rounded-3xl py-3"
                 onClick={() => {
                   setModalType('ADD');
                   setModalState('ACTIVE');
