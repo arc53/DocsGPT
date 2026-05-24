@@ -10,8 +10,7 @@ import {
   removeSessionToken,
   validateProviderSession,
 } from '../utils/providerUtils';
-import ConnectedStateSkeleton from './ConnectedStateSkeleton';
-import FilesSectionSkeleton from './FileSelectionSkeleton';
+import SkeletonLoader from './SkeletonLoader';
 
 interface PickerFile {
   id: string;
@@ -224,8 +223,8 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
     <div>
       {isValidating ? (
         <>
-          <ConnectedStateSkeleton />
-          <FilesSectionSkeleton />
+          <SkeletonLoader component="connectedState" />
+          <SkeletonLoader component="filesSection" />
         </>
       ) : (
         <>
