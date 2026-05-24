@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -9,7 +10,6 @@ import {
 import remarkGfm from 'remark-gfm';
 
 import userService from '../api/services/userService';
-import Exit from '../assets/exit.svg';
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import CopyButton from './CopyButton';
@@ -440,12 +440,9 @@ export default function ArtifactSidebar({
             <button
               className="hover:bg-accent dark:hover:bg-accent rounded-full p-1"
               onClick={onClose}
+              aria-label="Close"
             >
-              <img
-                className="h-3 w-3 filter dark:invert"
-                src={Exit}
-                alt="Close"
-              />
+              <X className="h-3 w-3" />
             </button>
           </div>
           <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>
@@ -473,12 +470,9 @@ export default function ArtifactSidebar({
           <button
             className="hover:bg-accent rounded-full p-2"
             onClick={onClose}
+            aria-label="Close"
           >
-            <img
-              className="h-4 w-4 filter dark:invert"
-              src={Exit}
-              alt="Close"
-            />
+            <X className="h-4 w-4" />
           </button>
         </div>
         <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>

@@ -1,3 +1,4 @@
+import { X } from 'lucide-react';
 import {
   SyntheticEvent,
   useCallback,
@@ -7,7 +8,6 @@ import {
 } from 'react';
 import { useSelector } from 'react-redux';
 import Edit from '../assets/edit.svg';
-import Exit from '../assets/exit.svg';
 import { useDarkTheme } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import CheckMark2 from '../assets/checkMark2.svg';
@@ -233,16 +233,18 @@ export default function ConversationTile({
                     });
                   }}
                 />
-                <img
-                  src={Exit}
-                  alt="Exit"
-                  className={`mt-px mr-4 h-3 w-3 cursor-pointer filter hover:opacity-50 dark:invert`}
+                <button
+                  type="button"
+                  aria-label="Exit"
                   id={`img-${conversation.id}`}
+                  className="mt-px mr-4 inline-flex cursor-pointer hover:opacity-50"
                   onClick={(event: SyntheticEvent) => {
                     event.stopPropagation();
                     onClear();
                   }}
-                />
+                >
+                  <X className="h-3 w-3" />
+                </button>
               </div>
             ) : (
               <DropdownMenu open={isOpen} onOpenChange={setOpen}>

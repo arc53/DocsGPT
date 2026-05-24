@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { LoaderCircle, Mic, Square } from 'lucide-react';
+import { LoaderCircle, Mic, Square, X } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
@@ -10,7 +10,6 @@ import userService from '../api/services/userService';
 import AlertIcon from '../assets/alert.svg';
 import ClipIcon from '../assets/clip.svg';
 import DragFileUpload from '../assets/DragFileUpload.svg';
-import ExitIcon from '../assets/exit.svg';
 import RedirectIcon from '../assets/redirect.svg';
 import SendArrow from '../assets/send.svg?react';
 import SourceIcon from '../assets/source.svg';
@@ -1635,10 +1634,9 @@ export default function MessageInput({
                   }}
                   aria-label={t('conversation.attachments.remove')}
                 >
-                  <img
-                    src={ExitIcon}
-                    alt={t('conversation.attachments.remove')}
-                    className="h-2.5 w-2.5 filter dark:invert"
+                  <X
+                    aria-label={t('conversation.attachments.remove')}
+                    className="h-2.5 w-2.5"
                   />
                 </button>
               </div>
