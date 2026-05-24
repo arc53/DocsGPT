@@ -63,6 +63,7 @@ EXPECTED_IDS = {
     },
     "docsgpt": {"docsgpt-local"},
     "huggingface": {"huggingface-local"},
+    "qianfan": {"ernie-5.0"},
 }
 
 
@@ -78,6 +79,7 @@ def _make_settings(**overrides):
     s.OPEN_ROUTER_API_KEY = None
     s.NOVITA_API_KEY = None
     s.HUGGINGFACE_API_KEY = None
+    s.QIANFAN_API_KEY = None
     s.LLM_PROVIDER = ""
     s.LLM_NAME = None
     s.API_KEY = None
@@ -227,6 +229,24 @@ class TestRegistryPermutations:
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["huggingface"] | EXPECTED_IDS["docsgpt"]
 
+    def test_qianfan_only(self):
+        s = _make_settings(QIANFAN_API_KEY="qianfan-test")
+        with patch("application.core.settings.settings", s):
+            reg = ModelRegistry()
+        ids = {m.id for m in reg.get_all_models()}
+        assert ids == EXPECTED_IDS["qianfan"] | EXPECTED_IDS["docsgpt"]
+
+    def test_qianfan_via_llm_provider_with_llm_name(self):
+        s = _make_settings(
+            LLM_PROVIDER="qianfan", API_KEY="key", LLM_NAME="ernie-5.0"
+        )
+        with patch("application.core.settings.settings", s):
+            reg = ModelRegistry()
+        qianfan_ids = {
+            m.id for m in reg.get_all_models() if m.provider.value == "qianfan"
+        }
+        assert qianfan_ids == {"ernie-5.0"}
+
     def test_no_credentials_only_docsgpt(self):
         s = _make_settings()
         with patch("application.core.settings.settings", s):
@@ -256,6 +276,7 @@ class TestRegistryPermutations:
             GROQ_API_KEY="x",
             OPEN_ROUTER_API_KEY="x",
             NOVITA_API_KEY="x",
+            QIANFAN_API_KEY="x",
             HUGGINGFACE_API_KEY="x",
             OPENAI_API_BASE="x",
         )

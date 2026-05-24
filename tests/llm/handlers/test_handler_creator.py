@@ -72,6 +72,7 @@ class TestLLMHandlerCreator:
             "openai": OpenAILLMHandler,
             "google": GoogleLLMHandler,
             "novita": OpenAILLMHandler,
+            "qianfan": OpenAILLMHandler,
             "default": OpenAILLMHandler,
         }
 

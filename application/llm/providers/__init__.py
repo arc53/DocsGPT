@@ -23,6 +23,7 @@ from application.llm.providers.openai import OpenAIProvider
 from application.llm.providers.openai_compatible import OpenAICompatibleProvider
 from application.llm.providers.openrouter import OpenRouterProvider
 from application.llm.providers.premai import PremAIProvider
+from application.llm.providers.qianfan import QianfanProvider
 from application.llm.providers.sagemaker import SagemakerProvider
 
 # Order here is the order the registry iterates providers (and therefore
@@ -40,6 +41,7 @@ ALL_PROVIDERS: List[Provider] = [
     GroqProvider(),
     OpenRouterProvider(),
     NovitaProvider(),
+    QianfanProvider(),
     HuggingFaceProvider(),
     LlamaCppProvider(),
     PremAIProvider(),
