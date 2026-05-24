@@ -26,8 +26,8 @@ import Link from '../assets/link.svg';
 import Sources from '../assets/sources.svg';
 import UserIcon from '../assets/user.svg';
 import Accordion from '../components/Accordion';
-import Avatar from '../components/Avatar';
 import CopyButton from '../components/CopyButton';
+import { Avatar } from '../components/ui/avatar';
 import MermaidRenderer from '../components/MermaidRenderer';
 import Spinner from '../components/Spinner';
 import { Sheet, SheetContent } from '../components/ui/sheet';
@@ -172,13 +172,9 @@ const ConversationBubble = forwardRef<
             ref={ref}
             className={`flex flex-row-reverse justify-items-start`}
           >
-            <Avatar
-              size="SMALL"
-              className="mt-2 shrink-0 text-2xl"
-              avatar={
-                <img className="mr-1 rounded-full" width={30} src={UserIcon} />
-              }
-            />
+            <Avatar className="mt-2 shrink-0 text-2xl">
+              <img className="mr-1 rounded-full" width={30} src={UserIcon} />
+            </Avatar>
             {!isEditClicked && (
               <>
                 <div className="relative mr-2 flex w-full flex-col">
@@ -332,14 +328,10 @@ const ConversationBubble = forwardRef<
               <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
                 <div className="my-2 flex flex-row items-center justify-center gap-3">
                   <Avatar
+                    src={Sources}
+                    alt={t('conversation.sources.title')}
                     className="h-6.5 w-7.5 text-xl"
-                    avatar={
-                      <img
-                        src={Sources}
-                        alt={t('conversation.sources.title')}
-                        className="h-full w-full object-fill"
-                      />
-                    }
+                    imgClassName="h-full w-full object-fill"
                   />
                   <p className="text-base font-semibold">
                     {t('conversation.sources.title')}
@@ -479,14 +471,10 @@ const ConversationBubble = forwardRef<
           <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
             <div className="my-2 flex flex-row items-center justify-center gap-3">
               <Avatar
+                src={DocsGPT3}
+                alt={t('conversation.answer')}
                 className="h-8.5 w-8.5 text-2xl"
-                avatar={
-                  <img
-                    src={DocsGPT3}
-                    alt={t('conversation.answer')}
-                    className="h-full w-full object-cover"
-                  />
-                }
+                imgClassName="h-full w-full object-cover"
               />
               <p className="text-base font-semibold">
                 {t('conversation.answer')}
@@ -1052,14 +1040,10 @@ function ToolCalls({
         <>
           <div className="my-2 flex flex-row items-center justify-center gap-3">
             <Avatar
+              src={Sources}
+              alt={'ToolCalls'}
               className="h-6.5 w-7.5 text-xl"
-              avatar={
-                <img
-                  src={Sources}
-                  alt={'ToolCalls'}
-                  className="h-full w-full object-fill"
-                />
-              }
+              imgClassName="h-full w-full object-fill"
             />
             <button
               className="flex flex-row items-center gap-2"
@@ -1179,14 +1163,10 @@ function Thought({
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
       <div className="my-2 flex flex-row items-center justify-center gap-3">
         <Avatar
+          src={Cloud}
+          alt={'Thought'}
           className="h-6.5 w-7.5 text-xl"
-          avatar={
-            <img
-              src={Cloud}
-              alt={'Thought'}
-              className="h-full w-full object-fill"
-            />
-          }
+          imgClassName="h-full w-full object-fill"
         />
         <button
           className="flex flex-row items-center gap-2"

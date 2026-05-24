@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import ResearchIcon from '../assets/research.svg';
-import Avatar from '../components/Avatar';
+import { Avatar } from '../components/ui/avatar';
 import { ResearchState } from './conversationModels';
 
 const SmallCheck = () => (
@@ -100,14 +100,10 @@ export default function ResearchProgress({
       {/* Header row — matches Reasoning / Sources pattern */}
       <div className="my-2 flex flex-row items-center gap-3">
         <Avatar
+          src={ResearchIcon}
+          alt="Research"
           className="h-[26px] w-[30px] text-xl"
-          avatar={
-            <img
-              src={ResearchIcon}
-              alt="Research"
-              className="h-full w-full object-fill"
-            />
-          }
+          imgClassName="h-full w-full object-fill"
         />
         <button
           className="flex flex-row items-center gap-2"

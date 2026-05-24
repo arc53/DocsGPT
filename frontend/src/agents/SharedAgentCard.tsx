@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import EditIcon from '../assets/edit.svg';
-import AgentImage from '../components/AgentImage';
+import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { getToolDisplayName } from '../utils/toolUtils';
 import { Agent } from './types';
@@ -24,9 +24,9 @@ export default function SharedAgentCard({
     <div className="border-border dark:border-border flex w-full max-w-[720px] flex-col rounded-3xl border p-6 shadow-xs sm:w-fit sm:min-w-[480px]">
       <div className="flex items-start gap-3">
         <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full p-1">
-          <AgentImage
+          <Avatar
             src={agent.image}
-            className="h-full w-full rounded-full object-contain"
+            imgClassName="h-full w-full rounded-full object-contain"
           />
         </div>
         <div className="flex max-h-[92px] flex-1 flex-col gap-px">

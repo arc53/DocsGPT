@@ -16,7 +16,7 @@ import Hamburger from './assets/hamburger.svg';
 import openNewChat from './assets/openNewChat.svg';
 import Pin from './assets/pin.svg';
 import SearchIcon from './assets/search.svg';
-import AgentImage from './components/AgentImage';
+import { Avatar } from './components/ui/avatar';
 import SettingGear from './assets/settingGear.svg';
 import Spark from './assets/spark.svg';
 import Spinner from './components/Spinner';
@@ -443,10 +443,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     >
                       <div className="flex items-center gap-2">
                         <div className="flex w-6 justify-center">
-                          <AgentImage
+                          <Avatar
                             src={agent.image}
                             alt="agent-logo"
-                            className="h-6 w-6 rounded-full object-contain"
+                            imgClassName="h-6 w-6 rounded-full object-contain"
                           />
                         </div>
                         <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">

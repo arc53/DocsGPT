@@ -13,7 +13,7 @@ import Pin from '../assets/pin.svg';
 import Trash from '../assets/red-trash.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import UnPin from '../assets/unpin.svg';
-import AgentImage from '../components/AgentImage';
+import { Avatar } from '../components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -304,10 +304,10 @@ export default function AgentCard({
       </DropdownMenu>
       <div className="w-full">
         <div className="flex w-full items-center gap-1 px-1">
-          <AgentImage
+          <Avatar
             src={agent.image}
             alt={`${agent.name}`}
-            className="h-7 w-7 rounded-full object-contain"
+            imgClassName="h-7 w-7 rounded-full object-contain"
           />
           {agent.status === 'draft' && (
             <p className="text-foreground text-xs opacity-50">{`(Draft)`}</p>
