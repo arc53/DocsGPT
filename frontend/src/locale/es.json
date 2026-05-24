@@ -70,6 +70,9 @@
       "sync": "Sincronizar",
       "syncNow": "Sincronizar ahora",
       "syncing": "Sincronizando...",
+      "reingest": "Reindexar",
+      "ingestFailed": "Error de indexación",
+      "ingestProcessing": "Indexando...",
       "syncConfirmation": "¿Estás seguro de que deseas sincronizar \"{{sourceName}}\"? Esto actualizará el contenido con tu almacenamiento en la nube y puede anular cualquier edición que hayas realizado en fragmentos individuales.",
       "syncFrequency": {
         "never": "Nunca",
@@ -158,6 +161,7 @@
       "manageTools": "Ir a Herramientas",
       "edit": "Editar",
       "delete": "Eliminar",
+      "builtIn": "Integrada",
       "deleteWarning": "¿Estás seguro de que deseas eliminar la herramienta \"{{toolName}}\"?",
       "unsavedChanges": "Tienes cambios sin guardar que se perderán si sales sin guardar.",
       "leaveWithoutSaving": "Salir sin Guardar",
@@ -353,6 +357,8 @@
         "failed": "Error al subir",
         "wait": "Esto puede tardar varios minutos",
         "preparing": "Preparando subida",
+        "parsing": "Analizando archivos...",
+        "embedding": "Generando incrustaciones...",
         "tokenLimit": "Excede el límite de tokens, considere cargar un documento más pequeño",
         "expandDetails": "Expandir detalles de subida",
         "collapseDetails": "Contraer detalles de subida",
@@ -473,6 +479,11 @@
       "note": "El documento fuente, información personal y conversaciones posteriores permanecerán privadas",
       "create": "Crear",
       "option": "Permitir a los usuarios realizar más consultas"
+    },
+    "searchConversations": {
+      "searchPlaceholder": "Buscar conversaciones",
+      "noResults": "No se encontraron resultados",
+      "loading": "Cargando..."
     },
     "configTool": {
       "title": "Configuración de la Herramienta",
@@ -653,7 +664,8 @@
         "delete": "Eliminar",
         "logs": "Registros",
         "accessDetails": "Detalles de Acceso",
-        "add": "Agregar"
+        "add": "Agregar",
+        "moreActions": "Más acciones"
       },
       "sections": {
         "meta": "Meta",
@@ -717,6 +729,11 @@
       },
       "preview": {
         "publishedPreview": "Los agentes publicados se pueden previsualizar aquí"
+      },
+      "dangerZone": {
+        "heading": "Zona de peligro",
+        "description": "Eliminar este agente es permanente y eliminará todas sus programaciones e historial de ejecuciones.",
+        "deleteButton": "Eliminar agente"
       },
       "externalKb": "KB Externa"
     },

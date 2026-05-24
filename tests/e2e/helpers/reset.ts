@@ -1,5 +1,4 @@
 /**
- * Phase 1 helper — see e2e-plan.md §P1-B.
  * Per-test TRUNCATE — preserves `alembic_version`, wipes every other table.
  */
 

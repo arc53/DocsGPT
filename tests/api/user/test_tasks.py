@@ -33,7 +33,7 @@ class TestIngestTask:
 
         mock_worker.assert_called_once_with(
             ANY, "dir", ["pdf"], "job1", "/path", "file.pdf", "user1",
-            file_name_map=None, idempotency_key=None,
+            file_name_map=None, idempotency_key=None, source_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -50,7 +50,7 @@ class TestIngestTask:
 
         mock_worker.assert_called_once_with(
             ANY, "dir", ["pdf"], "job1", "/path", "file.pdf", "user1",
-            file_name_map=name_map, idempotency_key=None,
+            file_name_map=name_map, idempotency_key=None, source_id=None,
         )
 
 
@@ -66,7 +66,7 @@ class TestIngestRemoteTask:
 
         mock_worker.assert_called_once_with(
             ANY, {"url": "http://x"}, "job1", "user1", "web",
-            idempotency_key=None,
+            idempotency_key=None, source_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -169,6 +169,7 @@ class TestIngestConnectorTask:
             doc_id=None,
             sync_frequency="never",
             idempotency_key=None,
+            source_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -207,6 +208,7 @@ class TestIngestConnectorTask:
             doc_id="doc1",
             sync_frequency="daily",
             idempotency_key=None,
+            source_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -220,7 +222,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 7
+        assert sender.add_periodic_task.call_count == 11
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -241,6 +243,17 @@ class TestSetupPeriodicTasks:
         assert calls[5][1].get("name") == "reconciliation"
         # version-check (every 7h)
         assert calls[6][0][0] == timedelta(hours=7)
+        # message_events retention sweep (24h)
+        assert calls[7][0][0] == timedelta(hours=24)
+        assert calls[7][1].get("name") == "cleanup-message-events"
+        # orphan memories sweep (24h)
+        assert calls[8][0][0] == timedelta(hours=24)
+        assert calls[8][1].get("name") == "cleanup-orphan-memories"
+        # scheduler dispatcher
+        assert calls[9][1].get("name") == "dispatch-scheduled-runs"
+        # schedule runs cleanup (24h)
+        assert calls[10][0][0] == timedelta(hours=24)
+        assert calls[10][1].get("name") == "cleanup-schedule-runs"
 
 
 class TestMcpOauthTask:
@@ -255,20 +268,6 @@ class TestMcpOauthTask:
 
         mock_worker.assert_called_once_with(ANY, {"server": "mcp"}, "user1")
         assert result == {"url": "http://auth"}
-
-
-class TestMcpOauthStatusTask:
-    @pytest.mark.unit
-    @patch("application.api.user.tasks.mcp_oauth_status")
-    def test_calls_mcp_oauth_status(self, mock_worker):
-        from application.api.user.tasks import mcp_oauth_status_task
-
-        mock_worker.return_value = {"status": "authorized"}
-
-        result = mcp_oauth_status_task("task123")
-
-        mock_worker.assert_called_once_with(ANY, "task123")
-        assert result == {"status": "authorized"}
 
 
 class TestDurableTaskRetryPolicy:
@@ -302,10 +301,10 @@ class TestDurableTaskRetryPolicy:
             "schedule_syncs",
             "sync_source",
             "mcp_oauth_task",
-            "mcp_oauth_status_task",
             "cleanup_pending_tool_state",
             "reconciliation_task",
             "version_check_task",
+            "cleanup_orphan_memories",
         ],
     )
     def test_short_periodic_tasks_have_no_retry_config(self, task_name):
@@ -438,6 +437,159 @@ class TestCleanupPendingToolState:
         }
 
 
+class TestCleanupMessageEventsTask:
+    """Retention janitor delegates to MessageEventsRepository.cleanup_older_than."""
+
+    @pytest.mark.unit
+    def test_skips_when_postgres_uri_missing(self, monkeypatch):
+        from application.api.user.tasks import cleanup_message_events
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "POSTGRES_URI", None, raising=False)
+
+        result = cleanup_message_events.run()
+        assert result == {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    @pytest.mark.unit
+    def test_deletes_rows_past_retention_window(self, pg_conn, monkeypatch):
+        import uuid
+
+        from sqlalchemy import text as _text
+
+        from application.api.user.tasks import cleanup_message_events
+        from application.core.settings import settings
+        from application.storage.db.repositories.message_events import (
+            MessageEventsRepository,
+        )
+
+        # Seed parent rows so the FK on message_events holds.
+        user_id = f"user-{uuid.uuid4().hex[:8]}"
+        conv_id = uuid.uuid4()
+        msg_id = uuid.uuid4()
+        pg_conn.execute(
+            _text("INSERT INTO users (user_id) VALUES (:u)"),
+            {"u": user_id},
+        )
+        pg_conn.execute(
+            _text(
+                "INSERT INTO conversations (id, user_id, name) "
+                "VALUES (:id, :u, 'test')"
+            ),
+            {"id": conv_id, "u": user_id},
+        )
+        pg_conn.execute(
+            _text(
+                "INSERT INTO conversation_messages (id, conversation_id, "
+                "user_id, position) VALUES (:id, :c, :u, 0)"
+            ),
+            {"id": msg_id, "c": conv_id, "u": user_id},
+        )
+
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(str(msg_id), 0, "answer", {"chunk": "stale"})
+        repo.record(str(msg_id), 1, "answer", {"chunk": "fresh"})
+        # Backdate seq=0 past the default 14-day retention so the
+        # janitor catches it; seq=1 stays at "now" and must survive.
+        pg_conn.execute(
+            _text(
+                "UPDATE message_events SET created_at = now() - interval '20 days' "
+                "WHERE message_id = CAST(:id AS uuid) AND sequence_no = 0"
+            ),
+            {"id": str(msg_id)},
+        )
+
+        monkeypatch.setattr(
+            settings, "POSTGRES_URI", "postgresql://stub", raising=False
+        )
+
+        @contextmanager
+        def _fake_begin():
+            yield pg_conn
+
+        fake_engine = MagicMock()
+        fake_engine.begin = _fake_begin
+
+        with patch(
+            "application.storage.db.engine.get_engine",
+            return_value=fake_engine,
+        ):
+            result = cleanup_message_events.run()
+
+        assert result == {
+            "deleted": 1,
+            "ttl_days": settings.MESSAGE_EVENTS_RETENTION_DAYS,
+        }
+        # Only the fresh row survives.
+        rows = repo.read_after(str(msg_id))
+        assert [r["sequence_no"] for r in rows] == [1]
+
+
+class TestCleanupOrphanMemoriesTask:
+    """Sweeps orphan memories from the FK-to-trigger orphan window."""
+
+    @pytest.mark.unit
+    def test_skips_when_postgres_uri_missing(self, monkeypatch):
+        from application.api.user.tasks import cleanup_orphan_memories
+        from application.core.settings import settings
+
+        monkeypatch.setattr(settings, "POSTGRES_URI", None, raising=False)
+
+        result = cleanup_orphan_memories.run()
+        assert result == {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    @pytest.mark.unit
+    def test_deletes_orphan_keeps_synthetic_and_live(
+        self, pg_conn, monkeypatch
+    ):
+        import uuid
+
+        from sqlalchemy import text as _text
+
+        from application.agents.default_tools import default_tool_id
+        from application.api.user.tasks import cleanup_orphan_memories
+        from application.core.settings import settings
+        from application.storage.db.repositories.memories import (
+            MemoriesRepository,
+        )
+
+        repo = MemoriesRepository(pg_conn)
+        synthetic_id = default_tool_id("memory")
+        live_id = str(
+            pg_conn.execute(
+                _text(
+                    "INSERT INTO user_tools (user_id, name) "
+                    "VALUES ('u-task-mem', 'memory') RETURNING id"
+                )
+            ).scalar()
+        )
+        orphan_id = str(uuid.uuid4())
+        repo.upsert("u-task-mem", synthetic_id, "/syn.txt", "keep")
+        repo.upsert("u-task-mem", live_id, "/live.txt", "keep")
+        repo.upsert("u-task-mem", orphan_id, "/orphan.txt", "drop")
+
+        monkeypatch.setattr(
+            settings, "POSTGRES_URI", "postgresql://stub", raising=False
+        )
+
+        @contextmanager
+        def _fake_begin():
+            yield pg_conn
+
+        fake_engine = MagicMock()
+        fake_engine.begin = _fake_begin
+
+        with patch(
+            "application.storage.db.engine.get_engine",
+            return_value=fake_engine,
+        ):
+            result = cleanup_orphan_memories.run()
+
+        assert result == {"deleted": 1}
+        assert repo.get_by_path("u-task-mem", synthetic_id, "/syn.txt")
+        assert repo.get_by_path("u-task-mem", live_id, "/live.txt")
+        assert repo.get_by_path("u-task-mem", orphan_id, "/orphan.txt") is None
+
+
 class TestIngestIdempotency:
     """Same short-circuit applies to the ingest task path."""
 
@@ -449,7 +601,7 @@ class TestIngestIdempotency:
 
         def _fake_worker(self, directory, formats, job_name, file_path,
                          filename, user, file_name_map=None,
-                         idempotency_key=None):
+                         idempotency_key=None, source_id=None):
             worker_calls.append(filename)
             return {"status": "ok", "directory": directory}
 
@@ -469,3 +621,63 @@ class TestIngestIdempotency:
         assert first == second
         assert first == {"status": "ok", "directory": "dir"}
         assert len(worker_calls) == 1
+
+
+class TestIngestPoisonEvent:
+    """The poison hook publishes a terminal source.ingest.failed so the
+    upload toast resolves instead of hanging on "training".
+    """
+
+    @pytest.mark.unit
+    def test_publishes_failed_event(self):
+        from application.api.user.tasks import _emit_ingest_poison_event
+
+        published = []
+
+        def _fake_publish(user, event_type, payload, *, scope=None):
+            published.append((user, event_type, payload, scope))
+
+        with patch(
+            "application.events.publisher.publish_user_event",
+            side_effect=_fake_publish,
+        ):
+            _emit_ingest_poison_event(
+                "ingest",
+                {"user": "u1", "source_id": "src-9", "filename": "doc.pdf"},
+            )
+
+        assert len(published) == 1
+        user, event_type, payload, scope = published[0]
+        assert user == "u1"
+        assert event_type == "source.ingest.failed"
+        assert payload["source_id"] == "src-9"
+        assert payload["filename"] == "doc.pdf"
+        assert payload["operation"] == "upload"
+        assert scope == {"kind": "source", "id": "src-9"}
+
+    @pytest.mark.unit
+    def test_skips_when_source_id_missing(self):
+        from application.api.user.tasks import _emit_ingest_poison_event
+
+        with patch(
+            "application.events.publisher.publish_user_event",
+        ) as mock_publish:
+            _emit_ingest_poison_event("ingest", {"user": "u1"})
+
+        mock_publish.assert_not_called()
+
+    @pytest.mark.unit
+    def test_reingest_uses_reingest_operation(self):
+        from application.api.user.tasks import _emit_ingest_poison_event
+
+        published = []
+        with patch(
+            "application.events.publisher.publish_user_event",
+            side_effect=lambda *a, **k: published.append((a, k)),
+        ):
+            _emit_ingest_poison_event(
+                "reingest_source_task",
+                {"user": "u1", "source_id": "src-r"},
+            )
+
+        assert published[0][0][2]["operation"] == "reingest"

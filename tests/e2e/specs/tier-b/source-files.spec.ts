@@ -1,5 +1,5 @@
 /**
- * Phase 3 Tier-B · source-files (B5) — POST /api/manage_source_files.
+ * Tier-B · source-files (B5) — POST /api/manage_source_files.
  *
  * Exercises the three `operation` branches in
  * `application/api/user/sources/upload.py::ManageSourceFiles`:

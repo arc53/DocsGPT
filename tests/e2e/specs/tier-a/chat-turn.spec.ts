@@ -1,7 +1,7 @@
 /**
- * Phase 2 — P2-07 · chat turn save (the HOTTEST migration path).
+ * P2-07 · chat turn save (the HOTTEST migration path).
  *
- * A single /stream call is responsible for writes to FOUR Tier-1 tables:
+ * A single /stream call is responsible for writes to FOUR core tables:
  *
  *   - `conversations`          (1 row per new conversation)
  *   - `conversation_messages`  (1 row per turn — prompt AND response in the
@@ -186,7 +186,7 @@ test.describe('tier-a · chat turn save', () => {
     await resetDb();
   });
 
-  test('single chat turn via UI writes to all four Tier-1 tables and reload rehydrates the conversation', async ({
+  test('single chat turn via UI writes to all four core tables and reload rehydrates the conversation', async ({
     browser,
   }) => {
     const { context, sub } = await newUserContext(browser);

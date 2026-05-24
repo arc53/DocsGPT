@@ -1,4 +1,4 @@
-"""Tests for client-side tools (Phase 2).
+"""Tests for client-side tools.
 
 Covers merge_client_tools, prepare_tools_for_llm with client tools,
 check_pause for client-side tools, and the full flow through the handler.

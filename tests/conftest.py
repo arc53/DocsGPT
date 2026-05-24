@@ -15,9 +15,9 @@ their own conftest to point at a real, long-running Postgres instance
 tests and are marked with ``@pytest.mark.integration``.
 
 No mongomock. The ``mock_mongo_db`` fixture that used to live here was
-removed as part of the Phase 4/5 Mongo→Postgres cutover. Tests that
-still reference it will fail with "fixture not found" until the
-corresponding route handler is migrated to a repository read.
+removed as part of the Mongo→Postgres cutover. Tests that still
+reference it will fail with "fixture not found" until the corresponding
+route handler is migrated to a repository read.
 """
 
 from __future__ import annotations

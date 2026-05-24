@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useSelector, useStore } from 'react-redux';
 
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
@@ -14,6 +14,7 @@ import { useLoaderState, useOutsideAlerter } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
+import type { RootState } from '../store';
 import { formatBytes } from '../utils/stringUtils';
 import Chunks from './Chunks';
 import ContextMenu, { MenuOption } from './ContextMenu';
@@ -64,6 +65,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
     useState<DirectoryStructure | null>(null);
   const [currentPath, setCurrentPath] = useState<string[]>([]);
   const token = useSelector(selectToken);
+  const store = useStore<RootState>();
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const menuRefs = useRef<{
     [key: string]: React.RefObject<HTMLDivElement | null>;
@@ -81,6 +83,25 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   const [syncDone, setSyncDone] = useState<boolean>(false);
   const [syncConfirmationModal, setSyncConfirmationModal] =
     useState<ActiveState>('INACTIVE');
+  const mountedRef = useRef(true);
+  const syncUnsubscribeRef = useRef<(() => void) | null>(null);
+  // Holds the 5-minute SSE-wait timer so the unmount cleanup can clear
+  // it — otherwise the timer fires up to 5 min after unmount and
+  // resolves an abandoned Promise.
+  const syncTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+      syncUnsubscribeRef.current?.();
+      syncUnsubscribeRef.current = null;
+      if (syncTimerRef.current !== null) {
+        window.clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = null;
+      }
+    },
+    [],
+  );
 
   useOutsideAlerter(
     searchDropdownRef,
@@ -116,67 +137,108 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
         console.log('Sync started successfully:', data.task_id);
         setSyncProgress(10);
 
-        // Poll task status using userService
-        const maxAttempts = 30;
-        const pollInterval = 2000;
+        // The connector worker (``ingest_connector`` in
+        // ``application/worker.py``) publishes
+        // ``source.ingest.{queued,completed,failed}`` envelopes keyed on
+        // ``scope.id == docId`` (sync mode reuses the source uuid). Wait
+        // on the bounded ``notifications.recentEvents`` ring for a
+        // terminal envelope rather than polling ``/task_status``.
+        // Mirrors FileTree's slice-walking pattern, including the
+        // ``opStartedAt`` guard so a stale terminal event from a prior
+        // sync of this same source can't short-circuit the current op.
+        const opStartedAt = Date.now();
 
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const terminalFromSse = (): 'completed' | 'failed' | null => {
+          const events = store.getState().notifications.recentEvents;
+          for (const event of events) {
+            if (event.scope?.id !== docId) continue;
+            const ts = event.ts ? Date.parse(event.ts) : NaN;
+            if (!Number.isFinite(ts) || ts < opStartedAt) continue;
+            if (event.type === 'source.ingest.completed') return 'completed';
+            if (event.type === 'source.ingest.failed') return 'failed';
+          }
+          return null;
+        };
+
+        const MAX_WAIT_MS = 5 * 60_000;
+        const terminal = await new Promise<
+          'completed' | 'failed' | 'timeout' | 'unmounted'
+        >((resolve) => {
+          // Cover the race where the event landed between the POST
+          // returning and the subscribe call.
+          const initial = terminalFromSse();
+          if (initial) {
+            resolve(initial);
+            return;
+          }
+          if (!mountedRef.current) {
+            resolve('unmounted');
+            return;
+          }
+          let settled = false;
+          const finish = (
+            value: 'completed' | 'failed' | 'timeout' | 'unmounted',
+          ) => {
+            if (settled) return;
+            settled = true;
+            if (syncTimerRef.current !== null) {
+              window.clearTimeout(syncTimerRef.current);
+              syncTimerRef.current = null;
+            }
+            if (syncUnsubscribeRef.current) {
+              syncUnsubscribeRef.current();
+              syncUnsubscribeRef.current = null;
+            }
+            resolve(value);
+          };
+          syncTimerRef.current = window.setTimeout(
+            () => finish('timeout'),
+            MAX_WAIT_MS,
+          );
+          syncUnsubscribeRef.current = store.subscribe(() => {
+            if (!mountedRef.current) {
+              finish('unmounted');
+              return;
+            }
+            const next = terminalFromSse();
+            if (next) finish(next);
+          });
+        });
+
+        if (terminal === 'timeout') {
+          console.error('Sync timed out waiting for SSE terminal');
+        } else if (terminal === 'unmounted') {
+          return;
+        }
+
+        if (terminal === 'completed') {
+          // The "no files downloaded" early-return path publishes
+          // ``completed`` with ``no_changes: true`` — treated as success
+          // here; refreshing the directory is cheap and idempotent.
+          setSyncProgress(100);
+          console.log('Sync completed successfully');
+
           try {
-            const statusResponse = await userService.getTaskStatus(
-              data.task_id,
+            const refreshResponse = await userService.getDirectoryStructure(
+              docId,
               token,
             );
-            const statusData = await statusResponse.json();
-
-            console.log(
-              `Task status (attempt ${attempt + 1}):`,
-              statusData.status,
-            );
-
-            if (statusData.status === 'SUCCESS') {
-              setSyncProgress(100);
-              console.log('Sync completed successfully');
-
-              // Refresh directory structure
-              try {
-                const refreshResponse = await userService.getDirectoryStructure(
-                  docId,
-                  token,
-                );
-                const refreshData = await refreshResponse.json();
-                if (refreshData && refreshData.directory_structure) {
-                  setDirectoryStructure(refreshData.directory_structure);
-                  setCurrentPath([]);
-                }
-                if (refreshData && refreshData.provider) {
-                  setSourceProvider(refreshData.provider);
-                }
-
-                setSyncDone(true);
-                setTimeout(() => setSyncDone(false), 5000);
-              } catch (err) {
-                console.error('Error refreshing directory structure:', err);
-              }
-              break;
-            } else if (statusData.status === 'FAILURE') {
-              console.error('Sync task failed:', statusData.result);
-              break;
-            } else if (statusData.status === 'PROGRESS') {
-              const progress = Number(
-                statusData.result && statusData.result.current != null
-                  ? statusData.result.current
-                  : statusData.meta && statusData.meta.current != null
-                    ? statusData.meta.current
-                    : 0,
-              );
-              setSyncProgress(Math.max(10, progress));
+            const refreshData = await refreshResponse.json();
+            if (refreshData && refreshData.directory_structure) {
+              setDirectoryStructure(refreshData.directory_structure);
+              setCurrentPath([]);
+            }
+            if (refreshData && refreshData.provider) {
+              setSourceProvider(refreshData.provider);
             }
 
-            await new Promise((resolve) => setTimeout(resolve, pollInterval));
-          } catch (error) {
-            console.error('Error polling task status:', error);
-            break;
+            setSyncDone(true);
+            setTimeout(() => setSyncDone(false), 5000);
+          } catch (err) {
+            console.error('Error refreshing directory structure:', err);
           }
+        } else if (terminal === 'failed') {
+          console.error('Sync task failed (per SSE)');
         }
       } else {
         console.error('Sync failed:', data.error);

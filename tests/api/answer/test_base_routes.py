@@ -343,6 +343,50 @@ class TestProcessResponseStreamExtended:
             result = resource.process_response_stream(iter(stream))
             assert result["thought"] == "thinking..."
 
+    def test_handles_id_prefixed_chunks(self, mock_mongo_db, flask_app):
+        """``complete_stream`` emits ``id: <seq>\\n`` before each
+        ``data:`` line so reconnects can resume. The non-streaming
+        ``/api/answer`` consumer must skip the ``id:`` header (and the
+        informational ``message_id`` event) without breaking JSON
+        decoding.
+        """
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            stream = [
+                'id: 0\n'
+                f'data: {json.dumps({"type": "message_id", "message_id": "abc"})}\n\n',
+                'id: 1\n'
+                f'data: {json.dumps({"type": "answer", "answer": "Hello "})}\n\n',
+                'id: 2\n'
+                f'data: {json.dumps({"type": "answer", "answer": "world"})}\n\n',
+                'id: 3\n'
+                f'data: {json.dumps({"type": "id", "id": "conv-1"})}\n\n',
+                'id: 4\n'
+                f'data: {json.dumps({"type": "end"})}\n\n',
+            ]
+            result = resource.process_response_stream(iter(stream))
+            assert result["error"] is None
+            assert result["answer"] == "Hello world"
+            assert result["conversation_id"] == "conv-1"
+
+    def test_skips_keepalive_comment_lines(self, mock_mongo_db, flask_app):
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            stream = [
+                ': keepalive\n\n',
+                'id: 0\n'
+                f'data: {json.dumps({"type": "answer", "answer": "ok"})}\n\n',
+                'id: 1\n'
+                f'data: {json.dumps({"type": "end"})}\n\n',
+            ]
+            result = resource.process_response_stream(iter(stream))
+            assert result["answer"] == "ok"
+            assert result["error"] is None
+
 
 @pytest.mark.unit
 class TestCheckUsageStringBooleans:
@@ -593,6 +637,251 @@ class TestCompleteStreamGeneratorExit:
             next(gen)
             gen.close()  # Should not crash even with save error
 
+    def test_generator_exit_before_any_response_journals_error_not_end(
+        self, mock_mongo_db, flask_app,
+    ):
+        """A client disconnect right after the early ``message_id`` frame
+        leaves ``response_full`` empty, so finalize never runs. The abort
+        handler must journal ``error`` (not ``end``) and flip the row to
+        ``failed`` — otherwise a reconnecting client sees a terminal
+        ``end`` for a row whose DB status is still non-terminal and the
+        UI parks on a blank successful answer.
+        """
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+
+            # An agent that's primed but never yields anything before the
+            # client disconnects — keeps ``response_full`` empty.
+            def gen_never_yields():
+                if False:
+                    yield  # pragma: no cover
+                return
+
+            mock_agent.gen.return_value = gen_never_yields()
+            mock_agent.compression_metadata = None
+            mock_agent.compression_saved = False
+            mock_agent.tool_calls = []
+
+            resource.conversation_service = MagicMock()
+            resource.conversation_service.save_user_question.return_value = {
+                "conversation_id": "conv1",
+                "message_id": "msg1",
+                "request_id": "req1",
+            }
+
+            journaled: list[tuple] = []
+
+            def _capture_record(message_id, sequence_no, event_type, payload):
+                journaled.append((message_id, sequence_no, event_type, payload))
+                return True
+
+            with patch(
+                "application.api.answer.routes.base.record_event",
+                side_effect=_capture_record,
+            ):
+                gen = resource.complete_stream(
+                    question="Q",
+                    agent=mock_agent,
+                    conversation_id="conv1",
+                    user_api_key=None,
+                    decoded_token={"sub": "u"},
+                    should_save_conversation=True,
+                    model_id="gpt-4",
+                )
+                # Drain the early ``message_id`` event, then close before
+                # the agent yields anything.
+                next(gen)
+                gen.close()
+
+            # The early message_id frame got journaled (seq 0); the abort
+            # handler must follow with an ``error`` event (NOT ``end``).
+            terminal_events = [
+                (et, pl) for (_, _, et, pl) in journaled if et in ("end", "error")
+            ]
+            assert len(terminal_events) == 1, (
+                f"expected exactly one terminal journal write, got {terminal_events}"
+            )
+            assert terminal_events[0][0] == "error", (
+                f"expected ``error`` terminal but got ``end``: {terminal_events}"
+            )
+            payload = terminal_events[0][1]
+            assert payload.get("type") == "error"
+            assert payload.get("code") == "client_disconnect"
+
+            # And the DB row should have been flipped to ``failed`` via
+            # finalize_message. The mocked service records the call.
+            finalize_calls = (
+                resource.conversation_service.finalize_message.call_args_list
+            )
+            assert len(finalize_calls) == 1
+            assert finalize_calls[0].kwargs.get("status") == "failed"
+
+    def test_generator_exit_after_response_still_journals_end(
+        self, mock_mongo_db, flask_app,
+    ):
+        """Regression guard: a disconnect AFTER partial response was
+        produced and ``finalize_message`` succeeded must still journal
+        ``end`` (the row matches ``complete``). Only the empty-response
+        branch flips to ``error``.
+        """
+        from application.api.answer.routes.base import BaseAnswerResource
+        from application.storage.db.repositories.conversations import (
+            MessageUpdateOutcome,
+        )
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+
+            def gen_answers():
+                yield {"answer": "partial"}
+
+            mock_agent.gen.return_value = gen_answers()
+            mock_agent.compression_metadata = None
+            mock_agent.compression_saved = False
+            mock_agent.tool_calls = []
+
+            resource.conversation_service = MagicMock()
+            resource.conversation_service.finalize_message.return_value = (
+                MessageUpdateOutcome.UPDATED
+            )
+            resource.conversation_service.save_user_question.return_value = {
+                "conversation_id": "conv1",
+                "message_id": "msg1",
+                "request_id": "req1",
+            }
+
+            journaled: list[tuple] = []
+
+            def _capture_record(message_id, sequence_no, event_type, payload):
+                journaled.append((message_id, sequence_no, event_type, payload))
+                return True
+
+            with patch(
+                "application.api.answer.routes.base.record_event",
+                side_effect=_capture_record,
+            ):
+                gen = resource.complete_stream(
+                    question="Q",
+                    agent=mock_agent,
+                    conversation_id="conv1",
+                    user_api_key=None,
+                    decoded_token={"sub": "u"},
+                    should_save_conversation=True,
+                    model_id="gpt-4",
+                )
+                next(gen)  # message_id frame
+                next(gen)  # answer frame (consumes ``partial``)
+                gen.close()
+
+            terminal_events = [
+                (et, pl) for (_, _, et, pl) in journaled if et in ("end", "error")
+            ]
+            assert terminal_events and terminal_events[0][0] == "end", (
+                f"finalize succeeded but abort journaled {terminal_events}"
+            )
+
+    def test_generator_exit_after_normal_finalize_already_complete_journals_end(
+        self, mock_mongo_db, flask_app,
+    ):
+        """Regression for the race where the normal-path finalize wins
+        against a client disconnect.
+
+        Trace: agent finishes, ``complete_stream`` runs the normal-path
+        ``finalize_message`` at base.py:632 and flips the row to
+        ``complete``. The client TCP-resets before the ``end`` frame can
+        be journaled. The GeneratorExit handler calls ``finalize_message``
+        again — and the repository, gated by ``only_if_non_terminal``,
+        reports ``ALREADY_COMPLETE`` because the row is already at the
+        target state. The abort handler must journal ``end``, not
+        ``error``: the DB says ``complete``, the reconnecting client
+        must see the same.
+
+        Without the fix the abort handler treated ``ALREADY_COMPLETE``
+        as a failure and journaled ``error`` — a reconnect would then
+        replay a successful completion as a failed answer.
+        """
+        from application.api.answer.routes.base import BaseAnswerResource
+        from application.storage.db.repositories.conversations import (
+            MessageUpdateOutcome,
+        )
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+
+            def gen_answers():
+                yield {"answer": "partial"}
+
+            mock_agent.gen.return_value = gen_answers()
+            mock_agent.compression_metadata = None
+            mock_agent.compression_saved = False
+            mock_agent.tool_calls = []
+
+            resource.conversation_service = MagicMock()
+            # Normal-path call returns UPDATED; abort-handler call sees
+            # the row already terminal and returns ALREADY_COMPLETE.
+            resource.conversation_service.finalize_message.side_effect = [
+                MessageUpdateOutcome.UPDATED,
+                MessageUpdateOutcome.ALREADY_COMPLETE,
+            ]
+            resource.conversation_service.save_user_question.return_value = {
+                "conversation_id": "conv1",
+                "message_id": "msg1",
+                "request_id": "req1",
+            }
+
+            journaled: list[tuple] = []
+
+            def _capture_record(message_id, sequence_no, event_type, payload):
+                journaled.append((message_id, sequence_no, event_type, payload))
+                return True
+
+            with patch(
+                "application.api.answer.routes.base.record_event",
+                side_effect=_capture_record,
+            ):
+                gen = resource.complete_stream(
+                    question="Q",
+                    agent=mock_agent,
+                    conversation_id="conv1",
+                    user_api_key=None,
+                    decoded_token={"sub": "u"},
+                    should_save_conversation=True,
+                    model_id="gpt-4",
+                )
+                next(gen)  # message_id frame
+                next(gen)  # answer frame
+                # Pull the ``id`` frame so the normal-path finalize at
+                # line 632 actually runs (it sits between the answer
+                # frame yield and the id frame yield).
+                next(gen)  # id frame — runs normal-path finalize first
+                gen.close()  # GeneratorExit at the id frame yield
+
+            terminal_events = [
+                (et, pl) for (_, _, et, pl) in journaled if et in ("end", "error")
+            ]
+            assert len(terminal_events) == 1, (
+                f"expected exactly one terminal journal write, got "
+                f"{terminal_events}"
+            )
+            assert terminal_events[0][0] == "end", (
+                f"row was already ``complete`` but abort journaled "
+                f"{terminal_events[0]} — reconnect would surface a "
+                f"successful answer as failed"
+            )
+
+            # Both finalize_message calls were made: the normal-path
+            # one and the abort-handler one. Asserting on side_effect
+            # consumption ensures the test really exercised both
+            # branches.
+            assert (
+                resource.conversation_service.finalize_message.call_count == 2
+            )
+
 
 @contextmanager
 def _patch_db_session(conn):
@@ -606,8 +895,32 @@ def _patch_db_session(conn):
     ), patch(
         "application.api.answer.services.conversation_service.db_readonly",
         _yield,
+    ), patch(
+        # ``record_event`` opens its own short-lived ``db_session`` for
+        # cross-connection visibility. In tests we route it back to the
+        # same ``pg_conn`` so the journal write can see the message row
+        # the conversation_service just wrote in this transaction.
+        "application.streaming.message_journal.db_session",
+        _yield,
+    ), patch(
+        # ``complete_stream`` reads ``latest_sequence_no`` via
+        # ``db_readonly`` to seed continuation runs. Same patch reason
+        # as the journal — keep the read on the same pg_conn so it sees
+        # uncommitted writes from this transaction.
+        "application.api.answer.routes.base.db_readonly",
+        _yield,
     ):
         yield
+
+
+def _extract_sse_data(chunk: str) -> str:
+    """Pull the ``data:`` payload from an SSE record, ignoring any
+    ``id:`` header introduced by the journal wiring.
+    """
+    for line in chunk.split("\n"):
+        if line.startswith("data:"):
+            return line[len("data:") :].lstrip()
+    return ""
 
 
 @pytest.mark.unit
@@ -659,6 +972,158 @@ class TestCompleteStreamWalAcceptance:
             assert "RuntimeError" in msgs[0]["metadata"]["error"]
             assert "LLM upstream failed" in msgs[0]["metadata"]["error"]
 
+    def test_tool_approval_event_only_fires_when_state_saved(
+        self, pg_conn, flask_app,
+    ):
+        """A `tool.approval.required` notification with no resumable
+        ``pending_tool_state`` row would deep-link the user to a 404.
+        Gate the publish on save_state actually committing.
+        """
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+            # Drive the agent into the paused branch with a single
+            # ``tool_calls_pending`` event.
+            mock_agent.gen.return_value = iter(
+                [
+                    {
+                        "type": "tool_calls_pending",
+                        "data": {"pending_tool_calls": [{"call_id": "c1"}]},
+                    }
+                ]
+            )
+            mock_agent._pending_continuation = {
+                "messages": [],
+                "tools_dict": {},
+                "pending_tool_calls": [{"call_id": "c1"}],
+            }
+            mock_agent.tool_calls = []
+            mock_agent.compression_metadata = None
+            mock_agent.compression_saved = False
+
+            published: list = []
+
+            def _capture(*args, **kwargs):
+                published.append(args)
+
+            with _patch_db_session(pg_conn), patch(
+                "application.api.answer.routes.base.publish_user_event",
+                side_effect=_capture,
+            ), patch(
+                "application.api.answer.services.continuation_service."
+                "ContinuationService.save_state",
+                side_effect=RuntimeError("PG outage"),
+            ):
+                list(
+                    resource.complete_stream(
+                        question="run my tool",
+                        agent=mock_agent,
+                        conversation_id=None,
+                        user_api_key=None,
+                        decoded_token={"sub": "u-tap"},
+                        should_save_conversation=True,
+                        model_id="gpt-4",
+                    )
+                )
+
+            # No tool.approval.required publish when save_state failed.
+            event_types = [a[1] for a in published if len(a) >= 2]
+            assert "tool.approval.required" not in event_types
+
+    def test_continuation_seeds_sequence_no_from_journal_high_water_mark(
+        self, pg_conn, flask_app,
+    ):
+        """A resumed (tool-actions) stream must continue numbering past
+        the original run's max ``sequence_no``. Otherwise the second
+        invocation collides on the duplicate-PK and silently drops
+        every journal write past the resume point.
+
+        We pre-seed the journal with synthetic rows simulating an
+        original run, then invoke ``complete_stream`` with
+        ``_continuation`` set and assert seq numbering picks up past
+        the high-water mark.
+        """
+        import uuid as _uuid
+
+        from sqlalchemy import text as sql_text
+
+        from application.api.answer.routes.base import BaseAnswerResource
+        from application.storage.db.repositories.message_events import (
+            MessageEventsRepository,
+        )
+
+        # Pre-seed: insert a parent conversation + message + a few
+        # journal rows so latest_sequence_no returns 7.
+        user_id = "u-resume"
+        conv_id = _uuid.uuid4()
+        message_id = _uuid.uuid4()
+        pg_conn.execute(
+            sql_text("INSERT INTO users (user_id) VALUES (:u)"),
+            {"u": user_id},
+        )
+        pg_conn.execute(
+            sql_text(
+                "INSERT INTO conversations (id, user_id, name) "
+                "VALUES (:id, :u, 'pre-seed')"
+            ),
+            {"id": conv_id, "u": user_id},
+        )
+        pg_conn.execute(
+            sql_text(
+                "INSERT INTO conversation_messages "
+                "(id, conversation_id, user_id, position, prompt) "
+                "VALUES (:id, :c, :u, 0, 'q')"
+            ),
+            {"id": message_id, "c": conv_id, "u": user_id},
+        )
+        repo = MessageEventsRepository(pg_conn)
+        for seq in range(8):  # rows 0..7
+            repo.record(str(message_id), seq, "answer", {"chunk": str(seq)})
+        original_max = repo.latest_sequence_no(str(message_id))
+        assert original_max == 7
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            cont_agent = MagicMock()
+            cont_agent.gen_continuation.return_value = iter(
+                [{"answer": "d"}, {"answer": "e"}]
+            )
+            cont_agent.tool_calls = []
+            cont_agent.compression_metadata = None
+            cont_agent.compression_saved = False
+            cont_agent.tool_executor = None
+
+            with _patch_db_session(pg_conn):
+                list(
+                    resource.complete_stream(
+                        question="",
+                        agent=cont_agent,
+                        conversation_id=str(conv_id),
+                        user_api_key=None,
+                        decoded_token={"sub": user_id},
+                        should_save_conversation=True,
+                        model_id="gpt-4",
+                        _continuation={
+                            "messages": [],
+                            "tools_dict": {},
+                            "pending_tool_calls": [],
+                            "tool_actions": [],
+                            "reserved_message_id": str(message_id),
+                            "request_id": "req-resume",
+                        },
+                    )
+                )
+
+        new_max = MessageEventsRepository(pg_conn).latest_sequence_no(
+            str(message_id)
+        )
+        # Continuation extended the journal — the new high-water mark
+        # is strictly greater than the seeded ``original_max=7``,
+        # confirming the allocator picked up past the resume point.
+        assert new_max is not None and new_max > original_max
+
     def test_request_id_consistent_across_sse_event_and_wal_row(
         self, pg_conn, flask_app,
     ):
@@ -694,9 +1159,9 @@ class TestCompleteStreamWalAcceptance:
                 )
 
             sse_events = [
-                json.loads(s.replace("data: ", "").strip())
+                json.loads(_extract_sse_data(s))
                 for s in stream
-                if s.startswith("data: ")
+                if "data:" in s
             ]
             early_events = [e for e in sse_events if e.get("type") == "message_id"]
             assert len(early_events) == 1
@@ -712,3 +1177,102 @@ class TestCompleteStreamWalAcceptance:
             msgs = ConversationsRepository(pg_conn).get_messages(str(convs[0][0]))
             assert len(msgs) == 1
             assert msgs[0]["request_id"] == sse_request_id
+
+
+@pytest.mark.unit
+class TestStreamingHeartbeatSeed:
+    """Regression guard: when the row flips to ``streaming`` we must seed
+    ``last_heartbeat_at`` so the watchdog doesn't fall back to
+    ``timestamp`` (creation time) on slow LLM cold-starts (>idle_secs).
+    """
+
+    def test_heartbeat_seeded_on_first_chunk(self, mock_mongo_db, flask_app):
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+            mock_agent.gen.return_value = iter(
+                [{"answer": "a"}, {"answer": "b"}]
+            )
+            mock_agent.compression_metadata = None
+            mock_agent.compression_saved = False
+            mock_agent.tool_calls = []
+            mock_agent.tool_executor = None
+
+            resource.conversation_service = MagicMock()
+            resource.conversation_service.save_conversation.return_value = "conv1"
+            resource.conversation_service.save_user_question.return_value = {
+                "conversation_id": "conv1",
+                "message_id": "msg1",
+                "request_id": "req1",
+            }
+
+            list(
+                resource.complete_stream(
+                    question="Q",
+                    agent=mock_agent,
+                    conversation_id="conv1",
+                    user_api_key=None,
+                    decoded_token={"sub": "u"},
+                    should_save_conversation=True,
+                    model_id="gpt-4",
+                )
+            )
+
+            # update_message_status flips the row to ``streaming`` exactly
+            # once (idempotent via streaming_marked).
+            status_calls = [
+                c for c in resource.conversation_service
+                .update_message_status.call_args_list
+                if c.args[1] == "streaming"
+            ]
+            assert len(status_calls) == 1
+            assert status_calls[0].args[0] == "msg1"
+
+            # heartbeat seed runs exactly once at the same flip — multiple
+            # chunks don't re-stamp inside this window (the throttled
+            # _heartbeat_streaming path is gated by STREAM_HEARTBEAT_INTERVAL).
+            hb_calls = (
+                resource.conversation_service.heartbeat_message.call_args_list
+            )
+            assert len(hb_calls) == 1
+            assert hb_calls[0].args[0] == "msg1"
+
+    def test_heartbeat_seed_skipped_without_reserved_message_id(
+        self, mock_mongo_db, flask_app,
+    ):
+        """No DB-backed message row → no heartbeat call (and no error)."""
+        from application.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+            mock_agent.gen.return_value = iter([{"answer": "a"}])
+            mock_agent.compression_metadata = None
+            mock_agent.compression_saved = False
+            mock_agent.tool_calls = []
+            mock_agent.tool_executor = None
+
+            resource.conversation_service = MagicMock()
+            resource.conversation_service.save_conversation.return_value = "conv1"
+            # save_user_question returns no message_id → reservation absent
+            resource.conversation_service.save_user_question.return_value = {
+                "conversation_id": "conv1",
+                "message_id": None,
+                "request_id": "req1",
+            }
+
+            list(
+                resource.complete_stream(
+                    question="Q",
+                    agent=mock_agent,
+                    conversation_id="conv1",
+                    user_api_key=None,
+                    decoded_token={"sub": "u"},
+                    should_save_conversation=True,
+                    model_id="gpt-4",
+                )
+            )
+
+            resource.conversation_service.heartbeat_message.assert_not_called()

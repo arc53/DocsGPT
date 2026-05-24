@@ -1,5 +1,5 @@
 /**
- * Phase 1 — P1-C · simple_jwt auth flow.
+ * P1-C · simple_jwt auth flow.
  *
  * Covers e2e-plan.md §7.3: with `AUTH_TYPE=simple_jwt` the backend does NOT
  * issue tokens — the frontend shows `JWTModal`, the user pastes a

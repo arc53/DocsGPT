@@ -1,5 +1,5 @@
 /**
- * Phase 3 helper — upload / task_status polling primitives for Tier-B specs.
+ * Upload / task_status polling primitives shared across upload specs.
  *
  * These helpers wrap the two patterns that recur across B1/B3/B4/B5:
  *

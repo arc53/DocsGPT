@@ -17,7 +17,7 @@ import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import Pagination from '../components/DocumentPagination';
 import DropdownMenu from '../components/DropdownMenu';
 import SkeletonLoader from '../components/SkeletonLoader';
-import { useDarkTheme, useLoaderState } from '../hooks';
+import { useDarkTheme, useDebouncedValue, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
@@ -27,6 +27,12 @@ import {
   setSourceDocs,
 } from '../preferences/preferenceSlice';
 import Upload from '../upload/Upload';
+import {
+  addUploadTask,
+  removeUploadTask,
+  selectUploadTasks,
+  updateUploadTask,
+} from '../upload/uploadSlice';
 import { formatDate } from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
@@ -56,9 +62,10 @@ export default function Sources({
   const [isDarkTheme] = useDarkTheme();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
+  const uploadTasks = useSelector(selectUploadTasks);
 
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState<string>('');
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, 500);
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
   const [isOnboarding, setIsOnboarding] = useState<boolean>(false);
   const [loading, setLoading] = useLoaderState(false);
@@ -116,14 +123,6 @@ export default function Sources({
     docId: null,
     document: null,
   });
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
 
   const refreshDocs = useCallback(
     (
@@ -257,6 +256,57 @@ export default function Sources({
     }
   };
 
+  const handleReingest = async (doc: Doc) => {
+    if (!doc.id) {
+      return;
+    }
+    const sourceId = doc.id;
+    // Drop stale toast rows for this source (a finished/dismissed task
+    // would swallow the reingest's SSE events), then open a fresh one.
+    uploadTasks
+      .filter((task) => task.sourceId === sourceId)
+      .forEach((task) => dispatch(removeUploadTask(task.id)));
+    const reingestTaskId = `reingest-${sourceId}-${Date.now()}`;
+    dispatch(
+      addUploadTask({
+        id: reingestTaskId,
+        fileName: doc.name || sourceId,
+        progress: 0,
+        status: 'training',
+        sourceId,
+      }),
+    );
+    try {
+      const response = await userService.reingestSource(
+        { source_id: sourceId },
+        token,
+      );
+      const data = await response.json();
+      if (!data.success) {
+        console.error('Reingest failed:', data.error || data.message);
+        dispatch(
+          updateUploadTask({
+            id: reingestTaskId,
+            updates: {
+              status: 'failed',
+              errorMessage: data.error || data.message,
+            },
+          }),
+        );
+        return;
+      }
+      refreshDocs(undefined, currentPage, rowsPerPage);
+    } catch (error) {
+      console.error('Error reingesting source:', error);
+      dispatch(
+        updateUploadTask({
+          id: reingestTaskId,
+          updates: { status: 'failed' },
+        }),
+      );
+    }
+  };
+
   const [documentToDelete, setDocumentToDelete] = useState<{
     index: number;
     document: Doc;
@@ -290,6 +340,19 @@ export default function Sources({
         variant: 'primary',
       },
     ];
+
+    if (document.ingestStatus === 'failed') {
+      actions.push({
+        icon: SyncIcon,
+        label: t('settings.sources.reingest'),
+        onClick: () => {
+          handleReingest(document);
+        },
+        iconWidth: 14,
+        iconHeight: 14,
+        variant: 'primary',
+      });
+    }
 
     if (document.syncFrequency) {
       actions.push({
@@ -491,6 +554,16 @@ export default function Sources({
                       </div>
 
                       <div className="flex flex-col items-start justify-start gap-1">
+                        {document.ingestStatus === 'failed' && (
+                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] leading-[16px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                            {t('settings.sources.ingestFailed')}
+                          </span>
+                        )}
+                        {document.ingestStatus === 'processing' && (
+                          <span className="bg-muted-foreground/10 text-muted-foreground rounded-full px-2 py-0.5 text-[11px] leading-[16px] font-medium">
+                            {t('settings.sources.ingestProcessing')}
+                          </span>
+                        )}
                         <div className="flex items-center gap-2">
                           <img
                             src={CalendarIcon}

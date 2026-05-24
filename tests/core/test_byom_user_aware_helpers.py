@@ -572,6 +572,7 @@ class TestSharedAgentResolvesOwnerBYOM:
             sp = StreamProcessor.__new__(StreamProcessor)
             sp.data = {}
             sp.initial_user_id = "caller"
+            sp._agent_data = {"_id": "shared-agent", "user": "owner"}
             sp.agent_config = {
                 "user_id": "owner",
                 "default_model_id": owner_model["id"],

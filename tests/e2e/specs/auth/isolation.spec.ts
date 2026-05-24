@@ -1,8 +1,9 @@
 /**
- * Phase 1 — P1-C · cross-user isolation.
+ * P1-C · cross-user isolation.
  *
- * Covers the Phase 1 acceptance criterion: two freshly-minted users (A and
- * B) must not see each other's writes. User A creates a prompt; user B's
+ * Covers the cross-user isolation acceptance criterion: two
+ * freshly-minted users (A and B) must not see each other's writes.
+ * User A creates a prompt; user B's
  * `/api/get_prompts` must not include it, and the DB must report zero
  * `prompts` rows for user B.
  *

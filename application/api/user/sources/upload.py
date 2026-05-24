@@ -13,6 +13,7 @@ from sqlalchemy import text as sql_text
 from application.api import api
 from application.api.user.tasks import ingest, ingest_connector_task, ingest_remote
 from application.core.settings import settings
+from application.storage.db.source_ids import derive_source_id as _derive_source_id
 from application.parser.connectors.connector_creator import ConnectorCreator
 from application.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
 from application.storage.db.repositories.idempotency import IdempotencyRepository
@@ -69,7 +70,13 @@ def _claim_task_or_get_cached(key, task_name):
 
     Pre-generates the celery task_id so a losing writer sees the same
     id immediately. Returns ``(task_id, cached_response)``; non-None
-    cached means the caller should return without enqueuing.
+    cached means the caller should return without enqueuing. The
+    cached payload mirrors the fresh-request response shape (including
+    ``source_id``) so the frontend can correlate SSE ingest events to
+    the cached upload task without an extra round-trip — but only when
+    the cached row actually exists; the "deduplicated" sentinel
+    deliberately omits ``source_id`` so the frontend doesn't bind to a
+    phantom source.
     """
     predetermined_id = str(uuid.uuid4())
     with db_session() as conn:
@@ -81,10 +88,16 @@ def _claim_task_or_get_cached(key, task_name):
     with db_readonly() as conn:
         existing = IdempotencyRepository(conn).get_task(key)
     cached_id = existing.get("task_id") if existing else None
-    return None, {
+    payload: dict = {
         "success": True,
         "task_id": cached_id or "deduplicated",
     }
+    # Only surface ``source_id`` when there's a real winner whose worker
+    # is publishing SSE events tagged with that id. The "deduplicated"
+    # branch means the lock row vanished — we have nothing to correlate.
+    if cached_id is not None:
+        payload["source_id"] = str(_derive_source_id(key))
+    return None, payload
 
 
 def _release_claim(key):
@@ -236,6 +249,15 @@ class UploadFile(Resource):
                         file_path = f"{base_path}/{safe_file}"
                         with open(temp_file_path, "rb") as f:
                             storage.save_file(f, file_path)
+            # Mint the source UUID up here so the HTTP response and the
+            # worker's SSE envelopes share one id. With an idempotency
+            # key we reuse the deterministic uuid5 (retried task lands on
+            # the same source row); without a key we fall back to uuid4.
+            # The worker is told to use this id verbatim — see
+            # ``ingest_worker(source_id=...)``.
+            source_uuid = (
+                _derive_source_id(scoped_key) if scoped_key else uuid.uuid4()
+            )
             ingest_kwargs = dict(
                 args=(
                     settings.UPLOAD_FOLDER,
@@ -249,6 +271,7 @@ class UploadFile(Resource):
                     "file_name_map": file_name_map,
                     # Scoped so the worker dedup row matches the HTTP claim.
                     "idempotency_key": scoped_key or idempotency_key,
+                    "source_id": str(source_uuid),
                 },
             )
             if predetermined_task_id is not None:
@@ -273,7 +296,15 @@ class UploadFile(Resource):
             return make_response(jsonify({"success": False}), 400)
         # Predetermined id matches the dedup-claim row; loser GET sees same.
         response_task_id = predetermined_task_id or task.id
-        response_payload = {"success": True, "task_id": response_task_id}
+        # ``source_uuid`` was minted above and passed to the worker as
+        # ``source_id``; the worker uses it verbatim for every SSE event,
+        # so the frontend can correlate inbound ``source.ingest.*`` to
+        # this upload regardless of whether an idempotency key was set.
+        response_payload: dict = {
+            "success": True,
+            "task_id": response_task_id,
+            "source_id": str(source_uuid),
+        }
         return make_response(jsonify(response_payload), 200)
 
 
@@ -326,6 +357,18 @@ class UploadRemote(Resource):
             )
             if cached is not None:
                 return make_response(jsonify(cached), 200)
+        # Mint the source UUID up here so the HTTP response and the
+        # worker's SSE envelopes share one id. Same pattern as
+        # ``UploadFile.post``: with an idempotency key we reuse the
+        # deterministic uuid5 (retried task lands on the same source
+        # row); without a key we fall back to uuid4. The worker is told
+        # to use this id verbatim — see ``remote_worker`` and
+        # ``ingest_connector``. Without this the no-key path would mint
+        # a random uuid4 inside the worker that the frontend has no way
+        # to correlate SSE events to.
+        source_uuid = (
+            _derive_source_id(scoped_key) if scoped_key else uuid.uuid4()
+        )
         try:
             config = json.loads(data["data"])
             source_data = None
@@ -382,13 +425,23 @@ class UploadRemote(Resource):
                         "recursive": config.get("recursive", False),
                         "retriever": config.get("retriever", "classic"),
                         "idempotency_key": scoped_key or idempotency_key,
+                        "source_id": str(source_uuid),
                     },
                 }
                 if predetermined_task_id is not None:
                     connector_kwargs["task_id"] = predetermined_task_id
                 task = ingest_connector_task.apply_async(**connector_kwargs)
                 response_task_id = predetermined_task_id or task.id
-                response_payload = {"success": True, "task_id": response_task_id}
+                # ``source_uuid`` was minted above and passed to the
+                # worker as ``source_id``; the worker uses it verbatim
+                # for every SSE event, so the frontend can correlate
+                # inbound ``source.ingest.*`` regardless of whether an
+                # idempotency key was set.
+                response_payload = {
+                    "success": True,
+                    "task_id": response_task_id,
+                    "source_id": str(source_uuid),
+                }
                 return make_response(jsonify(response_payload), 200)
             remote_kwargs = {
                 "kwargs": {
@@ -397,6 +450,7 @@ class UploadRemote(Resource):
                     "user": user,
                     "loader": data["source"],
                     "idempotency_key": scoped_key or idempotency_key,
+                    "source_id": str(source_uuid),
                 },
             }
             if predetermined_task_id is not None:
@@ -410,7 +464,11 @@ class UploadRemote(Resource):
                 _release_claim(scoped_key)
             return make_response(jsonify({"success": False}), 400)
         response_task_id = predetermined_task_id or task.id
-        response_payload = {"success": True, "task_id": response_task_id}
+        response_payload = {
+            "success": True,
+            "task_id": response_task_id,
+            "source_id": str(source_uuid),
+        }
         return make_response(jsonify(response_payload), 200)
 
 
@@ -553,6 +611,19 @@ class ManageSourceFiles(Resource):
                         scoped_key, "reingest_source_task",
                     )
                     if cached is not None:
+                        # Frontend keys reingest polling on
+                        # ``reingest_task_id``; the shared cache helper
+                        # writes ``task_id``. Alias here so a dedup
+                        # response doesn't silently break FileTree's
+                        # poller. Override ``source_id`` too — the
+                        # helper derives it from the scoped key, which
+                        # is correct for upload but wrong for reingest
+                        # (the worker publishes events scoped to the
+                        # actual source row id).
+                        cached_task_id = cached.pop("task_id", None)
+                        if cached_task_id is not None:
+                            cached["reingest_task_id"] = cached_task_id
+                        cached["source_id"] = resolved_source_id
                         return make_response(jsonify(cached), 200)
 
                 added_files = []
@@ -608,6 +679,12 @@ class ManageSourceFiles(Resource):
                             "added_files": added_files,
                             "parent_dir": parent_dir,
                             "reingest_task_id": task.id,
+                            # ``source_id`` lets the frontend correlate
+                            # inbound ``source.ingest.*`` SSE events
+                            # (emitted by ``reingest_source_worker``)
+                            # back to the reingest task — matches the
+                            # upload route's source-id contract.
+                            "source_id": resolved_source_id,
                         }
                     ),
                     200,
@@ -659,6 +736,15 @@ class ManageSourceFiles(Resource):
                         scoped_key, "reingest_source_task",
                     )
                     if cached is not None:
+                        cached_task_id = cached.pop("task_id", None)
+                        if cached_task_id is not None:
+                            cached["reingest_task_id"] = cached_task_id
+                        # Override the helper's synthetic source_id (uuid5
+                        # of the scoped key) with the real source row id
+                        # — the reingest worker publishes SSE events
+                        # scoped to ``resolved_source_id`` and FileTree
+                        # correlates on it.
+                        cached["source_id"] = resolved_source_id
                         return make_response(jsonify(cached), 200)
 
                 # Remove files from storage and directory structure
@@ -704,6 +790,7 @@ class ManageSourceFiles(Resource):
                             "message": f"Removed {len(removed_files)} files",
                             "removed_files": removed_files,
                             "reingest_task_id": task.id,
+                            "source_id": resolved_source_id,
                         }
                     ),
                     200,
@@ -762,6 +849,14 @@ class ManageSourceFiles(Resource):
                         scoped_key, "reingest_source_task",
                     )
                     if cached is not None:
+                        cached_task_id = cached.pop("task_id", None)
+                        if cached_task_id is not None:
+                            cached["reingest_task_id"] = cached_task_id
+                        # Same source_id override as the ``remove`` /
+                        # ``add`` cached branches — the helper's synthetic
+                        # id doesn't match what reingest_source_worker
+                        # tags its SSE events with.
+                        cached["source_id"] = resolved_source_id
                         return make_response(jsonify(cached), 200)
 
                 success = storage.remove_directory(full_directory_path)
@@ -825,6 +920,7 @@ class ManageSourceFiles(Resource):
                             "message": f"Successfully removed directory: {directory_path}",
                             "removed_directory": directory_path,
                             "reingest_task_id": task.id,
+                            "source_id": resolved_source_id,
                         }
                     ),
                     200,

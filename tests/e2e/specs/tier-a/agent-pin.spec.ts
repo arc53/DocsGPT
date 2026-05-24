@@ -1,5 +1,5 @@
 /**
- * Phase 2 — P2-11 · agent pin/unpin.
+ * P2-11 · agent pin/unpin.
  *
  * Writes to `users.agent_preferences.pinned` (JSONB text[]) via
  * `POST /api/pin_agent?id=<agent_id>`. Reads via `GET /api/pinned_agents`.

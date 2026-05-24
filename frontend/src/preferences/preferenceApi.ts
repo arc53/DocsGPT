@@ -85,6 +85,49 @@ export async function getConversations(
   }
 }
 
+export async function searchConversations(
+  query: string,
+  token: string | null,
+  limit = 30,
+): Promise<GetConversationsResult> {
+  try {
+    const response = await conversationService.searchConversations(
+      query,
+      token,
+      limit,
+    );
+
+    if (!response.ok) {
+      console.error('Error searching conversations:', response.statusText);
+      return { data: null, loading: false };
+    }
+
+    const rawData: unknown = await response.json();
+    if (!Array.isArray(rawData)) {
+      console.error(
+        'Invalid data format received from API: Expected an array.',
+        rawData,
+      );
+      return { data: null, loading: false };
+    }
+
+    const conversations: ConversationSummary[] = rawData.map((item: any) => ({
+      id: item.id,
+      name: item.name,
+      agent_id: item.agent_id ?? null,
+      match_field: item.match_field ?? null,
+      match_snippet: item.match_snippet ?? null,
+    }));
+    return { data: conversations, loading: false };
+  } catch (error) {
+    console.error(
+      'An unexpected error occurred while searching conversations:',
+      error,
+    );
+    return { data: null, loading: false };
+  }
+}
+
 export function getLocalApiKey(): string | null {
   const key = localStorage.getItem('DocsGPTApiKey');
   return key;

@@ -158,6 +158,35 @@ class TestSimpleDirectoryReaderLoadData:
         for doc in docs:
             assert isinstance(doc, Document)
 
+    def test_load_data_progress_callback_fires_per_file(self, temp_dir):
+        from application.parser.file.bulk import SimpleDirectoryReader
+
+        reader = SimpleDirectoryReader(
+            input_dir=str(temp_dir), recursive=False, exclude_hidden=True,
+        )
+        calls = []
+        reader.load_data(progress_callback=lambda done, total: calls.append((done, total)))
+
+        total_files = len(reader.input_files)
+        assert total_files >= 1
+        # One callback per file, monotonically increasing, ending at total.
+        assert [c[0] for c in calls] == list(range(1, total_files + 1))
+        assert all(c[1] == total_files for c in calls)
+
+    def test_load_data_progress_callback_errors_swallowed(self, temp_dir):
+        from application.parser.file.bulk import SimpleDirectoryReader
+
+        reader = SimpleDirectoryReader(
+            input_dir=str(temp_dir), recursive=False, exclude_hidden=True,
+        )
+
+        def _boom(done, total):
+            raise RuntimeError("callback blew up")
+
+        # A failing callback must not abort ingestion.
+        docs = reader.load_data(progress_callback=_boom)
+        assert len(docs) >= 1
+
     def test_load_data_concatenate(self, temp_dir):
         from application.parser.file.bulk import SimpleDirectoryReader
 

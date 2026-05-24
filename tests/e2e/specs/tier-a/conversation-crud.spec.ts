@@ -1,5 +1,5 @@
 /**
- * Phase 2 — P2-08 · Conversation CRUD (Tier-A migration-critical).
+ * P2-08 · Conversation CRUD (Tier-A migration-critical).
  *
  * Covers e2e-plan.md §P2 row P2-08: writes/deletes against `conversations`
  * and the cascading child tables (`conversation_messages`,

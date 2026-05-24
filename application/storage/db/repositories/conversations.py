@@ -15,6 +15,7 @@ Covers every operation the legacy Mongo code performs on
 from __future__ import annotations
 
 import json
+from enum import Enum
 from typing import Optional
 
 from sqlalchemy import Connection, text
@@ -23,6 +24,22 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.models import conversations_table, conversation_messages_table
 from application.storage.db.serialization import PGNativeJSONEncoder
+
+
+class MessageUpdateOutcome(str, Enum):
+    """Discriminated result of ``update_message_by_id``.
+
+    Distinguishes the row-actually-updated case from the row-already-at-
+    the-requested-terminal-state case so an abort handler can journal
+    ``end`` instead of ``error`` when the normal-path finalize already
+    flipped the row to ``complete``.
+    """
+
+    UPDATED = "updated"
+    ALREADY_COMPLETE = "already_complete"
+    ALREADY_FAILED = "already_failed"
+    NOT_FOUND = "not_found"
+    INVALID = "invalid"
 
 
 def _message_row_to_dict(row) -> dict:
@@ -58,8 +75,8 @@ class ConversationsRepository:
         - Already-UUID-shaped → returned as-is.
         - Otherwise treated as a Mongo ObjectId and looked up via
           ``agents.legacy_mongo_id``. Returns ``None`` if no PG row
-          exists yet (e.g. the agent was created before Phase 1
-          backfill).
+          exists yet (e.g. the agent was created before the backfill
+          ran).
         """
         if not agent_id_raw:
             return None
@@ -242,6 +259,57 @@ class ConversationsRepository:
                 "ORDER BY date DESC LIMIT :limit"
             ),
             {"user_id": user_id, "limit": limit},
+        )
+        return [row_to_dict(r) for r in result.fetchall()]
+
+    def search_for_user(
+        self, user_id: str, query: str, limit: int = 30,
+    ) -> list[dict]:
+        """Search a user's conversations by name or message content.
+
+        Same visibility filter as :meth:`list_for_user`. Matches against
+        ``conversations.name`` or any of the conversation's messages'
+        ``prompt`` / ``response`` columns (case-insensitive substring).
+
+        Each returned row includes ``match_field`` (one of ``name``,
+        ``prompt``, ``response``) and ``match_text`` (the full text of the
+        first matching field, ``name`` taking precedence over messages,
+        ``prompt`` over ``response``) so callers can render a snippet.
+        """
+        if not query:
+            return []
+        result = self._conn.execute(
+            text(
+                "SELECT c.*, mt.match_field, mt.match_text "
+                "FROM conversations c "
+                "JOIN LATERAL ( "
+                "  SELECT field AS match_field, txt AS match_text "
+                "  FROM ( "
+                "    SELECT 'name'::text AS field, c.name AS txt, 0 AS prio "
+                "    WHERE c.name ILIKE :pattern "
+                "    UNION ALL "
+                "    SELECT 'prompt'::text, m.prompt, 1 "
+                "    FROM conversation_messages m "
+                "    WHERE m.conversation_id = c.id "
+                "      AND m.prompt ILIKE :pattern "
+                "    UNION ALL "
+                "    SELECT 'response'::text, m.response, 2 "
+                "    FROM conversation_messages m "
+                "    WHERE m.conversation_id = c.id "
+                "      AND m.response ILIKE :pattern "
+                "  ) s "
+                "  ORDER BY prio "
+                "  LIMIT 1 "
+                ") mt ON TRUE "
+                "WHERE c.user_id = :user_id "
+                "AND (c.api_key IS NULL OR c.agent_id IS NOT NULL) "
+                "ORDER BY c.date DESC LIMIT :limit"
+            ),
+            {
+                "user_id": user_id,
+                "pattern": f"%{query}%",
+                "limit": limit,
+            },
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
@@ -697,7 +765,7 @@ class ConversationsRepository:
     def update_message_by_id(
         self, message_id: str, fields: dict,
         *, only_if_non_terminal: bool = False,
-    ) -> bool:
+    ) -> MessageUpdateOutcome:
         """Update specific fields on a message identified by its UUID.
 
         ``metadata`` is merged into the existing JSONB rather than
@@ -705,9 +773,13 @@ class ConversationsRepository:
         a successful late finalize. When ``only_if_non_terminal`` is
         True, the update is gated so a late finalize cannot retract a
         reconciler-set ``failed`` (or a prior ``complete``).
+
+        The return value discriminates "I updated the row" from "the
+        row was already at a terminal state" so the abort handler can
+        journal ``end`` when the normal-path finalize already ran.
         """
         if not looks_like_uuid(message_id):
-            return False
+            return MessageUpdateOutcome.INVALID
         allowed = {
             "prompt", "response", "thought", "sources", "tool_calls",
             "attachments", "model_id", "metadata", "timestamp", "status",
@@ -715,7 +787,7 @@ class ConversationsRepository:
         }
         filtered = {k: v for k, v in fields.items() if k in allowed}
         if not filtered:
-            return False
+            return MessageUpdateOutcome.INVALID
 
         api_to_col = {"metadata": "message_metadata"}
 
@@ -752,15 +824,44 @@ class ConversationsRepository:
                 params[col] = val
 
         set_parts.append("updated_at = now()")
-        where_clauses = ["id = CAST(:id AS uuid)"]
+        update_where = ["id = CAST(:id AS uuid)"]
         if only_if_non_terminal:
-            where_clauses.append("status NOT IN ('complete', 'failed')")
+            update_where.append("status NOT IN ('complete', 'failed')")
+        # Single-statement attempt + prior-status probe. Both CTEs see
+        # the same MVCC snapshot, so ``prior.status`` reflects the row
+        # state before the UPDATE — exactly what we need to tell
+        # ``ALREADY_COMPLETE`` apart from ``ALREADY_FAILED`` apart from
+        # ``NOT_FOUND`` without a follow-up SELECT.
         sql = (
-            f"UPDATE conversation_messages SET {', '.join(set_parts)} "
-            f"WHERE {' AND '.join(where_clauses)}"
+            "WITH attempted AS ("
+            f"  UPDATE conversation_messages SET {', '.join(set_parts)} "
+            f"  WHERE {' AND '.join(update_where)} "
+            "  RETURNING 1 AS updated"
+            "), "
+            "prior AS ("
+            "  SELECT status FROM conversation_messages "
+            "  WHERE id = CAST(:id AS uuid)"
+            ") "
+            "SELECT (SELECT updated FROM attempted) AS updated, "
+            "       (SELECT status FROM prior) AS prior_status"
         )
-        result = self._conn.execute(text(sql), params)
-        return result.rowcount > 0
+        row = self._conn.execute(text(sql), params).fetchone()
+        if row is None:
+            return MessageUpdateOutcome.NOT_FOUND
+        updated, prior_status = row[0], row[1]
+        if updated:
+            return MessageUpdateOutcome.UPDATED
+        if prior_status is None:
+            return MessageUpdateOutcome.NOT_FOUND
+        if prior_status == "complete":
+            return MessageUpdateOutcome.ALREADY_COMPLETE
+        if prior_status == "failed":
+            return MessageUpdateOutcome.ALREADY_FAILED
+        # ``only_if_non_terminal=False`` always updates an existing row,
+        # so reaching here means the gate excluded it for some status
+        # the terminal set doesn't cover — treat as "not found" rather
+        # than inventing a new variant.
+        return MessageUpdateOutcome.NOT_FOUND
 
     def update_message_status(
         self, message_id: str, status: str,

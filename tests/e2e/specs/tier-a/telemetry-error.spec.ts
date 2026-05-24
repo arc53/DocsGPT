@@ -1,5 +1,5 @@
 /**
- * Phase 2 — P2-13 · Telemetry on error paths (stack_logs + user_logs).
+ * P2-13 · Telemetry on error paths (stack_logs + user_logs).
  *
  * Asserts the two append-only, server-side telemetry pipes stay wired after
  * the MongoDB→Postgres migration:

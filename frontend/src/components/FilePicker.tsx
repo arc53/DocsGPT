@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import userService from '../api/services/userService';
 import { formatBytes } from '../utils/stringUtils';
 import { formatDate } from '../utils/dateTimeUtils';
 import {
@@ -22,6 +23,7 @@ import {
   TableHeader,
   TableCell,
 } from './Table';
+import { useDebouncedCallback } from '../hooks';
 
 interface CloudFile {
   id: string;
@@ -100,7 +102,6 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   const [activeTab, setActiveTab] = useState<'my_files' | 'shared'>('my_files');
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const isFolder = (file: CloudFile) => {
@@ -126,7 +127,6 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
       setIsLoading(true);
 
-      const apiHost = import.meta.env.VITE_API_HOST;
       if (!pageToken) {
         setFiles([]);
       }
@@ -141,15 +141,11 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
           search_query: searchQuery,
           shared: shared,
         };
-        const response = await fetch(`${apiHost}/api/connectors/files`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
+        const response = await userService.getConnectorFiles(
+          body,
+          token,
+          controller.signal,
+        );
 
         const data = await response.json();
         if (data.success) {
@@ -187,20 +183,9 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     }
 
     try {
-      const apiHost = import.meta.env.VITE_API_HOST;
-      const validateResponse = await fetch(
-        `${apiHost}/api/connectors/validate-session`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            provider: provider,
-            session_token: sessionToken,
-          }),
-        },
+      const validateResponse = await userService.validateConnectorSession(
+        provider,
+        token,
       );
 
       if (!validateResponse.ok) {
@@ -292,32 +277,26 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
   useEffect(() => {
     return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
       abortControllerRef.current?.abort();
     };
   }, []);
 
+  const debouncedLoadFiles = useDebouncedCallback((query: string) => {
+    const sessionToken = getSessionToken(provider);
+    if (sessionToken) {
+      loadCloudFiles(
+        sessionToken,
+        currentFolderId,
+        undefined,
+        query,
+        activeTab === 'shared' && !currentFolderId,
+      );
+    }
+  }, 300);
+
   const handleSearchChange = (query: string) => {
     setSearchQuery(query);
-
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
-    searchTimeoutRef.current = setTimeout(() => {
-      const sessionToken = getSessionToken(provider);
-      if (sessionToken) {
-        loadCloudFiles(
-          sessionToken,
-          currentFolderId,
-          undefined,
-          query,
-          activeTab === 'shared' && !currentFolderId,
-        );
-      }
-    }, 300);
+    debouncedLoadFiles(query);
   };
 
   const handleFolderClick = (folderId: string, folderName: string) => {
@@ -424,23 +403,14 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
         onDisconnect={() => {
           const sessionToken = getSessionToken(provider);
           if (sessionToken) {
-            const apiHost = import.meta.env.VITE_API_HOST;
-            fetch(`${apiHost}/api/connectors/disconnect`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({
-                provider: provider,
-                session_token: sessionToken,
-              }),
-            }).catch((err) =>
-              console.error(
-                `Error disconnecting from ${getProviderConfig(provider).displayName}:`,
-                err,
-              ),
-            );
+            userService
+              .disconnectConnector(provider, sessionToken, token)
+              .catch((err) =>
+                console.error(
+                  `Error disconnecting from ${getProviderConfig(provider).displayName}:`,
+                  err,
+                ),
+              );
           }
 
           removeSessionToken(provider);

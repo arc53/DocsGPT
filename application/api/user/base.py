@@ -83,13 +83,15 @@ def resolve_tool_details(tool_ids):
     """
     Resolve tool IDs to their display details.
 
-    Accepts either Postgres UUIDs or legacy Mongo ObjectId strings (mixed
-    lists are supported — each id is looked up via ``get_any``, which
-    resolves to whichever column matches). Unknown ids are silently
+    Accepts Postgres UUIDs, legacy Mongo ObjectId strings, or the
+    synthetic ids of default chat tools / agent-selectable builtins
+    (mixed lists are supported). Synthetic ids are resolved in memory;
+    real ids are looked up via ``get_any``. Unknown ids are silently
     skipped.
 
     Args:
-        tool_ids: List of tool IDs (UUIDs or legacy Mongo ObjectId strings).
+        tool_ids: List of tool IDs (UUIDs, legacy ObjectId strings, or
+            synthetic default-tool / builtin ids).
 
     Returns:
         List of tool details with ``id``, ``name``, and ``display_name``.
@@ -97,19 +99,37 @@ def resolve_tool_details(tool_ids):
     if not tool_ids:
         return []
 
+    from application.agents.default_tools import (
+        is_synthesized_tool_id,
+        synthesize_tool_by_name,
+        synthesized_tool_name_for_id,
+    )
+
     uuid_ids: list[str] = []
     legacy_ids: list[str] = []
+    default_details: list[dict] = []
     for tid in tool_ids:
         if not tid:
             continue
         tid_str = str(tid)
+        if is_synthesized_tool_id(tid_str):
+            synth = synthesize_tool_by_name(synthesized_tool_name_for_id(tid_str))
+            if synth is not None:
+                default_details.append(
+                    {
+                        "id": tid_str,
+                        "name": synth.get("name", ""),
+                        "display_name": synth.get("display_name", ""),
+                    }
+                )
+            continue
         if looks_like_uuid(tid_str):
             uuid_ids.append(tid_str)
         else:
             legacy_ids.append(tid_str)
 
     if not uuid_ids and not legacy_ids:
-        return []
+        return default_details
 
     rows: list[dict] = []
     with db_readonly() as conn:
@@ -132,7 +152,7 @@ def resolve_tool_details(tool_ids):
             )
             rows.extend(row_to_dict(r) for r in result.fetchall())
 
-    return [
+    return default_details + [
         {
             "id": str(tool.get("id") or tool.get("legacy_mongo_id") or ""),
             "name": tool.get("name", "") or "",

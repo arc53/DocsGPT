@@ -28,13 +28,13 @@ const endpoints = {
     UPDATE_PROMPT: '/api/update_prompt',
     SINGLE_PROMPT: (id: string) => `/api/get_single_prompt?id=${id}`,
     DELETE_PATH: (docPath: string) => `/api/delete_old?source_id=${docPath}`,
-    TASK_STATUS: (task_id: string) => `/api/task_status?task_id=${task_id}`,
     MESSAGE_ANALYTICS: '/api/get_message_analytics',
     TOKEN_ANALYTICS: '/api/get_token_analytics',
     FEEDBACK_ANALYTICS: '/api/get_feedback_analytics',
     LOGS: `/api/get_user_logs`,
     MANAGE_SYNC: '/api/manage_sync',
     SYNC_SOURCE: '/api/sync_source',
+    REINGEST_SOURCE: '/api/sources/reingest',
     GET_AVAILABLE_TOOLS: '/api/available_tools',
     GET_USER_TOOLS: '/api/get_tools',
     CREATE_TOOL: '/api/create_tool',
@@ -43,6 +43,11 @@ const endpoints = {
     DELETE_TOOL: '/api/delete_tool',
     PARSE_SPEC: '/api/parse_spec',
     SYNC_CONNECTOR: '/api/connectors/sync',
+    CONNECTOR_AUTH: (provider: string) =>
+      `/api/connectors/auth?provider=${provider}`,
+    CONNECTOR_FILES: '/api/connectors/files',
+    CONNECTOR_VALIDATE_SESSION: '/api/connectors/validate-session',
+    CONNECTOR_DISCONNECT: '/api/connectors/disconnect',
     GET_CHUNKS: (
       docId: string,
       page: number,
@@ -59,6 +64,7 @@ const endpoints = {
     UPDATE_CHUNK: '/api/update_chunk',
     STORE_ATTACHMENT: '/api/store_attachment',
     STT: '/api/stt',
+    TTS: '/api/tts',
     LIVE_STT_START: '/api/stt/live/start',
     LIVE_STT_CHUNK: '/api/stt/live/chunk',
     LIVE_STT_FINISH: '/api/stt/live/finish',
@@ -67,8 +73,6 @@ const endpoints = {
     MANAGE_SOURCE_FILES: '/api/manage_source_files',
     MCP_TEST_CONNECTION: '/api/mcp_server/test',
     MCP_SAVE_SERVER: '/api/mcp_server/save',
-    MCP_OAUTH_STATUS: (task_id: string) =>
-      `/api/mcp_server/oauth_status/${task_id}`,
     MCP_AUTH_STATUS: '/api/mcp_server/auth_status',
     AGENT_FOLDERS: '/api/agents/folders/',
     AGENT_FOLDER: (id: string) => `/api/agents/folders/${id}`,
@@ -80,6 +84,13 @@ const endpoints = {
     CUSTOM_MODEL: (id: string) => `/api/user/models/${id}`,
     CUSTOM_MODEL_TEST: (id: string) => `/api/user/models/${id}/test`,
     CUSTOM_MODEL_TEST_PAYLOAD: '/api/user/models/test',
+    AGENT_SCHEDULES: (agentId: string) => `/api/agents/${agentId}/schedules`,
+    SCHEDULE: (id: string) => `/api/schedules/${id}`,
+    SCHEDULE_RUN_NOW: (id: string) => `/api/schedules/${id}/run`,
+    SCHEDULE_RUNS: (id: string, limit?: number, offset?: number) =>
+      `/api/schedules/${id}/runs?limit=${limit ?? 50}&offset=${offset ?? 0}`,
+    SCHEDULE_RUN: (id: string, runId: string) =>
+      `/api/schedules/${id}/runs/${runId}`,
   },
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',
@@ -92,6 +103,8 @@ const endpoints = {
     FEEDBACK: '/api/feedback',
     CONVERSATION: (id: string) => `/api/get_single_conversation?id=${id}`,
     CONVERSATIONS: '/api/get_conversations',
+    SEARCH_CONVERSATIONS: (q: string, limit = 30) =>
+      `/api/search_conversations?q=${encodeURIComponent(q)}&limit=${limit}`,
     MESSAGE_TAIL: (messageId: string) => `/api/messages/${messageId}/tail`,
     SHARE_CONVERSATION: (isPromptable: boolean) =>
       `/api/share?isPromptable=${isPromptable}`,

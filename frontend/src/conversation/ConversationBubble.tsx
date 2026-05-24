@@ -13,6 +13,7 @@ import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
+import SchedulerToolCallCard from '../agents/schedules/SchedulerToolCallCard';
 import ChevronDown from '../assets/chevron-down.svg';
 import Cloud from '../assets/cloud.svg';
 import DocsGPT3 from '../assets/cute_docsgpt3.svg';
@@ -70,6 +71,8 @@ const ConversationBubble = forwardRef<
       decision: 'approved' | 'denied',
       comment?: string,
     ) => void;
+    /** Active agent id; refreshes the Schedules tab from SchedulerToolCallCard. */
+    agentId?: string;
   }
 >(function ConversationBubble(
   {
@@ -89,6 +92,7 @@ const ConversationBubble = forwardRef<
     filesAttached,
     onOpenArtifact,
     onToolAction,
+    agentId,
   },
   ref,
 ) {
@@ -132,6 +136,8 @@ const ConversationBubble = forwardRef<
   }, [message]);
 
   const handleEditClick = () => {
+    if (!editInputBox.trim() || editInputBox.trim() === (message ?? '').trim())
+      return;
     setIsEditClicked(false);
     handleUpdatedQuestionSubmission?.(editInputBox, true, questionNumber);
   };
@@ -152,10 +158,10 @@ const ConversationBubble = forwardRef<
                     <img
                       src={DocumentationDark}
                       alt="Attachment"
-                      className="h-[15px] w-[15px] object-fill"
+                      className="h-3.75 w-3.75 object-fill"
                     />
                   </div>
-                  <span className="max-w-[150px] truncate font-normal">
+                  <span className="max-w-37.5 truncate font-normal">
                     {file.fileName}
                   </span>
                 </div>
@@ -242,8 +248,12 @@ const ConversationBubble = forwardRef<
                   {t('conversation.edit.cancel')}
                 </button>
                 <button
-                  className="bg-primary hover:bg-primary/90 dark:hover:bg-primary/90 rounded-full px-4 py-2 text-sm font-medium text-white transition-colors"
+                  className="bg-primary not-disabled:hover:bg-primary/90 not-disabled:dark:hover:bg-primary/90 disabled:bg-primary/30 rounded-full px-4 py-2 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed"
                   onClick={handleEditClick}
+                  disabled={
+                    !editInputBox.trim() ||
+                    editInputBox.trim() === (message ?? '').trim()
+                  }
                 >
                   {t('conversation.edit.update')}
                 </button>
@@ -322,7 +332,7 @@ const ConversationBubble = forwardRef<
               <div className="mb-4 flex flex-col flex-wrap items-start self-start lg:flex-nowrap">
                 <div className="my-2 flex flex-row items-center justify-center gap-3">
                   <Avatar
-                    className="h-[26px] w-[30px] text-xl"
+                    className="h-6.5 w-7.5 text-xl"
                     avatar={
                       <img
                         src={Sources}
@@ -370,7 +380,7 @@ const ConversationBubble = forwardRef<
                             <img
                               src={Document}
                               alt="Document"
-                              className="h-[17px] w-[17px] object-fill"
+                              className="h-4.25 w-4.25 object-fill"
                             />
                             <p
                               className="mt-0.5 truncate text-xs"
@@ -388,11 +398,11 @@ const ConversationBubble = forwardRef<
                         </div>
                         {activeTooltip === index && (
                           <div
-                            className={`dark:bg-card dark:text-foreground absolute left-1/2 z-50 max-h-48 w-40 translate-x-[-50%] translate-y-[3px] rounded-xl bg-[#FBFBFB] p-4 text-black shadow-xl sm:w-56`}
+                            className={`dark:bg-card dark:text-foreground absolute left-1/2 z-50 max-h-48 w-40 translate-x-[-50%] translate-y-0.75 rounded-xl bg-[#FBFBFB] p-4 text-black shadow-xl sm:w-56`}
                             onMouseOver={() => setActiveTooltip(index)}
                             onMouseOut={() => setActiveTooltip(null)}
                           >
-                            <p className="line-clamp-6 max-h-[164px] overflow-hidden rounded-md text-sm wrap-break-word text-ellipsis">
+                            <p className="line-clamp-6 max-h-41 overflow-hidden rounded-md text-sm wrap-break-word text-ellipsis">
                               {source.text}
                             </p>
                           </div>
@@ -417,7 +427,11 @@ const ConversationBubble = forwardRef<
             )}
         {research && <ResearchProgress research={research} />}
         {toolCalls && toolCalls.length > 0 && (
-          <ToolCalls toolCalls={toolCalls} onToolAction={onToolAction} />
+          <ToolCalls
+            toolCalls={toolCalls}
+            onToolAction={onToolAction}
+            agentId={agentId}
+          />
         )}
         {!message && primaryArtifactCall?.artifact_id && onOpenArtifact && (
           <div className="my-2 ml-2 flex justify-start">
@@ -465,7 +479,7 @@ const ConversationBubble = forwardRef<
           <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
             <div className="my-2 flex flex-row items-center justify-center gap-3">
               <Avatar
-                className="h-[34px] w-[34px] text-2xl"
+                className="h-8.5 w-8.5 text-2xl"
                 avatar={
                   <img
                     src={DocsGPT3}
@@ -999,6 +1013,7 @@ function ToolCallApprovalBar({
 function ToolCalls({
   toolCalls,
   onToolAction,
+  agentId,
 }: {
   toolCalls: ToolCallsType[];
   onToolAction?: (
@@ -1006,6 +1021,7 @@ function ToolCalls({
     decision: 'approved' | 'denied',
     comment?: string,
   ) => void;
+  agentId?: string;
 }) {
   const [isToolCallsOpen, setIsToolCallsOpen] = useState(false);
 
@@ -1017,7 +1033,7 @@ function ToolCalls({
   );
 
   return (
-    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+    <div className="relative mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
       {/* Approval bars — always visible, compact inline */}
       {awaitingCalls.length > 0 && (
         <div className="fade-in mt-4 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
@@ -1036,7 +1052,7 @@ function ToolCalls({
         <>
           <div className="my-2 flex flex-row items-center justify-center gap-3">
             <Avatar
-              className="h-[26px] w-[30px] text-xl"
+              className="h-6.5 w-7.5 text-xl"
               avatar={
                 <img
                   src={Sources}
@@ -1060,88 +1076,101 @@ function ToolCalls({
           {isToolCallsOpen && (
             <div className="fade-in mr-5 ml-3 w-[90vw] md:w-[70vw] lg:w-full">
               <div className="grid grid-cols-1 gap-2">
-                {resolvedCalls.map((toolCall, index) => (
-                  <Accordion
-                    key={`tool-call-${index}`}
-                    title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
-                    className="bg-muted dark:bg-answer-bubble w-full rounded-4xl"
-                    titleClassName="px-6 py-2 text-sm font-semibold"
-                  >
-                    <div className="flex flex-col gap-1">
-                      <div className="border-border flex flex-col rounded-2xl border">
-                        <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
-                          <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                            Arguments
-                          </span>{' '}
-                          <CopyButton
-                            textToCopy={JSON.stringify(
-                              toolCall.arguments,
-                              null,
-                              2,
-                            )}
-                          />
-                        </p>
-                        <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                          <span
-                            className="dark:text-muted-foreground leading-[23px] text-black"
-                            style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                          >
-                            {JSON.stringify(toolCall.arguments, null, 2)}
-                          </span>
-                        </p>
+                {resolvedCalls.map((toolCall, index) => {
+                  if (toolCall.tool_name === 'scheduler') {
+                    return (
+                      <SchedulerToolCallCard
+                        key={`scheduler-${toolCall.call_id ?? index}`}
+                        result={toolCall.result}
+                        actionName={toolCall.action_name}
+                        status={toolCall.status}
+                        agentId={agentId}
+                      />
+                    );
+                  }
+                  return (
+                    <Accordion
+                      key={`tool-call-${index}`}
+                      title={`${toolCall.tool_name}  -  ${toolCall.action_name.substring(0, toolCall.action_name.lastIndexOf('_'))}`}
+                      className="bg-muted dark:bg-answer-bubble w-full rounded-4xl"
+                      titleClassName="px-6 py-2 text-sm font-semibold"
+                    >
+                      <div className="flex flex-col gap-1">
+                        <div className="border-border flex flex-col rounded-2xl border">
+                          <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
+                            <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                              Arguments
+                            </span>{' '}
+                            <CopyButton
+                              textToCopy={JSON.stringify(
+                                toolCall.arguments,
+                                null,
+                                2,
+                              )}
+                            />
+                          </p>
+                          <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                            <span
+                              className="dark:text-muted-foreground leading-5.75 text-black"
+                              style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                            >
+                              {JSON.stringify(toolCall.arguments, null, 2)}
+                            </span>
+                          </p>
+                        </div>
+                        <div className="border-border flex flex-col rounded-2xl border">
+                          <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
+                            <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
+                              Response
+                            </span>{' '}
+                            <CopyButton
+                              textToCopy={
+                                toolCall.status === 'error'
+                                  ? toolCall.error || 'Unknown error'
+                                  : JSON.stringify(toolCall.result, null, 2)
+                              }
+                            />
+                          </p>
+                          {toolCall.status === 'pending' && (
+                            <span className="dark:bg-card flex w-full items-center justify-center rounded-b-2xl p-2">
+                              <Spinner size="small" />
+                            </span>
+                          )}
+                          {toolCall.status === 'completed' && (
+                            <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                              <span
+                                className="dark:text-muted-foreground leading-5.75 text-black"
+                                style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                              >
+                                {JSON.stringify(toolCall.result, null, 2)}
+                              </span>
+                            </p>
+                          )}
+                          {toolCall.status === 'error' && (
+                            <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                              <span
+                                className="text-destructive leading-5.75"
+                                style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                              >
+                                {toolCall.error}
+                              </span>
+                            </p>
+                          )}
+                          {toolCall.status === 'denied' && (
+                            <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
+                              <span
+                                className="text-muted-foreground leading-5.75"
+                                style={{ fontFamily: 'IBMPlexMono-Medium' }}
+                              >
+                                Denied by user
+                              </span>
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      <div className="border-border flex flex-col rounded-2xl border">
-                        <p className="dark:bg-background flex flex-row items-center justify-between rounded-t-2xl bg-black/10 px-2 py-1 text-sm font-semibold wrap-break-word">
-                          <span style={{ fontFamily: 'IBMPlexMono-Medium' }}>
-                            Response
-                          </span>{' '}
-                          <CopyButton
-                            textToCopy={
-                              toolCall.status === 'error'
-                                ? toolCall.error || 'Unknown error'
-                                : JSON.stringify(toolCall.result, null, 2)
-                            }
-                          />
-                        </p>
-                        {toolCall.status === 'pending' && (
-                          <span className="dark:bg-card flex w-full items-center justify-center rounded-b-2xl p-2">
-                            <Spinner size="small" />
-                          </span>
-                        )}
-                        {toolCall.status === 'completed' && (
-                          <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                            <span
-                              className="dark:text-muted-foreground leading-[23px] text-black"
-                              style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                            >
-                              {JSON.stringify(toolCall.result, null, 2)}
-                            </span>
-                          </p>
-                        )}
-                        {toolCall.status === 'error' && (
-                          <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                            <span
-                              className="text-destructive leading-[23px]"
-                              style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                            >
-                              {toolCall.error}
-                            </span>
-                          </p>
-                        )}
-                        {toolCall.status === 'denied' && (
-                          <p className="dark:bg-card rounded-b-2xl p-2 font-mono text-sm wrap-break-word">
-                            <span
-                              className="text-muted-foreground leading-[23px]"
-                              style={{ fontFamily: 'IBMPlexMono-Medium' }}
-                            >
-                              Denied by user
-                            </span>
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </Accordion>
-                ))}
+                    </Accordion>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1166,7 +1195,7 @@ function Thought({
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
       <div className="my-2 flex flex-row items-center justify-center gap-3">
         <Avatar
-          className="h-[26px] w-[30px] text-xl"
+          className="h-6.5 w-7.5 text-xl"
           avatar={
             <img
               src={Cloud}
@@ -1191,7 +1220,7 @@ function Thought({
       </div>
       {isThoughtOpen && (
         <div className="fade-in mr-5 ml-2 max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
-          <div className="bg-muted dark:bg-answer-bubble rounded-[28px] px-7 py-[18px]">
+          <div className="bg-muted dark:bg-answer-bubble rounded-[28px] px-7 py-4.5">
             <ReactMarkdown
               className="fade-in leading-normal wrap-break-word whitespace-pre-wrap"
               remarkPlugins={[remarkGfm, remarkMath]}

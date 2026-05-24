@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # and Dify defaults; long ingests can override via env.
     CELERY_WORKER_PREFETCH_MULTIPLIER: int = 1
     CELERY_VISIBILITY_TIMEOUT: int = 3600
+    # Recycle the prefork worker child once its resident size crosses this many
+    # kilobytes — backstops native-heap growth from docling/torch parsing. 0 disables.
+    CELERY_WORKER_MAX_MEMORY_PER_CHILD: int = 4194304
+    # Recycle the child after this many tasks; 0 disables (memory cap is the primary knob).
+    CELERY_WORKER_MAX_TASKS_PER_CHILD: int = 0
     # Only consulted when VECTOR_STORE=mongodb or when running scripts/db/backfill.py; user data lives in Postgres.
     MONGO_URI: Optional[str] = None
     # User-data Postgres DB.
@@ -61,9 +66,14 @@ class Settings(BaseSettings):
     PARSE_IMAGE_REMOTE: bool = False
     DOCLING_OCR_ENABLED: bool = False  # Enable OCR for docling parsers (PDF, images)
     DOCLING_OCR_ATTACHMENTS_ENABLED: bool = False  # Enable OCR for docling when parsing attachments
+
+     # Pages docling's threaded pipeline buffers in flight; the library
+    # default (100) drives worker RSS to ~3 GB on a mid-size PDF.
+    DOCLING_PIPELINE_QUEUE_MAX_SIZE: int = 2
     VECTOR_STORE: str = (
         "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector" or "oracle"
     )
+
     RETRIEVERS_ENABLED: list = ["classic_rag"]
     AGENT_NAME: str = "classic"
     FALLBACK_LLM_PROVIDER: Optional[str] = None  # provider for fallback llm
@@ -190,12 +200,63 @@ class Settings(BaseSettings):
     # Tool pre-fetch settings
     ENABLE_TOOL_PREFETCH: bool = True
 
+    # Config-free tools on by default in agentless chats. ``scheduler`` is
+    # dual-registered (also in ``BUILTIN_AGENT_TOOLS``) so the same synthetic id
+    # resolves whether reached via defaults or the agent picker.
+    DEFAULT_CHAT_TOOLS: list = ["memory", "read_webpage", "scheduler"]
+
     # Conversation Compression Settings
     ENABLE_CONVERSATION_COMPRESSION: bool = True
     COMPRESSION_THRESHOLD_PERCENTAGE: float = 0.8  # Trigger at 80% of context
     COMPRESSION_MODEL_OVERRIDE: Optional[str] = None  # Use different model for compression
     COMPRESSION_PROMPT_VERSION: str = "v1.0"  # Track prompt iterations
     COMPRESSION_MAX_HISTORY_POINTS: int = 3  # Keep only last N compression points to prevent DB bloat
+
+    # Internal SSE push channel (notifications + durable replay journal)
+    # Master switch — when False, /api/events emits a "push_disabled" comment
+    # and returns; clients fall back to polling. Publisher becomes a no-op.
+    ENABLE_SSE_PUSH: bool = True
+    # Per-user durable backlog cap (~entries). At typical event rates this
+    # gives ~24h of replay; tune up for verbose feeds, down for memory.
+    EVENTS_STREAM_MAXLEN: int = 1000
+    # SSE keepalive comment cadence. Must sit under Cloudflare's 100s idle
+    # close and iOS Safari's ~60s — 15s gives generous headroom.
+    SSE_KEEPALIVE_SECONDS: int = 15
+    # Cap on simultaneous SSE connections per user. Each connection holds
+    # one WSGI thread (32 per gunicorn worker) and one Redis pub/sub
+    # connection. 8 covers normal multi-tab use without letting one user
+    # starve the pool. Set to 0 to disable the cap.
+    SSE_MAX_CONCURRENT_PER_USER: int = 8
+    # Per-request cap on the number of backlog entries XRANGE returns
+    # for ``/api/events`` snapshots. Bounds the bytes a single replay
+    # can move from Redis to the wire — a malicious client looping
+    # ``Last-Event-ID=<oldest>`` reconnects can only enumerate this
+    # many entries per round-trip. Combined with the per-user
+    # connection cap above and the windowed budget below, total
+    # enumeration throughput is bounded.
+    EVENTS_REPLAY_MAX_PER_REQUEST: int = 200
+    # Sliding-window cap on snapshot replays per user. Once the budget
+    # is exhausted the route returns HTTP 429 with the cursor pinned;
+    # the client backs off and retries after the window rolls over.
+    EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW: int = 30
+    EVENTS_REPLAY_BUDGET_WINDOW_SECONDS: int = 60
+
+    # Retention for the ``message_events`` journal. The ``cleanup_message_events``
+    # beat task deletes rows older than this. Reconnect-replay only
+    # needs the journal for streams a client could still be tailing,
+    # so 14 days is a generous default that covers paused/tool-action
+    # flows without unbounded table growth.
+    MESSAGE_EVENTS_RETENTION_DAYS: int = 14
+
+    # Scheduler (see scheduler.md).
+    SCHEDULE_DISPATCHER_INTERVAL: int = 30
+    SCHEDULE_MIN_INTERVAL: int = 900
+    SCHEDULE_MAX_PER_USER: int = 50
+    SCHEDULE_RUN_TIMEOUT: int = 600
+    SCHEDULE_MISFIRE_GRACE: int = 60
+    SCHEDULE_AUTOPAUSE_FAILURES: int = 3
+    SCHEDULE_ONCE_MAX_HORIZON: int = 31_536_000
+    SCHEDULE_RUN_OUTPUT_RETENTION_DAYS: int = 90
 
     @field_validator("POSTGRES_URI", mode="before")
     @classmethod

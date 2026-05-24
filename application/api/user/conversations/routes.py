@@ -7,9 +7,13 @@ from flask_restx import fields, Namespace, Resource
 from sqlalchemy import text as sql_text
 
 from application.api import api
+from application.api.answer.services.conversation_service import (
+    TERMINATED_RESPONSE_PLACEHOLDER,
+)
 from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.repositories.attachments import AttachmentsRepository
 from application.storage.db.repositories.conversations import ConversationsRepository
+from application.storage.db.repositories.message_events import MessageEventsRepository
 from application.storage.db.session import db_readonly, db_session
 from application.utils import check_required_fields
 
@@ -101,6 +105,85 @@ class GetConversations(Resource):
         except Exception as err:
             current_app.logger.error(
                 f"Error retrieving conversations: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(list_conversations), 200)
+
+
+@conversations_ns.route("/search_conversations")
+class SearchConversations(Resource):
+    @staticmethod
+    def _build_match_snippet(text_value: str, query: str, radius: int = 60) -> str:
+        if not text_value:
+            return ""
+        idx = text_value.lower().find(query.lower())
+        if idx == -1:
+            snippet = text_value[: radius * 2]
+            return snippet + ("…" if len(text_value) > len(snippet) else "")
+        start = max(0, idx - radius)
+        end = min(len(text_value), idx + len(query) + radius)
+        snippet = text_value[start:end]
+        if start > 0:
+            snippet = "…" + snippet
+        if end < len(text_value):
+            snippet = snippet + "…"
+        return snippet
+
+    @api.doc(
+        description=(
+            "Search the authenticated user's conversations by name or "
+            "message content (case-insensitive substring match). Mirrors "
+            "the visibility filter and response shape of /get_conversations, "
+            "and additionally returns ``match_field`` (``name``, ``prompt`` "
+            "or ``response``) and ``match_snippet`` (a short excerpt of the "
+            "matched text centered on the query) for each result."
+        ),
+        params={
+            "q": "Search term (required)",
+            "limit": "Maximum number of results to return (default 30, max 100)",
+        },
+    )
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        query = (request.args.get("q") or "").strip()
+        if not query:
+            return make_response(
+                jsonify({"success": False, "message": "q is required"}), 400
+            )
+        try:
+            limit = int(request.args.get("limit", 30))
+        except (TypeError, ValueError):
+            limit = 30
+        limit = max(1, min(limit, 100))
+        user_id = decoded_token.get("sub")
+        try:
+            with db_readonly() as conn:
+                conversations = ConversationsRepository(conn).search_for_user(
+                    user_id, query, limit=limit
+                )
+            list_conversations = [
+                {
+                    "id": str(conversation["id"]),
+                    "name": conversation["name"],
+                    "agent_id": (
+                        str(conversation["agent_id"])
+                        if conversation.get("agent_id")
+                        else None
+                    ),
+                    "is_shared_usage": conversation.get("is_shared_usage", False),
+                    "shared_token": conversation.get("shared_token", None),
+                    "match_field": conversation.get("match_field"),
+                    "match_snippet": self._build_match_snippet(
+                        conversation.get("match_text") or "", query
+                    ),
+                }
+                for conversation in conversations
+            ]
+        except Exception as err:
+            current_app.logger.error(
+                f"Error searching conversations: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify(list_conversations), 200)
@@ -346,6 +429,25 @@ class GetMessageTail(Resource):
                 if row is None:
                     return make_response(jsonify({"status": "not found"}), 404)
                 msg = row_to_dict(row)
+                # Mid-stream the row's response is the placeholder; rebuild
+                # the live partial from the journal so /tail mirrors SSE.
+                status = msg.get("status")
+                response = msg.get("response")
+                thought = msg.get("thought")
+                sources = msg.get("sources") or []
+                tool_calls = msg.get("tool_calls") or []
+                if status in ("pending", "streaming") and (
+                    response == TERMINATED_RESPONSE_PLACEHOLDER
+                ):
+                    partial = MessageEventsRepository(conn).reconstruct_partial(
+                        message_id
+                    )
+                    response = partial["response"]
+                    thought = partial["thought"] or thought
+                    if partial["sources"]:
+                        sources = partial["sources"]
+                    if partial["tool_calls"]:
+                        tool_calls = partial["tool_calls"]
         except Exception as err:
             current_app.logger.error(
                 f"Error tailing message {message_id}: {err}", exc_info=True
@@ -356,11 +458,11 @@ class GetMessageTail(Resource):
             jsonify(
                 {
                     "message_id": str(msg["id"]),
-                    "status": msg.get("status"),
-                    "response": msg.get("response"),
-                    "thought": msg.get("thought"),
-                    "sources": msg.get("sources") or [],
-                    "tool_calls": msg.get("tool_calls") or [],
+                    "status": status,
+                    "response": response,
+                    "thought": thought,
+                    "sources": sources,
+                    "tool_calls": tool_calls,
                     "request_id": msg.get("request_id"),
                     "last_heartbeat_at": metadata.get("last_heartbeat_at"),
                     "error": metadata.get("error"),

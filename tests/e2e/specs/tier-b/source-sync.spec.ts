@@ -1,5 +1,5 @@
 /**
- * Phase 3 Tier-B · source-sync (B4) — sync frequency + manual sync.
+ * Tier-B · source-sync (B4) — sync frequency + manual sync.
  *
  * Two endpoints:
  *

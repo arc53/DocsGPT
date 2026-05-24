@@ -1,9 +1,14 @@
 import { configureStore } from '@reduxjs/toolkit';
 
 import agentPreviewReducer from './agents/agentPreviewSlice';
+import schedulesReducer from './agents/schedules/schedulesSlice';
 import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
-import { conversationSlice } from './conversation/conversationSlice';
+import {
+  conversationListenerMiddleware,
+  conversationSlice,
+} from './conversation/conversationSlice';
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
+import notificationsReducer from './notifications/notificationsSlice';
 import { getStoredRecentDocs } from './preferences/preferenceApi';
 import {
   Preference,
@@ -67,9 +72,14 @@ const store = configureStore({
     upload: uploadReducer,
     agentPreview: agentPreviewReducer,
     workflowPreview: workflowPreviewReducer,
+    notifications: notificationsReducer,
+    schedules: schedulesReducer,
   },
   middleware: (getDefaultMiddleware) =>
-    getDefaultMiddleware().concat(prefListenerMiddleware.middleware),
+    getDefaultMiddleware().concat(
+      prefListenerMiddleware.middleware,
+      conversationListenerMiddleware.middleware,
+    ),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

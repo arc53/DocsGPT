@@ -70,6 +70,9 @@
       "sync": "Synchronisieren",
       "syncNow": "Jetzt synchronisieren",
       "syncing": "Synchronisiere...",
+      "reingest": "Erneut indexieren",
+      "ingestFailed": "Indexierung fehlgeschlagen",
+      "ingestProcessing": "Indexierung...",
       "syncConfirmation": "Bist du sicher, dass du \"{{sourceName}}\" synchronisieren möchtest? Dies aktualisiert den Inhalt mit deinem Cloud-Speicher und kann Änderungen an einzelnen Chunks überschreiben.",
       "syncFrequency": {
         "never": "Nie",
@@ -158,6 +161,7 @@
       "manageTools": "Zu den Werkzeugen",
       "edit": "Bearbeiten",
       "delete": "Löschen",
+      "builtIn": "Integriert",
       "deleteWarning": "Bist du sicher, dass du das Werkzeug \"{{toolName}}\" löschen möchtest?",
       "unsavedChanges": "Du hast ungespeicherte Änderungen, die verloren gehen, wenn du ohne Speichern verlässt.",
       "leaveWithoutSaving": "Ohne Speichern verlassen",
@@ -353,6 +357,8 @@
         "failed": "Upload fehlgeschlagen",
         "wait": "Dies kann einige Minuten dauern",
         "preparing": "Upload wird vorbereitet",
+        "parsing": "Dateien werden verarbeitet...",
+        "embedding": "Einbettung...",
         "tokenLimit": "Token-Limit überschritten, bitte lade ein kleineres Dokument hoch",
         "expandDetails": "Upload-Details erweitern",
         "collapseDetails": "Upload-Details einklappen",
@@ -455,6 +461,11 @@
       "note": "Quelldokument, persönliche Informationen und weitere Konversationen bleiben privat",
       "create": "Erstellen",
       "option": "Benutzern weitere Eingaben erlauben"
+    },
+    "searchConversations": {
+      "searchPlaceholder": "Konversationen durchsuchen",
+      "noResults": "Keine Ergebnisse gefunden",
+      "loading": "Laden..."
     },
     "configTool": {
       "title": "Werkzeug-Konfiguration",
@@ -635,7 +646,8 @@
         "delete": "Löschen",
         "logs": "Protokolle",
         "accessDetails": "Zugangsdaten",
-        "add": "Hinzufügen"
+        "add": "Hinzufügen",
+        "moreActions": "Weitere Aktionen"
       },
       "sections": {
         "meta": "Meta",
@@ -699,6 +711,11 @@
       },
       "preview": {
         "publishedPreview": "Veröffentlichte Agenten können hier in der Vorschau angezeigt werden"
+      },
+      "dangerZone": {
+        "heading": "Gefahrenzone",
+        "description": "Das Löschen dieses Agenten ist endgültig und entfernt alle seine Zeitpläne und den Ausführungsverlauf.",
+        "deleteButton": "Agent löschen"
       },
       "externalKb": "Externe KB"
     },

@@ -1,5 +1,5 @@
 /**
- * Phase 2 — P2-10 · Agent CRUD (classic type).
+ * P2-10 · Agent CRUD (classic type).
  *
  * Writes to `agents`, reads `prompts`, touches `users`. Exercises the full
  * create→publish→update→delete lifecycle plus cross-tenant isolation and a

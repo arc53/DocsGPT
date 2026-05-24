@@ -1,9 +1,18 @@
-import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
+import {
+  createAsyncThunk,
+  createListenerMiddleware,
+  createSlice,
+  PayloadAction,
+} from '@reduxjs/toolkit';
 
 import conversationService from '../api/services/conversationService';
+import {
+  sseEventReceived,
+  type SSEEvent,
+} from '../notifications/notificationsSlice';
 import { getConversations } from '../preferences/preferenceApi';
 import { setConversations } from '../preferences/preferenceSlice';
-import store from '../store';
+import type { RootState } from '../store';
 import {
   clearAttachments,
   selectCompletedAttachments,
@@ -957,20 +966,34 @@ export const conversationSlice = createSlice({
       const status = tail?.status as MessageStatus | undefined;
       query.messageStatus = status;
       query.lastHeartbeatAt = tail?.last_heartbeat_at ?? query.lastHeartbeatAt;
-      if (status === 'complete') {
-        query.response = tail?.response ?? '';
-        query.thought = tail?.thought ?? query.thought;
-        query.sources = tail?.sources ?? query.sources;
-        query.tool_calls = tail?.tool_calls ?? query.tool_calls;
-        delete query.error;
-      } else if (status === 'failed') {
+      if (status === 'failed') {
         // Surface as error so the placeholder text never renders.
         query.error =
           (typeof tail?.error === 'string' && tail.error) ||
           'Generation failed before completing.';
         delete query.response;
+        return;
       }
-      // pending / streaming: untouched; spinner keeps showing.
+      // /tail returns reconstructed partials mid-stream so a second tab
+      // can render the in-flight bubble; spinner is driven by status.
+      const incomingResponse = tail?.response;
+      if (typeof incomingResponse === 'string') {
+        query.response = incomingResponse;
+      } else if (status === 'complete') {
+        query.response = '';
+      }
+      if (typeof tail?.thought === 'string') {
+        query.thought = tail.thought;
+      }
+      if (Array.isArray(tail?.sources) && tail.sources.length > 0) {
+        query.sources = tail.sources;
+      }
+      if (Array.isArray(tail?.tool_calls) && tail.tool_calls.length > 0) {
+        query.tool_calls = tail.tool_calls;
+      }
+      if (status === 'complete') {
+        delete query.error;
+      }
     },
     raiseError(
       state,
@@ -1012,8 +1035,6 @@ export const conversationSlice = createSlice({
   },
 });
 
-type RootState = ReturnType<typeof store.getState>;
-
 export const selectQueries = (state: RootState) => state.conversation.queries;
 
 export const selectStatus = (state: RootState) => state.conversation.status;
@@ -1038,3 +1059,45 @@ export const {
   updateMessageMeta,
 } = conversationSlice.actions;
 export default conversationSlice.reducer;
+
+// Listener (not a reducer) so a scheduled message appended to the open
+// chat can dispatch loadConversation + sidebar refresh.
+export const conversationListenerMiddleware = createListenerMiddleware();
+
+conversationListenerMiddleware.startListening({
+  actionCreator: sseEventReceived,
+  effect: async (action: PayloadAction<SSEEvent>, listenerApi) => {
+    const envelope = action.payload;
+    if (envelope.type !== 'schedule.message.appended') return;
+    const payload = (envelope.payload || {}) as Record<string, unknown>;
+    const conversationId =
+      (payload.conversation_id as string | undefined) || '';
+    if (!conversationId) return;
+
+    const state = listenerApi.getState() as RootState;
+    const token = state.preference.token;
+
+    // Skip mid-stream: loadConversation -> updateConversationId flips status
+    // to 'idle', and the next SSE chunk dies on the 'idle' guard in
+    // updateStreamingQuery. Defer the refresh to the user's next navigation.
+    if (
+      state.conversation.conversationId === conversationId &&
+      state.conversation.status !== 'loading'
+    ) {
+      listenerApi.dispatch(
+        loadConversation({ id: conversationId, force: true }),
+      );
+    }
+
+    // Refresh sidebar; server reorders by updated_at which just bumped.
+    try {
+      const fetched = await getConversations(token);
+      listenerApi.dispatch(setConversations(fetched));
+    } catch (error) {
+      console.error(
+        'schedule.message.appended: conversations refresh failed',
+        error,
+      );
+    }
+  },
+});

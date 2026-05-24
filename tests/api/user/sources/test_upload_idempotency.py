@@ -543,6 +543,84 @@ class TestRemoteIdempotency:
         assert response.status_code == 400
         assert mock_apply.call_count == 0
 
+    def test_no_header_returns_source_id_matching_worker_kwarg(
+        self, app, pg_conn,
+    ):
+        """Regression: without an ``Idempotency-Key``, the route must
+        still return a ``source_id`` AND pass that same id to the worker
+        as ``source_id`` so SSE envelopes line up with what the
+        frontend already has. Previously the route omitted ``source_id``
+        entirely on the no-key path and the worker minted its own
+        random uuid, breaking push correlation for the default upload
+        flow.
+        """
+        from application.api.user.sources.upload import UploadRemote
+
+        apply_mock = _apply_async_mock()
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.upload.ingest_remote.apply_async",
+            apply_mock,
+        ), app.test_request_context(
+            "/api/remote", method="POST",
+            data={
+                "user": "u", "source": "github", "name": "g",
+                "data": json.dumps({"repo_url": "https://github.com/x/y"}),
+            },
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = UploadRemote().post()
+        assert response.status_code == 200
+        assert "source_id" in response.json
+        assert (
+            apply_mock.call_args.kwargs["kwargs"]["source_id"]
+            == response.json["source_id"]
+        )
+
+    def test_no_header_connector_returns_source_id_matching_worker_kwarg(
+        self, app, pg_conn,
+    ):
+        """Same regression as above for the connector branch
+        (``ingest_connector_task``). The connector path took the
+        no-key gap independently of the plain remote path."""
+        from application.api.user.sources.upload import UploadRemote
+
+        apply_mock = _apply_async_mock()
+        # Pick any registered connector — the route only branches on
+        # ``ConnectorCreator.get_supported_connectors()``.
+        from application.parser.connectors.connector_creator import (
+            ConnectorCreator,
+        )
+        supported = ConnectorCreator.get_supported_connectors()
+        if not supported:
+            pytest.skip("no connectors registered in this build")
+        connector_source = next(iter(supported))
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.upload.ingest_connector_task.apply_async",
+            apply_mock,
+        ), app.test_request_context(
+            "/api/remote", method="POST",
+            data={
+                "user": "u", "source": connector_source, "name": "g",
+                "data": json.dumps({
+                    "session_token": "tok",
+                    "file_ids": ["f1"],
+                }),
+            },
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = UploadRemote().post()
+        assert response.status_code == 200
+        assert "source_id" in response.json
+        assert (
+            apply_mock.call_args.kwargs["kwargs"]["source_id"]
+            == response.json["source_id"]
+        )
+
 
 def _seed_source(pg_conn, user="u", **kw):
     from application.storage.db.repositories.sources import SourcesRepository
@@ -673,9 +751,139 @@ class TestManageSourceFilesIdempotency:
         assert apply_mock.call_count == 1
         # Loser's response carries the winner's task_id, not the
         # original 200-with-added_files payload.
-        assert second.json["task_id"] == first.json["reingest_task_id"]
+        # ``manage_source_files`` aliases ``task_id`` ->
+        # ``reingest_task_id`` in the cached payload so the dedup
+        # response shape matches the fresh-request response (FileTree
+        # keys reingest correlation on ``reingest_task_id`` /
+        # ``source_id``).
+        assert second.json["reingest_task_id"] == first.json["reingest_task_id"]
+        # Cached ``source_id`` must equal the real source row id (not
+        # the helper's uuid5-of-key) so FileTree's SSE correlation on
+        # ``event.scope.id === result.source_id`` keeps working.
+        assert second.json["source_id"] == first.json["source_id"]
+        assert second.json["source_id"] == str(src["id"])
         # Confirm the loser never invoked the file-save path.
         assert fake_storage.save_file.call_count == 1
+
+    def test_remove_same_key_second_post_returns_real_source_id(
+        self, app, pg_conn
+    ):
+        """Regression: the ``remove`` cached branch used to leave the
+        helper's synthetic ``source_id`` (uuid5 of the scoped key) in
+        place. The reingest worker publishes SSE events tagged with the
+        real source row id, so the cached response had to be patched to
+        match what the fresh response returns — otherwise FileTree's
+        SSE correlation silently fails on every idempotent retry and
+        the user never sees the directory refresh.
+        """
+        from application.api.user.sources.upload import ManageSourceFiles
+
+        user = "alice-mgr-rmrep"
+        src = _seed_source(
+            pg_conn,
+            user=user,
+            file_path="/data",
+            file_name_map={"a.txt": "a.txt"},
+        )
+
+        fake_storage = MagicMock()
+        fake_storage.file_exists.return_value = True
+        apply_mock = _apply_async_mock()
+
+        def _do_remove():
+            return app.test_request_context(
+                "/api/manage_source_files",
+                method="POST",
+                data={
+                    "source_id": str(src["id"]),
+                    "operation": "remove",
+                    "file_paths": json.dumps(["a.txt"]),
+                },
+                content_type="multipart/form-data",
+                headers={"Idempotency-Key": "mgr-rmrep"},
+            )
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "application.api.user.tasks.reingest_source_task.apply_async",
+            apply_mock,
+        ):
+            with _do_remove():
+                from flask import request
+                request.decoded_token = {"sub": user}
+                first = ManageSourceFiles().post()
+            with _do_remove():
+                from flask import request
+                request.decoded_token = {"sub": user}
+                second = ManageSourceFiles().post()
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert apply_mock.call_count == 1
+        assert second.json["reingest_task_id"] == first.json["reingest_task_id"]
+        # The contract under test: cached source_id matches the fresh
+        # response (the real source row id), not the helper's uuid5.
+        assert second.json["source_id"] == first.json["source_id"]
+        assert second.json["source_id"] == str(src["id"])
+
+    def test_remove_directory_same_key_second_post_returns_real_source_id(
+        self, app, pg_conn
+    ):
+        """Same regression as the ``remove`` test, for the
+        ``remove_directory`` branch.
+        """
+        from application.api.user.sources.upload import ManageSourceFiles
+
+        user = "alice-mgr-rmdir-rep"
+        src = _seed_source(
+            pg_conn,
+            user=user,
+            file_path="/data",
+            file_name_map={"sub/a.txt": "a.txt"},
+        )
+
+        fake_storage = MagicMock()
+        fake_storage.is_directory.return_value = True
+        fake_storage.remove_directory.return_value = True
+        apply_mock = _apply_async_mock()
+
+        def _do_remove_dir():
+            return app.test_request_context(
+                "/api/manage_source_files",
+                method="POST",
+                data={
+                    "source_id": str(src["id"]),
+                    "operation": "remove_directory",
+                    "directory_path": "sub",
+                },
+                content_type="multipart/form-data",
+                headers={"Idempotency-Key": "mgr-rmdir-rep"},
+            )
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "application.api.user.tasks.reingest_source_task.apply_async",
+            apply_mock,
+        ):
+            with _do_remove_dir():
+                from flask import request
+                request.decoded_token = {"sub": user}
+                first = ManageSourceFiles().post()
+            with _do_remove_dir():
+                from flask import request
+                request.decoded_token = {"sub": user}
+                second = ManageSourceFiles().post()
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert apply_mock.call_count == 1
+        assert second.json["reingest_task_id"] == first.json["reingest_task_id"]
+        assert second.json["source_id"] == first.json["source_id"]
+        assert second.json["source_id"] == str(src["id"])
 
     def test_concurrent_same_key_only_one_apply_async(self, app, pg_engine):
         """N parallel same-key POSTs → exactly one apply_async."""

@@ -70,6 +70,9 @@
       "sync": "同步",
       "syncNow": "立即同步",
       "syncing": "同步中...",
+      "reingest": "重新索引",
+      "ingestFailed": "索引失敗",
+      "ingestProcessing": "索引中...",
       "syncConfirmation": "您確定要同步 \"{{sourceName}}\" 嗎？這將使用您的雲端儲存更新內容，並可能覆蓋您對個別文本塊所做的任何編輯。",
       "syncFrequency": {
         "never": "從不",
@@ -158,6 +161,7 @@
       "manageTools": "前往工具",
       "edit": "編輯",
       "delete": "刪除",
+      "builtIn": "內建",
       "deleteWarning": "您確定要刪除工具 \"{{toolName}}\" 嗎？",
       "unsavedChanges": "您有未儲存的變更，如果不儲存就離開將會遺失。",
       "leaveWithoutSaving": "不儲存離開",
@@ -353,6 +357,8 @@
         "failed": "上傳失敗",
         "wait": "這可能需要幾分鐘",
         "preparing": "準備上傳",
+        "parsing": "正在解析檔案...",
+        "embedding": "正在生成嵌入...",
         "tokenLimit": "超出令牌限制，請考慮上傳較小的文檔",
         "expandDetails": "展開上傳詳情",
         "collapseDetails": "摺疊上傳詳情",
@@ -473,6 +479,11 @@
       "note": "來源文件、個人資訊和後續對話將保持私密",
       "create": "建立",
       "option": "允許使用者進行更多查詢"
+    },
+    "searchConversations": {
+      "searchPlaceholder": "搜尋對話",
+      "noResults": "未找到結果",
+      "loading": "載入中..."
     },
     "configTool": {
       "title": "工具設定",
@@ -653,7 +664,8 @@
         "delete": "刪除",
         "logs": "日誌",
         "accessDetails": "存取詳情",
-        "add": "新增"
+        "add": "新增",
+        "moreActions": "更多操作"
       },
       "sections": {
         "meta": "中繼資料",
@@ -717,6 +729,11 @@
       },
       "preview": {
         "publishedPreview": "已發佈的代理可以在此處預覽"
+      },
+      "dangerZone": {
+        "heading": "危險區域",
+        "description": "刪除此代理將無法復原，並會移除其所有排程和執行歷史。",
+        "deleteButton": "刪除代理"
       },
       "externalKb": "外部知識庫"
     },

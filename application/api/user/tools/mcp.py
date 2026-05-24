@@ -1,6 +1,5 @@
 """Tool management MCP server integration."""
 
-import json
 from urllib.parse import urlencode, urlparse
 
 from flask import current_app, jsonify, make_response, redirect, request
@@ -226,7 +225,9 @@ class MCPServerSave(Resource):
                     )
                 redis_client = get_redis_instance()
                 manager = MCPOAuthManager(redis_client)
-                result = manager.get_oauth_status(config["oauth_task_id"])
+                result = manager.get_oauth_status(
+                    config["oauth_task_id"], user
+                )
                 if not result.get("status") == "completed":
                     return make_response(
                         jsonify(
@@ -435,56 +436,6 @@ class MCPOAuthCallback(Resource):
             )
             return redirect(
                 "/api/connectors/callback-status?status=error&message=Internal+server+error.&provider=mcp_tool"
-            )
-
-
-@tools_mcp_ns.route("/mcp_server/oauth_status/<string:task_id>")
-class MCPOAuthStatus(Resource):
-    def get(self, task_id):
-        try:
-            redis_client = get_redis_instance()
-            status_key = f"mcp_oauth_status:{task_id}"
-            status_data = redis_client.get(status_key)
-
-            if status_data:
-                status = json.loads(status_data)
-                if "tools" in status and isinstance(status["tools"], list):
-                    status["tools"] = [
-                        {
-                            "name": t.get("name", "unknown"),
-                            "description": t.get("description", ""),
-                        }
-                        for t in status["tools"]
-                    ]
-                return make_response(
-                    jsonify({"success": True, "task_id": task_id, **status})
-                )
-            else:
-                return make_response(
-                    jsonify(
-                        {
-                            "success": True,
-                            "task_id": task_id,
-                            "status": "pending",
-                            "message": "Waiting for OAuth to start...",
-                        }
-                    ),
-                    200,
-                )
-        except Exception as e:
-            current_app.logger.error(
-                f"Error getting OAuth status for task {task_id}: {str(e)}",
-                exc_info=True,
-            )
-            return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Failed to get OAuth status",
-                        "task_id": task_id,
-                    }
-                ),
-                500,
             )
 
 

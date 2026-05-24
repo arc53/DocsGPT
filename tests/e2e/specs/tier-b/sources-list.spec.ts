@@ -1,5 +1,5 @@
 /**
- * Phase 3 Tier-B · sources-list (B2) — list / paginate / search / delete /
+ * Tier-B · sources-list (B2) — list / paginate / search / delete /
  * directory-structure.
  *
  * Exercises the read-side endpoints the UI calls from

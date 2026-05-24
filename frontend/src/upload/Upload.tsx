@@ -2,9 +2,9 @@ import { useCallback, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch, useSelector, useStore } from 'react-redux';
 
-import userService from '../api/services/userService';
+import type { RootState } from '../store';
 import { getSessionToken } from '../utils/providerUtils';
 import Dropdown from '../components/Dropdown';
 import Input from '../components/Input';
@@ -298,6 +298,7 @@ function Upload({
 
   const { t } = useTranslation();
   const dispatch = useDispatch();
+  const store = useStore<RootState>();
 
   const ingestorOptions: IngestorOption[] = IngestorFormSchemas.filter(
     (schema) => (schema.validate ? schema.validate() : true),
@@ -334,110 +335,113 @@ function Upload({
     [dispatch],
   );
 
+  /**
+   * Wait for the source.ingest.* SSE pipeline to flip this task into a
+   * terminal state, then run the post-completion side effects: refresh
+   * the global source list, auto-select the new doc, and fire the
+   * caller's ``onSuccessfulUpload`` hook. The slice's extraReducer
+   * (uploadSlice.ts) is the sole driver of the task's status; we only
+   * subscribe so the side effects can fire after the modal has closed.
+   */
   const trackTraining = useCallback(
-    (backendTaskId: string, clientTaskId: string) => {
-      let timeoutId: number | null = null;
+    (clientTaskId: string) => {
+      let handled = false;
 
-      const poll = () => {
-        userService
-          .getTaskStatus(backendTaskId, null)
-          .then((response) => response.json())
-          .then(async (data) => {
-            if (!data.success && data.message) {
-              if (timeoutId !== null) {
-                clearTimeout(timeoutId);
-                timeoutId = null;
-              }
-              handleTaskFailure(clientTaskId, data.message);
-              return;
-            }
-
-            if (data.status === 'SUCCESS') {
-              if (timeoutId !== null) {
-                clearTimeout(timeoutId);
-                timeoutId = null;
-              }
-
-              const docs = await getDocs(token);
-              dispatch(setSourceDocs(docs));
-
-              if (Array.isArray(docs)) {
-                const existingDocIds = new Set(
-                  (Array.isArray(sourceDocs) ? sourceDocs : [])
-                    .map((doc: Doc) => doc?.id)
-                    .filter((id): id is string => Boolean(id)),
-                );
-                const newDoc = docs.find(
-                  (doc: Doc) => doc.id && !existingDocIds.has(doc.id),
-                );
-                if (newDoc) {
-                  // If only one doc is selected, replace it completely
-                  // If multiple docs are selected, append the new doc
-                  if (selectedDocs.length === 1) {
-                    dispatch(setSelectedDocs([newDoc]));
-                  } else {
-                    dispatch(setSelectedDocs([...selectedDocs, newDoc]));
-                  }
+      const handleTerminal = (status: 'completed' | 'failed') => {
+        if (handled) return;
+        handled = true;
+        if (status !== 'completed') return;
+        getDocs(token)
+          .then((docs) => {
+            dispatch(setSourceDocs(docs));
+            if (Array.isArray(docs)) {
+              const existingDocIds = new Set(
+                (Array.isArray(sourceDocs) ? sourceDocs : [])
+                  .map((doc: Doc) => doc?.id)
+                  .filter((id): id is string => Boolean(id)),
+              );
+              const newDoc = docs.find(
+                (doc: Doc) => doc.id && !existingDocIds.has(doc.id),
+              );
+              if (newDoc) {
+                // If only one doc is selected, replace it completely
+                // If multiple docs are selected, append the new doc
+                if (selectedDocs.length === 1) {
+                  dispatch(setSelectedDocs([newDoc]));
+                } else {
+                  dispatch(setSelectedDocs([...selectedDocs, newDoc]));
                 }
               }
-
-              if (data.result?.limited) {
-                dispatch(
-                  updateUploadTask({
-                    id: clientTaskId,
-                    updates: {
-                      status: 'failed',
-                      progress: 100,
-                      errorMessage: t('modals.uploadDoc.progress.tokenLimit'),
-                    },
-                  }),
-                );
-              } else {
-                dispatch(
-                  updateUploadTask({
-                    id: clientTaskId,
-                    updates: {
-                      status: 'completed',
-                      progress: 100,
-                      errorMessage: undefined,
-                    },
-                  }),
-                );
-                onSuccessfulUpload?.();
-              }
-            } else if (data.status === 'FAILURE') {
-              if (timeoutId !== null) {
-                clearTimeout(timeoutId);
-                timeoutId = null;
-              }
-              handleTaskFailure(clientTaskId, data.result?.message);
-            } else if (data.status === 'PROGRESS') {
-              dispatch(
-                updateUploadTask({
-                  id: clientTaskId,
-                  updates: {
-                    status: 'training',
-                    progress: Math.min(100, data.result?.current ?? 0),
-                  },
-                }),
-              );
-              timeoutId = window.setTimeout(poll, 5000);
-            } else {
-              timeoutId = window.setTimeout(poll, 5000);
             }
+            onSuccessfulUpload?.();
           })
-          .catch((error) => {
-            if (timeoutId !== null) {
-              clearTimeout(timeoutId);
-              timeoutId = null;
-            }
-            handleTaskFailure(clientTaskId, error?.message);
+          .catch((err) => {
+            console.error(
+              'SSE-driven post-completion source-list refresh failed:',
+              err,
+            );
           });
       };
 
-      timeoutId = window.setTimeout(poll, 3000);
+      const check = () => {
+        const state = store.getState();
+        const task = state.upload.tasks.find((t) => t.id === clientTaskId);
+        if (!task) return false;
+        if (task.status === 'completed' || task.status === 'failed') {
+          handleTerminal(task.status);
+          return true;
+        }
+        // Recover from the race where the terminal SSE landed before
+        // ``xhr.onload`` populated ``task.sourceId`` — the slice
+        // silently drops such events (no task to match by sourceId).
+        // Mirrors ConnectorTree/FileTree's ``recentEvents`` walk.
+        if (task.sourceId) {
+          for (const event of state.notifications.recentEvents) {
+            if (event.scope?.id !== task.sourceId) continue;
+            if (event.type === 'source.ingest.completed') {
+              handleTerminal('completed');
+              return true;
+            }
+            if (event.type === 'source.ingest.failed') {
+              handleTerminal('failed');
+              return true;
+            }
+          }
+        }
+        return false;
+      };
+
+      if (check()) return;
+      const MAX_WAIT_MS = 5 * 60_000;
+      let unsubscribe: (() => void) | null = null;
+      const timer = window.setTimeout(() => {
+        unsubscribe?.();
+        if (!handled) {
+          handled = true;
+          console.warn(
+            'trackTraining: timed out waiting for terminal SSE',
+            clientTaskId,
+          );
+          dispatch(
+            updateUploadTask({
+              id: clientTaskId,
+              updates: {
+                status: 'failed',
+                errorMessage:
+                  'Timed out waiting for ingest completion. The ingest may still be running — please refresh to check.',
+              },
+            }),
+          );
+        }
+      }, MAX_WAIT_MS);
+      unsubscribe = store.subscribe(() => {
+        if (check()) {
+          window.clearTimeout(timer);
+          unsubscribe?.();
+        }
+      });
     },
-    [dispatch, handleTaskFailure, onSuccessfulUpload, sourceDocs, t, token],
+    [dispatch, onSuccessfulUpload, selectedDocs, sourceDocs, store, token],
   );
 
   const onDrop = useCallback(
@@ -499,19 +503,23 @@ function Upload({
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          const parsed = JSON.parse(xhr.responseText) as { task_id?: string };
+          const parsed = JSON.parse(xhr.responseText) as {
+            task_id?: string;
+            source_id?: string;
+          };
           if (parsed.task_id) {
             dispatch(
               updateUploadTask({
                 id: clientTaskId,
                 updates: {
                   taskId: parsed.task_id,
+                  sourceId: parsed.source_id,
                   status: 'training',
                   progress: 0,
                 },
               }),
             );
-            trackTraining(parsed.task_id, clientTaskId);
+            trackTraining(clientTaskId);
           } else {
             dispatch(
               updateUploadTask({
@@ -627,19 +635,23 @@ function Upload({
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          const response = JSON.parse(xhr.responseText) as { task_id?: string };
+          const response = JSON.parse(xhr.responseText) as {
+            task_id?: string;
+            source_id?: string;
+          };
           if (response.task_id) {
             dispatch(
               updateUploadTask({
                 id: clientTaskId,
                 updates: {
                   taskId: response.task_id,
+                  sourceId: response.source_id,
                   status: 'training',
                   progress: 0,
                 },
               }),
             );
-            trackTraining(response.task_id, clientTaskId);
+            trackTraining(clientTaskId);
           } else {
             dispatch(
               updateUploadTask({

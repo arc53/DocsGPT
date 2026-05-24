@@ -157,7 +157,9 @@ class TestGetRedisInstance:
 
         assert result is mock_instance
         mock_from_url.assert_called_once_with(
-            "redis://localhost:6379/0", socket_connect_timeout=2
+            "redis://localhost:6379/0",
+            socket_connect_timeout=2,
+            health_check_interval=10,
         )
 
     @patch("application.cache.redis.Redis.from_url")

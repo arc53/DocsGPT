@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import useDrivePicker from 'react-google-drive-picker';
 
+import userService from '../api/services/userService';
 import ConnectorAuth from './ConnectorAuth';
 import {
   getSessionToken,
@@ -199,18 +200,11 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
     const sessionToken = getSessionToken('google_drive');
     if (sessionToken) {
       try {
-        const apiHost = import.meta.env.VITE_API_HOST;
-        await fetch(`${apiHost}/api/connectors/disconnect`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            provider: 'google_drive',
-            session_token: sessionToken,
-          }),
-        });
+        await userService.disconnectConnector(
+          'google_drive',
+          sessionToken,
+          token,
+        );
       } catch (err) {
         console.error('Error disconnecting from Google Drive:', err);
       }

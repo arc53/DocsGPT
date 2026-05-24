@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { ActiveState } from '../models/misc';
+import { selectRecentEvents } from '../notifications/notificationsSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import WrapperComponent from './WrapperModal';
 
@@ -33,6 +34,7 @@ export default function MCPServerModal({
 }: MCPServerModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
+  const recentEvents = useSelector(selectRecentEvents);
 
   const authTypes = [
     { label: t('settings.tools.mcp.authTypes.none'), value: 'none' },
@@ -71,17 +73,29 @@ export default function MCPServerModal({
   >([]);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const oauthPopupRef = useRef<Window | null>(null);
-  const pollingCancelledRef = useRef(false);
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set after ``test_mcp_connection`` returns ``task_id``. The SSE
+  // effect filters ``recentEvents`` to envelopes matching this id and
+  // drives the OAuth UI (popup open / completion / failure) from the
+  // push stream rather than polling the legacy status endpoint.
+  const [oauthTaskId, setOauthTaskId] = useState<string | null>(null);
+  // Highest event id we have already reacted to for this taskId. Each
+  // mcp.oauth.* envelope must fire its side-effect once; without this
+  // any later re-render that re-evaluates ``recentEvents`` would
+  // re-open the popup or re-fire onComplete.
+  const handledEventIdsRef = useRef<Set<string>>(new Set());
+  // Holds the ``testConnection`` ``onComplete`` for the current
+  // task id so the SSE effect can invoke it when the terminal event
+  // lands. Reset to ``null`` on cancel / new test / unmount.
+  const onCompleteRef = useRef<((result: any) => void) | null>(null);
+  const popupOpenedRef = useRef(false);
   const [oauthCompleted, setOAuthCompleted] = useState(false);
   const [saveActive, setSaveActive] = useState(false);
 
-  const cleanupPolling = useCallback(() => {
-    pollingCancelledRef.current = true;
-    if (pollTimerRef.current) {
-      clearTimeout(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
+  const cleanupOAuthListener = useCallback(() => {
+    setOauthTaskId(null);
+    handledEventIdsRef.current = new Set();
+    onCompleteRef.current = null;
+    popupOpenedRef.current = false;
     if (oauthPopupRef.current && !oauthPopupRef.current.closed) {
       oauthPopupRef.current.close();
     }
@@ -89,8 +103,8 @@ export default function MCPServerModal({
   }, []);
 
   useEffect(() => {
-    return cleanupPolling;
-  }, [cleanupPolling]);
+    return cleanupOAuthListener;
+  }, [cleanupOAuthListener]);
 
   useEffect(() => {
     if (modalState === 'ACTIVE' && server) {
@@ -119,7 +133,7 @@ export default function MCPServerModal({
   }, [modalState, server]);
 
   const resetForm = () => {
-    cleanupPolling();
+    cleanupOAuthListener();
     setFormData({
       name: t('settings.tools.mcp.defaultServerName'),
       server_url: '',
@@ -228,114 +242,123 @@ export default function MCPServerModal({
     return config;
   };
 
-  const pollOAuthStatus = async (
-    taskId: string,
-    onComplete: (result: any) => void,
-  ) => {
-    let attempts = 0;
-    const maxAttempts = 60;
-    let popupOpened = false;
-    pollingCancelledRef.current = false;
+  /**
+   * Drive the OAuth handshake straight from the SSE stream:
+   *
+   * - ``mcp.oauth.awaiting_redirect`` → open the popup with the
+   *   ``authorization_url`` carried on the envelope. Previously this URL
+   *   came from polling ``/api/mcp_server/oauth_status/<task_id>``; the
+   *   worker now publishes it inline so we never need to poll.
+   * - ``mcp.oauth.completed`` → enable Save, surface discovered tools,
+   *   invoke ``onComplete`` (resolves ``testConnection``'s pending state).
+   * - ``mcp.oauth.failed`` → surface the error and reset Save.
+   *
+   * Each event is matched to the active task id via ``scope.id``. The
+   * publisher is best-effort: a lost ``awaiting_redirect`` envelope
+   * means the popup never opens, the user retries, and we accept that
+   * over the prior 1s × 60 polling loop.
+   */
+  useEffect(() => {
+    if (!oauthTaskId) return;
+    // ``recentEvents`` is newest-first (the slice ``unshift``s on
+    // arrival). Walk it oldest-first so we observe the natural OAuth
+    // ordering (``awaiting_redirect`` → ``completed``) when both
+    // arrive between effect runs — otherwise we would short-circuit
+    // on ``completed`` and never open the popup for the
+    // ``awaiting_redirect`` envelope that was already buffered.
+    for (let i = recentEvents.length - 1; i >= 0; i--) {
+      const event = recentEvents[i];
+      if (event.scope?.id !== oauthTaskId) continue;
+      if (!event.id || handledEventIdsRef.current.has(event.id)) continue;
 
-    const poll = async () => {
-      if (pollingCancelledRef.current) return;
-      try {
-        const resp = await userService.getMCPOAuthStatus(taskId, token);
-        if (pollingCancelledRef.current) return;
-        const data = await resp.json();
-        if (pollingCancelledRef.current) return;
+      const payload = (event.payload || {}) as Record<string, unknown>;
 
-        if (data.authorization_url && !popupOpened) {
+      if (event.type === 'mcp.oauth.awaiting_redirect') {
+        handledEventIdsRef.current.add(event.id);
+        const authUrl = payload.authorization_url as string | undefined;
+        if (authUrl && !popupOpenedRef.current) {
+          popupOpenedRef.current = true;
           if (oauthPopupRef.current && !oauthPopupRef.current.closed) {
             oauthPopupRef.current.close();
           }
           oauthPopupRef.current = window.open(
-            data.authorization_url,
+            authUrl,
             'oauthPopup',
             'width=600,height=700',
           );
-          popupOpened = true;
-
           if (!oauthPopupRef.current) {
+            // Popup blocked — surface the URL inline so the user can
+            // click through manually. Browsers gate ``window.open``
+            // outside of a user gesture, and the SSE event arrives
+            // asynchronously, so a blocked popup is expected on
+            // some browsers / configs.
             setTestResult({
               success: true,
               message: t('settings.tools.mcp.oauthPopupBlocked', {
                 defaultValue:
                   'Popup blocked by browser. Click below to authorize:',
               }),
-              authorization_url: data.authorization_url,
+              authorization_url: authUrl,
             });
           }
         }
+        continue;
+      }
 
-        const callbackReceived =
-          data.status === 'callback_received' || data.status === 'completed';
-
-        if (data.status === 'completed') {
-          setOAuthCompleted(true);
-          setSaveActive(true);
-          onComplete({
-            ...data,
+      if (event.type === 'mcp.oauth.completed') {
+        handledEventIdsRef.current.add(event.id);
+        const tools = Array.isArray(payload.tools) ? payload.tools : [];
+        const toolsCount =
+          (payload.tools_count as number | undefined) ?? tools.length;
+        setOAuthCompleted(true);
+        setSaveActive(true);
+        if (oauthPopupRef.current && !oauthPopupRef.current.closed) {
+          oauthPopupRef.current.close();
+        }
+        const cb = onCompleteRef.current;
+        onCompleteRef.current = null;
+        setOauthTaskId(null);
+        if (cb) {
+          cb({
+            status: 'completed',
+            task_id: oauthTaskId,
+            tools,
+            tools_count: toolsCount,
             success: true,
             message: t('settings.tools.mcp.oauthCompleted'),
           });
-          if (oauthPopupRef.current && !oauthPopupRef.current.closed) {
-            oauthPopupRef.current.close();
-          }
-        } else if (data.status === 'error' || data.success === false) {
-          setSaveActive(false);
-          onComplete({
-            ...data,
-            success: false,
-            message: data.message || t('settings.tools.mcp.errors.oauthFailed'),
-          });
-          if (oauthPopupRef.current && !oauthPopupRef.current.closed) {
-            oauthPopupRef.current.close();
-          }
-        } else {
-          if (++attempts < maxAttempts) {
-            if (
-              oauthPopupRef.current &&
-              oauthPopupRef.current.closed &&
-              popupOpened &&
-              !callbackReceived
-            ) {
-              setSaveActive(false);
-              onComplete({
-                success: false,
-                message: t('settings.tools.mcp.errors.oauthFailed'),
-              });
-              return;
-            }
-            pollTimerRef.current = setTimeout(poll, 1000);
-          } else {
-            setSaveActive(false);
-            cleanupPolling();
-            onComplete({
-              success: false,
-              message: t('settings.tools.mcp.errors.oauthTimeout'),
-            });
-          }
         }
-      } catch {
-        if (pollingCancelledRef.current) return;
-        if (++attempts < maxAttempts) {
-          pollTimerRef.current = setTimeout(poll, 1000);
-        } else {
-          cleanupPolling();
-          onComplete({
-            success: false,
-            message: t('settings.tools.mcp.errors.oauthTimeout'),
-          });
-        }
+        continue;
       }
-    };
-    poll();
-  };
+
+      if (event.type === 'mcp.oauth.failed') {
+        handledEventIdsRef.current.add(event.id);
+        const message =
+          (payload.error as string) ??
+          t('settings.tools.mcp.errors.oauthFailed');
+        setSaveActive(false);
+        if (oauthPopupRef.current && !oauthPopupRef.current.closed) {
+          oauthPopupRef.current.close();
+        }
+        const cb = onCompleteRef.current;
+        onCompleteRef.current = null;
+        setOauthTaskId(null);
+        if (cb) {
+          cb({
+            status: 'error',
+            task_id: oauthTaskId,
+            success: false,
+            message,
+          });
+        }
+        continue;
+      }
+    }
+  }, [recentEvents, oauthTaskId, t]);
 
   const testConnection = async () => {
     if (!validateForm()) return;
-    cleanupPolling();
+    cleanupOAuthListener();
     setTesting(true);
     setTestResult(null);
     setDiscoveredTools([]);
@@ -355,7 +378,7 @@ export default function MCPServerModal({
           message: t('settings.tools.mcp.oauthInProgress'),
         });
         setSaveActive(false);
-        pollOAuthStatus(result.task_id, (finalResult) => {
+        onCompleteRef.current = (finalResult: any) => {
           setTestResult(finalResult);
           if (finalResult.tools && Array.isArray(finalResult.tools)) {
             setDiscoveredTools(finalResult.tools);
@@ -365,7 +388,11 @@ export default function MCPServerModal({
             oauth_task_id: result.task_id || '',
           }));
           setTesting(false);
-        });
+        };
+        // Activate the SSE listener for this task id. The effect above
+        // will react when ``mcp.oauth.{awaiting_redirect,completed,failed}``
+        // arrives.
+        setOauthTaskId(result.task_id);
       } else {
         setTestResult(result);
         if (result.success && result.tools && Array.isArray(result.tools)) {

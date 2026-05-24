@@ -1,4 +1,4 @@
-"""Phase 3 tests: operator MODELS_CONFIG_DIR.
+"""Tests for the operator MODELS_CONFIG_DIR.
 
 Covers the operator-supplied directory of model YAMLs that's loaded
 after the built-in catalog. Operators use this to add new

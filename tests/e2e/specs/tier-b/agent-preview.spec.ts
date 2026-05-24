@@ -1,5 +1,5 @@
 /**
- * Phase 3 Tier-B · agent preview does NOT persist conversations
+ * Tier-B · agent preview does NOT persist conversations
  *
  * Covers B14. The preview flow in `frontend/src/agents/agentPreviewSlice.ts`
  * calls `handleFetchAnswerSteaming(..., save_conversation=false)` — see the

@@ -1,5 +1,5 @@
 /**
- * Phase 2 helper — shared streaming primitives.
+ * Shared streaming primitives for SSE specs.
  *
  * The backend exposes two streaming endpoints:
  *   - POST /stream  (answer_ns path="/" + route "/stream") — SSE body

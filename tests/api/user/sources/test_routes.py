@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import Flask
+from sqlalchemy import text
 
 
 @pytest.fixture
@@ -256,8 +257,38 @@ class TestPaginatedSources:
         for key in (
             "id", "name", "date", "model", "location", "tokens",
             "retriever", "syncFrequency", "provider", "isNested", "type",
+            "ingestStatus",
         ):
             assert key in row
+
+    def test_exposes_stalled_ingest_status(self, app, pg_conn):
+        """A source whose ingest the reconciler escalated to 'stalled'
+        surfaces ingestStatus='failed' so the UI can badge it.
+        """
+        from application.api.user.sources.routes import PaginatedSources
+
+        user = "u-ingest-status"
+        src = _seed_source(pg_conn, user, name="stalled-doc", type="file")
+        pg_conn.execute(
+            text(
+                """
+                INSERT INTO ingest_chunk_progress (
+                    source_id, total_chunks, embedded_chunks, last_index,
+                    status
+                )
+                VALUES (CAST(:sid AS uuid), 907, 9, 8, 'stalled')
+                """
+            ),
+            {"sid": str(src["id"])},
+        )
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/paginated?page=1&rows=10"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = PaginatedSources().get()
+        row = response.json["paginated"][0]
+        assert row["ingestStatus"] == "failed"
 
 
 class TestDeleteOldIndexes:
@@ -553,6 +584,35 @@ class TestSyncSource:
         assert response.status_code == 200
         assert response.json["task_id"] == "task-123"
 
+    def test_normalizes_dict_remote_data_before_dispatch(self, app, pg_conn):
+        """The route must hand the sync task the normalized URL string."""
+        from application.api.user.sources.routes import SyncSource
+
+        user = "u-normalize"
+        src = _seed_source(
+            pg_conn, user, name="crawl-src", type="crawler",
+            remote_data=json.dumps(
+                {"url": "https://example.com", "provider": "crawler"}
+            ),
+        )
+
+        fake_task = MagicMock(id="task-norm")
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.sync_source.delay",
+            return_value=fake_task,
+        ) as mock_delay, app.test_request_context(
+            "/api/sync_source",
+            method="POST",
+            json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SyncSource().post()
+
+        assert response.status_code == 200
+        assert mock_delay.call_args.kwargs["source_data"] == "https://example.com"
+        assert mock_delay.call_args.kwargs["loader"] == "crawler"
+
     def test_sync_task_raises_returns_400(self, app, pg_conn):
         from application.api.user.sources.routes import SyncSource
 
@@ -573,6 +633,135 @@ class TestSyncSource:
             from flask import request
             request.decoded_token = {"sub": user}
             response = SyncSource().post()
+        assert response.status_code == 400
+
+
+class TestReingestSource:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.sources.routes import ReingestSource
+
+        with app.test_request_context(
+            "/api/sources/reingest", method="POST", json={"source_id": "x"}
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = ReingestSource().post()
+        assert response.status_code == 401
+
+    def test_returns_400_missing_id(self, app):
+        from application.api.user.sources.routes import ReingestSource
+
+        with app.test_request_context(
+            "/api/sources/reingest", method="POST", json={}
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = ReingestSource().post()
+        assert response.status_code == 400
+
+    def test_returns_404_missing_source(self, app, pg_conn):
+        from application.api.user.sources.routes import ReingestSource
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/reingest",
+            method="POST",
+            json={"source_id": "00000000-0000-0000-0000-000000000000"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u"}
+            response = ReingestSource().post()
+        assert response.status_code == 404
+
+    def test_triggers_reingest_task(self, app, pg_conn):
+        from application.api.user.sources.routes import ReingestSource
+
+        user = "u-reingest"
+        src = _seed_source(pg_conn, user, name="stalled-src", type="file")
+
+        fake_task = MagicMock(id="reingest-task-1")
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.reingest_source_task.delay",
+            return_value=fake_task,
+        ) as mock_delay, app.test_request_context(
+            "/api/sources/reingest",
+            method="POST",
+            json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ReingestSource().post()
+
+        assert response.status_code == 200
+        assert response.json["task_id"] == "reingest-task-1"
+        assert mock_delay.call_args.kwargs["source_id"] == str(src["id"])
+        assert mock_delay.call_args.kwargs["user"] == user
+        # Scoped idempotency key engages the task's lease so repeated
+        # clicks collapse onto one reingest instead of racing.
+        assert mock_delay.call_args.kwargs["idempotency_key"] == (
+            f"reingest-source:{user}:{src['id']}"
+        )
+
+    def test_clears_stalled_ingest_progress_row(self, app, pg_conn):
+        """Reingest drops the stale chunk-progress row so the sources
+        list stops deriving a 'failed' ingest status for the source.
+        """
+        from application.api.user.sources.routes import ReingestSource
+
+        user = "u-reingest-clear"
+        src = _seed_source(pg_conn, user, name="stalled-doc", type="file")
+        pg_conn.execute(
+            text(
+                """
+                INSERT INTO ingest_chunk_progress (
+                    source_id, total_chunks, embedded_chunks, last_index,
+                    status
+                )
+                VALUES (CAST(:sid AS uuid), 100, 9, 8, 'stalled')
+                """
+            ),
+            {"sid": str(src["id"])},
+        )
+
+        fake_task = MagicMock(id="reingest-task-2")
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.reingest_source_task.delay",
+            return_value=fake_task,
+        ), app.test_request_context(
+            "/api/sources/reingest",
+            method="POST",
+            json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ReingestSource().post()
+
+        assert response.status_code == 200
+        remaining = pg_conn.execute(
+            text(
+                "SELECT count(*) FROM ingest_chunk_progress "
+                "WHERE source_id = CAST(:sid AS uuid)"
+            ),
+            {"sid": str(src["id"])},
+        ).scalar()
+        assert remaining == 0
+
+    def test_reingest_task_raises_returns_400(self, app, pg_conn):
+        from application.api.user.sources.routes import ReingestSource
+
+        user = "u-reingest-fail"
+        src = _seed_source(pg_conn, user, name="fail-src", type="file")
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.reingest_source_task.delay",
+            side_effect=RuntimeError("boom"),
+        ), app.test_request_context(
+            "/api/sources/reingest",
+            method="POST",
+            json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ReingestSource().post()
         assert response.status_code == 400
 
 

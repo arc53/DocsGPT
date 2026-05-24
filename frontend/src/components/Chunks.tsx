@@ -11,6 +11,7 @@ import NoFilesIcon from '../assets/no-files.svg';
 import SearchIcon from '../assets/search.svg';
 import {
   useDarkTheme,
+  useDebouncedValue,
   useLoaderState,
   useMediaQuery,
   useOutsideAlerter,
@@ -130,6 +131,7 @@ const Chunks: React.FC<ChunksProps> = ({
   const [totalChunks, setTotalChunks] = useState(0);
   const [loading, setLoading] = useLoaderState(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
   const [editingChunk, setEditingChunk] = useState<ChunkType | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [editingText, setEditingText] = useState('');
@@ -151,7 +153,7 @@ const Chunks: React.FC<ChunksProps> = ({
         perPage,
         token,
         path,
-        searchTerm,
+        debouncedSearchTerm,
       );
 
       if (!response.ok) {
@@ -276,16 +278,12 @@ const Chunks: React.FC<ChunksProps> = ({
   };
 
   useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      if (page !== 1) {
-        setPage(1);
-      } else {
-        fetchChunks();
-      }
-    }, 300);
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm]);
+    if (page !== 1) {
+      setPage(1);
+    } else {
+      fetchChunks();
+    }
+  }, [debouncedSearchTerm]);
 
   useEffect(() => {
     !loading && fetchChunks();

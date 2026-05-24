@@ -67,13 +67,18 @@ def _patch_markdownify(monkeypatch):
     return outputs
 
 
-def _setup_session(mock_get_side_effect):
-    session = MagicMock()
-    session.get.side_effect = mock_get_side_effect
-    return session
+def _patch_pinned_request(monkeypatch, side_effect):
+    """Replace pinned_request with a stub that maps URL -> response or raises."""
+    def fake_pinned_request(method, url, **_kwargs):
+        return side_effect(url)
+
+    monkeypatch.setattr(
+        "application.parser.remote.crawler_markdown.pinned_request",
+        fake_pinned_request,
+    )
 
 
-def test_load_data_filters_external_links(_patch_markdownify):
+def test_load_data_filters_external_links(monkeypatch, _patch_markdownify):
     root_html = """
     <html><head><title>Home</title></head>
     <body><a href="/about">About</a><a href="https://other.com">Other</a><p>Welcome</p></body>
@@ -89,8 +94,9 @@ def test_load_data_filters_external_links(_patch_markdownify):
         "http://example.com/about": DummyResponse(about_html),
     }
 
+    _patch_pinned_request(monkeypatch, lambda url: responses[url])
+
     loader = CrawlerLoader(limit=5)
-    loader.session = _setup_session(lambda url, timeout=10: responses[url])
 
     docs = loader.load_data("http://example.com")
 
@@ -102,7 +108,7 @@ def test_load_data_filters_external_links(_patch_markdownify):
     assert texts == {"Home Markdown", "About Markdown"}
 
 
-def test_load_data_allows_subdomains(_patch_markdownify):
+def test_load_data_allows_subdomains(monkeypatch, _patch_markdownify):
     root_html = """
     <html><head><title>Home</title></head>
     <body><a href="http://blog.example.com/post">Blog</a></body>
@@ -118,8 +124,9 @@ def test_load_data_allows_subdomains(_patch_markdownify):
         "http://blog.example.com/post": DummyResponse(blog_html),
     }
 
+    _patch_pinned_request(monkeypatch, lambda url: responses[url])
+
     loader = CrawlerLoader(limit=5, allow_subdomains=True)
-    loader.session = _setup_session(lambda url, timeout=10: responses[url])
 
     docs = loader.load_data("http://example.com")
 
@@ -137,13 +144,14 @@ def test_load_data_handles_fetch_errors(monkeypatch, _patch_markdownify, _patch_
 
     _patch_markdownify[root_html] = "Home Markdown"
 
-    def side_effect(url, timeout=10):
+    def side_effect(url):
         if url == "http://example.com":
             return DummyResponse(root_html)
         raise requests.exceptions.RequestException("boom")
 
+    _patch_pinned_request(monkeypatch, side_effect)
+
     loader = CrawlerLoader(limit=5)
-    loader.session = _setup_session(side_effect)
     mock_print = MagicMock()
     monkeypatch.setattr("builtins.print", mock_print)
 

@@ -421,3 +421,85 @@ class TestDoclingParserGaps:
         parser = DoclingCSVParser()
         assert parser.export_format == "markdown"
         assert parser.ocr_enabled is True
+
+
+# =====================================================================
+# Pipeline memory caps
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestApplyPipelineCaps:
+    """_apply_pipeline_caps bounds docling's threaded-pipeline buffering."""
+
+    def test_caps_threaded_pipeline_knobs(self, monkeypatch):
+        from application.core.settings import settings
+        from application.parser.file.docling_parser import _apply_pipeline_caps
+
+        monkeypatch.setattr(
+            settings, "DOCLING_PIPELINE_QUEUE_MAX_SIZE", 2, raising=False
+        )
+
+        class Opts:
+            # docling >= 2.94 threaded pipeline — all knobs present.
+            queue_max_size = 100
+            layout_batch_size = 4
+            table_batch_size = 4
+            ocr_batch_size = 4
+
+        opts = Opts()
+        _apply_pipeline_caps(opts)
+
+        assert opts.queue_max_size == 2
+        assert opts.layout_batch_size == 1
+        assert opts.table_batch_size == 1
+        assert opts.ocr_batch_size == 1
+
+    def test_queue_size_is_settings_driven(self, monkeypatch):
+        from application.core.settings import settings
+        from application.parser.file.docling_parser import _apply_pipeline_caps
+
+        monkeypatch.setattr(
+            settings, "DOCLING_PIPELINE_QUEUE_MAX_SIZE", 6, raising=False
+        )
+
+        class Opts:
+            queue_max_size = 100
+
+        opts = Opts()
+        _apply_pipeline_caps(opts)
+        assert opts.queue_max_size == 6
+
+    def test_misconfigured_zero_floors_to_one(self, monkeypatch):
+        """A 0 queue depth could deadlock the threaded pipeline — floor it."""
+        from application.core.settings import settings
+        from application.parser.file.docling_parser import _apply_pipeline_caps
+
+        monkeypatch.setattr(
+            settings, "DOCLING_PIPELINE_QUEUE_MAX_SIZE", 0, raising=False
+        )
+
+        class Opts:
+            queue_max_size = 100
+
+        opts = Opts()
+        _apply_pipeline_caps(opts)
+        assert opts.queue_max_size == 1
+
+    def test_noop_on_docling_without_threaded_pipeline(self):
+        """Builds predating the threaded pipeline lack the knobs — the cap
+        must be a silent no-op, not an AttributeError."""
+        from application.parser.file.docling_parser import _apply_pipeline_caps
+
+        class LegacyOpts:
+            __slots__ = ("do_ocr", "do_table_structure")
+
+            def __init__(self):
+                self.do_ocr = False
+                self.do_table_structure = True
+
+        opts = LegacyOpts()
+        _apply_pipeline_caps(opts)  # must not raise
+
+        assert not hasattr(opts, "queue_max_size")
+        assert not hasattr(opts, "layout_batch_size")

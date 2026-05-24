@@ -10,6 +10,7 @@ import Spinner from './components/Spinner';
 import UploadToast from './components/UploadToast';
 import Conversation from './conversation/Conversation';
 import { SharedConversation } from './conversation/SharedConversation';
+import { EventStreamProvider } from './events/EventStreamProvider';
 import { useDarkTheme, useMediaQuery } from './hooks';
 import useDataInitializer from './hooks/useDataInitializer';
 import useTokenAuth from './hooks/useTokenAuth';
@@ -17,6 +18,7 @@ import Navigation from './Navigation';
 import PageNotFound from './PageNotFound';
 import Setting from './settings';
 import Notification from './components/Notification';
+import ToolApprovalToast from './notifications/ToolApprovalToast';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { isAuthLoading } = useTokenAuth();
@@ -29,7 +31,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  return <>{children}</>;
+  return <EventStreamProvider>{children}</EventStreamProvider>;
 }
 
 function MainLayout() {
@@ -50,6 +52,7 @@ function MainLayout() {
         <Outlet />
       </div>
       <UploadToast />
+      <ToolApprovalToast />
     </div>
   );
 }

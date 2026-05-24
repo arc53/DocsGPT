@@ -214,6 +214,10 @@ class StoreAttachment(Resource):
                         {
                             "success": True,
                             "task_id": tasks[0]["task_id"],
+                            # Surface the attachment_id so the frontend
+                            # can correlate ``attachment.*`` SSE events
+                            # to this row and skip the polling fallback.
+                            "attachment_id": tasks[0]["attachment_id"],
                             "message": "File uploaded successfully. Processing started.",
                         }
                     ),

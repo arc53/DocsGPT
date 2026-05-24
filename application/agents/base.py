@@ -98,6 +98,7 @@ class BaseAgent(ABC):
                 user_api_key=user_api_key,
                 user=self.user,
                 decoded_token=decoded_token,
+                agent_id=agent_id,
             )
 
         self.attachments = attachments or []
@@ -114,6 +115,8 @@ class BaseAgent(ABC):
         self.compressed_summary = compressed_summary
         self.current_token_count = 0
         self.context_limit_reached = False
+        self.conversation_id: Optional[str] = None
+        self.initial_user_id: Optional[str] = None
 
     @log_activity()
     def gen(

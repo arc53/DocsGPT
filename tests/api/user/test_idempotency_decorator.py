@@ -417,3 +417,181 @@ class TestSuccessfulRunClearsLease:
         assert row[0] == "completed"
         assert row[1] is None
         assert row[2] is None
+
+
+@pytest.mark.unit
+class TestSynthesizedKeyGuardsKeylessDispatch:
+    """A keyless dispatch carrying ``source_id`` is still poison-guarded:
+    the wrapper synthesizes a deterministic key from ``source_id``.
+    """
+
+    def test_keyless_with_source_id_records_dedup_row(self, pg_conn):
+        from application.api.user.idempotency import with_idempotency
+
+        @with_idempotency(task_name="ingest")
+        def task(self, idempotency_key=None, source_id=None):
+            return {"ran": True}
+
+        with _patch_decorator_db(pg_conn):
+            result = task(_fake_celery_self(), source_id="src-abc")
+
+        assert result == {"ran": True}
+        row = _row_for(pg_conn, "auto:ingest:src-abc")
+        assert row is not None
+        assert row[0] == "ingest"
+        assert row[2] == "completed"
+
+    def test_synthesized_key_stable_across_redeliveries(self, pg_conn):
+        """Same ``source_id`` → same key → a redelivery short-circuits to
+        the cached result instead of re-running the body.
+        """
+        from application.api.user.idempotency import with_idempotency
+
+        runs = {"count": 0}
+
+        @with_idempotency(task_name="ingest")
+        def task(self, idempotency_key=None, source_id=None):
+            runs["count"] += 1
+            return {"n": runs["count"]}
+
+        with _patch_decorator_db(pg_conn):
+            first = task(_fake_celery_self(), source_id="src-1")
+            second = task(_fake_celery_self(), source_id="src-1")
+
+        assert first == second == {"n": 1}
+        assert runs["count"] == 1
+
+    def test_poison_guard_trips_for_keyless_dispatch(self, pg_conn):
+        """The core fix: a keyless OOM-looping dispatch is bounded — the
+        guard trips after MAX_TASK_ATTEMPTS with no explicit key.
+        """
+        from application.api.user.idempotency import (
+            MAX_TASK_ATTEMPTS, with_idempotency,
+        )
+
+        runs = {"count": 0}
+
+        @with_idempotency(task_name="ingest")
+        def task(self, idempotency_key=None, source_id=None):
+            runs["count"] += 1
+            raise RuntimeError("OOM-style failure")
+
+        with _patch_decorator_db(pg_conn):
+            for _ in range(MAX_TASK_ATTEMPTS):
+                with pytest.raises(RuntimeError):
+                    task(_fake_celery_self(), source_id="src-poison")
+            result = task(_fake_celery_self(), source_id="src-poison")
+
+        assert runs["count"] == MAX_TASK_ATTEMPTS
+        assert result["success"] is False
+        assert "poison-loop" in result["error"]
+        assert _row_for(pg_conn, "auto:ingest:src-poison")[2] == "failed"
+
+    def test_no_source_id_no_key_runs_unguarded(self, pg_conn):
+        """No explicit key and no ``source_id`` anchor → pass through with
+        no DB writes, exactly as before.
+        """
+        from application.api.user.idempotency import with_idempotency
+
+        @with_idempotency(task_name="store_attachment")
+        def task(self, idempotency_key=None):
+            return {"ran": True}
+
+        with patch(
+            "application.api.user.idempotency.db_session"
+        ) as mock_session, patch(
+            "application.api.user.idempotency.db_readonly"
+        ) as mock_readonly:
+            result = task(_fake_celery_self())
+
+        assert result == {"ran": True}
+        assert mock_session.call_count == 0
+        assert mock_readonly.call_count == 0
+
+    def test_explicit_key_takes_precedence_over_source_id(self, pg_conn):
+        """An explicit key wins; the synthesized ``auto:`` key is unused."""
+        from application.api.user.idempotency import with_idempotency
+
+        @with_idempotency(task_name="ingest")
+        def task(self, idempotency_key=None, source_id=None):
+            return {"ran": True}
+
+        with _patch_decorator_db(pg_conn):
+            task(
+                _fake_celery_self(),
+                idempotency_key="explicit-k",
+                source_id="src-x",
+            )
+
+        assert _row_for(pg_conn, "explicit-k") is not None
+        assert _row_for(pg_conn, "auto:ingest:src-x") is None
+
+
+@pytest.mark.unit
+class TestPoisonHook:
+    """``on_poison`` fires on the poison-guard branch with the task's
+    bound arguments, and never on the success path.
+    """
+
+    def test_hook_invoked_with_bound_args_on_poison(self, pg_conn):
+        from application.api.user.idempotency import (
+            MAX_TASK_ATTEMPTS, with_idempotency,
+        )
+
+        captured = []
+
+        def _hook(task_name, bound):
+            captured.append((task_name, bound))
+
+        @with_idempotency(task_name="ingest", on_poison=_hook)
+        def task(self, idempotency_key=None, source_id=None):
+            raise RuntimeError("never converges")
+
+        with _patch_decorator_db(pg_conn):
+            for _ in range(MAX_TASK_ATTEMPTS):
+                with pytest.raises(RuntimeError):
+                    task(_fake_celery_self(), source_id="src-h")
+            task(_fake_celery_self(), source_id="src-h")
+
+        assert len(captured) == 1
+        task_name, bound = captured[0]
+        assert task_name == "ingest"
+        assert bound["source_id"] == "src-h"
+
+    def test_hook_not_invoked_on_success(self, pg_conn):
+        from application.api.user.idempotency import with_idempotency
+
+        calls = []
+
+        @with_idempotency(
+            task_name="ingest", on_poison=lambda *a: calls.append(a)
+        )
+        def task(self, idempotency_key=None, source_id=None):
+            return {"ok": True}
+
+        with _patch_decorator_db(pg_conn):
+            task(_fake_celery_self(), source_id="src-ok")
+
+        assert calls == []
+
+    def test_hook_failure_does_not_break_poison_return(self, pg_conn):
+        """A throwing hook must not change the poison-guard outcome."""
+        from application.api.user.idempotency import (
+            MAX_TASK_ATTEMPTS, with_idempotency,
+        )
+
+        def _bad_hook(task_name, bound):
+            raise ValueError("hook blew up")
+
+        @with_idempotency(task_name="ingest", on_poison=_bad_hook)
+        def task(self, idempotency_key=None, source_id=None):
+            raise RuntimeError("never converges")
+
+        with _patch_decorator_db(pg_conn):
+            for _ in range(MAX_TASK_ATTEMPTS):
+                with pytest.raises(RuntimeError):
+                    task(_fake_celery_self(), source_id="src-bad")
+            result = task(_fake_celery_self(), source_id="src-bad")
+
+        assert result["success"] is False
+        assert "poison-loop" in result["error"]

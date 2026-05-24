@@ -14,6 +14,8 @@ export type Doc = {
   syncFrequency?: string;
   isNested?: boolean;
   provider?: string;
+  // Derived server-side from ingest_chunk_progress (sources API).
+  ingestStatus?: 'processing' | 'failed';
 };
 
 export type GetDocsResponse = {

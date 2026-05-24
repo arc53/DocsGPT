@@ -175,6 +175,67 @@ class UsersRepository:
             {"user_id": user_id, "agent_id": agent_id},
         )
 
+    def set_default_tool_enabled(
+        self, user_id: str, tool_name: str, enabled: bool
+    ) -> None:
+        """Toggle a default chat tool in ``tool_preferences`` (idempotent)."""
+        self.upsert(user_id)
+        if enabled:
+            self._conn.execute(
+                text(
+                    """
+                    UPDATE users
+                    SET tool_preferences = jsonb_set(
+                        COALESCE(tool_preferences, '{}'::jsonb),
+                        '{disabled_default_tools}',
+                        COALESCE(
+                            (
+                                SELECT jsonb_agg(elem)
+                                FROM jsonb_array_elements(
+                                    COALESCE(
+                                        tool_preferences->'disabled_default_tools',
+                                        '[]'::jsonb
+                                    )
+                                ) AS elem
+                                WHERE (elem #>> '{}') != :tool_name
+                            ),
+                            '[]'::jsonb
+                        )
+                    ),
+                    updated_at = now()
+                    WHERE user_id = :user_id
+                    """
+                ),
+                {"user_id": user_id, "tool_name": tool_name},
+            )
+        else:
+            self._conn.execute(
+                text(
+                    """
+                    UPDATE users
+                    SET tool_preferences = jsonb_set(
+                        COALESCE(tool_preferences, '{}'::jsonb),
+                        '{disabled_default_tools}',
+                        CASE
+                            WHEN COALESCE(
+                                tool_preferences->'disabled_default_tools',
+                                '[]'::jsonb
+                            ) @> to_jsonb(CAST(:tool_name AS text))
+                                THEN tool_preferences->'disabled_default_tools'
+                            ELSE
+                                COALESCE(
+                                    tool_preferences->'disabled_default_tools',
+                                    '[]'::jsonb
+                                ) || to_jsonb(CAST(:tool_name AS text))
+                        END
+                    ),
+                    updated_at = now()
+                    WHERE user_id = :user_id
+                    """
+                ),
+                {"user_id": user_id, "tool_name": tool_name},
+            )
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------

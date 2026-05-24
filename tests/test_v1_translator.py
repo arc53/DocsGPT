@@ -1,4 +1,4 @@
-"""Tests for the v1 API translator (Phase 4).
+"""Tests for the v1 API translator.
 
 Covers request translation, response translation, streaming event
 translation, continuation detection, and history conversion.
