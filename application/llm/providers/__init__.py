@@ -17,6 +17,7 @@ from application.llm.providers.docsgpt import DocsGPTProvider
 from application.llm.providers.google import GoogleProvider
 from application.llm.providers.groq import GroqProvider
 from application.llm.providers.huggingface import HuggingFaceProvider
+from application.llm.providers.litellm import LiteLLMProvider
 from application.llm.providers.llama_cpp import LlamaCppProvider
 from application.llm.providers.novita import NovitaProvider
 from application.llm.providers.openai import OpenAIProvider
@@ -41,6 +42,7 @@ ALL_PROVIDERS: List[Provider] = [
     OpenRouterProvider(),
     NovitaProvider(),
     HuggingFaceProvider(),
+    LiteLLMProvider(),
     LlamaCppProvider(),
     PremAIProvider(),
     SagemakerProvider(),
