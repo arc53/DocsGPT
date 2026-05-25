@@ -415,6 +415,7 @@ class BaseAnswerResource:
                     tools_dict=_continuation["tools_dict"],
                     pending_tool_calls=_continuation["pending_tool_calls"],
                     tool_actions=_continuation["tool_actions"],
+                    reasoning_content=_continuation.get("reasoning_content", ""),
                 )
             else:
                 gen_iter = agent.gen(query=question)
@@ -567,6 +568,14 @@ class BaseAnswerResource:
                                     # consistent across token_usage rows.
                                     "reserved_message_id": reserved_message_id,
                                     "request_id": request_id,
+                                    # Persisted in agent_config (rather than
+                                    # a new column) so resume rebuilds the
+                                    # paused assistant message with the
+                                    # reasoning DeepSeek thinking mode
+                                    # requires on the follow-up turn.
+                                    "reasoning_content": continuation.get(
+                                        "reasoning_content", ""
+                                    ),
                                 },
                                 client_tools=getattr(
                                     agent.tool_executor, "client_tools", None
@@ -1055,7 +1064,7 @@ class BaseAnswerResource:
                         "pending_tool_calls", []
                     )
                 elif event["type"] == "thought":
-                    thought = event["thought"]
+                    thought += event["thought"]
                 elif event["type"] == "error":
                     logger.error(f"Error from stream: {event['error']}")
                     return {

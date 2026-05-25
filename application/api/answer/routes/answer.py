@@ -82,6 +82,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                     tools_dict,
                     pending_tool_calls,
                     tool_actions,
+                    reasoning_content,
                 ) = processor.resume_from_tool_actions(
                     data["tool_actions"], data["conversation_id"]
                 )
@@ -104,6 +105,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                         "tool_actions": tool_actions,
                         "reserved_message_id": processor.reserved_message_id,
                         "request_id": processor.request_id,
+                        "reasoning_content": reasoning_content,
                     },
                 )
             else:

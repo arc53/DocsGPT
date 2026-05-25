@@ -136,6 +136,7 @@ class BaseAgent(ABC):
         tools_dict: Dict,
         pending_tool_calls: List[Dict],
         tool_actions: List[Dict],
+        reasoning_content: str = "",
     ) -> Generator[Dict, None, None]:
         """Resume generation after tool actions are resolved.
 
@@ -175,11 +176,14 @@ class BaseAgent(ABC):
                 tc_obj["thought_signature"] = pending["thought_signature"]
             tc_objects.append(tc_obj)
 
-        messages.append({
+        resumed_assistant: Dict[str, Any] = {
             "role": "assistant",
             "content": None,
             "tool_calls": tc_objects,
-        })
+        }
+        if reasoning_content:
+            resumed_assistant["reasoning_content"] = reasoning_content
+        messages.append(resumed_assistant)
 
         # Now process each pending call and append tool result messages
         for pending in pending_tool_calls:
@@ -433,7 +437,17 @@ class BaseAgent(ABC):
         for i in working_history:
             if "prompt" in i and "response" in i:
                 messages.append({"role": "user", "content": i["prompt"]})
-                messages.append({"role": "assistant", "content": i["response"]})
+                asst_msg: Dict[str, Any] = {
+                    "role": "assistant",
+                    "content": i["response"],
+                }
+                # Persisted thought from the prior turn rides along as
+                # reasoning_content so providers that require it on the
+                # follow-up call (DeepSeek thinking mode) accept the
+                # request. Other OpenAI-compatible APIs ignore the field.
+                if i.get("thought"):
+                    asst_msg["reasoning_content"] = i["thought"]
+                messages.append(asst_msg)
             if "tool_calls" in i:
                 for tool_call in i["tool_calls"]:
                     call_id = tool_call.get("call_id") or str(uuid.uuid4())

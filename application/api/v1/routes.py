@@ -117,6 +117,7 @@ def chat_completions():
                 tools_dict,
                 pending_tool_calls,
                 tool_actions,
+                reasoning_content,
             ) = processor.resume_from_tool_actions(
                 internal_data["tool_actions"], conversation_id
             )
@@ -125,6 +126,7 @@ def chat_completions():
                 "tools_dict": tools_dict,
                 "pending_tool_calls": pending_tool_calls,
                 "tool_actions": tool_actions,
+                "reasoning_content": reasoning_content,
             }
             question = ""
         else:

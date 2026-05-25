@@ -51,6 +51,7 @@ class LLMResponse:
     tool_calls: List[ToolCall]
     finish_reason: str
     raw_response: Any
+    reasoning_content: str = ""
 
     @property
     def requires_tool_call(self) -> bool:
@@ -714,7 +715,12 @@ class LLMHandler(ABC):
             return False, None
 
     def handle_tool_calls(
-        self, agent, tool_calls: List[ToolCall], tools_dict: Dict, messages: List[Dict]
+        self,
+        agent,
+        tool_calls: List[ToolCall],
+        tools_dict: Dict,
+        messages: List[Dict],
+        reasoning_content: str = "",
     ) -> Generator:
         """
         Execute tool calls and update conversation history.
@@ -731,6 +737,11 @@ class LLMHandler(ABC):
             tool_calls: List of tool calls to execute
             tools_dict: Available tools dictionary
             messages: Current conversation history
+            reasoning_content: Reasoning text emitted by the model
+                before these tool calls. Attached to the recorded
+                assistant message so providers that require reasoning
+                to round-trip (DeepSeek thinking mode) accept the
+                follow-up request.
 
         Returns:
             Tuple of (updated_messages, pending_actions).
@@ -872,11 +883,14 @@ class LLMHandler(ABC):
                     }
                     if getattr(call, "thought_signature", None):
                         tool_call_obj["thought_signature"] = call.thought_signature
-                    updated_messages.append({
+                    assistant_msg: Dict[str, Any] = {
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [tool_call_obj],
-                    })
+                    }
+                    if reasoning_content:
+                        assistant_msg["reasoning_content"] = reasoning_content
+                    updated_messages.append(assistant_msg)
                     denial_call = ToolCall(
                         id=pause_info["call_id"],
                         name=call.name,
@@ -967,11 +981,19 @@ class LLMHandler(ABC):
                 if call.thought_signature:
                     tool_call_obj["thought_signature"] = call.thought_signature
 
-                updated_messages.append({
+                assistant_msg: Dict[str, Any] = {
                     "role": "assistant",
                     "content": None,
                     "tool_calls": [tool_call_obj],
-                })
+                }
+                # Each call in a parallel batch becomes its own
+                # assistant message here, so the same per-round
+                # reasoning has to ride on every one — DeepSeek
+                # thinking mode rejects any assistant message in the
+                # active turn that's missing reasoning_content.
+                if reasoning_content:
+                    assistant_msg["reasoning_content"] = reasoning_content
+                updated_messages.append(assistant_msg)
 
                 updated_messages.append(self.create_tool_message(call, tool_response))
             except Exception as e:
@@ -1026,8 +1048,13 @@ class LLMHandler(ABC):
         iteration = 0
         while parsed.requires_tool_call:
             iteration += 1
+            reasoning_for_round = parsed.reasoning_content or ""
             tool_handler_gen = self.handle_tool_calls(
-                agent, parsed.tool_calls, tools_dict, messages
+                agent,
+                parsed.tool_calls,
+                tools_dict,
+                messages,
+                reasoning_content=reasoning_for_round,
             )
             while True:
                 try:
@@ -1042,6 +1069,7 @@ class LLMHandler(ABC):
                     "messages": messages,
                     "pending_tool_calls": pending_actions,
                     "tools_dict": tools_dict,
+                    "reasoning_content": reasoning_for_round,
                 }
                 yield {
                     "type": "tool_calls_pending",
@@ -1104,15 +1132,19 @@ class LLMHandler(ABC):
         """
         buffer = ""
         tool_calls = {}
+        reasoning_buffer = ""
 
         for chunk in self._iterate_stream(response):
             if isinstance(chunk, dict) and chunk.get("type") == "thought":
+                reasoning_buffer += chunk.get("thought") or ""
                 yield chunk
                 continue
             if isinstance(chunk, str):
                 yield chunk
                 continue
             parsed = self.parse_response(chunk)
+            if parsed.reasoning_content:
+                reasoning_buffer += parsed.reasoning_content
 
             if parsed.tool_calls:
                 for call in parsed.tool_calls:
@@ -1134,7 +1166,11 @@ class LLMHandler(ABC):
                             existing.thought_signature = call.thought_signature
             if parsed.finish_reason == "tool_calls":
                 tool_handler_gen = self.handle_tool_calls(
-                    agent, list(tool_calls.values()), tools_dict, messages
+                    agent,
+                    list(tool_calls.values()),
+                    tools_dict,
+                    messages,
+                    reasoning_content=reasoning_buffer,
                 )
                 while True:
                     try:
@@ -1143,6 +1179,8 @@ class LLMHandler(ABC):
                         messages, pending_actions = e.value
                         break
                 tool_calls = {}
+                pause_reasoning = reasoning_buffer
+                reasoning_buffer = ""
 
                 # If tools need approval or client execution, pause the loop
                 if pending_actions:
@@ -1150,6 +1188,7 @@ class LLMHandler(ABC):
                         "messages": messages,
                         "pending_tool_calls": pending_actions,
                         "tools_dict": tools_dict,
+                        "reasoning_content": pause_reasoning,
                     }
                     yield {
                         "type": "tool_calls_pending",

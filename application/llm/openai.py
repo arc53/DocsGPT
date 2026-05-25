@@ -108,6 +108,10 @@ class OpenAILLM(BaseLLM):
         for message in messages:
             role = message.get("role")
             content = message.get("content")
+            # Reasoning round-trips for providers that demand it
+            # (DeepSeek thinking mode). Other OpenAI-compatible APIs
+            # ignore the extra field.
+            reasoning_content = message.get("reasoning_content")
 
             if role == "model":
                 role = "assistant"
@@ -132,11 +136,14 @@ class OpenAILLM(BaseLLM):
                         "type": "function",
                         "function": {"name": func.get("name", ""), "arguments": args},
                     })
-                cleaned_messages.append({
+                cleaned_assistant: dict = {
                     "role": "assistant",
                     "content": None,
                     "tool_calls": cleaned_tcs,
-                })
+                }
+                if reasoning_content:
+                    cleaned_assistant["reasoning_content"] = reasoning_content
+                cleaned_messages.append(cleaned_assistant)
                 continue
 
             # Standard format: tool message with tool_call_id (passthrough)
@@ -151,7 +158,10 @@ class OpenAILLM(BaseLLM):
 
             if role and content is not None:
                 if isinstance(content, str):
-                    cleaned_messages.append({"role": role, "content": content})
+                    msg_obj: dict = {"role": role, "content": content}
+                    if reasoning_content and role == "assistant":
+                        msg_obj["reasoning_content"] = reasoning_content
+                    cleaned_messages.append(msg_obj)
                 elif isinstance(content, list):
                     content_parts = []
                     for item in content:
@@ -195,7 +205,10 @@ class OpenAILLM(BaseLLM):
                             elif "text" in item and "type" not in item:
                                 content_parts.append({"type": "text", "text": item["text"]})
                     if content_parts:
-                        cleaned_messages.append({"role": role, "content": content_parts})
+                        list_msg: dict = {"role": role, "content": content_parts}
+                        if reasoning_content and role == "assistant":
+                            list_msg["reasoning_content"] = reasoning_content
+                        cleaned_messages.append(list_msg)
                 else:
                     raise ValueError(f"Unexpected content type: {type(content)}")
         return cleaned_messages

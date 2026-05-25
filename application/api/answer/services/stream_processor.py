@@ -190,6 +190,15 @@ class StreamProcessor:
                     {
                         "prompt": query["prompt"],
                         "response": query["response"],
+                        # Carry the persisted thought so _build_messages
+                        # re-attaches it as reasoning_content on replay —
+                        # DeepSeek thinking mode rejects follow-up turns
+                        # whose prior assistant message dropped it.
+                        **(
+                            {"thought": query["thought"]}
+                            if query.get("thought")
+                            else {}
+                        ),
                         **(
                             {"metadata": query["metadata"]}
                             if "metadata" in query
@@ -226,6 +235,11 @@ class StreamProcessor:
                     {
                         "prompt": query["prompt"],
                         "response": query["response"],
+                        **(
+                            {"thought": query["thought"]}
+                            if query.get("thought")
+                            else {}
+                        ),
                         **({"metadata": query["metadata"]} if "metadata" in query else {}),
                     }
                     for query in conversation.get("queries", [])
@@ -261,6 +275,11 @@ class StreamProcessor:
                 {
                     "prompt": query["prompt"],
                     "response": query["response"],
+                    **(
+                        {"thought": query["thought"]}
+                        if query.get("thought")
+                        else {}
+                    ),
                     **({"metadata": query["metadata"]} if "metadata" in query else {}),
                 }
                 for query in conversation.get("queries", [])
@@ -971,7 +990,11 @@ class StreamProcessor:
             conversation_id: The conversation being resumed.
 
         Returns:
-            Tuple of (agent, messages, tools_dict, pending_tool_calls, tool_actions).
+            Tuple of (agent, messages, tools_dict, pending_tool_calls,
+            tool_actions, reasoning_content). ``reasoning_content`` is
+            the reasoning text emitted before the pause; round-tripping
+            it back to the model is required by DeepSeek's thinking
+            mode and ignored elsewhere.
         """
         from application.api.answer.services.continuation_service import (
             ContinuationService,
@@ -1100,7 +1123,15 @@ class StreamProcessor:
         self.reserved_message_id = agent_config.get("reserved_message_id")
         self.request_id = agent_config.get("request_id")
 
-        return agent, messages, tools_dict, pending_tool_calls, tool_actions
+        reasoning_content = agent_config.get("reasoning_content", "")
+        return (
+            agent,
+            messages,
+            tools_dict,
+            pending_tool_calls,
+            tool_actions,
+            reasoning_content,
+        )
 
     def create_agent(
         self,
