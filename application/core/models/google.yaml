@@ -7,11 +7,11 @@ defaults:
 
 models:
   - id: gemini-3.1-pro-preview
-    display_name: Gemini 3.1 Pro
+    display_name: Gemini 3.1 Pro (preview)
     description: Most capable Gemini 3 model with advanced reasoning and agentic coding (preview)
-  - id: gemini-3-flash-preview
-    display_name: Gemini 3 Flash
-    description: Frontier-class performance for low-latency, high-volume tasks (preview)
-  - id: gemini-3.1-flash-lite-preview
+  - id: gemini-3.5-flash
+    display_name: Gemini 3.5 Flash
+    description: Frontier-class Flash for sustained performance on agentic and coding tasks
+  - id: gemini-3.1-flash-lite
     display_name: Gemini 3.1 Flash-Lite
-    description: Cost-efficient frontier-class multimodal model for high-throughput workloads (preview)
+    description: Cost-efficient frontier-class multimodal model for high-throughput workloads

@@ -14,7 +14,7 @@ The primary method for configuring your LLM provider in DocsGPT is through the `
 To connect to a cloud LLM provider, you will typically need to configure the following basic settings in your `.env` file:
 
 *   **`LLM_PROVIDER`**:  This setting is essential and identifies the specific cloud provider you wish to use (e.g., `openai`, `google`, `anthropic`).
-*   **`LLM_NAME`**:  Specifies the exact model you want to utilize from your chosen provider (e.g., `gpt-5.1`, `gemini-flash-latest`, `claude-3-5-sonnet-20241022`).  Refer to your provider's documentation for a list of available models.
+*   **`LLM_NAME`**:  Specifies the exact model you want to utilize from your chosen provider (e.g., `gpt-5.1`, `gemini-3.5-flash`, `claude-3-5-sonnet-20241022`).  Refer to your provider's documentation for a list of available models.
 *   **`API_KEY`**:  Almost all cloud LLM providers require an API key for authentication. Obtain your API key from your chosen provider's platform and securely store it in your `.env` file.
 
 ## Explicitly Supported Cloud Providers
@@ -25,7 +25,7 @@ DocsGPT offers direct, streamlined support for the following cloud LLM providers
 | :--------------------------- | :------------- | :-------------------------- |
 | DocsGPT Public API           | `docsgpt`      | `None`                      |
 | OpenAI                       | `openai`       | `gpt-5.1`                   |
-| Google (Vertex AI, Gemini)   | `google`       | `gemini-flash-latest`       |
+| Google (Vertex AI, Gemini)   | `google`       | `gemini-3.5-flash`          |
 | Anthropic (Claude)           | `anthropic`    | `claude-3-5-sonnet-20241022`|
 | Groq                         | `groq`         | `llama-3.3-70b-versatile`   |
 | HuggingFace Inference API    | `huggingface`  | `meta-llama/Llama-3.1-8B-Instruct` |
