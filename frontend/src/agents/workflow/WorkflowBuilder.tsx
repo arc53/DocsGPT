@@ -1392,8 +1392,8 @@ function WorkflowBuilderInner() {
                 {t('agents.backToAll')}
               </Button>
             )}
-            <div className="group relative flex items-center gap-2">
-              <div>
+            {!canManageAgent && (
+              <div className="min-w-0">
                 <div
                   className="max-w-xs truncate text-xl font-bold text-gray-900 dark:text-white"
                   title={workflowName || 'New Workflow'}
@@ -1402,19 +1402,27 @@ function WorkflowBuilderInner() {
                 </div>
                 {workflowDescription && (
                   <div
-                    className="max-w-xs truncate text-xs text-gray-500 dark:text-gray-400"
+                    className="text-muted-foreground max-w-xs truncate text-xs"
                     title={workflowDescription}
                   >
                     {workflowDescription}
                   </div>
                 )}
               </div>
+            )}
+            <div className="relative flex items-center">
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
                 onClick={() => setShowWorkflowSettings(!showWorkflowSettings)}
-                className="size-auto p-0 text-gray-400 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-transparent hover:text-gray-600 dark:hover:bg-transparent dark:hover:text-gray-200"
+                className="text-muted-foreground hover:bg-accent hover:text-foreground size-auto p-1"
+                aria-label="Workflow settings"
+                title={
+                  workflowDescription
+                    ? `${workflowName || 'New Workflow'} — ${workflowDescription}`
+                    : 'Edit workflow details'
+                }
               >
                 <Pencil size={14} />
               </Button>
