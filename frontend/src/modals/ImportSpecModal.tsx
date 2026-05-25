@@ -5,10 +5,13 @@ import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import Upload from '../assets/upload.svg';
 import Spinner from '../components/Spinner';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { APIActionType } from '../settings/types';
-import WrapperModal from './WrapperModal';
+import { getMethodColorClass } from '../utils/httpMethodColors';
 
 interface ImportSpecModalProps {
   modalState: ActiveState;
@@ -25,18 +28,6 @@ interface ParsedResult {
   };
   actions: APIActionType[];
 }
-
-const METHOD_COLORS: Record<string, string> = {
-  GET: 'bg-[#D1FAE5] text-[#065F46] dark:bg-[#064E3B]/60 dark:text-[#6EE7B7]',
-  POST: 'bg-[#DBEAFE] text-[#1E40AF] dark:bg-[#1E3A8A]/60 dark:text-[#93C5FD]',
-  PUT: 'bg-[#FEF3C7] text-[#92400E] dark:bg-[#78350F]/60 dark:text-[#FCD34D]',
-  DELETE:
-    'bg-[#FEE2E2] text-[#991B1B] dark:bg-[#7F1D1D]/60 dark:text-[#FCA5A5]',
-  PATCH: 'bg-[#EDE9FE] text-[#5B21B6] dark:bg-[#4C1D95]/60 dark:text-[#C4B5FD]',
-  HEAD: 'bg-[#F3F4F6] text-[#374151] dark:bg-[#374151]/60 dark:text-[#D1D5DB]',
-  OPTIONS:
-    'bg-[#F3F4F6] text-[#374151] dark:bg-[#374151]/60 dark:text-[#D1D5DB]',
-};
 
 export default function ImportSpecModal({
   modalState,
@@ -157,19 +148,47 @@ export default function ImportSpecModal({
     handleClose();
   };
 
-  if (modalState !== 'ACTIVE') return null;
-
   return (
-    <WrapperModal
-      close={handleClose}
-      className="w-full max-w-2xl"
+    <Modal
+      open={modalState === 'ACTIVE'}
+      onOpenChange={(o) => !o && handleClose()}
+      title={t('modals.importSpec.title')}
+      size="lg"
       contentClassName="max-h-[70vh]"
+      footer={
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={handleClose}
+            className="rounded-3xl px-5"
+          >
+            {t('modals.importSpec.cancel')}
+          </Button>
+          {!parsedResult ? (
+            <Button
+              type="button"
+              onClick={handleParse}
+              disabled={!file || loading}
+              className="w-20 rounded-3xl px-5 disabled:cursor-not-allowed"
+            >
+              {loading && <Spinner size="small" />}
+              {!loading && t('modals.importSpec.parse')}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              onClick={handleImport}
+              disabled={selectedActions.size === 0}
+              className="rounded-3xl px-5 disabled:cursor-not-allowed"
+            >
+              {t('modals.importSpec.import', { count: selectedActions.size })}
+            </Button>
+          )}
+        </>
+      }
     >
       <div className="flex flex-col gap-4">
-        <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
-          {t('modals.importSpec.title')}
-        </h2>
-
         {!parsedResult ? (
           <div className="flex flex-col gap-4">
             <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -223,11 +242,11 @@ export default function ImportSpecModal({
                 <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
                   {t('modals.importSpec.baseUrl')}
                 </label>
-                <input
+                <Input
                   type="text"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  className="border-border dark:border-border text-foreground dark:text-foreground bg-card w-full rounded-lg border px-3 py-2 text-sm outline-hidden"
+                  className="bg-card h-auto rounded-lg px-3 py-2 text-sm md:text-sm"
                   placeholder={
                     parsedResult.metadata.base_url || 'https://api.example.com'
                   }
@@ -241,14 +260,17 @@ export default function ImportSpecModal({
                   count: parsedResult.actions.length,
                 })}
               </p>
-              <button
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
                 onClick={toggleAll}
-                className="text-primary hover:text-primary text-sm"
+                className="h-auto p-0"
               >
                 {selectedActions.size === parsedResult.actions.length
                   ? t('modals.importSpec.deselectAll')
                   : t('modals.importSpec.selectAll')}
-              </button>
+              </Button>
             </div>
 
             <div className="max-h-72 space-y-2 overflow-y-auto px-1">
@@ -266,7 +288,7 @@ export default function ImportSpecModal({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span
-                        className={`rounded px-2 py-0.5 text-xs font-medium ${METHOD_COLORS[action.method.toUpperCase()] || METHOD_COLORS.GET}`}
+                        className={`rounded px-2 py-0.5 text-xs font-medium ${getMethodColorClass(action.method)}`}
                       >
                         {action.method.toUpperCase()}
                       </span>
@@ -288,34 +310,7 @@ export default function ImportSpecModal({
             </div>
           </div>
         )}
-
-        <div className="mt-2 flex flex-row-reverse gap-2">
-          {!parsedResult ? (
-            <button
-              onClick={handleParse}
-              disabled={!file || loading}
-              className="bg-primary hover:bg-primary/90 flex w-20 items-center justify-center gap-2 rounded-3xl px-5 py-2 text-sm text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading && <Spinner size="small" color="white" />}
-              {!loading && t('modals.importSpec.parse')}
-            </button>
-          ) : (
-            <button
-              onClick={handleImport}
-              disabled={selectedActions.size === 0}
-              className="bg-primary hover:bg-primary/90 rounded-3xl px-5 py-2 text-sm text-white transition-all disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {t('modals.importSpec.import', { count: selectedActions.size })}
-            </button>
-          )}
-          <button
-            onClick={handleClose}
-            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-3xl px-5 py-2 text-sm font-medium"
-          >
-            {t('modals.importSpec.cancel')}
-          </button>
-        </div>
       </div>
-    </WrapperModal>
+    </Modal>
   );
 }

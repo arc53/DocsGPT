@@ -1,7 +1,9 @@
+import { X } from 'lucide-react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useMatch, useNavigate } from 'react-router-dom';
 
 import WarnIcon from '../assets/warn.svg';
+import { Button } from '../components/ui/button';
 import type { RootState } from '../store';
 
 import {
@@ -103,42 +105,22 @@ export default function ToolApprovalToast() {
         ({ eventId, conversationId }) => (
           <div
             key={eventId}
-            className="border-border bg-card w-[271px] overflow-hidden rounded-2xl border shadow-[0px_24px_48px_0px_#00000029]"
+            className="border-border bg-card shadow-toast w-[271px] overflow-hidden rounded-2xl border"
           >
             <div className="bg-accent/50 dark:bg-muted flex items-center justify-between px-4 py-3">
-              <h3 className="font-inter dark:text-foreground text-[14px] leading-[16.5px] font-medium text-black">
+              <h3 className="dark:text-foreground text-sm leading-[16.5px] font-medium text-black">
                 Tool approval needed
               </h3>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => dispatch(dismissToolApproval(eventId))}
-                className="flex h-8 items-center justify-center p-0 text-black opacity-70 transition-opacity hover:opacity-100 dark:text-white"
+                className="h-8 w-8 p-0 text-black opacity-70 transition-opacity hover:bg-transparent hover:opacity-100 dark:text-white"
                 aria-label="Dismiss"
               >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-4 w-4"
-                >
-                  <path
-                    d="M18 6L6 18"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="M6 6L18 18"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
+                <X className="h-4 w-4" />
+              </Button>
             </div>
             <div className="flex items-center justify-between gap-3 px-5 py-3">
               <div className="flex min-w-0 items-center gap-2">
@@ -149,22 +131,23 @@ export default function ToolApprovalToast() {
                   aria-hidden="true"
                 />
                 <p
-                  className="font-inter dark:text-muted-foreground max-w-[140px] truncate text-[13px] leading-[16.5px] font-normal text-black"
+                  className="dark:text-muted-foreground max-w-[140px] truncate text-sm leading-[16.5px] font-normal text-black"
                   title={conversationName(conversationId)}
                 >
                   {conversationName(conversationId)}
                 </p>
               </div>
-              <button
+              <Button
                 type="button"
+                size="sm"
                 onClick={() => {
                   dispatch(dismissToolApproval(eventId));
                   navigate(`/c/${conversationId}`);
                 }}
-                className="rounded-full bg-[#7D54D1] px-3 py-1 text-[12px] font-medium text-white shadow-sm hover:bg-[#6a45b8]"
+                className="h-auto rounded-full px-3 py-1 text-xs font-medium text-white shadow-sm"
               >
                 Review
-              </button>
+              </Button>
             </div>
           </div>
         ),

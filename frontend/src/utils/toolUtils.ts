@@ -15,3 +15,12 @@ export function getToolDisplayName(tool: ToolLabelSource): string {
   if (isNonEmptyString(tool.name)) return tool.name.trim();
   return '';
 }
+
+// Chat-popup visibility rule: show defaults (so users can toggle the
+// agentless chat tools on/off) plus any non-builtin user_tools row. Hide
+// pure builtins (agent-only). Dual-registered tools like ``scheduler``
+// carry BOTH flags and stay visible via the ``default`` branch.
+export const isChatToolVisible = (tool: {
+  default?: boolean;
+  builtin?: boolean;
+}): boolean => Boolean(tool.default) || !tool.builtin;

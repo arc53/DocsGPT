@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 
+import { Button } from '../../components/ui/button';
 import type { ScheduleRun } from '../types/schedule';
 import ScheduleStatusBadge from './StatusBadge';
 
@@ -44,13 +45,15 @@ export default function RunDetailDrawer({
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Run details</h2>
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={onClose}
-            className="border-border text-muted-foreground rounded-md border px-3 py-1 text-sm"
+            className="text-muted-foreground"
           >
             Close
-          </button>
+          </Button>
         </div>
         <dl className="mb-4 grid grid-cols-2 gap-2 text-sm">
           <dt className="text-muted-foreground">Status</dt>

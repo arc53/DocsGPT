@@ -1,4 +1,6 @@
-import React from 'react';
+import * as React from 'react';
+
+import { cn } from '@/lib/utils';
 
 interface TableProps {
   children: React.ReactNode;
@@ -43,10 +45,16 @@ const TableContainer = React.forwardRef<HTMLDivElement, TableContainerProps>(
     ref: React.ForwardedRef<HTMLDivElement>,
   ) {
     return (
-      <div className={`relative rounded-[6px] ${className}`}>
+      <div
+        data-slot="table-container"
+        className={cn('relative rounded-md', className)}
+      >
         <div
           ref={ref}
-          className={`w-full overflow-x-auto rounded-[6px] bg-transparent ${bordered ? 'border-border dark:border-border border' : ''}`}
+          className={cn(
+            'w-full overflow-x-auto rounded-md bg-transparent',
+            bordered && 'border-border border',
+          )}
           style={{
             maxHeight: height === 'auto' ? undefined : height,
             overflowY: height === 'auto' ? 'hidden' : 'auto',
@@ -66,16 +74,23 @@ const Table: React.FC<TableProps> = ({
 }) => {
   return (
     <table
-      className={`w-full table-auto border-collapse bg-transparent ${minWidth} ${className}`}
+      data-slot="table"
+      className={cn(
+        'w-full table-auto border-collapse bg-transparent',
+        minWidth,
+        className,
+      )}
     >
       {children}
     </table>
   );
 };
+
 const TableHead: React.FC<TableHeadProps> = ({ children, className = '' }) => {
   return (
     <thead
-      className={`dark:bg-card sticky top-0 z-10 bg-gray-100 ${className} `}
+      data-slot="table-head"
+      className={cn('bg-muted sticky top-0 z-10', className)}
     >
       {children}
     </thead>
@@ -84,7 +99,10 @@ const TableHead: React.FC<TableHeadProps> = ({ children, className = '' }) => {
 
 const TableBody: React.FC<TableHeadProps> = ({ children, className = '' }) => {
   return (
-    <tbody className={`[&>tr:last-child]:border-b-0 ${className}`}>
+    <tbody
+      data-slot="table-body"
+      className={cn('[&>tr:last-child]:border-b-0', className)}
+    >
       {children}
     </tbody>
   );
@@ -95,13 +113,14 @@ const TableRow: React.FC<TableRowProps> = ({
   className = '',
   onClick,
 }) => {
-  const baseClasses =
-    'border-b border-border hover:bg-muted dark:border-border dark:hover:bg-muted';
-  const cursorClass = onClick ? 'cursor-pointer' : '';
-
   return (
     <tr
-      className={`${baseClasses} ${cursorClass} ${className}`}
+      data-slot="table-row"
+      className={cn(
+        'border-border hover:bg-muted border-b',
+        onClick && 'cursor-pointer',
+        className,
+      )}
       onClick={onClick}
     >
       {children}
@@ -116,23 +135,22 @@ const TableHeader: React.FC<TableCellProps> = ({
   width,
   align = 'left',
 }) => {
-  const getAlignmentClass = () => {
-    switch (align) {
-      case 'right':
-        return 'text-right';
-      case 'center':
-        return 'text-center';
-      default:
-        return 'text-left';
-    }
-  };
-
-  const baseClasses = `px-2 py-3 text-sm font-medium text-gray-700 lg:px-3 dark:text-muted-foreground border-b border-border dark:border-border relative box-border ${getAlignmentClass()}`;
-  const widthClasses = minWidth ? minWidth : '';
+  const alignmentClass =
+    align === 'right'
+      ? 'text-right'
+      : align === 'center'
+        ? 'text-center'
+        : 'text-left';
 
   return (
     <th
-      className={`${baseClasses} ${widthClasses} ${className}`}
+      data-slot="table-header"
+      className={cn(
+        'border-border text-muted-foreground relative box-border border-b px-2 py-3 text-sm font-medium lg:px-3',
+        alignmentClass,
+        minWidth,
+        className,
+      )}
       style={width ? { width, minWidth: width, maxWidth: width } : {}}
     >
       {children}
@@ -147,23 +165,22 @@ const TableCell: React.FC<TableCellProps> = ({
   width,
   align = 'left',
 }) => {
-  const getAlignmentClass = () => {
-    switch (align) {
-      case 'right':
-        return 'text-right';
-      case 'center':
-        return 'text-center';
-      default:
-        return 'text-left';
-    }
-  };
-
-  const baseClasses = `px-2 py-2 text-sm lg:px-3 box-border ${getAlignmentClass()}`;
-  const widthClasses = minWidth ? minWidth : '';
+  const alignmentClass =
+    align === 'right'
+      ? 'text-right'
+      : align === 'center'
+        ? 'text-center'
+        : 'text-left';
 
   return (
     <td
-      className={`${baseClasses} ${widthClasses} ${className}`}
+      data-slot="table-cell"
+      className={cn(
+        'box-border px-2 py-2 text-sm lg:px-3',
+        alignmentClass,
+        minWidth,
+        className,
+      )}
       style={width ? { width, minWidth: width, maxWidth: width } : {}}
     >
       {children}

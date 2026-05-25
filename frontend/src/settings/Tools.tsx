@@ -1,4 +1,5 @@
 import { RefreshCcw, Trash } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -9,9 +10,16 @@ import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import SearchIcon from '../assets/search.svg';
 import ThreeDotsIcon from '../assets/three-dots.svg';
-import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import SkeletonLoader from '../components/SkeletonLoader';
-import ToggleSwitch from '../components/ToggleSwitch';
+import { Button } from '../components/ui/button';
+import { Switch } from '../components/ui/switch';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
+import { Input } from '../components/ui/input';
 import { useDarkTheme, useLoaderState } from '../hooks';
 import AddToolModal from '../modals/AddToolModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -20,6 +28,16 @@ import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import ToolConfig from './ToolConfig';
 import { APIToolType, UserToolType } from './types';
+
+type ToolsMenuOption = {
+  icon: string | LucideIcon;
+  label: string;
+  onClick: () => void;
+  variant: 'default' | 'destructive';
+  iconWidth?: number;
+  iconHeight?: number;
+  iconClassName?: string;
+};
 
 export default function Tools() {
   const { t } = useTranslation();
@@ -34,10 +52,6 @@ export default function Tools() {
     UserToolType | APIToolType | null
   >(null);
   const [loading, setLoading] = useLoaderState(false);
-  const [activeMenuId, setActiveMenuId] = React.useState<string | null>(null);
-  const menuRefs = React.useRef<{
-    [key: string]: React.RefObject<HTMLDivElement | null>;
-  }>({});
   const [deleteModalState, setDeleteModalState] =
     React.useState<ActiveState>('INACTIVE');
   const [toolToDelete, setToolToDelete] = React.useState<UserToolType | null>(
@@ -49,14 +63,6 @@ export default function Tools() {
   const [mcpStatuses, setMcpStatuses] = React.useState<{
     [toolId: string]: string;
   }>({});
-
-  React.useEffect(() => {
-    userTools.forEach((tool) => {
-      if (!menuRefs.current[tool.id]) {
-        menuRefs.current[tool.id] = React.createRef<HTMLDivElement>();
-      }
-    });
-  }, [userTools]);
 
   const handleDeleteTool = (tool: UserToolType) => {
     setToolToDelete(tool);
@@ -91,13 +97,13 @@ export default function Tools() {
     setReconnectModalState('ACTIVE');
   };
 
-  const getMenuOptions = (tool: UserToolType): MenuOption[] => {
-    const options: MenuOption[] = [
+  const getMenuOptions = (tool: UserToolType): ToolsMenuOption[] => {
+    const options: ToolsMenuOption[] = [
       {
         icon: Edit,
         label: t('settings.tools.edit'),
         onClick: () => handleSettingsClick(tool),
-        variant: 'primary',
+        variant: 'default',
         iconWidth: 14,
         iconHeight: 14,
       },
@@ -105,7 +111,7 @@ export default function Tools() {
         icon: Trash,
         label: t('settings.tools.delete'),
         onClick: () => handleDeleteTool(tool),
-        variant: 'danger',
+        variant: 'destructive',
         iconWidth: 16,
         iconHeight: 16,
       },
@@ -115,7 +121,7 @@ export default function Tools() {
         icon: RefreshCcw,
         label: t('settings.tools.reconnect'),
         onClick: () => handleReconnect(tool),
-        variant: 'primary',
+        variant: 'default',
         iconWidth: 16,
         iconHeight: 16,
         iconClassName: 'text-[#747474]',
@@ -218,35 +224,39 @@ export default function Tools() {
       ) : (
         <div className="mt-8">
           <div className="relative flex flex-col">
-            <p className="text-muted-foreground mb-5 text-[15px] leading-6">
+            <p className="text-muted-foreground mb-5 text-sm leading-6">
               {t('settings.tools.subtitle')}
             </p>
             <div className="my-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="relative w-full max-w-md">
-                <img
-                  src={SearchIcon}
-                  alt=""
-                  className="absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 opacity-40"
-                />
-                <input
+              <div className="w-full max-w-md">
+                <Input
                   maxLength={256}
-                  placeholder={t('settings.tools.searchPlaceholder')}
+                  label={t('settings.tools.searchPlaceholder')}
                   name="Document-search-input"
                   type="text"
                   id="tool-search-input"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="border-border bg-card text-foreground placeholder:text-muted-foreground h-11 w-full rounded-full border py-2 pr-5 pl-11 text-sm shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow outline-none focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-none"
+                  labelBgClassName="bg-background"
+                  className="rounded-full"
+                  leftIcon={
+                    <img
+                      src={SearchIcon}
+                      alt=""
+                      className="h-4 w-4 opacity-40"
+                    />
+                  }
                 />
               </div>
-              <button
-                className="bg-primary hover:bg-primary/90 flex h-11 min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white"
+              <Button
+                type="button"
+                className="h-11 min-w-[108px] rounded-full whitespace-normal text-white"
                 onClick={() => {
                   setAddToolModalState('ACTIVE');
                 }}
               >
                 {t('settings.tools.addTool')}
-              </button>
+              </Button>
             </div>
             <div className="border-border dark:border-border mt-5 mb-8 border-b" />
             {loading ? (
@@ -288,35 +298,68 @@ export default function Tools() {
                       filtered.map((tool, index) => (
                         <div
                           key={index}
-                          className="bg-muted hover:bg-accent relative flex h-52 w-[300px] flex-col justify-between overflow-hidden rounded-2xl p-6"
+                          className="bg-muted hover:bg-accent relative flex h-52 w-[300px] flex-col justify-between overflow-hidden rounded-2xl p-5"
                         >
                           {!tool.default && (
-                            <div
-                              ref={menuRefs.current[tool.id]}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveMenuId(
-                                  activeMenuId === tool.id ? null : tool.id,
-                                );
-                              }}
-                              className="absolute top-4 right-4 z-10 cursor-pointer"
-                            >
-                              <img
-                                src={ThreeDotsIcon}
-                                alt={t('settings.tools.settingsIconAlt')}
-                                className="h-[19px] w-[19px]"
-                              />
-                              <ContextMenu
-                                isOpen={activeMenuId === tool.id}
-                                setIsOpen={(isOpen) => {
-                                  setActiveMenuId(isOpen ? tool.id : null);
-                                }}
-                                options={getMenuOptions(tool)}
-                                anchorRef={menuRefs.current[tool.id]}
-                                position="bottom-right"
-                                offset={{ x: 0, y: 0 }}
-                              />
-                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="absolute top-4 right-4 z-10 cursor-pointer"
+                                  aria-label={t(
+                                    'settings.tools.settingsIconAlt',
+                                  )}
+                                >
+                                  <img
+                                    src={ThreeDotsIcon}
+                                    alt={t('settings.tools.settingsIconAlt')}
+                                    className="h-[19px] w-[19px]"
+                                  />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="end"
+                                className="min-w-[144px]"
+                              >
+                                {getMenuOptions(tool).map((option, idx) => {
+                                  const IconCmp =
+                                    typeof option.icon !== 'string'
+                                      ? option.icon
+                                      : null;
+                                  return (
+                                    <DropdownMenuItem
+                                      key={idx}
+                                      variant={option.variant}
+                                      onSelect={() => option.onClick()}
+                                    >
+                                      {typeof option.icon === 'string' ? (
+                                        <img
+                                          src={option.icon}
+                                          alt=""
+                                          width={option.iconWidth ?? 16}
+                                          height={option.iconHeight ?? 16}
+                                          className={option.iconClassName}
+                                        />
+                                      ) : (
+                                        IconCmp && (
+                                          <IconCmp
+                                            size={Math.max(
+                                              option.iconWidth ?? 16,
+                                              option.iconHeight ?? 16,
+                                            )}
+                                            strokeWidth={1.75}
+                                            aria-hidden="true"
+                                            className={option.iconClassName}
+                                          />
+                                        )
+                                      )}
+                                      <span>{option.label}</span>
+                                    </DropdownMenuItem>
+                                  );
+                                })}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           )}
                           <div className="w-full">
                             <div className="flex w-full items-center gap-2 px-1">
@@ -326,14 +369,14 @@ export default function Tools() {
                                 className="h-6 w-6"
                               />
                               {tool.default && (
-                                <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] leading-none font-medium text-gray-600 dark:bg-gray-700/40 dark:text-gray-300">
+                                <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs leading-none font-medium text-gray-600 dark:bg-gray-700/40 dark:text-gray-300">
                                   {t('settings.tools.builtIn')}
                                 </span>
                               )}
                               {tool.name === 'mcp_tool' &&
                                 mcpStatuses[tool.id] && (
                                   <span
-                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] leading-none font-medium ${
+                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs leading-none font-medium ${
                                       mcpStatuses[tool.id] === 'connected'
                                         ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
                                         : mcpStatuses[tool.id] === 'needs_auth'
@@ -356,12 +399,12 @@ export default function Tools() {
                             <div className="mt-[9px]">
                               <p
                                 title={tool.customName || tool.displayName}
-                                className="text-foreground dark:text-foreground truncate px-1 text-[13px] leading-relaxed font-semibold capitalize"
+                                className="text-foreground dark:text-foreground truncate px-1 text-sm leading-relaxed font-semibold capitalize"
                               >
                                 {tool.customName || tool.displayName}
                               </p>
                               <p
-                                className="text-muted-foreground mt-1 line-clamp-4 max-h-24 overflow-hidden px-1 text-[12px] leading-relaxed break-all"
+                                className="text-muted-foreground mt-1 line-clamp-4 max-h-24 overflow-hidden px-1 text-xs leading-relaxed break-all"
                                 title={tool.description}
                               >
                                 {tool.description}
@@ -369,14 +412,13 @@ export default function Tools() {
                             </div>
                           </div>
                           <div className="absolute right-4 bottom-4">
-                            <ToggleSwitch
+                            <Switch
                               checked={tool.status}
-                              onChange={(checked) =>
+                              onCheckedChange={(checked) =>
                                 updateToolStatus(tool.id, checked)
                               }
-                              size="small"
                               id={`toolToggle-${index}`}
-                              ariaLabel={t('settings.tools.toggleToolAria', {
+                              aria-label={t('settings.tools.toggleToolAria', {
                                 toolName: tool.customName || tool.displayName,
                               })}
                             />

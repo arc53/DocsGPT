@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -9,11 +10,12 @@ import {
 import remarkGfm from 'remark-gfm';
 
 import userService from '../api/services/userService';
-import Exit from '../assets/exit.svg';
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import CopyButton from './CopyButton';
 import Spinner from './Spinner';
+import { Button } from './ui/button';
+import { Sheet, SheetContent } from './ui/sheet';
 
 type TodoItem = {
   todo_id: number;
@@ -179,8 +181,8 @@ function NoteView({ data }: { data: NoteArtifactData }) {
                 const language = match ? match[1] : '';
 
                 return match ? (
-                  <div className="group border-border relative my-2 overflow-hidden rounded-[14px] border">
-                    <div className="bg-platinum flex items-center justify-between px-2 py-1">
+                  <div className="group border-border relative my-2 overflow-hidden rounded-xl border">
+                    <div className="bg-muted flex items-center justify-between px-2 py-1">
                       <span className="text-foreground dark:text-foreground text-xs font-medium">
                         {language}
                       </span>
@@ -204,7 +206,7 @@ function NoteView({ data }: { data: NoteArtifactData }) {
                   </div>
                 ) : (
                   <code
-                    className="dark:bg-accent dark:text-foreground rounded-[6px] bg-gray-200 px-2 py-1 text-xs font-normal"
+                    className="dark:bg-accent dark:text-foreground rounded-md bg-gray-200 px-2 py-1 text-xs font-normal"
                     {...rest}
                   >
                     {children}
@@ -276,7 +278,6 @@ export default function ArtifactSidebar({
   conversationId,
   variant = 'overlay',
 }: ArtifactSidebarProps) {
-  const sidebarRef = React.useRef<HTMLDivElement>(null);
   const lastSuccessfulTodoArtifactIdRef = React.useRef<string | null>(null);
   const currentFetchIdRef = React.useRef<string | null>(null);
   const token = useSelector(selectToken);
@@ -385,22 +386,6 @@ export default function ArtifactSidebar({
       });
   }, [isOpen, effectiveArtifactId, token, toolName, conversationId]);
 
-  const handleClickOutside = (event: MouseEvent) => {
-    if (
-      sidebarRef.current &&
-      !sidebarRef.current.contains(event.target as Node)
-    ) {
-      onClose();
-    }
-  };
-
-  useEffect(() => {
-    if (variant === 'overlay' && isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, variant]);
-
   const renderContent = () => {
     if (loading) {
       return (
@@ -453,16 +438,16 @@ export default function ArtifactSidebar({
             <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
               {title}
             </span>
-            <button
-              className="hover:bg-accent dark:hover:bg-accent rounded-full p-1"
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="rounded-full"
               onClick={onClose}
+              aria-label="Close"
             >
-              <img
-                className="h-3 w-3 filter dark:invert"
-                src={Exit}
-                alt="Close"
-              />
-            </button>
+              <X className="h-3 w-3" />
+            </Button>
           </div>
           <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>
         </div>
@@ -471,29 +456,34 @@ export default function ArtifactSidebar({
   }
 
   return (
-    <div ref={sidebarRef} className="h-vh relative">
-      <div
-        className={`dark:bg-card bg-card fixed top-0 right-0 z-50 flex h-full w-80 transform flex-col shadow-xl transition-all duration-300 sm:w-96 ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
-        } border-l border-[#9ca3af]/10`}
+    <Sheet
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        className="dark:bg-card bg-card flex h-full w-80 flex-col gap-0 border-l border-[#9ca3af]/10 p-0 sm:w-96 sm:max-w-none"
       >
         <div className="flex w-full items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
           <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
             {title}
           </span>
-          <button
-            className="hover:bg-accent rounded-full p-2"
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
             onClick={onClose}
+            aria-label="Close"
           >
-            <img
-              className="h-4 w-4 filter dark:invert"
-              src={Exit}
-              alt="Close"
-            />
-          </button>
+            <X className="h-4 w-4" />
+          </Button>
         </div>
         <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 }

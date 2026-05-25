@@ -1,18 +1,37 @@
+import { ChevronDown, Pencil, Trash2 } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import Dropdown, { DropdownProps } from '../components/Dropdown';
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '../components/ui/command';
+import { Button } from '../components/ui/button';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '../components/ui/popover';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, PromptProps } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import PromptsModal from '../preferences/PromptsModal';
+import { cn } from '@/lib/utils';
+
+type PromptsDropdownProps = {
+  className?: string;
+  contentClassName?: string;
+};
 
 type ExtendedPromptProps = PromptProps & {
   title?: string;
   titleClassName?: string;
-  dropdownProps?: Partial<DropdownProps>;
+  dropdownProps?: PromptsDropdownProps;
   showAddButton?: boolean;
 };
 
@@ -26,20 +45,8 @@ export default function Prompts({
   dropdownProps = {},
   showAddButton = true,
 }: ExtendedPromptProps) {
-  const handleSelectPrompt = ({
-    name,
-    id,
-    type,
-  }: {
-    name: string;
-    id: string;
-    type: string;
-  }) => {
-    setEditPromptName(name);
-    onSelectPrompt(name, id, type);
-  };
-
   const token = useSelector(selectToken);
+  const { t } = useTranslation();
   const [newPromptName, setNewPromptName] = React.useState('');
   const [newPromptContent, setNewPromptContent] = React.useState('');
   const [editPromptName, setEditPromptName] = React.useState('');
@@ -51,12 +58,22 @@ export default function Prompts({
   });
   const [modalType, setModalType] = React.useState<'ADD' | 'EDIT'>('ADD');
   const [modalState, setModalState] = React.useState<ActiveState>('INACTIVE');
-  const { t } = useTranslation();
+  const [open, setOpen] = React.useState(false);
 
   const [promptToDelete, setPromptToDelete] = React.useState<{
     id: string;
     name: string;
   } | null>(null);
+
+  const handleSelectPrompt = (prompt: {
+    name: string;
+    id: string;
+    type: string;
+  }) => {
+    setEditPromptName(prompt.name);
+    onSelectPrompt(prompt.name, prompt.id, prompt.type);
+    setOpen(false);
+  };
 
   const handleAddPrompt = async () => {
     try {
@@ -178,6 +195,12 @@ export default function Prompts({
         console.error(error);
       });
   };
+
+  const triggerClassName = cn(
+    'border-border bg-card text-foreground hover:bg-accent flex w-56 items-center justify-between rounded-3xl border px-5 py-3 text-sm',
+    dropdownProps.className,
+  );
+
   return (
     <>
       <div>
@@ -186,46 +209,113 @@ export default function Prompts({
             {title ? title : t('settings.general.prompt')}
           </p>
           <div className="flex flex-row flex-wrap items-end justify-start gap-6">
-            <Dropdown
-              searchable
-              options={prompts.map((prompt: any) =>
-                typeof prompt === 'string'
-                  ? { name: prompt, id: prompt, type: '' }
-                  : prompt,
-              )}
-              selectedValue={selectedPrompt ? selectedPrompt.name : ''}
-              onSelect={handleSelectPrompt}
-              showEdit
-              showDelete={(prompt) => prompt.type !== 'public'}
-              onEdit={({
-                id,
-                name,
-                type,
-              }: {
-                id: string;
-                name: string;
-                type?: string;
-              }) => {
-                setModalType('EDIT');
-                setEditPromptName(name);
-                handleFetchPromptContent(id);
-                setCurrentPromptEdit({ id: id, name: name, type: type ?? '' });
-                setModalState('ACTIVE');
-              }}
-              onDelete={handleDeletePrompt}
-              placeholder={'Select a prompt'}
-              {...dropdownProps}
-            />
+            <Popover open={open} onOpenChange={setOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={cn('h-auto justify-between', triggerClassName)}
+                >
+                  <span
+                    className={cn(
+                      'truncate',
+                      !selectedPrompt?.name && 'text-muted-foreground',
+                    )}
+                  >
+                    {selectedPrompt?.name || 'Select a prompt'}
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      'text-muted-foreground ml-2 h-4 w-4 shrink-0 transition-transform',
+                      open && 'rotate-180',
+                    )}
+                  />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                className={cn(
+                  'w-(--radix-popover-trigger-width) p-0',
+                  dropdownProps.contentClassName,
+                )}
+              >
+                <Command>
+                  <CommandInput placeholder="Search..." className="h-9" />
+                  <CommandList>
+                    <CommandEmpty>No results found</CommandEmpty>
+                    {prompts.map((prompt) => {
+                      const isActive = selectedPrompt?.id === prompt.id;
+                      const canDelete = prompt.type !== 'public';
+                      return (
+                        <CommandItem
+                          key={prompt.id}
+                          value={prompt.name}
+                          onSelect={() => handleSelectPrompt(prompt)}
+                          className={cn(
+                            'flex items-center justify-between gap-2',
+                            isActive && 'bg-accent font-medium',
+                          )}
+                        >
+                          <span className="truncate">{prompt.name}</span>
+                          <div className="flex shrink-0 items-center gap-1">
+                            {prompt.type !== 'public' && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setModalType('EDIT');
+                                  setEditPromptName(prompt.name);
+                                  handleFetchPromptContent(prompt.id);
+                                  setCurrentPromptEdit({
+                                    id: prompt.id,
+                                    name: prompt.name,
+                                    type: prompt.type,
+                                  });
+                                  setModalState('ACTIVE');
+                                  setOpen(false);
+                                }}
+                                className="h-auto w-auto rounded p-1"
+                                aria-label="Edit prompt"
+                              >
+                                <Pencil className="text-muted-foreground h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                            {canDelete && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeletePrompt(prompt.id);
+                                }}
+                                className="h-auto w-auto rounded p-1"
+                                aria-label="Delete prompt"
+                              >
+                                <Trash2 className="text-muted-foreground h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
             {showAddButton && (
-              <button
-                className="border-primary text-primary hover:bg-primary/90 w-20 rounded-3xl border border-solid py-3 text-sm transition-colors hover:text-white"
+              <Button
+                type="button"
+                className="h-auto w-20 rounded-3xl border border-transparent py-3"
                 onClick={() => {
                   setModalType('ADD');
                   setModalState('ACTIVE');
                 }}
               >
                 {t('settings.general.add')}
-              </button>
+              </Button>
             )}
           </div>
         </div>

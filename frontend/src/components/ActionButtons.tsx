@@ -11,6 +11,7 @@ import {
   setConversation,
   updateConversationId,
 } from '../conversation/conversationSlice';
+import { Button } from './ui/button';
 
 interface ActionButtonsProps {
   className?: string;
@@ -50,10 +51,13 @@ export default function ActionButtons({
     >
       <div className={`flex items-center gap-2 sm:gap-4 ${className}`}>
         {showNewChat && (
-          <button
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
             title={t('actionButtons.openNewChat')}
             onClick={newChat}
-            className="hover:bg-accent dark:hover:bg-accent flex items-center gap-1 rounded-full p-2 lg:hidden"
+            className="rounded-full lg:hidden"
           >
             <img
               className="filter dark:invert"
@@ -62,15 +66,18 @@ export default function ActionButtons({
               height={21}
               src={newChatIcon}
             />
-          </button>
+          </Button>
         )}
 
         {showShare && conversationId && (
           <>
-            <button
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
               title={t('actionButtons.share')}
               onClick={() => setShareModalState(true)}
-              className="hover:bg-accent dark:hover:bg-accent rounded-full p-2"
+              className="rounded-full"
             >
               <img
                 className="filter dark:invert"
@@ -79,7 +86,7 @@ export default function ActionButtons({
                 height={16}
                 src={ShareIcon}
               />
-            </button>
+            </Button>
             {isShareModalOpen && (
               <ShareConversationModal
                 close={() => setShareModalState(false)}

@@ -5,6 +5,7 @@ import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
+import { Button } from './ui/button';
 
 interface ConnectorAuthProps {
   provider: string;
@@ -193,7 +194,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
 
       {isConnected ? (
         <div className="mb-4">
-          <div className="text-eerie-black flex w-full items-center justify-between rounded-[10px] bg-[#8FDD51] px-4 py-2 text-sm font-medium">
+          <div className="flex w-full items-center justify-between rounded-lg bg-[#8FDD51] px-4 py-2 text-sm font-medium text-black">
             <div className="flex max-w-[500px] items-center gap-2">
               <svg className="h-4 w-4" viewBox="0 0 24 24">
                 <path
@@ -208,19 +209,23 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
               </span>
             </div>
             {onDisconnect && (
-              <button
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
                 onClick={onDisconnect}
-                className="text-eerie-black text-xs font-medium underline hover:text-gray-700"
+                className="h-auto p-0 text-xs text-black underline hover:text-gray-700"
               >
                 {t('modals.uploadDoc.connectors.auth.disconnect')}
-              </button>
+              </Button>
             )}
           </div>
         </div>
       ) : (
-        <button
+        <Button
+          type="button"
           onClick={handleAuth}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 py-3 text-white transition-colors hover:bg-blue-600"
+          className="w-full rounded-lg bg-blue-500 px-4 py-3 text-white hover:bg-blue-600"
         >
           <svg className="h-5 w-5" viewBox="0 0 24 24">
             <path
@@ -229,7 +234,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
             />
           </svg>
           {label}
-        </button>
+        </Button>
       )}
     </>
   );

@@ -8,8 +8,10 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import SearchIcon from '../assets/search.svg';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Modal } from '../components/ui/modal';
 import { searchConversations } from '../preferences/preferenceApi';
-import WrapperModal from './WrapperModal';
 
 type ConversationListItem = {
   id: string;
@@ -38,10 +40,7 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
     <>
       {parts.map((part, idx) =>
         part.toLowerCase() === trimmed.toLowerCase() ? (
-          <mark
-            key={idx}
-            className="text-purple-30 bg-transparent font-semibold"
-          >
+          <mark key={idx} className="text-primary bg-transparent font-semibold">
             {part}
           </mark>
         ) : (
@@ -150,22 +149,28 @@ export default function SearchConversationsModal({
     !!query.trim() && !isSearching && visibleConversations.length === 0;
 
   return (
-    <WrapperModal
-      close={close}
-      className="w-[92vw] max-w-xl p-0"
+    <Modal
+      open={true}
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+      hideTitle
+      title={t('modals.searchConversations.searchPlaceholder')}
+      showCloseButton={false}
+      className="w-[92vw] !max-w-xl !p-0"
       contentClassName="max-h-[70vh]"
     >
       <div className="flex flex-col">
         <div className="border-sidebar-border flex items-center gap-2 border-b px-5 py-4">
           <img src={SearchIcon} alt="search" className="h-4 w-4 opacity-60" />
-          <input
+          <Input
             ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleInputKeyDown}
             placeholder={t('modals.searchConversations.searchPlaceholder')}
-            className="text-foreground placeholder:text-muted-foreground w-full bg-transparent text-sm outline-none"
+            className="h-auto rounded-none border-none px-0 py-0 text-sm shadow-none focus-visible:ring-0"
           />
         </div>
 
@@ -190,9 +195,10 @@ export default function SearchConversationsModal({
               const isActive = index === activeIndex;
 
               return (
-                <button
+                <Button
                   key={conversation.id}
                   type="button"
+                  variant="ghost"
                   ref={(element) => {
                     resultRefs.current[index] = element;
                   }}
@@ -200,7 +206,7 @@ export default function SearchConversationsModal({
                   onMouseEnter={() => setActiveIndex(index)}
                   role="option"
                   aria-selected={isActive}
-                  className={`text-foreground flex w-full flex-col items-start gap-0.5 px-5 py-2.5 text-left text-sm ${
+                  className={`text-foreground flex h-auto w-full flex-col items-start gap-0.5 rounded-none px-5 py-2.5 text-left ${
                     isActive ? 'bg-sidebar-accent' : 'hover:bg-sidebar-accent'
                   }`}
                 >
@@ -222,11 +228,11 @@ export default function SearchConversationsModal({
                       />
                     </span>
                   )}
-                </button>
+                </Button>
               );
             })}
         </div>
       </div>
-    </WrapperModal>
+    </Modal>
   );
 }

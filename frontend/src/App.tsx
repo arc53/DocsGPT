@@ -1,7 +1,7 @@
 import './locale/i18n';
 
 import { useState } from 'react';
-import { Outlet, Route, Routes } from 'react-router-dom';
+import { Outlet, Route, Routes, useLocation } from 'react-router-dom';
 
 import Agents from './agents';
 import SharedAgentGate from './agents/SharedAgentGate';
@@ -45,7 +45,7 @@ function MainLayout() {
       <div
         className={`h-[calc(100dvh-64px)] overflow-auto transition-all duration-300 ease-in-out lg:h-screen ${
           !(isMobile || isTablet)
-            ? `${navOpen ? 'lg:ml-72' : 'lg:ml-0'}`
+            ? `${navOpen ? 'lg:ml-72' : 'lg:ml-14'}`
             : 'ml-0 lg:ml-16'
         }`}
       >
@@ -58,27 +58,36 @@ function MainLayout() {
 }
 export default function App() {
   const [, , componentMounted] = useDarkTheme();
+  const location = useLocation();
   const [showNotification, setShowNotification] = useState<boolean>(() => {
     const saved = localStorage.getItem('showNotification');
     return saved ? JSON.parse(saved) : true;
   });
   const notificationText = import.meta.env.VITE_NOTIFICATION_TEXT;
   const notificationLink = import.meta.env.VITE_NOTIFICATION_LINK;
+  // Hide the changelog banner on public share routes — those pages are
+  // embedded / shared externally and shouldn't carry product chrome.
+  const isPublicShareRoute =
+    location.pathname.startsWith('/share/') ||
+    location.pathname.startsWith('/shared/');
   if (!componentMounted) {
     return <div />;
   }
   return (
     <div className="relative h-full overflow-hidden">
-      {notificationLink && notificationText && showNotification && (
-        <Notification
-          notificationText={notificationText}
-          notificationLink={notificationLink}
-          handleCloseNotification={() => {
-            setShowNotification(false);
-            localStorage.setItem('showNotification', 'false');
-          }}
-        />
-      )}
+      {notificationLink &&
+        notificationText &&
+        showNotification &&
+        !isPublicShareRoute && (
+          <Notification
+            notificationText={notificationText}
+            notificationLink={notificationLink}
+            handleCloseNotification={() => {
+              setShowNotification(false);
+              localStorage.setItem('showNotification', 'false');
+            }}
+          />
+        )}
       <Routes>
         <Route
           element={

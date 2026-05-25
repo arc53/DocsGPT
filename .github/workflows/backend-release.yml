@@ -1,0 +1,73 @@
+name: Backend release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'application/version.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: backend-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'arc53/DocsGPT'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Read version from application/version.py
+        id: ver
+        run: |
+          VERSION=$(python3 -c "g={}; exec(open('application/version.py').read(), g); print(g['__version__'])")
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read __version__ from application/version.py"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION"
+
+      - name: Check if tag already exists
+        id: check
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          if git ls-remote --tags --exit-code origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $VERSION already exists on origin — skipping."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create and push tag
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$VERSION"
+          # Authenticate this single push via a one-shot tokenized remote URL
+          # instead of leaving GITHUB_TOKEN persisted in .git/config (see
+          # persist-credentials: false on the checkout step above).
+          git push \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "$VERSION"
+
+      - name: Create GitHub release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          gh release create "$VERSION" \
+            --title "v$VERSION" \
+            --generate-notes

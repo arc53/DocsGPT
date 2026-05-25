@@ -1,3 +1,4 @@
+import { X } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -10,6 +11,7 @@ import {
   selectUploadTasks,
   type UploadTask,
 } from '../upload/uploadSlice';
+import { Button } from './ui/button';
 
 const PROGRESS_RADIUS = 10;
 const PROGRESS_CIRCUMFERENCE = 2 * Math.PI * PROGRESS_RADIUS;
@@ -65,7 +67,7 @@ export default function UploadToast() {
       aria-atomic="false"
     >
       <div
-        className={`border-border bg-card w-[271px] overflow-hidden rounded-2xl border shadow-[0px_24px_48px_0px_#00000029] transition-all duration-300`}
+        className={`border-border bg-card shadow-toast w-[271px] overflow-hidden rounded-2xl border transition-all duration-300`}
       >
         <div
           className={`flex items-center justify-between px-4 py-3 ${
@@ -74,19 +76,21 @@ export default function UploadToast() {
               : 'bg-destructive/10 dark:bg-destructive/10'
           }`}
         >
-          <h3 className="font-inter dark:text-foreground text-[14px] leading-[16.5px] font-medium text-black">
+          <h3 className="dark:text-foreground text-sm leading-[16.5px] font-medium text-black">
             {headerLabel}
           </h3>
           <div className="flex items-center gap-1">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={() => setCollapsed((prev) => !prev)}
               aria-label={
                 collapsed
                   ? t('modals.uploadDoc.progress.expandDetails')
                   : t('modals.uploadDoc.progress.collapseDetails')
               }
-              className="flex h-8 items-center justify-center p-0 text-black opacity-70 transition-opacity hover:opacity-100 dark:text-white"
+              className="text-black opacity-70 hover:bg-transparent hover:opacity-100 dark:text-white dark:hover:bg-transparent"
             >
               <img
                 src={ChevronDown}
@@ -95,37 +99,17 @@ export default function UploadToast() {
                   collapsed ? 'rotate-180' : ''
                 }`}
               />
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               onClick={dismissAll}
-              className="flex h-8 items-center justify-center p-0 text-black opacity-70 transition-opacity hover:opacity-100 dark:text-white"
+              className="text-black opacity-70 hover:bg-transparent hover:opacity-100 dark:text-white dark:hover:bg-transparent"
               aria-label={t('modals.uploadDoc.progress.dismiss')}
             >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-4 w-4"
-              >
-                <path
-                  d="M18 6L6 18"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M6 6L18 18"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
+              <X className="h-4 w-4" />
+            </Button>
           </div>
         </div>
 
@@ -167,13 +151,13 @@ function UploadRow({
       <div className="flex items-center justify-between px-5 py-3">
         <div className="flex min-w-0 flex-col">
           <p
-            className="font-inter dark:text-muted-foreground max-w-[200px] truncate text-[13px] leading-[16.5px] font-normal text-black"
+            className="dark:text-muted-foreground max-w-[200px] truncate text-sm leading-[16.5px] font-normal text-black"
             title={task.fileName}
           >
             {task.fileName}
           </p>
           {task.status === 'training' && task.stage && (
-            <span className="font-inter text-muted-foreground mt-0.5 text-[11px] leading-[14px]">
+            <span className="text-muted-foreground mt-0.5 text-xs leading-[14px]">
               {t(`modals.uploadDoc.progress.${task.stage}`)}
             </span>
           )}
@@ -185,7 +169,7 @@ function UploadRow({
               width="24"
               height="24"
               viewBox="0 0 24 24"
-              className="h-6 w-6 shrink-0 text-[#7D54D1]"
+              className="text-primary h-6 w-6 shrink-0"
               role="progressbar"
               aria-valuemin={0}
               aria-valuemax={100}
@@ -204,7 +188,7 @@ function UploadRow({
                 fill="none"
               />
               <circle
-                className="text-[#7D54D1]"
+                className="text-primary"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"

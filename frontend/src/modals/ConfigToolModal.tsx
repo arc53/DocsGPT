@@ -4,12 +4,13 @@ import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import ConfigFields from '../components/ConfigFields';
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { AvailableToolType } from './types';
-import WrapperModal from './WrapperModal';
 
 interface ConfigToolModalProps {
   modalState: ActiveState;
@@ -110,14 +111,38 @@ export default function ConfigToolModal({
       .finally(() => setSaving(false));
   };
 
-  if (modalState !== 'ACTIVE' || !tool) return null;
+  if (!tool) return null;
 
   return (
-    <WrapperModal close={handleClose}>
-      <div className="w-[400px] max-w-[90vw]">
-        <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
-          {t('modals.configTool.title')}
-        </h2>
+    <Modal
+      open={modalState === 'ACTIVE'}
+      onOpenChange={(o) => !o && handleClose()}
+      title={t('modals.configTool.title')}
+      size="lg"
+      footer={
+        <>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={handleClose}
+            className="rounded-3xl px-5"
+          >
+            {t('modals.configTool.closeButton')}
+          </Button>
+          <Button
+            type="button"
+            onClick={handleAddTool}
+            disabled={saving}
+            className="rounded-3xl px-5"
+          >
+            {saving
+              ? t('modals.configTool.addButton') + '…'
+              : t('modals.configTool.addButton')}
+          </Button>
+        </>
+      }
+    >
+      <div>
         <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
           {t('modals.configTool.type')}:{' '}
           <span className="font-medium text-gray-700 dark:text-gray-200">
@@ -149,25 +174,7 @@ export default function ConfigToolModal({
             />
           )}
         </div>
-
-        <div className="mt-8 flex flex-row-reverse gap-2">
-          <button
-            onClick={handleAddTool}
-            disabled={saving}
-            className="bg-primary hover:bg-primary/90 rounded-full px-5 py-2 text-sm font-medium text-white transition-colors disabled:opacity-60"
-          >
-            {saving
-              ? t('modals.configTool.addButton') + '…'
-              : t('modals.configTool.addButton')}
-          </button>
-          <button
-            onClick={handleClose}
-            className="dark:text-foreground hover:bg-accent dark:hover:bg-accent cursor-pointer rounded-full px-5 py-2 text-sm font-medium"
-          >
-            {t('modals.configTool.closeButton')}
-          </button>
-        </div>
       </div>
-    </WrapperModal>
+    </Modal>
   );
 }

@@ -11,7 +11,6 @@ import {
   Pencil,
   Play,
   Plus,
-  Settings2,
   StickyNote,
   Trash2,
   X,
@@ -37,6 +36,8 @@ import ReactFlow, {
 } from 'reactflow';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
 import {
   Select,
@@ -1381,15 +1382,17 @@ function WorkflowBuilderInner() {
                 inline
               />
             ) : (
-              <button
+              <Button
+                type="button"
+                variant="outline"
                 onClick={navigateBackToAgents}
-                className="border-border text-muted-foreground hover:bg-accent rounded-full border px-4 py-2 text-sm"
+                className="text-muted-foreground rounded-full px-4 py-2 text-sm font-normal shadow-none"
               >
                 {t('agents.backToAll')}
-              </button>
+              </Button>
             )}
-            <div className="group relative flex items-center gap-2">
-              <div>
+            {!canManageAgent && (
+              <div className="min-w-0">
                 <div
                   className="max-w-xs truncate text-xl font-bold text-gray-900 dark:text-white"
                   title={workflowName || 'New Workflow'}
@@ -1398,19 +1401,30 @@ function WorkflowBuilderInner() {
                 </div>
                 {workflowDescription && (
                   <div
-                    className="max-w-xs truncate text-xs text-gray-500 dark:text-gray-400"
+                    className="text-muted-foreground max-w-xs truncate text-xs"
                     title={workflowDescription}
                   >
                     {workflowDescription}
                   </div>
                 )}
               </div>
-              <button
+            )}
+            <div className="relative flex items-center">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => setShowWorkflowSettings(!showWorkflowSettings)}
-                className="text-gray-400 opacity-0 transition-opacity group-hover:opacity-100 hover:text-gray-600 dark:hover:text-gray-200"
+                className="text-muted-foreground hover:bg-accent hover:text-foreground size-auto p-1"
+                aria-label="Workflow settings"
+                title={
+                  workflowDescription
+                    ? `${workflowName || 'New Workflow'} — ${workflowDescription}`
+                    : 'Edit workflow details'
+                }
               >
                 <Pencil size={14} />
-              </button>
+              </Button>
               {showWorkflowSettings && (
                 <div
                   ref={workflowSettingsRef}
@@ -1420,11 +1434,11 @@ function WorkflowBuilderInner() {
                     <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                       Workflow Name
                     </label>
-                    <input
+                    <Input
                       type="text"
                       value={workflowName}
                       onChange={(e) => setWorkflowName(e.target.value)}
-                      className="focus:ring-ring border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 dark:text-white"
+                      className="bg-card h-auto rounded-lg px-3 py-2 text-sm shadow-none"
                       placeholder="Enter workflow name"
                     />
                   </div>
@@ -1435,7 +1449,7 @@ function WorkflowBuilderInner() {
                     <textarea
                       value={workflowDescription}
                       onChange={(e) => setWorkflowDescription(e.target.value)}
-                      className="focus:ring-ring border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 dark:text-white"
+                      className="focus-visible:ring-ring/50 focus-visible:border-ring border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none focus-visible:ring-2 dark:text-white"
                       rows={3}
                       placeholder="Describe what this workflow does"
                     />
@@ -1474,7 +1488,7 @@ function WorkflowBuilderInner() {
                       ]}
                       className="border-border rounded-lg border-2 border-dashed p-3 text-center transition-colors"
                     />
-                    <p className="text-muted-foreground mt-1 text-[11px]">
+                    <p className="text-muted-foreground mt-1 text-xs">
                       Image updates are included the next time you save.
                     </p>
                   </div>
@@ -1484,7 +1498,7 @@ function WorkflowBuilderInner() {
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                           {t('agents.form.advanced.systemPromptOverride')}
                         </label>
-                        <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                           {t(
                             'agents.form.advanced.systemPromptOverrideDescription',
                           )}
@@ -1514,45 +1528,45 @@ function WorkflowBuilderInner() {
                       </button>
                     </div>
                   </div>
-                  <button
+                  <Button
+                    type="button"
                     onClick={handleWorkflowSettingsDone}
                     disabled={isPublishing}
-                    className="bg-primary hover:bg-primary/90 w-full rounded-lg px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    className="w-full rounded-lg text-white"
                   >
                     Done
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowWorkflowSettings((prev) => !prev)}
-              className="border-border bg-card hover:bg-accent flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium text-gray-700 transition-colors dark:text-gray-200"
-            >
-              <Settings2 size={16} />
-              Details
-            </button>
             {canManageAgent && (
-              <button
+              <Button
+                type="button"
+                variant="outline"
                 onClick={() => setAgentDetails('ACTIVE')}
-                className="border-border bg-card hover:bg-accent flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium text-gray-700 transition-colors dark:text-gray-200"
+                className="rounded-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200"
               >
                 <Link size={16} />
                 Access Details
-              </button>
+              </Button>
             )}
             {canManageAgent && (
-              <button
+              <Button
+                type="button"
+                variant="destructive-outline"
                 onClick={() => setDeleteConfirmation('ACTIVE')}
                 disabled={isDeletingAgent}
-                className="bg-card flex items-center gap-2 rounded-full border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10"
+                className="bg-card rounded-full border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-600 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10 dark:hover:text-red-400"
               >
                 <Trash2 size={16} />
                 {isDeletingAgent ? 'Deleting...' : 'Delete'}
-              </button>
+              </Button>
             )}
-            <button
+            <Button
+              type="button"
+              variant="outline"
               onClick={() => {
                 const validationErrors = validateWorkflow();
                 if (validationErrors.length > 0) {
@@ -1562,18 +1576,19 @@ function WorkflowBuilderInner() {
                 }
                 setShowPreview(true);
               }}
-              className="border-border bg-card hover:bg-accent flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium text-gray-700 transition-colors dark:text-gray-200"
+              className="rounded-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200"
             >
               <Play size={16} />
               Preview
-            </button>
-            <button
+            </Button>
+            <Button
+              type="button"
               onClick={handlePrimaryAction}
               disabled={isPrimaryActionDisabled}
-              className={`relative inline-flex items-center justify-center rounded-full px-6 py-2 text-sm font-medium shadow-sm transition-colors disabled:cursor-not-allowed ${
+              className={`relative rounded-full px-6 py-2 text-sm font-medium shadow-sm ${
                 canManageAgent && !hasSavableChanges
-                  ? 'dark:bg-accent bg-gray-200 text-gray-500 dark:text-gray-400'
-                  : 'bg-primary hover:bg-primary/90 text-white disabled:opacity-50'
+                  ? 'dark:bg-accent bg-gray-200 text-gray-500 hover:bg-gray-200 dark:text-gray-400'
+                  : 'text-white'
               }`}
             >
               <span
@@ -1586,7 +1601,7 @@ function WorkflowBuilderInner() {
               {showPrimaryActionSpinner ? (
                 <Loader2 size={16} className="absolute animate-spin" />
               ) : null}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -1611,12 +1626,15 @@ function WorkflowBuilderInner() {
                   ))}
                 </ul>
               </AlertDescription>
-              <button
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => setPublishErrors([])}
-                className="absolute top-4 right-4 text-red-700 hover:text-red-900 dark:text-red-300 dark:hover:text-red-100"
+                className="absolute top-4 right-4 size-auto p-0 text-red-700 hover:bg-transparent hover:text-red-900 dark:text-red-300 dark:hover:bg-transparent dark:hover:text-red-100"
               >
                 <X size={16} />
-              </button>
+              </Button>
             </Alert>
           </div>
         )}
@@ -1633,7 +1651,7 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'agent')}
                 >
-                  <div className="text-primary group-hover:bg-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 transition-colors group-hover:text-white">
+                  <div className="text-primary group-hover:bg-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 transition-colors group-hover:text-white dark:bg-purple-900/40">
                     <Bot size={18} />
                   </div>
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -1645,7 +1663,7 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'end')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600 transition-colors group-hover:bg-green-600 group-hover:text-white">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600 transition-colors group-hover:bg-green-600 group-hover:text-white dark:bg-green-900/40 dark:text-green-300">
                     <Flag size={18} />
                   </div>
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -1657,7 +1675,7 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'note')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-600 transition-colors group-hover:bg-yellow-500 group-hover:text-white">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-600 transition-colors group-hover:bg-yellow-500 group-hover:text-white dark:bg-yellow-900/40 dark:text-yellow-300">
                     <StickyNote size={18} />
                   </div>
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
@@ -1677,14 +1695,14 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'state')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white dark:bg-blue-900/40 dark:text-blue-300">
                     <Database size={18} />
                   </div>
                   <div className="flex flex-col">
                     <span className="text-foreground text-sm font-medium">
                       Set State
                     </span>
-                    <span className="text-muted-foreground text-[10px]">
+                    <span className="text-muted-foreground text-xs">
                       Modify workflow variables
                     </span>
                   </div>
@@ -1694,14 +1712,14 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'condition')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 transition-colors group-hover:bg-orange-600 group-hover:text-white">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 transition-colors group-hover:bg-orange-600 group-hover:text-white dark:bg-orange-900/40 dark:text-orange-300">
                     <GitBranch size={18} />
                   </div>
                   <div className="flex flex-col">
                     <span className="text-foreground text-sm font-medium">
                       If / Else
                     </span>
-                    <span className="text-muted-foreground text-[10px]">
+                    <span className="text-muted-foreground text-xs">
                       Conditional branching
                     </span>
                   </div>
@@ -1738,7 +1756,7 @@ function WorkflowBuilderInner() {
                   className="absolute inset-0 z-10"
                   onClick={handlePanelBackdropClick}
                 />
-                <div className="border-border bg-card absolute top-4 right-4 z-20 w-96 rounded-2xl border shadow-[0px_4px_40px_-3px_#0000001A]">
+                <div className="border-border bg-card shadow-modal absolute top-4 right-4 z-20 w-96 rounded-2xl border">
                   <div className="border-border flex items-center justify-between border-b p-4">
                     <h3 className="font-semibold text-gray-900 dark:text-white">
                       {selectedNode.type === 'start' && 'Start Node'}
@@ -1748,12 +1766,15 @@ function WorkflowBuilderInner() {
                       {selectedNode.type === 'state' && 'Set global variables'}
                       {selectedNode.type === 'condition' && 'If / Else'}
                     </h3>
-                    <button
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
                       onClick={() => setShowNodeConfig(false)}
-                      className="text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-200"
+                      className="size-auto p-0 text-gray-400 hover:bg-transparent hover:text-gray-600 dark:hover:bg-transparent dark:hover:text-gray-200 [&_svg:not([class*='size-'])]:size-5"
                     >
                       <X size={20} />
-                    </button>
+                    </Button>
                   </div>
 
                   <div className="max-h-[calc(100vh-200px)] overflow-y-auto p-4">
@@ -1774,7 +1795,7 @@ function WorkflowBuilderInner() {
                               <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                                 Title
                               </label>
-                              <input
+                              <Input
                                 type="text"
                                 value={
                                   selectedNode.data.title ||
@@ -1787,7 +1808,7 @@ function WorkflowBuilderInner() {
                                     label: e.target.value,
                                   })
                                 }
-                                className="border-border focus:ring-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                 placeholder="Enter node title"
                               />
                             </div>
@@ -1923,7 +1944,7 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className="border-border focus:ring-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                     rows={3}
                                     placeholder="System prompt for the agent"
                                   />
@@ -1951,7 +1972,7 @@ function WorkflowBuilderInner() {
                                   <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     Output Variable
                                   </label>
-                                  <input
+                                  <Input
                                     type="text"
                                     value={
                                       selectedNode.data.config
@@ -1966,7 +1987,7 @@ function WorkflowBuilderInner() {
                                         },
                                       });
                                     }}
-                                    className="border-border focus:ring-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                    className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                     placeholder="Variable name for output"
                                   />
                                 </div>
@@ -2059,7 +2080,7 @@ function WorkflowBuilderInner() {
                                         e.target.value,
                                       )
                                     }
-                                    className="border-border focus:ring-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus:ring-2 dark:text-white"
+                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
                                     rows={8}
                                     placeholder={`{
   "type": "object",
@@ -2099,7 +2120,7 @@ function WorkflowBuilderInner() {
                                       content: e.target.value,
                                     })
                                   }
-                                  className="border-border focus:ring-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                  className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                   rows={4}
                                   placeholder="Enter note content"
                                 />
@@ -2134,7 +2155,10 @@ function WorkflowBuilderInner() {
                                           selectedNode.data.config
                                             ?.operations || []
                                         ).length > 1 && (
-                                          <button
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon-sm"
                                             onClick={() => {
                                               const ops = [
                                                 ...(selectedNode.data.config
@@ -2149,10 +2173,10 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="text-gray-400 transition-colors hover:text-red-500"
+                                            className="size-auto p-0 text-gray-400 hover:bg-transparent hover:text-red-500 dark:hover:bg-transparent"
                                           >
                                             <Trash2 size={14} />
-                                          </button>
+                                          </Button>
                                         )}
                                       </div>
                                       <textarea
@@ -2174,11 +2198,11 @@ function WorkflowBuilderInner() {
                                             },
                                           });
                                         }}
-                                        className="border-border focus:ring-ring bg-card dark:bg-accent mb-1 w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                        className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card dark:bg-accent mb-1 w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                         rows={2}
                                         placeholder="input.foo + 1"
                                       />
-                                      <p className="text-muted-foreground mb-3 text-[10px]">
+                                      <p className="text-muted-foreground mb-3 text-xs">
                                         Use Common Expression Language to create
                                         a custom expression.{' '}
                                         <a
@@ -2194,7 +2218,7 @@ function WorkflowBuilderInner() {
                                         <span className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                                           To variable
                                         </span>
-                                        <input
+                                        <Input
                                           type="text"
                                           value={op.target_variable}
                                           onChange={(e) => {
@@ -2214,14 +2238,17 @@ function WorkflowBuilderInner() {
                                               },
                                             });
                                           }}
-                                          className="border-border focus:ring-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                          className="bg-card dark:bg-accent h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                           placeholder="variable_name"
                                         />
                                       </div>
                                     </div>
                                   ),
                                 )}
-                                <button
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
                                   onClick={() => {
                                     const ops = [
                                       ...(selectedNode.data.config
@@ -2235,11 +2262,11 @@ function WorkflowBuilderInner() {
                                       },
                                     });
                                   }}
-                                  className="hover:bg-accent flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 transition-colors dark:text-gray-400"
+                                  className="h-auto gap-1 self-start rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400"
                                 >
                                   <Plus size={14} />
                                   Add
-                                </button>
+                                </Button>
                               </>
                             )}
 
@@ -2249,7 +2276,9 @@ function WorkflowBuilderInner() {
                                   Create conditions to branch your workflow
                                 </p>
                                 <div className="border-border flex overflow-hidden rounded-lg border">
-                                  <button
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
                                     onClick={() =>
                                       handleUpdateNodeData({
                                         config: {
@@ -2258,16 +2287,18 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+                                    className={`h-auto flex-1 rounded-none px-3 py-1.5 text-xs font-medium ${
                                       (selectedNode.data.config?.mode ||
                                         'simple') === 'simple'
-                                        ? 'bg-primary text-white'
-                                        : 'hover:bg-accent text-gray-600 dark:text-gray-400'
+                                        ? 'bg-primary hover:bg-primary text-white hover:text-white'
+                                        : 'text-gray-600 dark:text-gray-400'
                                     }`}
                                   >
                                     Simple
-                                  </button>
-                                  <button
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
                                     onClick={() =>
                                       handleUpdateNodeData({
                                         config: {
@@ -2276,15 +2307,15 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className={`flex-1 px-3 py-1.5 text-xs font-medium transition-colors ${
+                                    className={`h-auto flex-1 rounded-none px-3 py-1.5 text-xs font-medium ${
                                       selectedNode.data.config?.mode ===
                                       'advanced'
-                                        ? 'bg-primary text-white'
-                                        : 'hover:bg-accent text-gray-600 dark:text-gray-400'
+                                        ? 'bg-primary hover:bg-primary text-white hover:text-white'
+                                        : 'text-gray-600 dark:text-gray-400'
                                     }`}
                                   >
                                     Advanced
-                                  </button>
+                                  </Button>
                                 </div>
 
                                 {(selectedNode.data.config?.cases || []).map(
@@ -2299,7 +2330,10 @@ function WorkflowBuilderInner() {
                                         </span>
                                         {(selectedNode.data.config?.cases || [])
                                           .length > 1 && (
-                                          <button
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon-sm"
                                             onClick={() => {
                                               const cases =
                                                 normalizeConditionCases([
@@ -2330,13 +2364,13 @@ function WorkflowBuilderInner() {
                                                 );
                                               }
                                             }}
-                                            className="text-gray-400 transition-colors hover:text-red-500"
+                                            className="size-auto p-0 text-gray-400 hover:bg-transparent hover:text-red-500 dark:hover:bg-transparent"
                                           >
                                             <Trash2 size={14} />
-                                          </button>
+                                          </Button>
                                         )}
                                       </div>
-                                      <input
+                                      <Input
                                         type="text"
                                         value={c.name || ''}
                                         onChange={(e) => {
@@ -2356,13 +2390,13 @@ function WorkflowBuilderInner() {
                                             },
                                           });
                                         }}
-                                        className="border-border focus:ring-ring bg-card dark:bg-accent mb-2 w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                        className="bg-card dark:bg-accent mb-2 h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                         placeholder="Case name (optional)"
                                       />
                                       {(selectedNode.data.config?.mode ||
                                         'simple') === 'simple' ? (
                                         <div className="flex items-center gap-2">
-                                          <input
+                                          <Input
                                             type="text"
                                             value={
                                               parseSimpleCel(c.expression)
@@ -2392,7 +2426,7 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="border-border focus:ring-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 dark:text-white"
+                                            className="bg-card dark:bg-accent h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                             placeholder="Variable"
                                           />
                                           <Select
@@ -2455,7 +2489,7 @@ function WorkflowBuilderInner() {
                                               </SelectItem>
                                             </SelectContent>
                                           </Select>
-                                          <input
+                                          <Input
                                             type="text"
                                             value={
                                               parseSimpleCel(c.expression).value
@@ -2484,7 +2518,7 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="border-border focus:ring-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring-2 dark:text-white"
+                                            className="bg-card dark:bg-accent h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                             placeholder="Value"
                                           />
                                         </div>
@@ -2509,11 +2543,11 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="border-border focus:ring-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus:ring-2 dark:text-white"
+                                            className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                             rows={2}
                                             placeholder="Enter condition, e.g. input == 5"
                                           />
-                                          <p className="text-muted-foreground mt-1 text-[10px]">
+                                          <p className="text-muted-foreground mt-1 text-xs">
                                             Use Common Expression Language to
                                             create a custom expression.{' '}
                                             <a
@@ -2531,7 +2565,10 @@ function WorkflowBuilderInner() {
                                   ),
                                 )}
 
-                                <button
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
                                   onClick={() => {
                                     const cases = normalizeConditionCases([
                                       ...(selectedNode.data.config?.cases ||
@@ -2551,27 +2588,29 @@ function WorkflowBuilderInner() {
                                       },
                                     });
                                   }}
-                                  className="hover:bg-accent flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 transition-colors dark:text-gray-400"
+                                  className="h-auto gap-1 self-start rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400"
                                 >
                                   <Plus size={14} />
                                   Add
-                                </button>
+                                </Button>
                               </>
                             )}
                           </>
                         )}
                     </div>
 
-                    <button
+                    <Button
+                      type="button"
+                      variant="destructive-outline"
                       onClick={handleDeleteNode}
                       disabled={selectedNode?.type === 'start'}
-                      className="flex w-full items-center justify-center gap-2 rounded-full border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10"
+                      className="w-full rounded-full border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-600 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10 dark:hover:text-red-400"
                     >
                       <Trash2 size={16} />
                       {selectedNode?.type === 'start'
                         ? 'Cannot Delete Start Node'
                         : 'Delete Node'}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </>

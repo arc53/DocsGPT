@@ -1,4 +1,5 @@
 import { Globe, Tag, Trash } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -10,8 +11,15 @@ import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import SearchIcon from '../assets/search.svg';
 import ThreeDotsIcon from '../assets/three-dots.svg';
-import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { Button } from '../components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
+import { Input } from '../components/ui/input';
 import { useDarkTheme, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import CustomModelModal from '../modals/CustomModelModal';
@@ -22,6 +30,15 @@ import {
 } from '../preferences/preferenceSlice';
 
 import type { CustomModel } from '../models/types';
+
+type CustomModelMenuOption = {
+  icon: string | LucideIcon;
+  label: string;
+  onClick: () => void;
+  variant: 'default' | 'destructive';
+  iconWidth?: number;
+  iconHeight?: number;
+};
 
 const formatBaseUrlHost = (baseUrl: string): string => {
   if (!baseUrl) return '';
@@ -48,10 +65,6 @@ export default function CustomModels() {
   const [editingModel, setEditingModel] = React.useState<CustomModel | null>(
     null,
   );
-  const [activeMenuId, setActiveMenuId] = React.useState<string | null>(null);
-  const menuRefs = React.useRef<{
-    [key: string]: React.RefObject<HTMLDivElement | null>;
-  }>({});
   const [deleteState, setDeleteState] = React.useState<ActiveState>('INACTIVE');
   const [modelToDelete, setModelToDelete] = React.useState<CustomModel | null>(
     null,
@@ -76,14 +89,6 @@ export default function CustomModels() {
   React.useEffect(() => {
     fetchModelsRef.current();
   }, [token]);
-
-  React.useEffect(() => {
-    models.forEach((model) => {
-      if (!menuRefs.current[model.id]) {
-        menuRefs.current[model.id] = React.createRef<HTMLDivElement>();
-      }
-    });
-  }, [models]);
 
   const openAddModal = () => {
     setEditingModel(null);
@@ -139,12 +144,12 @@ export default function CustomModels() {
     }
   };
 
-  const getMenuOptions = (model: CustomModel): MenuOption[] => [
+  const getMenuOptions = (model: CustomModel): CustomModelMenuOption[] => [
     {
       icon: Edit,
       label: t('settings.customModels.actions.edit'),
       onClick: () => openEditModal(model),
-      variant: 'primary',
+      variant: 'default',
       iconWidth: 14,
       iconHeight: 14,
     },
@@ -152,7 +157,7 @@ export default function CustomModels() {
       icon: Trash,
       label: t('settings.customModels.actions.delete'),
       onClick: () => requestDelete(model),
-      variant: 'danger',
+      variant: 'destructive',
       iconWidth: 16,
       iconHeight: 16,
     },
@@ -182,33 +187,33 @@ export default function CustomModels() {
   return (
     <div className="mt-8">
       <div className="relative flex flex-col">
-        <p className="text-muted-foreground mb-5 text-[15px] leading-6">
+        <p className="text-muted-foreground mb-5 text-sm leading-6">
           {t('settings.customModels.subtitle')}
         </p>
         <div className="my-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full max-w-md">
-            <img
-              src={SearchIcon}
-              alt=""
-              className="absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 opacity-40"
-            />
-            <input
+          <div className="w-full max-w-md">
+            <Input
               maxLength={256}
-              placeholder={t('settings.customModels.searchPlaceholder')}
+              label={t('settings.customModels.searchPlaceholder')}
               name="custom-models-search-input"
               type="text"
               id="custom-models-search-input"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="border-border bg-card text-foreground placeholder:text-muted-foreground h-11 w-full rounded-full border py-2 pr-5 pl-11 text-sm shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow outline-none focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-none"
+              labelBgClassName="bg-background"
+              className="rounded-full"
+              leftIcon={
+                <img src={SearchIcon} alt="" className="h-4 w-4 opacity-40" />
+              }
             />
           </div>
-          <button
-            className="bg-primary hover:bg-primary/90 flex h-11 min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white"
+          <Button
+            type="button"
+            className="h-11 min-w-[108px] rounded-full whitespace-normal text-white"
             onClick={openAddModal}
           >
             {t('settings.customModels.addModel')}
-          </button>
+          </Button>
         </div>
         <div className="border-border dark:border-border mt-5 mb-8 border-b" />
         {loading ? (
@@ -224,44 +229,76 @@ export default function CustomModels() {
                     key={model.id}
                     className="bg-muted hover:bg-accent relative flex w-[300px] flex-col overflow-hidden rounded-2xl p-5"
                   >
-                    <div
-                      ref={menuRefs.current[model.id]}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveMenuId(
-                          activeMenuId === model.id ? null : model.id,
-                        );
-                      }}
-                      className="absolute top-3 right-3 z-10 cursor-pointer"
-                    >
-                      <img
-                        src={ThreeDotsIcon}
-                        alt={t('settings.customModels.actionsMenuAria', {
-                          modelName: model.display_name,
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={(e) => e.stopPropagation()}
+                          className="absolute top-3 right-3 z-10 cursor-pointer"
+                          aria-label={t(
+                            'settings.customModels.actionsMenuAria',
+                            { modelName: model.display_name },
+                          )}
+                        >
+                          <img
+                            src={ThreeDotsIcon}
+                            alt={t('settings.customModels.actionsMenuAria', {
+                              modelName: model.display_name,
+                            })}
+                            className="h-[19px] w-[19px]"
+                          />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="min-w-[144px]"
+                      >
+                        {getMenuOptions(model).map((option, index) => {
+                          const IconCmp =
+                            typeof option.icon !== 'string'
+                              ? option.icon
+                              : null;
+                          return (
+                            <DropdownMenuItem
+                              key={index}
+                              variant={option.variant}
+                              onSelect={() => option.onClick()}
+                            >
+                              {typeof option.icon === 'string' ? (
+                                <img
+                                  src={option.icon}
+                                  alt=""
+                                  width={option.iconWidth ?? 16}
+                                  height={option.iconHeight ?? 16}
+                                />
+                              ) : (
+                                IconCmp && (
+                                  <IconCmp
+                                    size={Math.max(
+                                      option.iconWidth ?? 16,
+                                      option.iconHeight ?? 16,
+                                    )}
+                                    strokeWidth={1.75}
+                                    aria-hidden="true"
+                                  />
+                                )
+                              )}
+                              <span>{option.label}</span>
+                            </DropdownMenuItem>
+                          );
                         })}
-                        className="h-[19px] w-[19px]"
-                      />
-                      <ContextMenu
-                        isOpen={activeMenuId === model.id}
-                        setIsOpen={(isOpen) => {
-                          setActiveMenuId(isOpen ? model.id : null);
-                        }}
-                        options={getMenuOptions(model)}
-                        anchorRef={menuRefs.current[model.id]}
-                        position="bottom-right"
-                        offset={{ x: 0, y: 0 }}
-                      />
-                    </div>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     <div className="w-full pr-7">
                       <div className="flex items-center gap-2">
                         <p
                           title={model.display_name}
-                          className="text-foreground dark:text-foreground truncate text-[15px] leading-snug font-semibold"
+                          className="text-foreground dark:text-foreground truncate text-sm leading-snug font-semibold"
                         >
                           {model.display_name}
                         </p>
                         {!model.enabled && (
-                          <span className="bg-muted-foreground/15 text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-[10px] leading-none font-medium">
+                          <span className="bg-muted-foreground/15 text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-xs leading-none font-medium">
                             {t('settings.customModels.disabledBadge')}
                           </span>
                         )}

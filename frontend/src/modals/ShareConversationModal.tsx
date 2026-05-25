@@ -3,9 +3,17 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import conversationService from '../api/services/conversationService';
-import Spinner from '../assets/spinner.svg';
-import Dropdown from '../components/Dropdown';
-import ToggleSwitch from '../components/ToggleSwitch';
+import Spinner from '../components/Spinner';
+import { Button } from '../components/ui/button';
+import { Modal } from '../components/ui/modal';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import { Switch } from '../components/ui/switch';
 import { Doc } from '../models/misc';
 import {
   selectChunks,
@@ -14,7 +22,6 @@ import {
   selectSourceDocs,
   selectToken,
 } from '../preferences/preferenceSlice';
-import WrapperModal from './WrapperModal';
 
 type StatusType = 'loading' | 'idle' | 'fetched' | 'failed';
 
@@ -96,36 +103,48 @@ export const ShareConversationModal = ({
   };
 
   return (
-    <WrapperModal close={close} contentClassName="!overflow-visible">
-      <div className="flex w-[600px] max-w-[80vw] flex-col gap-2">
-        <h2 className="text-foreground dark:text-foreground text-xl font-medium">
-          {t('modals.shareConv.label')}
-        </h2>
-        <p className="text-foreground dark:text-muted-foreground/60 text-sm leading-relaxed">
-          {t('modals.shareConv.note')}
-        </p>
+    <Modal
+      open={true}
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+      size="xl"
+      title={t('modals.shareConv.label')}
+      description={t('modals.shareConv.note')}
+      contentClassName="!overflow-visible"
+    >
+      <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <span className="text-foreground text-lg dark:text-white">
             {t('modals.shareConv.option')}
           </span>
-          <ToggleSwitch
+          <Switch
             checked={allowPrompt}
-            onChange={togglePromptPermission}
-            size="medium"
+            onCheckedChange={togglePromptPermission}
           />
         </div>
         {allowPrompt && (
           <div className="my-4">
-            <Dropdown
-              placeholder={t('modals.createAPIKey.sourceDoc')}
-              selectedValue={sourcePath}
-              onSelect={(selection: { label: string; value: string }) =>
-                setSourcePath(selection)
-              }
-              options={extractDocPaths(sourceDocs ?? [])}
-              size="w-full"
-              rounded="xl"
-            />
+            <Select
+              value={sourcePath?.value}
+              onValueChange={(value) => {
+                const opt = extractDocPaths(sourceDocs ?? []).find(
+                  (o) => o.value === value,
+                );
+                if (opt) setSourcePath(opt);
+              }}
+            >
+              <SelectTrigger className="w-full rounded-xl px-5 py-3" size="lg">
+                <SelectValue placeholder={t('modals.createAPIKey.sourceDoc')} />
+              </SelectTrigger>
+              <SelectContent>
+                {extractDocPaths(sourceDocs ?? []).map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
         <div className="flex items-baseline justify-between gap-2">
@@ -133,30 +152,29 @@ export const ShareConversationModal = ({
             {`${domain}/share/${identifier ?? '....'}`}
           </span>
           {status === 'fetched' ? (
-            <button
-              className="bg-primary hover:bg-primary/90 my-1 h-10 w-28 rounded-full p-2 text-sm text-white"
+            <Button
+              type="button"
+              size="lg"
+              className="my-1 w-28 rounded-3xl"
               onClick={() => handleCopyKey(`${domain}/share/${identifier}`)}
             >
               {isCopied ? t('modals.saveKey.copied') : t('modals.saveKey.copy')}
-            </button>
+            </Button>
           ) : (
-            <button
-              className="bg-primary hover:bg-primary/90 my-1 flex h-10 w-28 items-center justify-evenly rounded-full p-2 text-center text-sm font-normal text-white"
+            <Button
+              type="button"
+              size="lg"
+              className="my-1 w-28 justify-evenly rounded-3xl text-center"
               onClick={() => {
                 shareCoversationPublicly(allowPrompt);
               }}
             >
               {t('modals.shareConv.create')}
-              {status === 'loading' && (
-                <img
-                  src={Spinner}
-                  className="inline animate-spin cursor-pointer bg-transparent filter dark:invert"
-                ></img>
-              )}
-            </button>
+              {status === 'loading' && <Spinner size="small" />}
+            </Button>
           )}
         </div>
       </div>
-    </WrapperModal>
+    </Modal>
   );
 };

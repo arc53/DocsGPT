@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isChatToolVisible } from './ToolsPopup';
+import { isChatToolVisible } from './toolUtils';
 
 // Regression for the filter drift introduced when ``scheduler`` was
 // dual-registered (both ``default: true`` and ``builtin: true``). The

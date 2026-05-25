@@ -10,8 +10,8 @@ import {
   removeSessionToken,
   validateProviderSession,
 } from '../utils/providerUtils';
-import ConnectedStateSkeleton from './ConnectedStateSkeleton';
-import FilesSectionSkeleton from './FileSelectionSkeleton';
+import SkeletonLoader from './SkeletonLoader';
+import { Button } from './ui/button';
 
 interface PickerFile {
   id: string;
@@ -224,8 +224,8 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
     <div>
       {isValidating ? (
         <>
-          <ConnectedStateSkeleton />
-          <FilesSectionSkeleton />
+          <SkeletonLoader component="connectedState" />
+          <SkeletonLoader component="filesSection" />
         </>
       ) : (
         <>
@@ -262,9 +262,11 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                   <h3 className="text-sm font-medium">
                     {t('modals.uploadDoc.connectors.googleDrive.selectedFiles')}
                   </h3>
-                  <button
+                  <Button
+                    type="button"
+                    size="sm"
                     onClick={() => handleOpenPicker()}
-                    className="rounded-md bg-[#A076F6] px-3 py-1 text-sm text-white hover:bg-[#8A5FD4]"
+                    className="bg-[#A076F6] hover:bg-[#8A5FD4]"
                     disabled={isLoading}
                   >
                     {isLoading
@@ -272,7 +274,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                       : t(
                           'modals.uploadDoc.connectors.googleDrive.selectFiles',
                         )}
-                  </button>
+                  </Button>
                 </div>
 
                 {selectedFiles.length === 0 && selectedFolders.length === 0 ? (
@@ -303,7 +305,10 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                             <span className="flex-1 truncate text-sm">
                               {folder.name}
                             </span>
-                            <button
+                            <Button
+                              type="button"
+                              variant="link"
+                              size="sm"
                               onClick={() => {
                                 const newSelectedFolders =
                                   selectedFolders.filter(
@@ -315,12 +320,12 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                                   newSelectedFolders.map((f) => f.id),
                                 );
                               }}
-                              className="ml-2 text-sm text-red-500 hover:text-red-700"
+                              className="ml-2 h-auto p-0 text-sm text-red-500 hover:text-red-700 hover:no-underline"
                             >
                               {t(
                                 'modals.uploadDoc.connectors.googleDrive.remove',
                               )}
-                            </button>
+                            </Button>
                           </div>
                         ))}
                       </div>
@@ -346,7 +351,10 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                             <span className="flex-1 truncate text-sm">
                               {file.name}
                             </span>
-                            <button
+                            <Button
+                              type="button"
+                              variant="link"
+                              size="sm"
                               onClick={() => {
                                 const newSelectedFiles = selectedFiles.filter(
                                   (f) => f.id !== file.id,
@@ -357,12 +365,12 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                                   selectedFolders.map((f) => f.id),
                                 );
                               }}
-                              className="ml-2 text-sm text-red-500 hover:text-red-700"
+                              className="ml-2 h-auto p-0 text-sm text-red-500 hover:text-red-700 hover:no-underline"
                             >
                               {t(
                                 'modals.uploadDoc.connectors.googleDrive.remove',
                               )}
-                            </button>
+                            </Button>
                           </div>
                         ))}
                       </div>

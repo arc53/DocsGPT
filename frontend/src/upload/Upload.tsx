@@ -6,10 +6,18 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import type { RootState } from '../store';
 import { getSessionToken } from '../utils/providerUtils';
-import Dropdown from '../components/Dropdown';
-import Input from '../components/Input';
-import ToggleSwitch from '../components/ToggleSwitch';
-import WrapperModal from '../modals/WrapperModal';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import { Switch } from '../components/ui/switch';
+import { Modal } from '../components/ui/modal';
 import { ActiveState, Doc } from '../models/misc';
 
 import { getDocs } from '../preferences/preferenceApi';
@@ -104,7 +112,7 @@ function Upload({
         return (
           <Input
             key={field.name}
-            placeholder={field.label}
+            label={field.label}
             type="text"
             name={field.name}
             value={String(
@@ -116,9 +124,7 @@ function Upload({
                 e.target.value,
               )
             }
-            borderVariant="thin"
             required={isRequired}
-            colorVariant="silver"
             labelBgClassName="bg-card"
           />
         );
@@ -126,7 +132,7 @@ function Upload({
         return (
           <Input
             key={field.name}
-            placeholder={field.label}
+            label={field.label}
             type="number"
             name={field.name}
             value={String(
@@ -138,53 +144,63 @@ function Upload({
                 Number(e.target.value),
               )
             }
-            borderVariant="thin"
             required={isRequired}
-            colorVariant="silver"
             labelBgClassName="bg-card"
           />
         );
-      case 'enum':
+      case 'enum': {
+        const currentValue = String(
+          ingestor.config[field.name as keyof typeof ingestor.config] ?? '',
+        );
         return (
-          <Dropdown
+          <Select
             key={field.name}
-            options={field.options || []}
-            selectedValue={
-              field.options?.find(
-                (opt) =>
-                  opt.value ===
-                  ingestor.config[field.name as keyof typeof ingestor.config],
-              ) || null
-            }
-            onSelect={(selected: { label: string; value: string }) => {
+            value={currentValue || undefined}
+            onValueChange={(value) => {
               handleIngestorChange(
                 field.name as keyof IngestorConfig['config'],
-                selected.value,
+                value,
               );
             }}
-            size="w-full"
-            rounded="3xl"
-            placeholder={field.label}
-            contentSize="text-sm"
-          />
+          >
+            <SelectTrigger
+              className="w-full rounded-3xl px-5 py-3 text-sm"
+              size="lg"
+            >
+              <SelectValue placeholder={field.label} />
+            </SelectTrigger>
+            <SelectContent>
+              {(field.options || []).map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         );
+      }
       case 'boolean':
         return (
-          <ToggleSwitch
+          <div
             key={field.name}
-            label={field.label}
-            checked={Boolean(
-              ingestor.config[field.name as keyof typeof ingestor.config],
-            )}
-            onChange={(checked: boolean) => {
-              handleIngestorChange(
-                field.name as keyof IngestorConfig['config'],
-                checked,
-              );
-            }}
-            size="small"
-            className={`mt-2 text-base`}
-          />
+            className="mt-2 flex flex-row items-center gap-3 text-base"
+          >
+            <Label htmlFor={`field-${field.name}`} className="text-foreground">
+              {field.label}
+            </Label>
+            <Switch
+              id={`field-${field.name}`}
+              checked={Boolean(
+                ingestor.config[field.name as keyof typeof ingestor.config],
+              )}
+              onCheckedChange={(checked: boolean) => {
+                handleIngestorChange(
+                  field.name as keyof IngestorConfig['config'],
+                  checked,
+                );
+              }}
+            />
+          </div>
         );
       case 'local_file_picker':
         return (
@@ -196,7 +212,7 @@ function Upload({
               </span>
             </div>
             <div className="mt-4 max-w-full">
-              <p className="text-foreground dark:text-foreground mb-3.5 text-[14px] font-medium">
+              <p className="text-foreground dark:text-foreground mb-3.5 text-sm font-medium">
                 {t('modals.uploadDoc.selectedFiles')}
               </p>
               <div className="max-w-full overflow-hidden">
@@ -210,7 +226,7 @@ function Upload({
                   </p>
                 ))}
                 {files.length === 0 && (
-                  <p className="text-muted-foreground text-[14px]">
+                  <p className="text-muted-foreground text-sm">
                     {t('modals.uploadDoc.noFilesSelected')}
                   </p>
                 )}
@@ -850,7 +866,7 @@ function Upload({
             key={option.value}
             className={`relative mx-auto flex h-[91.2px] w-full cursor-pointer flex-col justify-between gap-2 rounded-2xl border border-solid pt-[21.1px] pr-[21px] pb-[15px] pl-[21px] transition-colors duration-300 ease-out ${
               ingestor.type === option.value
-                ? 'border-[#7D54D1] bg-[#7D54D1] text-white'
+                ? 'border-primary bg-primary text-white'
                 : 'border-border hover:bg-accent/30 dark:border-border/30 bg-transparent transition-shadow duration-300 hover:shadow-[0_0_15px_0_#00000026]'
             }`}
             onClick={() =>
@@ -865,7 +881,7 @@ function Upload({
                   className={`${ingestor.type === option.value ? 'invert filter' : ''} dark:invert dark:filter`}
                 />
               </div>
-              <p className="font-inter self-start text-[13px] leading-[18px] font-semibold">
+              <p className="self-start text-sm leading-[18px] font-semibold">
                 {t(`modals.uploadDoc.ingestors.${option.value}.label`)}
               </p>
             </div>
@@ -875,14 +891,18 @@ function Upload({
     );
   };
   return (
-    <WrapperModal
-      close={handleClose}
+    <Modal
+      open={true}
+      onOpenChange={(o) => !o && handleClose()}
+      hideTitle
+      title={t('modals.uploadDoc.label')}
+      size="lg"
       className="max-h-[90vh] w-11/12 sm:max-h-none sm:w-auto sm:min-w-[600px] md:min-w-[700px]"
       contentClassName="max-h-[80vh] sm:max-h-none"
     >
       <div className="flex w-full flex-col gap-6">
         {!ingestor.type && (
-          <p className="font-inter text-foreground dark:text-foreground text-left text-[20px] leading-7 font-semibold tracking-[0.15px]">
+          <p className="text-foreground dark:text-foreground text-left text-xl leading-7 font-semibold tracking-[0.15px]">
             {t('modals.uploadDoc.selectSource')}
           </p>
         )}
@@ -892,9 +912,11 @@ function Upload({
             {!ingestor.type && renderIngestorSelection()}
             {ingestor.type && (
               <div className="flex flex-col gap-4">
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
                   onClick={() => handleIngestorTypeChange(null)}
-                  className="flex w-fit items-center gap-2 text-[#777777] hover:text-[#555555]"
+                  className="h-auto w-fit gap-2 px-0 py-0 text-[#777777] hover:bg-transparent hover:text-[#555555]"
                 >
                   <img
                     src={ChevronRight}
@@ -902,16 +924,15 @@ function Upload({
                     className="h-3 w-3 rotate-180 transform"
                   />
                   <span>{t('modals.uploadDoc.back')}</span>
-                </button>
+                </Button>
 
-                <h2 className="font-inter text-foreground text-[22px] leading-7 font-semibold tracking-[0.15px]">
+                <h2 className="text-foreground text-2xl leading-7 font-semibold tracking-[0.15px]">
                   {ingestor.type &&
                     t(`modals.uploadDoc.ingestors.${ingestor.type}.heading`)}
                 </h2>
 
                 <Input
                   type="text"
-                  colorVariant="silver"
                   value={ingestor.name}
                   onChange={(e) => {
                     setNameTouched(true);
@@ -920,8 +941,7 @@ function Upload({
                       name: e.target.value,
                     }));
                   }}
-                  borderVariant="thin"
-                  placeholder={t('modals.uploadDoc.name')}
+                  label={t('modals.uploadDoc.name')}
                   required={true}
                   labelBgClassName="bg-card"
                   className="w-full"
@@ -934,34 +954,37 @@ function Upload({
               getIngestorSchema(ingestor.type as IngestorType)?.fields.some(
                 (field: FormField) => field.advanced,
               ) && (
-                <button
+                <Button
+                  type="button"
+                  variant="link"
                   onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                  className="text-primary bg-transparent py-2 pl-0 text-left text-sm font-normal hover:cursor-pointer"
+                  className="h-auto w-fit justify-start px-0 py-2 text-sm font-normal hover:no-underline"
                 >
                   {showAdvancedOptions
                     ? t('modals.uploadDoc.hideAdvanced')
                     : t('modals.uploadDoc.showAdvanced')}
-                </button>
+                </Button>
               )}
           </>
         )}
         <div className="flex justify-end gap-4">
           {activeTab && ingestor.type && (
-            <button
+            <Button
+              type="button"
               onClick={handleUpload}
               disabled={isUploadDisabled()}
-              className={`rounded-3xl px-4 py-2 text-[14px] font-medium ${
+              className={`h-auto rounded-3xl px-4 py-2 text-sm font-medium ${
                 isUploadDisabled()
-                  ? 'dark:bg-muted dark:text-muted-foreground cursor-not-allowed bg-gray-300 text-gray-500'
-                  : 'bg-primary hover:bg-primary/90 cursor-pointer text-white'
+                  ? 'dark:bg-muted dark:text-muted-foreground bg-gray-300 text-gray-500'
+                  : ''
               }`}
             >
               {t('modals.uploadDoc.train')}
-            </button>
+            </Button>
           )}
         </div>
       </div>
-    </WrapperModal>
+    </Modal>
   );
 }
 

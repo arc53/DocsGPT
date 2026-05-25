@@ -7,18 +7,39 @@ import {
   Title,
   Tooltip,
 } from 'chart.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import Dropdown from '../components/Dropdown';
 import SkeletonLoader from '../components/SkeletonLoader';
-import { useLoaderState } from '../hooks';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import { useDarkTheme, useLoaderState } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import { htmlLegendPlugin } from '../utils/chartUtils';
 import { formatDate } from '../utils/dateTimeUtils';
+
+/**
+ * Resolve a CSS custom property on `:root` to a concrete color string.
+ *
+ * Chart.js renders to a canvas, so it can't consume Tailwind classes or CSS
+ * variables directly. Read the resolved value at render time and pass that
+ * concrete string. Falls back when running outside a browser (SSR / tests).
+ */
+function readCssVar(name: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback;
+  // The `.dark` class lives on document.body (see useDarkTheme), so query
+  // body — querying documentElement would always resolve the :root value.
+  const value = getComputedStyle(document.body).getPropertyValue(name).trim();
+  return value || fallback;
+}
 
 import type { ChartData } from 'chart.js';
 ChartJS.register(
@@ -95,6 +116,13 @@ export default function Analytics({ agentId }: AnalyticsProps) {
   const [loadingMessages, setLoadingMessages] = useLoaderState(true);
   const [loadingTokens, setLoadingTokens] = useLoaderState(true);
   const [loadingFeedback, setLoadingFeedback] = useLoaderState(true);
+  const [isDarkTheme] = useDarkTheme();
+  const primaryColor = useMemo(
+    () => readCssVar('--primary', '#7d54d1'),
+    // isDarkTheme drives the `.dark` class on document.body and changes the
+    // resolved value of `--primary`; re-read whenever it flips.
+    [isDarkTheme],
+  );
 
   const fetchMessagesData = async (agent_id?: string, filter?: string) => {
     setLoadingMessages(true);
@@ -175,7 +203,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
   }, [agentId, feedbackFilter]);
   return (
     <div className="mt-8">
-      <p className="text-muted-foreground mb-5 text-[15px] leading-6">
+      <p className="text-muted-foreground mb-5 text-sm leading-6">
         {t('settings.analytics.subtitle')}
       </p>
       {/* Messages Analytics */}
@@ -185,17 +213,29 @@ export default function Analytics({ agentId }: AnalyticsProps) {
             <p className="text-foreground dark:text-foreground font-bold">
               {t('settings.analytics.messages')}
             </p>
-            <Dropdown
-              size="w-[125px]"
-              options={filterOptions}
-              placeholder={t('settings.analytics.filterPlaceholder')}
-              onSelect={(selectedOption: { label: string; value: string }) => {
-                setMessagesFilter(selectedOption);
+            <Select
+              value={messagesFilter?.value}
+              onValueChange={(value) => {
+                const opt = filterOptions.find((o) => o.value === value);
+                if (opt) setMessagesFilter(opt);
               }}
-              selectedValue={messagesFilter ?? null}
-              rounded="3xl"
-              contentSize="text-sm"
-            />
+            >
+              <SelectTrigger
+                className="w-[125px] rounded-3xl px-5 py-3 text-sm"
+                size="lg"
+              >
+                <SelectValue
+                  placeholder={t('settings.analytics.filterPlaceholder')}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {filterOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="relative mt-px h-[245px] w-full">
             <div
@@ -214,7 +254,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                     {
                       label: t('settings.analytics.messages'),
                       data: Object.values(messagesData || {}),
-                      backgroundColor: '#7D54D1',
+                      backgroundColor: primaryColor,
                     },
                   ],
                 }}
@@ -232,17 +272,29 @@ export default function Analytics({ agentId }: AnalyticsProps) {
             <p className="text-foreground dark:text-foreground font-bold">
               {t('settings.analytics.tokenUsage')}
             </p>
-            <Dropdown
-              size="w-[125px]"
-              options={filterOptions}
-              placeholder={t('settings.analytics.filterPlaceholder')}
-              onSelect={(selectedOption: { label: string; value: string }) => {
-                setTokenUsageFilter(selectedOption);
+            <Select
+              value={tokenUsageFilter?.value}
+              onValueChange={(value) => {
+                const opt = filterOptions.find((o) => o.value === value);
+                if (opt) setTokenUsageFilter(opt);
               }}
-              selectedValue={tokenUsageFilter ?? null}
-              rounded="3xl"
-              contentSize="text-sm"
-            />
+            >
+              <SelectTrigger
+                className="w-[125px] rounded-3xl px-5 py-3 text-sm"
+                size="lg"
+              >
+                <SelectValue
+                  placeholder={t('settings.analytics.filterPlaceholder')}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {filterOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="relative mt-px h-[245px] w-full">
             <div
@@ -261,7 +313,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                     {
                       label: t('settings.analytics.tokenUsage'),
                       data: Object.values(tokenUsageData || {}),
-                      backgroundColor: '#7D54D1',
+                      backgroundColor: primaryColor,
                     },
                   ],
                 }}
@@ -281,17 +333,29 @@ export default function Analytics({ agentId }: AnalyticsProps) {
             <p className="text-foreground dark:text-foreground font-bold">
               {t('settings.analytics.userFeedback')}
             </p>
-            <Dropdown
-              size="w-[125px]"
-              options={filterOptions}
-              placeholder={t('settings.analytics.filterPlaceholder')}
-              onSelect={(selectedOption: { label: string; value: string }) => {
-                setFeedbackFilter(selectedOption);
+            <Select
+              value={feedbackFilter?.value}
+              onValueChange={(value) => {
+                const opt = filterOptions.find((o) => o.value === value);
+                if (opt) setFeedbackFilter(opt);
               }}
-              selectedValue={feedbackFilter ?? null}
-              rounded="3xl"
-              contentSize="text-sm"
-            />
+            >
+              <SelectTrigger
+                className="w-[125px] rounded-3xl px-5 py-3 text-sm"
+                size="lg"
+              >
+                <SelectValue
+                  placeholder={t('settings.analytics.filterPlaceholder')}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {filterOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="relative mt-px h-[245px] w-full">
             <div
@@ -312,7 +376,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                       data: Object.values(feedbackData || {}).map(
                         (item) => item.positive,
                       ),
-                      backgroundColor: '#7D54D1',
+                      backgroundColor: primaryColor,
                     },
                     {
                       label: t('settings.analytics.negativeFeedback'),

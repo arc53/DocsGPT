@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
+import { Button } from '../../components/ui/button';
 import { selectToken } from '../../preferences/preferenceSlice';
 import type { AppDispatch } from '../../store';
 import { deleteSchedule, loadSchedulesForAgent } from './schedulesSlice';
@@ -160,13 +161,15 @@ export default function SchedulerToolCallCard({
         </p>
       )}
       {taskId && !cancelled && (
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={cancel}
-          className="text-destructive border-border mt-2 rounded-md border px-3 py-1 text-xs"
+          className="text-destructive mt-2 text-xs"
         >
           Cancel
-        </button>
+        </Button>
       )}
       {cancelled && (
         <p className="text-muted-foreground mt-2 text-xs">Cancelled.</p>

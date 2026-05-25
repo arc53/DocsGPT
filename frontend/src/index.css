@@ -9,68 +9,11 @@ layer(base);
 
 @theme {
   --font-roboto: Roboto, sans-serif;
-
-  --color-eerie-black: #212121;
-  --color-black-1000: #343541;
-  --color-jet: #343541;
-  --color-gray-alpha: rgba(0, 0, 0, 0.64);
-  --color-gray-1000: #f6f6f6;
-  --color-gray-2000: rgba(0, 0, 0, 0.5);
-  --color-gray-3000: rgba(243, 243, 243, 1);
-  --color-gray-5000: #bbbbbb;
-  --color-gray-6000: #757575;
-  --color-red-1000: rgb(254, 202, 202);
-  --color-blue-1000: #7d54d1;
-  --color-blue-2000: #002b49;
-  --color-blue-3000: #4b02e2;
-  --color-purple-30: #7d54d1;
-  --color-purple-3000: rgb(230, 222, 247);
-  --color-blue-4000: rgba(0, 125, 255, 0.36);
-  --color-blue-5000: rgba(0, 125, 255);
-  --color-green-2000: #0fff50;
-  --color-light-gray: #edeef0;
-  --color-just-black: #00000;
-  --color-purple-taupe: #464152;
-  --color-dove-gray: #6c6c6c;
-  --color-silver: #c4c4c4;
-  --color-rainy-gray: #a4a4a4;
-  --color-raisin-black: #222327;
-  --color-chinese-black: #161616;
-  --color-chinese-silver: #cdcdcd;
-  --color-dark-charcoal: #2f3036;
-  --color-bright-gray: #ebebeb;
-  --color-outer-space: #444654;
-  --color-gun-metal: #2e303e;
-  --color-sonic-silver: #747474;
-  --color-soap: #d8ccf1;
-  --color-independence: #54546d;
-  --color-philippine-yellow: #ffc700;
-  --color-chinese-white: #e0e0e0;
-  --color-dark-gray: #aaaaaa;
-  --color-dim-gray: #6a6a6a;
-  --color-cultured: #f4f4f4;
-  --color-charleston-green: #2b2c31;
-  --color-charleston-green-2: #26272e;
-  --color-charleston-green-3: #26272a;
-  --color-grey: #7e7e7e;
-  --color-platinum: #e6e6e6;
-  --color-eerie-black-2: #191919;
-  --color-light-silver: #d9d9d9;
-  --color-carbon: #2e2e2e;
-  --color-onyx: #35363b;
-  --color-royal-purple: #6c4ab0;
-  --color-chinese-black-2: #0f1419;
-  --color-gainsboro: #d9dcde;
-  --color-onyx-2: #35383c;
-  --color-philippine-grey: #929292;
-  --color-charcoal-grey: #53545d;
-  --color-north-texas-green: #0c9d35;
-  --color-medium-purple: #8d66dd;
-  --color-slate-blue: #6f5fca;
-  --color-light-gainsboro: #d7d7d7;
-  --color-raisin-black-light: #18181b;
-  --color-sonic-silver-light: #7f7f82;
-  --color-violets-are-blue: #976af3;
+  --font-mono:
+    'IBMPlexMono-Medium', ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
+  --shadow-modal: 0px 4px 40px -3px #0000001a;
+  --shadow-toast: 0px 24px 48px 0px #00000029;
 }
 
 /*
@@ -745,7 +688,7 @@ Avoid over-scrolling in mobile browsers
   }
 
   .logs-table {
-    font-family: 'IBMPlexMono-Medium', system-ui;
+    font-family: var(--font-mono);
   }
 
   .fade-in {
@@ -812,6 +755,12 @@ Avoid over-scrolling in mobile browsers
     to {
       opacity: 1;
       transform: translateY(0);
+    }
+  }
+
+  @keyframes spinner-rotate {
+    100% {
+      transform: rotate(1turn);
     }
   }
 }

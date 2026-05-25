@@ -149,7 +149,7 @@ export default function TimezoneCombobox({
           <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      {/* z-200 keeps the popover above WrapperModal (z-100); matches DatePicker. */}
+      {/* z-200 keeps the popover above Modal (z-50); matches DatePicker. */}
       <PopoverContent
         className="z-200 w-[min(20rem,calc(100vw-2rem))] p-0"
         align="start"

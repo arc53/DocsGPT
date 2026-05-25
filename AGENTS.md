@@ -145,6 +145,27 @@ vale .
 - Avoid broad UI refactors unless the task explicitly asks for them.
 - Do not re-create components if we already have some in the app.
 
+#### Icons
+
+DocsGPT historically mixed three icon sources: `lucide-react`, inline SVG components, and
+`.svg` assets loaded via `<img src=…>`. For new code:
+
+1. **Prefer `lucide-react`** for standard UI affordances (close, chevron, search, trash,
+   plus, etc.). It tokenizes via `currentColor`, ships tree-shaken icons, and the codebase
+   already imports it in 30+ places. `<X className="size-4" />`, `<ChevronDown />`, etc.
+2. **Use `assets/<name>.svg?react`** when you need a brand-specific or domain illustration
+   that doesn't exist in lucide (the app logo, robot fallback, retry arrow, send arrow,
+   etc.). Always set `fill="currentColor"` / `stroke="currentColor"` in the SVG file so
+   consumers can theme via Tailwind text classes.
+3. **Avoid `<img src={Asset}>` for new icons.** It blocks `currentColor` theming and
+   forces dark-variant duplicates (the audit removed several orphan dark/purple/white
+   variants in this branch). The pattern is acceptable for existing call sites — don't
+   bulk-migrate without a reason.
+
+Three pre-existing dark-variant pairs (`documentation`, `no-files`, `science-spark`) are
+hand-tuned multi-color illustrations, not pure inverts; they keep their `-dark` companion
+files until a per-illustration refactor.
+
 ## PR readiness
 
 Before opening a PR:

@@ -25,10 +25,3 @@ export type AvailableToolType = {
     parameters: object;
   }[];
 };
-
-export type WrapperModalPropsType = {
-  children?: React.ReactNode;
-  isPerformingTask?: boolean;
-  close: () => void;
-  className?: string;
-};

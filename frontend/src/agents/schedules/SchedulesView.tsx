@@ -5,6 +5,7 @@ import { useParams } from 'react-router-dom';
 
 import userService from '../../api/services/userService';
 import Spinner from '../../components/Spinner';
+import { Button } from '../../components/ui/button';
 import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
 import { selectToken } from '../../preferences/preferenceSlice';
@@ -112,7 +113,6 @@ export default function SchedulesView() {
   };
 
   const closeModal = () => {
-    if (submitting) return;
     setModalOpen(false);
     setEditing(null);
   };
@@ -154,7 +154,7 @@ export default function SchedulesView() {
       : `/agents/edit/${agentId}`;
 
   return (
-    <div className="p-4 md:p-12">
+    <div className="p-4 pt-4 md:p-12 md:pt-4">
       <AgentPageHeader
         agentId={agentId}
         agentName={agent?.name}
@@ -187,13 +187,9 @@ export default function SchedulesView() {
               <h2 className="text-lg font-semibold">
                 {t('agents.schedules.heading')}
               </h2>
-              <button
-                type="button"
-                onClick={openCreate}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-3 py-1 text-sm"
-              >
+              <Button type="button" size="sm" onClick={openCreate}>
                 {t('agents.schedules.newRecurring')}
-              </button>
+              </Button>
             </header>
             <section>
               <h3 className="text-muted-foreground mb-2 text-sm font-semibold uppercase">
@@ -226,15 +222,17 @@ export default function SchedulesView() {
                           </p>
                         </div>
                         <div className="flex gap-2">
-                          <button
+                          <Button
                             type="button"
+                            size="sm"
                             onClick={() => openEdit(schedule)}
-                            className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
+                            className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid bg-transparent px-5 hover:text-white"
                           >
                             {t('agents.schedules.edit')}
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            size="sm"
                             onClick={() =>
                               dispatch(
                                 setSchedulePaused({
@@ -247,45 +245,50 @@ export default function SchedulesView() {
                                 }),
                               )
                             }
-                            className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
+                            className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid bg-transparent px-5 hover:text-white"
                           >
                             {schedule.status === 'active'
                               ? t('agents.schedules.pause')
                               : t('agents.schedules.resume')}
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            size="sm"
                             onClick={() =>
                               dispatch(
                                 runScheduleNow({ id: schedule.id, token }),
                               )
                             }
-                            className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
+                            className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid bg-transparent px-5 hover:text-white"
                           >
                             {t('agents.schedules.runNow')}
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            variant="destructive-outline"
+                            size="sm"
                             onClick={() => requestDelete(schedule)}
-                            className="rounded-full border border-solid border-red-500 px-5 py-1 text-sm text-red-500 transition-colors hover:bg-red-500 hover:text-white"
+                            className="rounded-full px-5"
                           >
                             {t('agents.schedules.delete')}
-                          </button>
+                          </Button>
                         </div>
                       </div>
-                      <button
+                      <Button
                         type="button"
+                        variant="link"
+                        size="sm"
                         onClick={() =>
                           setExpanded(
                             expanded === schedule.id ? null : schedule.id,
                           )
                         }
-                        className="text-primary mt-2 text-xs underline"
+                        className="mt-2 h-auto p-0 text-xs underline"
                       >
                         {expanded === schedule.id
                           ? t('agents.schedules.hideRuns')
                           : t('agents.schedules.showRuns')}
-                      </button>
+                      </Button>
                       {expanded === schedule.id && (
                         <div className="mt-2">
                           <RunLog
@@ -329,22 +332,25 @@ export default function SchedulesView() {
                         </div>
                         <div className="flex gap-2">
                           {schedule.status === 'active' && (
-                            <button
+                            <Button
                               type="button"
+                              size="sm"
                               onClick={() => openEdit(schedule)}
-                              className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid px-5 py-1 text-sm transition-colors hover:text-white"
+                              className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid bg-transparent px-5 hover:text-white"
                             >
                               {t('agents.schedules.edit')}
-                            </button>
+                            </Button>
                           )}
                           {schedule.status === 'active' && (
-                            <button
+                            <Button
                               type="button"
+                              variant="destructive-outline"
+                              size="sm"
                               onClick={() => requestDelete(schedule)}
-                              className="rounded-full border border-solid border-red-500 px-5 py-1 text-sm text-red-500 transition-colors hover:bg-red-500 hover:text-white"
+                              className="rounded-full px-5"
                             >
                               {t('agents.schedules.cancel')}
-                            </button>
+                            </Button>
                           )}
                         </div>
                       </div>

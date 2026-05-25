@@ -5,6 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import conversationService from '../api/services/conversationService';
 import MessageInput from '../components/MessageInput';
+import { Button } from '../components/ui/button';
 import { selectToken } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import { formatDate } from '../utils/dateTimeUtils';
@@ -139,17 +140,17 @@ export const SharedConversation = () => {
         twitterDescription="Shared conversations with DocsGPT"
       />
       <div className="bg-background flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden">
-        <div className="dark:border-b-silver w-full max-w-[1200px] border-b p-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
-          <h1 className="font-semi-bold text-foreground dark:text-foreground text-4xl">
+        <div className="border-b-border w-full max-w-[1200px] border-b p-2 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12">
+          <h1 className="text-foreground dark:text-foreground text-4xl font-semibold">
             {title}
           </h1>
-          <h2 className="font-semi-bold text-foreground dark:text-foreground text-base">
+          <h2 className="text-foreground dark:text-foreground text-base font-semibold">
             {t('sharedConv.subtitle')}{' '}
             <a href="/" className="text-[#007DFF]">
               DocsGPT
             </a>
           </h2>
-          <h2 className="font-semi-bold text-foreground dark:text-foreground text-base">
+          <h2 className="text-foreground dark:text-foreground text-base font-semibold">
             {date}
           </h2>
         </div>
@@ -172,12 +173,13 @@ export const SharedConversation = () => {
               />
             </div>
           ) : (
-            <button
+            <Button
+              type="button"
               onClick={() => navigate('/')}
-              className="bg-primary hover:bg-primary/90 mb-14 w-fit rounded-full px-5 py-3 text-white shadow-xl transition-colors duration-200 sm:mb-0"
+              className="mb-14 h-auto w-fit rounded-full px-5 py-3 text-white shadow-xl sm:mb-0"
             >
               {t('sharedConv.button')}
-            </button>
+            </Button>
           )}
 
           <p className="text-muted-foreground hidden w-screen self-center bg-transparent py-2 text-center text-xs md:inline md:w-full">

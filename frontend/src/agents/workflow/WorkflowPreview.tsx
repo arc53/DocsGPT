@@ -15,6 +15,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 import ChevronDownIcon from '../../assets/chevron-down.svg';
@@ -98,7 +99,12 @@ function ExecutionDetails({
         <div className="flex h-[26px] w-[30px] items-center justify-center">
           <Workflow className="h-5 w-5 text-gray-600 dark:text-gray-400" />
         </div>
-        <button className="flex flex-row items-center gap-2" onClick={onToggle}>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onToggle}
+          className="h-auto gap-2 px-0 py-0 hover:bg-transparent"
+        >
           <p className="text-base font-semibold">
             Execution Details
             <span className="ml-1.5 text-sm font-normal text-gray-500 dark:text-gray-400">
@@ -114,7 +120,7 @@ function ExecutionDetails({
               isOpen ? 'rotate-180' : '',
             )}
           />
-        </button>
+        </Button>
       </div>
       <div
         className={cn(
@@ -318,13 +324,15 @@ function WorkflowMiniMap({
             <div className="absolute top-12 left-4 h-3 w-0.5 bg-gray-200 dark:bg-gray-700" />
           )}
 
-          <button
+          <Button
+            type="button"
+            variant="outline"
             onClick={() => hasStepData(node.id) && onNodeClick?.(node.id)}
             disabled={!hasStepData(node.id)}
             className={cn(
-              'flex h-12 w-full items-center gap-2 rounded-lg border px-3 text-xs transition-all',
+              'h-12 w-full justify-start gap-2 px-3 text-xs disabled:opacity-100',
               getStatusColor(node.id),
-              hasStepData(node.id) && 'cursor-pointer hover:opacity-80',
+              hasStepData(node.id) && 'hover:opacity-80',
             )}
           >
             <div
@@ -340,7 +348,7 @@ function WorkflowMiniMap({
                 {getNodeDisplayName(node)}
               </div>
               {getNodeSubtitle(node) && (
-                <div className="truncate text-[10px] text-gray-500 dark:text-gray-400">
+                <div className="truncate text-xs text-gray-500 dark:text-gray-400">
                   {getNodeSubtitle(node)}
                 </div>
               )}
@@ -356,7 +364,7 @@ function WorkflowMiniMap({
                 <XCircle className="h-3 w-3 text-red-500" />
               )}
             </div>
-          </button>
+          </Button>
         </div>
       ))}
     </div>

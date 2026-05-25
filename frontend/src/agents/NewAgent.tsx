@@ -12,13 +12,25 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
 import SourceIcon from '../assets/source.svg';
-import Dropdown from '../components/Dropdown';
 import { FileUpload } from '../components/FileUpload';
-import MultiSelectPopup, { OptionType } from '../components/MultiSelectPopup';
+import {
+  MultiSelectPopover,
+  type MultiSelectPopoverItem,
+} from '../components/MultiSelectPopover';
 import Spinner from '../components/Spinner';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -87,14 +99,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     default_model_id: '',
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [userTools, setUserTools] = useState<OptionType[]>([]);
+  const [userTools, setUserTools] = useState<MultiSelectPopoverItem[]>([]);
+  const [rawUserTools, setRawUserTools] = useState<UserToolType[]>([]);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [isSourcePopupOpen, setIsSourcePopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [isModelsPopupOpen, setIsModelsPopupOpen] = useState(false);
-  const [selectedSourceIds, setSelectedSourceIds] = useState<
-    Set<string | number>
-  >(new Set());
+  const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [selectedTools, setSelectedTools] = useState<ToolSummary[]>([]);
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(
     new Set(),
@@ -446,19 +459,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       if (!response.ok) throw new Error('Failed to fetch tools');
       const data = await response.json();
       // Group ordering: builtins -> defaults -> user tools (sorted via the
-      // MultiSelectPopup first-appearance grouping).
+      // MultiSelectPopover first-appearance grouping).
       const groupFor = (tool: UserToolType): string => {
         if (tool.builtin) return t('agents.form.toolsPopup.groupBuiltin');
         if (tool.default) return t('agents.form.toolsPopup.groupDefault');
         return t('agents.form.toolsPopup.groupCustom');
       };
-      const tools: OptionType[] = data.tools.map((tool: UserToolType) => ({
-        id: tool.id,
-        label: getToolDisplayName(tool),
-        icon: `/toolIcons/tool_${tool.name}.svg`,
-        name: tool.name,
-        group: groupFor(tool),
-      }));
+      const tools: MultiSelectPopoverItem[] = data.tools.map(
+        (tool: UserToolType) => ({
+          id: tool.id,
+          label: getToolDisplayName(tool),
+          icon: `/toolIcons/tool_${tool.name}.svg`,
+          group: groupFor(tool),
+        }),
+      );
       const groupOrder = [
         t('agents.form.toolsPopup.groupBuiltin'),
         t('agents.form.toolsPopup.groupDefault'),
@@ -469,6 +483,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           groupOrder.indexOf(a.group || '') - groupOrder.indexOf(b.group || ''),
       );
       setUserTools(tools);
+      setRawUserTools(data.tools as UserToolType[]);
     };
     const getModels = async () => {
       const response = await modelService.getModels(token);
@@ -529,19 +544,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   useEffect(() => {
     if (sourceDocs && sourceDocs.length > 0 && selectedSourceIds.size === 0) {
       const defaultSource = sourceDocs.find((s) => s.name === 'Default');
-      if (defaultSource) {
-        setSelectedSourceIds(
-          new Set([
-            defaultSource.id || defaultSource.retriever || defaultSource.name,
-          ]),
-        );
-      } else {
-        setSelectedSourceIds(
-          new Set([
-            sourceDocs[0].id || sourceDocs[0].retriever || sourceDocs[0].name,
-          ]),
-        );
-      }
+      const fallback = defaultSource || sourceDocs[0];
+      setSelectedSourceIds(
+        new Set([String(fallback.id || fallback.retriever || fallback.name)]),
+      );
     }
   }, [sourceDocs, selectedSourceIds.size]);
 
@@ -726,61 +732,66 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const showAgentNav = effectiveMode === 'edit' && Boolean(agent.id);
 
   return (
-    <div className="flex flex-col px-4 pt-4 pb-2 max-[1179px]:min-h-dvh min-[1180px]:h-dvh md:px-12 md:pt-12 md:pb-3">
-      {showAgentNav ? (
-        <AgentPageHeader
-          agentId={agent.id}
-          agentName={agent.name}
-          agentEditPath={`/agents/edit/${agent.id}`}
-          currentPage="overview"
-          className="px-4"
-        />
-      ) : null}
-      <div className="mt-5 flex w-full flex-wrap items-center justify-end gap-2 px-4">
-        {agent.agent_type === 'workflow' && (
-          <div className="mt-4 w-full">
-            <WorkflowBuilder />
-          </div>
+    <div className="flex flex-col px-4 pt-4 pb-2 max-[1179px]:min-h-dvh min-[1180px]:h-dvh md:px-12 md:pt-4 md:pb-3">
+      {agent.agent_type === 'workflow' && (
+        <div className="mt-4 w-full">
+          <WorkflowBuilder />
+        </div>
+      )}
+      <div className="flex w-full flex-wrap items-center justify-between gap-2 px-4">
+        {showAgentNav ? (
+          <AgentPageHeader
+            agentId={agent.id}
+            agentName={agent.name}
+            agentEditPath={`/agents/edit/${agent.id}`}
+            currentPage="overview"
+          />
+        ) : (
+          <span aria-hidden />
         )}
         <div className="flex flex-wrap items-center gap-2">
           {hasChanges && (
-            <button
-              className="text-primary dark:text-foreground rounded-3xl px-2 py-2 text-sm font-medium"
+            <Button
+              type="button"
+              variant="ghost"
               onClick={handleCancel}
+              className="text-primary dark:text-foreground rounded-3xl px-2 hover:bg-transparent"
             >
               {t('agents.form.buttons.cancel')}
-            </button>
+            </Button>
           )}
           {modeConfig[effectiveMode].showSaveDraft && (
-            <button
+            <Button
+              type="button"
               disabled={isJsonSchemaInvalid()}
-              className={`border-primary text-primary hover:bg-primary/90 flex min-w-28 items-center justify-center rounded-3xl border border-solid px-5 py-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-white ${
-                isJsonSchemaInvalid() ? 'cursor-not-allowed opacity-30' : ''
-              }`}
               onClick={handleSaveDraft}
+              className={`border-primary text-primary hover:bg-primary/90 min-w-28 rounded-3xl border border-solid bg-transparent px-5 whitespace-nowrap hover:text-white ${
+                isJsonSchemaInvalid() ? 'disabled:opacity-30' : ''
+              }`}
             >
               <span className="flex items-center justify-center transition-all duration-200">
                 {draftLoading ? (
-                  <Spinner size="small" color="#976af3" />
+                  <Spinner size="small" />
                 ) : (
                   t('agents.form.buttons.saveDraft')
                 )}
               </span>
-            </button>
+            </Button>
           )}
-          <button
+          <Button
+            type="button"
             disabled={!isPublishable() || !hasChanges}
-            className={`${!isPublishable() || !hasChanges ? 'cursor-not-allowed opacity-30' : ''} bg-primary hover:bg-primary/90 flex min-w-28 items-center justify-center rounded-3xl px-5 py-2 text-sm font-medium whitespace-nowrap text-white`}
             onClick={handlePublish}
+            className={`${!isPublishable() || !hasChanges ? 'disabled:opacity-30' : ''} min-w-28 rounded-3xl px-5 whitespace-nowrap text-white`}
           >
             <span className="flex items-center justify-center transition-all duration-200">
               {publishLoading ? (
-                <Spinner size="small" color="white" />
+                <Spinner size="small" />
               ) : (
                 modeConfig[effectiveMode].buttonText
               )}
             </span>
-          </button>
+          </Button>
           {modeConfig[effectiveMode].showAccessDetails && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -803,21 +814,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
         </div>
       </div>
-      <div className="bg-muted dark:bg-background mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-[30px] p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden">
+      <div className="bg-muted dark:bg-background mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-2xl p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden">
         <div className="scrollbar-overlay col-span-2 flex flex-col gap-5 max-[1179px]:overflow-visible min-[1180px]:max-h-full min-[1180px]:overflow-y-auto min-[1180px]:pr-3">
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.meta')}
             </h2>
-            <input
-              className="border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-3 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400"
+            <Input
+              className="bg-card mt-3 h-auto rounded-3xl px-5 py-3 text-sm placeholder:text-gray-400 md:text-sm"
               type="text"
               value={agent.name}
               placeholder={t('agents.form.placeholders.agentName')}
               onChange={(e) => setAgent({ ...agent, name: e.target.value })}
             />
             <textarea
-              className="border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-3 h-32 w-full rounded-xl border px-5 py-4 text-sm outline-hidden placeholder:text-gray-400"
+              className="border-border text-foreground dark:text-foreground dark:placeholder:text-muted-foreground bg-card dark:border-border focus-visible:ring-ring/50 focus-visible:border-ring mt-3 h-32 w-full rounded-xl border px-5 py-4 text-sm outline-hidden placeholder:text-gray-400 focus-visible:ring-[3px]"
               placeholder={t('agents.form.placeholders.describeAgent')}
               value={agent.description}
               onChange={(e) =>
@@ -833,7 +844,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 uploadText={[
                   {
                     text: t('agents.form.upload.clickToUpload'),
-                    colorClass: 'text-[#7D54D1]',
+                    colorClass: 'text-primary',
                   },
                   {
                     text: t('agents.form.upload.dragAndDrop'),
@@ -843,105 +854,110 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               />
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.source')}
             </h2>
             <div className="mt-3">
               <div className="flex flex-wrap items-center gap-1">
-                <button
-                  ref={sourceAnchorButtonRef}
-                  onClick={() => setIsSourcePopupOpen(!isSourcePopupOpen)}
-                  className={`border-border bg-card dark:border-border w-full truncate rounded-3xl border px-5 py-3 text-left text-sm ${
-                    selectedSourceIds.size > 0
-                      ? 'text-foreground dark:text-foreground'
-                      : 'dark:text-muted-foreground text-gray-400'
-                  }`}
-                >
-                  {selectedSourceIds.size > 0
-                    ? Array.from(selectedSourceIds)
-                        .map((id) => {
-                          const matchedDoc = sourceDocs?.find(
-                            (source) =>
-                              source.id === id ||
-                              source.name === id ||
-                              source.retriever === id,
-                          );
-                          return (
-                            matchedDoc?.name || t('agents.form.externalKb')
-                          );
-                        })
-                        .filter(Boolean)
-                        .join(', ')
-                    : t('agents.form.placeholders.selectSources')}
-                </button>
-                <MultiSelectPopup
-                  isOpen={isSourcePopupOpen}
-                  onClose={() => setIsSourcePopupOpen(false)}
-                  anchorRef={sourceAnchorButtonRef}
-                  options={
+                <MultiSelectPopover
+                  open={isSourcePopupOpen}
+                  onOpenChange={setIsSourcePopupOpen}
+                  title={t('agents.form.sourcePopup.title')}
+                  items={
                     sourceDocs?.map((doc: Doc) => ({
-                      id: doc.id || doc.retriever || doc.name,
+                      id: String(doc.id || doc.retriever || doc.name),
                       label: doc.name,
                       icon: <img src={SourceIcon} alt="" />,
                     })) || []
                   }
-                  selectedIds={selectedSourceIds}
-                  onSelectionChange={(newSelectedIds: Set<string | number>) => {
+                  selectedIds={Array.from(selectedSourceIds)}
+                  onToggle={(id) => {
+                    const next = new Set(selectedSourceIds);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
                     if (
-                      newSelectedIds.size === 0 &&
+                      next.size === 0 &&
                       sourceDocs &&
                       sourceDocs.length > 0
                     ) {
                       const defaultSource = sourceDocs.find(
                         (s) => s.name === 'Default',
                       );
-                      if (defaultSource) {
-                        setSelectedSourceIds(
-                          new Set([
-                            defaultSource.id ||
-                              defaultSource.retriever ||
-                              defaultSource.name,
-                          ]),
-                        );
-                      } else {
-                        setSelectedSourceIds(
-                          new Set([
-                            sourceDocs[0].id ||
-                              sourceDocs[0].retriever ||
-                              sourceDocs[0].name,
-                          ]),
-                        );
-                      }
+                      const fallback = defaultSource || sourceDocs[0];
+                      setSelectedSourceIds(
+                        new Set([
+                          String(
+                            fallback.id || fallback.retriever || fallback.name,
+                          ),
+                        ]),
+                      );
                     } else {
-                      setSelectedSourceIds(newSelectedIds);
+                      setSelectedSourceIds(next);
                     }
                   }}
-                  title={t('agents.form.sourcePopup.title')}
                   searchPlaceholder={t(
                     'agents.form.sourcePopup.searchPlaceholder',
                   )}
-                  noOptionsMessage={t(
-                    'agents.form.sourcePopup.noOptionsMessage',
-                  )}
+                  emptyMessage={t('agents.form.sourcePopup.noOptionsMessage')}
+                  trigger={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      ref={sourceAnchorButtonRef}
+                      className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
+                        selectedSourceIds.size > 0
+                          ? 'text-foreground dark:text-foreground'
+                          : 'dark:text-muted-foreground text-gray-400'
+                      }`}
+                    >
+                      {selectedSourceIds.size > 0
+                        ? Array.from(selectedSourceIds)
+                            .map((id) => {
+                              const matchedDoc = sourceDocs?.find(
+                                (source) =>
+                                  source.id === id ||
+                                  source.name === id ||
+                                  source.retriever === id,
+                              );
+                              return (
+                                matchedDoc?.name || t('agents.form.externalKb')
+                              );
+                            })
+                            .filter(Boolean)
+                            .join(', ')
+                        : t('agents.form.placeholders.selectSources')}
+                    </Button>
+                  }
                 />
               </div>
               <div className="mt-3">
-                <Dropdown
-                  options={chunks}
-                  selectedValue={agent.chunks ? agent.chunks : null}
-                  onSelect={(value: string) =>
+                <Select
+                  value={agent.chunks || undefined}
+                  onValueChange={(value) =>
                     setAgent({ ...agent, chunks: value })
                   }
-                  size="w-full"
-                  rounded="3xl"
-                  placeholder={t('agents.form.placeholders.chunksPerQuery')}
-                  contentSize="text-sm"
-                />
+                >
+                  <SelectTrigger
+                    className="w-full rounded-3xl px-5 py-3 text-sm"
+                    size="lg"
+                  >
+                    <SelectValue
+                      placeholder={t('agents.form.placeholders.chunksPerQuery')}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {chunks.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <div className="flex flex-wrap items-end gap-1">
               <div className="min-w-20 grow basis-full sm:basis-0">
                 <Prompts
@@ -961,127 +977,120 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   title={t('agents.form.sections.prompt')}
                   titleClassName="text-lg font-semibold"
                   showAddButton={false}
-                  dropdownProps={{
-                    size: 'w-full',
-                    rounded: '3xl',
-                    contentSize: 'text-sm',
-                  }}
+                  dropdownProps={{ className: 'w-full' }}
                 />
               </div>
-              <button
-                className="border-primary text-primary hover:bg-primary/90 min-w-20 shrink-0 basis-full rounded-3xl border border-solid px-5 py-3 text-sm whitespace-nowrap transition-colors hover:text-white sm:basis-auto"
+              <Button
+                type="button"
                 onClick={() => setAddPromptModal('ACTIVE')}
+                className="border-primary text-primary hover:bg-primary/90 h-auto min-w-20 shrink-0 basis-full rounded-3xl border border-solid bg-transparent px-5 py-3 whitespace-nowrap hover:text-white sm:basis-auto"
               >
                 {t('agents.form.buttons.add')}
-              </button>
+              </Button>
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.tools')}
             </h2>
             <div className="mt-3 flex flex-wrap items-center gap-1">
-              <button
-                ref={toolAnchorButtonRef}
-                onClick={() => setIsToolsPopupOpen(!isToolsPopupOpen)}
-                className={`border-border bg-card dark:border-border w-full truncate rounded-3xl border px-5 py-3 text-left text-sm ${
-                  selectedTools.length > 0
-                    ? 'text-foreground dark:text-foreground'
-                    : 'dark:text-muted-foreground text-gray-400'
-                }`}
-              >
-                {selectedTools.length > 0
-                  ? selectedTools
-                      .map((tool) => getToolDisplayName(tool))
-                      .filter(Boolean)
-                      .join(', ')
-                  : t('agents.form.placeholders.selectTools')}
-              </button>
-              <MultiSelectPopup
-                isOpen={isToolsPopupOpen}
-                onClose={() => setIsToolsPopupOpen(false)}
-                anchorRef={toolAnchorButtonRef}
-                options={userTools}
-                selectedIds={new Set(selectedTools.map((tool) => tool.id))}
-                onSelectionChange={(newSelectedIds: Set<string | number>) =>
-                  setSelectedTools(
-                    userTools
-                      .filter((tool) => newSelectedIds.has(tool.id))
-                      .map((tool) => ({
-                        id: String(tool.id),
-                        name:
-                          typeof tool.name === 'string'
-                            ? tool.name
-                            : tool.label,
-                        display_name: tool.label,
-                      })),
-                  )
-                }
+              <MultiSelectPopover
+                open={isToolsPopupOpen}
+                onOpenChange={setIsToolsPopupOpen}
                 title={t('agents.form.toolsPopup.title')}
+                items={userTools}
+                selectedIds={selectedTools.map((tool) => tool.id)}
+                onToggle={(id) => {
+                  const exists = selectedTools.find((t) => t.id === id);
+                  if (exists) {
+                    setSelectedTools(selectedTools.filter((t) => t.id !== id));
+                    return;
+                  }
+                  const item = userTools.find((t) => t.id === id);
+                  const raw = rawUserTools.find((t) => t.id === id);
+                  if (!item) return;
+                  setSelectedTools([
+                    ...selectedTools,
+                    {
+                      id: item.id,
+                      name: raw?.name || item.label,
+                      display_name: item.label,
+                    },
+                  ]);
+                }}
                 searchPlaceholder={t(
                   'agents.form.toolsPopup.searchPlaceholder',
                 )}
-                noOptionsMessage={t('agents.form.toolsPopup.noOptionsMessage')}
+                emptyMessage={t('agents.form.toolsPopup.noOptionsMessage')}
+                trigger={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    ref={toolAnchorButtonRef}
+                    className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
+                      selectedTools.length > 0
+                        ? 'text-foreground dark:text-foreground'
+                        : 'dark:text-muted-foreground text-gray-400'
+                    }`}
+                  >
+                    {selectedTools.length > 0
+                      ? selectedTools
+                          .map((tool) => getToolDisplayName(tool))
+                          .filter(Boolean)
+                          .join(', ')
+                      : t('agents.form.placeholders.selectTools')}
+                  </Button>
+                }
               />
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.agentType')}
             </h2>
             <div className="mt-3">
-              <Dropdown
-                options={agentTypes}
-                selectedValue={
-                  agent.agent_type
-                    ? agentTypes.find((type) => type.value === agent.agent_type)
-                        ?.label || null
-                    : null
+              <Select
+                value={agent.agent_type || undefined}
+                onValueChange={(value) =>
+                  setAgent({ ...agent, agent_type: value })
                 }
-                onSelect={(option: { label: string; value: string }) =>
-                  setAgent({ ...agent, agent_type: option.value })
-                }
-                size="w-full"
-                rounded="3xl"
-                placeholder={t('agents.form.placeholders.selectType')}
-                contentSize="text-sm"
-              />
+              >
+                <SelectTrigger
+                  className="w-full rounded-3xl px-5 py-3 text-sm"
+                  size="lg"
+                >
+                  <SelectValue
+                    placeholder={t('agents.form.placeholders.selectType')}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {agentTypes.map((type) => (
+                    <SelectItem key={type.value} value={type.value}>
+                      {type.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
+          <div className="bg-card rounded-2xl px-6 py-3">
             <h2 className="text-lg font-semibold">
               {t('agents.form.sections.models')}
             </h2>
             <div className="mt-3 flex flex-col gap-3">
-              <button
-                ref={modelAnchorButtonRef}
-                onClick={() => setIsModelsPopupOpen(!isModelsPopupOpen)}
-                className={`border-border bg-card dark:border-border w-full truncate rounded-3xl border px-5 py-3 text-left text-sm ${
-                  selectedModelIds.size > 0
-                    ? 'text-foreground dark:text-foreground'
-                    : 'dark:text-muted-foreground text-gray-400'
-                }`}
-              >
-                {selectedModelIds.size > 0
-                  ? availableModels
-                      .filter((m) => selectedModelIds.has(m.id))
-                      .map((m) => m.display_name)
-                      .join(', ')
-                  : t('agents.form.placeholders.selectModels')}
-              </button>
-              <MultiSelectPopup
-                isOpen={isModelsPopupOpen}
-                onClose={() => setIsModelsPopupOpen(false)}
-                anchorRef={modelAnchorButtonRef}
-                options={(() => {
+              <MultiSelectPopover
+                open={isModelsPopupOpen}
+                onOpenChange={setIsModelsPopupOpen}
+                title={t('agents.form.modelsPopup.title')}
+                items={(() => {
                   const builtinLabel = t(
                     'settings.customModels.modelsGroup.builtin',
                   );
                   const userLabel = t('settings.customModels.modelsGroup.user');
-                  const builtin: OptionType[] = [];
-                  const user: OptionType[] = [];
+                  const builtin: MultiSelectPopoverItem[] = [];
+                  const user: MultiSelectPopoverItem[] = [];
                   availableModels.forEach((model) => {
-                    const opt: OptionType = {
+                    const opt: MultiSelectPopoverItem = {
                       id: model.id,
                       label: model.display_name,
                       group: model.source === 'user' ? userLabel : builtinLabel,
@@ -1091,55 +1100,80 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   });
                   return [...builtin, ...user];
                 })()}
-                selectedIds={selectedModelIds}
-                onSelectionChange={(newSelectedIds: Set<string | number>) =>
-                  setSelectedModelIds(
-                    new Set(Array.from(newSelectedIds).map(String)),
-                  )
-                }
-                title={t('agents.form.modelsPopup.title')}
+                selectedIds={Array.from(selectedModelIds)}
+                onToggle={(id) => {
+                  const next = new Set(selectedModelIds);
+                  if (next.has(id)) next.delete(id);
+                  else next.add(id);
+                  setSelectedModelIds(next);
+                }}
                 searchPlaceholder={t(
                   'agents.form.modelsPopup.searchPlaceholder',
                 )}
-                noOptionsMessage={t('agents.form.modelsPopup.noOptionsMessage')}
+                emptyMessage={t('agents.form.modelsPopup.noOptionsMessage')}
+                trigger={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    ref={modelAnchorButtonRef}
+                    className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
+                      selectedModelIds.size > 0
+                        ? 'text-foreground dark:text-foreground'
+                        : 'dark:text-muted-foreground text-gray-400'
+                    }`}
+                  >
+                    {selectedModelIds.size > 0
+                      ? availableModels
+                          .filter((m) => selectedModelIds.has(m.id))
+                          .map((m) => m.display_name)
+                          .join(', ')
+                      : t('agents.form.placeholders.selectModels')}
+                  </Button>
+                }
               />
               {selectedModelIds.size > 0 && (
                 <div>
                   <label className="mb-2 block text-sm font-medium">
                     {t('agents.form.labels.defaultModel')}
                   </label>
-                  <Dropdown
-                    options={availableModels
-                      .filter((m) => selectedModelIds.has(m.id))
-                      .map((m) => ({
-                        label: m.display_name,
-                        value: m.id,
-                      }))}
-                    selectedValue={
-                      availableModels.find(
-                        (m) => m.id === agent.default_model_id,
-                      )?.display_name || null
+                  <Select
+                    value={agent.default_model_id || undefined}
+                    onValueChange={(value) =>
+                      setAgent({ ...agent, default_model_id: value })
                     }
-                    onSelect={(option: { label: string; value: string }) =>
-                      setAgent({ ...agent, default_model_id: option.value })
-                    }
-                    size="w-full"
-                    rounded="3xl"
-                    placeholder={t(
-                      'agents.form.placeholders.selectDefaultModel',
-                    )}
-                    contentSize="text-sm"
-                  />
+                  >
+                    <SelectTrigger
+                      className="w-full rounded-3xl px-5 py-3 text-sm"
+                      size="lg"
+                    >
+                      <SelectValue
+                        placeholder={t(
+                          'agents.form.placeholders.selectDefaultModel',
+                        )}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableModels
+                        .filter((m) => selectedModelIds.has(m.id))
+                        .map((m) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            {m.display_name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
             </div>
           </div>
-          <div className="bg-card rounded-[30px] px-6 py-3">
-            <button
+          <div className="bg-card rounded-2xl px-6 py-3">
+            <Button
+              type="button"
+              variant="ghost"
               onClick={() =>
                 setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)
               }
-              className="flex w-full items-center justify-between text-left focus:outline-none"
+              className="h-auto w-full justify-between px-0 py-0 text-left hover:bg-transparent"
             >
               <div>
                 <h2 className="text-lg font-semibold">
@@ -1148,7 +1182,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </div>
               <div className="ml-4 flex items-center">
                 <svg
-                  className={`h-5 w-5 transform transition-transform duration-200 ${
+                  className={`size-5 transform transition-transform duration-200 ${
                     isAdvancedSectionExpanded ? 'rotate-180' : ''
                   }`}
                   fill="none"
@@ -1163,7 +1197,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   />
                 </svg>
               </div>
-            </button>
+            </Button>
             {isAdvancedSectionExpanded && (
               <div className="mt-3">
                 <div>
@@ -1187,7 +1221,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   "additionalProperties": false
 }`}
                   rows={9}
-                  className={`border-border text-foreground dark:text-foreground bg-card dark:border-border mt-2 w-full rounded-2xl border px-4 py-3 font-mono text-sm outline-hidden`}
+                  className={`border-border text-foreground dark:text-foreground bg-card dark:border-border focus-visible:ring-ring/50 focus-visible:border-ring mt-2 w-full rounded-2xl border px-4 py-3 font-mono text-sm outline-hidden focus-visible:ring-[3px]`}
                 />
                 {jsonSchemaText.trim() !== '' && (
                   <div
@@ -1220,31 +1254,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         {t('agents.form.advanced.tokenLimitingDescription')}
                       </p>
                     </div>
-                    <button
-                      onClick={() => {
-                        const newTokenMode = !agent.limited_token_mode;
+                    <Switch
+                      checked={agent.limited_token_mode}
+                      onCheckedChange={(checked) => {
                         setAgent({
                           ...agent,
-                          limited_token_mode: newTokenMode,
-                          limited_request_mode: newTokenMode
+                          limited_token_mode: checked,
+                          limited_request_mode: checked
                             ? false
                             : agent.limited_request_mode,
                         });
                       }}
-                      className={`relative h-6 w-11 rounded-full transition-colors ${
-                        agent.limited_token_mode
-                          ? 'bg-primary'
-                          : 'bg-gray-300 dark:bg-gray-600'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          agent.limited_token_mode ? '' : '-translate-x-5'
-                        }`}
-                      />
-                    </button>
+                    />
                   </div>
-                  <input
+                  <Input
                     type="number"
                     min="0"
                     value={agent.token_limit || ''}
@@ -1258,7 +1281,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     }
                     disabled={!agent.limited_token_mode}
                     placeholder={t('agents.form.placeholders.enterTokenLimit')}
-                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${
+                    className={`bg-card mt-2 h-auto rounded-3xl px-5 py-3 text-sm placeholder:text-gray-400 md:text-sm ${
                       !agent.limited_token_mode
                         ? 'cursor-not-allowed opacity-50'
                         : ''
@@ -1276,31 +1299,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         {t('agents.form.advanced.requestLimitingDescription')}
                       </p>
                     </div>
-                    <button
-                      onClick={() => {
-                        const newRequestMode = !agent.limited_request_mode;
+                    <Switch
+                      checked={agent.limited_request_mode}
+                      onCheckedChange={(checked) => {
                         setAgent({
                           ...agent,
-                          limited_request_mode: newRequestMode,
-                          limited_token_mode: newRequestMode
+                          limited_request_mode: checked,
+                          limited_token_mode: checked
                             ? false
                             : agent.limited_token_mode,
                         });
                       }}
-                      className={`relative h-6 w-11 rounded-full transition-colors ${
-                        agent.limited_request_mode
-                          ? 'bg-primary'
-                          : 'bg-gray-300 dark:bg-gray-600'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          agent.limited_request_mode ? '' : '-translate-x-5'
-                        }`}
-                      />
-                    </button>
+                    />
                   </div>
-                  <input
+                  <Input
                     type="number"
                     min="0"
                     value={agent.request_limit || ''}
@@ -1316,7 +1328,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     placeholder={t(
                       'agents.form.placeholders.enterRequestLimit',
                     )}
-                    className={`border-border text-foreground dark:text-foreground dark:placeholder:text-silver bg-card dark:border-border mt-2 w-full rounded-3xl border px-5 py-3 text-sm outline-hidden placeholder:text-gray-400 ${
+                    className={`bg-card mt-2 h-auto rounded-3xl px-5 py-3 text-sm placeholder:text-gray-400 md:text-sm ${
                       !agent.limited_request_mode
                         ? 'cursor-not-allowed opacity-50'
                         : ''
@@ -1336,35 +1348,23 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         )}
                       </p>
                     </div>
-                    <button
-                      onClick={() =>
+                    <Switch
+                      className="shrink-0"
+                      checked={agent.allow_system_prompt_override}
+                      onCheckedChange={(checked) =>
                         setAgent({
                           ...agent,
-                          allow_system_prompt_override:
-                            !agent.allow_system_prompt_override,
+                          allow_system_prompt_override: checked,
                         })
                       }
-                      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-                        agent.allow_system_prompt_override
-                          ? 'bg-primary'
-                          : 'bg-gray-300 dark:bg-gray-600'
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          agent.allow_system_prompt_override
-                            ? ''
-                            : '-translate-x-5'
-                        }`}
-                      />
-                    </button>
+                    />
                   </div>
                 </div>
               </div>
             )}
           </div>
           {modeConfig[effectiveMode].showDelete && agent.id && (
-            <div className="border-destructive/40 bg-destructive/5 rounded-[30px] border px-6 py-4">
+            <div className="border-destructive/40 bg-destructive/5 rounded-2xl border px-6 py-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <h2 className="text-destructive text-lg font-semibold">
@@ -1376,10 +1376,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 </div>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="destructive-outline"
                   size="sm"
                   onClick={() => setDeleteConfirmation('ACTIVE')}
-                  className="text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0"
+                  className="shrink-0"
                 >
                   {t('agents.form.dangerZone.deleteButton')}
                 </Button>
@@ -1388,9 +1388,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
         </div>
         <div className="col-span-3 flex flex-col gap-2 max-[1179px]:h-auto max-[1179px]:px-0 max-[1179px]:py-0 min-[1180px]:h-full min-[1180px]:py-2">
-          <h2 className="text-lg font-semibold">
-            {t('agents.form.sections.preview')}
-          </h2>
           <div className="flex-1 max-[1179px]:overflow-visible min-[1180px]:min-h-0 min-[1180px]:overflow-hidden">
             <AgentPreviewArea />
           </div>
@@ -1430,9 +1427,9 @@ function AgentPreviewArea() {
   const { t } = useTranslation();
   const selectedAgent = useSelector(selectSelectedAgent);
   return (
-    <div className="bg-card border-border w-full rounded-[30px] border max-[1179px]:h-[600px] min-[1180px]:h-full">
+    <div className="bg-card border-border w-full rounded-2xl border max-[1179px]:h-[600px] min-[1180px]:h-full">
       {selectedAgent?.status === 'published' ? (
-        <div className="flex h-full w-full flex-col overflow-hidden rounded-[30px]">
+        <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl">
           <AgentPreview />
         </div>
       ) : (

@@ -1,56 +1,21 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector, useStore } from 'react-redux';
+import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import ArrowLeft from '../assets/arrow-left.svg';
 import CheckmarkIcon from '../assets/checkMark2.svg';
-import EyeView from '../assets/eye-view.svg';
-import FileIcon from '../assets/file.svg';
-import FolderIcon from '../assets/folder.svg';
 import SyncIcon from '../assets/sync.svg';
-import ThreeDots from '../assets/three-dots.svg';
-import { useLoaderState, useOutsideAlerter } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
-import type { RootState } from '../store';
-import { formatBytes } from '../utils/stringUtils';
-import Chunks from './Chunks';
-import ContextMenu, { MenuOption } from './ContextMenu';
-import SkeletonLoader from './SkeletonLoader';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from './Table';
-
-interface FileNode {
-  type?: string;
-  token_count?: number;
-  size_bytes?: number;
-  display_name?: string;
-  [key: string]: any;
-}
-
-interface DirectoryStructure {
-  [key: string]: FileNode;
-}
+import TreeBrowser from './tree/TreeBrowser';
+import type { TreeBrowserController } from './tree/types';
+import { useReingestSseWaiter } from './tree/useReingestWait';
 
 interface ConnectorTreeProps {
   docId: string;
   sourceName: string;
   onBackToDocuments: () => void;
-}
-
-interface SearchResult {
-  name: string;
-  path: string;
-  isFile: boolean;
 }
 
 const ConnectorTree: React.FC<ConnectorTreeProps> = ({
@@ -59,67 +24,17 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   onBackToDocuments,
 }) => {
   const { t } = useTranslation();
-  const [loading, setLoading] = useLoaderState(true, 500);
-  const [error, setError] = useState<string | null>(null);
-  const [directoryStructure, setDirectoryStructure] =
-    useState<DirectoryStructure | null>(null);
-  const [currentPath, setCurrentPath] = useState<string[]>([]);
   const token = useSelector(selectToken);
-  const store = useStore<RootState>();
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-  const menuRefs = useRef<{
-    [key: string]: React.RefObject<HTMLDivElement | null>;
-  }>({});
-  const [selectedFile, setSelectedFile] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const searchDropdownRef = useRef<HTMLDivElement>(null);
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [syncProgress, setSyncProgress] = useState<number>(0);
-  const [sourceProvider, setSourceProvider] = useState<string>('');
-  const [syncDone, setSyncDone] = useState<boolean>(false);
+
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
+  const [syncDone, setSyncDone] = useState(false);
+  const [sourceProvider, setSourceProvider] = useState('');
   const [syncConfirmationModal, setSyncConfirmationModal] =
     useState<ActiveState>('INACTIVE');
-  const mountedRef = useRef(true);
-  const syncUnsubscribeRef = useRef<(() => void) | null>(null);
-  // Holds the 5-minute SSE-wait timer so the unmount cleanup can clear
-  // it — otherwise the timer fires up to 5 min after unmount and
-  // resolves an abandoned Promise.
-  const syncTimerRef = useRef<number | null>(null);
 
-  useEffect(
-    () => () => {
-      mountedRef.current = false;
-      syncUnsubscribeRef.current?.();
-      syncUnsubscribeRef.current = null;
-      if (syncTimerRef.current !== null) {
-        window.clearTimeout(syncTimerRef.current);
-        syncTimerRef.current = null;
-      }
-    },
-    [],
-  );
-
-  useOutsideAlerter(
-    searchDropdownRef,
-    () => {
-      setSearchQuery('');
-      setSearchResults([]);
-    },
-    [],
-    false,
-  );
-
-  const handleFileClick = (fileName: string, displayName?: string) => {
-    const fullPath = [...currentPath, fileName].join('/');
-    setSelectedFile({
-      id: fullPath,
-      name: displayName ?? fileName,
-    });
-  };
+  const controllerRef = useRef<TreeBrowserController | null>(null);
+  const { waitForTerminal, mountedRef } = useReingestSseWaiter();
 
   const handleSync = async () => {
     if (isSyncing) return;
@@ -137,73 +52,12 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
         console.log('Sync started successfully:', data.task_id);
         setSyncProgress(10);
 
-        // The connector worker (``ingest_connector`` in
-        // ``application/worker.py``) publishes
-        // ``source.ingest.{queued,completed,failed}`` envelopes keyed on
-        // ``scope.id == docId`` (sync mode reuses the source uuid). Wait
-        // on the bounded ``notifications.recentEvents`` ring for a
-        // terminal envelope rather than polling ``/task_status``.
-        // Mirrors FileTree's slice-walking pattern, including the
-        // ``opStartedAt`` guard so a stale terminal event from a prior
-        // sync of this same source can't short-circuit the current op.
+        // Sync mode reuses the source uuid for ``scope.id``, so we wait
+        // on the same SSE channel FileTree uses for ingest terminals.
+        // ``opStartedAt`` guards against a stale terminal from a prior
+        // sync of this same source short-circuiting the current op.
         const opStartedAt = Date.now();
-
-        const terminalFromSse = (): 'completed' | 'failed' | null => {
-          const events = store.getState().notifications.recentEvents;
-          for (const event of events) {
-            if (event.scope?.id !== docId) continue;
-            const ts = event.ts ? Date.parse(event.ts) : NaN;
-            if (!Number.isFinite(ts) || ts < opStartedAt) continue;
-            if (event.type === 'source.ingest.completed') return 'completed';
-            if (event.type === 'source.ingest.failed') return 'failed';
-          }
-          return null;
-        };
-
-        const MAX_WAIT_MS = 5 * 60_000;
-        const terminal = await new Promise<
-          'completed' | 'failed' | 'timeout' | 'unmounted'
-        >((resolve) => {
-          // Cover the race where the event landed between the POST
-          // returning and the subscribe call.
-          const initial = terminalFromSse();
-          if (initial) {
-            resolve(initial);
-            return;
-          }
-          if (!mountedRef.current) {
-            resolve('unmounted');
-            return;
-          }
-          let settled = false;
-          const finish = (
-            value: 'completed' | 'failed' | 'timeout' | 'unmounted',
-          ) => {
-            if (settled) return;
-            settled = true;
-            if (syncTimerRef.current !== null) {
-              window.clearTimeout(syncTimerRef.current);
-              syncTimerRef.current = null;
-            }
-            if (syncUnsubscribeRef.current) {
-              syncUnsubscribeRef.current();
-              syncUnsubscribeRef.current = null;
-            }
-            resolve(value);
-          };
-          syncTimerRef.current = window.setTimeout(
-            () => finish('timeout'),
-            MAX_WAIT_MS,
-          );
-          syncUnsubscribeRef.current = store.subscribe(() => {
-            if (!mountedRef.current) {
-              finish('unmounted');
-              return;
-            }
-            const next = terminalFromSse();
-            if (next) finish(next);
-          });
-        });
+        const terminal = await waitForTerminal(docId, opStartedAt);
 
         if (terminal === 'timeout') {
           console.error('Sync timed out waiting for SSE terminal');
@@ -219,21 +73,16 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
           console.log('Sync completed successfully');
 
           try {
-            const refreshResponse = await userService.getDirectoryStructure(
-              docId,
-              token,
-            );
-            const refreshData = await refreshResponse.json();
-            if (refreshData && refreshData.directory_structure) {
-              setDirectoryStructure(refreshData.directory_structure);
-              setCurrentPath([]);
+            const refreshed = await controllerRef.current?.refreshDirectory();
+            if (refreshed) {
+              controllerRef.current?.resetPath();
             }
-            if (refreshData && refreshData.provider) {
-              setSourceProvider(refreshData.provider);
+            if (mountedRef.current) {
+              setSyncDone(true);
+              setTimeout(() => {
+                if (mountedRef.current) setSyncDone(false);
+              }, 5000);
             }
-
-            setSyncDone(true);
-            setTimeout(() => setSyncDone(false), 5000);
           } catch (err) {
             console.error('Error refreshing directory structure:', err);
           }
@@ -251,609 +100,63 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
     }
   };
 
-  useEffect(() => {
-    const fetchDirectoryStructure = async () => {
-      try {
-        setLoading(true);
-
-        const directoryResponse = await userService.getDirectoryStructure(
-          docId,
-          token,
-        );
-        const directoryData = await directoryResponse.json();
-
-        if (directoryData && directoryData.directory_structure) {
-          setDirectoryStructure(directoryData.directory_structure);
-        } else {
-          setError('Invalid response format');
-        }
-
-        if (directoryData && directoryData.provider) {
-          setSourceProvider(directoryData.provider);
-        }
-      } catch (err) {
-        setError('Failed to load source information');
-        console.error(err);
-      } finally {
-        setLoading(false);
+  const topRightAction = (
+    <button
+      onClick={() => setSyncConfirmationModal('ACTIVE')}
+      disabled={isSyncing}
+      className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors ${
+        isSyncing
+          ? 'dark:bg-muted dark:text-muted-foreground cursor-not-allowed bg-gray-300 text-gray-600'
+          : 'bg-primary hover:bg-primary/90 text-white'
+      }`}
+      title={
+        isSyncing
+          ? `${t('settings.sources.syncing')} ${syncProgress}%`
+          : syncDone
+            ? 'Done'
+            : t('settings.sources.sync')
       }
-    };
+    >
+      <img
+        src={syncDone ? CheckmarkIcon : SyncIcon}
+        alt={t('settings.sources.sync')}
+        className={`mr-2 h-4 w-4 brightness-0 invert filter ${isSyncing ? 'animate-spin' : ''}`}
+      />
+      {isSyncing
+        ? `${syncProgress}%`
+        : syncDone
+          ? 'Done'
+          : t('settings.sources.sync')}
+    </button>
+  );
 
-    if (docId) {
-      fetchDirectoryStructure();
-    }
-  }, [docId, token]);
-
-  const navigateToDirectory = (dirName: string) => {
-    setCurrentPath([...currentPath, dirName]);
-  };
-
-  const navigateUp = () => {
-    setCurrentPath(currentPath.slice(0, -1));
-  };
-
-  const getCurrentDirectory = (): DirectoryStructure => {
-    if (!directoryStructure) return {};
-
-    let current = directoryStructure;
-    for (const dir of currentPath) {
-      if (current[dir] && !current[dir].type) {
-        current = current[dir] as DirectoryStructure;
-      } else {
-        return {};
-      }
-    }
-    return current;
-  };
-
-  const getMenuRef = (id: string) => {
-    if (!menuRefs.current[id]) {
-      menuRefs.current[id] = React.createRef();
-    }
-    return menuRefs.current[id];
-  };
-
-  const handleMenuClick = (
-    e: React.MouseEvent<HTMLButtonElement>,
-    id: string,
-  ) => {
-    e.stopPropagation();
-    setActiveMenuId(activeMenuId === id ? null : id);
-  };
-
-  const getActionOptions = (
-    name: string,
-    isFile: boolean,
-    _itemId: string,
-    displayName?: string,
-  ): MenuOption[] => {
-    const options: MenuOption[] = [];
-
-    options.push({
-      icon: EyeView,
-      label: t('settings.sources.view'),
-      onClick: (event: React.SyntheticEvent) => {
-        event.stopPropagation();
-        if (isFile) {
-          handleFileClick(name, displayName);
-        } else {
-          navigateToDirectory(name);
-        }
-      },
-      iconWidth: 18,
-      iconHeight: 18,
-      variant: 'primary',
-    });
-
-    return options;
-  };
-
-  const calculateDirectoryStats = (
-    structure: DirectoryStructure,
-  ): { totalSize: number; totalTokens: number } => {
-    let totalSize = 0;
-    let totalTokens = 0;
-
-    Object.entries(structure).forEach(([_, node]) => {
-      if (node.type) {
-        // It's a file
-        totalSize += node.size_bytes || 0;
-        totalTokens += node.token_count || 0;
-      } else {
-        // It's a directory, recurse
-        const stats = calculateDirectoryStats(node);
-        totalSize += stats.totalSize;
-        totalTokens += stats.totalTokens;
-      }
-    });
-
-    return { totalSize, totalTokens };
-  };
-
-  const handleBackNavigation = () => {
-    if (selectedFile) {
-      setSelectedFile(null);
-    } else if (currentPath.length === 0) {
-      if (onBackToDocuments) {
-        onBackToDocuments();
-      }
-    } else {
-      navigateUp();
-    }
-  };
-
-  const renderPathNavigation = () => {
-    return (
-      <div className="mb-0 flex min-h-[38px] flex-col gap-2 text-base sm:flex-row sm:items-center sm:justify-between">
-        {/* Left side with path navigation */}
-        <div className="flex w-full items-center sm:w-auto">
-          <button
-            className="text-muted-foreground mr-3 flex h-[29px] w-[29px] items-center justify-center rounded-full border p-2 text-sm font-medium dark:border-0"
-            onClick={handleBackNavigation}
-          >
-            <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-          </button>
-
-          <div className="flex flex-wrap items-center">
-            <span className="font-semibold wrap-break-word text-[#7D54D1]">
-              {sourceName}
-            </span>
-            {currentPath.length > 0 && (
-              <>
-                <span className="text-muted-foreground mx-1 shrink-0">/</span>
-                {currentPath.map((dir, index) => (
-                  <React.Fragment key={index}>
-                    <span className="dark:text-foreground wrap-break-word text-gray-700">
-                      {dir}
-                    </span>
-                    {index < currentPath.length - 1 && (
-                      <span className="text-muted-foreground mx-1 shrink-0">
-                        /
-                      </span>
-                    )}
-                  </React.Fragment>
-                ))}
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="relative mt-2 flex w-full flex-row flex-nowrap items-center justify-end gap-2 sm:mt-0 sm:w-auto">
-          {renderFileSearch()}
-
-          {/* Sync button */}
-          <button
-            onClick={() => setSyncConfirmationModal('ACTIVE')}
-            disabled={isSyncing}
-            className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-[14px] font-medium whitespace-nowrap transition-colors ${
-              isSyncing
-                ? 'dark:bg-muted dark:text-muted-foreground cursor-not-allowed bg-gray-300 text-gray-600'
-                : 'bg-primary hover:bg-primary/90 text-white'
-            }`}
-            title={
-              isSyncing
-                ? `${t('settings.sources.syncing')} ${syncProgress}%`
-                : syncDone
-                  ? 'Done'
-                  : t('settings.sources.sync')
-            }
-          >
-            <img
-              src={syncDone ? CheckmarkIcon : SyncIcon}
-              alt={t('settings.sources.sync')}
-              className={`mr-2 h-4 w-4 brightness-0 invert filter ${isSyncing ? 'animate-spin' : ''}`}
-            />
-            {isSyncing
-              ? `${syncProgress}%`
-              : syncDone
-                ? 'Done'
-                : t('settings.sources.sync')}
-          </button>
-        </div>
-      </div>
-    );
-  };
-
-  const renderFileTree = (directory: DirectoryStructure): React.ReactNode[] => {
-    // Create parent directory row
-    const parentRow =
-      currentPath.length > 0
-        ? [
-            <TableRow key="parent-dir" onClick={navigateUp}>
-              <TableCell width="40%" align="left">
-                <div className="flex items-center">
-                  <img
-                    src={FolderIcon}
-                    alt={t('settings.sources.parentFolderAlt')}
-                    className="mr-2 h-4 w-4 shrink-0"
-                  />
-                  <span className="truncate">..</span>
-                </div>
-              </TableCell>
-              <TableCell width="30%" align="left">
-                -
-              </TableCell>
-              <TableCell width="20%" align="left">
-                -
-              </TableCell>
-              <TableCell width="10%" align="right"></TableCell>
-            </TableRow>,
-          ]
-        : [];
-
-    // Sort entries: directories first, then files, both alphabetically
-    const sortedEntries = Object.entries(directory).sort(
-      ([nameA, nodeA], [nameB, nodeB]) => {
-        const isFileA = !!nodeA.type;
-        const isFileB = !!nodeB.type;
-
-        if (isFileA !== isFileB) {
-          return isFileA ? 1 : -1; // Directories first
-        }
-
-        return nameA.localeCompare(nameB); // Alphabetical within each group
-      },
-    );
-
-    // Process directories
-    const directoryRows = sortedEntries
-      .filter(([_, node]) => !node.type)
-      .map(([name, node]) => {
-        const itemId = `dir-${name}`;
-        const menuRef = getMenuRef(itemId);
-
-        // Calculate directory stats
-        const dirStats = calculateDirectoryStats(node as DirectoryStructure);
-
-        return (
-          <TableRow key={itemId} onClick={() => navigateToDirectory(name)}>
-            <TableCell width="40%" align="left">
-              <div className="flex min-w-0 items-center">
-                <img
-                  src={FolderIcon}
-                  alt={t('settings.sources.folderAlt')}
-                  className="mr-2 h-4 w-4 shrink-0"
-                />
-                <span className="truncate">{name}</span>
-              </div>
-            </TableCell>
-            <TableCell width="30%" align="left">
-              {dirStats.totalTokens > 0
-                ? dirStats.totalTokens.toLocaleString()
-                : '-'}
-            </TableCell>
-            <TableCell width="20%" align="left">
-              {dirStats.totalSize > 0 ? formatBytes(dirStats.totalSize) : '-'}
-            </TableCell>
-            <TableCell width="10%" align="right">
-              <div ref={menuRef} className="relative">
-                <button
-                  onClick={(e) => handleMenuClick(e, itemId)}
-                  className="dark:hover:bg-muted inline-flex h-[35px] w-6 shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
-                  aria-label={t('settings.sources.menuAlt')}
-                >
-                  <img
-                    src={ThreeDots}
-                    alt={t('settings.sources.menuAlt')}
-                    className="opacity-60 hover:opacity-100"
-                  />
-                </button>
-                <ContextMenu
-                  isOpen={activeMenuId === itemId}
-                  setIsOpen={(isOpen) =>
-                    setActiveMenuId(isOpen ? itemId : null)
-                  }
-                  options={getActionOptions(name, false, itemId)}
-                  anchorRef={menuRef}
-                  position="bottom-left"
-                  offset={{ x: -4, y: 4 }}
-                />
-              </div>
-            </TableCell>
-          </TableRow>
-        );
-      });
-
-    // Process files
-    const fileRows = sortedEntries
-      .filter(([_, node]) => !!node.type)
-      .map(([name, node]) => {
-        const itemId = `file-${name}`;
-        const menuRef = getMenuRef(itemId);
-        const displayName =
-          typeof node.display_name === 'string' && node.display_name.trim()
-            ? node.display_name
-            : name;
-
-        return (
-          <TableRow
-            key={itemId}
-            onClick={() => handleFileClick(name, displayName)}
-          >
-            <TableCell width="40%" align="left">
-              <div className="flex min-w-0 items-center">
-                <img
-                  src={FileIcon}
-                  alt={t('settings.sources.fileAlt')}
-                  className="mr-2 h-4 w-4 shrink-0"
-                />
-                <span className="truncate">{displayName}</span>
-              </div>
-            </TableCell>
-            <TableCell width="30%" align="left">
-              {node.token_count?.toLocaleString() || '-'}
-            </TableCell>
-            <TableCell width="20%" align="left">
-              {node.size_bytes ? formatBytes(node.size_bytes) : '-'}
-            </TableCell>
-            <TableCell width="10%" align="right">
-              <div ref={menuRef} className="relative">
-                <button
-                  onClick={(e) => handleMenuClick(e, itemId)}
-                  className="dark:hover:bg-muted inline-flex h-[35px] w-6 shrink-0 items-center justify-center rounded-md font-medium transition-colors hover:bg-[#EBEBEB]"
-                  aria-label={t('settings.sources.menuAlt')}
-                >
-                  <img
-                    src={ThreeDots}
-                    alt={t('settings.sources.menuAlt')}
-                    className="opacity-60 hover:opacity-100"
-                  />
-                </button>
-                <ContextMenu
-                  isOpen={activeMenuId === itemId}
-                  setIsOpen={(isOpen) =>
-                    setActiveMenuId(isOpen ? itemId : null)
-                  }
-                  options={getActionOptions(name, true, itemId, displayName)}
-                  anchorRef={menuRef}
-                  position="bottom-left"
-                  offset={{ x: -4, y: 4 }}
-                />
-              </div>
-            </TableCell>
-          </TableRow>
-        );
-      });
-
-    return [...parentRow, ...directoryRows, ...fileRows];
-  };
-
-  const searchFiles = (
-    query: string,
-    structure: DirectoryStructure,
-    currentPath: string[] = [],
-  ): SearchResult[] => {
-    let results: SearchResult[] = [];
-
-    Object.entries(structure).forEach(([name, node]) => {
-      const fullPath = [...currentPath, name].join('/');
-      const displayName =
-        typeof node.display_name === 'string' && node.display_name.trim()
-          ? node.display_name
-          : '';
-      const queryLower = query.toLowerCase();
-      const matchTarget = displayName ? `${name} ${displayName}` : name;
-
-      if (matchTarget.toLowerCase().includes(queryLower)) {
-        results.push({
-          name: displayName || name,
-          path: fullPath,
-          isFile: !!node.type,
-        });
-      }
-
-      if (!node.type) {
-        // If it's a directory, search recursively
-        results = [
-          ...results,
-          ...searchFiles(query, node as DirectoryStructure, [
-            ...currentPath,
-            name,
-          ]),
-        ];
-      }
-    });
-
-    return results;
-  };
-
-  const handleSearchSelect = (result: SearchResult) => {
-    if (result.isFile) {
-      const pathParts = result.path.split('/');
-      const fileName = pathParts.pop() || '';
-      setCurrentPath(pathParts);
-
-      setSelectedFile({
-        id: result.path,
-        name: result.name || fileName,
-      });
-    } else {
-      setCurrentPath(result.path.split('/'));
-      setSelectedFile(null);
-    }
-    setSearchQuery('');
-    setSearchResults([]);
-  };
-
-  const renderFileSearch = () => {
-    return (
-      <div className="relative w-52" ref={searchDropdownRef}>
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => {
-            setSearchQuery(e.target.value);
-            if (directoryStructure) {
-              setSearchResults(searchFiles(e.target.value, directoryStructure));
-            }
-          }}
-          placeholder={t('settings.sources.searchFiles')}
-          className={`border-border dark:border-border h-[38px] w-full border px-4 py-2 ${searchQuery ? 'rounded-t-[24px]' : 'rounded-[24px]'} bg-transparent focus:outline-none`}
-        />
-
-        {searchQuery && (
-          <div className="border-border bg-card dark:border-border dark:bg-card absolute top-full right-0 left-0 z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-2xl border border-t-0 shadow-lg transition-all duration-200">
-            <div className="max-h-[calc(100vh-200px)] overflow-x-hidden overflow-y-auto overscroll-contain">
-              {searchResults.length === 0 ? (
-                <div className="text-muted-foreground py-2 text-center text-sm">
-                  {t('settings.sources.noResults')}
-                </div>
-              ) : (
-                searchResults.map((result, index) => (
-                  <div
-                    key={index}
-                    onClick={() => handleSearchSelect(result)}
-                    title={result.path}
-                    className={`hover:bg-muted dark:hover:bg-muted flex min-w-0 cursor-pointer items-center px-3 py-2 ${
-                      index !== searchResults.length - 1
-                        ? 'border-border dark:border-border border-b'
-                        : ''
-                    }`}
-                  >
-                    <img
-                      src={result.isFile ? FileIcon : FolderIcon}
-                      alt={
-                        result.isFile
-                          ? t('settings.sources.fileAlt')
-                          : t('settings.sources.folderAlt')
-                      }
-                      className="mr-2 h-4 w-4 shrink-0"
-                    />
-                    <span className="flex-1 truncate text-sm">
-                      {result.name}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const handleFileSearch = (searchQuery: string) => {
-    if (directoryStructure) {
-      return searchFiles(searchQuery, directoryStructure);
-    }
-    return [];
-  };
-
-  const getDisplayNameForPath = (path: string) => {
-    if (!directoryStructure) {
-      return path.split('/').pop() || path;
-    }
-    let structure: any = directoryStructure;
-    if (typeof structure === 'string') {
-      try {
-        structure = JSON.parse(structure);
-      } catch (e) {
-        return path.split('/').pop() || path;
-      }
-    }
-    if (typeof structure !== 'object' || structure === null) {
-      return path.split('/').pop() || path;
-    }
-    const parts = path.split('/').filter(Boolean);
-    let current: any = structure;
-    for (const part of parts) {
-      if (!current || typeof current !== 'object') {
-        return parts[parts.length - 1] || path;
-      }
-      current = current[part];
-    }
-    if (
-      current &&
-      typeof current === 'object' &&
-      typeof current.display_name === 'string' &&
-      current.display_name.trim()
-    ) {
-      return current.display_name;
-    }
-    return parts[parts.length - 1] || path;
-  };
-
-  const handleFileSelect = (path: string) => {
-    const pathParts = path.split('/');
-    const fileName = pathParts.pop() || '';
-    setCurrentPath(pathParts);
-    setSelectedFile({
-      id: path,
-      name: getDisplayNameForPath(path) || fileName,
-    });
-  };
-
-  const currentDirectory = getCurrentDirectory();
-
-  const navigateToPath = (index: number) => {
-    setCurrentPath(currentPath.slice(0, index + 1));
-  };
+  const extraContent = (
+    <ConfirmationModal
+      message={t('settings.sources.syncConfirmation', { sourceName })}
+      modalState={syncConfirmationModal}
+      setModalState={setSyncConfirmationModal}
+      handleSubmit={handleSync}
+      submitLabel={t('settings.sources.sync')}
+      cancelLabel={t('cancel')}
+    />
+  );
 
   return (
-    <div>
-      {selectedFile ? (
-        <div className="flex">
-          <div className="flex-1">
-            <Chunks
-              documentId={docId}
-              documentName={sourceName}
-              handleGoBack={() => setSelectedFile(null)}
-              path={selectedFile.id}
-              displayPath={[...currentPath, selectedFile.name].join('/')}
-              onFileSearch={handleFileSearch}
-              onFileSelect={handleFileSelect}
-            />
-          </div>
-        </div>
-      ) : (
-        <div className="flex w-full max-w-full flex-col overflow-hidden">
-          <div className="mb-2">{renderPathNavigation()}</div>
-
-          <div className="w-full">
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableHeader width="40%" align="left">
-                      {t('settings.sources.fileName')}
-                    </TableHeader>
-                    <TableHeader width="30%" align="left">
-                      {t('settings.sources.tokens')}
-                    </TableHeader>
-                    <TableHeader width="20%" align="left">
-                      {t('settings.sources.size')}
-                    </TableHeader>
-                    <TableHeader width="10%" align="right">
-                      <span className="sr-only">
-                        {t('settings.sources.actions')}
-                      </span>
-                    </TableHeader>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {loading ? (
-                    <SkeletonLoader component="fileTable" />
-                  ) : (
-                    renderFileTree(getCurrentDirectory())
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </div>
-        </div>
-      )}
-
-      <ConfirmationModal
-        message={t('settings.sources.syncConfirmation', {
-          sourceName,
-        })}
-        modalState={syncConfirmationModal}
-        setModalState={setSyncConfirmationModal}
-        handleSubmit={handleSync}
-        submitLabel={t('settings.sources.sync')}
-        cancelLabel={t('cancel')}
-      />
-    </div>
+    <TreeBrowser
+      docId={docId}
+      sourceName={sourceName}
+      onBackToDocuments={onBackToDocuments}
+      columnOrder="tokens-first"
+      sortEntries
+      controllerRef={controllerRef}
+      topRightAction={topRightAction}
+      extraContent={extraContent}
+      onDirectoryDataLoaded={(data) => {
+        if (data && data.provider) {
+          setSourceProvider(data.provider);
+        }
+      }}
+    />
   );
 };
 

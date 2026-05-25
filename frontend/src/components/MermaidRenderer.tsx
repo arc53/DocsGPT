@@ -11,6 +11,7 @@ import {
 import { selectStatus } from '../conversation/conversationSlice';
 import { useDarkTheme } from '../hooks';
 import CopyButton from './CopyButton';
+import { Button } from './ui/button';
 import { MermaidRendererProps } from './types';
 
 const MermaidRenderer: React.FC<MermaidRendererProps> = ({
@@ -263,8 +264,8 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   const errorRender = !isCurrentlyLoading && error;
 
   return (
-    <div className="w-inherit group border-border bg-card relative overflow-hidden rounded-[14px] border">
-      <div className="bg-platinum dark:bg-muted flex items-center justify-between px-2 py-1">
+    <div className="w-inherit group border-border bg-card relative overflow-hidden rounded-xl border">
+      <div className="bg-muted flex items-center justify-between px-2 py-1">
         <span className="text-foreground dark:text-foreground text-xs font-medium">
           mermaid
         </span>
@@ -273,27 +274,32 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
 
           {showDiagramOptions && (
             <div className="relative" ref={downloadMenuRef}>
-              <button
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
                 onClick={() => setShowDownloadMenu(!showDownloadMenu)}
-                className="flex h-full items-center rounded-sm bg-gray-100 px-2 py-1 text-xs dark:bg-gray-700"
+                className="h-auto gap-1 rounded-sm bg-gray-100 px-2 py-1 text-xs dark:bg-gray-700"
                 title={t('mermaid.downloadOptions')}
               >
                 Download <span className="ml-1">▼</span>
-              </button>
+              </Button>
               {showDownloadMenu && (
                 <div className="border-border bg-card absolute right-0 z-10 mt-1 w-40 rounded-sm border shadow-lg">
                   <ul>
                     {downloadOptions.map((option, index) => (
                       <li key={index}>
-                        <button
+                        <Button
+                          type="button"
+                          variant="ghost"
                           onClick={() => {
                             option.action();
                             setShowDownloadMenu(false);
                           }}
-                          className="hover:bg-muted w-full px-4 py-2 text-left text-xs"
+                          className="h-auto w-full justify-start rounded-none px-4 py-2 text-left text-xs font-normal"
                         >
                           {option.label}
-                        </button>
+                        </Button>
                       </li>
                     ))}
                   </ul>
@@ -303,17 +309,20 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
           )}
 
           {showDiagramOptions && (
-            <button
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
               onClick={() => setShowCode(!showCode)}
-              className={`flex h-full items-center rounded px-2 py-1 text-xs ${
+              className={`h-auto rounded px-2 py-1 text-xs ${
                 showCode
-                  ? 'bg-blue-200 dark:bg-blue-800'
-                  : 'bg-gray-100 dark:bg-gray-700'
+                  ? 'bg-blue-200 hover:bg-blue-200/90 dark:bg-blue-800 dark:hover:bg-blue-800/90'
+                  : 'bg-gray-100 hover:bg-gray-100/90 dark:bg-gray-700 dark:hover:bg-gray-700/90'
               }`}
               title={t('mermaid.viewCode')}
             >
               Code
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -351,15 +360,17 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
             {isHovering && (
               <>
                 <div className="absolute top-2 right-2 z-10 flex items-center gap-2 rounded-sm bg-black/70 px-2 py-1 text-xs text-white">
-                  <button
+                  <Button
+                    type="button"
+                    variant="ghost"
                     onClick={() =>
                       setZoomFactor((prev) => Math.max(1, prev - 0.5))
                     }
-                    className="rounded px-1 hover:bg-gray-600"
+                    className="h-auto px-1 py-0 text-white hover:bg-gray-600 hover:text-white"
                     title={t('mermaid.decreaseZoom')}
                   >
                     -
-                  </button>
+                  </Button>
                   <span
                     className="cursor-pointer hover:underline"
                     onClick={() => {
@@ -369,15 +380,17 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
                   >
                     {zoomFactor.toFixed(1)}x
                   </span>
-                  <button
+                  <Button
+                    type="button"
+                    variant="ghost"
                     onClick={() =>
                       setZoomFactor((prev) => Math.min(6, prev + 0.5))
                     }
-                    className="rounded px-1 hover:bg-gray-600"
+                    className="h-auto px-1 py-0 text-white hover:bg-gray-600 hover:text-white"
                     title={t('mermaid.increaseZoom')}
                   >
                     +
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
@@ -401,7 +414,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
 
           {showCode && (
             <div className="border-border border-t">
-              <div className="bg-platinum dark:bg-muted p-2">
+              <div className="bg-muted p-2">
                 <span className="text-foreground dark:text-foreground text-xs font-medium">
                   Mermaid Code
                 </span>

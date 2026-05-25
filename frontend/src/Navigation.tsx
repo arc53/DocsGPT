@@ -16,11 +16,11 @@ import Hamburger from './assets/hamburger.svg';
 import openNewChat from './assets/openNewChat.svg';
 import Pin from './assets/pin.svg';
 import SearchIcon from './assets/search.svg';
-import AgentImage from './components/AgentImage';
+import { Avatar } from './components/ui/avatar';
+import { Button } from './components/ui/button';
 import SettingGear from './assets/settingGear.svg';
 import Spark from './assets/spark.svg';
-import SpinnerDark from './assets/spinner-dark.svg';
-import Spinner from './assets/spinner.svg';
+import Spinner from './components/Spinner';
 import Twitter from './assets/TwitterX.svg';
 import UnPin from './assets/unpin.svg';
 import Help from './components/Help';
@@ -32,9 +32,9 @@ import {
   updateConversationId,
 } from './conversation/conversationSlice';
 import ConversationTile from './conversation/ConversationTile';
-import { useDarkTheme, useMediaQuery } from './hooks';
+import { useMediaQuery } from './hooks';
 import useTokenAuth from './hooks/useTokenAuth';
-import DeleteConvModal from './modals/DeleteConvModal';
+import ConfirmationModal from './modals/ConfirmationModal';
 import JWTModal from './modals/JWTModal';
 import SearchConversationsModal from './modals/SearchConversationsModal';
 import { ActiveState } from './models/misc';
@@ -77,7 +77,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const selectedAgent = useSelector(selectSelectedAgent);
 
   const { isMobile, isTablet } = useMediaQuery();
-  const [isDarkTheme] = useDarkTheme();
   const { showTokenModal, handleTokenSubmit } = useTokenAuth();
 
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
@@ -316,43 +315,79 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         />
       )}
 
-      {
-        <div className="absolute top-3 left-3 z-20 hidden transition-all duration-300 ease-in-out lg:block">
-          <div className="flex items-center gap-3">
-            {!navOpen && (
-              <button
-                onClick={() => {
-                  setNavOpen(!navOpen);
-                }}
-                className="transition-transform duration-200 hover:scale-110"
-              >
-                <img
-                  src={PanelLeftOpen}
-                  alt="Open navigation menu"
-                  className="m-auto transition-all duration-300 ease-in-out"
-                />
-              </button>
-            )}
-            {queries?.length > 0 && (
-              <button
-                onClick={() => {
-                  newChat();
-                }}
-                className="transition-transform duration-200 hover:scale-110"
-              >
-                <img
-                  src={openNewChat}
-                  alt="Start new chat"
-                  className="cursor-pointer"
-                />
-              </button>
-            )}
-            <div className="text-muted-foreground text-[20px] font-medium">
-              DocsGPT
-            </div>
+      {/* Icon rail (desktop only, when sidebar collapsed) */}
+      {!navOpen && !isMobile && !isTablet && (
+        <div className="bg-sidebar border-border fixed top-0 left-0 z-10 hidden h-full w-14 flex-col items-center gap-2 border-r py-3 lg:flex">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setNavOpen(true)}
+            aria-label="Open navigation menu"
+          >
+            <img
+              src={PanelLeftOpen}
+              alt=""
+              className="transition-all duration-300 ease-in-out"
+            />
+          </Button>
+          {queries?.length > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => newChat()}
+              aria-label="Start new chat"
+            >
+              <img src={openNewChat} alt="" />
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setSearchOpen(true)}
+            aria-label={t('modals.searchConversations.searchPlaceholder')}
+            title={t('modals.searchConversations.searchPlaceholder')}
+          >
+            <img
+              src={SearchIcon}
+              alt=""
+              className="h-5 w-5 filter dark:invert"
+            />
+          </Button>
+          <div className="mt-auto flex flex-col items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                dispatch(setSelectedAgent(null));
+                navigate('/agents');
+              }}
+              aria-label={t('manageAgents')}
+            >
+              <img src={Spark} alt="" className="h-5 w-5" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                resetConversation();
+                navigate('/settings');
+              }}
+              aria-label={t('settings.label')}
+            >
+              <img
+                src={SettingGear}
+                alt=""
+                className="h-5 w-5 filter dark:invert"
+              />
+            </Button>
           </div>
         </div>
-      }
+      )}
       <div
         ref={navRef}
         className={`${
@@ -375,18 +410,22 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               <p className="my-auto text-2xl font-semibold">DocsGPT</p>
             </a>
           </div>
-          <button
-            className="float-right mr-5"
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="float-right mr-5 h-auto w-auto p-0 hover:bg-transparent"
             onClick={() => {
               setNavOpen(!navOpen);
             }}
+            aria-label={navOpen ? 'Collapse sidebar' : 'Expand sidebar'}
           >
             <img
               src={navOpen ? PanelLeftClose : PanelLeftOpen}
               alt={navOpen ? 'Collapse sidebar' : 'Expand sidebar'}
               className="m-auto transition-all duration-300 ease-in-out hover:scale-110"
             />
-          </button>
+          </Button>
         </div>
         <NavLink
           to={'/c/new'}
@@ -416,12 +455,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           className="scrollbar-overlay mb-auto h-[78vh] overflow-x-hidden overflow-y-auto dark:text-white"
         >
           {conversations?.loading && !isDeletingConversation && (
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform">
-              <img
-                src={isDarkTheme ? Spinner : SpinnerDark}
-                className="animate-spin cursor-pointer bg-transparent"
-                alt="Loading conversations"
-              />
+            <div
+              className="text-foreground absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform dark:text-white"
+              role="status"
+              aria-label="Loading conversations"
+            >
+              <Spinner size="small" />
             </div>
           )}
           {recentAgents?.length > 0 ? (
@@ -445,10 +484,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     >
                       <div className="flex items-center gap-2">
                         <div className="flex w-6 justify-center">
-                          <AgentImage
+                          <Avatar
                             src={agent.image}
                             alt="agent-logo"
-                            className="h-6 w-6 rounded-full object-contain"
+                            imgClassName="h-6 w-6 rounded-full object-contain"
                           />
                         </div>
                         <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
@@ -458,18 +497,24 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                       <div
                         className={`${isMobile || isTablet ? 'flex' : 'invisible flex group-hover:visible'} items-center px-3`}
                       >
-                        <button
-                          className="rounded-full hover:opacity-75"
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="h-auto w-auto rounded-full p-0 hover:bg-transparent hover:opacity-75"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleTogglePin(agent);
                           }}
+                          aria-label={
+                            agent.pinned ? 'Unpin agent' : 'Pin agent'
+                          }
                         >
                           <img
                             src={agent.pinned ? UnPin : Pin}
                             className="h-4 w-4"
                           ></img>
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -524,9 +569,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             <div className="mt-7">
               <div className="mx-4 my-auto mt-2 flex h-8 items-center justify-between gap-4 rounded-3xl">
                 <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
-                <button
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => setSearchOpen(true)}
-                  className="hover:bg-sidebar-accent mr-2 flex h-7 w-7 items-center justify-center rounded-full"
+                  className="hover:bg-sidebar-accent mr-2 h-7 w-7 rounded-full"
                   aria-label={t('modals.searchConversations.searchPlaceholder')}
                   title={t('modals.searchConversations.searchPlaceholder')}
                 >
@@ -535,7 +583,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     alt="search"
                     className="h-4 w-4 opacity-70"
                   />
-                </button>
+                </Button>
               </div>
               <div className="conversations-container">
                 {(conversations.data ?? []).map((conversation) => (
@@ -639,25 +687,32 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       </div>
       <div className="dark:border-b-sidebar-border bg-sidebar sticky z-10 h-16 w-full border-b-2 lg:hidden">
         <div className="ml-6 flex h-full items-center gap-6">
-          <button
-            className="h-6 w-6 lg:hidden"
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="h-6 w-6 p-0 hover:bg-transparent lg:hidden"
             onClick={() => setNavOpen(true)}
+            aria-label="Toggle mobile menu"
           >
             <img
               src={Hamburger}
               alt="Toggle mobile menu"
               className="w-7 filter dark:invert"
             />
-          </button>
-          <div className="text-muted-foreground text-[20px] font-medium">
+          </Button>
+          <div className="text-muted-foreground text-xl font-medium">
             DocsGPT
           </div>
         </div>
       </div>
-      <DeleteConvModal
+      <ConfirmationModal
+        message={t('modals.deleteConv.confirm')}
         modalState={modalStateDeleteConv}
-        setModalState={setModalStateDeleteConv}
-        handleDeleteAllConv={handleDeleteAllConversations}
+        setModalState={(state) => dispatch(setModalStateDeleteConv(state))}
+        submitLabel={t('modals.deleteConv.delete')}
+        handleSubmit={handleDeleteAllConversations}
+        variant="danger"
       />
       {uploadModalState === 'ACTIVE' && (
         <Upload

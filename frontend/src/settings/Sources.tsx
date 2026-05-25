@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -13,10 +13,16 @@ import SyncIcon from '../assets/sync.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import CalendarIcon from '../assets/calendar.svg';
 import DiscIcon from '../assets/disc.svg';
-import ContextMenu, { MenuOption } from '../components/ContextMenu';
 import Pagination from '../components/DocumentPagination';
-import DropdownMenu from '../components/DropdownMenu';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { Button } from '../components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
+import { Input } from '../components/ui/input';
 import { useDarkTheme, useDebouncedValue, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
@@ -37,6 +43,15 @@ import { formatDate } from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import Chunks from '../components/Chunks';
+
+type SourceMenuOption = {
+  icon: string;
+  label: string;
+  onClick: () => void;
+  variant: 'default' | 'destructive';
+  iconWidth?: number;
+  iconHeight?: number;
+};
 
 const formatTokens = (tokens: number): string => {
   const roundToTwoDecimals = (num: number): string => {
@@ -76,34 +91,7 @@ export default function Sources({
   const [rowsPerPage, setRowsPerPage] = useState<number>(10);
   const [totalPages, setTotalPages] = useState<number>(1);
 
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-  const menuRefs = useRef<{
-    [key: string]: React.RefObject<HTMLDivElement | null>;
-  }>({});
-
-  // Create or get a ref for each document wrapper div (not the td)
-  const getMenuRef = (docId: string) => {
-    if (!menuRefs.current[docId]) {
-      menuRefs.current[docId] = React.createRef<HTMLDivElement>();
-    }
-    return menuRefs.current[docId];
-  };
-
-  const handleMenuClick = (e: React.MouseEvent, docId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const isAnyMenuOpen =
-      (syncMenuState.isOpen && syncMenuState.docId === docId) ||
-      activeMenuId === docId;
-
-    if (isAnyMenuOpen) {
-      setSyncMenuState((prev) => ({ ...prev, isOpen: false, docId: null }));
-      setActiveMenuId(null);
-      return;
-    }
-    setActiveMenuId(docId);
-  };
+  const [actionMenuDocId, setActionMenuDocId] = useState<string | null>(null);
 
   const currentDocuments = paginatedDocuments ?? [];
   const syncOptions = [
@@ -113,7 +101,6 @@ export default function Sources({
     { label: t('settings.sources.syncFrequency.monthly'), value: 'monthly' },
   ];
   const [documentToView, setDocumentToView] = useState<Doc>();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [syncMenuState, setSyncMenuState] = useState<{
     isOpen: boolean;
     docId: string | null;
@@ -327,8 +314,11 @@ export default function Sources({
     }
   };
 
-  const getActionOptions = (index: number, document: Doc): MenuOption[] => {
-    const actions: MenuOption[] = [
+  const getActionOptions = (
+    index: number,
+    document: Doc,
+  ): SourceMenuOption[] => {
+    const actions: SourceMenuOption[] = [
       {
         icon: EyeView,
         label: t('settings.sources.view'),
@@ -337,7 +327,7 @@ export default function Sources({
         },
         iconWidth: 18,
         iconHeight: 18,
-        variant: 'primary',
+        variant: 'default',
       },
     ];
 
@@ -350,7 +340,7 @@ export default function Sources({
         },
         iconWidth: 14,
         iconHeight: 14,
-        variant: 'primary',
+        variant: 'default',
       });
     }
 
@@ -367,7 +357,7 @@ export default function Sources({
         },
         iconWidth: 14,
         iconHeight: 14,
-        variant: 'primary',
+        variant: 'default',
       });
       actions.push({
         icon: SyncIcon,
@@ -377,7 +367,7 @@ export default function Sources({
         },
         iconWidth: 14,
         iconHeight: 14,
-        variant: 'primary',
+        variant: 'default',
       });
     }
 
@@ -389,7 +379,7 @@ export default function Sources({
       },
       iconWidth: 18,
       iconHeight: 18,
-      variant: 'danger',
+      variant: 'destructive',
     });
 
     return actions;
@@ -423,39 +413,34 @@ export default function Sources({
       )}
     </div>
   ) : (
-    <div className="mt-8 flex w-full max-w-full flex-col overflow-hidden">
+    <div className="mt-8 flex w-full max-w-full flex-col">
       <div className="relative flex grow flex-col">
-        <p className="text-muted-foreground mb-5 text-[15px] leading-6">
+        <p className="text-muted-foreground mb-5 text-sm leading-6">
           {t('settings.sources.subtitle')}
         </p>
         <div className="mb-6 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-          <div className="w-full sm:w-auto">
-            <label htmlFor="document-search-input" className="sr-only">
-              {t('settings.sources.searchPlaceholder')}
-            </label>
-            <div className="relative w-full max-w-md">
-              <img
-                src={SearchIcon}
-                alt=""
-                className="absolute top-1/2 left-4 h-5 w-5 -translate-y-1/2 opacity-40"
-              />
-              <input
-                maxLength={256}
-                placeholder={t('settings.sources.searchPlaceholder')}
-                name="Document-search-input"
-                type="text"
-                id="document-search-input"
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="border-border bg-card text-foreground placeholder:text-muted-foreground h-11 w-full rounded-full border py-2 pr-5 pl-11 text-sm shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-shadow outline-none focus:shadow-[0_2px_8px_rgba(0,0,0,0.1)] dark:shadow-none"
-              />
-            </div>
+          <div className="w-full max-w-md sm:w-auto">
+            <Input
+              maxLength={256}
+              label={t('settings.sources.searchPlaceholder')}
+              name="Document-search-input"
+              type="text"
+              id="document-search-input"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
+              labelBgClassName="bg-background"
+              className="rounded-full"
+              leftIcon={
+                <img src={SearchIcon} alt="" className="h-4 w-4 opacity-40" />
+              }
+            />
           </div>
-          <button
-            className="bg-primary hover:bg-primary/90 flex h-11 min-w-[108px] items-center justify-center rounded-full px-4 text-sm whitespace-normal text-white"
+          <Button
+            type="button"
+            className="h-11 min-w-[108px] rounded-full whitespace-normal text-white"
             title={t('settings.sources.addSource')}
             onClick={() => {
               setIsOnboarding(false);
@@ -463,7 +448,7 @@ export default function Sources({
             }}
           >
             {t('settings.sources.addSource')}
-          </button>
+          </Button>
         </div>
         <div className="relative w-full">
           {loading ? (
@@ -489,8 +474,9 @@ export default function Sources({
                 return (
                   <div key={docId} className="relative">
                     <div
-                      className={`bg-muted dark:bg-accent flex h-[130px] w-full flex-col rounded-2xl p-3 transition-all duration-200 ${
-                        activeMenuId === docId || syncMenuState.docId === docId
+                      className={`bg-muted dark:bg-accent flex h-[130px] w-full flex-col rounded-2xl p-5 transition-all duration-200 ${
+                        actionMenuDocId === docId ||
+                        syncMenuState.docId === docId
                           ? 'scale-[1.05]'
                           : 'hover:scale-[1.05]'
                       }`}
@@ -498,25 +484,15 @@ export default function Sources({
                       <div className="w-full flex-1">
                         <div className="flex w-full items-center justify-between gap-2">
                           <h3
-                            className="font-inter dark:text-foreground text-foreground line-clamp-3 text-[13px] leading-[18px] font-semibold wrap-break-word"
+                            className="dark:text-foreground text-foreground line-clamp-3 text-sm leading-[18px] font-semibold wrap-break-word"
                             title={document.name}
                           >
                             {document.name}
                           </h3>
-                          <div
-                            ref={getMenuRef(docId)}
-                            className="relative flex items-center justify-end"
-                          >
+                          <div className="relative flex items-center justify-end">
                             {document.syncFrequency && (
                               <DropdownMenu
-                                name={t('settings.sources.sync')}
-                                options={syncOptions}
-                                onSelect={(value: string) => {
-                                  handleManageSync(document, value);
-                                }}
-                                defaultValue={document.syncFrequency}
-                                icon={SyncIcon}
-                                isOpen={
+                                open={
                                   syncMenuState.docId === docId &&
                                   syncMenuState.isOpen
                                 }
@@ -528,39 +504,88 @@ export default function Sources({
                                     document: isOpen ? document : null,
                                   }));
                                 }}
-                                anchorRef={getMenuRef(docId)}
-                                position="bottom-left"
-                                offset={{ x: -8, y: 8 }}
-                                className="min-w-[120px]"
-                              />
+                              >
+                                <DropdownMenuTrigger asChild>
+                                  <span
+                                    aria-hidden
+                                    className="pointer-events-none absolute inset-0 opacity-0"
+                                  />
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent
+                                  align="end"
+                                  className="min-w-[120px]"
+                                >
+                                  {syncOptions.map((opt) => (
+                                    <DropdownMenuItem
+                                      key={opt.value}
+                                      onSelect={() =>
+                                        handleManageSync(document, opt.value)
+                                      }
+                                    >
+                                      {opt.label}
+                                    </DropdownMenuItem>
+                                  ))}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleMenuClick(e, docId);
-                              }}
-                              className="dark:hover:bg-muted inline-flex h-[35px] w-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[#EBEBEB]"
-                              aria-label={t('settings.sources.menuAlt')}
-                              data-testid={`menu-button-${docId}`}
+                            <DropdownMenu
+                              open={actionMenuDocId === docId}
+                              onOpenChange={(open) =>
+                                setActionMenuDocId(open ? docId : null)
+                              }
                             >
-                              <img
-                                src={ThreeDots}
-                                alt={t('settings.sources.menuAlt')}
-                                className="opacity-60 hover:opacity-100"
-                              />
-                            </button>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="h-[35px] w-6"
+                                  aria-label={t('settings.sources.menuAlt')}
+                                  data-testid={`menu-button-${docId}`}
+                                >
+                                  <img
+                                    src={ThreeDots}
+                                    alt={t('settings.sources.menuAlt')}
+                                    className="opacity-60 hover:opacity-100"
+                                  />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="end"
+                                className="min-w-[144px]"
+                              >
+                                {getActionOptions(index, document).map(
+                                  (option, idx) => (
+                                    <DropdownMenuItem
+                                      key={idx}
+                                      variant={option.variant}
+                                      onSelect={() => option.onClick()}
+                                    >
+                                      <img
+                                        src={option.icon}
+                                        alt=""
+                                        width={option.iconWidth ?? 16}
+                                        height={option.iconHeight ?? 16}
+                                      />
+                                      <span>{option.label}</span>
+                                    </DropdownMenuItem>
+                                  ),
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </div>
                       </div>
 
                       <div className="flex flex-col items-start justify-start gap-1">
                         {document.ingestStatus === 'failed' && (
-                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] leading-[16px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs leading-[16px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
                             {t('settings.sources.ingestFailed')}
                           </span>
                         )}
                         {document.ingestStatus === 'processing' && (
-                          <span className="bg-muted-foreground/10 text-muted-foreground rounded-full px-2 py-0.5 text-[11px] leading-[16px] font-medium">
+                          <span className="bg-muted-foreground/10 text-muted-foreground rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium">
                             {t('settings.sources.ingestProcessing')}
                           </span>
                         )}
@@ -570,13 +595,13 @@ export default function Sources({
                             alt=""
                             className="h-3.5 w-3.5"
                           />
-                          <span className="font-inter text-muted-foreground text-[12px] leading-[18px] font-medium">
+                          <span className="text-muted-foreground text-xs leading-[18px] font-medium">
                             {document.date ? formatDate(document.date) : ''}
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
                           <img src={DiscIcon} alt="" className="h-3.5 w-3.5" />
-                          <span className="font-inter text-muted-foreground text-[12px] leading-[18px] font-medium">
+                          <span className="text-muted-foreground text-xs leading-[18px] font-medium">
                             {document.tokens
                               ? formatTokens(+document.tokens)
                               : ''}
@@ -584,17 +609,6 @@ export default function Sources({
                         </div>
                       </div>
                     </div>
-                    <ContextMenu
-                      isOpen={activeMenuId === docId}
-                      setIsOpen={(isOpen) => {
-                        setActiveMenuId(isOpen ? docId : null);
-                      }}
-                      options={getActionOptions(index, document)}
-                      anchorRef={getMenuRef(docId)}
-                      position="bottom-left"
-                      offset={{ x: -8, y: 8 }}
-                      className="z-50"
-                    />
                   </div>
                 );
               })}

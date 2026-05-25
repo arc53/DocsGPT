@@ -12,7 +12,9 @@ interface SkeletonLoaderProps {
     | 'chunkCards'
     | 'sourceCards'
     | 'toolCards'
-    | 'addToolCards';
+    | 'addToolCards'
+    | 'connectedState'
+    | 'filesSection';
 }
 
 const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
@@ -47,16 +49,16 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       {[...Array(4)].map((_, idx) => (
         <tr key={idx} className="animate-pulse">
           <td className="w-[40%] px-4 py-4">
-            <div className="h-4 w-full rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+            <div className="bg-muted h-4 w-full rounded-sm"></div>
           </td>
           <td className="w-[30%] px-4 py-4">
-            <div className="h-4 w-full rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+            <div className="bg-muted h-4 w-full rounded-sm"></div>
           </td>
           <td className="w-[20%] px-4 py-4">
-            <div className="h-4 w-full rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+            <div className="bg-muted h-4 w-full rounded-sm"></div>
           </td>
           <td className="w-[10%] px-4 py-4">
-            <div className="h-4 w-full rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+            <div className="bg-muted h-4 w-full rounded-sm"></div>
           </td>
         </tr>
       ))}
@@ -68,16 +70,16 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       {[...Array(4)].map((_, idx) => (
         <tr key={idx} className="animate-pulse">
           <td className="p-2">
-            <div className="mx-auto h-4 w-3/4 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+            <div className="bg-muted mx-auto h-4 w-3/4 rounded-sm"></div>
           </td>
           <td className="p-2">
-            <div className="mx-auto h-4 w-full rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+            <div className="bg-muted mx-auto h-4 w-full rounded-sm"></div>
           </td>
           <td className="p-2">
-            <div className="mx-auto h-4 w-full rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+            <div className="bg-muted mx-auto h-4 w-full rounded-sm"></div>
           </td>
           <td className="p-2">
-            <div className="mx-auto h-4 w-8 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+            <div className="bg-muted mx-auto h-4 w-8 rounded-sm"></div>
           </td>
         </tr>
       ))}
@@ -86,10 +88,10 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
 
   const renderDropdown = () => (
     <div className="animate-pulse">
-      <div className="mb-2 h-4 w-24 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-      <div className="flex h-14 w-[360px] items-center justify-between rounded-3xl bg-gray-300 px-4 dark:bg-gray-600">
-        <div className="h-3 w-24 rounded-sm bg-gray-400 dark:bg-gray-700"></div>
-        <div className="h-3 w-3 rounded-sm bg-gray-400 dark:bg-gray-700"></div>
+      <div className="bg-muted mb-2 h-4 w-24 rounded-sm"></div>
+      <div className="bg-muted flex h-14 w-[360px] items-center justify-between rounded-3xl px-4">
+        <div className="bg-muted-foreground/20 h-3 w-24 rounded-sm"></div>
+        <div className="bg-muted-foreground/20 h-3 w-3 rounded-sm"></div>
       </div>
     </div>
   );
@@ -102,11 +104,11 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
           className="dark:hover:bg-accent hover:bg-muted flex w-full items-start p-2"
         >
           <div className="flex w-full items-center gap-2">
-            <div className="h-3 w-3 rounded-lg bg-gray-300 dark:bg-gray-600"></div>
+            <div className="bg-muted h-3 w-3 rounded-lg"></div>
             <div className="flex w-full flex-row items-center gap-2">
-              <div className="h-3 w-[30%] rounded-lg bg-gray-300 lg:w-52 dark:bg-gray-600"></div>
-              <div className="h-3 w-[16%] rounded-lg bg-gray-300 lg:w-28 dark:bg-gray-600"></div>
-              <div className="h-3 w-[40%] rounded-lg bg-gray-300 lg:w-64 dark:bg-gray-600"></div>
+              <div className="bg-muted h-3 w-[30%] rounded-lg lg:w-52"></div>
+              <div className="bg-muted h-3 w-[16%] rounded-lg lg:w-28"></div>
+              <div className="bg-muted h-3 w-[40%] rounded-lg lg:w-64"></div>
             </div>
           </div>
         </div>
@@ -125,28 +127,28 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
         >
           <div className="space-y-4">
             <div>
-              <div className="mb-2 h-4 w-3/4 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-              <div className="mb-2 h-4 w-5/6 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-              <div className="mb-2 h-4 w-1/2 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-              <div className="mb-2 h-4 w-3/4 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-              <div className="mb-2 h-4 w-full rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+              <div className="bg-muted mb-2 h-4 w-3/4 rounded-sm"></div>
+              <div className="bg-muted mb-2 h-4 w-5/6 rounded-sm"></div>
+              <div className="bg-muted mb-2 h-4 w-1/2 rounded-sm"></div>
+              <div className="bg-muted mb-2 h-4 w-3/4 rounded-sm"></div>
+              <div className="bg-muted mb-2 h-4 w-full rounded-sm"></div>
             </div>
-            <div className="my-4 border-t border-gray-400 dark:border-gray-700"></div>
+            <div className="border-border my-4 border-t"></div>
             <div>
-              <div className="mb-2 h-4 w-2/3 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-              <div className="mb-2 h-4 w-1/4 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-              <div className="mb-2 h-4 w-full rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+              <div className="bg-muted mb-2 h-4 w-2/3 rounded-sm"></div>
+              <div className="bg-muted mb-2 h-4 w-1/4 rounded-sm"></div>
+              <div className="bg-muted mb-2 h-4 w-full rounded-sm"></div>
             </div>
-            <div className="my-4 border-t border-gray-400 dark:border-gray-700"></div>
+            <div className="border-border my-4 border-t"></div>
             <div>
-              <div className="mb-2 h-4 w-5/6 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-              <div className="mb-2 h-4 w-1/3 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-              <div className="mb-2 h-4 w-2/3 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-              <div className="mb-2 h-4 w-full rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+              <div className="bg-muted mb-2 h-4 w-5/6 rounded-sm"></div>
+              <div className="bg-muted mb-2 h-4 w-1/3 rounded-sm"></div>
+              <div className="bg-muted mb-2 h-4 w-2/3 rounded-sm"></div>
+              <div className="bg-muted mb-2 h-4 w-full rounded-sm"></div>
             </div>
-            <div className="my-4 border-t border-gray-400 dark:border-gray-700"></div>
-            <div className="mb-2 h-4 w-3/4 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-            <div className="mb-2 h-4 w-5/6 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+            <div className="border-border my-4 border-t"></div>
+            <div className="bg-muted mb-2 h-4 w-3/4 rounded-sm"></div>
+            <div className="bg-muted mb-2 h-4 w-5/6 rounded-sm"></div>
           </div>
         </div>
       ))}
@@ -159,23 +161,23 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
         <div key={idx} className="bg-card w-full animate-pulse rounded-3xl p-6">
           <div className="space-y-6">
             <div className="space-y-2">
-              <div className="mb-4 h-4 w-1/3 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+              <div className="bg-muted mb-4 h-4 w-1/3 rounded-sm"></div>
               <div className="grid grid-cols-6 items-end gap-2">
-                <div className="h-32 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-                <div className="h-24 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-                <div className="h-40 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-                <div className="h-28 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-                <div className="h-36 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-                <div className="h-20 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+                <div className="bg-muted h-32 rounded-sm"></div>
+                <div className="bg-muted h-24 rounded-sm"></div>
+                <div className="bg-muted h-40 rounded-sm"></div>
+                <div className="bg-muted h-28 rounded-sm"></div>
+                <div className="bg-muted h-36 rounded-sm"></div>
+                <div className="bg-muted h-20 rounded-sm"></div>
               </div>
             </div>
             <div className="space-y-2">
-              <div className="mb-4 h-4 w-1/4 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-              <div className="h-32 rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+              <div className="bg-muted mb-4 h-4 w-1/4 rounded-sm"></div>
+              <div className="bg-muted h-32 rounded-sm"></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="h-4 w-full rounded-sm bg-gray-300 dark:bg-gray-600"></div>
-              <div className="h-4 w-full rounded-sm bg-gray-300 dark:bg-gray-600"></div>
+              <div className="bg-muted h-4 w-full rounded-sm"></div>
+              <div className="bg-muted h-4 w-full rounded-sm"></div>
             </div>
           </div>
         </div>
@@ -188,19 +190,19 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       {Array.from({ length: count }).map((_, index) => (
         <div
           key={`chunk-skel-${index}`}
-          className="border-border dark:border-border relative flex h-[197px] w-full max-w-[487px] animate-pulse flex-col overflow-hidden rounded-[5.86px] border"
+          className="border-border dark:border-border relative flex h-[197px] w-full max-w-[487px] animate-pulse flex-col overflow-hidden rounded-md border"
         >
           <div className="w-full">
             <div className="border-border bg-muted dark:border-border dark:bg-card flex w-full items-center justify-between border-b px-4 py-3">
-              <div className="h-4 w-20 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="bg-muted-foreground/20 h-4 w-20 rounded"></div>
             </div>
             <div className="space-y-3 px-4 pt-4 pb-6">
-              <div className="h-3 w-full rounded bg-gray-200 dark:bg-gray-700"></div>
-              <div className="h-3 w-11/12 rounded bg-gray-200 dark:bg-gray-700"></div>
-              <div className="h-3 w-5/6 rounded bg-gray-200 dark:bg-gray-700"></div>
-              <div className="h-3 w-4/5 rounded bg-gray-200 dark:bg-gray-700"></div>
-              <div className="h-3 w-3/4 rounded bg-gray-200 dark:bg-gray-700"></div>
-              <div className="h-3 w-2/3 rounded bg-gray-200 dark:bg-gray-700"></div>
+              <div className="bg-muted h-3 w-full rounded"></div>
+              <div className="bg-muted h-3 w-11/12 rounded"></div>
+              <div className="bg-muted h-3 w-5/6 rounded"></div>
+              <div className="bg-muted h-3 w-4/5 rounded"></div>
+              <div className="bg-muted h-3 w-3/4 rounded"></div>
+              <div className="bg-muted h-3 w-2/3 rounded"></div>
             </div>
           </div>
         </div>
@@ -218,20 +220,20 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
           <div className="w-full flex-1">
             <div className="flex w-full items-center justify-between gap-2">
               <div className="flex-1">
-                <div className="h-[13px] w-full rounded bg-gray-200 dark:bg-gray-700"></div>
+                <div className="bg-muted-foreground/20 h-[13px] w-full rounded"></div>
               </div>
-              <div className="h-6 w-6 rounded bg-gray-200 dark:bg-gray-700"></div>
+              <div className="bg-muted-foreground/20 h-6 w-6 rounded"></div>
             </div>
           </div>
 
           <div className="flex flex-col items-start justify-start gap-1 pt-3">
             <div className="mb-1 flex items-center gap-2">
-              <div className="h-3 w-3 rounded bg-gray-200 dark:bg-gray-700"></div>
-              <div className="h-[12px] w-20 rounded bg-gray-200 dark:bg-gray-700"></div>
+              <div className="bg-muted-foreground/20 h-3 w-3 rounded"></div>
+              <div className="bg-muted-foreground/20 h-[12px] w-20 rounded"></div>
             </div>
             <div className="flex items-center gap-2">
-              <div className="h-3 w-3 rounded bg-gray-200 dark:bg-gray-700"></div>
-              <div className="h-[12px] w-16 rounded bg-gray-200 dark:bg-gray-700"></div>
+              <div className="bg-muted-foreground/20 h-3 w-3 rounded"></div>
+              <div className="bg-muted-foreground/20 h-[12px] w-16 rounded"></div>
             </div>
           </div>
         </div>
@@ -244,17 +246,17 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       {Array.from({ length: count }).map((_, idx) => (
         <div
           key={`add-tool-skel-${idx}`}
-          className="border-light-gainsboro dark:border-arsenic flex h-52 w-full animate-pulse flex-col justify-between rounded-2xl border p-6"
+          className="border-border flex h-52 w-full animate-pulse flex-col justify-between rounded-2xl border p-6"
         >
           <div className="w-full">
             <div className="flex w-full items-center justify-between px-1">
-              <div className="h-6 w-6 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="bg-muted h-6 w-6 rounded"></div>
             </div>
             <div className="mt-[9px] space-y-2 px-1">
-              <div className="h-4 w-2/3 rounded bg-gray-300 dark:bg-gray-600"></div>
-              <div className="h-3 w-full rounded bg-gray-200 dark:bg-gray-700"></div>
-              <div className="h-3 w-5/6 rounded bg-gray-200 dark:bg-gray-700"></div>
-              <div className="h-3 w-3/4 rounded bg-gray-200 dark:bg-gray-700"></div>
+              <div className="bg-muted h-4 w-2/3 rounded"></div>
+              <div className="bg-muted h-3 w-full rounded"></div>
+              <div className="bg-muted h-3 w-5/6 rounded"></div>
+              <div className="bg-muted h-3 w-3/4 rounded"></div>
             </div>
           </div>
         </div>
@@ -271,21 +273,45 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
         >
           <div className="w-full">
             <div className="flex items-center gap-2 px-1">
-              <div className="h-6 w-6 rounded bg-gray-300 dark:bg-gray-600"></div>
+              <div className="bg-muted-foreground/20 h-6 w-6 rounded"></div>
             </div>
             <div className="mt-[9px] space-y-2 px-1">
-              <div className="h-4 w-2/3 rounded bg-gray-300 dark:bg-gray-600"></div>
-              <div className="h-3 w-full rounded bg-gray-200 dark:bg-gray-700"></div>
-              <div className="h-3 w-5/6 rounded bg-gray-200 dark:bg-gray-700"></div>
-              <div className="h-3 w-3/4 rounded bg-gray-200 dark:bg-gray-700"></div>
+              <div className="bg-muted-foreground/20 h-4 w-2/3 rounded"></div>
+              <div className="bg-muted-foreground/20 h-3 w-full rounded"></div>
+              <div className="bg-muted-foreground/20 h-3 w-5/6 rounded"></div>
+              <div className="bg-muted-foreground/20 h-3 w-3/4 rounded"></div>
             </div>
           </div>
           <div className="flex justify-end">
-            <div className="h-5 w-9 rounded-full bg-gray-300 dark:bg-gray-600"></div>
+            <div className="bg-muted-foreground/20 h-5 w-9 rounded-full"></div>
           </div>
         </div>
       ))}
     </>
+  );
+
+  const renderConnectedState = () => (
+    <div className="mb-4">
+      <div className="bg-muted flex w-full animate-pulse items-center justify-between rounded-lg px-4 py-2">
+        <div className="flex items-center gap-2">
+          <div className="bg-muted-foreground/20 h-4 w-4 rounded"></div>
+          <div className="bg-muted-foreground/20 h-4 w-32 rounded"></div>
+        </div>
+        <div className="bg-muted-foreground/20 h-4 w-16 rounded"></div>
+      </div>
+    </div>
+  );
+
+  const renderFilesSection = () => (
+    <div className="border-border dark:border-border rounded-lg border">
+      <div className="p-4">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="bg-muted h-5 w-24 animate-pulse rounded"></div>
+          <div className="bg-muted h-8 w-24 animate-pulse rounded"></div>
+        </div>
+        <div className="bg-muted h-4 w-40 animate-pulse rounded"></div>
+      </div>
+    </div>
   );
 
   const componentMap = {
@@ -299,6 +325,8 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     sourceCards: renderSourceCards,
     toolCards: renderToolCards,
     addToolCards: renderAddToolCards,
+    connectedState: renderConnectedState,
+    filesSection: renderFilesSection,
   };
 
   const render = componentMap[component] || componentMap.default;

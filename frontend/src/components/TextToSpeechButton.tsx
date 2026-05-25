@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import Speaker from '../assets/speaker.svg?react';
 import Stopspeech from '../assets/stopspeech.svg?react';
-import LoadingIcon from '../assets/Loading.svg?react'; // Add a loading icon SVG here
 import userService from '../api/services/userService';
+import { Button } from './ui/button';
+import Spinner from './Spinner';
 
 let currentlyPlayingAudio: {
   audio: HTMLAudioElement;
@@ -171,10 +172,12 @@ export default function SpeakButton({ text }: { text: string }) {
   };
 
   return (
-    <button
+    <Button
       type="button"
-      className={`flex cursor-pointer items-center justify-center rounded-full p-2 ${
-        isSpeaking || isLoading ? 'bg-accent' : 'hover:bg-accent bg-transparent'
+      variant="ghost"
+      size="icon"
+      className={`cursor-pointer rounded-full ${
+        isSpeaking || isLoading ? 'bg-accent' : ''
       }`}
       onClick={handleSpeakClick}
       aria-label={
@@ -187,12 +190,12 @@ export default function SpeakButton({ text }: { text: string }) {
       disabled={isLoading}
     >
       {isLoading ? (
-        <LoadingIcon className="animate-spin" />
+        <Spinner size="small" />
       ) : isSpeaking ? (
         <Stopspeech className="fill-none" />
       ) : (
         <Speaker className="fill-none" />
       )}
-    </button>
+    </Button>
   );
 }

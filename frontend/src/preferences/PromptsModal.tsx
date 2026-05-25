@@ -1,12 +1,19 @@
+import { ChevronDown } from 'lucide-react';
 import { ActiveState } from '../models/misc';
-import Input from '../components/Input';
+import { Input } from '../components/ui/input';
 import { Link } from 'react-router-dom';
 
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import WrapperModal from '../modals/WrapperModal';
-import Dropdown from '../components/Dropdown';
+import { Modal } from '../components/ui/modal';
+import { Button } from '../components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import BookIcon from '../assets/book.svg';
 import userService from '../api/services/userService';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -90,6 +97,79 @@ const buildSystemVariableOptions = (translate: (key: string) => string) =>
     label: translate(labelKey),
   }));
 
+type VariableMenuProps = {
+  options: { label: string; value: string }[];
+  label: string;
+  textareaId: string;
+  content: string;
+  setContent: (content: string) => void;
+  triggerClassName?: string;
+  contentClassName?: string;
+};
+
+function VariableMenu({
+  options,
+  label,
+  textareaId,
+  content,
+  setContent,
+  triggerClassName,
+  contentClassName,
+}: VariableMenuProps) {
+  const handleSelect = (value: string) => {
+    const textarea = document.getElementById(textareaId) as HTMLTextAreaElement;
+    if (!textarea) return;
+    const cursorPosition = textarea.selectionStart;
+    const textBefore = content.slice(0, cursorPosition);
+    const textAfter = content.slice(cursorPosition);
+
+    // Add leading space if needed
+    const needsSpace =
+      cursorPosition > 0 && content.charAt(cursorPosition - 1) !== ' ';
+
+    const newText =
+      textBefore + (needsSpace ? ' ' : '') + `{{ ${value} }}` + textAfter;
+    setContent(newText);
+
+    setTimeout(() => {
+      textarea.focus();
+      const insertedLen = value.length + 6 + (needsSpace ? 1 : 0);
+      textarea.setSelectionRange(
+        cursorPosition + insertedLen,
+        cursorPosition + insertedLen,
+      );
+    }, 0);
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className={`border-border bg-card text-foreground hover:bg-accent h-auto justify-between rounded-3xl px-5 py-3 text-xs sm:text-sm ${triggerClassName ?? ''}`}
+        >
+          <span className="truncate">{label}</span>
+          <ChevronDown className="text-muted-foreground ml-2 h-4 w-4 shrink-0" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className={`max-h-72 overflow-y-auto ${contentClassName ?? ''}`}
+      >
+        {options.map((opt) => (
+          <DropdownMenuItem
+            key={opt.value}
+            onSelect={() => handleSelect(opt.value)}
+          >
+            {opt.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 type PromptTextareaProps = {
   id: string;
   value: string;
@@ -134,7 +214,7 @@ function PromptTextarea({
       </div>
       <textarea
         id={id}
-        className="peer border-border dark:border-border relative z-10 h-48 w-full resize-none rounded border-2 bg-transparent px-3 py-2 text-base text-gray-800 outline-none md:h-64 lg:h-80 dark:text-white"
+        className="peer border-border dark:border-border focus-visible:ring-ring/50 focus-visible:border-ring relative z-10 h-48 w-full resize-none rounded border-2 bg-transparent px-3 py-2 text-base text-gray-800 outline-none focus-visible:ring-[3px] md:h-64 lg:h-80 dark:text-white"
         value={value}
         onChange={onChange}
         onScroll={handleScroll}
@@ -244,15 +324,12 @@ function AddPrompt({
       </p>
       <div>
         <Input
-          placeholder={t('modals.prompts.promptName')}
+          label={t('modals.prompts.promptName')}
           type="text"
           className="mb-5"
-          edgeRoundness="rounded"
-          textSize="medium"
           value={newPromptName}
           onChange={(e) => setNewPromptName(e.target.value)}
           labelBgClassName="bg-card"
-          borderVariant="thick"
         />
 
         <div className="relative w-full">
@@ -278,109 +355,38 @@ function AddPrompt({
           <span className="font-bold">
             {t('modals.prompts.variablesLabel')}
           </span>
-          <span className="text-muted-foreground text-xs text-[10px] font-medium">
+          <span className="text-muted-foreground text-xs font-medium">
             {t('modals.prompts.variablesDescription')}
           </span>
         </p>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <Dropdown
+          <VariableMenu
             options={systemVariableOptions}
-            selectedValue={t('modals.prompts.systemVariablesDropdownLabel')}
-            onSelect={(option) => {
-              const textarea = document.getElementById(
-                'new-prompt-content',
-              ) as HTMLTextAreaElement;
-              if (textarea) {
-                const cursorPosition = textarea.selectionStart;
-                const textBefore = newPromptContent.slice(0, cursorPosition);
-                const textAfter = newPromptContent.slice(cursorPosition);
-
-                // Add leading space if needed
-                const needsSpace =
-                  cursorPosition > 0 &&
-                  newPromptContent.charAt(cursorPosition - 1) !== ' ';
-
-                const newText =
-                  textBefore +
-                  (needsSpace ? ' ' : '') +
-                  `{{ ${option.value} }}` +
-                  textAfter;
-                setNewPromptContent(newText);
-
-                setTimeout(() => {
-                  textarea.focus();
-                  textarea.setSelectionRange(
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                  );
-                }, 0);
-              }
-            }}
-            placeholder={t('modals.prompts.systemVariablesDropdownLabel')}
-            size="w-[140px] sm:w-[185px]"
-            rounded="3xl"
-            contentSize="text-[12px] sm:text-[14px]"
+            label={t('modals.prompts.systemVariablesDropdownLabel')}
+            textareaId="new-prompt-content"
+            content={newPromptContent}
+            setContent={setNewPromptContent}
+            triggerClassName="w-[140px] sm:w-[185px]"
           />
 
-          <Dropdown
+          <VariableMenu
             options={toolVariables}
-            selectedValue={'Tool Variables'}
-            onSelect={(option) => {
-              const textarea = document.getElementById(
-                'new-prompt-content',
-              ) as HTMLTextAreaElement;
-              if (textarea) {
-                const cursorPosition = textarea.selectionStart;
-                const textBefore = newPromptContent.slice(0, cursorPosition);
-                const textAfter = newPromptContent.slice(cursorPosition);
-
-                // Add leading space if needed
-                const needsSpace =
-                  cursorPosition > 0 &&
-                  newPromptContent.charAt(cursorPosition - 1) !== ' ';
-
-                const newText =
-                  textBefore +
-                  (needsSpace ? ' ' : '') +
-                  `{{ ${option.value} }}` +
-                  textAfter;
-                setNewPromptContent(newText);
-                setTimeout(() => {
-                  textarea.focus();
-                  textarea.setSelectionRange(
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                  );
-                }, 0);
-              }
-            }}
-            placeholder="Tool Variables"
-            size="w-[140px] sm:w-[171px]"
-            rounded="3xl"
-            contentSize="text-[12px] sm:text-[14px]"
+            label="Tool Variables"
+            textareaId="new-prompt-content"
+            content={newPromptContent}
+            setContent={setNewPromptContent}
+            triggerClassName="w-[140px] sm:w-[171px]"
           />
         </div>
       </div>
-      <div className="mt-4 flex flex-col justify-between gap-4 text-[14px] sm:flex-row sm:gap-0">
+      <div className="mt-4 flex flex-col justify-between gap-4 text-sm sm:flex-row sm:gap-0">
         <div className="flex justify-start">
           <Link
             to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm font-medium text-[#6A4DF4] hover:underline"
+            className="text-primary flex items-center gap-2 text-sm font-medium hover:underline"
           >
             <img
               src={BookIcon}
@@ -388,27 +394,30 @@ function AddPrompt({
               className="flex h-4 w-3 shrink-0 items-center justify-center"
               aria-hidden="true"
             />
-            <span className="text-[14px] font-bold">
+            <span className="text-sm font-bold">
               {t('modals.prompts.learnAboutPrompts')}
             </span>
           </Link>
         </div>
 
         <div className="flex justify-end gap-2 sm:gap-4">
-          <button
+          <Button
+            type="button"
+            variant="destructive-outline"
             onClick={() => setModalState('INACTIVE')}
-            className="rounded-3xl border border-[#D9534F] px-5 py-2 text-sm font-medium text-[#D9534F] transition-all hover:bg-[#D9534F] hover:text-white"
+            className="h-auto rounded-3xl px-5 py-2 text-sm font-medium"
           >
             {t('modals.prompts.cancel')}
-          </button>
+          </Button>
 
-          <button
+          <Button
+            type="button"
             onClick={handleAddPrompt}
-            className="rounded-3xl bg-[#6A4DF4] px-6 py-2 text-sm font-medium text-white transition-all hover:bg-[#563DD1] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#6A4DF4]"
+            className="h-auto rounded-3xl px-6 py-2 text-sm font-medium text-white"
             disabled={disableSave}
           >
             {t('modals.prompts.save')}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -451,15 +460,12 @@ function EditPrompt({
       </p>
       <div>
         <Input
-          placeholder={t('modals.prompts.promptName')}
+          label={t('modals.prompts.promptName')}
           type="text"
           className="mb-5"
-          edgeRoundness="rounded"
-          textSize="medium"
           value={editPromptName}
           onChange={(e) => setEditPromptName(e.target.value)}
           labelBgClassName="bg-card"
-          borderVariant="thick"
         />
 
         <div className="relative w-full">
@@ -485,109 +491,38 @@ function EditPrompt({
           <span className="font-bold">
             {t('modals.prompts.variablesLabel')}
           </span>
-          <span className="text-muted-foreground text-xs text-[10px] font-medium">
+          <span className="text-muted-foreground text-xs font-medium">
             {t('modals.prompts.variablesDescription')}
           </span>
         </p>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <Dropdown
+          <VariableMenu
             options={systemVariableOptions}
-            selectedValue={t('modals.prompts.systemVariablesDropdownLabel')}
-            onSelect={(option) => {
-              const textarea = document.getElementById(
-                'edit-prompt-content',
-              ) as HTMLTextAreaElement;
-              if (textarea) {
-                const cursorPosition = textarea.selectionStart;
-                const textBefore = editPromptContent.slice(0, cursorPosition);
-                const textAfter = editPromptContent.slice(cursorPosition);
-
-                // Add leading space if needed
-                const needsSpace =
-                  cursorPosition > 0 &&
-                  editPromptContent.charAt(cursorPosition - 1) !== ' ';
-
-                const newText =
-                  textBefore +
-                  (needsSpace ? ' ' : '') +
-                  `{{ ${option.value} }}` +
-                  textAfter;
-                setEditPromptContent(newText);
-
-                setTimeout(() => {
-                  textarea.focus();
-                  textarea.setSelectionRange(
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                  );
-                }, 0);
-              }
-            }}
-            placeholder={t('modals.prompts.systemVariablesDropdownLabel')}
-            size="w-[140px] sm:w-[185px]"
-            rounded="3xl"
-            contentSize="text-[12px] sm:text-[14px]"
+            label={t('modals.prompts.systemVariablesDropdownLabel')}
+            textareaId="edit-prompt-content"
+            content={editPromptContent}
+            setContent={setEditPromptContent}
+            triggerClassName="w-[140px] sm:w-[185px]"
           />
 
-          <Dropdown
+          <VariableMenu
             options={toolVariables}
-            selectedValue={'Tool Variables'}
-            onSelect={(option) => {
-              const textarea = document.getElementById(
-                'edit-prompt-content',
-              ) as HTMLTextAreaElement;
-              if (textarea) {
-                const cursorPosition = textarea.selectionStart;
-                const textBefore = editPromptContent.slice(0, cursorPosition);
-                const textAfter = editPromptContent.slice(cursorPosition);
-
-                // Add leading space if needed
-                const needsSpace =
-                  cursorPosition > 0 &&
-                  editPromptContent.charAt(cursorPosition - 1) !== ' ';
-
-                const newText =
-                  textBefore +
-                  (needsSpace ? ' ' : '') +
-                  `{{ ${option.value} }}` +
-                  textAfter;
-                setEditPromptContent(newText);
-                setTimeout(() => {
-                  textarea.focus();
-                  textarea.setSelectionRange(
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                    cursorPosition +
-                      option.value.length +
-                      6 +
-                      (needsSpace ? 1 : 0),
-                  );
-                }, 0);
-              }
-            }}
-            placeholder="Tool Variables"
-            size="w-[140px] sm:w-[171px]"
-            rounded="3xl"
-            contentSize="text-[12px] sm:text-[14px]"
+            label="Tool Variables"
+            textareaId="edit-prompt-content"
+            content={editPromptContent}
+            setContent={setEditPromptContent}
+            triggerClassName="w-[140px] sm:w-[171px]"
           />
         </div>
       </div>
-      <div className="mt-4 flex flex-col justify-between gap-4 text-[14px] sm:flex-row sm:gap-0">
+      <div className="mt-4 flex flex-col justify-between gap-4 text-sm sm:flex-row sm:gap-0">
         <div className="flex justify-start">
           <Link
             to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm font-medium text-[#6A4DF4] hover:underline"
+            className="text-primary flex items-center gap-2 text-sm font-medium hover:underline"
           >
             <img
               src={BookIcon}
@@ -595,26 +530,29 @@ function EditPrompt({
               className="flex h-4 w-3 shrink-0 items-center justify-center"
               aria-hidden="true"
             />
-            <span className="text-[14px] font-bold">
+            <span className="text-sm font-bold">
               {t('modals.prompts.learnAboutPrompts')}
             </span>
           </Link>
         </div>
 
         <div className="flex justify-end gap-2 sm:gap-4">
-          <button
+          <Button
+            type="button"
+            variant="destructive-outline"
             onClick={() => setModalState('INACTIVE')}
-            className="rounded-3xl border border-[#D9534F] px-5 py-2 text-sm font-medium text-[#D9534F] transition-all hover:bg-[#D9534F] hover:text-white"
+            className="h-auto rounded-3xl px-5 py-2 text-sm font-medium"
           >
             {t('modals.prompts.cancel')}
-          </button>
+          </Button>
 
-          <button
+          <Button
+            type="button"
             onClick={() => {
               handleEditPrompt &&
                 handleEditPrompt(currentPromptEdit.id, currentPromptEdit.type);
             }}
-            className="rounded-3xl bg-[#6A4DF4] px-6 py-2 text-sm font-medium text-white transition-all hover:bg-[#563DD1] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#6A4DF4]"
+            className="h-auto rounded-3xl px-6 py-2 text-sm font-medium text-white"
             disabled={
               currentPromptEdit.type === 'public' ||
               disableSave ||
@@ -627,7 +565,7 @@ function EditPrompt({
             }
           >
             {t('modals.prompts.save')}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -750,19 +688,25 @@ export default function PromptsModal({
     view = <></>;
   }
 
-  return modalState === 'ACTIVE' ? (
-    <WrapperModal
-      close={() => {
-        setModalState('INACTIVE');
-        if (type === 'ADD') {
-          setNewPromptName('');
-          setNewPromptContent('');
+  return (
+    <Modal
+      open={modalState === 'ACTIVE'}
+      onOpenChange={(o) => {
+        if (!o) {
+          setModalState('INACTIVE');
+          if (type === 'ADD') {
+            setNewPromptName('');
+            setNewPromptContent('');
+          }
         }
       }}
+      hideTitle
+      title={type === 'ADD' ? 'Add Prompt' : 'Edit Prompt'}
+      size="lg"
       className="bg-card dark:bg-card mx-4 mt-16 w-[95vw] max-w-[650px] rounded-2xl px-4 py-4 sm:px-6 sm:py-6 md:max-w-[860px] md:px-8 md:py-6 lg:max-w-[980px]"
       contentClassName="!overflow-visible"
     >
       {view}
-    </WrapperModal>
-  ) : null;
+    </Modal>
+  );
 }
