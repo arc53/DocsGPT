@@ -117,6 +117,7 @@ export default function FolderCard({
               <DropdownMenuItem
                 key={index}
                 variant={option.variant}
+                onClick={(e) => e.stopPropagation()}
                 onSelect={(event) => {
                   option.onClick(event as unknown as SyntheticEvent);
                 }}
