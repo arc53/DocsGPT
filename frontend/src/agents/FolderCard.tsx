@@ -106,10 +106,14 @@ export default function FolderCard({
             <button
               type="button"
               onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
               className="ml-2 shrink-0 cursor-pointer"
-              aria-label={t('agents.folders.rename')}
+              aria-label={t('agents.folders.menuAriaLabel', {
+                folderName: folder.name,
+                defaultValue: 'Folder actions',
+              })}
             >
-              <img src={ThreeDots} alt="menu" className="h-4 w-4" />
+              <img src={ThreeDots} alt="" className="h-4 w-4" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-[144px]">

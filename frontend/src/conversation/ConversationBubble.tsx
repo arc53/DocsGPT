@@ -222,7 +222,7 @@ const ConversationBubble = forwardRef<
                     setIsEditClicked(true);
                     setEditInputBox(message ?? '');
                   }}
-                  className={`mt-3 h-fit w-auto shrink-0 cursor-pointer rounded-full p-2 pt-1.5 pl-1.5 ${isEditClicked ? 'visible' : 'invisible group-hover:visible'}`}
+                  className="mt-3 h-fit w-auto shrink-0 cursor-pointer rounded-full p-2 pt-1.5 pl-1.5 invisible group-hover:visible"
                 >
                   <img src={Edit} alt="Edit" className="cursor-pointer" />
                 </Button>
