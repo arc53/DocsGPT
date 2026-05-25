@@ -201,6 +201,7 @@ export default function CustomModels() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               labelBgClassName="bg-background"
+              className="rounded-full"
               leftIcon={
                 <img src={SearchIcon} alt="" className="h-4 w-4 opacity-40" />
               }

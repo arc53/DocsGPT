@@ -238,6 +238,7 @@ export default function Tools() {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   labelBgClassName="bg-background"
+                  className="rounded-full"
                   leftIcon={
                     <img
                       src={SearchIcon}

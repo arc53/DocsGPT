@@ -176,6 +176,7 @@ export default function AgentsList() {
             onChange={(e) => setSearchQuery(e.target.value)}
             label={t('agents.searchPlaceholder')}
             labelBgClassName="bg-background"
+            className="rounded-full"
             leftIcon={
               <img src={Search} alt="" className="h-4 w-4 opacity-40" />
             }
