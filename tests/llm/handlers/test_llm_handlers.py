@@ -963,7 +963,9 @@ class TestHandleStreaming:
             mock_settings.ENABLE_CONVERSATION_COMPRESSION = False
 
             # handle_tool_calls yields skip events and sets context_limit_reached
-            def fake_handle_tool_calls(agent, calls, tools_dict, messages):
+            def fake_handle_tool_calls(
+                agent, calls, tools_dict, messages, reasoning_content=""
+            ):
                 agent.context_limit_reached = True
                 yield {"type": "tool_call", "data": {"status": "skipped"}}
                 return messages, None

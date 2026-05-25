@@ -75,9 +75,17 @@ class CompressionResult:
         Convert recent queries to history format.
 
         Returns:
-            List of prompt/response dicts
+            List of prompt/response dicts (with thought when present so
+            DeepSeek-style providers can re-attach reasoning_content on
+            replay).
         """
-        return [
-            {"prompt": q["prompt"], "response": q["response"]}
-            for q in self.recent_queries
-        ]
+        out: List[Dict[str, str]] = []
+        for q in self.recent_queries:
+            entry: Dict[str, str] = {
+                "prompt": q["prompt"],
+                "response": q["response"],
+            }
+            if q.get("thought"):
+                entry["thought"] = q["thought"]
+            out.append(entry)
+        return out

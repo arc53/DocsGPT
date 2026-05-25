@@ -549,7 +549,9 @@ class GoogleLLM(BaseLLM):
         system_instruction = None
         if formatting == "openai":
             messages, system_instruction = self._clean_messages_google(messages)
-        config = types.GenerateContentConfig()
+        config = types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(include_thoughts=True),
+        )
         if system_instruction:
             config.system_instruction = system_instruction
         if tools:
@@ -587,7 +589,13 @@ class GoogleLLM(BaseLLM):
         system_instruction = None
         if formatting == "openai":
             messages, system_instruction = self._clean_messages_google(messages)
-        config = types.GenerateContentConfig()
+        # include_thoughts surfaces Gemini's thought-summary parts so the
+        # same {"type":"thought"} accumulator that DeepSeek uses can
+        # capture and persist them. Off by default; thinking itself is
+        # already on for Gemini 3.x flash/pro.
+        config = types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(include_thoughts=True),
+        )
         if system_instruction:
             config.system_instruction = system_instruction
         if tools:

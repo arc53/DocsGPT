@@ -1,6 +1,7 @@
 from typing import Any, Dict, Generator
 
 from application.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
+from application.llm.openai import OpenAILLM
 
 
 class OpenAILLMHandler(LLMHandler):
@@ -29,11 +30,16 @@ class OpenAILLMHandler(LLMHandler):
                 )
                 for tc in message.tool_calls or []
             ]
+        # Reasoning lives on the message object for non-streaming and
+        # on the delta for streaming. DeepSeek thinking mode requires
+        # this to be echoed back on the next turn.
+        reasoning_content = OpenAILLM._extract_reasoning_text(message)
         return LLMResponse(
             content=getattr(message, "content", ""),
             tool_calls=tool_calls,
             finish_reason=getattr(response, "finish_reason", ""),
             raw_response=response,
+            reasoning_content=reasoning_content,
         )
 
     def create_tool_message(self, tool_call: ToolCall, result: Any) -> Dict:
