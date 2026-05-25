@@ -74,9 +74,9 @@ export default function AgentPageHeader({
   const displayName = agentName?.trim() || t('agents.pageHeader.fallbackName');
 
   return (
-    <div className={cn('flex flex-col gap-3', className)}>
-      <Breadcrumb>
-        <BreadcrumbList>
+    <div className={cn('flex flex-row items-baseline gap-6', className)}>
+      <Breadcrumb className="shrink-0">
+        <BreadcrumbList className="flex-nowrap">
           <BreadcrumbItem>
             <BreadcrumbLink asChild>
               <Link to="/agents">{t('agents.pageHeader.crumbs.agents')}</Link>
@@ -110,7 +110,7 @@ export default function AgentPageHeader({
       <nav
         aria-label={t('agents.pageHeader.subnavAriaLabel')}
         className={cn(
-          'flex w-full items-center gap-6',
+          'flex items-center gap-6',
           // 1px baseline rule under the whole row; the active tab's 2px
           // primary underline sits on top of it for the GitHub-style look.
           !inline && 'border-border border-b',
@@ -121,7 +121,7 @@ export default function AgentPageHeader({
           // Always render a 2px bottom border so row height stays constant
           // between active/inactive; only the color changes.
           const baseClasses =
-            'whitespace-nowrap border-b-2 pb-2 text-sm font-medium transition-colors';
+            'whitespace-nowrap border-b-2 pb-1 text-sm font-medium transition-colors';
           if (isActive) {
             return (
               <span
