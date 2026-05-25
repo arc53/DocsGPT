@@ -413,7 +413,7 @@ export default function Sources({
       )}
     </div>
   ) : (
-    <div className="mt-8 flex w-full max-w-full flex-col overflow-hidden">
+    <div className="mt-8 flex w-full max-w-full flex-col">
       <div className="relative flex grow flex-col">
         <p className="text-muted-foreground mb-5 text-sm leading-6">
           {t('settings.sources.subtitle')}

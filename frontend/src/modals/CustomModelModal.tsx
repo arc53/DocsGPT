@@ -371,6 +371,10 @@ export default function CustomModelModal({
                 <Input
                   id="cm-base-url"
                   type="url"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                   value={formData.base_url}
                   onChange={(e) => handleChange('base_url', e.target.value)}
                   placeholder={t('settings.customModels.placeholders.baseUrl')}
@@ -396,8 +400,11 @@ export default function CustomModelModal({
                 </Label>
                 <Input
                   id="cm-api-key"
-                  type="password"
-                  autoComplete="new-password"
+                  type="text"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                   value={formData.api_key}
                   onChange={(e) => handleChange('api_key', e.target.value)}
                   placeholder={

@@ -110,7 +110,7 @@ export default function ResearchProgress({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-auto bg-transparent px-0 py-0 font-normal hover:bg-transparent"
+          className="h-auto bg-transparent px-0 py-0 font-normal hover:bg-transparent dark:hover:bg-transparent"
           onClick={() => setIsExpanded(!isExpanded)}
         >
           <p className="text-sm font-semibold">
