@@ -96,6 +96,12 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
           data-slot="modal-content"
           onPointerDownOutside={blockOutsideInteractions}
           onInteractOutside={blockOutsideInteractions}
+          // Radix portals this to <body> in the DOM, but React still bubbles
+          // synthetic events through the JSX tree. Stop the bubble at the
+          // modal boundary so consumers mounted inside clickable cards (e.g.
+          // MoveToFolderModal inside AgentCard) don't trigger the card's
+          // onClick when the user interacts inside the modal.
+          onClick={(event) => event.stopPropagation()}
           className={cn(
             'bg-card text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 shadow-modal fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl p-8 duration-200 outline-none',
             SIZE_CLASSES[size],
