@@ -56,6 +56,10 @@ EXPECTED_IDS = {
         "moonshotai/kimi-k2.6",
         "zai-org/glm-5",
     },
+    "openai_compatible": {
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+    },
     "azure_openai": {
         "azure-gpt-5.5",
         "azure-gpt-5.4-mini",
@@ -88,8 +92,11 @@ def _make_settings(**overrides):
 
 
 @pytest.fixture(autouse=True)
-def _reset_registry():
+def _reset_registry(monkeypatch):
     ModelRegistry.reset()
+    # openai_compatible catalogs read their key directly from os.environ,
+    # so clear any host-set keys to keep these tests deterministic.
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     yield
     ModelRegistry.reset()
 
@@ -248,7 +255,8 @@ class TestRegistryPermutations:
         ids = {m.id for m in reg.get_all_models()}
         assert "azure-gpt-5.5" in ids
 
-    def test_everything_set(self):
+    def test_everything_set(self, monkeypatch):
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
         s = _make_settings(
             OPENAI_API_KEY="x",
             ANTHROPIC_API_KEY="x",

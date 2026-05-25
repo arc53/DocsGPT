@@ -1,0 +1,18 @@
+provider: openai_compatible
+display_provider: deepseek
+api_key_env: DEEPSEEK_API_KEY
+base_url: https://api.deepseek.com/v1
+
+defaults:
+  supports_tools: true
+  supports_structured_output: true
+  context_window: 1048576
+
+models:
+  - id: deepseek-v4-flash
+    display_name: DeepSeek V4 Flash
+    description: Cost-efficient 1M-context model with hybrid thinking / non-thinking modes, tool calling and FIM completion
+
+  - id: deepseek-v4-pro
+    display_name: DeepSeek V4 Pro
+    description: Frontier 1M-context model with hybrid thinking / non-thinking modes for advanced reasoning and agentic coding
