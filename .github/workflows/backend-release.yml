@@ -19,7 +19,9 @@ jobs:
     if: github.repository == 'arc53/DocsGPT'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
 
       - name: Read version from application/version.py
         id: ver
@@ -47,12 +49,18 @@ jobs:
       - name: Create and push tag
         if: steps.check.outputs.exists == 'false'
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "$VERSION"
-          git push origin "$VERSION"
+          # Authenticate this single push via a one-shot tokenized remote URL
+          # instead of leaving GITHUB_TOKEN persisted in .git/config (see
+          # persist-credentials: false on the checkout step above).
+          git push \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "$VERSION"
 
       - name: Create GitHub release
         if: steps.check.outputs.exists == 'false'
