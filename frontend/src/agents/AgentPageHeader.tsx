@@ -74,7 +74,12 @@ export default function AgentPageHeader({
   const displayName = agentName?.trim() || t('agents.pageHeader.fallbackName');
 
   return (
-    <div className={cn('flex flex-row items-baseline gap-6', className)}>
+    <div
+      className={cn(
+        'flex flex-col gap-3 md:flex-row md:items-baseline md:gap-6',
+        className,
+      )}
+    >
       <Breadcrumb className="shrink-0">
         <BreadcrumbList className="flex-nowrap">
           <BreadcrumbItem>

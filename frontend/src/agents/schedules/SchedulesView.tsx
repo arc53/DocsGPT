@@ -154,7 +154,7 @@ export default function SchedulesView() {
       : `/agents/edit/${agentId}`;
 
   return (
-    <div className="p-4 md:p-12">
+    <div className="p-4 pt-4 md:p-12 md:pt-4">
       <AgentPageHeader
         agentId={agentId}
         agentName={agent?.name}

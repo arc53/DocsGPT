@@ -732,21 +732,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const showAgentNav = effectiveMode === 'edit' && Boolean(agent.id);
 
   return (
-    <div className="flex flex-col px-4 pt-4 pb-2 max-[1179px]:min-h-dvh min-[1180px]:h-dvh md:px-12 md:pt-12 md:pb-3">
-      {showAgentNav ? (
-        <AgentPageHeader
-          agentId={agent.id}
-          agentName={agent.name}
-          agentEditPath={`/agents/edit/${agent.id}`}
-          currentPage="overview"
-          className="px-4"
-        />
-      ) : null}
-      <div className="mt-5 flex w-full flex-wrap items-center justify-end gap-2 px-4">
-        {agent.agent_type === 'workflow' && (
-          <div className="mt-4 w-full">
-            <WorkflowBuilder />
-          </div>
+    <div className="flex flex-col px-4 pt-4 pb-2 max-[1179px]:min-h-dvh min-[1180px]:h-dvh md:px-12 md:pt-4 md:pb-3">
+      {agent.agent_type === 'workflow' && (
+        <div className="mt-4 w-full">
+          <WorkflowBuilder />
+        </div>
+      )}
+      <div className="flex w-full flex-wrap items-center justify-between gap-2 px-4">
+        {showAgentNav ? (
+          <AgentPageHeader
+            agentId={agent.id}
+            agentName={agent.name}
+            agentEditPath={`/agents/edit/${agent.id}`}
+            currentPage="overview"
+          />
+        ) : (
+          <span aria-hidden />
         )}
         <div className="flex flex-wrap items-center gap-2">
           {hasChanges && (
@@ -1387,9 +1388,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           )}
         </div>
         <div className="col-span-3 flex flex-col gap-2 max-[1179px]:h-auto max-[1179px]:px-0 max-[1179px]:py-0 min-[1180px]:h-full min-[1180px]:py-2">
-          <h2 className="text-lg font-semibold">
-            {t('agents.form.sections.preview')}
-          </h2>
           <div className="flex-1 max-[1179px]:overflow-visible min-[1180px]:min-h-0 min-[1180px]:overflow-hidden">
             <AgentPreviewArea />
           </div>
