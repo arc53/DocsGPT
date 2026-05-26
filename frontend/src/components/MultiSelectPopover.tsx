@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import CheckmarkIcon from '../assets/checkmark.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
-import { useDarkTheme } from '../hooks';
+import { useDarkTheme, useMediaQuery } from '../hooks';
 import { cn } from '@/lib/utils';
 import Spinner from './Spinner';
 import {
@@ -16,6 +16,7 @@ import {
   CommandList,
 } from './ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from './ui/sheet';
 
 export type MultiSelectPopoverItem = {
   id: string;
@@ -84,6 +85,7 @@ export function MultiSelectPopover({
 }: MultiSelectPopoverProps) {
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
+  const { isMobile } = useMediaQuery();
   const selectedSet = React.useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const orderedItems = React.useMemo(() => {
@@ -175,6 +177,88 @@ export function MultiSelectPopover({
     </div>
   );
 
+  const commandBody = (
+    <Command shouldFilter={searchable} className="bg-transparent">
+      {title && (
+        <div className="shrink-0 px-4 pt-4">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+            {title}
+          </h3>
+        </div>
+      )}
+      {searchable && (
+        <div className="shrink-0 px-4 pt-4">
+          <CommandInput placeholder={effectivePlaceholder} className="h-10" />
+        </div>
+      )}
+
+      {loading ? (
+        <div className="text-foreground flex items-center justify-center py-8 dark:text-white">
+          <Spinner size="small" />
+        </div>
+      ) : (
+        <div className="dark:border-border mx-4 my-4 min-h-0 grow overflow-hidden rounded-md border border-[#D9D9D9]">
+          <CommandList className="max-h-full overflow-y-auto">
+            <CommandEmpty>{renderEmptyState()}</CommandEmpty>
+            {items.length === 0 ? (
+              renderEmptyState()
+            ) : hasGroups ? (
+              grouped.groupOrder.map((groupKey) => {
+                const groupItems = grouped.map.get(groupKey) || [];
+                if (groupItems.length === 0) return null;
+                return (
+                  <CommandGroup
+                    key={`group-${groupKey || 'ungrouped'}`}
+                    heading={groupKey || undefined}
+                    className="[&_[cmdk-group-heading]]:bg-muted/50 [&_[cmdk-group-heading]]:dark:bg-card [&_[cmdk-group-heading]]:text-muted-foreground p-0 [&_[cmdk-group-heading]]:sticky [&_[cmdk-group-heading]]:top-0 [&_[cmdk-group-heading]]:z-10 [&_[cmdk-group-heading]]:border-b [&_[cmdk-group-heading]]:border-[#D9D9D9] [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:dark:border-[#2E2E2E]"
+                  >
+                    {groupItems.map(renderItem)}
+                  </CommandGroup>
+                );
+              })
+            ) : (
+              <CommandGroup className="p-0">
+                {orderedItems.map(renderItem)}
+              </CommandGroup>
+            )}
+          </CommandList>
+        </div>
+      )}
+
+      {footer && (
+        <div className="border-border dark:border-border shrink-0 border-t px-4 py-4">
+          {footer}
+        </div>
+      )}
+    </Command>
+  );
+
+  if (isMobile) {
+    return (
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetTrigger asChild>{trigger}</SheetTrigger>
+        <SheetContent
+          side="bottom"
+          showCloseButton={false}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          className={cn(
+            'border-border bg-background dark:border-border dark:bg-card flex max-h-[85vh] flex-col gap-0 overflow-hidden rounded-t-2xl p-0 pb-[env(safe-area-inset-bottom)]',
+            contentClassName,
+          )}
+        >
+          <SheetTitle className="sr-only">
+            {title || effectivePlaceholder}
+          </SheetTitle>
+          <div
+            className="mx-auto mt-2 mb-1 h-1.5 w-12 shrink-0 rounded-full bg-gray-300 dark:bg-gray-600"
+            aria-hidden="true"
+          />
+          {commandBody}
+        </SheetContent>
+      </Sheet>
+    );
+  }
+
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
@@ -186,62 +270,7 @@ export function MultiSelectPopover({
           contentClassName,
         )}
       >
-        <Command shouldFilter={searchable} className="bg-transparent">
-          {title && (
-            <div className="shrink-0 px-4 pt-4">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                {title}
-              </h3>
-            </div>
-          )}
-          {searchable && (
-            <div className="shrink-0 px-4 pt-4">
-              <CommandInput
-                placeholder={effectivePlaceholder}
-                className="h-10"
-              />
-            </div>
-          )}
-
-          {loading ? (
-            <div className="text-foreground flex items-center justify-center py-8 dark:text-white">
-              <Spinner size="small" />
-            </div>
-          ) : (
-            <div className="dark:border-border mx-4 my-4 grow overflow-hidden rounded-md border border-[#D9D9D9]">
-              <CommandList className="max-h-none">
-                <CommandEmpty>{renderEmptyState()}</CommandEmpty>
-                {items.length === 0 ? (
-                  renderEmptyState()
-                ) : hasGroups ? (
-                  grouped.groupOrder.map((groupKey) => {
-                    const groupItems = grouped.map.get(groupKey) || [];
-                    if (groupItems.length === 0) return null;
-                    return (
-                      <CommandGroup
-                        key={`group-${groupKey || 'ungrouped'}`}
-                        heading={groupKey || undefined}
-                        className="[&_[cmdk-group-heading]]:bg-muted/50 [&_[cmdk-group-heading]]:dark:bg-card [&_[cmdk-group-heading]]:text-muted-foreground p-0 [&_[cmdk-group-heading]]:sticky [&_[cmdk-group-heading]]:top-0 [&_[cmdk-group-heading]]:z-10 [&_[cmdk-group-heading]]:border-b [&_[cmdk-group-heading]]:border-[#D9D9D9] [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:dark:border-[#2E2E2E]"
-                      >
-                        {groupItems.map(renderItem)}
-                      </CommandGroup>
-                    );
-                  })
-                ) : (
-                  <CommandGroup className="p-0">
-                    {orderedItems.map(renderItem)}
-                  </CommandGroup>
-                )}
-              </CommandList>
-            </div>
-          )}
-
-          {footer && (
-            <div className="border-border dark:border-border shrink-0 border-t px-4 py-4">
-              {footer}
-            </div>
-          )}
-        </Command>
+        {commandBody}
       </PopoverContent>
     </Popover>
   );
