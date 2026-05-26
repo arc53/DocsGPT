@@ -98,11 +98,18 @@ export function useDarkTheme() {
 
   useEffect(() => {
     localStorage.setItem('selectedTheme', isDarkTheme ? 'Dark' : 'Light');
-    if (isDarkTheme) {
-      document.body?.classList.add('dark');
-    } else {
-      document.body?.classList.remove('dark');
-    }
+    const action = isDarkTheme ? 'add' : 'remove';
+    document.body?.classList[action]('dark');
+    document.documentElement.classList[action]('dark');
+
+    const color = isDarkTheme ? '#161616' : '#fbfbfb';
+    document.head
+      .querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')
+      .forEach((m) => {
+        m.removeAttribute('media');
+        m.setAttribute('content', color);
+      });
+
     setComponentMounted(true);
   }, [isDarkTheme]);
 

@@ -195,6 +195,9 @@ layer(base);
     }
   }
 
+  html {
+    background-color: var(--background);
+  }
   body.dark {
     background-color: var(--background);
   }
