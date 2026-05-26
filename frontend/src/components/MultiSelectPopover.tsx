@@ -200,9 +200,7 @@ export function MultiSelectPopover({
         <div className="dark:border-border mx-4 my-4 min-h-0 grow overflow-hidden rounded-md border border-[#D9D9D9]">
           <CommandList className="max-h-full overflow-y-auto">
             <CommandEmpty>{renderEmptyState()}</CommandEmpty>
-            {items.length === 0 ? (
-              renderEmptyState()
-            ) : hasGroups ? (
+            {hasGroups ? (
               grouped.groupOrder.map((groupKey) => {
                 const groupItems = grouped.map.get(groupKey) || [];
                 if (groupItems.length === 0) return null;
