@@ -78,81 +78,109 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
     }
   };
 
-  const handleAuth = async () => {
-    try {
-      completedRef.current = false;
-      // Close any popup left over from a previous click before wiping
-      // the ref — otherwise the old window keeps living with no
-      // interval watching it and no listener handling its messages.
-      if (authWindowRef.current && !authWindowRef.current.closed) {
-        authWindowRef.current.close();
-      }
-      authWindowRef.current = null;
-      cleanup();
-
-      const authResponse = await userService.getConnectorAuthUrl(
-        provider,
-        token,
-      );
-      if (!mountedRef.current) return;
-
-      if (!authResponse.ok) {
-        throw new Error(
-          `${t('modals.uploadDoc.connectors.auth.authUrlFailed')}: ${authResponse.status}`,
-        );
-      }
-
-      const authData = await authResponse.json();
-      if (!mountedRef.current) return;
-      if (!authData.success || !authData.authorization_url) {
-        throw new Error(
-          authData.error || t('modals.uploadDoc.connectors.auth.authUrlFailed'),
-        );
-      }
-
-      const authWindow = window.open(
-        authData.authorization_url,
-        `${provider}-auth`,
-        'width=500,height=600,scrollbars=yes,resizable=yes',
-      );
-      if (!authWindow) {
-        throw new Error(t('modals.uploadDoc.connectors.auth.popupBlocked'));
-      }
-      authWindowRef.current = authWindow;
-
-      messageHandlerRef.current = handleAuthMessage;
-      window.addEventListener('message', handleAuthMessage as any);
-
-      const checkClosed = window.setInterval(() => {
-        if (authWindow.closed) {
-          clearInterval(checkClosed);
-          intervalRef.current = null;
-          if (messageHandlerRef.current) {
-            window.removeEventListener(
-              'message',
-              messageHandlerRef.current as any,
-            );
-            messageHandlerRef.current = null;
-          }
-          authWindowRef.current = null;
-          if (!completedRef.current) {
-            onError(t('modals.uploadDoc.connectors.auth.authCancelled'));
-          }
-        }
-      }, 1000);
-      intervalRef.current = checkClosed;
-    } catch (error) {
-      if (!mountedRef.current) return;
-      onError(
-        error instanceof Error
-          ? error.message
-          : t('modals.uploadDoc.connectors.auth.authFailed'),
-      );
+  const handleAuth = () => {
+    completedRef.current = false;
+    // Close any popup left over from a previous click before wiping
+    // the ref — otherwise the old window keeps living with no
+    // interval watching it and no listener handling its messages.
+    if (authWindowRef.current && !authWindowRef.current.closed) {
+      authWindowRef.current.close();
     }
+    authWindowRef.current = null;
+    cleanup();
+
+    // Synchronous popup inside the click; navigated below after the
+    // async URL fetch resolves. Otherwise Safari blocks it as non-gesture.
+    const authWindow = window.open(
+      'about:blank',
+      `${provider}-auth`,
+      'width=500,height=600,scrollbars=yes,resizable=yes',
+    );
+    if (!authWindow) {
+      onError(t('modals.uploadDoc.connectors.auth.popupBlocked'));
+      return;
+    }
+    authWindowRef.current = authWindow;
+
+    (async () => {
+      try {
+        const authResponse = await userService.getConnectorAuthUrl(
+          provider,
+          token,
+        );
+        if (!mountedRef.current) {
+          authWindow.close();
+          return;
+        }
+
+        if (!authResponse.ok) {
+          authWindow.close();
+          throw new Error(
+            `${t('modals.uploadDoc.connectors.auth.authUrlFailed')}: ${authResponse.status}`,
+          );
+        }
+
+        const authData = await authResponse.json();
+        if (!mountedRef.current) {
+          authWindow.close();
+          return;
+        }
+        if (!authData.success || !authData.authorization_url) {
+          authWindow.close();
+          throw new Error(
+            authData.error ||
+              t('modals.uploadDoc.connectors.auth.authUrlFailed'),
+          );
+        }
+
+        if (authWindow.closed) {
+          // User closed the placeholder before we resolved.
+          authWindowRef.current = null;
+          onError(t('modals.uploadDoc.connectors.auth.authCancelled'));
+          return;
+        }
+        authWindow.location.href = authData.authorization_url;
+
+        messageHandlerRef.current = handleAuthMessage;
+        window.addEventListener('message', handleAuthMessage as any);
+
+        const checkClosed = window.setInterval(() => {
+          if (authWindow.closed) {
+            clearInterval(checkClosed);
+            intervalRef.current = null;
+            if (messageHandlerRef.current) {
+              window.removeEventListener(
+                'message',
+                messageHandlerRef.current as any,
+              );
+              messageHandlerRef.current = null;
+            }
+            authWindowRef.current = null;
+            if (!completedRef.current) {
+              onError(t('modals.uploadDoc.connectors.auth.authCancelled'));
+            }
+          }
+        }, 1000);
+        intervalRef.current = checkClosed;
+      } catch (error) {
+        if (!authWindow.closed) {
+          authWindow.close();
+        }
+        authWindowRef.current = null;
+        if (!mountedRef.current) return;
+        onError(
+          error instanceof Error
+            ? error.message
+            : t('modals.uploadDoc.connectors.auth.authFailed'),
+        );
+      }
+    })();
   };
 
-  // Release interval, message listener, and popup on unmount only.
   useEffect(() => {
+    // Re-arm on mount; React 19 strict-mode's double-invoke would otherwise
+    // leave this stuck at false from the prior cleanup, aborting later awaits.
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       cleanup();

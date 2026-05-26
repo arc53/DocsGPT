@@ -3,7 +3,7 @@ layer(base);
 
 @import 'tailwindcss';
 
-@import "tw-animate-css";
+@import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -55,12 +55,12 @@ layer(base);
 
   /* Light theme scrollbar */
   &::-webkit-scrollbar-thumb {
-    background: #E2E8F0;
+    background: #e2e8f0;
     border-radius: 9999px;
   }
 
   &::-webkit-scrollbar-thumb:hover {
-    background: #8C9198;
+    background: #8c9198;
   }
 
   /* Dark theme scrollbar */
@@ -70,11 +70,11 @@ layer(base);
   }
 
   .dark &::-webkit-scrollbar-thumb:hover {
-    background: #F0F0F0;
+    background: #f0f0f0;
   }
 
   scrollbar-width: thin;
-  scrollbar-color: #E2E8F0 transparent;
+  scrollbar-color: #e2e8f0 transparent;
 
   .dark & {
     scrollbar-color: #949494 transparent;
@@ -97,11 +97,11 @@ layer(base);
   }
 
   &:hover::-webkit-scrollbar-thumb {
-    background: #E2E8F0;
+    background: #e2e8f0;
   }
 
   &:hover::-webkit-scrollbar-thumb:hover {
-    background: #8C9198;
+    background: #8c9198;
   }
 
   .dark &::-webkit-scrollbar-thumb {
@@ -114,7 +114,7 @@ layer(base);
   }
 
   .dark &:hover::-webkit-scrollbar-thumb:hover {
-    background: #F0F0F0;
+    background: #f0f0f0;
   }
 
   /* Standard scrollbar properties (Chrome 121+, Firefox) */
@@ -122,7 +122,7 @@ layer(base);
   scrollbar-color: transparent transparent;
 
   &:hover {
-    scrollbar-color: #E2E8F0 transparent;
+    scrollbar-color: #e2e8f0 transparent;
   }
 
   .dark & {
@@ -173,7 +173,7 @@ layer(base);
     & th,
     & td {
       scrollbar-width: thin;
-      scrollbar-color: #E2E8F0 transparent;
+      scrollbar-color: #e2e8f0 transparent;
     }
 
     .dark & th,
@@ -206,24 +206,24 @@ layer(base);
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #E2E8F0;
+    background: #e2e8f0;
     border-radius: 9999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #8C9198;
+    background: #8c9198;
   }
   .dark ::-webkit-scrollbar-thumb {
     background: #949494;
   }
   .dark ::-webkit-scrollbar-thumb:hover {
-    background: #F0F0F0;
+    background: #f0f0f0;
   }
 
   /* Firefox: base scrollbar styles (Firefox ignores ::-webkit-scrollbar) */
   @supports (-moz-appearance: none) {
     * {
       scrollbar-width: thin;
-      scrollbar-color: #E2E8F0 transparent;
+      scrollbar-color: #e2e8f0 transparent;
     }
     .dark * {
       scrollbar-color: #949494 transparent;
@@ -741,7 +741,9 @@ Avoid over-scrolling in mobile browsers
   }
 
   @keyframes thinkingBounce {
-    0%, 80%, 100% {
+    0%,
+    80%,
+    100% {
       transform: scale(0.6);
       opacity: 0.4;
     }
@@ -901,4 +903,12 @@ Avoid over-scrolling in mobile browsers
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Picker portals outside Radix's tree; force interactivity + raise z so
+   clicks land when a Modal/Sheet is also open. */
+.picker-dialog,
+.picker-dialog-bg {
+  pointer-events: auto !important;
+  z-index: 9999 !important;
 }

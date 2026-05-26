@@ -134,7 +134,9 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
           <div
             className={cn(
               'no-scrollbar text-foreground overflow-y-auto',
-              isMobileSheet && 'min-h-0 grow',
+              // overflow-y-auto forces overflow-x:auto, clipping focus-ring
+              // box-shadows; px-1 keeps them inside the clip rect.
+              isMobileSheet && 'min-h-0 grow px-1',
               contentClassName,
             )}
           >
