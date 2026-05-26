@@ -12,10 +12,12 @@ import {
   DialogPortal,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useMediaQuery } from '../../hooks';
 import { cn } from '@/lib/utils';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 
 type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full';
+type ModalMobileVariant = 'modal' | 'sheet';
 
 const SIZE_CLASSES: Record<ModalSize, string> = {
   sm: 'sm:max-w-sm',
@@ -38,6 +40,7 @@ export type ModalProps = {
   showCloseButton?: boolean;
   isPerformingTask?: boolean;
   size?: ModalSize;
+  mobileVariant?: ModalMobileVariant;
 };
 
 const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
@@ -54,9 +57,12 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
     showCloseButton = true,
     isPerformingTask = false,
     size = 'md',
+    mobileVariant = 'modal',
   },
   ref,
 ) {
+  const { isMobile } = useMediaQuery();
+  const isMobileSheet = mobileVariant === 'sheet' && isMobile;
   const shouldShowCloseButton = showCloseButton && !isPerformingTask;
 
   // When a task is performing, block click-outside / pointer-outside to
@@ -94,8 +100,12 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
         <DialogPrimitive.Content
           ref={ref}
           data-slot="modal-content"
+          data-mobile-sheet={isMobileSheet ? '' : undefined}
           onPointerDownOutside={blockOutsideInteractions}
           onInteractOutside={blockOutsideInteractions}
+          onOpenAutoFocus={
+            isMobileSheet ? (event) => event.preventDefault() : undefined
+          }
           // Radix portals this to <body> in the DOM, but React still bubbles
           // synthetic events through the JSX tree. Stop the bubble at the
           // modal boundary so consumers mounted inside clickable cards (e.g.
@@ -103,25 +113,39 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
           // onClick when the user interacts inside the modal.
           onClick={(event) => event.stopPropagation()}
           className={cn(
-            'bg-card text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 shadow-modal fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl p-8 duration-200 outline-none',
-            SIZE_CLASSES[size],
-            className,
+            'bg-card text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out shadow-modal fixed z-50 duration-200 outline-none',
+            isMobileSheet
+              ? 'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 flex max-h-[90vh] w-full flex-col gap-3 rounded-t-2xl px-4 pt-2 pb-[max(env(safe-area-inset-bottom),1rem)]'
+              : cn(
+                  'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 top-[50%] left-[50%] grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl p-8',
+                  SIZE_CLASSES[size],
+                  className,
+                ),
           )}
         >
+          {isMobileSheet && (
+            <div
+              className="mx-auto h-1.5 w-12 shrink-0 rounded-full bg-gray-300 dark:bg-gray-600"
+              aria-hidden="true"
+            />
+          )}
           {titleNode}
           {descriptionNode}
           <div
             className={cn(
               'no-scrollbar text-foreground overflow-y-auto',
+              // overflow-y-auto forces overflow-x:auto, clipping focus-ring
+              // box-shadows; px-1 keeps them inside the clip rect.
+              isMobileSheet && 'min-h-0 grow px-1',
               contentClassName,
             )}
           >
             {children}
           </div>
           {footer ? (
-            <div className="flex justify-end gap-2">{footer}</div>
+            <div className="flex shrink-0 justify-end gap-2">{footer}</div>
           ) : null}
-          {shouldShowCloseButton && (
+          {shouldShowCloseButton && !isMobileSheet && (
             <DialogClose
               className="ring-offset-background focus:ring-ring absolute top-3 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none"
               aria-label="Close"

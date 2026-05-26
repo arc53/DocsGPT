@@ -199,6 +199,7 @@ export default function ScheduleFormModal({
           : t('agents.schedules.modal.create')
       }
       size="md"
+      mobileVariant="sheet"
       className="w-[min(560px,92vw)] sm:p-6"
       contentClassName="max-h-[80vh]"
     >

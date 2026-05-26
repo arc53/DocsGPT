@@ -157,6 +157,7 @@ export default function SearchConversationsModal({
       hideTitle
       title={t('modals.searchConversations.searchPlaceholder')}
       showCloseButton={false}
+      mobileVariant="sheet"
       className="w-[92vw] !max-w-xl !p-0"
       contentClassName="max-h-[70vh]"
     >

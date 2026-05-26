@@ -593,6 +593,7 @@ export default function MCPServerModal({
           : t('settings.tools.mcp.addServer')
       }
       size="lg"
+      mobileVariant="sheet"
       className="max-w-[600px] md:w-[80vw] lg:w-[60vw]"
     >
       <div className="flex h-full flex-col">

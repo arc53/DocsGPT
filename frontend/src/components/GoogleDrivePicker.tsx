@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import useDrivePicker from 'react-google-drive-picker';
+import drivePickerImport from 'react-google-drive-picker';
+
+// Vite 8 CJS interop returns the namespace object for this lib instead of
+// unwrapping `default`; tolerate both shapes.
+const useDrivePicker = ((
+  drivePickerImport as unknown as { default?: typeof drivePickerImport }
+).default ?? drivePickerImport) as typeof drivePickerImport;
 
 import userService from '../api/services/userService';
 import ConnectorAuth from './ConnectorAuth';
@@ -116,6 +122,8 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
 
     try {
       const clientId: string = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+      const developerKey: string =
+        import.meta.env.VITE_GOOGLE_PICKER_API_KEY ?? '';
 
       // Derive appId from clientId (extract numeric part before first dash)
       const appId = clientId ? clientId.split('-')[0] : null;
@@ -129,7 +137,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
 
       openPicker({
         clientId: clientId,
-        developerKey: '',
+        developerKey,
         appId: appId,
         setSelectFolderEnabled: false,
         viewId: 'DOCS',
