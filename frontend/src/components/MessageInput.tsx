@@ -1416,8 +1416,15 @@ export default function MessageInput({
     handlePostDocumentSelect(updated.length > 0 ? updated : null);
   };
 
+  const userToolsRef = useRef<UserToolType[]>(userTools);
+  userToolsRef.current = userTools;
+  const toolsFetchInFlightRef = useRef(false);
+
   const fetchUserTools = useCallback(() => {
-    setToolsLoading(true);
+    if (toolsFetchInFlightRef.current) return;
+    toolsFetchInFlightRef.current = true;
+    const showLoading = userToolsRef.current.length === 0;
+    if (showLoading) setToolsLoading(true);
     userService
       .getUserTools(token)
       .then((res) => res.json())
@@ -1428,8 +1435,16 @@ export default function MessageInput({
       .catch((error) => {
         console.error('Error fetching tools:', error);
       })
-      .finally(() => setToolsLoading(false));
+      .finally(() => {
+        toolsFetchInFlightRef.current = false;
+        if (showLoading) setToolsLoading(false);
+      });
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    fetchUserTools();
+  }, [token, fetchUserTools]);
 
   useEffect(() => {
     if (isToolsPopupOpen) fetchUserTools();
