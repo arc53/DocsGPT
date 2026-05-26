@@ -103,9 +103,13 @@ export function useDarkTheme() {
     } else {
       document.body?.classList.remove('dark');
     }
+    // Sync iOS Safari bottom bar color with app theme (fixes #2488)
+    const themeColorMetas = document.querySelectorAll('meta[name="theme-color"]');
+    themeColorMetas.forEach((meta) => {
+      meta.setAttribute('content', isDarkTheme ? '#161616' : '#fbfbfb');
+    });
     setComponentMounted(true);
   }, [isDarkTheme]);
-
   const toggleTheme = () => {
     setIsDarkTheme(!isDarkTheme);
   };
