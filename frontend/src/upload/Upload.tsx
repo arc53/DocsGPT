@@ -897,6 +897,7 @@ function Upload({
       hideTitle
       title={t('modals.uploadDoc.label')}
       size="lg"
+      mobileVariant="sheet"
       className="max-h-[90vh] w-11/12 sm:max-h-none sm:w-auto sm:min-w-[600px] md:min-w-[700px]"
       contentClassName="max-h-[80vh] sm:max-h-none"
     >

@@ -703,6 +703,7 @@ export default function PromptsModal({
       hideTitle
       title={type === 'ADD' ? 'Add Prompt' : 'Edit Prompt'}
       size="lg"
+      mobileVariant="sheet"
       className="bg-card dark:bg-card w-[95vw] max-w-[650px] rounded-2xl px-4 py-4 sm:px-6 sm:py-6 md:max-w-[860px] md:px-8 md:py-6 lg:max-w-[980px]"
       contentClassName="!overflow-visible"
     >
