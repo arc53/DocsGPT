@@ -282,15 +282,21 @@ class DeviceBroker:
     def cleanup_invocation(self, invocation_id: str) -> None:
         """Drop an invocation from all registries.
 
-        Removes it from ``_invocations`` and, if it was still parked for an
-        offline device, from ``_pending`` too. Without the pending removal a
-        timed-out invocation would be drained and executed by a later
+        Removes it from ``_invocations``, the active session's
+        ``invocations`` map, and — if it was still parked for an offline
+        device — ``_pending`` too. Dropping it from the active session keeps
+        a long-lived SSE session from accumulating completed invocations
+        (unbounded memory). Without the pending removal a timed-out
+        invocation would be drained and executed by a later
         ``register_session`` — running a command the user already saw fail.
         """
         with self._lock:
             inv = self._invocations.pop(invocation_id, None)
             if inv is None:
                 return
+            sess = self._sessions.get(inv.device_id)
+            if sess is not None:
+                sess.invocations.pop(invocation_id, None)
             pending = self._pending.get(inv.device_id)
             if pending:
                 remaining = [p for p in pending if p.invocation_id != invocation_id]

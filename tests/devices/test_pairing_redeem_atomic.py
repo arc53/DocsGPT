@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import Flask
+from sqlalchemy.exc import IntegrityError
 
 from application.api.devices import pairing as pairing_module
 
@@ -135,6 +136,114 @@ def test_two_redeems_of_one_code_create_exactly_one_device(app, monkeypatch):
     assert second.status_code in (404, 409), second.get_json()
     assert statuses.count(200) == 1
     assert _CountingDevicesRepo.creates == 1
+
+
+def _fake_integrity_error() -> IntegrityError:
+    return IntegrityError("INSERT ...", {}, Exception("duplicate key"))
+
+
+class _CollideOnceRepo:
+    """``create`` raises IntegrityError on its first call, then succeeds."""
+
+    calls = 0
+    names: list = []
+
+    def __init__(self, conn):
+        pass
+
+    def create(self, **kwargs):
+        type(self).calls += 1
+        type(self).names.append(kwargs.get("name"))
+        if type(self).calls == 1:
+            raise _fake_integrity_error()
+        return {"id": kwargs.get("device_id"), **kwargs}
+
+
+class _AlwaysCollideRepo:
+    """``create`` always raises IntegrityError (every name collides)."""
+
+    calls = 0
+
+    def __init__(self, conn):
+        pass
+
+    def create(self, **kwargs):
+        type(self).calls += 1
+        raise _fake_integrity_error()
+
+
+def test_redeem_retries_name_collision_then_succeeds(app, monkeypatch):
+    redis_client = _redis_or_skip()
+    _CollideOnceRepo.calls = 0
+    _CollideOnceRepo.names = []
+    monkeypatch.setattr(pairing_module, "DevicesRepository", _CollideOnceRepo)
+    monkeypatch.setattr(
+        pairing_module, "_upsert_remote_device_user_tool", lambda conn, **k: None
+    )
+    monkeypatch.setattr(pairing_module, "db_session", _Sess)
+    monkeypatch.setattr(pairing_module, "fingerprint_pubkey", lambda _p: "fpfpfp")
+    monkeypatch.setattr(pairing_module, "hash_session_token", lambda _t: "tokhash")
+
+    user_code = _seed_pairing(redis_client, f"user_{uuid.uuid4().hex}")
+    try:
+        resp = _redeem_once(app, redis_client, user_code)
+    finally:
+        device_code = redis_client.get(
+            pairing_module._user_code_index_key(user_code)
+        )
+        if device_code:
+            if isinstance(device_code, (bytes, bytearray)):
+                device_code = device_code.decode()
+            redis_client.delete(pairing_module._PAIRING_REDIS_PREFIX + device_code)
+        redis_client.delete(pairing_module._user_code_index_key(user_code))
+
+    # Redeem still succeeds; the second name attempt won.
+    assert resp.status_code == 200, resp.get_json()
+    assert _CollideOnceRepo.calls == 2
+    # The winning name differs from the first (colliding) candidate.
+    assert _CollideOnceRepo.names[0] != _CollideOnceRepo.names[1]
+    assert resp.get_json()["name"] == _CollideOnceRepo.names[1]
+
+
+def test_redeem_releases_claim_when_all_names_collide(app, monkeypatch):
+    redis_client = _redis_or_skip()
+    _AlwaysCollideRepo.calls = 0
+    monkeypatch.setattr(pairing_module, "DevicesRepository", _AlwaysCollideRepo)
+    monkeypatch.setattr(
+        pairing_module, "_upsert_remote_device_user_tool", lambda conn, **k: None
+    )
+    monkeypatch.setattr(pairing_module, "db_session", _Sess)
+    monkeypatch.setattr(pairing_module, "fingerprint_pubkey", lambda _p: "fpfpfp")
+    monkeypatch.setattr(pairing_module, "hash_session_token", lambda _t: "tokhash")
+
+    user_code = _seed_pairing(redis_client, f"user_{uuid.uuid4().hex}")
+    device_code = redis_client.get(
+        pairing_module._user_code_index_key(user_code)
+    )
+    if isinstance(device_code, (bytes, bytearray)):
+        device_code = device_code.decode()
+    try:
+        resp = _redeem_once(app, redis_client, user_code)
+
+        # Every attempt collided -> error returned.
+        assert resp.status_code == 500, resp.get_json()
+        assert _AlwaysCollideRepo.calls == pairing_module._DEVICE_NAME_RETRIES
+
+        # The claim was released: status reverted to pending and the
+        # user-code index restored, so the code can be redeemed again.
+        state = json.loads(
+            redis_client.get(pairing_module._PAIRING_REDIS_PREFIX + device_code)
+        )
+        assert state["status"] == "pending"
+        restored = redis_client.get(
+            pairing_module._user_code_index_key(user_code)
+        )
+        if isinstance(restored, (bytes, bytearray)):
+            restored = restored.decode()
+        assert restored == device_code
+    finally:
+        redis_client.delete(pairing_module._PAIRING_REDIS_PREFIX + device_code)
+        redis_client.delete(pairing_module._user_code_index_key(user_code))
 
 
 def test_claim_pairing_wins_exactly_once():

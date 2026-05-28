@@ -35,6 +35,29 @@ def test_cleanup_removes_pending_so_register_session_doesnt_replay():
         pass
 
 
+def test_cleanup_removes_from_active_session():
+    # A completed invocation must not linger in the active session's map,
+    # or a long-lived SSE session accumulates them unboundedly.
+    broker = DeviceBroker()
+    sess = broker.register_session("dev_live", "user_live")
+    inv = broker.dispatch_invocation(
+        "dev_live", "user_live",
+        {"invocation_id": "inv_live", "action": "run_command"},
+    )
+    # Dispatched into the active session.
+    assert "inv_live" in sess.invocations
+    assert broker.get_invocation("inv_live") is inv
+
+    # Drive it to completion via a control chunk, then clean up.
+    broker.submit_output_chunk(
+        "inv_live", {"stream": "control", "exit_code": 0, "duration_ms": 1}
+    )
+    broker.cleanup_invocation("inv_live")
+
+    assert "inv_live" not in sess.invocations
+    assert broker.get_invocation("inv_live") is None
+
+
 def test_cleanup_keeps_other_pending_invocations():
     # Cleaning one invocation must leave a sibling pending invocation intact.
     broker = DeviceBroker()

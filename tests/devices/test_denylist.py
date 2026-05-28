@@ -91,6 +91,34 @@ def test_rm_separated_flags_subpath_safe():
     assert check_denylist("rm -r -f /tmp/x") is None
 
 
+def test_rm_wrapped_timeout_separated_flags():
+    # ``timeout 5 rm -r -f /`` — wrapper + separated flags must still trip.
+    assert check_denylist("timeout 5 rm -r -f /") == "rm -rf /"
+
+
+def test_rm_wrapped_nice_separated_flags():
+    assert check_denylist("nice rm -f -r /") == "rm -rf /"
+
+
+def test_rm_wrapped_nohup_bundle():
+    assert check_denylist("nohup rm -rf /") == "rm -rf /"
+
+
+def test_rm_wrapped_timeout_duration_slash_star():
+    # ``timeout 30s rm -rf /*`` — duration token skipped, root-star target.
+    assert check_denylist("timeout 30s rm -rf /*") == "rm -rf /"
+
+
+def test_wrapped_safe_ls_not_denied():
+    # ``timeout 5 ls`` is harmless even though it's wrapped.
+    assert check_denylist("timeout 5 ls") is None
+
+
+def test_wrapped_rm_subpath_safe():
+    # ``nice rm -rf /tmp/foo`` is a subpath wipe; stays safe.
+    assert check_denylist("nice rm -rf /tmp/foo") is None
+
+
 def test_rm_rf_home_tilde():
     assert check_denylist("rm -rf ~") == "rm -rf ~"
 

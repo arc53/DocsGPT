@@ -117,22 +117,38 @@ class RemoteDeviceTool(Tool):
         ``user_tools.actions[].require_approval`` snapshot stored at pair
         time. Returns ``True`` when a prompt is required.
         """
+        requires_approval, _denylist_forced = self.preview_decision(
+            action_name, params,
+        )
+        return requires_approval
+
+    def preview_decision(
+        self, action_name: str, params: dict,
+    ) -> tuple[bool, bool]:
+        """Live approval decision plus whether it's a denylist-forced prompt.
+
+        Returns ``(requires_approval, denylist_forced)``. ``denylist_forced``
+        is True only when the prompt is mandated by the hard denylist, which
+        a headless allowlist must never bypass. Unknown / inactive devices
+        and missing commands require approval but are NOT denylist-forced.
+        """
         if action_name != "run_command":
-            return True
+            return True, False
         if not self.device_id or not self.user_id:
-            return True
+            return True, False
         if self._device is None:
             self._device = self._load_device()
         device = self._device
         if device is None or device.get("status") != "active":
             # Don't bypass the prompt for an unknown / inactive device;
             # execute_action will surface the error.
-            return True
+            return True, False
         command = ((params or {}).get("command") or "").strip()
         if not command:
-            return True
-        _reason, effective_mode = self._decide_approval(device, command)
-        return effective_mode != "full"
+            return True, False
+        reason, effective_mode = self._decide_approval(device, command)
+        denylist_forced = reason == "denylist_forced_prompt"
+        return effective_mode != "full", denylist_forced
 
     def execute_action(self, action_name: str, **kwargs):
         if action_name != "run_command":

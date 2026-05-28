@@ -6,7 +6,7 @@ import re
 import shlex
 from typing import List, Optional, Tuple
 
-from application.devices.splitter import split_command
+from application.devices.splitter import split_command, strip_wrappers
 
 
 # Label/reason for the rm-root wipe, shared by the regex rule and the
@@ -155,7 +155,10 @@ def check_denylist(command: str) -> Optional[str]:
     if not command:
         return None
     for segment in split_command(command):
-        if _is_rm_root_wipe(segment):
+        # ``split_command`` keeps wrappers (``timeout 5 rm -rf /``,
+        # ``nohup rm -rf /``); strip them so the token-based rm check sees
+        # the real inner command and can't be evaded by a wrapper.
+        if _is_rm_root_wipe(strip_wrappers(segment)) or _is_rm_root_wipe(segment):
             return _RM_ROOT_LABEL
         for label, pattern in _PATTERNS:
             if pattern.search(segment):

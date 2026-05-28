@@ -29,6 +29,22 @@ def fingerprint_pubkey(pubkey_b64: str) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _canonical_payload(method: str, path: str, ts: str, body: bytes) -> str:
+    """Canonical string the device signs / the server verifies.
+
+    Format: ``"{method} {path} {ts} {sha256_hex(body)}"``. The body hash
+    binds the request body into the signature so a captured signature can't
+    be replayed with a tampered body inside the timestamp window. For a GET
+    (empty body) this is the SHA-256 of the empty string.
+
+    KEEP IN SYNC with the DocsGPT-cli signer
+    (``internal/host/identity.go`` ``CanonicalPayload`` / ``SignRequest``).
+    The hex encoding and single-space separators must match byte-for-byte.
+    """
+    body_hash = hashlib.sha256(body or b"").hexdigest()
+    return f"{method} {path} {ts} {body_hash}"
+
+
 def verify_device_session(*, touch: bool = True) -> Tuple[Optional[dict], Optional[tuple]]:
     """Validate the device session token on the current request.
 
@@ -107,7 +123,9 @@ def _verify_signature(device: dict) -> Optional[tuple]:
     if fingerprint_pubkey(pubkey_b64) != device["machine_pubkey_fingerprint"]:
         return _error("pubkey_fingerprint_mismatch", 401)
 
-    payload = f"{request.method} {request.path} {ts}".encode("utf-8")
+    payload = _canonical_payload(
+        request.method, request.path, ts, request.get_data()
+    ).encode("utf-8")
     try:
         pubkey = Ed25519PublicKey.from_public_bytes(base64.b64decode(pubkey_b64))
         pubkey.verify(base64.b64decode(sig_b64), payload)

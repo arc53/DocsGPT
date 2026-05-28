@@ -11,6 +11,7 @@ import uuid
 from typing import Optional
 
 from flask import jsonify, make_response, request
+from sqlalchemy.exc import IntegrityError
 
 from application.api.devices.auth import fingerprint_pubkey, hash_session_token
 from application.cache import get_redis_instance
@@ -27,6 +28,8 @@ _USER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 _USER_CODE_LEN = 8  # ABCD-WXYZ (8 chars, displayed with a single dash)
 _PAIRING_REDIS_PREFIX = "docsgpt:device_pairing:"
 _ALLOWED_APPROVAL_MODES = {"ask", "full"}
+# Attempts to find a non-colliding device name before releasing the claim.
+_DEVICE_NAME_RETRIES = 5
 
 # Atomic redeem claim: read the pairing JSON, and only if its ``status`` is
 # ``pending`` flip it to ``redeemed`` and write it back (TTL preserved).
@@ -262,28 +265,56 @@ def redeem_pairing() -> tuple:
         approval_mode = "ask"
 
     name_source = requested_name or hostname
-    name = _next_device_name(user_id, name_source)
-    try:
-        with db_session() as conn:
-            DevicesRepository(conn).create(
-                device_id=device_id,
-                user_id=user_id,
-                name=name,
-                machine_pubkey_fingerprint=fingerprint,
-                token_hash=token_hash,
-                hostname=hostname,
-                os=os_name,
-                arch=arch,
-                cli_version=cli_version,
-                approval_mode=approval_mode,
-                description=description,
+    # The claim has already been consumed, so a failed device insert would
+    # strand a one-time code. ``_next_device_name`` only adds a 16-bit
+    # suffix, so a ``UNIQUE (user_id, name)`` collision is possible; retry
+    # with a fresh name a few times, and release the claim if every attempt
+    # collides so the user can redeem the code again.
+    name = None
+    created = False
+    for _attempt in range(_DEVICE_NAME_RETRIES):
+        candidate = _next_device_name(user_id, name_source)
+        try:
+            with db_session() as conn:
+                DevicesRepository(conn).create(
+                    device_id=device_id,
+                    user_id=user_id,
+                    name=candidate,
+                    machine_pubkey_fingerprint=fingerprint,
+                    token_hash=token_hash,
+                    hostname=hostname,
+                    os=os_name,
+                    arch=arch,
+                    cli_version=cli_version,
+                    approval_mode=approval_mode,
+                    description=description,
+                )
+                _upsert_remote_device_user_tool(
+                    conn, user_id=user_id, device_id=device_id,
+                    device_name=candidate, description=description,
+                )
+            name = candidate
+            created = True
+            break
+        except IntegrityError:
+            # Name collision on this attempt; the transaction rolled back.
+            # Loop to try a freshly-generated name.
+            logger.warning(
+                "device name collision on redeem (attempt %d); retrying",
+                _attempt + 1,
             )
-            _upsert_remote_device_user_tool(
-                conn, user_id=user_id, device_id=device_id,
-                device_name=name, description=description,
-            )
-    except Exception:
-        logger.exception("failed to create device row during redeem")
+            continue
+        except Exception:
+            logger.exception("failed to create device row during redeem")
+            _release_claim(redis_client, device_code, state, user_code_raw)
+            return _error("internal_error", 500)
+
+    if not created:
+        logger.error(
+            "device create exhausted name retries during redeem; "
+            "releasing claim",
+        )
+        _release_claim(redis_client, device_code, state, user_code_raw)
         return _error("internal_error", 500)
 
     state["status"] = "redeemed"
@@ -327,6 +358,39 @@ def _claim_pairing(redis_client, device_code: str) -> Optional[bool]:
     return bool(result)
 
 
+def _release_claim(
+    redis_client, device_code: str, state: dict, user_code_raw: str,
+) -> None:
+    """Revert a consumed claim so the one-time code is redeemable again.
+
+    Called when the device row can't be created after the atomic claim
+    already flipped the pairing to ``redeemed``. Restores ``pending`` and
+    re-points the user-code index at the device code, preserving the
+    remaining TTL where possible. Best-effort: failures are logged, not
+    raised, since the caller is already returning an error.
+    """
+    key = _PAIRING_REDIS_PREFIX + device_code
+    try:
+        ttl = redis_client.ttl(key)
+        revert = dict(state)
+        revert["status"] = "pending"
+        revert.pop("device_id", None)
+        revert.pop("device_name", None)
+        encoded = json.dumps(revert)
+        if isinstance(ttl, int) and ttl > 0:
+            redis_client.setex(key, ttl, encoded)
+            if user_code_raw:
+                redis_client.setex(
+                    _user_code_index_key(user_code_raw), ttl, device_code
+                )
+        else:
+            redis_client.set(key, encoded)
+            if user_code_raw:
+                redis_client.set(_user_code_index_key(user_code_raw), device_code)
+    except Exception:
+        logger.exception("failed to release pairing claim for %s", device_code)
+
+
 def _load_pairing(device_code: str) -> Optional[dict]:
     redis_client = _redis()
     if redis_client is None:
@@ -346,11 +410,14 @@ def _load_pairing(device_code: str) -> Optional[dict]:
 
 
 def _next_device_name(user_id: str, hostname: str) -> str:
-    """Return a unique name for the new device row (collide-safe)."""
+    """Return a candidate name for the new device row.
+
+    Adds a random 16-bit suffix to reduce collisions on the DB
+    ``UNIQUE (user_id, name)`` constraint. Collisions are still possible,
+    so ``redeem_pairing`` retries with a fresh candidate on conflict.
+    """
     base = hostname or "device"
     base = base.strip() or "device"
-    # The DB UNIQUE (user_id, name) constraint will reject collisions; pick
-    # a suffix proactively rather than retrying.
     return f"{base}-{os.urandom(2).hex()}"
 
 

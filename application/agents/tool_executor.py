@@ -404,20 +404,29 @@ class ToolExecutor:
             )
 
         require_approval = bool(action_data.get("require_approval"))
+        # ``denylist_forced`` marks a prompt the hard denylist mandates; a
+        # headless allowlist must never bypass it (see below).
+        denylist_forced = False
         # ``remote_device`` decides per-invocation based on the live device
         # state (``approval_mode``, sticky patterns, allow/denylist). The
         # cached ``user_tools.actions[].require_approval`` snapshot does
         # not reflect later approval-mode changes nor command-level
         # heuristics, so consult the tool directly.
         if tool_data.get("name") == "remote_device":
-            require_approval = self._remote_device_requires_approval(
-                tool_data, action_name, arguments,
+            require_approval, denylist_forced = (
+                self._remote_device_requires_approval(
+                    tool_data, action_name, arguments,
+                )
             )
 
         if require_approval:
             if self.headless:
                 tool_row_id = str(tool_data.get("id") or tool_id)
-                if tool_row_id in self.tool_allowlist:
+                # A denylist-forced prompt is never pre-authorizable: a
+                # scheduled/headless run with the device allowlisted must
+                # still be denied a denylisted command. Only non-forced
+                # approvals honor the allowlist bypass.
+                if tool_row_id in self.tool_allowlist and not denylist_forced:
                     # Pre-authorized for headless execution — fall through.
                     return None
                 return {
@@ -459,13 +468,14 @@ class ToolExecutor:
 
     def _remote_device_requires_approval(
         self, tool_data: Dict, action_name: str, arguments: Dict,
-    ) -> bool:
-        """Live ``require_approval`` for a ``remote_device`` invocation.
+    ) -> tuple[bool, bool]:
+        """Live approval decision for a ``remote_device`` invocation.
 
         Instantiates ``RemoteDeviceTool`` with the cached config and the
         executor's user context, then asks it to evaluate the command.
-        Falls back to ``True`` on any error so a misconfigured device
-        never silently bypasses the prompt.
+        Returns ``(requires_approval, denylist_forced)``. Falls back to a
+        denylist-forced prompt on any error so a misconfigured device never
+        silently bypasses the prompt — not even via the headless allowlist.
         """
         try:
             from application.agents.tools.remote_device import RemoteDeviceTool
@@ -474,13 +484,13 @@ class ToolExecutor:
                 config=tool_data.get("config") or {},
                 user_id=self.user,
             )
-            return tool.preview_requires_approval(action_name, arguments)
+            return tool.preview_decision(action_name, arguments)
         except Exception:
             logger.exception(
-                "remote_device preview_requires_approval failed; defaulting "
-                "to prompt",
+                "remote_device preview_decision failed; defaulting to a "
+                "forced prompt",
             )
-            return True
+            return True, True
 
     def execute(self, tools_dict: Dict, call, llm_class_name: str):
         """Execute a tool call. Yields status events, returns (result, call_id)."""

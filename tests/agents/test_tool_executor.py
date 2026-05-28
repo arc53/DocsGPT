@@ -642,6 +642,162 @@ class TestCheckPauseRemoteDevice:
 
 
 @pytest.mark.unit
+class TestCheckPauseRemoteDeviceHeadless:
+    """Headless gating for ``remote_device``.
+
+    A denylist-forced prompt must NOT be bypassed by the run's
+    ``tool_allowlist`` — otherwise a scheduled/headless run with the device
+    allowlisted would auto-execute even a denylisted command. Normal
+    (non-forced) approvals keep the allowlist bypass.
+    """
+
+    def _make_call(self, name="run_command", call_id="c1", command="whoami"):
+        import json
+
+        call = Mock()
+        call.name = name
+        call.id = call_id
+        call.arguments = json.dumps({"command": command})
+        call.thought_signature = None
+        return call
+
+    def _tools_dict(self, *, device_id="dev_abc"):
+        return {
+            "rd0": {
+                "id": "rd0",
+                "name": "remote_device",
+                "config": {"device_id": device_id},
+                "actions": [
+                    {
+                        "name": "run_command",
+                        "description": "Execute on device",
+                        "active": True,
+                        "require_approval": False,
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "command": {
+                                    "type": "string",
+                                    "filled_by_llm": True,
+                                    "value": "",
+                                },
+                            },
+                            "required": ["command"],
+                        },
+                    }
+                ],
+            }
+        }
+
+    def _patch_device(self, monkeypatch, device):
+        from application.agents.tools import remote_device
+
+        monkeypatch.setattr(
+            remote_device.RemoteDeviceTool,
+            "_load_device",
+            lambda self: device,
+        )
+
+    def _patch_sticky(self, monkeypatch, patterns):
+        from application.agents.tools import remote_device
+
+        monkeypatch.setattr(
+            remote_device,
+            "normalize_command",
+            lambda cmd: cmd.split()[0] + " *" if cmd else "",
+        )
+        captured = {"patterns": set(patterns)}
+
+        class _StubRepo:
+            def __init__(self, conn):
+                pass
+
+            def has_pattern(self, device_id, user_id, pattern):
+                return pattern in captured["patterns"]
+
+        monkeypatch.setattr(
+            remote_device, "DeviceAutoApprovePatternsRepository", _StubRepo
+        )
+
+        class _StubConn:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        monkeypatch.setattr(remote_device, "db_readonly", lambda: _StubConn())
+
+    def test_headless_allowlisted_denylisted_command_denied(self, monkeypatch):
+        """Device allowlisted, but ``rm -rf /`` is a forced prompt -> denied."""
+        executor = ToolExecutor(
+            user="alice", headless=True, tool_allowlist={"rd0"}
+        )
+        self._patch_device(
+            monkeypatch,
+            {"id": "dev_abc", "approval_mode": "full", "status": "active"},
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="rm -rf /")
+        result = executor.check_pause(tools_dict, call, "OpenAILLM")
+        assert result is not None
+        assert result["pause_type"] == "headless_denied"
+        assert result["error_type"] == "tool_not_allowed"
+
+    def test_headless_allowlisted_normal_command_executes(self, monkeypatch):
+        """Device allowlisted + a normal command in ``full`` -> executes."""
+        executor = ToolExecutor(
+            user="alice", headless=True, tool_allowlist={"rd0"}
+        )
+        self._patch_device(
+            monkeypatch,
+            {"id": "dev_abc", "approval_mode": "full", "status": "active"},
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="whoami")
+        assert executor.check_pause(tools_dict, call, "OpenAILLM") is None
+
+    def test_headless_not_allowlisted_denied(self, monkeypatch):
+        """Without the allowlist, an ask-mode command is denied headless."""
+        executor = ToolExecutor(user="alice", headless=True, tool_allowlist=set())
+        self._patch_device(
+            monkeypatch,
+            {"id": "dev_abc", "approval_mode": "ask", "status": "active"},
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="ls -la /tmp")
+        result = executor.check_pause(tools_dict, call, "OpenAILLM")
+        assert result is not None
+        assert result["pause_type"] == "headless_denied"
+
+    def test_headless_allowlisted_ask_mode_normal_executes(self, monkeypatch):
+        """ask-mode + allowlisted + non-denylisted -> bypass allowed."""
+        executor = ToolExecutor(
+            user="alice", headless=True, tool_allowlist={"rd0"}
+        )
+        self._patch_device(
+            monkeypatch,
+            {"id": "dev_abc", "approval_mode": "ask", "status": "active"},
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="ls -la /tmp")
+        # Not denylist-forced, so the allowlist bypass applies.
+        assert executor.check_pause(tools_dict, call, "OpenAILLM") is None
+
+
+@pytest.mark.unit
 class TestToolExecutorExecute:
 
     def _make_call(self, name="action_toolid", call_id="c1", arguments="{}"):

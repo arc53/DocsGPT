@@ -34,6 +34,56 @@ def split_command(command: str) -> List[str]:
     return [p.strip() for p in parts if p and p.strip()]
 
 
+def strip_wrappers(segment: str) -> str:
+    """Return ``segment`` with leading command wrappers removed.
+
+    ``timeout 30s rm -rf /`` → ``rm -rf /``; ``nice -n 5 rm -rf /`` →
+    ``rm -rf /``. Wrappers and their own arguments (e.g. ``timeout 30s``,
+    ``nice -n 5``) are dropped so safety checks see the real inner command.
+    ``env`` is intentionally left in place so the denylist sees the head
+    token rather than env assignments. Returns the original segment when
+    there is nothing to strip or on a parse failure.
+    """
+    if not segment:
+        return ""
+    try:
+        tokens = shlex.split(segment, posix=True)
+    except ValueError:
+        # Unbalanced quotes — let callers fall back to the raw segment.
+        return segment
+    if not tokens:
+        return ""
+    i = _wrapper_offset(tokens)
+    if i == 0:
+        return segment
+    return " ".join(tokens[i:])
+
+
+def _wrapper_offset(tokens: List[str]) -> int:
+    """Index of the first non-wrapper token (skipping wrapper args).
+
+    ``env`` is treated as a non-wrapper so it is never stripped.
+    """
+    i = 0
+    while i < len(tokens) and tokens[i] in _WRAPPERS and tokens[i] != "env":
+        current = tokens[i]
+        i += 1
+        if i >= len(tokens):
+            break
+        # Skip wrapper-specific arguments before the wrapped command.
+        if current == "timeout":
+            # ``timeout 30`` or ``timeout 30s`` -- skip the duration token.
+            if re.match(r"^\d+[smhd]?$", tokens[i]):
+                i += 1
+        elif current == "nice":
+            # ``nice -n 10 cmd`` -- skip ``-n`` and its value.
+            if tokens[i].startswith("-n"):
+                i += 1
+                if i < len(tokens) and re.match(r"^-?\d+$", tokens[i]):
+                    i += 1
+    return i
+
+
 def head_token(segment: str) -> str:
     """Extract the head command token from a segment, stripping wrappers.
 
@@ -48,34 +98,11 @@ def head_token(segment: str) -> str:
         tokens = segment.split()
     if not tokens:
         return ""
-    head = tokens[0]
-    # Strip leading wrappers; stop at the first non-wrapper. ``timeout 30s ls``
-    # has token[0] = ``timeout`` and token[1] = ``30s``; ``ls`` is at [2].
-    i = 0
-    while head in _WRAPPERS and head != "env":
-        # ``env`` is special — leave it unstripped so the denylist sees the
-        # real head token.
-        current = tokens[i]
-        i += 1
-        if i >= len(tokens):
-            break
-        # Skip wrapper-specific arguments before the wrapped command.
-        if current == "timeout":
-            # ``timeout 30`` or ``timeout 30s`` -- skip the duration token.
-            if re.match(r"^\d+[smhd]?$", tokens[i]):
-                i += 1
-                if i >= len(tokens):
-                    break
-        elif current == "nice":
-            # ``nice -n 10 cmd`` -- skip ``-n`` and its value.
-            if tokens[i].startswith("-n"):
-                i += 1
-                if i < len(tokens) and re.match(r"^-?\d+$", tokens[i]):
-                    i += 1
-                if i >= len(tokens):
-                    break
-        head = tokens[i]
-    return head
+    i = _wrapper_offset(tokens)
+    if i >= len(tokens):
+        # Segment was only wrappers/args; nothing meaningful to return.
+        return tokens[0]
+    return tokens[i]
 
 
 def head_tokens(command: str) -> List[str]:
