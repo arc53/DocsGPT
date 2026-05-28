@@ -74,7 +74,14 @@ def _write_together_yaml(directory: Path) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def _reset_registry():
+def _reset_registry(monkeypatch):
+    # Builtin openai_compatible catalogs (e.g. deepseek.yaml) activate when
+    # their api_key_env is present in os.environ, which the openai_compatible
+    # provider reads directly, independent of the patched settings. Clear it
+    # so a key leaked by another test (or present in the dev .env) doesn't add
+    # extra models to the exact-match assertions below. Mirrors the delenv
+    # guard in test_model_registry_yaml.py.
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     ModelRegistry.reset()
     yield
     ModelRegistry.reset()
