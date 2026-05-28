@@ -349,6 +349,7 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
                     agent_id=str(agent_id_raw) if agent_id_raw else None,
                     source="schedule",
                     request_id=str(run_id),
+                    model_id=outcome.get("model_id"),
                 )
             except Exception:
                 logger.exception(

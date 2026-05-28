@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import text
 
 from application.storage.db.repositories.token_usage import TokenUsageRepository
 
@@ -33,6 +34,33 @@ class TestInsert:
             start=_now() - timedelta(minutes=1), end=_now() + timedelta(minutes=1), api_key="key-1"
         )
         assert total == 30
+
+
+class TestModelId:
+    def _latest_model_id(self, conn, user_id):
+        return conn.execute(
+            text(
+                "SELECT model_id FROM token_usage "
+                "WHERE user_id = :u ORDER BY id DESC LIMIT 1"
+            ),
+            {"u": user_id},
+        ).scalar_one()
+
+    def test_persists_model_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.insert(user_id="u-model", prompt_tokens=1, generated_tokens=1, model_id="gpt-4o")
+        assert self._latest_model_id(pg_conn, "u-model") == "gpt-4o"
+
+    def test_persists_byom_uuid_model_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        uuid_id = "11111111-1111-1111-1111-111111111111"
+        repo.insert(user_id="u-byom", prompt_tokens=1, generated_tokens=1, model_id=uuid_id)
+        assert self._latest_model_id(pg_conn, "u-byom") == uuid_id
+
+    def test_model_id_defaults_to_null(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.insert(user_id="u-nomodel", prompt_tokens=1, generated_tokens=1)
+        assert self._latest_model_id(pg_conn, "u-nomodel") is None
 
 
 class TestSumTokensInRange:

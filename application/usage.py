@@ -134,6 +134,7 @@ def _persist_call_usage(llm, call_usage):
                     getattr(llm, "_token_usage_source", None) or "agent_stream"
                 ),
                 request_id=getattr(llm, "_request_id", None),
+                model_id=getattr(llm, "_canonical_model_id", None),
             )
     except Exception:
         logger.exception("token_usage persist failed")

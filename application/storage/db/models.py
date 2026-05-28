@@ -103,6 +103,9 @@ token_usage_table = Table(
     # N rows) count as a single request via DISTINCT in the repository
     # query. NULL on side-channel sources by design.
     Column("request_id", Text),
+    # Added in ``0015_token_usage_model_id``. Canonical model id (catalog
+    # name for built-ins, UUID for BYOM); NULL on un-backfilled rows.
+    Column("model_id", Text),
 )
 
 user_logs_table = Table(

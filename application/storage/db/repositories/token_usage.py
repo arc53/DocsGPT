@@ -33,6 +33,7 @@ class TokenUsageRepository:
         generated_tokens: int = 0,
         source: str = "agent_stream",
         request_id: Optional[str] = None,
+        model_id: Optional[str] = None,
         timestamp: Optional[datetime] = None,
     ) -> None:
         # Attribution guard: the ``token_usage_attribution_chk`` CHECK
@@ -59,13 +60,13 @@ class TokenUsageRepository:
                 INSERT INTO token_usage (
                     user_id, api_key, agent_id,
                     prompt_tokens, generated_tokens,
-                    source, request_id, timestamp
+                    source, request_id, model_id, timestamp
                 )
                 VALUES (
                     :user_id, :api_key,
                     CAST(:agent_id AS uuid),
                     :prompt_tokens, :generated_tokens,
-                    :source, :request_id, COALESCE(:timestamp, now())
+                    :source, :request_id, :model_id, COALESCE(:timestamp, now())
                 )
                 """
             ),
@@ -77,6 +78,7 @@ class TokenUsageRepository:
                 "generated_tokens": generated_tokens,
                 "source": source,
                 "request_id": request_id,
+                "model_id": model_id,
                 "timestamp": timestamp,
             },
         )
