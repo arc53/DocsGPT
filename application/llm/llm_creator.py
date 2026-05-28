@@ -111,7 +111,7 @@ class LLMCreator:
 
         # Forward model_user_id so backup/fallback resolves under the
         # owner's scope on shared-agent dispatch.
-        return plugin.llm_class(
+        llm = plugin.llm_class(
             api_key,
             user_api_key,
             decoded_token=decoded_token,
@@ -124,3 +124,7 @@ class LLMCreator:
             *args,
             **kwargs,
         )
+        # llm.model_id is the upstream name (BYOM resolves it above); stamp
+        # the canonical id (UUID for BYOM) separately for token_usage.
+        llm._canonical_model_id = model_id
+        return llm
