@@ -32,13 +32,36 @@ def test_normalize_empty():
     assert normalize_segment("") == ""
 
 
-def test_normalize_command_compound_uses_first():
-    # First segment only.
-    assert normalize_command("ls -la && rm -rf /tmp") == "ls *"
+def test_normalize_command_compound_joins_all_segments():
+    # All segments normalized and joined; not just the first.
+    assert normalize_command("ls -la && rm -rf /tmp") == "ls * && rm *"
+
+
+def test_normalize_command_compound_distinguishes_tail():
+    # Sticky for ``ls /tmp && whoami`` must not match ``ls /tmp && rm /tmp/x``.
+    assert normalize_command("ls /tmp && whoami") == "ls * && whoami"
+    assert (
+        normalize_command("ls /tmp && rm /tmp/x")
+        != normalize_command("ls /tmp && whoami")
+    )
+
+
+def test_normalize_command_single_segment_unchanged():
+    # A non-compound command yields just its own pattern (no `` && ``).
+    assert normalize_command("ls -la /tmp") == "ls *"
+
+
+def test_normalize_command_skips_empty_segments():
+    # Trailing/empty connector segments are dropped, not joined as blanks.
+    assert normalize_command("ls -la && ") == "ls *"
 
 
 def test_normalize_command_none_when_empty():
     assert normalize_command("") is None
+
+
+def test_normalize_command_none_when_only_connectors():
+    assert normalize_command("&& ;") is None
 
 
 def test_normalize_quoted_args():

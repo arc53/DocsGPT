@@ -235,7 +235,9 @@ class RemoteDeviceTool(Tool):
         stdout = []
         stderr = []
         try:
-            for chunk in broker.drain_output(inv.invocation_id, timeout=1.0):
+            for chunk in broker.drain_output(
+                inv.invocation_id, timeout=1.0, deadline=deadline
+            ):
                 if time.time() > deadline:
                     break
                 stream = chunk.get("stream")
@@ -248,6 +250,11 @@ class RemoteDeviceTool(Tool):
                     pass
         finally:
             broker.cleanup_invocation(inv.invocation_id)
+
+        # Deadline hit with no control chunk: the device never connected or
+        # never finished. Surface a clear timeout instead of empty success.
+        if not inv.completed.is_set() and inv.exit_code is None and not inv.error:
+            inv.error = "device did not respond (timed out)"
 
         return {
             "exit_code": inv.exit_code,

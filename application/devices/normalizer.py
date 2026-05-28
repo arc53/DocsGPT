@@ -6,8 +6,10 @@ Rule: head + first sub-token (when present), wildcard the rest.
   ``ls -la /tmp``                       -> ``ls *``
   ``cat /etc/passwd``                   -> ``cat *``
 
-For compound commands, the caller normalizes ONLY the segment that
-triggered the prompt — this module operates on one segment at a time.
+Compound commands are normalized segment-by-segment and rejoined with
+`` && ``, so a sticky only matches a command with the same normalized
+segment sequence:
+  ``ls /tmp && whoami``                 -> ``ls * && whoami``
 """
 
 from __future__ import annotations
@@ -62,16 +64,21 @@ def normalize_segment(segment: str) -> str:
 
 
 def normalize_command(command: str) -> Optional[str]:
-    """Normalize an entire command, returning the first segment's pattern.
+    """Normalize an entire command into its joined sticky pattern.
 
-    For compound commands, returns the pattern for the first segment only.
-    The approval flow treats one approval-trigger as one sticky pattern;
-    callers needing per-segment patterns should use ``normalize_segment``
-    on the offending segment directly.
+    Every segment is normalized and the results are joined with `` && ``,
+    so a compound command's sticky only matches a command with the same
+    normalized segment sequence (approving ``ls /tmp && whoami`` won't
+    auto-approve ``ls /tmp && rm /tmp/x``). Empty segments are skipped;
+    returns ``None`` if there are no non-empty segments.
     """
     if not command:
         return None
-    segments = split_command(command)
-    if not segments:
+    patterns = [
+        normalize_segment(segment)
+        for segment in split_command(command)
+    ]
+    patterns = [p for p in patterns if p]
+    if not patterns:
         return None
-    return normalize_segment(segments[0])
+    return " && ".join(patterns)

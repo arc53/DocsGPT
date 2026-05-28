@@ -96,9 +96,20 @@ def update_device(device_id: str):
         return make_response(jsonify({"success": False, "error": "auth"}), 401)
     body = request.get_json(silent=True) or {}
     update_fields: dict = {}
-    for key in ("name", "description"):
-        if key in body:
-            update_fields[key] = body[key]
+    if "name" in body:
+        name = body["name"]
+        if not isinstance(name, str) or not name.strip():
+            return make_response(
+                jsonify({"success": False, "error": "invalid_name"}), 400
+            )
+        update_fields["name"] = name.strip()
+    if "description" in body:
+        description = body["description"]
+        if not isinstance(description, str):
+            return make_response(
+                jsonify({"success": False, "error": "invalid_description"}), 400
+            )
+        update_fields["description"] = description.strip()
     if "approval_mode" in body:
         mode = body["approval_mode"]
         if mode not in _ALLOWED_APPROVAL_MODES:

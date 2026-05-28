@@ -11,6 +11,55 @@ def test_rm_rf_short_flag_order():
     assert check_denylist("rm -fr /") == "rm -rf /"
 
 
+def test_rm_rf_slash_star():
+    assert check_denylist("rm -rf /*") == "rm -rf /"
+
+
+def test_rm_rf_long_flags():
+    assert check_denylist("rm --recursive --force /") == "rm -rf /"
+
+
+def test_rm_rf_no_preserve_root():
+    assert check_denylist("rm -rf --no-preserve-root /") == "rm -rf /"
+
+
+def test_rm_rf_no_preserve_root_before_flags():
+    assert check_denylist("rm --no-preserve-root -rf /") == "rm -rf /"
+
+
+def test_rm_rf_no_preserve_root_slash_star():
+    assert check_denylist("rm -rf --no-preserve-root /*") == "rm -rf /"
+
+
+def test_rm_rf_long_flags_with_no_preserve_root():
+    assert (
+        check_denylist("rm --recursive --no-preserve-root --force /")
+        == "rm -rf /"
+    )
+
+
+def test_rm_rf_tmp_subpath_safe():
+    assert check_denylist("rm -rf /tmp/foo") is None
+
+
+def test_rm_rf_relative_build_safe():
+    assert check_denylist("rm -rf ./build") is None
+
+
+def test_rm_rf_home_subpath_safe():
+    assert check_denylist("rm -rf /home/x") is None
+
+
+def test_rm_recursive_only_safe():
+    # Recursive without force isn't the catastrophic root-wipe form.
+    assert check_denylist("rm -r /tmp") is None
+
+
+def test_rm_force_only_slash_safe():
+    # Force without recursive (``rm -f /``) fails on a non-empty dir; not denied.
+    assert check_denylist("rm -f /") is None
+
+
 def test_rm_rf_home_tilde():
     assert check_denylist("rm -rf ~") == "rm -rf ~"
 

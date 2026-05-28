@@ -13,8 +13,16 @@ from application.devices.splitter import split_command
 _PATTERNS: List[Tuple[str, re.Pattern]] = [
     (
         "rm -rf /",
+        # ``rm`` with recursive+force targeting the filesystem root. Flags
+        # (incl. ``--no-preserve-root``) may appear in any order before or
+        # after the recursive/force flags; the target must be exactly ``/``
+        # or ``/*`` so safe paths (``/tmp/foo``, ``./build``, ``/home/x``)
+        # don't match. ``(?:-\S+\s+)*`` absorbs any extra leading options.
         re.compile(
-            r"\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r|-rf|-fr|--recursive\s+--force|--force\s+--recursive)\s+/?\s*(?:$|\s)"
+            r"\brm\s+(?:-\S+\s+)*"
+            r"(?:-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r"
+            r"|--recursive\s+(?:-\S+\s+)*--force|--force\s+(?:-\S+\s+)*--recursive)"
+            r"\s+(?:-\S+\s+)*/\*?\s*(?:$|\s)"
         ),
     ),
     (
@@ -64,7 +72,7 @@ _PATTERNS: List[Tuple[str, re.Pattern]] = [
         "git push --force",
         # ``--force-with-lease`` is OK; treat ``-f`` short form as denied.
         re.compile(
-            r"\bgit\s+push\b.*(--force(?!-with-lease)|--mirror|(?:^|\s)-f(?:\s|$))"
+            r"\bgit\s+push\b.*(--force(?!-with-lease)|--mirror|\s-f(?:\s|$))"
         ),
     ),
 ]

@@ -249,11 +249,19 @@ class DeviceBroker:
             inv.completed.set()
         return True
 
-    def drain_output(self, invocation_id: str, timeout: float = 0.5):
+    def drain_output(
+        self,
+        invocation_id: str,
+        timeout: float = 0.5,
+        deadline: Optional[float] = None,
+    ):
         """Yield queued chunks for an invocation; stops on INVOCATION_DONE.
 
         Used by the tool's generator. Blocks up to ``timeout`` per chunk
-        so the caller can interleave with other work.
+        so the caller can interleave with other work. ``deadline`` is an
+        absolute ``time.time()`` value; once it passes with no output and
+        the invocation never completed, the generator returns so a device
+        that never connects can't loop forever.
         """
         inv = self.get_invocation(invocation_id)
         if inv is None:
@@ -263,6 +271,8 @@ class DeviceBroker:
                 item = inv.output_queue.get(timeout=timeout)
             except Empty:
                 if inv.completed.is_set():
+                    return
+                if deadline is not None and time.time() >= deadline:
                     return
                 continue
             if item is INVOCATION_DONE:

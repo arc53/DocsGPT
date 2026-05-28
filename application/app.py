@@ -186,10 +186,14 @@ def authenticate_request():
         return None
     # Remote-device CLI endpoints carry opaque ``tok_…`` session tokens
     # (not JWTs); ``verify_device_session`` runs inside the route handler.
+    # The redeem endpoint is tokenless — it authenticates via the one-time
+    # ``user_code`` inside ``redeem_pairing`` — so it's exempt too. Pairing
+    # create + status stay JWT-protected (UI calls).
     if (
         request.path.startswith("/api/devices/poll")
         or request.path.startswith("/api/devices/sessions/")
         or request.path == "/api/devices/me"
+        or request.path == "/api/devices/pairings/redeem"
     ):
         request.decoded_token = None
         return None
