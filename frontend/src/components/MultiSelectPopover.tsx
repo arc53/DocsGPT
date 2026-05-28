@@ -22,6 +22,8 @@ export type MultiSelectPopoverItem = {
   id: string;
   label: string;
   description?: string;
+  /** Rich variant of ``description`` — wins when both are set. */
+  descriptionNode?: React.ReactNode;
   icon?: React.ReactNode | string;
   group?: string;
   disabled?: boolean;
@@ -138,11 +140,13 @@ export function MultiSelectPopover({
             >
               {item.label}
             </p>
-            {item.description && (
+            {item.descriptionNode ? (
+              <div className="overflow-hidden">{item.descriptionNode}</div>
+            ) : item.description ? (
               <p className="text-muted-foreground overflow-hidden text-xs text-ellipsis whitespace-nowrap">
                 {item.description}
               </p>
-            )}
+            ) : null}
           </div>
         </div>
         <div

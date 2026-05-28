@@ -91,6 +91,13 @@ const endpoints = {
       `/api/schedules/${id}/runs?limit=${limit ?? 50}&offset=${offset ?? 0}`,
     SCHEDULE_RUN: (id: string, runId: string) =>
       `/api/schedules/${id}/runs/${runId}`,
+    DEVICES: '/api/devices',
+    DEVICE: (id: string) => `/api/devices/${id}`,
+    DEVICE_AUTO_APPROVE: (id: string) => `/api/devices/${id}/auto-approve`,
+    DEVICE_AUDIT: (id: string) => `/api/devices/${id}/audit`,
+    DEVICE_PAIRINGS: '/api/devices/pairings',
+    DEVICE_PAIRING: (deviceCode: string) =>
+      `/api/devices/pairings/${deviceCode}`,
   },
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',

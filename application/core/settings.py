@@ -237,6 +237,12 @@ class Settings(BaseSettings):
     # flows without unbounded table growth.
     MESSAGE_EVENTS_RETENTION_DAYS: int = 14
 
+    # Remote Device feature.
+    REMOTE_DEVICE_POLL_TIMEOUT_SECONDS: int = 60
+    REMOTE_DEVICE_SESSION_IDLE_SECONDS: int = 60
+    REMOTE_DEVICE_REQUIRE_SIGNATURE: bool = False
+    REMOTE_DEVICE_PAIRING_TTL_SECONDS: int = 600
+
     # Scheduler (see scheduler.md).
     SCHEDULE_DISPATCHER_INTERVAL: int = 30
     SCHEDULE_MIN_INTERVAL: int = 900

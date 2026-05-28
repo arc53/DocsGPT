@@ -6,6 +6,7 @@ import userService from '../api/services/userService';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Modal } from '../components/ui/modal';
 import { useLoaderState } from '../hooks';
+import PairDeviceModal from '../settings/PairDeviceModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import ConfigToolModal from './ConfigToolModal';
@@ -18,12 +19,14 @@ export default function AddToolModal({
   setModalState,
   getUserTools,
   onToolAdded,
+  onDevicePaired,
 }: {
   message: string;
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
   getUserTools: () => void;
   onToolAdded: (toolId: string) => void;
+  onDevicePaired?: (deviceId: string) => void;
 }) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -35,6 +38,8 @@ export default function AddToolModal({
   const [configModalState, setConfigModalState] =
     React.useState<ActiveState>('INACTIVE');
   const [mcpModalState, setMcpModalState] =
+    React.useState<ActiveState>('INACTIVE');
+  const [pairModalState, setPairModalState] =
     React.useState<ActiveState>('INACTIVE');
   const [loading, setLoading] = useLoaderState(false);
 
@@ -52,6 +57,13 @@ export default function AddToolModal({
   };
 
   const handleAddTool = (tool: AvailableToolType) => {
+    // ``remote_device`` is created server-side via the pairing redeem
+    // endpoint, not the standard create_tool path.
+    if (tool.name === 'remote_device') {
+      setModalState('INACTIVE');
+      setPairModalState('ACTIVE');
+      return;
+    }
     if (Object.keys(tool.configRequirements).length === 0) {
       userService
         .createTool(
@@ -173,6 +185,15 @@ export default function AddToolModal({
         modalState={mcpModalState}
         setModalState={setMcpModalState}
         onServerSaved={handleMcpServerAdded}
+      />
+      <PairDeviceModal
+        modalState={pairModalState}
+        setModalState={setPairModalState}
+        onPaired={(deviceId) => {
+          setPairModalState('INACTIVE');
+          setModalState('INACTIVE');
+          onDevicePaired?.(deviceId);
+        }}
       />
     </>
   );

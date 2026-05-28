@@ -409,6 +409,80 @@ class TestHandlerPauseSignaling:
         ]
         assert len(pause_events) == 1
 
+    def test_pause_propagates_device_id_for_remote_device(self):
+        """``pause_info['device_id']`` (set in tool_executor for the
+        remote_device tool) must be copied into the emitted ``tool_call``
+        event so the approval UI can render the "don't ask again" button."""
+        handler = ConcreteHandler()
+        agent = self._make_agent()
+        agent.tool_executor.check_pause = Mock(return_value={
+            "call_id": "c1",
+            "name": "run_command_0",
+            "tool_name": "remote_device",
+            "tool_id": "0",
+            "action_name": "run_command",
+            "arguments": {"command": "ls"},
+            "pause_type": "awaiting_approval",
+            "device_id": "dev_abc",
+            "thought_signature": None,
+        })
+
+        call = ToolCall(id="c1", name="run_command_0", arguments='{"command": "ls"}')
+        gen = handler.handle_tool_calls(
+            agent, [call], {"0": {"name": "remote_device"}}, []
+        )
+
+        events = []
+        try:
+            while True:
+                events.append(next(gen))
+        except StopIteration:
+            pass
+
+        pause_events = [
+            e for e in events
+            if e.get("type") == "tool_call"
+            and e.get("data", {}).get("status") == "awaiting_approval"
+        ]
+        assert len(pause_events) == 1
+        assert pause_events[0]["data"].get("device_id") == "dev_abc"
+
+    def test_pause_omits_device_id_for_non_remote_tools(self):
+        """``device_id`` must NOT leak into pause events for tools that
+        don't ship one in ``pause_info``."""
+        handler = ConcreteHandler()
+        agent = self._make_agent()
+        agent.tool_executor.check_pause = Mock(return_value={
+            "call_id": "c1",
+            "name": "send_msg_0",
+            "tool_name": "telegram",
+            "tool_id": "0",
+            "action_name": "send_msg",
+            "arguments": {"text": "hello"},
+            "pause_type": "awaiting_approval",
+            "thought_signature": None,
+        })
+
+        call = ToolCall(id="c1", name="send_msg_0", arguments='{"text": "hello"}')
+        gen = handler.handle_tool_calls(
+            agent, [call], {"0": {"name": "telegram"}}, []
+        )
+
+        events = []
+        try:
+            while True:
+                events.append(next(gen))
+        except StopIteration:
+            pass
+
+        pause_events = [
+            e for e in events
+            if e.get("type") == "tool_call"
+            and e.get("data", {}).get("status") == "awaiting_approval"
+        ]
+        assert len(pause_events) == 1
+        assert "device_id" not in pause_events[0]["data"]
+
     def test_mixed_execute_and_pause(self):
         """One tool executes, another needs approval."""
         handler = ConcreteHandler()
@@ -989,3 +1063,115 @@ class TestContinuationServiceMarkResuming:
         svc = cont_mod.ContinuationService()
         # Not a UUID and no legacy row exists.
         assert svc.mark_resuming("not-a-uuid", "alice") is False
+
+
+# ---------------------------------------------------------------------------
+# Refresh during pause: per-call ``tool_call`` events must reconstruct
+# into ``tool_calls`` so the approval bar re-renders.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+class TestReconstructPartialToolCallReplay:
+    """The pause path in ``llm/handlers/base.py`` emits a per-call
+    ``tool_call`` event (status ``awaiting_approval``) — not a bulk
+    ``tool_calls`` snapshot. ``reconstruct_partial`` must overlay these
+    so a conversation refresh while paused still shows the approval bar.
+    """
+
+    @staticmethod
+    def _seed_message(conn):
+        from sqlalchemy import text
+
+        user_id = f"user-{uuid.uuid4().hex[:8]}"
+        conv_id = uuid.uuid4()
+        msg_id = uuid.uuid4()
+        conn.execute(
+            text("INSERT INTO users (user_id) VALUES (:u)"),
+            {"u": user_id},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO conversations (id, user_id, name) "
+                "VALUES (:id, :u, 'test')"
+            ),
+            {"id": conv_id, "u": user_id},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO conversation_messages (id, conversation_id, user_id, position) "
+                "VALUES (:id, :c, :u, 0)"
+            ),
+            {"id": msg_id, "c": conv_id, "u": user_id},
+        )
+        return str(msg_id)
+
+    def test_paused_tool_call_event_lands_in_tool_calls(self, pg_conn):
+        from application.storage.db.repositories.message_events import (
+            MessageEventsRepository,
+        )
+
+        message_id = self._seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        # Mirror the exact shape emitted at base.py:941-950 on pause.
+        repo.record(
+            message_id,
+            0,
+            "tool_call",
+            {
+                "type": "tool_call",
+                "data": {
+                    "tool_name": "remote_device",
+                    "call_id": "call_remote_test_1",
+                    "action_name": "run_command",
+                    "arguments": {"command": "ls -la /tmp"},
+                    "status": "awaiting_approval",
+                    "device_id": "dev_abc",
+                },
+            },
+        )
+        partial = repo.reconstruct_partial(message_id)
+        assert len(partial["tool_calls"]) == 1
+        tc = partial["tool_calls"][0]
+        assert tc["status"] == "awaiting_approval"
+        assert tc["device_id"] == "dev_abc"
+        assert tc["call_id"] == "call_remote_test_1"
+
+    def test_completed_event_replaces_paused_event(self, pg_conn):
+        from application.storage.db.repositories.message_events import (
+            MessageEventsRepository,
+        )
+
+        message_id = self._seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(
+            message_id,
+            0,
+            "tool_call",
+            {
+                "type": "tool_call",
+                "data": {
+                    "tool_name": "remote_device",
+                    "call_id": "c1",
+                    "status": "awaiting_approval",
+                },
+            },
+        )
+        repo.record(
+            message_id,
+            1,
+            "tool_call",
+            {
+                "type": "tool_call",
+                "data": {
+                    "tool_name": "remote_device",
+                    "call_id": "c1",
+                    "status": "completed",
+                    "result": "/tmp listing here",
+                },
+            },
+        )
+        partial = repo.reconstruct_partial(message_id)
+        assert len(partial["tool_calls"]) == 1
+        assert partial["tool_calls"][0]["status"] == "completed"
+        assert partial["tool_calls"][0]["result"] == "/tmp listing here"

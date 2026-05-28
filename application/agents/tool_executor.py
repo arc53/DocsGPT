@@ -403,7 +403,18 @@ class ToolExecutor:
                 {},
             )
 
-        if action_data.get("require_approval"):
+        require_approval = bool(action_data.get("require_approval"))
+        # ``remote_device`` decides per-invocation based on the live device
+        # state (``approval_mode``, sticky patterns, allow/denylist). The
+        # cached ``user_tools.actions[].require_approval`` snapshot does
+        # not reflect later approval-mode changes nor command-level
+        # heuristics, so consult the tool directly.
+        if tool_data.get("name") == "remote_device":
+            require_approval = self._remote_device_requires_approval(
+                tool_data, action_name, arguments,
+            )
+
+        if require_approval:
             if self.headless:
                 tool_row_id = str(tool_data.get("id") or tool_id)
                 if tool_row_id in self.tool_allowlist:
@@ -425,7 +436,7 @@ class ToolExecutor:
                     "error_type": "tool_not_allowed",
                     "thought_signature": getattr(call, "thought_signature", None),
                 }
-            return {
+            payload = {
                 "call_id": call_id,
                 "name": llm_name,
                 "tool_name": tool_data.get("name", "unknown"),
@@ -436,8 +447,40 @@ class ToolExecutor:
                 "pause_type": "awaiting_approval",
                 "thought_signature": getattr(call, "thought_signature", None),
             }
+            # Surface the device id so the approval UI can offer a
+            # "don't ask again" sticky-pattern action for remote devices.
+            if tool_data.get("name") == "remote_device":
+                config = tool_data.get("config") or {}
+                if config.get("device_id"):
+                    payload["device_id"] = config["device_id"]
+            return payload
 
         return None
+
+    def _remote_device_requires_approval(
+        self, tool_data: Dict, action_name: str, arguments: Dict,
+    ) -> bool:
+        """Live ``require_approval`` for a ``remote_device`` invocation.
+
+        Instantiates ``RemoteDeviceTool`` with the cached config and the
+        executor's user context, then asks it to evaluate the command.
+        Falls back to ``True`` on any error so a misconfigured device
+        never silently bypasses the prompt.
+        """
+        try:
+            from application.agents.tools.remote_device import RemoteDeviceTool
+
+            tool = RemoteDeviceTool(
+                config=tool_data.get("config") or {},
+                user_id=self.user,
+            )
+            return tool.preview_requires_approval(action_name, arguments)
+        except Exception:
+            logger.exception(
+                "remote_device preview_requires_approval failed; defaulting "
+                "to prompt",
+            )
+            return True
 
     def execute(self, tools_dict: Dict, call, llm_class_name: str):
         """Execute a tool call. Yields status events, returns (result, call_id)."""
@@ -499,6 +542,12 @@ class ToolExecutor:
             "arguments": call_args,
         }
         tool_data = tools_dict[tool_id]
+        # Surface the device id on remote_device tool-call events so the
+        # approval UI can wire up the sticky "don't ask again" button.
+        if tool_data.get("name") == "remote_device":
+            config = tool_data.get("config") or {}
+            if config.get("device_id"):
+                tool_call_data["device_id"] = config["device_id"]
         # Journal first so the reconciler sees malformed calls and any
         # subsequent ``_mark_failed`` actually updates a real row.
         proposed_ok = _record_proposed(

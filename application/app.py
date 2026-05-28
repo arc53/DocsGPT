@@ -17,6 +17,7 @@ setup_logging()
 from application.api import api  # noqa: E402
 from application.api.answer import answer  # noqa: E402
 from application.api.answer.routes.messages import messages_bp  # noqa: E402
+from application.api.devices import devices_bp  # noqa: E402
 from application.api.events.routes import events  # noqa: E402
 from application.api.internal.routes import internal  # noqa: E402
 from application.api.user.routes import user  # noqa: E402
@@ -61,6 +62,7 @@ app.register_blueprint(events)
 app.register_blueprint(messages_bp)
 app.register_blueprint(internal)
 app.register_blueprint(connector)
+app.register_blueprint(devices_bp)
 app.register_blueprint(v1_bp)
 app.config.update(
     UPLOAD_FOLDER="inputs",
@@ -180,6 +182,15 @@ def authenticate_request():
     # Authorization header, which the JWT decoder below would reject. Defer
     # auth to the route handlers (see application/api/v1/routes.py).
     if request.path.startswith("/v1/"):
+        request.decoded_token = None
+        return None
+    # Remote-device CLI endpoints carry opaque ``tok_…`` session tokens
+    # (not JWTs); ``verify_device_session`` runs inside the route handler.
+    if (
+        request.path.startswith("/api/devices/poll")
+        or request.path.startswith("/api/devices/sessions/")
+        or request.path == "/api/devices/me"
+    ):
         request.decoded_token = None
         return None
     decoded_token = handle_auth(request)

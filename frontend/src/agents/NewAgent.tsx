@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 
+import devicesService from '../api/services/devicesService';
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
 import SourceIcon from '../assets/source.svg';
@@ -455,9 +456,25 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   useEffect(() => {
     const getTools = async () => {
-      const response = await userService.getUserTools(token);
-      if (!response.ok) throw new Error('Failed to fetch tools');
-      const data = await response.json();
+      const [toolsResponse, devicesResult] = await Promise.all([
+        userService.getUserTools(token),
+        // Tolerate failures here: the picker should still render the
+        // tool list even if /api/devices returns an error or 401.
+        devicesService.list(token).catch(() => ({ devices: [] })),
+      ]);
+      if (!toolsResponse.ok) throw new Error('Failed to fetch tools');
+      const data = await toolsResponse.json();
+      const devicesById = new Map<
+        string,
+        { online: boolean; last_seen_at: string | null | undefined }
+      >();
+      const onlineWindowMs = 30_000;
+      (devicesResult.devices || []).forEach((d) => {
+        const seen = d.last_seen_at ? Date.parse(d.last_seen_at) : NaN;
+        const online =
+          !Number.isNaN(seen) && Date.now() - seen < onlineWindowMs;
+        devicesById.set(d.id, { online, last_seen_at: d.last_seen_at });
+      });
       // Group ordering: builtins -> defaults -> user tools (sorted via the
       // MultiSelectPopover first-appearance grouping).
       const groupFor = (tool: UserToolType): string => {
@@ -466,12 +483,33 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         return t('agents.form.toolsPopup.groupCustom');
       };
       const tools: MultiSelectPopoverItem[] = data.tools.map(
-        (tool: UserToolType) => ({
-          id: tool.id,
-          label: getToolDisplayName(tool),
-          icon: `/toolIcons/tool_${tool.name}.svg`,
-          group: groupFor(tool),
-        }),
+        (tool: UserToolType) => {
+          const base: MultiSelectPopoverItem = {
+            id: tool.id,
+            label: getToolDisplayName(tool),
+            icon: `/toolIcons/tool_${tool.name}.svg`,
+            group: groupFor(tool),
+          };
+          if (tool.name === 'remote_device') {
+            const deviceId = (tool.config?.device_id as string) || '';
+            const meta = devicesById.get(deviceId);
+            const online = meta?.online ?? false;
+            base.descriptionNode = (
+              <span
+                className={`mt-0.5 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  online
+                    ? 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-300'
+                    : 'bg-gray-200 text-gray-700 dark:bg-gray-700/40 dark:text-gray-300'
+                }`}
+              >
+                {online
+                  ? t('settings.devices.online')
+                  : t('settings.devices.offline')}
+              </span>
+            );
+          }
+          return base;
+        },
       );
       const groupOrder = [
         t('agents.form.toolsPopup.groupBuiltin'),

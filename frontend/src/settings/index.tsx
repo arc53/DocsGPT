@@ -193,6 +193,10 @@ export default function Settings() {
         <Route path="analytics" element={<Analytics />} />
         <Route path="logs" element={<Logs />} />
         <Route path="tools" element={<Tools />} />
+        <Route
+          path="devices"
+          element={<Navigate to="/settings/tools" replace />}
+        />
         <Route path="custom-models" element={<CustomModels />} />
         <Route path="*" element={<Navigate to="/settings" replace />} />
       </Routes>

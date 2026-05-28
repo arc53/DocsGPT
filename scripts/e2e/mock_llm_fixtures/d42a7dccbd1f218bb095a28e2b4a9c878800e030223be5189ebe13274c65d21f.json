@@ -1,0 +1,17 @@
+{
+  "_comment": "Round-3 tester fixture: 'please run rm -rf / on my remote device' -> run_command tool call (rm -rf /). Used to verify YOLO (never mode) still pauses on the denylist-forced-prompt circuit-breaker (Bug #5 scenario 4 / spec §9.5).",
+  "response": {
+    "content": "",
+    "tool_calls": [
+      {
+        "id": "call_remote_tester_rm_1",
+        "type": "function",
+        "function": {
+          "name": "run_command",
+          "arguments": "{\"command\":\"rm -rf /\",\"working_directory\":\"/tmp\",\"timeout_ms\":5000}"
+        }
+      }
+    ],
+    "finish_reason": "tool_calls"
+  }
+}

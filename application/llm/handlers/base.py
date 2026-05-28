@@ -938,16 +938,18 @@ class LLMHandler(ABC):
                     }
                     continue
                 # Yield pause event so the client knows this tool is waiting
-                yield {
-                    "type": "tool_call",
-                    "data": {
-                        "tool_name": pause_info["tool_name"],
-                        "call_id": pause_info["call_id"],
-                        "action_name": pause_info.get("llm_name", pause_info["name"]),
-                        "arguments": pause_info["arguments"],
-                        "status": pause_info["pause_type"],
-                    },
+                pause_data = {
+                    "tool_name": pause_info["tool_name"],
+                    "call_id": pause_info["call_id"],
+                    "action_name": pause_info.get("llm_name", pause_info["name"]),
+                    "arguments": pause_info["arguments"],
+                    "status": pause_info["pause_type"],
                 }
+                # Surface device_id for remote_device pauses so the approval UI
+                # can wire the sticky "don't ask again" button.
+                if pause_info.get("device_id"):
+                    pause_data["device_id"] = pause_info["device_id"]
+                yield {"type": "tool_call", "data": pause_data}
                 pending_actions.append(pause_info)
                 # Do NOT add messages for pending tools here.
                 # They will be added on resume to keep call/result pairs together.

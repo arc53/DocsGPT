@@ -458,6 +458,190 @@ class TestCheckPause:
 
 
 @pytest.mark.unit
+class TestCheckPauseRemoteDevice:
+    """The gate must consult the live ``RemoteDeviceTool`` decision for
+    ``remote_device`` so ``approval_mode`` changes after pair time and
+    per-command heuristics (denylist, sticky) are respected.
+    """
+
+    def _make_call(self, name="run_command", call_id="c1", command="ls -la /tmp"):
+        import json
+
+        call = Mock()
+        call.name = name
+        call.id = call_id
+        call.arguments = json.dumps({"command": command})
+        call.thought_signature = None
+        return call
+
+    def _tools_dict(self, *, device_id="dev_abc"):
+        return {
+            "rd0": {
+                "id": "rd0",
+                "name": "remote_device",
+                "config": {"device_id": device_id},
+                "actions": [
+                    {
+                        "name": "run_command",
+                        "description": "Execute on device",
+                        "active": True,
+                        "require_approval": False,
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "command": {
+                                    "type": "string",
+                                    "filled_by_llm": True,
+                                    "value": "",
+                                },
+                            },
+                            "required": ["command"],
+                        },
+                    }
+                ],
+            }
+        }
+
+    def _patch_device(self, monkeypatch, device):
+        """Stub ``RemoteDeviceTool._load_device`` to return ``device``."""
+        from application.agents.tools import remote_device
+
+        monkeypatch.setattr(
+            remote_device.RemoteDeviceTool,
+            "_load_device",
+            lambda self: device,
+        )
+
+    def _patch_sticky(self, monkeypatch, patterns):
+        """Stub the sticky lookup to match any normalized pattern in ``patterns``."""
+        from application.agents.tools import remote_device
+
+        monkeypatch.setattr(
+            remote_device,
+            "normalize_command",
+            lambda cmd: cmd.split()[0] + " *" if cmd else "",
+        )
+        captured = {"patterns": set(patterns)}
+
+        class _StubRepo:
+            def __init__(self, conn):
+                pass
+
+            def has_pattern(self, device_id, user_id, pattern):
+                return pattern in captured["patterns"]
+
+        monkeypatch.setattr(
+            remote_device,
+            "DeviceAutoApprovePatternsRepository",
+            _StubRepo,
+        )
+
+        class _StubConn:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        monkeypatch.setattr(remote_device, "db_readonly", lambda: _StubConn())
+
+    def test_full_non_deny_no_pause(self, monkeypatch):
+        """``full`` + a non-denylisted command auto-approves."""
+        executor = ToolExecutor(user="alice")
+        self._patch_device(
+            monkeypatch,
+            {
+                "id": "dev_abc",
+                "approval_mode": "full",
+                "status": "active",
+            },
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="whoami")
+        assert executor.check_pause(tools_dict, call, "OpenAILLM") is None
+
+    def test_full_writing_command_no_pause(self, monkeypatch):
+        """``full`` auto-approves writes too (only the denylist stops it)."""
+        executor = ToolExecutor(user="alice")
+        self._patch_device(
+            monkeypatch,
+            {
+                "id": "dev_abc",
+                "approval_mode": "full",
+                "status": "active",
+            },
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="rm /tmp/foo")
+        assert executor.check_pause(tools_dict, call, "OpenAILLM") is None
+
+    def test_full_denylist_forces_pause(self, monkeypatch):
+        """``full`` + a denylisted command still pauses (forced prompt)."""
+        executor = ToolExecutor(user="alice")
+        self._patch_device(
+            monkeypatch,
+            {
+                "id": "dev_abc",
+                "approval_mode": "full",
+                "status": "active",
+            },
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="rm -rf /")
+        result = executor.check_pause(tools_dict, call, "OpenAILLM")
+        assert result is not None
+        assert result["pause_type"] == "awaiting_approval"
+
+    def test_ask_mode_pauses(self, monkeypatch):
+        """``ask`` + any command pauses by default."""
+        executor = ToolExecutor(user="alice")
+        self._patch_device(
+            monkeypatch,
+            {
+                "id": "dev_abc",
+                "approval_mode": "ask",
+                "status": "active",
+            },
+        )
+        self._patch_sticky(monkeypatch, set())
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="ls -la /tmp")
+        result = executor.check_pause(tools_dict, call, "OpenAILLM")
+        assert result is not None
+        assert result["pause_type"] == "awaiting_approval"
+
+    def test_ask_mode_sticky_match_no_pause(self, monkeypatch):
+        """``ask`` + a command matching a stored sticky pattern auto-approves."""
+        executor = ToolExecutor(user="alice")
+        self._patch_device(
+            monkeypatch,
+            {
+                "id": "dev_abc",
+                "approval_mode": "ask",
+                "status": "active",
+            },
+        )
+        # The stub normalizer turns ``ls -la /tmp`` into ``ls *``.
+        self._patch_sticky(monkeypatch, {"ls *"})
+
+        tools_dict = self._tools_dict()
+        executor.prepare_tools_for_llm(tools_dict)
+        call = self._make_call(command="ls -la /tmp")
+        assert executor.check_pause(tools_dict, call, "OpenAILLM") is None
+
+
+@pytest.mark.unit
 class TestToolExecutorExecute:
 
     def _make_call(self, name="action_toolid", call_id="c1", arguments="{}"):

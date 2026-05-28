@@ -13,4 +13,7 @@ export type ToolCallsType = {
     | 'denied'
     | 'requires_client_execution';
   artifact_id?: string;
+  // Remote-device tool calls carry the device id so the approval UI can
+  // offer a "don't ask again" sticky-pattern action without a lookup.
+  device_id?: string;
 };

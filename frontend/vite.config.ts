@@ -12,6 +12,9 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    allowedHosts: ['pikamac-2'],
+  },
   test: {
     environment: 'happy-dom',
     globals: true,

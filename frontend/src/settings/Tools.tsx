@@ -26,6 +26,7 @@ import ConfirmationModal from '../modals/ConfirmationModal';
 import MCPServerModal from '../modals/MCPServerModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
+import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
 import { APIToolType, UserToolType } from './types';
 
@@ -152,7 +153,7 @@ export default function Tools() {
       .then((data) => {
         // Pure builtins (agent-only, e.g. a future builtin without an
         // agentless path) carry no per-user state and only apply when
-        // added to an agent — hide them from the management page. Dual-
+        // added to an agent, so hide them from the management page. Dual-
         // registered tools (``scheduler``: builtin + default) stay visible
         // here so the user can toggle the default off in agentless chats.
         const filtered = (data.tools || []).filter(
@@ -209,6 +210,23 @@ export default function Tools() {
       .catch((error) => console.error('Error fetching tools:', error));
   };
 
+  const handleDevicePaired = (deviceId: string) => {
+    setAddToolModalState('INACTIVE');
+    userService
+      .getUserTools(token)
+      .then((res) => res.json())
+      .then((data) => {
+        const newTool = data.tools.find(
+          (toolItem: UserToolType) =>
+            toolItem.name === 'remote_device' &&
+            toolItem.config?.device_id === deviceId,
+        );
+        if (newTool) setSelectedTool(newTool);
+        else console.error('Paired device tool not found');
+      })
+      .catch((error) => console.error('Error fetching tools:', error));
+  };
+
   React.useEffect(() => {
     getUserTools();
     fetchMcpStatuses();
@@ -216,11 +234,18 @@ export default function Tools() {
   return (
     <div>
       {selectedTool ? (
-        <ToolConfig
-          tool={selectedTool}
-          setTool={setSelectedTool}
-          handleGoBack={handleGoBack}
-        />
+        selectedTool.name === 'remote_device' ? (
+          <RemoteDeviceConfig
+            tool={selectedTool as UserToolType}
+            handleGoBack={handleGoBack}
+          />
+        ) : (
+          <ToolConfig
+            tool={selectedTool}
+            setTool={setSelectedTool}
+            handleGoBack={handleGoBack}
+          />
+        )
       ) : (
         <div className="mt-8">
           <div className="relative flex flex-col">
@@ -437,6 +462,7 @@ export default function Tools() {
             setModalState={setAddToolModalState}
             getUserTools={getUserTools}
             onToolAdded={handleToolAdded}
+            onDevicePaired={handleDevicePaired}
           />
           <ConfirmationModal
             message={t('settings.tools.deleteWarning', {

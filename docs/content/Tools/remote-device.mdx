@@ -1,0 +1,111 @@
+---
+title: 🖥️ Remote Device
+description: Run shell commands on a paired remote machine from a DocsGPT agent using docsgpt-cli host.
+---
+
+import { Callout } from 'nextra/components';
+
+# Remote Device Tool
+
+The Remote Device tool lets a DocsGPT agent run shell commands on a machine you control, such as a server, a Raspberry Pi, or your own laptop. You install `docsgpt-cli` on that machine, run it in `host` mode, and pair it with your DocsGPT account. The paired device then shows up as a tool you can attach to any agent.
+
+The machine connects outward to DocsGPT, so it works behind NAT or a firewall without opening any inbound ports.
+
+## How it works
+
+1. You run `docsgpt-cli host` on the target machine. It pairs to your account and keeps a lightweight connection open: it polls while idle and streams while a command is running.
+2. When an agent calls the device's `run_command` action, DocsGPT sends the command down to the daemon.
+3. The daemon runs the command locally, streams stdout and stderr back, and the agent uses the output to continue.
+4. Every invocation is recorded in the device's activity log.
+
+## Prerequisites
+
+- `docsgpt-cli` installed on the machine you want to control. See the [installation instructions](https://github.com/arc53/DocsGPT-cli#installation): download a binary from the [releases page](https://github.com/arc53/DocsGPT-cli/releases), use Homebrew (`brew tap arc53/docsgpt-cli && brew install docsgpt-cli`), or build from source.
+- Outbound internet access from that machine to your DocsGPT instance.
+
+<Callout type="info">
+  The `host` commands require a docsgpt-cli build with remote-device support. If `docsgpt-cli host` is not recognized, update to the latest release or build from source.
+</Callout>
+
+## Pair a device
+
+Pairing uses a short one-time code (a device-code style flow).
+
+1. In DocsGPT, go to **Settings -> Tools**, click **Add tool**, and choose **Remote Device**.
+2. Give it a name, an optional description (the agent sees this, so describe what the machine is for), and pick an approval mode. DocsGPT then shows a pairing code such as `ABCD-WXYZ` and the command to run.
+3. On the target machine, run:
+   ```bash
+   docsgpt-cli host pair --url https://your-docsgpt-instance
+   ```
+   Enter the code when prompted. (Omit `--url` to use the default cloud instance.)
+4. The UI switches to "Paired" once the code is redeemed. If you ran the command at a terminal, the CLI then offers to start the daemon or install it as a service.
+
+## Run the daemon
+
+Start it in the foreground:
+
+```bash
+docsgpt-cli host
+```
+
+You will see a startup banner, then periodic "idle" heartbeats. Press Ctrl-C to stop.
+
+To keep it running across reboots, install it as a service:
+
+```bash
+# Linux (systemd). As root this installs a system service; otherwise a user service.
+docsgpt-cli host install-service
+
+# macOS (launchd). The default is a per-user LaunchAgent that starts on login.
+docsgpt-cli host install-service
+
+# Always-on machine that starts at boot (Linux example):
+sudo docsgpt-cli host install-service --system --user $USER
+```
+
+Remove the service with `docsgpt-cli host uninstall-service`.
+
+## Approval modes
+
+The approval mode is set per device, either in the pairing form or later on the device's page under **Settings -> Tools**. There are two modes:
+
+- **Ask** (default): every command pauses for your approval before it runs. You approve it from the chat. You can also choose "approve and don't ask again" to auto-approve that command pattern in the future.
+- **Full access**: commands run without asking.
+
+<Callout type="warning">
+  A built-in safety denylist always applies, even in Full access mode. Catastrophic commands (for example `rm -rf /`, fork bombs, writing directly to a disk device, or `git push --force`) still pause for explicit approval and cannot be bypassed.
+</Callout>
+
+Compound commands are split on operators such as `&&`, `||`, `;`, and `|`, and each part is checked on its own, so a dangerous part cannot be hidden behind a safe one.
+
+## Attach to an agent
+
+A paired device behaves like any other tool. Open or create an agent, add the device from the tool picker, and the agent can call its `run_command` action. The picker shows whether the device is currently online.
+
+If you attach more than one device to an agent, give each a clear description so the agent can pick the right one.
+
+## Manage a device
+
+Open the device from **Settings -> Tools** to:
+
+- See its status (online or offline, with last-seen time), host, OS, and CLI version.
+- Change its name, description, or approval mode.
+- View recent activity (the command audit log).
+- Revoke it.
+
+From the CLI:
+
+```bash
+docsgpt-cli host status   # live status from the server
+docsgpt-cli host revoke   # revoke on the server and clear local state
+docsgpt-cli host reset    # clear local pairing only (leaves the server-side device)
+```
+
+Revoking a device stops its daemon: the next time it checks in it sees the revocation, prints a message, and exits. Under a service manager it will not be restarted.
+
+## Security notes
+
+- The machine connects outward only. No inbound ports are opened.
+- Each device has its own token, stored hashed on the server and revocable at any time.
+- Prefer **Ask** mode for any machine with sensitive data on it. Use **Full access** only on machines you are comfortable letting an agent drive unattended, and remember that the denylist is the only automatic guard in that mode.
+- Every command is logged on the server and visible in the device's activity log.

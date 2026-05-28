@@ -134,6 +134,219 @@ class TestMessageEventsRepository:
             "tool_calls": [],
         }
 
+    def test_reconstruct_partial_includes_paused_tool_call(self, pg_conn):
+        """A paused (awaiting_approval) ``tool_call`` event must surface
+        in ``tool_calls`` so a conversation refresh re-renders the
+        approval bar."""
+        message_id = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(
+            message_id, 0, "tool_call",
+            {
+                "type": "tool_call",
+                "data": {
+                    "tool_name": "remote_device",
+                    "call_id": "c1",
+                    "action_name": "run_command",
+                    "arguments": {"command": "ls"},
+                    "status": "awaiting_approval",
+                    "device_id": "dev_abc",
+                },
+            },
+        )
+        partial = repo.reconstruct_partial(message_id)
+        assert len(partial["tool_calls"]) == 1
+        tc = partial["tool_calls"][0]
+        assert tc["call_id"] == "c1"
+        assert tc["status"] == "awaiting_approval"
+        assert tc["device_id"] == "dev_abc"
+
+    def test_reconstruct_partial_tool_call_completed_replaces_pause(self, pg_conn):
+        """Later events for the same ``call_id`` overlay earlier ones,
+        so ``completed`` displaces ``awaiting_approval`` on refresh."""
+        message_id = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(
+            message_id, 0, "tool_call",
+            {
+                "type": "tool_call",
+                "data": {
+                    "tool_name": "remote_device",
+                    "call_id": "c1",
+                    "status": "awaiting_approval",
+                },
+            },
+        )
+        repo.record(
+            message_id, 1, "tool_call",
+            {
+                "type": "tool_call",
+                "data": {
+                    "tool_name": "remote_device",
+                    "call_id": "c1",
+                    "status": "completed",
+                    "result": "ok",
+                },
+            },
+        )
+        partial = repo.reconstruct_partial(message_id)
+        assert len(partial["tool_calls"]) == 1
+        assert partial["tool_calls"][0]["status"] == "completed"
+        assert partial["tool_calls"][0]["result"] == "ok"
+
+    def test_reconstruct_partial_multiple_tool_calls_preserve_order(self, pg_conn):
+        """First-seen order is preserved when multiple calls interleave."""
+        message_id = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(
+            message_id, 0, "tool_call",
+            {"type": "tool_call", "data": {"call_id": "c1", "status": "pending"}},
+        )
+        repo.record(
+            message_id, 1, "tool_call",
+            {"type": "tool_call", "data": {"call_id": "c2", "status": "pending"}},
+        )
+        repo.record(
+            message_id, 2, "tool_call",
+            {"type": "tool_call", "data": {"call_id": "c1", "status": "completed"}},
+        )
+        partial = repo.reconstruct_partial(message_id)
+        assert [tc["call_id"] for tc in partial["tool_calls"]] == ["c1", "c2"]
+        assert partial["tool_calls"][0]["status"] == "completed"
+        assert partial["tool_calls"][1]["status"] == "pending"
+
+    def test_reconstruct_partial_tool_call_overlays_bulk_tool_calls(self, pg_conn):
+        """Per-call ``tool_call`` events overlay an earlier bulk
+        ``tool_calls`` emit by ``call_id``."""
+        message_id = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(
+            message_id, 0, "tool_calls",
+            {
+                "type": "tool_calls",
+                "tool_calls": [
+                    {"call_id": "c1", "status": "pending"},
+                    {"call_id": "c2", "status": "pending"},
+                ],
+            },
+        )
+        repo.record(
+            message_id, 1, "tool_call",
+            {"type": "tool_call", "data": {"call_id": "c1", "status": "completed"}},
+        )
+        partial = repo.reconstruct_partial(message_id)
+        assert len(partial["tool_calls"]) == 2
+        by_id = {tc["call_id"]: tc for tc in partial["tool_calls"]}
+        assert by_id["c1"]["status"] == "completed"
+        assert by_id["c2"]["status"] == "pending"
+
+    def test_reconstruct_partial_tool_call_skips_missing_call_id(self, pg_conn):
+        """Malformed per-call events without ``call_id`` are dropped, not crashing."""
+        message_id = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(
+            message_id, 0, "tool_call",
+            {"type": "tool_call", "data": {"status": "pending"}},
+        )
+        repo.record(
+            message_id, 1, "tool_call",
+            {"type": "tool_call", "data": {"call_id": "c1", "status": "completed"}},
+        )
+        partial = repo.reconstruct_partial(message_id)
+        assert len(partial["tool_calls"]) == 1
+        assert partial["tool_calls"][0]["call_id"] == "c1"
+
+    def test_reconstruct_partial_paused_then_empty_bulk_preserves_overlay(
+        self, pg_conn
+    ):
+        """Realistic pause sequence: per-call ``awaiting_approval`` followed
+        by an empty bulk ``tool_calls: []`` from the classic-agent
+        end-of-turn yield. The empty bulk must not wipe the per-call entry.
+        """
+        message_id = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(
+            message_id, 0, "tool_call",
+            {
+                "type": "tool_call",
+                "data": {
+                    "tool_name": "remote_device",
+                    "call_id": "c1",
+                    "status": "awaiting_approval",
+                    "device_id": "dev_abc",
+                },
+            },
+        )
+        repo.record(
+            message_id, 1, "tool_calls",
+            {"type": "tool_calls", "tool_calls": []},
+        )
+        partial = repo.reconstruct_partial(message_id)
+        assert len(partial["tool_calls"]) == 1
+        assert partial["tool_calls"][0]["status"] == "awaiting_approval"
+        assert partial["tool_calls"][0]["device_id"] == "dev_abc"
+
+    def test_reconstruct_partial_paused_then_bulk_other_call_preserves_overlay(
+        self, pg_conn
+    ):
+        """A bulk emit for a different ``call_id`` must merge alongside the
+        per-call awaiting_approval entry rather than wipe it.
+        """
+        message_id = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(
+            message_id, 0, "tool_call",
+            {
+                "type": "tool_call",
+                "data": {
+                    "tool_name": "remote_device",
+                    "call_id": "c1",
+                    "status": "awaiting_approval",
+                },
+            },
+        )
+        repo.record(
+            message_id, 1, "tool_calls",
+            {
+                "type": "tool_calls",
+                "tool_calls": [
+                    {"call_id": "c2", "status": "completed"},
+                ],
+            },
+        )
+        partial = repo.reconstruct_partial(message_id)
+        by_id = {tc["call_id"]: tc for tc in partial["tool_calls"]}
+        assert set(by_id) == {"c1", "c2"}
+        assert by_id["c1"]["status"] == "awaiting_approval"
+        assert by_id["c2"]["status"] == "completed"
+
+    def test_reconstruct_partial_completed_then_empty_bulk_preserves_overlay(
+        self, pg_conn
+    ):
+        """A completed per-call entry survives a subsequent empty bulk emit."""
+        message_id = _seed_message(pg_conn)
+        repo = MessageEventsRepository(pg_conn)
+        repo.record(
+            message_id, 0, "tool_call",
+            {
+                "type": "tool_call",
+                "data": {
+                    "tool_name": "remote_device",
+                    "call_id": "c1",
+                    "status": "completed",
+                    "result": "ok",
+                },
+            },
+        )
+        repo.record(
+            message_id, 1, "tool_calls",
+            {"type": "tool_calls", "tool_calls": []},
+        )
+        partial = repo.reconstruct_partial(message_id)
+        assert len(partial["tool_calls"]) == 1
+        assert partial["tool_calls"][0]["status"] == "completed"
+        assert partial["tool_calls"][0]["result"] == "ok"
+
     def test_reconstruct_partial_skips_malformed_payload(self, pg_conn):
         message_id = _seed_message(pg_conn)
         repo = MessageEventsRepository(pg_conn)
