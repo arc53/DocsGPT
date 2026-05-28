@@ -18,6 +18,7 @@ declarations to keep this file readable; the DB is the authority.
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CHAR,
     Column,
     DateTime,
     ForeignKey,
@@ -675,4 +676,69 @@ schedule_runs_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     UniqueConstraint("schedule_id", "scheduled_for", name="schedule_runs_dedup_uidx"),
+)
+
+
+# --- Remote devices (migration 0012) ----------------------------------------
+
+devices_table = Table(
+    "devices",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("user_id", Text, nullable=False),
+    Column("name", Text, nullable=False),
+    Column("hostname", Text),
+    Column("os", Text),
+    Column("arch", Text),
+    Column("cli_version", Text),
+    Column("machine_pubkey_fingerprint", Text, nullable=False),
+    Column("token_hash", Text, nullable=False),
+    # CHECK (approval_mode IN ('ask', 'full')) lives in 0013.
+    Column("approval_mode", Text, nullable=False, server_default="ask"),
+    Column("description", Text),
+    Column("status", Text, nullable=False, server_default="active"),
+    Column("paired_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("last_seen_at", DateTime(timezone=True)),
+    Column("revoked_at", DateTime(timezone=True)),
+    Column("revoke_reason", Text),
+    UniqueConstraint("user_id", "name", name="devices_user_name_uidx"),
+)
+
+device_audit_log_table = Table(
+    "device_audit_log",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("device_id", Text, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False),
+    Column("user_id", Text, nullable=False),
+    Column("agent_id", Text),
+    Column("conversation_id", Text),
+    Column("invocation_id", Text, nullable=False),
+    Column("action", Text, nullable=False),
+    Column("command", Text, nullable=False),
+    Column("working_dir", Text),
+    Column("approval_mode", Text, nullable=False),
+    Column("decision", Text, nullable=False),
+    Column("decision_reason", Text),
+    Column("issued_at", DateTime(timezone=True), nullable=False),
+    Column("started_at", DateTime(timezone=True)),
+    Column("finished_at", DateTime(timezone=True)),
+    Column("exit_code", Integer),
+    Column("duration_ms", Integer),
+    Column("stdout_sha256", CHAR(64)),
+    Column("stderr_sha256", CHAR(64)),
+    Column("stdout_bytes", Integer),
+    Column("stderr_bytes", Integer),
+    Column("error", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+device_auto_approve_patterns_table = Table(
+    "device_auto_approve_patterns",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("device_id", Text, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False),
+    Column("user_id", Text, nullable=False),
+    Column("pattern", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint("device_id", "user_id", "pattern", name="device_auto_approve_uidx"),
 )

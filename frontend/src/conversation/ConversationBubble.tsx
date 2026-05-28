@@ -43,6 +43,7 @@ import { useDarkTheme, useOutsideAlerter } from '../hooks';
 import {
   selectChunks,
   selectSelectedDocs,
+  selectToken,
 } from '../preferences/preferenceSlice';
 import classes from './ConversationBubble.module.css';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
@@ -927,6 +928,7 @@ function ToolCallApprovalBar({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState('');
+  const token = useSelector(selectToken);
   const actionLabel = toolCall.action_name.substring(
     0,
     toolCall.action_name.lastIndexOf('_'),
@@ -934,6 +936,29 @@ function ToolCallApprovalBar({
   const argPreview = JSON.stringify(toolCall.arguments);
   const truncated =
     argPreview.length > 60 ? argPreview.slice(0, 57) + '...' : argPreview;
+
+  const isRemoteDevice =
+    toolCall.tool_name === 'remote_device' && toolCall.device_id;
+  const handleApproveSticky = async () => {
+    if (!isRemoteDevice || !toolCall.device_id) return;
+    const command =
+      (toolCall.arguments && (toolCall.arguments.command as string)) || '';
+    if (command) {
+      try {
+        const { default: devicesService } = await import(
+          '../api/services/devicesService'
+        );
+        await devicesService.addAutoApprovePattern(
+          toolCall.device_id,
+          command,
+          token,
+        );
+      } catch (err) {
+        console.error('auto-approve register failed', err);
+      }
+    }
+    onToolAction?.(toolCall.call_id, 'approved');
+  };
 
   return (
     <div className="border-border bg-muted dark:bg-card mb-2 w-full overflow-hidden rounded-2xl border">
@@ -964,6 +989,19 @@ function ToolCallApprovalBar({
           >
             Approve
           </Button>
+          {isRemoteDevice && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-auto rounded-full border bg-transparent px-4 py-1 text-xs font-medium shadow-none"
+              onClick={() => {
+                void handleApproveSticky();
+              }}
+              title="Approve and don't ask again for this command shape"
+            >
+              Approve, don&apos;t ask again
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"

@@ -176,8 +176,14 @@ class MessageEventsRepository:
     def reconstruct_partial(self, message_id: str) -> dict:
         """Rebuild partial response/thought/sources/tool_calls from journal events.
 
-        ``answer``/``thought`` chunks concat in seq order; ``source``/
-        ``tool_calls`` carry the full list at emit time (last-wins).
+        ``answer``/``thought`` chunks concat in seq order; ``source``
+        carries the full list at emit time (last-wins). ``tool_calls``
+        and per-call ``tool_call`` events are merged by ``call_id`` —
+        the most recent event for each call wins, and first-seen order
+        is preserved. An empty bulk ``tool_calls: []`` is a no-op (the
+        classic agent yields one at end-of-turn even when paused, and
+        wiping the overlay there would erase the live awaiting-approval
+        entry).
         """
         rows = self._conn.execute(
             text(
@@ -195,6 +201,23 @@ class MessageEventsRepository:
         thought_parts: list[str] = []
         sources: list = []
         tool_calls: list = []
+        # Per-call overlay: maps call_id -> index into ``tool_calls`` so a
+        # later event for the same call replaces the earlier one in place
+        # and preserves first-seen ordering. Bulk ``tool_calls`` emits
+        # merge into the same overlay rather than reseeding so they can't
+        # erase a per-call entry that arrived earlier in the stream.
+        tool_call_index: dict[str, int] = {}
+
+        def _overlay(entry: dict) -> None:
+            call_id = entry.get("call_id")
+            if not call_id:
+                return
+            existing = tool_call_index.get(call_id)
+            if existing is None:
+                tool_call_index[call_id] = len(tool_calls)
+                tool_calls.append(entry)
+            else:
+                tool_calls[existing] = entry
 
         for row in rows:
             payload = row.payload
@@ -215,8 +238,19 @@ class MessageEventsRepository:
                     sources = src
             elif etype == "tool_calls":
                 tcs = payload.get("tool_calls")
-                if isinstance(tcs, list):
-                    tool_calls = tcs
+                if not isinstance(tcs, list) or not tcs:
+                    # Empty bulk is a no-op: the classic-agent end-of-turn
+                    # yield emits one even on a paused turn where
+                    # ``self.tool_calls`` is empty, and the per-call
+                    # overlay carries the awaiting-approval entry.
+                    continue
+                for tc in tcs:
+                    if isinstance(tc, dict):
+                        _overlay(tc)
+            elif etype == "tool_call":
+                data = payload.get("data")
+                if isinstance(data, dict):
+                    _overlay(data)
 
         return {
             "response": "".join(response_parts),

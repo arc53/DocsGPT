@@ -110,12 +110,14 @@ const createClient = (transport: FetchLike) => {
     delete: (
       url: string,
       token: string | null,
+      data?: any,
       headers = {},
       signal?: AbortSignal,
     ): Promise<any> =>
       request(url, {
         method: 'DELETE',
         headers: getHeaders(token, headers),
+        body: data !== undefined ? JSON.stringify(data) : undefined,
         signal,
       }),
   };
