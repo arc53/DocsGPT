@@ -1,5 +1,5 @@
 {
-  "_comment": "Round-3 tester fixture: 'please run mkdir /tmp/rd_v3_test_dir on my remote device' -> run_command tool call (mkdir /tmp/rd_v3_test_dir). Used to verify writes-only + write command still pauses on the approval bar (Bug #5 scenario 2).",
+  "_comment": "Tester fixture: 'please run mkdir /tmp/rd_v3_test_dir on my remote device' -> run_command tool call (mkdir /tmp/rd_v3_test_dir). Used to verify a write command in ask mode still pauses on the approval bar.",
   "response": {
     "content": "",
     "tool_calls": [

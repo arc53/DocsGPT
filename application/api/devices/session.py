@@ -24,6 +24,12 @@ from application.storage.db.session import db_session
 logger = logging.getLogger(__name__)
 
 
+# Window (seconds) the CLI has to upgrade a poll-issued ticket to an SSE
+# stream. Advertised to the CLI as ``expires_in`` and used as the broker
+# ticket TTL so the two never drift.
+_SESSION_TICKET_TTL_SECONDS = 30
+
+
 def poll() -> Response:
     """``GET /api/devices/poll`` — long-poll for queued invocations.
 
@@ -34,7 +40,7 @@ def poll() -> Response:
     if err is not None:
         return err
     broker = get_broker()
-    ticket = broker.claim_ticket(device["id"])
+    ticket = broker.claim_ticket(device["id"], _SESSION_TICKET_TTL_SECONDS)
     if ticket is None:
         return make_response("", 202)
     return make_response(
@@ -42,7 +48,7 @@ def poll() -> Response:
             {
                 "session_ticket": ticket,
                 "session_url": f"/api/devices/sessions/{ticket}/events",
-                "expires_in": 30,
+                "expires_in": _SESSION_TICKET_TTL_SECONDS,
             }
         ),
         200,
@@ -77,11 +83,21 @@ def me() -> Response:
 
 
 def session_events(session_id: str) -> Response:
-    """``GET /api/devices/sessions/{id}/events`` — SSE invocation stream."""
+    """``GET /api/devices/sessions/{id}/events`` — SSE invocation stream.
+
+    The ``session_id`` must be the ``session_ticket`` the device's own
+    ``/poll`` just issued (the path it was handed as ``session_url``). A
+    stale, mismatched, or fabricated ticket is rejected with ``410 Gone``
+    before any stream is opened.
+    """
     device, err = verify_device_session()
     if err is not None:
         return err
     broker = get_broker()
+    if not broker.validate_ticket(device["id"], session_id):
+        return make_response(
+            jsonify({"success": False, "error": "session_ticket_invalid"}), 410
+        )
     sess = broker.register_session(device["id"], device["user_id"])
 
     keepalive_interval = float(settings.SSE_KEEPALIVE_SECONDS)

@@ -1,5 +1,5 @@
 {
-  "_comment": "Round-3 tester fixture: 'please run whoami on my remote device' -> run_command tool call (whoami). Used to verify YOLO (never mode) auto-approves a safe non-denylisted command (Bug #5 scenario 3).",
+  "_comment": "Tester fixture: 'please run whoami on my remote device' -> run_command tool call (whoami). Used to verify full mode auto-approves a safe non-denylisted command.",
   "response": {
     "content": "",
     "tool_calls": [

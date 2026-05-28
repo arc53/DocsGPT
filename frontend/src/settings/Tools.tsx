@@ -4,6 +4,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
+import devicesService from '../api/services/devicesService';
 import userService from '../api/services/userService';
 import Edit from '../assets/edit.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
@@ -71,14 +72,29 @@ export default function Tools() {
   };
 
   const confirmDeleteTool = () => {
-    if (toolToDelete) {
-      userService.deleteTool({ id: toolToDelete.id }, token).then(() => {
-        getUserTools();
-        fetchMcpStatuses();
-        setDeleteModalState('INACTIVE');
-        setToolToDelete(null);
-      });
+    if (!toolToDelete) return;
+    const afterDelete = () => {
+      getUserTools();
+      fetchMcpStatuses();
+      setDeleteModalState('INACTIVE');
+      setToolToDelete(null);
+    };
+    // Remote-device tools front a paired device + live session token. Revoke
+    // the device server-side (marks revoked, closes any session, invalidates
+    // the token, and drops the user_tools row) instead of deleting only the
+    // tool row, which would leave the daemon polling with a live token.
+    const deviceId =
+      toolToDelete.name === 'remote_device'
+        ? toolToDelete.config?.device_id
+        : undefined;
+    if (deviceId) {
+      devicesService
+        .revoke(deviceId, token)
+        .then(afterDelete)
+        .catch((error) => console.error('Failed to revoke device:', error));
+      return;
     }
+    userService.deleteTool({ id: toolToDelete.id }, token).then(afterDelete);
   };
 
   const handleReconnect = (tool: UserToolType) => {

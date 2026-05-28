@@ -82,8 +82,8 @@ class DeviceBroker:
         self._pending: Dict[str, List[InvocationState]] = {}
         # invocation_id -> InvocationState for ack/output lookup.
         self._invocations: Dict[str, InvocationState] = {}
-        # device_id -> session ticket queued for the next poll response.
-        self._tickets: Dict[str, str] = {}
+        # device_id -> (session ticket, monotonic expiry) for the next poll.
+        self._tickets: Dict[str, tuple[str, float]] = {}
 
     # ------------------------------------------------------------------
     # Session lifecycle (CLI side)
@@ -100,7 +100,8 @@ class DeviceBroker:
             if existing is not None:
                 existing.closed.set()
                 self._session_by_id.pop(existing.session_id, None)
-            session_id = self._tickets.pop(device_id, None) or f"st_{uuid.uuid4().hex}"
+            issued = self._tickets.pop(device_id, None)
+            session_id = issued[0] if issued else f"st_{uuid.uuid4().hex}"
             sess = SessionState(
                 session_id=session_id,
                 device_id=device_id,
@@ -141,22 +142,45 @@ class DeviceBroker:
     # ------------------------------------------------------------------
     # Polling
     # ------------------------------------------------------------------
-    def claim_ticket(self, device_id: str) -> Optional[str]:
+    def claim_ticket(self, device_id: str, ttl_seconds: float) -> Optional[str]:
         """Return a session ticket if the device has work waiting, else None.
 
         A pending invocation queued before the CLI polls allocates a ticket
-        eagerly; the CLI then upgrades to SSE with that ticket within the
-        envelope's ``expires_in``.
+        eagerly; the CLI then upgrades to SSE with that ticket within
+        ``ttl_seconds``. The ticket is remembered (with its expiry) so the SSE
+        ``session_id`` can be validated against the one this poll issued.
         """
+        now = time.monotonic()
         with self._lock:
             if not self._pending.get(device_id):
                 return None
             existing = self._tickets.get(device_id)
-            if existing:
-                return existing
+            if existing and existing[1] > now:
+                return existing[0]
             ticket = f"st_{uuid.uuid4().hex}"
-            self._tickets[device_id] = ticket
+            self._tickets[device_id] = (ticket, now + ttl_seconds)
             return ticket
+
+    def validate_ticket(self, device_id: str, session_id: str) -> bool:
+        """True iff ``session_id`` is the unexpired ticket issued to ``device_id``.
+
+        Gates the SSE upgrade: the CLI must open the events stream with the
+        exact ``session_ticket`` returned by its ``/poll`` (which became the
+        ``session_url``). An absent, mismatched, or expired ticket is rejected.
+        Expired entries are evicted so a stale ticket can't be reused.
+        """
+        if not session_id:
+            return False
+        now = time.monotonic()
+        with self._lock:
+            issued = self._tickets.get(device_id)
+            if issued is None:
+                return False
+            ticket, expires_at = issued
+            if expires_at <= now:
+                self._tickets.pop(device_id, None)
+                return False
+            return session_id == ticket
 
     # ------------------------------------------------------------------
     # Dispatch (server-issued)

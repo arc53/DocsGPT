@@ -1,5 +1,5 @@
 {
-  "_comment": "Round-3 tester fixture: 'please run rm -rf / on my remote device' -> run_command tool call (rm -rf /). Used to verify YOLO (never mode) still pauses on the denylist-forced-prompt circuit-breaker (Bug #5 scenario 4 / spec §9.5).",
+  "_comment": "Tester fixture: 'please run rm -rf / on my remote device' -> run_command tool call (rm -rf /). Used to verify full mode still pauses on the denylist-forced-prompt circuit-breaker.",
   "response": {
     "content": "",
     "tool_calls": [
