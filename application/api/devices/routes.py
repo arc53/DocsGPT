@@ -181,6 +181,10 @@ def add_auto_approve_pattern(device_id: str):
         return make_response(
             jsonify({"success": False, "error": "missing_command"}), 400
         )
+    if not isinstance(command, str):
+        return make_response(
+            jsonify({"success": False, "error": "invalid_command"}), 400
+        )
     pattern = normalize_command(command)
     if not pattern:
         return make_response(

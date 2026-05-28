@@ -38,6 +38,27 @@ def test_rm_rf_long_flags_with_no_preserve_root():
     )
 
 
+def test_rm_separated_flags_r_then_f():
+    # ``rm -r -f /`` (flags as separate tokens) must still trip.
+    assert check_denylist("rm -r -f /") == "rm -rf /"
+
+
+def test_rm_separated_flags_f_then_r():
+    assert check_denylist("rm -f -r /") == "rm -rf /"
+
+
+def test_rm_rfv_bundle_root():
+    assert check_denylist("rm -rfv /") == "rm -rf /"
+
+
+def test_rm_short_recursive_long_force():
+    assert check_denylist("rm -r --force /") == "rm -rf /"
+
+
+def test_rm_long_recursive_short_force_slash_star():
+    assert check_denylist("rm --recursive -f /*") == "rm -rf /"
+
+
 def test_rm_rf_tmp_subpath_safe():
     assert check_denylist("rm -rf /tmp/foo") is None
 
@@ -58,6 +79,16 @@ def test_rm_recursive_only_safe():
 def test_rm_force_only_slash_safe():
     # Force without recursive (``rm -f /``) fails on a non-empty dir; not denied.
     assert check_denylist("rm -f /") is None
+
+
+def test_rm_force_only_etc_safe():
+    # Force without recursive on a real path is not the root-wipe form.
+    assert check_denylist("rm -f /etc/hosts") is None
+
+
+def test_rm_separated_flags_subpath_safe():
+    # Separated recursive+force on a subpath stays safe.
+    assert check_denylist("rm -r -f /tmp/x") is None
 
 
 def test_rm_rf_home_tilde():

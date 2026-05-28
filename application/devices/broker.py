@@ -280,8 +280,24 @@ class DeviceBroker:
             yield item
 
     def cleanup_invocation(self, invocation_id: str) -> None:
+        """Drop an invocation from all registries.
+
+        Removes it from ``_invocations`` and, if it was still parked for an
+        offline device, from ``_pending`` too. Without the pending removal a
+        timed-out invocation would be drained and executed by a later
+        ``register_session`` — running a command the user already saw fail.
+        """
         with self._lock:
-            self._invocations.pop(invocation_id, None)
+            inv = self._invocations.pop(invocation_id, None)
+            if inv is None:
+                return
+            pending = self._pending.get(inv.device_id)
+            if pending:
+                remaining = [p for p in pending if p.invocation_id != invocation_id]
+                if remaining:
+                    self._pending[inv.device_id] = remaining
+                else:
+                    self._pending.pop(inv.device_id, None)
 
 
 _broker_instance: Optional[DeviceBroker] = None

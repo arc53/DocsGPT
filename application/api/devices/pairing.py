@@ -28,6 +28,33 @@ _USER_CODE_LEN = 8  # ABCD-WXYZ (8 chars, displayed with a single dash)
 _PAIRING_REDIS_PREFIX = "docsgpt:device_pairing:"
 _ALLOWED_APPROVAL_MODES = {"ask", "full"}
 
+# Atomic redeem claim: read the pairing JSON, and only if its ``status`` is
+# ``pending`` flip it to ``redeemed`` and write it back (TTL preserved).
+# Returns 1 if this caller won the claim, 0 otherwise (missing/not pending).
+# Run server-side so two concurrent redeems of one code can't both win.
+_CLAIM_PAIRING_LUA = """
+local raw = redis.call('GET', KEYS[1])
+if not raw then
+    return 0
+end
+local ok, state = pcall(cjson.decode, raw)
+if not ok then
+    return 0
+end
+if state['status'] ~= 'pending' then
+    return 0
+end
+state['status'] = 'redeemed'
+local ttl = redis.call('TTL', KEYS[1])
+local encoded = cjson.encode(state)
+if ttl and ttl > 0 then
+    redis.call('SET', KEYS[1], encoded, 'EX', ttl)
+else
+    redis.call('SET', KEYS[1], encoded)
+end
+return 1
+"""
+
 
 def _redis():
     return get_redis_instance()
@@ -64,7 +91,10 @@ def create_pairing() -> tuple:
         return _error("authentication_required", 401)
 
     body = request.get_json(silent=True) or {}
-    requested_name = (body.get("name") or "").strip() or None
+    raw_name = body.get("name")
+    if raw_name is not None and not isinstance(raw_name, str):
+        return _error("invalid_name", 400)
+    requested_name = (raw_name or "").strip() or None
     requested_description = body.get("description")
     if isinstance(requested_description, str):
         requested_description = requested_description.strip() or None
@@ -204,6 +234,15 @@ def redeem_pairing() -> tuple:
     if state.get("status") != "pending":
         return _error("pairing_already_redeemed", 409)
 
+    # Atomically claim the pairing before doing any work. Two concurrent
+    # redeems of the same code can both pass the check above; only the one
+    # that flips ``pending`` -> ``redeemed`` here proceeds to create a device.
+    claimed = _claim_pairing(redis_client, device_code)
+    if claimed is None:
+        return _error("redis_unavailable", 503)
+    if not claimed:
+        return _error("pairing_already_redeemed", 409)
+
     user_id = state["user_id"]
 
     try:
@@ -269,6 +308,23 @@ def redeem_pairing() -> tuple:
         ),
         200,
     )
+
+
+def _claim_pairing(redis_client, device_code: str) -> Optional[bool]:
+    """Atomically transition a pairing from ``pending`` to ``redeemed``.
+
+    Returns ``True`` if this caller won the claim, ``False`` if the pairing
+    is already non-pending or gone, and ``None`` if the atomic op itself
+    failed (caller should treat that as Redis-unavailable rather than
+    proceeding, to avoid a non-atomic double-redeem).
+    """
+    key = _PAIRING_REDIS_PREFIX + device_code
+    try:
+        result = redis_client.eval(_CLAIM_PAIRING_LUA, 1, key)
+    except Exception:
+        logger.exception("redis eval failed during pairing claim")
+        return None
+    return bool(result)
 
 
 def _load_pairing(device_code: str) -> Optional[dict]:

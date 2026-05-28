@@ -22,7 +22,12 @@ from application.api.devices import pairing as pairing_module
 
 
 class _StubRedis:
-    """Minimal Redis stand-in capturing setex payloads."""
+    """Minimal Redis stand-in capturing setex payloads.
+
+    ``eval`` re-implements the redeem-claim Lua: read the pairing JSON and,
+    only if ``status == 'pending'``, flip it to ``redeemed`` (returning 1),
+    else return 0. This lets the redeem tests exercise the atomic path.
+    """
 
     def __init__(self) -> None:
         self.setex_calls: list[tuple[str, int, str]] = []
@@ -37,6 +42,20 @@ class _StubRedis:
 
     def delete(self, key: str) -> None:
         self.store.pop(key, None)
+
+    def eval(self, _script: str, _numkeys: int, key: str, *_args) -> int:
+        raw = self.store.get(key)
+        if raw is None:
+            return 0
+        try:
+            state = json.loads(raw)
+        except Exception:
+            return 0
+        if state.get("status") != "pending":
+            return 0
+        state["status"] = "redeemed"
+        self.store[key] = json.dumps(state)
+        return 1
 
 
 @pytest.fixture
@@ -102,6 +121,16 @@ def test_create_pairing_rejects_invalid_approval_mode(app, mode):
     assert response.status_code == 400
     body = response.get_json()
     assert body["error"] == "invalid_approval_mode"
+    assert not redis.setex_calls
+
+
+@pytest.mark.parametrize("bad_name", [123, 12.5, True, ["x"], {"a": 1}])
+def test_create_pairing_rejects_non_string_name(app, bad_name):
+    # A non-string ``name`` must 400 instead of crashing on ``.strip()``.
+    redis = _StubRedis()
+    response = _call_create(app, {"name": bad_name}, redis)
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "invalid_name"
     assert not redis.setex_calls
 
 
