@@ -10,6 +10,7 @@ import devicesService, {
 import ArrowLeft from '../assets/arrow-left.svg';
 import CopyButton from '../components/CopyButton';
 import Spinner from '../components/Spinner';
+import ToolIcon from '../components/ToolIcon';
 import {
   Accordion,
   AccordionContent,
@@ -227,9 +228,9 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <img
-          src={`/toolIcons/tool_${tool.name}.svg`}
-          alt={`${tool.displayName} icon`}
+        <ToolIcon
+          name={tool.name}
+          title={`${tool.displayName} icon`}
           className="h-7 w-7"
         />
         <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
