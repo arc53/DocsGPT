@@ -1,7 +1,7 @@
 """Integration tests for Valkey vector store.
 
 These tests require a running Valkey instance with the valkey-search module loaded.
-Run with: podman run -d --name valkey-test -p 6379:6379 valkey/valkey:8.1 --loadmodule /usr/lib/valkey/modules/valkeysearch.so
+Run with: podman run -d --name valkey-test -p 6379:6379 valkey/valkey-bundle:latest
 
 Skip these tests when Valkey is not available by running:
     pytest -m "not integration"
