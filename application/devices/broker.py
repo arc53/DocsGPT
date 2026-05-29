@@ -297,7 +297,9 @@ class DeviceBroker:
             try:
                 redis.delete(_inv_key(invocation_id))
             except Exception:
-                pass
+                logger.debug(
+                    "cleanup after failed dispatch failed for %s", invocation_id
+                )
             inv.error = "device broker dispatch failed"
             inv.completed = True
         return inv
