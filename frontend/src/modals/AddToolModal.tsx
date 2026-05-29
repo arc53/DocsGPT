@@ -4,6 +4,7 @@ import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import SkeletonLoader from '../components/SkeletonLoader';
+import ToolIcon from '../components/ToolIcon';
 import { Modal } from '../components/ui/modal';
 import { useLoaderState } from '../hooks';
 import PairDeviceModal from '../settings/PairDeviceModal';
@@ -149,10 +150,10 @@ export default function AddToolModal({
                     >
                       <div className="w-full">
                         <div className="flex w-full items-center justify-between px-1">
-                          <img
-                            src={`/toolIcons/tool_${tool.name}.svg`}
+                          <ToolIcon
+                            name={tool.name}
                             className="h-6 w-6"
-                            alt={`${tool.name} icon`}
+                            title={`${tool.name} icon`}
                           />
                         </div>
                         <div className="mt-[9px]">

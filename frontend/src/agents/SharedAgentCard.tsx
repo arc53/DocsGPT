@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import EditIcon from '../assets/edit.svg';
+import ToolIcon from '../components/ToolIcon';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { getToolDisplayName } from '../utils/toolUtils';
@@ -87,9 +88,9 @@ export default function SharedAgentCard({
                 key={index}
                 className="bg-accent text-foreground dark:bg-card flex items-center gap-1 rounded-full px-3 py-1 text-xs font-light"
               >
-                <img
-                  src={`/toolIcons/tool_${tool.name}.svg`}
-                  alt={`${getToolDisplayName(tool)} icon`}
+                <ToolIcon
+                  name={tool.name}
+                  title={`${getToolDisplayName(tool)} icon`}
                   className="h-3 w-3"
                 />{' '}
                 {getToolDisplayName(tool)}

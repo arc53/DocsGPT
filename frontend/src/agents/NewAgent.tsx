@@ -33,6 +33,7 @@ import {
   type MultiSelectPopoverItem,
 } from '../components/MultiSelectPopover';
 import Spinner from '../components/Spinner';
+import ToolIcon from '../components/ToolIcon';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, Prompt } from '../models/misc';
@@ -487,7 +488,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           const base: MultiSelectPopoverItem = {
             id: tool.id,
             label: getToolDisplayName(tool),
-            icon: `/toolIcons/tool_${tool.name}.svg`,
+            icon: <ToolIcon name={tool.name} className="h-5 w-5" />,
             group: groupFor(tool),
           };
           if (tool.name === 'remote_device') {

@@ -12,6 +12,7 @@ import NoFilesIcon from '../assets/no-files.svg';
 import SearchIcon from '../assets/search.svg';
 import ThreeDotsIcon from '../assets/three-dots.svg';
 import SkeletonLoader from '../components/SkeletonLoader';
+import ToolIcon from '../components/ToolIcon';
 import { Button } from '../components/ui/button';
 import { Switch } from '../components/ui/switch';
 import {
@@ -404,9 +405,9 @@ export default function Tools() {
                           )}
                           <div className="w-full">
                             <div className="flex w-full items-center gap-2 px-1">
-                              <img
-                                src={`/toolIcons/tool_${tool.name}.svg`}
-                                alt={`${tool.displayName} icon`}
+                              <ToolIcon
+                                name={tool.name}
+                                title={`${tool.displayName} icon`}
                                 className="h-6 w-6"
                               />
                               {tool.default && (

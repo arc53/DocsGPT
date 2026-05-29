@@ -29,6 +29,7 @@ import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
 import { Button } from './ui/button';
 import { type MultiSelectPopoverItem } from './MultiSelectPopover';
+import ToolIcon from './ToolIcon';
 import {
   AttachFileButton,
   AttachmentChipList,
@@ -1438,7 +1439,7 @@ export default function MessageInput({
   const toolItems: MultiSelectPopoverItem[] = userTools.map((tool) => ({
     id: tool.id,
     label: tool.customName || tool.displayName,
-    icon: `/toolIcons/tool_${tool.name}.svg`,
+    icon: <ToolIcon name={tool.name} className="h-5 w-5" />,
   }));
 
   const selectedToolIds = userTools
