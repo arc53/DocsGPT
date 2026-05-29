@@ -241,6 +241,14 @@ class Settings(BaseSettings):
     REMOTE_DEVICE_SESSION_IDLE_SECONDS: int = 60
     REMOTE_DEVICE_REQUIRE_SIGNATURE: bool = False
     REMOTE_DEVICE_PAIRING_TTL_SECONDS: int = 600
+    # Redis-backed broker tunables (route invocations cross-process so a
+    # scheduled/Celery run reaches the web-held device session). The command
+    # queue TTL must exceed the max command drain deadline (the tool caps
+    # timeout_ms at 600s, drained with a +5s margin = 605s) so a queued command
+    # for a briefly-offline device isn't evicted before its own drain gives up.
+    REMOTE_DEVICE_CMD_QUEUE_TTL_SECONDS: int = 900
+    REMOTE_DEVICE_INVOCATION_TTL_SECONDS: int = 900
+    REMOTE_DEVICE_OUTPUT_STREAM_MAXLEN: int = 10_000
 
     # Scheduler (see scheduler.md).
     SCHEDULE_DISPATCHER_INTERVAL: int = 30

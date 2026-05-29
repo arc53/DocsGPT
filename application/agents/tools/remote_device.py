@@ -246,37 +246,72 @@ class RemoteDeviceTool(Tool):
             return False
 
     def _collect_result(self, broker, inv, device: dict, timeout_ms: int) -> Dict[str, Any]:
-        """Drain output from the broker until the control chunk arrives."""
+        """Drain output from the broker until the control chunk arrives.
+
+        Result fields come from the drained chunks, not from ``inv``: the
+        invocation runs and reports back in a different process (the web
+        tier), so the dispatching process never sees ``inv`` mutated.
+        """
+        # Dispatch already failed (e.g. broker/Redis unavailable): report it.
+        if inv.completed and inv.error:
+            return {
+                "exit_code": None,
+                "stdout": "",
+                "stderr": "",
+                "duration_ms": None,
+                "device_name": device.get("name"),
+                "error": inv.error,
+            }
+
         deadline = time.time() + (timeout_ms / 1000.0) + 5.0
         stdout = []
         stderr = []
+        exit_code = None
+        duration_ms = None
+        error = None
+        saw_control = False
         try:
             for chunk in broker.drain_output(
                 inv.invocation_id, timeout=1.0, deadline=deadline
             ):
-                if time.time() > deadline:
-                    break
                 stream = chunk.get("stream")
                 if stream == "stdout":
                     stdout.append(chunk.get("chunk", ""))
                 elif stream == "stderr":
                     stderr.append(chunk.get("chunk", ""))
                 elif stream == "control":
-                    # control chunks include exit_code; drain loop will stop next iter
-                    pass
+                    saw_control = True
+                    exit_code = chunk.get("exit_code")
+                    duration_ms = chunk.get("duration_ms")
+                    error = chunk.get("error") or error
+                # Stop once past the deadline — but only AFTER capturing a chunk
+                # the drain already yielded, so a near-deadline control chunk
+                # isn't dropped and misreported as a timeout.
+                if time.time() > deadline:
+                    break
+            # No control chunk observed: consult the authoritative completion
+            # state (before cleanup deletes it) so a late or dropped control
+            # chunk isn't misreported as "device did not respond".
+            if not saw_control:
+                final = broker.get_invocation(inv.invocation_id)
+                if final is not None and final.completed:
+                    saw_control = True
+                    exit_code = final.exit_code
+                    duration_ms = final.duration_ms
+                    error = final.error or error
         finally:
             broker.cleanup_invocation(inv.invocation_id)
 
-        # Deadline hit with no control chunk: the device never connected or
+        # Deadline hit with no completion at all: the device never connected or
         # never finished. Surface a clear timeout instead of empty success.
-        if not inv.completed.is_set() and inv.exit_code is None and not inv.error:
-            inv.error = "device did not respond (timed out)"
+        if not saw_control and exit_code is None and not error:
+            error = "device did not respond (timed out)"
 
         return {
-            "exit_code": inv.exit_code,
-            "stdout": "".join(stdout) if stdout else "".join(inv.stdout_parts),
-            "stderr": "".join(stderr) if stderr else "".join(inv.stderr_parts),
-            "duration_ms": inv.duration_ms,
+            "exit_code": exit_code,
+            "stdout": "".join(stdout),
+            "stderr": "".join(stderr),
+            "duration_ms": duration_ms,
             "device_name": device.get("name"),
-            "error": inv.error,
+            "error": error,
         }
