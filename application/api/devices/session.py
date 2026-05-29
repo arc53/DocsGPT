@@ -7,7 +7,6 @@ import io
 import json
 import logging
 import time
-from queue import Empty
 from typing import Iterator
 
 from flask import Response, jsonify, make_response, request, stream_with_context
@@ -118,16 +117,15 @@ def session_events(session_id: str) -> Response:
                     sess.last_event_id += 1
                     broker.close_session(sess.session_id, reason="idle")
                     return
-                try:
-                    inv = sess.invocation_queue.get(timeout=1.0)
-                except Empty:
+                envelope = broker.next_command(sess, timeout=1.0)
+                if envelope is None:
                     if time.time() - last_keepalive >= keepalive_interval:
                         last_keepalive = time.time()
                         yield ": heartbeat\n\n"
                     continue
                 sess.last_event_id += 1
                 sess.last_activity_at = time.time()
-                yield _sse_event("invocation", inv.envelope, sess.last_event_id)
+                yield _sse_event("invocation", envelope, sess.last_event_id)
                 last_keepalive = time.time()
         except GeneratorExit:
             logger.debug("device SSE generator exiting for session %s", sess.session_id)
@@ -164,6 +162,22 @@ def ack_invocation(session_id: str, invocation_id: str) -> Response:
             jsonify({"success": False, "error": "invocation_not_found"}), 404
         )
     broker.submit_ack(invocation_id, decision, reason)
+    if decision == "denied":
+        # A denial is terminal and produces no device output, so submit_output's
+        # audit write is never reached. Record the outcome here from locally
+        # known facts (not re-read Redis state the agent's drain races to clean
+        # up), so the audit row reflects the denial instead of staying
+        # "dispatched". Accepted/auto_approved runs record via submit_output.
+        from datetime import datetime, timezone
+        try:
+            with db_session() as conn:
+                DeviceAuditLogRepository(conn).record_result(
+                    invocation_id,
+                    finished_at=datetime.now(timezone.utc),
+                    error="denied",
+                )
+        except Exception:
+            logger.exception("audit record_result (denied) failed for %s", invocation_id)
     return make_response(jsonify({"success": True}), 200)
 
 
@@ -189,6 +203,7 @@ def submit_output(session_id: str, invocation_id: str) -> Response:
             )
 
     received = 0
+    control_chunk = None
     for line in io.BytesIO(body):
         line = line.strip()
         if not line:
@@ -199,33 +214,33 @@ def submit_output(session_id: str, invocation_id: str) -> Response:
             continue
         if not isinstance(chunk, dict):
             continue
+        if chunk.get("stream") == "control":
+            control_chunk = chunk
         broker.submit_output_chunk(invocation_id, chunk)
         received += 1
 
-    # Persist outcome on the audit row when a control chunk closed the stream.
-    if inv.completed.is_set():
+    # Persist the outcome when the closing control chunk arrived in this POST.
+    # Its fields are captured locally so the audit write survives the draining
+    # (worker) process racing to delete the invocation's Redis state. Byte
+    # totals / started_at live in the hash, read best-effort (the functional
+    # exit_code/error/duration still land even if the hash is already gone).
+    if control_chunk is not None:
+        from datetime import datetime, timezone
+        snap = broker.get_invocation(invocation_id)
         try:
-            from datetime import datetime, timezone
             with db_session() as conn:
                 DeviceAuditLogRepository(conn).record_result(
                     invocation_id,
                     started_at=(
-                        datetime.fromtimestamp(inv.started_at, tz=timezone.utc)
-                        if inv.started_at else None
+                        datetime.fromtimestamp(snap.started_at, tz=timezone.utc)
+                        if snap is not None and snap.started_at else None
                     ),
-                    finished_at=(
-                        datetime.fromtimestamp(inv.finished_at, tz=timezone.utc)
-                        if inv.finished_at else None
-                    ),
-                    exit_code=inv.exit_code,
-                    duration_ms=inv.duration_ms,
-                    stdout_bytes=sum(
-                        len(c) for c in inv.stdout_parts
-                    ),
-                    stderr_bytes=sum(
-                        len(c) for c in inv.stderr_parts
-                    ),
-                    error=inv.error,
+                    finished_at=datetime.now(timezone.utc),
+                    exit_code=_as_opt_int(control_chunk.get("exit_code")),
+                    duration_ms=_as_opt_int(control_chunk.get("duration_ms")),
+                    stdout_bytes=(snap.stdout_bytes if snap is not None else 0),
+                    stderr_bytes=(snap.stderr_bytes if snap is not None else 0),
+                    error=control_chunk.get("error"),
                 )
         except Exception:
             logger.exception("audit record_result failed for %s", invocation_id)
@@ -233,6 +248,16 @@ def submit_output(session_id: str, invocation_id: str) -> Response:
     return make_response(
         jsonify({"success": True, "received": received}), 200
     )
+
+
+def _as_opt_int(value) -> int | None:
+    """Coerce a CLI-supplied JSON value to int for an INTEGER audit column."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _sse_event(name: str, payload: dict, event_id: int) -> str:
