@@ -1,4 +1,4 @@
-import { RefreshCcw, Trash } from 'lucide-react';
+import { RefreshCcw, Search as SearchIcon, Trash } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -9,7 +9,6 @@ import userService from '../api/services/userService';
 import Edit from '../assets/edit.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
-import SearchIcon from '../assets/search.svg';
 import ThreeDotsIcon from '../assets/three-dots.svg';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToolIcon from '../components/ToolIcon';
@@ -282,10 +281,9 @@ export default function Tools() {
                   labelBgClassName="bg-background"
                   className="rounded-full"
                   leftIcon={
-                    <img
-                      src={SearchIcon}
-                      alt=""
-                      className="h-4 w-4 opacity-40"
+                    <SearchIcon
+                      className="size-4 opacity-40"
+                      strokeWidth={1.75}
                     />
                   }
                 />

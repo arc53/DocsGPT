@@ -2,24 +2,25 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
+import {
+  LayoutGrid,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Search as SearchIcon,
+  Settings as SettingsIcon,
+} from 'lucide-react';
 
 import { Agent } from './agents/types';
 import conversationService from './api/services/conversationService';
 import userService from './api/services/userService';
-import Add from './assets/add.svg';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
-import PanelLeftClose from './assets/panel-left-close.svg';
-import PanelLeftOpen from './assets/panel-left-open.svg';
 import Github from './assets/git_nav.svg';
-import Hamburger from './assets/hamburger.svg';
-import openNewChat from './assets/openNewChat.svg';
 import Pin from './assets/pin.svg';
-import SearchIcon from './assets/search.svg';
 import { Avatar } from './components/ui/avatar';
 import { Button } from './components/ui/button';
-import SettingGear from './assets/settingGear.svg';
-import Spark from './assets/spark.svg';
 import Spinner from './components/Spinner';
 import Twitter from './assets/TwitterX.svg';
 import UnPin from './assets/unpin.svg';
@@ -324,12 +325,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             size="icon"
             onClick={() => setNavOpen(true)}
             aria-label="Open navigation menu"
+            className="text-muted-foreground hover:text-foreground"
           >
-            <img
-              src={PanelLeftOpen}
-              alt=""
-              className="transition-all duration-300 ease-in-out"
-            />
+            <PanelLeftOpen className="size-5" strokeWidth={1.75} />
           </Button>
           {queries?.length > 0 && (
             <Button
@@ -338,37 +336,38 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               size="icon"
               onClick={() => newChat()}
               aria-label="Start new chat"
+              className="text-muted-foreground hover:text-foreground"
             >
-              <img src={openNewChat} alt="" />
+              <Plus className="size-5" strokeWidth={1.75} />
             </Button>
           )}
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            onClick={() => setSearchOpen(true)}
-            aria-label={t('modals.searchConversations.searchPlaceholder')}
-            title={t('modals.searchConversations.searchPlaceholder')}
+            onClick={() => {
+              dispatch(setSelectedAgent(null));
+              navigate('/agents');
+            }}
+            aria-label={t('manageAgents')}
+            className="text-muted-foreground hover:text-foreground"
           >
-            <img
-              src={SearchIcon}
-              alt=""
-              className="h-5 w-5 filter dark:invert"
-            />
+            <LayoutGrid className="size-5" strokeWidth={1.75} />
           </Button>
-          <div className="mt-auto flex flex-col items-center gap-2">
+          {conversations?.data && conversations.data.length > 0 && (
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              onClick={() => {
-                dispatch(setSelectedAgent(null));
-                navigate('/agents');
-              }}
-              aria-label={t('manageAgents')}
+              onClick={() => setSearchOpen(true)}
+              aria-label={t('modals.searchConversations.searchPlaceholder')}
+              title={t('modals.searchConversations.searchPlaceholder')}
+              className="text-muted-foreground hover:text-foreground"
             >
-              <img src={Spark} alt="" className="h-5 w-5" />
+              <SearchIcon className="size-5" strokeWidth={1.75} />
             </Button>
+          )}
+          <div className="mt-auto flex flex-col items-center gap-2">
             <Button
               type="button"
               variant="ghost"
@@ -378,12 +377,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 navigate('/settings');
               }}
               aria-label={t('settings.label')}
+              className="text-muted-foreground hover:text-foreground"
             >
-              <img
-                src={SettingGear}
-                alt=""
-                className="h-5 w-5 filter dark:invert"
-              />
+              <SettingsIcon className="size-5" strokeWidth={1.75} />
             </Button>
           </div>
         </div>
@@ -395,36 +391,46 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         } bg-sidebar dark:border-r-sidebar-border fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-300 ease-in-out dark:text-white`}
       >
         <div
-          className={'visible mt-2 flex h-[6vh] w-full justify-between md:h-12'}
+          className={
+            'visible mt-2 flex h-[6vh] w-full items-center justify-between md:h-12'
+          }
         >
           <div
-            className="mx-4 my-auto flex cursor-pointer gap-1.5"
+            className="mx-4 flex cursor-pointer items-center gap-1.5"
             onClick={() => {
               if (isMobile) {
                 setNavOpen(!navOpen);
               }
             }}
           >
-            <a href="/" className="flex gap-1.5">
-              <img className="h-10" src={DocsGPT3} alt="DocsGPT Logo" />
-              <p className="my-auto text-2xl font-semibold">DocsGPT</p>
+            <a href="/" className="flex items-center gap-1.5">
+              <img className="h-9" src={DocsGPT3} alt="DocsGPT Logo" />
+              <p className="text-foreground text-xl font-semibold dark:text-white">
+                DocsGPT
+              </p>
             </a>
           </div>
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="float-right mr-5 h-auto w-auto p-0 hover:bg-transparent"
+            className="text-muted-foreground hover:text-foreground mr-3"
             onClick={() => {
               setNavOpen(!navOpen);
             }}
             aria-label={navOpen ? 'Collapse sidebar' : 'Expand sidebar'}
           >
-            <img
-              src={navOpen ? PanelLeftClose : PanelLeftOpen}
-              alt={navOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-              className="m-auto transition-all duration-300 ease-in-out hover:scale-110"
-            />
+            {navOpen ? (
+              <PanelLeftClose
+                className="size-5 transition-all duration-300 ease-in-out hover:scale-110"
+                strokeWidth={1.75}
+              />
+            ) : (
+              <PanelLeftOpen
+                className="size-5 transition-all duration-300 ease-in-out hover:scale-110"
+                strokeWidth={1.75}
+              />
+            )}
           </Button>
         </div>
         <NavLink
@@ -438,15 +444,15 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           className={({ isActive }) =>
             `${
               isActive ? 'bg-transparent' : ''
-            } group border-sidebar-border hover:border-sidebar-border sticky mx-4 mt-4 flex cursor-pointer gap-2.5 rounded-3xl border p-3 hover:bg-transparent dark:text-white`
+            } group border-sidebar-border hover:border-sidebar-border sticky mx-4 mt-4 flex cursor-pointer items-center gap-2.5 rounded-3xl border p-3 hover:bg-transparent dark:text-white`
           }
         >
-          <img
-            src={Add}
-            alt="Create new chat"
-            className="opacity-80 group-hover:opacity-100"
+          <Plus
+            className="text-muted-foreground group-hover:text-foreground size-5 shrink-0"
+            strokeWidth={1.75}
+            aria-label="Create new chat"
           />
-          <p className="text-muted-foreground dark:text-foreground dark:group-hover:text-foreground text-sm group-hover:text-neutral-600">
+          <p className="text-muted-foreground group-hover:text-foreground text-sm">
             {t('newChat')}
           </p>
         </NavLink>
@@ -519,69 +525,77 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     </div>
                   ))}
                 </div>
-                <div
-                  className="hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
+                <NavLink
+                  to="/agents"
+                  end
                   onClick={() => {
                     dispatch(setSelectedAgent(null));
                     if (isMobile || isTablet) {
                       setNavOpen(false);
                     }
-                    navigate('/agents');
                   }}
+                  className={({ isActive }) =>
+                    `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 ${
+                      isActive ? 'bg-sidebar-accent' : ''
+                    }`
+                  }
                 >
                   <div className="flex w-6 justify-center">
-                    <img
-                      src={Spark}
-                      alt="manage-agents"
-                      className="h-[18px] w-[18px]"
+                    <LayoutGrid
+                      className="text-muted-foreground size-5"
+                      strokeWidth={1.75}
+                      aria-label="manage-agents"
                     />
                   </div>
                   <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
                     {t('manageAgents')}
                   </p>
-                </div>
+                </NavLink>
               </div>
             </div>
           ) : (
-            <div
-              className="hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4"
+            <NavLink
+              to="/agents"
+              end
               onClick={() => {
                 if (isMobile || isTablet) {
                   setNavOpen(false);
                 }
                 dispatch(setSelectedAgent(null));
-                navigate('/agents');
               }}
+              className={({ isActive }) =>
+                `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${
+                  isActive ? 'bg-sidebar-accent' : ''
+                }`
+              }
             >
-              <div className="flex w-6 justify-center">
-                <img
-                  src={Spark}
-                  alt="manage-agents"
-                  className="h-[18px] w-[18px]"
-                />
-              </div>
+              <LayoutGrid
+                className="text-muted-foreground size-5 shrink-0"
+                strokeWidth={1.75}
+                aria-label="manage-agents"
+              />
               <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
                 {t('manageAgents')}
               </p>
-            </div>
+            </NavLink>
           )}
           {conversations?.data && conversations.data.length > 0 ? (
             <div className="mt-7">
-              <div className="mx-4 my-auto mt-2 flex h-8 items-center justify-between gap-4 rounded-3xl">
+              <div className="my-auto mt-2 ml-4 flex h-9 items-center justify-between gap-4 rounded-3xl">
                 <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
                 <Button
                   type="button"
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon"
                   onClick={() => setSearchOpen(true)}
-                  className="hover:bg-sidebar-accent mr-2 h-7 w-7 rounded-full"
+                  className="text-muted-foreground hover:text-foreground hover:bg-sidebar-accent mr-3 rounded-full"
                   aria-label={t('modals.searchConversations.searchPlaceholder')}
                   title={t('modals.searchConversations.searchPlaceholder')}
                 >
-                  <img
-                    src={SearchIcon}
-                    alt="search"
-                    className="h-4 w-4 opacity-70"
+                  <SearchIcon
+                    className="size-5"
+                    strokeWidth={1.75}
+                    aria-label="search"
                   />
                 </Button>
               </div>
@@ -619,17 +633,15 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }}
               to="/settings"
               className={({ isActive }) =>
-                `hover:bg-sidebar-accent mx-4 my-auto flex h-9 cursor-pointer items-center gap-4 rounded-3xl ${
+                `hover:bg-sidebar-accent mx-4 my-auto flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${
                   isActive ? 'bg-sidebar-accent' : ''
                 }`
               }
             >
-              <img
-                src={SettingGear}
-                alt="Settings"
-                width={21}
-                height={21}
-                className="my-auto ml-2 filter dark:invert"
+              <SettingsIcon
+                className="text-muted-foreground size-5 shrink-0"
+                strokeWidth={1.75}
+                aria-label="Settings"
               />
               <p className="text-foreground text-sm dark:text-white">
                 {t('settings.label')}
@@ -686,24 +698,30 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </div>
       </div>
       <div className="dark:border-b-sidebar-border bg-sidebar sticky z-10 h-16 w-full border-b-2 lg:hidden">
-        <div className="ml-6 flex h-full items-center gap-6">
+        <div className="relative flex h-full items-center">
           <Button
             type="button"
             variant="ghost"
-            size="icon-sm"
-            className="h-6 w-6 p-0 hover:bg-transparent lg:hidden"
+            size="icon"
+            className="text-muted-foreground hover:text-foreground ml-4 size-9 lg:hidden"
             onClick={() => setNavOpen(true)}
             aria-label="Toggle mobile menu"
           >
-            <img
-              src={Hamburger}
-              alt="Toggle mobile menu"
-              className="w-7 filter dark:invert"
-            />
+            <Menu className="size-5" strokeWidth={1.75} />
           </Button>
-          <div className="text-muted-foreground text-xl font-medium">
-            DocsGPT
-          </div>
+          <a
+            href="/"
+            className="absolute left-1/2 flex -translate-x-1/2 items-center"
+          >
+            <img
+              className="absolute right-full mr-1.5 h-9"
+              src={DocsGPT3}
+              alt="DocsGPT Logo"
+            />
+            <p className="text-foreground text-xl font-semibold dark:text-white">
+              DocsGPT
+            </p>
+          </a>
         </div>
       </div>
       <ConfirmationModal

@@ -1,3 +1,4 @@
+import { Search as SearchIcon } from 'lucide-react';
 import {
   useEffect,
   useMemo,
@@ -7,7 +8,6 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import SearchIcon from '../assets/search.svg';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
@@ -163,7 +163,11 @@ export default function SearchConversationsModal({
     >
       <div className="flex flex-col">
         <div className="border-sidebar-border flex items-center gap-2 border-b px-5 py-4">
-          <img src={SearchIcon} alt="search" className="h-4 w-4 opacity-60" />
+          <SearchIcon
+            className="size-4 opacity-60"
+            strokeWidth={1.75}
+            aria-label="search"
+          />
           <Input
             ref={inputRef}
             type="text"
