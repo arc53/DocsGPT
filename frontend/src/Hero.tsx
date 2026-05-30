@@ -99,12 +99,16 @@ function HeroModelSelect() {
       <SelectContent className="bg-muted dark:bg-card rounded-t-none rounded-b-4xl border-0 shadow-md data-[side=bottom]:translate-y-0">
         {hasModels ? (
           availableModels?.map((model: Model) => (
-            <SelectItem key={model.id} value={model.id}>
+            <SelectItem
+              key={model.id}
+              value={model.id}
+              className="px-5 py-3 text-base [&_[data-slot=select-item-indicator]]:right-5"
+            >
               {model.display_name}
             </SelectItem>
           ))
         ) : (
-          <div className="text-muted-foreground px-3 py-2 text-sm">
+          <div className="text-muted-foreground px-5 py-3 text-base">
             No models available
           </div>
         )}

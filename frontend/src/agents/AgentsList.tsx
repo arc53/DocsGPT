@@ -1,10 +1,10 @@
+import { Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
-import Search from '../assets/search.svg';
 import Spinner from '../components/Spinner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -178,7 +178,10 @@ export default function AgentsList() {
             labelBgClassName="bg-background"
             className="rounded-full"
             leftIcon={
-              <img src={Search} alt="" className="h-4 w-4 opacity-40" />
+              <Search
+                className="text-muted-foreground size-4"
+                strokeWidth={1.75}
+              />
             }
           />
         </div>

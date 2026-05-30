@@ -1,3 +1,4 @@
+import { Search as SearchIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -8,7 +9,6 @@ import EyeView from '../assets/eye-view.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import Trash from '../assets/red-trash.svg';
-import SearchIcon from '../assets/search.svg';
 import SyncIcon from '../assets/sync.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import CalendarIcon from '../assets/calendar.svg';
@@ -434,7 +434,10 @@ export default function Sources({
               labelBgClassName="bg-background"
               className="rounded-full"
               leftIcon={
-                <img src={SearchIcon} alt="" className="h-4 w-4 opacity-40" />
+                <SearchIcon
+                  className="text-muted-foreground size-4"
+                  strokeWidth={1.75}
+                />
               }
             />
           </div>

@@ -39,9 +39,13 @@ const Help = () => {
         variant="ghost"
         ref={buttonRef}
         onClick={toggleDropdown}
-        className="hover:bg-sidebar-accent mx-4 my-auto w-full justify-start gap-4 rounded-3xl px-0"
+        className="hover:bg-sidebar-accent mx-4 my-auto w-full justify-start gap-2.5 rounded-3xl pr-0 pl-3"
       >
-        <img src={Info} alt="info" className="ml-2 w-5 filter dark:invert" />
+        <img
+          src={Info}
+          alt="info"
+          className="w-5 shrink-0 filter dark:invert"
+        />
         {t('help')}
       </Button>
       {isOpen && (
