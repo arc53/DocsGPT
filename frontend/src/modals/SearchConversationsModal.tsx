@@ -164,7 +164,7 @@ export default function SearchConversationsModal({
       <div className="flex flex-col">
         <div className="border-sidebar-border flex items-center gap-2 border-b px-5 py-4">
           <SearchIcon
-            className="size-4 opacity-60"
+            className="text-muted-foreground size-4"
             strokeWidth={1.75}
             aria-label="search"
           />

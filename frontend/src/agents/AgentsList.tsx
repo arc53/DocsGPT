@@ -178,7 +178,10 @@ export default function AgentsList() {
             labelBgClassName="bg-background"
             className="rounded-full"
             leftIcon={
-              <Search className="size-4 opacity-40" strokeWidth={1.75} />
+              <Search
+                className="text-muted-foreground size-4"
+                strokeWidth={1.75}
+              />
             }
           />
         </div>

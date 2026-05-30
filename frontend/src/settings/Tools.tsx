@@ -282,7 +282,7 @@ export default function Tools() {
                   className="rounded-full"
                   leftIcon={
                     <SearchIcon
-                      className="size-4 opacity-40"
+                      className="text-muted-foreground size-4"
                       strokeWidth={1.75}
                     />
                   }

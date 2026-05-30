@@ -493,7 +493,10 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                   onChange={(e) => handleSearchChange(e.target.value)}
                   labelBgClassName="bg-[#EEE6FF78] dark:bg-muted"
                   leftIcon={
-                    <SearchIcon className="size-4" strokeWidth={1.75} />
+                    <SearchIcon
+                      className="text-muted-foreground size-4"
+                      strokeWidth={1.75}
+                    />
                   }
                 />
               </div>
