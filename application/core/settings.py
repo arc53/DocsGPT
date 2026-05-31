@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     # Pages docling's threaded pipeline buffers in flight; the library
     # default (100) drives worker RSS to ~3 GB on a mid-size PDF.
     DOCLING_PIPELINE_QUEUE_MAX_SIZE: int = 2
-    VECTOR_STORE: str = "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector"
+    VECTOR_STORE: str = "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector" or "opengauss_datavec"
     RETRIEVERS_ENABLED: list = ["classic_rag"]
     AGENT_NAME: str = "classic"
     FALLBACK_LLM_PROVIDER: Optional[str] = None  # provider for fallback llm
@@ -156,6 +156,13 @@ class Settings(BaseSettings):
     # dialect form (``postgresql+psycopg://``) are all accepted and
     # normalized internally for ``psycopg.connect()``.
     PGVECTOR_CONNECTION_STRING: Optional[str] = None
+
+    # openGauss DataVec vectorstore config.
+    # DataVec is built into openGauss — no extension installation needed.
+    # Use a libpq-style DSN, e.g.:
+    #   "host=127.0.0.1 port=5432 dbname=mydb user=myuser password=xxx"
+    OPENGAUSS_CONNECTION_STRING: Optional[str] = None
+
     # Milvus vectorstore config
     MILVUS_COLLECTION_NAME: Optional[str] = "docsgpt"
     MILVUS_URI: Optional[str] = "./milvus_local.db"  # milvus lite version as default
