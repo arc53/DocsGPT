@@ -81,6 +81,84 @@ class TestGenMethods:
         result = llm.gen(model="m", messages=[{"role": "user", "content": "hi"}])
         assert result == "hello"
 
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    def test_gen_emits_llm_gen_start_event(self, caplog):
+        # Non-streaming counterpart to the llm_stream_start event: gen() must
+        # log before the model is queried so every call is observable.
+        import logging as _logging
+
+        class FakeProvider(StubLLM):
+            provider_name = "fake-provider"
+
+        llm = FakeProvider(raw_gen_return="hi")
+        with caplog.at_level(_logging.INFO, logger="root"):
+            llm.gen(
+                model="m1",
+                messages=[
+                    {"role": "user", "content": "hi"},
+                    {"role": "assistant", "content": "hey"},
+                ],
+                tools=[{"name": "t"}],
+                _usage_attachments=[{"path": "/tmp/a.png"}],
+            )
+
+        starts = [r for r in caplog.records if r.message == "llm_gen_start"]
+        assert len(starts) == 1
+        evt = starts[0]
+        assert evt.model == "m1"
+        assert evt.provider == "fake-provider"
+        assert evt.message_count == 2
+        assert evt.has_attachments is True
+        assert evt.has_tools is True
+
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    def test_gen_emits_event_without_attachments_or_tools(self, caplog):
+        import logging as _logging
+
+        llm = StubLLM(raw_gen_return="hi")
+        with caplog.at_level(_logging.INFO, logger="root"):
+            llm.gen(model="m1", messages=[])
+
+        evt = next(r for r in caplog.records if r.message == "llm_gen_start")
+        assert evt.message_count == 0
+        assert evt.has_attachments is False
+        assert evt.has_tools is False
+        # BaseLLM default — concrete providers always override.
+        assert evt.provider == "unknown"
+
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    def test_gen_fallback_emits_gen_start_for_fallback_provider(self, caplog):
+        # The fallback raw path bypasses gen(), so _execute_with_fallback must
+        # emit a second llm_gen_start tagged with the backup vendor/model —
+        # otherwise dashboards record only the failed primary.
+        import logging as _logging
+
+        class PrimaryProvider(FailingLLM):
+            provider_name = "primary-vendor"
+
+        class FallbackProvider(FallbackLLM):
+            provider_name = "fallback-vendor"
+
+        primary = PrimaryProvider()
+        primary._fallback_llm = FallbackProvider(model_id="backup-model-id")
+
+        with caplog.at_level(_logging.INFO, logger="root"):
+            result = primary.gen(
+                model="primary-model",
+                messages=[{"role": "user", "content": "hi"}],
+            )
+
+        assert result == "fallback_result"
+        starts = [r for r in caplog.records if r.message == "llm_gen_start"]
+        assert len(starts) == 2
+        assert starts[0].provider == "primary-vendor"
+        assert starts[0].model == "primary-model"
+        assert starts[1].provider == "fallback-vendor"
+        assert starts[1].model == "backup-model-id"
+
     @patch("application.llm.base.stream_cache", lambda f: f)
     @patch("application.llm.base.stream_token_usage", lambda f: f)
     def test_gen_stream_yields_results(self):

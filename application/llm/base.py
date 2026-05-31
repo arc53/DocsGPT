@@ -184,6 +184,18 @@ class BaseLLM(ABC):
                 f"{fallback.model_id}. Error: {str(e)}"
             )
 
+            # Mirror the streaming path: emit the fallback's own start event so
+            # dashboards attribute the response to the backup provider, not the
+            # failed primary.
+            fallback._emit_gen_start_log(
+                fallback.model_id,
+                kwargs.get("messages"),
+                kwargs.get("tools"),
+                bool(
+                    kwargs.get("_usage_attachments")
+                    or kwargs.get("attachments")
+                ),
+            )
             # Apply decorators to fallback's raw method directly — calling
             # fallback.gen() would re-enter the orchestrator and recurse via
             # fallback.fallback_llm.
@@ -248,6 +260,12 @@ class BaseLLM(ABC):
                 raise
 
     def gen(self, model, messages, stream=False, tools=None, *args, **kwargs):
+        # Mirror gen_stream: emit the start event before the decorators run so
+        # ``_usage_attachments`` is still in kwargs (the gen decorators pop it).
+        has_attachments = bool(
+            kwargs.get("_usage_attachments") or kwargs.get("attachments")
+        )
+        self._emit_gen_start_log(model, messages, tools, has_attachments)
         decorators = [gen_token_usage, gen_cache]
         return self._execute_with_fallback(
             "_raw_gen",
@@ -258,6 +276,23 @@ class BaseLLM(ABC):
             tools=tools,
             *args,
             **kwargs,
+        )
+
+    def _emit_gen_start_log(self, model, messages, tools, has_attachments):
+        # Non-streaming counterpart to ``_emit_stream_start_log``. Emitted by
+        # ``gen()`` before the call — and again for the fallback provider in
+        # ``_execute_with_fallback`` — so non-streaming invocations are
+        # observable from the first log line, not just streaming ones. A
+        # distinct event name keeps non-stream calls out of stream dashboards.
+        logging.info(
+            "llm_gen_start",
+            extra={
+                "model": model,
+                "provider": self.provider_name,
+                "message_count": len(messages) if messages is not None else 0,
+                "has_attachments": bool(has_attachments),
+                "has_tools": bool(tools),
+            },
         )
 
     def _emit_stream_start_log(self, model, messages, tools, has_attachments):
