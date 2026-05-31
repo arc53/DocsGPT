@@ -136,31 +136,21 @@ class BaseLLM(ABC):
             return args_dict
         return {k: v for k, v in args_dict.items() if v is not None}
 
-    @staticmethod
-    def _is_non_retriable_client_error(exc: BaseException) -> bool:
-        """4xx errors mean the request itself is malformed — retrying with
-        a different model fails identically and doubles the work. Only
-        transient/5xx/connection errors should trigger fallback."""
-        try:
-            from google.genai.errors import ClientError as _GenaiClientError
-
-            if isinstance(exc, _GenaiClientError):
-                return True
-        except ImportError:
-            pass
-        for attr in ("status_code", "code", "http_status"):
-            v = getattr(exc, attr, None)
-            if isinstance(v, int) and 400 <= v < 500:
-                return True
-        resp = getattr(exc, "response", None)
-        v = getattr(resp, "status_code", None)
-        return isinstance(v, int) and 400 <= v < 500
-
     def _execute_with_fallback(
         self, method_name: str, decorators: list, *args, **kwargs
     ):
         """
         Execute method with fallback support.
+
+        Any error raised by the primary model triggers a single attempt on
+        the fallback model, when one is configured. There is no error
+        classification: 5xx/transient failures are obviously recoverable on a
+        different model, and for client-side (4xx) errors — including rate
+        limits (429) and provider-specific payload rejections — the one extra
+        attempt is cheap insurance, since a second provider often accepts what
+        the first refused. ``GeneratorExit``/cancellation are ``BaseException``
+        subclasses and so bypass this handler (no fallback on client
+        disconnect), which is intentional.
 
         Args:
             method_name: Name of the raw method ('_raw_gen' or '_raw_gen_stream')
@@ -185,12 +175,6 @@ class BaseLLM(ABC):
         try:
             return decorated_method()
         except Exception as e:
-            if self._is_non_retriable_client_error(e):
-                logger.error(
-                    f"Primary LLM failed with non-retriable client error; "
-                    f"skipping fallback: {str(e)}"
-                )
-                raise
             if not self.fallback_llm:
                 logger.error(f"Primary LLM failed and no fallback configured: {str(e)}")
                 raise
@@ -210,13 +194,7 @@ class BaseLLM(ABC):
             try:
                 return fallback_method(fallback, *args, **fallback_kwargs)
             except Exception as e2:
-                if self._is_non_retriable_client_error(e2):
-                    logger.error(
-                        f"Fallback LLM failed with non-retriable client "
-                        f"error; giving up: {str(e2)}"
-                    )
-                else:
-                    logger.error(f"Fallback LLM also failed; giving up: {str(e2)}")
+                logger.error(f"Fallback LLM also failed; giving up: {str(e2)}")
                 raise
 
     def _stream_with_fallback(
@@ -233,12 +211,6 @@ class BaseLLM(ABC):
         try:
             yield from decorated_method()
         except Exception as e:
-            if self._is_non_retriable_client_error(e):
-                logger.error(
-                    f"Primary LLM failed mid-stream with non-retriable client "
-                    f"error; skipping fallback: {str(e)}"
-                )
-                raise
             if not self.fallback_llm:
                 logger.error(
                     f"Primary LLM failed and no fallback configured: {str(e)}"
@@ -270,15 +242,9 @@ class BaseLLM(ABC):
             try:
                 yield from fallback_method(fallback, *args, **fallback_kwargs)
             except Exception as e2:
-                if self._is_non_retriable_client_error(e2):
-                    logger.error(
-                        f"Fallback LLM failed mid-stream with non-retriable "
-                        f"client error; giving up: {str(e2)}"
-                    )
-                else:
-                    logger.error(
-                        f"Fallback LLM also failed mid-stream; giving up: {str(e2)}"
-                    )
+                logger.error(
+                    f"Fallback LLM also failed mid-stream; giving up: {str(e2)}"
+                )
                 raise
 
     def gen(self, model, messages, stream=False, tools=None, *args, **kwargs):

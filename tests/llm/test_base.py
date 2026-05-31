@@ -367,54 +367,39 @@ class _ClientErrorLLM(BaseLLM):
 
 
 @pytest.mark.unit
-class TestNonRetriableClientError:
+class TestClientErrorFallback:
+    """Any primary error triggers a single fallback attempt.
 
-    def test_helper_detects_4xx_status_code(self):
-        assert BaseLLM._is_non_retriable_client_error(_StatusError(400))
-        assert BaseLLM._is_non_retriable_client_error(_StatusError(404))
-        assert BaseLLM._is_non_retriable_client_error(_StatusError(429))
+    There is no error-class gate: 4xx (including 429 rate limits and
+    provider-specific payload rejections) and Gemini ``ClientError`` now
+    fall back just like 5xx/transient failures. Client disconnect
+    (``GeneratorExit``) is a ``BaseException`` and still bypasses fallback.
+    """
 
-    def test_helper_passes_5xx_through(self):
-        # 5xx and connection errors should still trigger fallback.
-        assert not BaseLLM._is_non_retriable_client_error(_StatusError(500))
-        assert not BaseLLM._is_non_retriable_client_error(_StatusError(503))
-        assert not BaseLLM._is_non_retriable_client_error(RuntimeError("oops"))
-
-    def test_helper_detects_genai_client_error(self):
-        try:
-            from google.genai.errors import ClientError
-        except ImportError:
-            pytest.skip("google-genai not installed")
-        # ClientError(code, response_json, response=None)
-        exc = ClientError(400, {"error": {"message": "bad", "code": 400}}, None)
-        assert BaseLLM._is_non_retriable_client_error(exc)
-
-    def test_helper_detects_response_status_code(self):
-        exc = RuntimeError("wrapped")
-        exc.response = type("R", (), {"status_code": 401})()
-        assert BaseLLM._is_non_retriable_client_error(exc)
-
+    # 4xx that used to be force-skipped; each should now reach the fallback.
+    @pytest.mark.parametrize("status_code", [400, 401, 403, 404, 413, 422, 429])
     @patch("application.llm.base.gen_cache", lambda f: f)
     @patch("application.llm.base.gen_token_usage", lambda f: f)
-    def test_4xx_skips_fallback(self):
+    def test_4xx_now_falls_back(self, status_code):
         fallback = FallbackLLM(model_id="fallback-model")
-        llm = _ClientErrorLLM(status_code=400)
+        llm = _ClientErrorLLM(status_code=status_code)
         llm._fallback_llm = fallback
 
-        with pytest.raises(_StatusError):
-            llm.gen(model="m", messages=[])
-        assert not fallback.gen_called
+        result = llm.gen(model="m", messages=[])
+        assert result == "fallback_result"
+        assert fallback.gen_called
 
+    @pytest.mark.parametrize("status_code", [400, 429])
     @patch("application.llm.base.stream_cache", lambda f: f)
     @patch("application.llm.base.stream_token_usage", lambda f: f)
-    def test_4xx_skips_stream_fallback(self):
+    def test_4xx_now_falls_back_stream(self, status_code):
         fallback = FallbackLLM(model_id="fallback-model")
-        llm = _ClientErrorLLM(status_code=400)
+        llm = _ClientErrorLLM(status_code=status_code)
         llm._fallback_llm = fallback
 
-        with pytest.raises(_StatusError):
-            list(llm.gen_stream(model="m", messages=[]))
-        assert not fallback.gen_stream_called
+        result = list(llm.gen_stream(model="m", messages=[]))
+        assert "fallback_chunk" in result
+        assert fallback.gen_stream_called
 
     @patch("application.llm.base.gen_cache", lambda f: f)
     @patch("application.llm.base.gen_token_usage", lambda f: f)
@@ -426,6 +411,50 @@ class TestNonRetriableClientError:
         result = llm.gen(model="m", messages=[])
         assert result == "fallback_result"
         assert fallback.gen_called
+
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    def test_genai_client_error_now_falls_back(self):
+        """A Gemini ClientError (4xx) is no longer force-skipped."""
+        try:
+            from google.genai.errors import ClientError
+        except ImportError:
+            pytest.skip("google-genai not installed")
+
+        class _GenaiErrorLLM(BaseLLM):
+            def _raw_gen(self, baseself, model, messages, stream=False, tools=None, **kw):
+                raise ClientError(400, {"error": {"message": "bad", "code": 400}}, None)
+
+            def _raw_gen_stream(self, baseself, model, messages, stream=True, tools=None, **kw):
+                raise ClientError(400, {"error": {"message": "bad", "code": 400}}, None)
+                yield  # unreachable; makes this a generator
+
+        fallback = FallbackLLM(model_id="fallback-model")
+        llm = _GenaiErrorLLM()
+        llm._fallback_llm = fallback
+
+        result = llm.gen(model="m", messages=[])
+        assert result == "fallback_result"
+        assert fallback.gen_called
+
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    def test_fallback_failure_propagates(self):
+        """When the fallback also fails, its error propagates to the caller."""
+
+        class _FailingFallback(BaseLLM):
+            def _raw_gen(self, baseself, model, messages, stream=False, tools=None, **kw):
+                raise _StatusError(400, "fallback_failed")
+
+            def _raw_gen_stream(self, baseself, model, messages, stream=True, tools=None, **kw):
+                raise _StatusError(400, "fallback_failed")
+                yield  # unreachable; makes this a generator
+
+        llm = _ClientErrorLLM(status_code=429)
+        llm._fallback_llm = _FailingFallback(model_id="fb")
+
+        with pytest.raises(_StatusError, match="fallback_failed"):
+            llm.gen(model="m", messages=[])
 
 
 # ---------------------------------------------------------------------------
