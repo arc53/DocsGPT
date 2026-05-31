@@ -295,6 +295,36 @@ class BaseLLM(ABC):
             },
         )
 
+    def _emit_gen_finished_log(
+        self,
+        model,
+        *,
+        prompt_tokens,
+        completion_tokens,
+        latency_ms,
+        cached_tokens=None,
+        error=None,
+    ):
+        # Non-streaming counterpart to ``_emit_stream_finished_log``. Paired
+        # with ``llm_gen_start`` so cost dashboards can join start/finish for
+        # non-streaming calls just as they do for streams. Token counts are
+        # client-side estimates from ``gen_token_usage``; ``status`` is
+        # ``"error"`` when the call raised. A distinct event name keeps
+        # non-stream calls out of stream dashboards.
+        extra = {
+            "model": model,
+            "provider": self.provider_name,
+            "prompt_tokens": int(prompt_tokens),
+            "completion_tokens": int(completion_tokens),
+            "latency_ms": int(latency_ms),
+            "status": "error" if error is not None else "ok",
+        }
+        if cached_tokens is not None:
+            extra["cached_tokens"] = int(cached_tokens)
+        if error is not None:
+            extra["error_class"] = type(error).__name__
+        logging.info("llm_gen_finished", extra=extra)
+
     def _emit_stream_start_log(self, model, messages, tools, has_attachments):
         # Stamped with ``self.provider_name`` so dashboards can group calls
         # by vendor; the fallback path emits its own copy on the fallback

@@ -159,6 +159,82 @@ class TestGenMethods:
         assert starts[1].provider == "fallback-vendor"
         assert starts[1].model == "backup-model-id"
 
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    def test_gen_emits_llm_gen_finished_on_success(self, caplog):
+        # Real gen_token_usage (only gen_cache patched) so the emit-from-
+        # finally path runs. user_api_key=None makes _persist_call_usage
+        # short-circuit before any DB access — same trick as the stream test.
+        import logging as _logging
+
+        class FakeProvider(StubLLM):
+            provider_name = "fake-provider"
+
+        llm = FakeProvider(raw_gen_return="alpha beta")
+        llm.user_api_key = None
+        with caplog.at_level(_logging.INFO, logger="root"):
+            llm.gen(model="m1", messages=[{"role": "user", "content": "hi"}])
+
+        finished = [r for r in caplog.records if r.message == "llm_gen_finished"]
+        assert len(finished) == 1
+        evt = finished[0]
+        assert evt.model == "m1"
+        assert evt.provider == "fake-provider"
+        assert evt.status == "ok"
+        assert isinstance(evt.prompt_tokens, int) and evt.prompt_tokens >= 0
+        assert isinstance(evt.completion_tokens, int) and evt.completion_tokens > 0
+        assert isinstance(evt.latency_ms, int) and evt.latency_ms >= 0
+        # cached_tokens / error_class are intentionally absent on success.
+        assert not hasattr(evt, "cached_tokens")
+        assert not hasattr(evt, "error_class")
+
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    def test_gen_emits_llm_gen_finished_on_error(self, caplog):
+        import logging as _logging
+
+        class FakeProvider(BaseLLM):
+            provider_name = "fake-provider"
+
+            def _raw_gen(self, baseself, model, messages, stream=False, tools=None, **kw):
+                raise RuntimeError("gen_boom")
+
+            def _raw_gen_stream(self, baseself, model, messages, stream=True, tools=None, **kw):
+                yield "x"
+
+        llm = FakeProvider()
+        llm.user_api_key = None
+        with caplog.at_level(_logging.INFO, logger="root"), pytest.raises(RuntimeError):
+            llm.gen(model="m1", messages=[{"role": "user", "content": "hi"}])
+
+        finished = [r for r in caplog.records if r.message == "llm_gen_finished"]
+        assert len(finished) == 1
+        evt = finished[0]
+        assert evt.status == "error"
+        assert evt.error_class == "RuntimeError"
+        # Prompt tokens are still recorded — the request was sent and billed.
+        assert evt.prompt_tokens > 0
+
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    def test_gen_finished_event_paired_with_gen_start(self, caplog):
+        # The two events form a pair the cost dashboards join on; verify they
+        # come in order and from the same provider/model.
+        import logging as _logging
+
+        class FakeProvider(StubLLM):
+            provider_name = "fake-provider"
+
+        llm = FakeProvider(raw_gen_return="x")
+        llm.user_api_key = None
+        with caplog.at_level(_logging.INFO, logger="root"):
+            llm.gen(model="m1", messages=[])
+
+        records = [
+            r for r in caplog.records
+            if r.message in ("llm_gen_start", "llm_gen_finished")
+        ]
+        assert [r.message for r in records] == ["llm_gen_start", "llm_gen_finished"]
+        assert records[0].model == records[1].model == "m1"
+        assert records[0].provider == records[1].provider == "fake-provider"
+
     @patch("application.llm.base.stream_cache", lambda f: f)
     @patch("application.llm.base.stream_token_usage", lambda f: f)
     def test_gen_stream_yields_results(self):
