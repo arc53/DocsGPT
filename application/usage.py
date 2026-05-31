@@ -147,6 +147,11 @@ def gen_token_usage(func):
     paths that introspect it (e.g., logging, response payloads). DB
     persistence happens here for every call so primary streams,
     side-channel LLMs, and no-save flows all produce rows uniformly.
+
+    Mirrors ``stream_token_usage``: persistence and the
+    ``llm_gen_finished`` log fire from a ``finally`` block, so a failed
+    call still records the prompt tokens it consumed and emits a
+    ``status="error"`` finish event.
     """
     def wrapper(self, model, messages, stream, tools, **kwargs):
         usage_attachments = kwargs.pop("_usage_attachments", None)
@@ -157,12 +162,31 @@ def gen_token_usage(func):
             usage_attachments=usage_attachments,
             **kwargs,
         )
-        result = func(self, model, messages, stream, tools, **kwargs)
-        call_usage["generated_tokens"] += _count_tokens(result)
-        self.token_usage["prompt_tokens"] += call_usage["prompt_tokens"]
-        self.token_usage["generated_tokens"] += call_usage["generated_tokens"]
-        _persist_call_usage(self, call_usage)
-        return result
+        started_at = time.monotonic()
+        error: BaseException | None = None
+        try:
+            result = func(self, model, messages, stream, tools, **kwargs)
+            call_usage["generated_tokens"] += _count_tokens(result)
+            return result
+        except Exception as exc:
+            error = exc
+            raise
+        finally:
+            self.token_usage["prompt_tokens"] += call_usage["prompt_tokens"]
+            self.token_usage["generated_tokens"] += call_usage["generated_tokens"]
+            _persist_call_usage(self, call_usage)
+            emit = getattr(self, "_emit_gen_finished_log", None)
+            if callable(emit):
+                try:
+                    emit(
+                        model,
+                        prompt_tokens=call_usage["prompt_tokens"],
+                        completion_tokens=call_usage["generated_tokens"],
+                        latency_ms=int((time.monotonic() - started_at) * 1000),
+                        error=error,
+                    )
+                except Exception:
+                    logger.exception("Failed to emit llm_gen_finished")
 
     return wrapper
 
