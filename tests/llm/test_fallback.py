@@ -754,3 +754,60 @@ class TestLLMCreatorPassesModelUserId:
         )
 
         assert captured["model_user_id"] == "owner-alice"
+
+
+# Tests — responding-provider tracking (cross-provider fallback handler fix)
+
+
+class _Google(FakeLLM):
+    provider_name = "google"
+
+
+class _OpenAI(FakeLLM):
+    provider_name = "openai"
+
+
+@pytest.mark.integration
+class TestRespondingProviderTracking:
+    """The handler that parses a response must follow the model that
+    actually produced it. ``BaseLLM`` exposes ``_responding_provider`` so
+    the handler layer can re-route ``parse_response`` after a fallback to a
+    different-provider model (Google primary -> OpenAI backup), instead of
+    silently dropping the backup's tool calls."""
+
+    def test_defaults_to_own_provider_before_any_call(self):
+        assert _Google()._responding_provider == "google"
+
+    def test_stream_success_keeps_primary_provider(self):
+        primary = _Google(stream_chunks=["a", "b"])
+        list(primary.gen_stream(**CALL_ARGS))
+        assert primary._responding_provider == "google"
+
+    def test_stream_fallback_records_backup_provider(self, patch_model_utils):
+        backup = _OpenAI(stream_chunks=["x"])
+        patch_model_utils(
+            get_provider=lambda m, **_kwargs: "openai",
+            get_api_key=lambda p: "k",
+            create_llm=lambda type, **kw: backup,
+        )
+        primary = _Google(
+            stream_chunks=["a"], fail_at=0, backup_models=["backup-model"]
+        )
+        list(primary.gen_stream(**CALL_ARGS))
+        assert primary._responding_provider == "openai"
+
+    def test_gen_success_keeps_primary_provider(self):
+        primary = _Google(responses=["ok"])
+        primary.gen(**CALL_ARGS)
+        assert primary._responding_provider == "google"
+
+    def test_gen_fallback_records_backup_provider(self, patch_model_utils):
+        backup = _OpenAI(responses=["backup ok"])
+        patch_model_utils(
+            get_provider=lambda m, **_kwargs: "openai",
+            get_api_key=lambda p: "k",
+            create_llm=lambda type, **kw: backup,
+        )
+        primary = _Google(fail_at=0, backup_models=["backup-model"])
+        primary.gen(**CALL_ARGS)
+        assert primary._responding_provider == "openai"

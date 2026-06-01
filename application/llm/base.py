@@ -38,6 +38,12 @@ class BaseLLM(ABC):
         # BYOM-resolution scope captured at LLM creation time so backup
         # / fallback lookups hit the same per-user layer as the primary.
         self.model_user_id = model_user_id
+        # Provider whose model actually produced the most recent response.
+        # Equals ``provider_name`` until a cross-provider fallback swaps the
+        # responding model mid-call (see ``_stream_with_fallback``); the
+        # handler layer reads this to parse chunks with the right provider's
+        # handler instead of the primary's.
+        self._responding_provider = self.provider_name
 
     @property
     def fallback_llm(self):
@@ -172,6 +178,7 @@ class BaseLLM(ABC):
                 decorated_method, method_name, decorators, *args, **kwargs
             )
 
+        self._responding_provider = self.provider_name
         try:
             return decorated_method()
         except Exception as e:
@@ -179,6 +186,7 @@ class BaseLLM(ABC):
                 logger.error(f"Primary LLM failed and no fallback configured: {str(e)}")
                 raise
             fallback = self.fallback_llm
+            self._responding_provider = fallback.provider_name
             logger.warning(
                 f"Primary LLM failed. Falling back to "
                 f"{fallback.model_id}. Error: {str(e)}"
@@ -220,6 +228,7 @@ class BaseLLM(ABC):
         ensures that if the primary LLM fails at any point during streaming
         (creation or mid-stream), we fall back to the backup model.
         """
+        self._responding_provider = self.provider_name
         try:
             yield from decorated_method()
         except Exception as e:
@@ -229,6 +238,7 @@ class BaseLLM(ABC):
                 )
                 raise
             fallback = self.fallback_llm
+            self._responding_provider = fallback.provider_name
             logger.warning(
                 f"Primary LLM failed mid-stream. Falling back to "
                 f"{fallback.model_id}. Error: {str(e)}"
