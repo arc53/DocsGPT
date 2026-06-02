@@ -37,6 +37,10 @@ class ModelCapabilities:
     context_window: int = 128000
     input_cost_per_token: Optional[float] = None
     output_cost_per_token: Optional[float] = None
+    # OpenAI reasoning-model effort hint (none/minimal/low/medium/high/xhigh;
+    # the accepted subset is model-dependent). Consumed by OpenAILLM; ignored
+    # by providers that don't accept it.
+    reasoning_effort: Optional[str] = None
 
 
 @dataclass
