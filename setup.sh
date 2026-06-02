@@ -711,7 +711,7 @@ connect_cloud_api_provider() {
             8) # MiniMax
                 provider_name="MiniMax"
                 llm_provider="minimax"
-                model_name="MiniMax-M2.5"
+                model_name="MiniMax-M3"
                 get_api_key
                 break ;;
             b|B) clear; return 1 ;; # Clear screen and Back to Main Menu

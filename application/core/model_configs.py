@@ -197,10 +197,21 @@ MINIMAX_ATTACHMENTS = IMAGE_ATTACHMENTS
 
 MINIMAX_MODELS = [
     AvailableModel(
-        id="MiniMax-M2.5",
+        id="MiniMax-M3",
         provider=ModelProvider.MINIMAX,
-        display_name="MiniMax M2.5",
-        description="MiniMax flagship model with 204K context window",
+        display_name="MiniMax M3",
+        description="Latest MiniMax flagship model with 512K context window, 128K max output, and image input support",
+        capabilities=ModelCapabilities(
+            supports_tools=True,
+            supported_attachment_types=MINIMAX_ATTACHMENTS,
+            context_window=512000,
+        ),
+    ),
+    AvailableModel(
+        id="MiniMax-M2.7",
+        provider=ModelProvider.MINIMAX,
+        display_name="MiniMax M2.7",
+        description="Previous-generation MiniMax model with 204K context window",
         capabilities=ModelCapabilities(
             supports_tools=True,
             supported_attachment_types=MINIMAX_ATTACHMENTS,
@@ -208,9 +219,9 @@ MINIMAX_MODELS = [
         ),
     ),
     AvailableModel(
-        id="MiniMax-M2.5-highspeed",
+        id="MiniMax-M2.7-highspeed",
         provider=ModelProvider.MINIMAX,
-        display_name="MiniMax M2.5 Highspeed",
+        display_name="MiniMax M2.7 Highspeed",
         description="Fast, cost-effective MiniMax model with 204K context window",
         capabilities=ModelCapabilities(
             supports_tools=True,

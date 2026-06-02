@@ -986,7 +986,7 @@ function Connect-CloudAPIProvider {
             "8" {  # MiniMax
                 $script:provider_name = "MiniMax"
                 $script:llm_name = "minimax"
-                $script:model_name = "MiniMax-M2.5"
+                $script:model_name = "MiniMax-M3"
                 Get-APIKey
                 break
             }
