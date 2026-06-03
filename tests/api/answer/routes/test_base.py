@@ -345,7 +345,7 @@ class TestCompleteStreamMethod:
         with flask_app.app_context(), patch.object(
             base_mod, "publish_user_event"
         ) as published, patch.object(
-            base_mod, "ContinuationService", lambda: MagicMock()
+            base_mod, "ContinuationService", MagicMock
         ):
             self._run_paused(
                 base_mod.BaseAnswerResource(),
@@ -371,7 +371,7 @@ class TestCompleteStreamMethod:
         with flask_app.app_context(), patch.object(
             base_mod, "publish_user_event"
         ) as published, patch.object(
-            base_mod, "ContinuationService", lambda: MagicMock()
+            base_mod, "ContinuationService", MagicMock
         ):
             self._run_paused(
                 base_mod.BaseAnswerResource(),
