@@ -245,6 +245,38 @@ class TestTranslateRequest:
         assert len(result["tool_actions"]) == 1
         assert result["tool_actions"][0]["call_id"] == "c1"
 
+    def test_continuation_persists_by_default(self):
+        """A continuation implies the first turn was saved, so the resumed turn
+        must persist too (otherwise the final answer + WAL row are lost)."""
+        data = {
+            "messages": [
+                {"role": "user", "content": "Search for X"},
+                {
+                    "role": "assistant",
+                    "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "search", "arguments": "{}"}}],
+                },
+                {"role": "tool", "tool_call_id": "c1", "content": "done"},
+            ],
+        }
+        result = translate_request(data, "key")
+        assert result["save_conversation"] is True
+
+    def test_continuation_honours_explicit_save_conversation_override(self):
+        """An explicit docsgpt.save_conversation=false on the continuation wins."""
+        data = {
+            "docsgpt": {"save_conversation": False},
+            "messages": [
+                {"role": "user", "content": "Search for X"},
+                {
+                    "role": "assistant",
+                    "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "search", "arguments": "{}"}}],
+                },
+                {"role": "tool", "tool_call_id": "c1", "content": "done"},
+            ],
+        }
+        result = translate_request(data, "key")
+        assert result["save_conversation"] is False
+
     def test_continuation_with_top_level_conversation_id(self):
         """Standard clients send conversation_id at request level, not in messages."""
         data = {

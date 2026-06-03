@@ -308,6 +308,95 @@ class TestCompleteStreamMethod:
             assert seen_conv_id_on_gen["value"] == fresh_conv_id
             assert tool_executor.conversation_id == fresh_conv_id
 
+    def _run_paused(self, resource, pending_calls):
+        """Drive complete_stream into its paused branch with the given pending
+        tool calls, mocking out the WAL row and continuation save."""
+        agent = MagicMock()
+        agent.gen.return_value = iter(
+            [{"type": "tool_calls_pending", "data": {"pending_tool_calls": pending_calls}}]
+        )
+        agent._pending_continuation = {
+            "messages": [],
+            "pending_tool_calls": pending_calls,
+            "tools_dict": {},
+        }
+        # Make the WAL reservation no-op so we stay off the journal/DB.
+        resource.conversation_service = MagicMock()
+        resource.conversation_service.save_user_question.side_effect = Exception("skip")
+        list(
+            resource.complete_stream(
+                question="Do the test",
+                agent=agent,
+                conversation_id="conv-1",
+                user_api_key=None,
+                decoded_token={"sub": "user123"},
+                should_save_conversation=True,
+            )
+        )
+
+    def test_paused_skips_notification_for_client_execution(
+        self, mock_mongo_db, flask_app
+    ):
+        """A pure ``requires_client_execution`` pause must NOT publish a
+        ``tool.approval.required`` event — the client resolves it, so the
+        notification would be non-actionable noise."""
+        from application.api.answer.routes import base as base_mod
+
+        with flask_app.app_context(), patch.object(
+            base_mod, "publish_user_event"
+        ) as published, patch.object(
+            base_mod, "ContinuationService", MagicMock
+        ):
+            self._run_paused(
+                base_mod.BaseAnswerResource(),
+                [
+                    {
+                        "call_id": "c1",
+                        "name": "create_file",
+                        "tool_name": "create_file",
+                        "action_name": "create_file",
+                        "pause_type": "requires_client_execution",
+                    }
+                ],
+            )
+        published.assert_not_called()
+
+    def test_paused_publishes_notification_only_for_awaiting_approval(
+        self, mock_mongo_db, flask_app
+    ):
+        """A pause with an ``awaiting_approval`` call publishes once, and the
+        payload surfaces only the approval call (not the client-side one)."""
+        from application.api.answer.routes import base as base_mod
+
+        with flask_app.app_context(), patch.object(
+            base_mod, "publish_user_event"
+        ) as published, patch.object(
+            base_mod, "ContinuationService", MagicMock
+        ):
+            self._run_paused(
+                base_mod.BaseAnswerResource(),
+                [
+                    {
+                        "call_id": "a1",
+                        "name": "delete_thing",
+                        "tool_name": "api_tool",
+                        "action_name": "delete_thing",
+                        "pause_type": "awaiting_approval",
+                    },
+                    {
+                        "call_id": "c1",
+                        "name": "create_file",
+                        "tool_name": "create_file",
+                        "action_name": "create_file",
+                        "pause_type": "requires_client_execution",
+                    },
+                ],
+            )
+        published.assert_called_once()
+        args, _ = published.call_args
+        assert args[1] == "tool.approval.required"
+        summaries = args[2]["pending_tool_calls"]
+        assert [s["call_id"] for s in summaries] == ["a1"]
 
 
 @pytest.mark.unit

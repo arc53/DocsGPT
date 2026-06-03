@@ -1004,6 +1004,22 @@ class StreamProcessor:
         from application.llm.handlers.handler_creator import LLMHandlerCreator
         from application.llm.llm_creator import LLMCreator
 
+        # api_key-in-body auth carries no JWT, so initial_user_id is None — but
+        # the state was saved under the agent owner. Resolve the owner so the
+        # lookup / mark_resuming / delete_state key on the same id. (No-op for
+        # v1, which already passes an owner-scoped decoded_token.)
+        if self.initial_user_id is None and self.data.get("api_key"):
+            with db_readonly() as conn:
+                agent_doc = AgentsRepository(conn).find_by_key(self.data["api_key"])
+            owner = (
+                (agent_doc.get("user_id") or agent_doc.get("user"))
+                if agent_doc
+                else None
+            )
+            if owner:
+                self.initial_user_id = owner
+                self.decoded_token = {"sub": owner}
+
         cont_service = ContinuationService()
         state = cont_service.load_state(conversation_id, self.initial_user_id)
         if not state:

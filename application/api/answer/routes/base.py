@@ -588,24 +588,34 @@ class BaseAnswerResource:
                                 exc_info=True,
                             )
 
-                    # Notify the user out-of-band so they can navigate
-                    # back to the conversation and decide on the
-                    # pending tool calls. Gated on ``state_saved``: a
-                    # missing pending_tool_state row would 404 the
-                    # resume endpoint, so an unfulfillable notification
-                    # is worse than no notification.
+                    # Notify the user out-of-band so they can navigate back and
+                    # resolve the pause. Only ``awaiting_approval`` pauses need a
+                    # human; ``requires_client_execution`` pauses are resolved by
+                    # the client, so notifying for those is non-actionable noise.
+                    # Also gated on ``state_saved``: a missing pending_tool_state
+                    # row would 404 the resume endpoint.
                     user_id_for_event = (
                         decoded_token.get("sub") if decoded_token else None
                     )
-                    if state_saved and user_id_for_event and conversation_id:
-                        pending_calls = continuation.get(
-                            "pending_tool_calls", []
-                        ) if continuation else []
-                        # Trim each pending tool call to its identifying
-                        # metadata so a tool with a multi-MB argument
-                        # doesn't blow out the per-event payload size
-                        # cap. The resume page fetches full args from
-                        # ``pending_tool_state`` regardless.
+                    approval_calls = [
+                        tc
+                        for tc in (
+                            continuation.get("pending_tool_calls", [])
+                            if continuation
+                            else []
+                        )
+                        if isinstance(tc, dict)
+                        and tc.get("pause_type") == "awaiting_approval"
+                    ]
+                    if (
+                        state_saved
+                        and user_id_for_event
+                        and conversation_id
+                        and approval_calls
+                    ):
+                        # Trim each pending tool call to its identifying metadata
+                        # so a multi-MB argument can't blow out the per-event
+                        # payload cap. Full args come from pending_tool_state.
                         pending_summaries = [
                             {
                                 k: tc.get(k)
@@ -615,10 +625,9 @@ class BaseAnswerResource:
                                     "action_name",
                                     "name",
                                 )
-                                if isinstance(tc, dict) and tc.get(k) is not None
+                                if tc.get(k) is not None
                             }
-                            for tc in (pending_calls or [])
-                            if isinstance(tc, dict)
+                            for tc in approval_calls
                         ]
                         publish_user_event(
                             user_id_for_event,
