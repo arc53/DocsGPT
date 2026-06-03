@@ -983,6 +983,94 @@ class TestResumeMarkResuming:
 
         assert sp.reserved_message_id == reserved_id
 
+    def test_resume_resolves_owner_from_api_key_when_no_jwt(self, monkeypatch):
+        """api_key-authenticated resumes (no JWT) must resolve the agent owner
+        before loading state.
+
+        On the native /stream and /api/answer routes the agent key lives in the
+        request body, so ``request.decoded_token`` — and hence
+        ``initial_user_id`` — is None. The pending state was saved under the
+        owner's id during the first turn, so the resume has to resolve the owner
+        here or the lookup misses and the run 400s with "No pending tool state
+        found for this conversation".
+        """
+        from contextlib import contextmanager
+
+        from application.api.answer.services import (
+            continuation_service as cont_mod,
+        )
+        from application.api.answer.services import stream_processor as sp_mod
+        from application.llm import llm_creator as llm_creator_mod
+        from application.llm.handlers import handler_creator as handler_mod
+
+        cont_service = MagicMock()
+        cont_service.load_state.return_value = {
+            "messages": [],
+            "pending_tool_calls": [],
+            "tools_dict": {},
+            "tool_schemas": [],
+            "agent_config": {
+                "model_id": "m1",
+                "model_user_id": None,
+                "llm_name": "openai",
+                "api_key": "k",
+                "user_api_key": None,
+                "agent_id": None,
+                "agent_type": "ClassicAgent",
+                "prompt": "",
+                "json_schema": None,
+                "retriever_config": None,
+            },
+            "client_tools": None,
+        }
+        cont_service.mark_resuming.return_value = True
+        monkeypatch.setattr(cont_mod, "ContinuationService", lambda: cont_service)
+        monkeypatch.setattr(
+            llm_creator_mod.LLMCreator, "create_llm", lambda *a, **kw: MagicMock(),
+        )
+        monkeypatch.setattr(
+            handler_mod.LLMHandlerCreator, "create_handler",
+            lambda *a, **kw: MagicMock(),
+        )
+        from application.agents import agent_creator as ac_mod
+        from application.agents import tool_executor as te_mod
+
+        monkeypatch.setattr(
+            te_mod, "ToolExecutor", lambda **kw: MagicMock(client_tools=None)
+        )
+        monkeypatch.setattr(
+            ac_mod.AgentCreator, "create_agent", lambda *a, **kw: MagicMock()
+        )
+
+        # The body api_key resolves to its owning user.
+        fake_repo = MagicMock()
+        fake_repo.find_by_key.return_value = {"user_id": "owner-1"}
+
+        @contextmanager
+        def _fake_db_readonly():
+            yield MagicMock()
+
+        monkeypatch.setattr(sp_mod, "db_readonly", _fake_db_readonly)
+        monkeypatch.setattr(sp_mod, "AgentsRepository", lambda conn: fake_repo)
+
+        conv_id = "00000000-0000-0000-0000-000000000009"
+        sp = sp_mod.StreamProcessor.__new__(sp_mod.StreamProcessor)
+        sp.data = {"api_key": "agent-key-1"}
+        sp.decoded_token = None
+        sp.initial_user_id = None
+        sp.conversation_id = conv_id
+        sp.agent_config = {}
+        sp.reserved_message_id = None
+
+        sp.resume_from_tool_actions(tool_actions=[], conversation_id=conv_id)
+
+        fake_repo.find_by_key.assert_called_once_with("agent-key-1")
+        # The lookup + claim now key on the owner id, not None.
+        cont_service.load_state.assert_called_once_with(conv_id, "owner-1")
+        cont_service.mark_resuming.assert_called_once_with(conv_id, "owner-1")
+        assert sp.initial_user_id == "owner-1"
+        assert sp.decoded_token == {"sub": "owner-1"}
+
 
 @pytest.mark.unit
 class TestContinuationServiceMarkResuming:

@@ -146,6 +146,12 @@ def translate_request(
             "tool_actions": tool_actions,
             "api_key": api_key,
         }
+        # A continuation only exists if turn 1 was saved, so default to True —
+        # otherwise the final turn and its WAL row are never persisted. An
+        # explicit override is honoured if the client resends it.
+        result["save_conversation"] = bool(
+            data.get("docsgpt", {}).get("save_conversation", True)
+        )
         # Carry tools forward for next iteration
         if data.get("tools"):
             result["client_tools"] = data["tools"]
