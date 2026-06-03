@@ -123,6 +123,26 @@ class BaseAgent(ABC):
         self, query: str, log_context: LogContext = None
     ) -> Generator[Dict, None, None]:
         yield from self._gen_inner(query, log_context)
+        yield from self._emit_responses_metadata()
+
+    def _emit_responses_metadata(self) -> Generator[Dict, None, None]:
+        """Surface the latest Responses API id so the route can persist it in
+        message metadata for previous_response_id chaining across turns."""
+        if not settings.OPENAI_RESPONSES_STORE:
+            return
+        response_id = getattr(self.llm, "_last_response_id", None)
+        if response_id:
+            yield {"metadata": {"response_id": response_id}}
+
+    def _previous_response_id(self) -> Optional[str]:
+        """Most recent stored Responses API id from chat history, if any."""
+        for turn in reversed(self.chat_history or []):
+            if not isinstance(turn, dict):
+                continue
+            meta = turn.get("metadata")
+            if isinstance(meta, dict) and meta.get("response_id"):
+                return meta["response_id"]
+        return None
 
     @abstractmethod
     def _gen_inner(
@@ -280,6 +300,7 @@ class BaseAgent(ABC):
 
         yield {"sources": self.retrieved_docs}
         yield {"tool_calls": self._get_truncated_tool_calls()}
+        yield from self._emit_responses_metadata()
 
     # ---- Tool delegation (thin wrappers around ToolExecutor) ----
 
@@ -558,6 +579,14 @@ class BaseAgent(ABC):
                     gen_kwargs["response_format"] = structured_format
                 elif self.llm_name == "google":
                     gen_kwargs["response_schema"] = structured_format
+        if (
+            settings.OPENAI_RESPONSES_STORE
+            and hasattr(self.llm, "_uses_responses_api")
+            and self.llm._uses_responses_api()
+        ):
+            previous_response_id = self._previous_response_id()
+            if previous_response_id:
+                gen_kwargs["previous_response_id"] = previous_response_id
         resp = self.llm.gen_stream(**gen_kwargs)
 
         if log_context:

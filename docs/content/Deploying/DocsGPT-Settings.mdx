@@ -48,7 +48,6 @@ Here are some of the most fundamental settings you'll likely want to configure:
     - `anthropic`: Use Anthropic's Claude models.
     - `groq`: Use Groq's models.
     - `huggingface`: Use HuggingFace Inference API.
-    - `azure_openai`: Use Azure OpenAI Service.
     - `openai` (when using local inference engines like Ollama, Llama.cpp, TGI, etc.): This signals DocsGPT to use an OpenAI-compatible API format, even if the actual LLM is running locally.
 
 - **`LLM_NAME`**: Specifies the specific model to use from the chosen LLM provider. The available models depend on the `LLM_PROVIDER` you've selected.
@@ -103,7 +102,7 @@ In this case, even though you are using Ollama locally, `LLM_PROVIDER` is set to
 
 DocsGPT ships with a built-in catalog of models for the providers it
 supports out of the box (OpenAI, Anthropic, Google, Groq, OpenRouter,
-Novita, Azure OpenAI, Hugging Face, DocsGPT). To add **your own
+Novita, Hugging Face, DocsGPT). To add **your own
 models** without forking the repo — for example, a Mistral or Together
 account, a self-hosted vLLM endpoint, or any other OpenAI-compatible
 API — point `MODELS_CONFIG_DIR` at a directory of YAML files.

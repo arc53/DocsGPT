@@ -8,7 +8,6 @@ Extends coverage beyond test_openai_llm.py:
   - _raw_gen with tools and response_format
   - _raw_gen_stream tool_calls yielding
   - prepare_structured_output_format nested schemas
-  - AzureOpenAILLM constructor
   - _supports_tools / _supports_structured_output
   - get_supported_attachment_types
   - prepare_messages_with_attachments edge cases
@@ -749,44 +748,6 @@ class TestGetBase64Image:
         llm.storage = types.SimpleNamespace(get_file=fake_get_file)
         with pytest.raises(FileNotFoundError):
             llm._get_base64_image({"path": "/nonexistent"})
-
-
-# AzureOpenAILLM
-
-
-@pytest.mark.unit
-class TestAzureOpenAILLM:
-
-    def test_constructor(self, monkeypatch):
-        monkeypatch.setattr(
-            "application.llm.openai.settings",
-            types.SimpleNamespace(
-                OPENAI_API_KEY="k",
-                API_KEY="k",
-                OPENAI_BASE_URL="",
-                OPENAI_API_BASE="https://my.azure.endpoint",
-                OPENAI_API_VERSION="2024-02-01",
-                AZURE_DEPLOYMENT_NAME="my-deployment",
-            ),
-        )
-        monkeypatch.setattr(
-            "application.llm.openai.StorageCreator",
-            types.SimpleNamespace(get_storage=lambda: None),
-        )
-        from unittest.mock import MagicMock
-
-        monkeypatch.setattr("application.llm.openai.OpenAI", MagicMock())
-        mock_azure = MagicMock()
-        monkeypatch.setattr("openai.AzureOpenAI", mock_azure, raising=False)
-
-        # We need to reimport to get fresh class with mocked module
-        import importlib
-        import application.llm.openai as oai_mod
-
-        importlib.reload(oai_mod)
-
-        # Just verify the class exists and inherits from OpenAILLM
-        assert issubclass(oai_mod.AzureOpenAILLM, oai_mod.OpenAILLM)
 
 
 # _truncate_base64_for_logging — additional edges
