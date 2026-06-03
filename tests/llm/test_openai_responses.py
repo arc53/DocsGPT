@@ -102,7 +102,9 @@ def test_to_responses_input_tool_roundtrip(monkeypatch):
             "arguments": '{"q":"x"}',
         },
         {"type": "function_call_output", "call_id": "call_1", "output": "result"},
-        {"role": "assistant", "content": [{"type": "input_text", "text": "final"}]},
+        # The Responses API requires output_text (not input_text) for the
+        # assistant role; input_text 400s. Locked in here so it can't regress.
+        {"role": "assistant", "content": [{"type": "output_text", "text": "final"}]},
     ]
 
 

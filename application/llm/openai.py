@@ -461,15 +461,12 @@ class OpenAILLM(BaseLLM):
     @staticmethod
     def _responses_content_parts(role, content):
         """Translate a cleaned chat ``content`` value into Responses content
-        parts (``input_text``/``input_image``/``input_file``).
-
-        Assistant text from prior turns is replayed as ``input_text`` too: a
-        Responses easy-input message only accepts the input_* content types
-        regardless of role (``output_text`` is reserved for full
-        output-message items, which carry id/status/annotations).
+        parts. The Responses API enforces the content-part type by message
+        role: assistant turns require ``output_text`` (``input_text`` is
+        rejected with a 400), while user/system turns require ``input_text``.
+        Images/files use ``input_image``/``input_file``.
         """
-        _ = role
-        text_type = "input_text"
+        text_type = "output_text" if role == "assistant" else "input_text"
         parts = []
         if content is None:
             return parts
