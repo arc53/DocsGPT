@@ -31,9 +31,11 @@ logger = logging.getLogger(__name__)
 BUILTIN_MODELS_DIR = Path(__file__).parent / "models"
 DEFAULTS_FILENAME = "_defaults.yaml"
 
-# Accepted reasoning_effort values across the OpenAI reasoning lineup.
-# Validated at YAML load so a typo aborts boot rather than surfacing as a
-# provider 400. The subset a given model actually accepts is model-dependent.
+# Accepted reasoning_effort values across the OpenAI reasoning lineup. This
+# is the union of all models; the set a given model actually accepts is a
+# subset (older o-series take low/medium/high only; GPT-5.5 adds xhigh;
+# none/minimal are GPT-5-era additions). Validated at YAML load so a typo
+# aborts boot rather than surfacing as a provider 400.
 VALID_REASONING_EFFORTS = frozenset(
     {"none", "minimal", "low", "medium", "high", "xhigh"}
 )
@@ -97,6 +99,7 @@ class _ModelEntry(_CapabilityFields):
     description: str = ""
     enabled: bool = True
     base_url: Optional[str] = None
+    upstream_model_id: Optional[str] = None
     aliases: List[str] = Field(default_factory=list)
 
     @field_validator("id")
@@ -248,6 +251,7 @@ def _build_model(
         capabilities=caps,
         enabled=entry.enabled,
         base_url=entry.base_url,
+        upstream_model_id=entry.upstream_model_id,
         display_provider=display_provider,
     )
 

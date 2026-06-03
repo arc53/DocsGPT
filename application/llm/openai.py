@@ -348,6 +348,8 @@ class OpenAILLM(BaseLLM):
                 **kwargs,
             )
 
+        self._apply_reasoning_effort(kwargs)
+
         request_params = {
             "model": model,
             "messages": messages,
@@ -402,6 +404,8 @@ class OpenAILLM(BaseLLM):
                 **kwargs,
             )
             return
+
+        self._apply_reasoning_effort(kwargs)
 
         request_params = {
             "model": model,
@@ -851,6 +855,22 @@ class OpenAILLM(BaseLLM):
         if self.capabilities is not None:
             return bool(self.capabilities.supports_structured_output)
         return True
+
+    def _apply_reasoning_effort(self, kwargs):
+        """Inject the model's configured reasoning_effort into ``kwargs``.
+
+        No-op when the caller already set one, when no registry capabilities
+        are attached, or when the model has no configured effort. Read from
+        per-model capabilities (not the caller) so a cross-provider fallback
+        applies its own model's effort rather than inheriting the primary's.
+        """
+        if "reasoning_effort" in kwargs:
+            return
+        if self.capabilities is None:
+            return
+        effort = getattr(self.capabilities, "reasoning_effort", None)
+        if effort:
+            kwargs["reasoning_effort"] = effort
 
     def prepare_structured_output_format(self, json_schema):
         if not json_schema:

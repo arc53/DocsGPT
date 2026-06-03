@@ -110,15 +110,52 @@ defaults:                              # optional, applied to every model below
   context_window: int                  # default 128000
   input_cost_per_token: float          # default null
   output_cost_per_token: float         # default null
+  reasoning_effort: <string>           # default null; none|minimal|low|medium|high|xhigh (subset is model-dependent)
 
 models:                                # required
-  - id: <string, required>             # the value persisted in agent records
+  - id: <string, required>             # unique registry key; persisted in agent records
     display_name: <string>             # default: id
     description: <string>              # default: ""
     enabled: bool                      # default true; false hides from /api/models
     base_url: <string>                 # optional custom endpoint for this model
+    upstream_model_id: <string>        # default: id; the name actually sent to the provider
     # All `defaults:` fields above can be overridden here per-model.
 ```
+
+### Reasoning effort, and one model at multiple efforts
+
+`reasoning_effort` is forwarded to the provider for OpenAI reasoning
+models. Accepted values are `none`, `minimal`, `low`, `medium`, `high`,
+and `xhigh`, but the subset each model accepts varies (older o-series
+take only `low`/`medium`/`high`; GPT-5.5 adds `xhigh`) — check the model
+page. Set it per-model; sending it to a non-reasoning model is rejected
+by the API:
+
+```yaml
+  - id: gpt-5.4-mini
+    display_name: GPT-5.4 Mini
+    reasoning_effort: medium
+```
+
+To expose the *same* upstream model at two efforts, give each entry a
+distinct `id` and point both at one `upstream_model_id`. The `id` is the
+unique registry key (and what's stored in agent records); the
+`upstream_model_id` is the name actually sent to the provider, defaulting
+to `id` when omitted:
+
+```yaml
+  - id: gpt-5.4-mini-low
+    display_name: GPT-5.4 Mini (Low Reasoning)
+    upstream_model_id: gpt-5.4-mini
+    reasoning_effort: low
+  - id: gpt-5.4-mini-high
+    display_name: GPT-5.4 Mini (High Reasoning)
+    upstream_model_id: gpt-5.4-mini
+    reasoning_effort: high
+```
+
+Both call `gpt-5.4-mini` on the wire; token usage is attributed to the
+distinct `id`s, so cost dashboards split by reasoning level.
 
 ### Attachment aliases
 
