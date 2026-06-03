@@ -35,6 +35,12 @@ type ExtendedPromptProps = PromptProps & {
   showAddButton?: boolean;
 };
 
+type PromptItem = {
+  name: string;
+  id: string;
+  type: string;
+};
+
 export default function Prompts({
   prompts,
   selectedPrompt,
@@ -65,11 +71,7 @@ export default function Prompts({
     name: string;
   } | null>(null);
 
-  const handleSelectPrompt = (prompt: {
-    name: string;
-    id: string;
-    type: string;
-  }) => {
+  const handleSelectPrompt = (prompt: PromptItem) => {
     setEditPromptName(prompt.name);
     onSelectPrompt(prompt.name, prompt.id, prompt.type);
     setOpen(false);
@@ -153,6 +155,19 @@ export default function Prompts({
     } catch (error) {
       console.error(error);
     }
+  };
+
+  const handleOpenEditPrompt = (prompt: PromptItem) => {
+    setModalType('EDIT');
+    setEditPromptName(prompt.name);
+    handleFetchPromptContent(prompt.id);
+    setCurrentPromptEdit({
+      id: prompt.id,
+      name: prompt.name,
+      type: prompt.type,
+    });
+    setModalState('ACTIVE');
+    setOpen(false);
   };
 
   const handleSaveChanges = (id: string, type: string) => {
@@ -265,16 +280,7 @@ export default function Prompts({
                                 size="icon-sm"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setModalType('EDIT');
-                                  setEditPromptName(prompt.name);
-                                  handleFetchPromptContent(prompt.id);
-                                  setCurrentPromptEdit({
-                                    id: prompt.id,
-                                    name: prompt.name,
-                                    type: prompt.type,
-                                  });
-                                  setModalState('ACTIVE');
-                                  setOpen(false);
+                                  handleOpenEditPrompt(prompt);
                                 }}
                                 className="h-auto w-auto rounded p-1"
                                 aria-label="Edit prompt"
@@ -305,6 +311,19 @@ export default function Prompts({
                 </Command>
               </PopoverContent>
             </Popover>
+            {selectedPrompt?.type !== 'public' && selectedPrompt?.id && (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => handleOpenEditPrompt(selectedPrompt)}
+                className="border-border bg-card text-foreground hover:bg-accent size-11 rounded-full"
+                aria-label="Edit selected prompt"
+                title="Edit selected prompt"
+              >
+                <Pencil className="text-muted-foreground h-4 w-4" />
+              </Button>
+            )}
             {showAddButton && (
               <Button
                 type="button"
