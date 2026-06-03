@@ -189,6 +189,13 @@ class Settings(BaseSettings):
     # Tool pre-fetch settings
     ENABLE_TOOL_PREFETCH: bool = True
 
+    # When True, OpenAI Responses API calls are persisted server-side
+    # (store=true) so a previous_response_id can chain turns. When False
+    # (the default) Responses calls are stateless (store=false) and any
+    # reasoning is carried across the in-turn tool loop via encrypted
+    # reasoning items instead.
+    OPENAI_RESPONSES_STORE: bool = False
+
     # Config-free tools on by default in agentless chats. ``scheduler`` is
     # dual-registered (also in ``BUILTIN_AGENT_TOOLS``) so the same synthetic id
     # resolves whether reached via defaults or the agent picker.

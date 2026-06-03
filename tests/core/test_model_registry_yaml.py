@@ -60,11 +60,6 @@ EXPECTED_IDS = {
         "deepseek-v4-flash",
         "deepseek-v4-pro",
     },
-    "azure_openai": {
-        "azure-gpt-5.5",
-        "azure-gpt-5.4-mini",
-        "azure-gpt-5.4-nano",
-    },
     "docsgpt": {"docsgpt-local"},
     "huggingface": {"huggingface-local"},
 }
@@ -240,20 +235,6 @@ class TestRegistryPermutations:
             reg = ModelRegistry()
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["docsgpt"]
-
-    def test_azure_via_provider(self):
-        s = _make_settings(LLM_PROVIDER="azure_openai", API_KEY="key")
-        with patch("application.core.settings.settings", s):
-            reg = ModelRegistry()
-        ids = {m.id for m in reg.get_all_models()}
-        assert "azure-gpt-5.5" in ids
-
-    def test_azure_via_api_base(self):
-        s = _make_settings(OPENAI_API_BASE="https://x.openai.azure.com")
-        with patch("application.core.settings.settings", s):
-            reg = ModelRegistry()
-        ids = {m.id for m in reg.get_all_models()}
-        assert "azure-gpt-5.5" in ids
 
     def test_everything_set(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "x")

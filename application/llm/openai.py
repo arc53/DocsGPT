@@ -60,6 +60,53 @@ def _truncate_base64_for_logging(messages):
     return truncated
 
 
+class _RespFunction:
+    """Minimal stand-in for an OpenAI tool-call ``function`` object."""
+
+    def __init__(self, name, arguments):
+        self.name = name
+        self.arguments = arguments
+
+
+class _RespToolCall:
+    """Chat-Completions-shaped tool call synthesized from a Responses
+    ``function_call`` item, so the existing OpenAI handler and the streaming
+    tool-call accumulator consume it unchanged."""
+
+    def __init__(self, id, index, name, arguments):
+        self.id = id
+        self.index = index
+        self.type = "function"
+        self.function = _RespFunction(name, arguments)
+
+
+class _RespDelta:
+    """Stand-in for a streaming chat ``choice.delta``."""
+
+    def __init__(self, content=None, tool_calls=None):
+        self.content = content
+        self.tool_calls = tool_calls
+
+
+class _RespMessage:
+    """Stand-in for a non-streaming chat ``choice.message``."""
+
+    def __init__(self, content=None, tool_calls=None):
+        self.content = content
+        self.tool_calls = tool_calls
+
+
+class _RespChoice:
+    """Stand-in for ``response.choices[0]`` (non-streaming) or a streaming
+    chunk's choice. ``parse_response`` reads ``.message`` or ``.delta`` plus
+    ``.finish_reason``."""
+
+    def __init__(self, finish_reason, delta=None, message=None):
+        self.delta = delta
+        self.message = message
+        self.finish_reason = finish_reason
+
+
 class OpenAILLM(BaseLLM):
     provider_name = "openai"
 
@@ -102,6 +149,13 @@ class OpenAILLM(BaseLLM):
                 api_key=self.api_key, base_url=effective_base_url
             )
         self.storage = StorageCreator.get_storage()
+        # Per-instance state for the Responses API path. ``_reasoning_for_calls``
+        # maps a function-call id to the reasoning items that preceded it, so
+        # the model's chain-of-thought survives the in-turn tool round-trip.
+        # ``_last_response_id`` is the most recent /v1/responses id, used to
+        # chain turns when OPENAI_RESPONSES_STORE is enabled.
+        self._reasoning_for_calls = {}
+        self._last_response_id = None
 
     def _clean_messages_openai(self, messages):
         cleaned_messages = []
@@ -283,6 +337,17 @@ class OpenAILLM(BaseLLM):
         if response_format and not self._supports_structured_output():
             response_format = None
 
+        previous_response_id = kwargs.pop("previous_response_id", None)
+        if self._uses_responses_api():
+            return self._responses_gen(
+                model,
+                messages,
+                tools=tools,
+                response_format=response_format,
+                previous_response_id=previous_response_id,
+                **kwargs,
+            )
+
         request_params = {
             "model": model,
             "messages": messages,
@@ -326,6 +391,18 @@ class OpenAILLM(BaseLLM):
         if response_format and not self._supports_structured_output():
             response_format = None
 
+        previous_response_id = kwargs.pop("previous_response_id", None)
+        if self._uses_responses_api():
+            yield from self._responses_gen_stream(
+                model,
+                messages,
+                tools=tools,
+                response_format=response_format,
+                previous_response_id=previous_response_id,
+                **kwargs,
+            )
+            return
+
         request_params = {
             "model": model,
             "messages": messages,
@@ -362,6 +439,401 @@ class OpenAILLM(BaseLLM):
                 # Yield non-content chunks only when needed for tool-call handling.
                 if has_tool_calls or finish_reason == "tool_calls":
                     yield choice
+        finally:
+            if hasattr(response, "close"):
+                response.close()
+
+    # ---- Responses API (/v1/responses) ----
+
+    def _uses_responses_api(self):
+        """True when the model's registry capability opts it into the
+        ``/v1/responses`` endpoint."""
+        return (
+            self.capabilities is not None
+            and getattr(self.capabilities, "api_flavor", "chat_completions")
+            == "responses"
+        )
+
+    @staticmethod
+    def _responses_content_parts(role, content):
+        """Translate a cleaned chat ``content`` value into Responses content
+        parts (``input_text``/``output_text``/``input_image``/``input_file``)."""
+        text_type = "output_text" if role == "assistant" else "input_text"
+        parts = []
+        if content is None:
+            return parts
+        if isinstance(content, str):
+            if content:
+                parts.append({"type": text_type, "text": content})
+            return parts
+        if isinstance(content, list):
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                itype = item.get("type")
+                if itype == "text":
+                    parts.append({"type": text_type, "text": item.get("text", "")})
+                elif itype == "image_url":
+                    url = (item.get("image_url") or {}).get("url")
+                    if url:
+                        parts.append({"type": "input_image", "image_url": url})
+                elif itype == "file":
+                    file_obj = item.get("file") or {}
+                    file_part = {"type": "input_file"}
+                    for key in ("file_id", "filename", "file_data"):
+                        if file_obj.get(key):
+                            file_part[key] = file_obj[key]
+                    parts.append(file_part)
+        return parts
+
+    def _to_responses_input(self, messages):
+        """Translate cleaned Chat-Completions messages into a Responses
+        ``input`` item list.
+
+        Reasoning items captured during the in-turn tool loop are re-injected
+        ahead of the function calls they belong to (deduped by id) so the
+        model keeps its chain-of-thought across the round-trip.
+        """
+        input_items = []
+        emitted_reasoning = set()
+        for message in messages:
+            role = message.get("role")
+            tool_calls = message.get("tool_calls")
+            if tool_calls and role == "assistant":
+                for tc in tool_calls:
+                    call_id = tc.get("id", "")
+                    for item in self._reasoning_for_calls.get(call_id, []):
+                        item_id = item.get("id")
+                        if item_id and item_id in emitted_reasoning:
+                            continue
+                        if item_id:
+                            emitted_reasoning.add(item_id)
+                        input_items.append(item)
+                    func = tc.get("function", {})
+                    input_items.append({
+                        "type": "function_call",
+                        "call_id": call_id,
+                        "name": func.get("name", ""),
+                        "arguments": func.get("arguments", "") or "{}",
+                    })
+                continue
+            tool_call_id = message.get("tool_call_id")
+            if role == "tool" and tool_call_id is not None:
+                tool_content = message.get("content")
+                input_items.append({
+                    "type": "function_call_output",
+                    "call_id": tool_call_id,
+                    "output": (
+                        tool_content
+                        if isinstance(tool_content, str)
+                        else json.dumps(tool_content)
+                    ),
+                })
+                continue
+            parts = self._responses_content_parts(role, message.get("content"))
+            if parts:
+                input_items.append({"role": role, "content": parts})
+        return input_items
+
+    @staticmethod
+    def _trim_for_previous_response(messages):
+        """When chaining via ``previous_response_id`` the server already holds
+        the earlier turns, so only system context plus everything after the
+        last completed assistant response needs to be sent again."""
+        last_assistant = -1
+        for i, message in enumerate(messages):
+            if message.get("role") == "assistant" and not message.get(
+                "tool_calls"
+            ):
+                last_assistant = i
+        if last_assistant < 0:
+            return messages
+        head = [
+            m
+            for m in messages[: last_assistant + 1]
+            if m.get("role") == "system"
+        ]
+        return head + messages[last_assistant + 1:]
+
+    @staticmethod
+    def _to_responses_tools(tools):
+        """Flatten Chat-Completions tool defs into Responses tool defs.
+
+        ``strict`` is left False so schemas that were valid on Chat
+        Completions are not newly rejected by the stricter Responses default.
+        """
+        converted = []
+        for tool in tools or []:
+            if tool.get("type") == "function" and isinstance(
+                tool.get("function"), dict
+            ):
+                fn = tool["function"]
+                converted.append({
+                    "type": "function",
+                    "name": fn.get("name", ""),
+                    "description": fn.get("description", ""),
+                    "parameters": fn.get("parameters", {}),
+                    "strict": False,
+                })
+            else:
+                converted.append(tool)
+        return converted
+
+    @staticmethod
+    def _responses_text_format(response_format):
+        """Map a Chat-Completions ``response_format`` to a Responses
+        ``text.format`` object."""
+        if not isinstance(response_format, dict):
+            return None
+        if response_format.get("type") == "json_schema":
+            js = response_format.get("json_schema", {})
+            fmt = {"type": "json_schema", "name": js.get("name", "response")}
+            if "schema" in js:
+                fmt["schema"] = js["schema"]
+            if "strict" in js:
+                fmt["strict"] = js["strict"]
+            return fmt
+        if response_format.get("type") == "json_object":
+            return {"type": "json_object"}
+        return None
+
+    def _build_responses_params(
+        self,
+        model,
+        input_items,
+        tools,
+        response_format,
+        previous_response_id,
+        stream,
+        kwargs,
+    ):
+        """Assemble the kwargs for ``client.responses.create``. Only known,
+        Responses-compatible keys are forwarded — unknown chat-only kwargs
+        are dropped so the API does not reject the request."""
+        params = {"model": model, "input": input_items, "stream": stream}
+
+        max_out = kwargs.pop("max_completion_tokens", None)
+        if max_out is None:
+            max_out = kwargs.pop("max_tokens", None)
+        if max_out is not None:
+            params["max_output_tokens"] = max_out
+
+        effort = (
+            getattr(self.capabilities, "reasoning_effort", None)
+            if self.capabilities is not None
+            else None
+        )
+        if effort:
+            params["reasoning"] = {"effort": effort, "summary": "auto"}
+
+        if response_format:
+            fmt = self._responses_text_format(response_format)
+            if fmt:
+                params["text"] = {"format": fmt}
+
+        if tools:
+            params["tools"] = self._to_responses_tools(tools)
+
+        store = bool(settings.OPENAI_RESPONSES_STORE)
+        params["store"] = store
+        if store:
+            if previous_response_id:
+                params["previous_response_id"] = previous_response_id
+        else:
+            # Stateless: ask the API to return encrypted reasoning so it can
+            # be replayed across the in-turn tool loop without server-side
+            # retention of the conversation.
+            params["include"] = ["reasoning.encrypted_content"]
+        return params
+
+    @staticmethod
+    def _reasoning_item_to_dict(item):
+        """Serialize a Responses ``reasoning`` output item into the input
+        shape needed to feed it back on the next call."""
+        result = {"type": "reasoning", "id": getattr(item, "id", None)}
+        encrypted = getattr(item, "encrypted_content", None)
+        if encrypted is not None:
+            result["encrypted_content"] = encrypted
+        summary = getattr(item, "summary", None) or []
+        serialized = []
+        for part in summary:
+            if isinstance(part, dict):
+                serialized.append(part)
+            else:
+                serialized.append({
+                    "type": getattr(part, "type", "summary_text"),
+                    "text": getattr(part, "text", ""),
+                })
+        result["summary"] = serialized
+        return result
+
+    def _record_responses_metadata(self, response):
+        rid = getattr(response, "id", None)
+        if rid:
+            self._last_response_id = rid
+
+    def _remember_reasoning(self, tool_calls, reasoning_items):
+        """Key captured reasoning items by each function-call id for replay
+        on the next in-turn request."""
+        if not reasoning_items:
+            return
+        for tc in tool_calls:
+            self._reasoning_for_calls[tc.id] = reasoning_items
+
+    def _parse_responses_output(self, response):
+        """Walk a non-streaming Responses ``output`` array into
+        ``(content, tool_calls, reasoning_items)``."""
+        content_parts = []
+        tool_calls = []
+        reasoning_items = []
+        for item in getattr(response, "output", None) or []:
+            itype = getattr(item, "type", None)
+            if itype == "reasoning":
+                reasoning_items.append(self._reasoning_item_to_dict(item))
+            elif itype == "message":
+                for part in getattr(item, "content", None) or []:
+                    if getattr(part, "type", None) == "output_text":
+                        content_parts.append(getattr(part, "text", "") or "")
+            elif itype == "function_call":
+                tool_calls.append(_RespToolCall(
+                    id=getattr(item, "call_id", "") or getattr(item, "id", ""),
+                    index=len(tool_calls),
+                    name=getattr(item, "name", "") or "",
+                    arguments=getattr(item, "arguments", "") or "",
+                ))
+        return "".join(content_parts), tool_calls, reasoning_items
+
+    def _responses_gen(
+        self,
+        model,
+        messages,
+        tools=None,
+        response_format=None,
+        previous_response_id=None,
+        **kwargs,
+    ):
+        if previous_response_id and settings.OPENAI_RESPONSES_STORE:
+            messages = self._trim_for_previous_response(messages)
+        input_items = self._to_responses_input(messages)
+        params = self._build_responses_params(
+            model,
+            input_items,
+            tools,
+            response_format,
+            previous_response_id,
+            stream=False,
+            kwargs=kwargs,
+        )
+        response = self.client.responses.create(**params)
+        logging.info(f"OpenAI responses output: {getattr(response, 'output', None)}")
+        self._record_responses_metadata(response)
+        content, tool_calls, reasoning_items = self._parse_responses_output(
+            response
+        )
+        if tools:
+            self._remember_reasoning(tool_calls, reasoning_items)
+            message = _RespMessage(
+                content=content or None, tool_calls=tool_calls or None
+            )
+            return _RespChoice(
+                finish_reason="tool_calls" if tool_calls else "stop",
+                message=message,
+            )
+        return content or ""
+
+    def _responses_gen_stream(
+        self,
+        model,
+        messages,
+        tools=None,
+        response_format=None,
+        previous_response_id=None,
+        **kwargs,
+    ):
+        if previous_response_id and settings.OPENAI_RESPONSES_STORE:
+            messages = self._trim_for_previous_response(messages)
+        input_items = self._to_responses_input(messages)
+        params = self._build_responses_params(
+            model,
+            input_items,
+            tools,
+            response_format,
+            previous_response_id,
+            stream=True,
+            kwargs=kwargs,
+        )
+        response = self.client.responses.create(**params)
+
+        func_calls = {}
+        reasoning_items = []
+        try:
+            for event in response:
+                etype = getattr(event, "type", "")
+                if etype == "response.output_text.delta":
+                    delta = getattr(event, "delta", "")
+                    if delta:
+                        yield delta
+                elif etype == "response.reasoning_summary_text.delta":
+                    delta = getattr(event, "delta", "")
+                    if delta:
+                        yield {"type": "thought", "thought": delta}
+                elif etype == "response.output_item.added":
+                    item = getattr(event, "item", None)
+                    if getattr(item, "type", None) == "function_call":
+                        index = getattr(event, "output_index", len(func_calls))
+                        func_calls[index] = {
+                            "call_id": (
+                                getattr(item, "call_id", "")
+                                or getattr(item, "id", "")
+                            ),
+                            "name": getattr(item, "name", "") or "",
+                            "arguments": "",
+                        }
+                elif etype == "response.function_call_arguments.delta":
+                    index = getattr(event, "output_index", None)
+                    if index in func_calls:
+                        func_calls[index]["arguments"] += (
+                            getattr(event, "delta", "") or ""
+                        )
+                elif etype == "response.function_call_arguments.done":
+                    index = getattr(event, "output_index", None)
+                    if index in func_calls:
+                        done_args = getattr(event, "arguments", None)
+                        if done_args is not None:
+                            func_calls[index]["arguments"] = done_args
+                elif etype == "response.output_item.done":
+                    item = getattr(event, "item", None)
+                    if getattr(item, "type", None) == "reasoning":
+                        reasoning_items.append(
+                            self._reasoning_item_to_dict(item)
+                        )
+                elif etype == "response.completed":
+                    self._record_responses_metadata(
+                        getattr(event, "response", None)
+                    )
+                    if func_calls:
+                        tool_calls = []
+                        for position, index in enumerate(sorted(func_calls)):
+                            entry = func_calls[index]
+                            tool_calls.append(_RespToolCall(
+                                id=entry["call_id"],
+                                index=position,
+                                name=entry["name"],
+                                arguments=entry["arguments"],
+                            ))
+                        self._remember_reasoning(tool_calls, reasoning_items)
+                        yield _RespChoice(
+                            finish_reason="tool_calls",
+                            delta=_RespDelta(tool_calls=tool_calls),
+                        )
+                elif etype in ("response.failed", "error"):
+                    resp = getattr(event, "response", None)
+                    err = (
+                        getattr(resp, "error", None)
+                        or getattr(event, "message", None)
+                        or "Responses stream error"
+                    )
+                    raise RuntimeError(f"Responses API stream error: {err}")
         finally:
             if hasattr(response, "close"):
                 response.close()
@@ -620,20 +1092,3 @@ class OpenAILLM(BaseLLM):
         except Exception as e:
             logging.error(f"Error uploading file to OpenAI: {e}", exc_info=True)
             raise
-
-
-class AzureOpenAILLM(OpenAILLM):
-
-    def __init__(self, api_key, user_api_key, *args, **kwargs):
-
-        super().__init__(api_key)
-        self.api_base = (settings.OPENAI_API_BASE,)
-        self.api_version = (settings.OPENAI_API_VERSION,)
-        self.deployment_name = (settings.AZURE_DEPLOYMENT_NAME,)
-        from openai import AzureOpenAI
-
-        self.client = AzureOpenAI(
-            api_key=api_key,
-            api_version=settings.OPENAI_API_VERSION,
-            azure_endpoint=settings.OPENAI_API_BASE,
-        )

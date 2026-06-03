@@ -16,7 +16,6 @@ class ModelProvider(str, Enum):
     OPENAI = "openai"
     OPENAI_COMPATIBLE = "openai_compatible"
     OPENROUTER = "openrouter"
-    AZURE_OPENAI = "azure_openai"
     ANTHROPIC = "anthropic"
     GROQ = "groq"
     GOOGLE = "google"
@@ -37,6 +36,14 @@ class ModelCapabilities:
     context_window: int = 128000
     input_cost_per_token: Optional[float] = None
     output_cost_per_token: Optional[float] = None
+    # OpenAI reasoning-model effort hint (none/minimal/low/medium/high/xhigh;
+    # the accepted subset is model-dependent). Consumed only by the
+    # Responses API path in OpenAILLM; ignored by other providers.
+    reasoning_effort: Optional[str] = None
+    # Which OpenAI wire protocol the model speaks: "chat_completions"
+    # (the default) or "responses" (the /v1/responses endpoint). Set per
+    # model so only models that actually support the Responses API opt in.
+    api_flavor: str = "chat_completions"
 
 
 @dataclass

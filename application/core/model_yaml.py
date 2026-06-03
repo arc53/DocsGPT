@@ -31,6 +31,15 @@ logger = logging.getLogger(__name__)
 BUILTIN_MODELS_DIR = Path(__file__).parent / "models"
 DEFAULTS_FILENAME = "_defaults.yaml"
 
+# Accepted reasoning_effort values across the OpenAI reasoning lineup.
+# Validated at YAML load so a typo aborts boot rather than surfacing as a
+# provider 400. The subset a given model actually accepts is model-dependent.
+VALID_REASONING_EFFORTS = frozenset(
+    {"none", "minimal", "low", "medium", "high", "xhigh"}
+)
+# Accepted api_flavor values: which OpenAI wire protocol a model speaks.
+VALID_API_FLAVORS = frozenset({"chat_completions", "responses"})
+
 
 class _DefaultsFile(BaseModel):
     """Schema for ``_defaults.yaml``. Currently just attachment aliases."""
@@ -56,6 +65,28 @@ class _CapabilityFields(BaseModel):
     context_window: Optional[int] = None
     input_cost_per_token: Optional[float] = None
     output_cost_per_token: Optional[float] = None
+    reasoning_effort: Optional[str] = None
+    api_flavor: Optional[str] = None
+
+    @field_validator("reasoning_effort")
+    @classmethod
+    def _valid_reasoning_effort(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in VALID_REASONING_EFFORTS:
+            valid = ", ".join(sorted(VALID_REASONING_EFFORTS))
+            raise ValueError(
+                f"reasoning_effort must be one of [{valid}], got {v!r}"
+            )
+        return v
+
+    @field_validator("api_flavor")
+    @classmethod
+    def _valid_api_flavor(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in VALID_API_FLAVORS:
+            valid = ", ".join(sorted(VALID_API_FLAVORS))
+            raise ValueError(
+                f"api_flavor must be one of [{valid}], got {v!r}"
+            )
+        return v
 
 
 class _ModelEntry(_CapabilityFields):
@@ -205,6 +236,8 @@ def _build_model(
         context_window=pick("context_window", 128000),
         input_cost_per_token=pick("input_cost_per_token", None),
         output_cost_per_token=pick("output_cost_per_token", None),
+        reasoning_effort=pick("reasoning_effort", None),
+        api_flavor=pick("api_flavor", "chat_completions"),
     )
 
     return AvailableModel(
