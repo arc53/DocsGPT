@@ -102,7 +102,7 @@ def test_to_responses_input_tool_roundtrip(monkeypatch):
             "arguments": '{"q":"x"}',
         },
         {"type": "function_call_output", "call_id": "call_1", "output": "result"},
-        {"role": "assistant", "content": [{"type": "output_text", "text": "final"}]},
+        {"role": "assistant", "content": [{"type": "input_text", "text": "final"}]},
     ]
 
 
@@ -145,7 +145,11 @@ def test_to_responses_input_multimodal_image(monkeypatch):
         "role": "user",
         "content": [
             {"type": "input_text", "text": "look"},
-            {"type": "input_image", "image_url": "data:image/png;base64,xx"},
+            {
+                "type": "input_image",
+                "image_url": "data:image/png;base64,xx",
+                "detail": "auto",
+            },
         ],
     }]
 
@@ -230,7 +234,9 @@ def test_build_responses_params_store_with_previous_id(monkeypatch):
     )
     assert params["store"] is True
     assert params["previous_response_id"] == "resp_abc"
-    assert "include" not in params
+    # Encrypted reasoning is always requested so in-turn carryover works
+    # regardless of server-side retention.
+    assert params["include"] == ["reasoning.encrypted_content"]
 
 
 # ── streaming normalization into the existing handler contract ───────────────
@@ -292,6 +298,47 @@ def test_responses_gen_stream_text_only(monkeypatch):
     out = list(llm._responses_gen_stream("gpt-5.5", [{"role": "user", "content": "hi"}], tools=None))
     assert out == ["Answer"]
     assert llm._last_response_id == "resp_2"
+
+
+@pytest.mark.unit
+def test_responses_gen_stream_parallel_tool_calls(monkeypatch):
+    from application.llm.handlers.openai import OpenAILLMHandler
+
+    llm = _make_llm(monkeypatch, _responses_caps())
+    events = [
+        _ns(
+            type="response.output_item.added", output_index=0,
+            item=_ns(type="function_call", call_id="call_a", name="t1", id="fc_a"),
+        ),
+        _ns(
+            type="response.output_item.added", output_index=1,
+            item=_ns(type="function_call", call_id="call_b", name="t2", id="fc_b"),
+        ),
+        _ns(type="response.function_call_arguments.delta", output_index=0, delta='{"a":'),
+        _ns(type="response.function_call_arguments.done", output_index=0, arguments='{"a":1}'),
+        _ns(type="response.function_call_arguments.done", output_index=1, arguments='{"b":2}'),
+        _ns(type="response.completed", response=_ns(id="resp_p")),
+    ]
+    llm.client.responses.create = MagicMock(return_value=events)
+    out = list(llm._responses_gen_stream("gpt-5.5", [{"role": "user", "content": "hi"}], tools=[{"type": "function", "function": {"name": "t1", "parameters": {}}}]))
+    parsed = OpenAILLMHandler().parse_response(out[-1])
+    assert parsed.finish_reason == "tool_calls"
+    assert [tc.id for tc in parsed.tool_calls] == ["call_a", "call_b"]
+    assert [tc.index for tc in parsed.tool_calls] == [0, 1]
+    assert parsed.tool_calls[0].arguments == '{"a":1}'
+    assert parsed.tool_calls[1].arguments == '{"b":2}'
+
+
+@pytest.mark.unit
+def test_responses_gen_stream_error_event_raises(monkeypatch):
+    llm = _make_llm(monkeypatch, _responses_caps())
+    events = [
+        _ns(type="response.output_text.delta", delta="partial"),
+        _ns(type="response.failed", response=_ns(error="boom")),
+    ]
+    llm.client.responses.create = MagicMock(return_value=events)
+    with pytest.raises(RuntimeError):
+        list(llm._responses_gen_stream("gpt-5.5", [{"role": "user", "content": "hi"}], tools=None))
 
 
 @pytest.mark.unit

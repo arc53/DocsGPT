@@ -461,8 +461,15 @@ class OpenAILLM(BaseLLM):
     @staticmethod
     def _responses_content_parts(role, content):
         """Translate a cleaned chat ``content`` value into Responses content
-        parts (``input_text``/``output_text``/``input_image``/``input_file``)."""
-        text_type = "output_text" if role == "assistant" else "input_text"
+        parts (``input_text``/``input_image``/``input_file``).
+
+        Assistant text from prior turns is replayed as ``input_text`` too: a
+        Responses easy-input message only accepts the input_* content types
+        regardless of role (``output_text`` is reserved for full
+        output-message items, which carry id/status/annotations).
+        """
+        _ = role
+        text_type = "input_text"
         parts = []
         if content is None:
             return parts
@@ -480,7 +487,11 @@ class OpenAILLM(BaseLLM):
                 elif itype == "image_url":
                     url = (item.get("image_url") or {}).get("url")
                     if url:
-                        parts.append({"type": "input_image", "image_url": url})
+                        parts.append({
+                            "type": "input_image",
+                            "image_url": url,
+                            "detail": "auto",
+                        })
                 elif itype == "file":
                     file_obj = item.get("file") or {}
                     file_part = {"type": "input_file"}
@@ -640,14 +651,13 @@ class OpenAILLM(BaseLLM):
 
         store = bool(settings.OPENAI_RESPONSES_STORE)
         params["store"] = store
-        if store:
-            if previous_response_id:
-                params["previous_response_id"] = previous_response_id
-        else:
-            # Stateless: ask the API to return encrypted reasoning so it can
-            # be replayed across the in-turn tool loop without server-side
-            # retention of the conversation.
-            params["include"] = ["reasoning.encrypted_content"]
+        if store and previous_response_id:
+            params["previous_response_id"] = previous_response_id
+        # Always request encrypted reasoning content so reasoning items can be
+        # replayed by value across the in-turn tool loop — this keeps
+        # carryover working whether or not the response is also retained
+        # server-side (store=true).
+        params["include"] = ["reasoning.encrypted_content"]
         return params
 
     @staticmethod
