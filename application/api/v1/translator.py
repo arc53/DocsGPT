@@ -7,8 +7,48 @@ This module handles:
 """
 
 import json
+import re
 import time
 from typing import Any, Dict, List, Optional
+
+# Some upstream models/proxies echo their reasoning into ``content`` as
+# stringified ``{'type': 'thought', 'thought': '...'}`` event reprs (instead of
+# using the separate reasoning channel) — most visibly when ``response_format``
+# is set. OpenAI's API never puts reasoning in ``content``, so for the
+# OpenAI-compatible endpoint we strip these and reroute them to
+# ``reasoning_content`` to keep ``content`` clean and compatible.
+# The thought value is a Python string repr: single-quoted, or double-quoted when
+# the token contains an apostrophe (e.g. "'ll"). Match the full quoted value
+# (honoring escapes) so tokens containing ``}`` or newlines don't truncate the
+# match and leave stray ``'}`` tails in the content.
+_LEAKED_THOUGHT_RE = re.compile(
+    r"""\{'type': 'thought', 'thought': ('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")\}""",
+    re.DOTALL,
+)
+
+
+def _strip_repr_quotes(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
+        return value[1:-1]
+    return value
+
+
+def _split_leaked_reasoning(content: Optional[str]) -> tuple:
+    """Return ``(clean_content, leaked_reasoning)``.
+
+    ``clean_content`` has any stringified thought-event reprs removed;
+    ``leaked_reasoning`` is the concatenated reasoning text that was extracted.
+    A no-op (returns the input unchanged) when no leak markers are present.
+    """
+    if not content or "'type': 'thought'" not in content:
+        return content, ""
+    extracted: List[str] = []
+    cleaned = _LEAKED_THOUGHT_RE.sub(
+        lambda m: (extracted.append(_strip_repr_quotes(m.group(1))) or ""), content
+    )
+    return cleaned, "".join(extracted)
+
 
 def _get_client_tool_name(tc: Dict) -> str:
     """Return the original tool name for client-facing responses.
@@ -121,6 +161,37 @@ def convert_history(messages: List[Dict]) -> List[Dict]:
     return history
 
 
+def extract_response_schema(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Extract a JSON schema for structured output from a chat-completions request.
+
+    Supports two request shapes:
+    - OpenAI ``response_format``:
+      ``{"type": "json_schema", "json_schema": {"name": ..., "schema": {...}}}``
+      (a bare schema under ``json_schema`` is also tolerated).
+    - ``response_schema`` convenience field: a raw JSON Schema object, or a
+      ``{"schema": {...}}`` wrapper.
+
+    Returns a raw JSON Schema object, or None. ``response_format``
+    ``{"type": "json_object"}`` carries no schema to enforce and yields None
+    (the model is still steered by the system prompt).
+    """
+    response_schema = data.get("response_schema")
+    if isinstance(response_schema, dict) and response_schema:
+        inner = response_schema.get("schema")
+        return inner if isinstance(inner, dict) else response_schema
+
+    response_format = data.get("response_format")
+    if isinstance(response_format, dict) and response_format.get("type") == "json_schema":
+        json_schema = response_format.get("json_schema")
+        if isinstance(json_schema, dict):
+            schema = json_schema.get("schema")
+            if isinstance(schema, dict):
+                return schema
+            if "type" in json_schema:
+                return json_schema
+    return None
+
+
 def translate_request(
     data: Dict[str, Any], api_key: str
 ) -> Dict[str, Any]:
@@ -134,6 +205,12 @@ def translate_request(
         Dict suitable for passing to ``StreamProcessor``.
     """
     messages = data.get("messages", [])
+    response_schema = extract_response_schema(data)
+    _rf = data.get("response_format")
+    _rf = _rf if isinstance(_rf, dict) else {}
+    # OpenAI Structured Outputs default to strict; honor an explicit strict:false.
+    json_schema_strict = bool((_rf.get("json_schema") or {}).get("strict", True))
+    json_object_mode = _rf.get("type") == "json_object"
 
     # Check for continuation (tool results after assistant tool_calls)
     if is_continuation(messages):
@@ -155,6 +232,11 @@ def translate_request(
         # Carry tools forward for next iteration
         if data.get("tools"):
             result["client_tools"] = data["tools"]
+        if response_schema is not None:
+            result["json_schema"] = response_schema
+            result["json_schema_strict"] = json_schema_strict
+        if json_object_mode:
+            result["json_object"] = True
         return result
 
     # Normal request — extract question from last user message
@@ -188,6 +270,12 @@ def translate_request(
     # DocsGPT extensions
     if docsgpt.get("attachments"):
         result["attachments"] = docsgpt["attachments"]
+
+    if response_schema is not None:
+        result["json_schema"] = response_schema
+        result["json_schema_strict"] = json_schema_strict
+    if json_object_mode:
+        result["json_object"] = True
 
     return result
 
@@ -246,9 +334,11 @@ def translate_response(
         ]
         finish_reason = "tool_calls"
     else:
-        message["content"] = answer
-        if thought:
-            message["reasoning_content"] = thought
+        clean_answer, leaked_reasoning = _split_leaked_reasoning(answer)
+        message["content"] = clean_answer
+        combined_reasoning = (thought or "") + leaked_reasoning
+        if combined_reasoning:
+            message["reasoning_content"] = combined_reasoning
         finish_reason = "stop"
 
     result: Dict[str, Any] = {
@@ -341,9 +431,15 @@ def translate_stream_event(
     chunks: List[str] = []
 
     if event_type == "answer":
-        chunks.append(
-            _make_chunk(completion_id, model_name, {"content": event_data.get("answer", "")})
-        )
+        clean, leaked = _split_leaked_reasoning(event_data.get("answer", ""))
+        if leaked:
+            chunks.append(
+                _make_chunk(completion_id, model_name, {"reasoning_content": leaked})
+            )
+        if clean:
+            chunks.append(
+                _make_chunk(completion_id, model_name, {"content": clean})
+            )
 
     elif event_type == "thought":
         chunks.append(
@@ -427,12 +523,15 @@ def translate_stream_event(
         chunks.append(f"data: {json.dumps(error_data)}\n\n")
 
     elif event_type == "structured_answer":
-        chunks.append(
-            _make_chunk(
-                completion_id, model_name,
-                {"content": event_data.get("answer", "")},
+        clean, leaked = _split_leaked_reasoning(event_data.get("answer", ""))
+        if leaked:
+            chunks.append(
+                _make_chunk(completion_id, model_name, {"reasoning_content": leaked})
             )
-        )
+        if clean:
+            chunks.append(
+                _make_chunk(completion_id, model_name, {"content": clean})
+            )
 
     # Skip: tool_calls (redundant), research_plan, research_progress
 

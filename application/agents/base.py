@@ -33,6 +33,8 @@ class BaseAgent(ABC):
         decoded_token: Optional[Dict] = None,
         attachments: Optional[List[Dict]] = None,
         json_schema: Optional[Dict] = None,
+        json_schema_strict: bool = True,
+        json_object: bool = False,
         limited_token_mode: Optional[bool] = False,
         token_limit: Optional[int] = settings.DEFAULT_AGENT_LIMITS["token_limit"],
         limited_request_mode: Optional[bool] = False,
@@ -108,6 +110,11 @@ class BaseAgent(ABC):
                 self.json_schema = normalize_json_schema_payload(json_schema)
             except JsonSchemaValidationError as exc:
                 logger.warning("Ignoring invalid JSON schema payload: %s", exc)
+        # Per-request structured-output controls (OpenAI-compatible):
+        # ``json_schema_strict`` mirrors response_format.json_schema.strict;
+        # ``json_object`` mirrors response_format {"type":"json_object"}.
+        self.json_schema_strict = json_schema_strict
+        self.json_object = json_object
         self.limited_token_mode = limited_token_mode
         self.token_limit = token_limit
         self.limited_request_mode = limited_request_mode
@@ -572,13 +579,21 @@ class BaseAgent(ABC):
             and self.llm._supports_structured_output()
         ):
             structured_format = self.llm.prepare_structured_output_format(
-                self.json_schema
+                self.json_schema, strict=getattr(self, "json_schema_strict", True)
             )
             if structured_format:
                 if self.llm_name == "openai":
                     gen_kwargs["response_format"] = structured_format
                 elif self.llm_name == "google":
                     gen_kwargs["response_schema"] = structured_format
+        elif (
+            getattr(self, "json_object", False)
+            and self.llm_name == "openai"
+            and hasattr(self.llm, "_supports_structured_output")
+            and self.llm._supports_structured_output()
+        ):
+            # OpenAI json_object mode: guarantee valid JSON, no schema enforcement.
+            gen_kwargs["response_format"] = {"type": "json_object"}
         if (
             settings.OPENAI_RESPONSES_STORE
             and hasattr(self.llm, "_uses_responses_api")

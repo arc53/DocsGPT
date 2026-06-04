@@ -647,6 +647,18 @@ class StreamProcessor:
                 }
             )
 
+        # Per-request structured output: a ``response_format`` / ``response_schema``
+        # in the request (surfaced by the v1 translator as ``json_schema``) overrides
+        # the agent's configured schema for this call. Invalid schemas are ignored
+        # downstream by the agent (normalize_json_schema_payload).
+        request_json_schema = self.data.get("json_schema")
+        if request_json_schema is not None:
+            self.agent_config["json_schema"] = request_json_schema
+        if self.data.get("json_schema_strict") is not None:
+            self.agent_config["json_schema_strict"] = self.data.get("json_schema_strict")
+        if self.data.get("json_object"):
+            self.agent_config["json_object"] = True
+
     def _configure_retriever(self):
         """Assemble retriever config; agent's values are authoritative when bound."""
         # BYOM scope: owner for shared-agent BYOM, caller for own BYOM,
@@ -1254,6 +1266,8 @@ class StreamProcessor:
             "decoded_token": self.decoded_token,
             "attachments": self.attachments,
             "json_schema": self.agent_config.get("json_schema"),
+            "json_schema_strict": self.agent_config.get("json_schema_strict", True),
+            "json_object": self.agent_config.get("json_object", False),
             "compressed_summary": self.compressed_summary,
             "llm": llm,
             "llm_handler": llm_handler,
