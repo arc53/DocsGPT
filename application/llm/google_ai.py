@@ -653,8 +653,12 @@ class GoogleLLM(BaseLLM):
         """Return whether this LLM supports structured JSON output."""
         return True
 
-    def prepare_structured_output_format(self, json_schema):
-        """Convert JSON schema to Google AI structured output format."""
+    def prepare_structured_output_format(self, json_schema, strict=True):
+        """Convert JSON schema to Google AI structured output format.
+
+        ``strict`` is accepted for signature parity with the OpenAI provider;
+        Google enforces the schema natively via ``response_schema``.
+        """
         if not json_schema:
             return None
         type_map = {

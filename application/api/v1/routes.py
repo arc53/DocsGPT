@@ -106,21 +106,32 @@ def chat_completions():
         if internal_data.get("tool_actions"):
             # Continuation mode
             conversation_id = internal_data.get("conversation_id")
-            if not conversation_id:
-                return make_response(
-                    jsonify({"error": {"message": "conversation_id required for tool continuation", "type": "invalid_request"}}),
-                    400,
+            if conversation_id:
+                (
+                    agent,
+                    messages,
+                    tools_dict,
+                    pending_tool_calls,
+                    tool_actions,
+                    reasoning_content,
+                ) = processor.resume_from_tool_actions(
+                    internal_data["tool_actions"], conversation_id
                 )
-            (
-                agent,
-                messages,
-                tools_dict,
-                pending_tool_calls,
-                tool_actions,
-                reasoning_content,
-            ) = processor.resume_from_tool_actions(
-                internal_data["tool_actions"], conversation_id
-            )
+            else:
+                # Stateless continuation: OpenAI-compatible clients (opencode,
+                # etc.) resend the full messages array but no conversation_id,
+                # so rebuild the agent + pending calls from the request itself.
+                (
+                    agent,
+                    messages,
+                    tools_dict,
+                    pending_tool_calls,
+                    tool_actions,
+                    reasoning_content,
+                ) = processor.build_continuation_from_messages(
+                    internal_data.get("messages", []),
+                    internal_data["tool_actions"],
+                )
             continuation = {
                 "messages": messages,
                 "tools_dict": tools_dict,
@@ -147,6 +158,12 @@ def chat_completions():
             return usage_error
 
         should_save_conversation = bool(internal_data.get("save_conversation", False))
+        # Only strip leaked reasoning from content for structured requests -- the
+        # only path where models echo reasoning into content -- so legitimate
+        # answers that mention the marker text are never corrupted.
+        strip_reasoning_leak = bool(
+            internal_data.get("json_schema") or internal_data.get("json_object")
+        )
 
         if is_stream:
             return Response(
@@ -158,6 +175,7 @@ def chat_completions():
                     model_name,
                     continuation,
                     should_save_conversation,
+                    strip_reasoning_leak,
                 ),
                 mimetype="text/event-stream",
                 headers={
@@ -174,6 +192,7 @@ def chat_completions():
                 model_name,
                 continuation,
                 should_save_conversation,
+                strip_reasoning_leak,
             )
 
     except ValueError as e:
@@ -204,6 +223,7 @@ def _stream_response(
     model_name: str,
     continuation: Optional[Dict],
     should_save_conversation: bool,
+    strip_reasoning_leak: bool = False,
 ) -> Generator[str, None, None]:
     """Generate translated SSE chunks for streaming response."""
     completion_id = f"chatcmpl-{int(time.time())}"
@@ -247,11 +267,13 @@ def _stream_response(
         # Update completion_id when we get the conversation id
         if event_data.get("type") == "id":
             conv_id = event_data.get("id", "")
-            if conv_id:
+            if conv_id and conv_id != "None":
                 completion_id = f"chatcmpl-{conv_id}"
 
         # Translate to standard format
-        translated = translate_stream_event(event_data, completion_id, model_name)
+        translated = translate_stream_event(
+            event_data, completion_id, model_name, strip_reasoning_leak
+        )
         for chunk in translated:
             yield chunk
 
@@ -264,6 +286,7 @@ def _non_stream_response(
     model_name: str,
     continuation: Optional[Dict],
     should_save_conversation: bool,
+    strip_reasoning_leak: bool = False,
 ) -> Response:
     """Collect full response and return as single JSON."""
     stream = helper.complete_stream(
@@ -298,6 +321,7 @@ def _non_stream_response(
         thought=result["thought"] or "",
         model_name=model_name,
         pending_tool_calls=pending,
+        strip_reasoning_leak=strip_reasoning_leak,
     )
     return make_response(jsonify(response), 200)
 

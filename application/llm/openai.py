@@ -879,7 +879,7 @@ class OpenAILLM(BaseLLM):
         if effort:
             kwargs["reasoning_effort"] = effort
 
-    def prepare_structured_output_format(self, json_schema):
+    def prepare_structured_output_format(self, json_schema, strict=True):
         if not json_schema:
             return None
         try:
@@ -914,7 +914,12 @@ class OpenAILLM(BaseLLM):
                     return schema_copy
                 return schema_obj
 
-            processed_schema = add_additional_properties_false(json_schema)
+            # Strict mode requires additionalProperties:false + all-required on every
+            # object (OpenAI Structured Outputs). When strict is false (OpenAI's
+            # lenient json_schema), pass the schema through unchanged.
+            processed_schema = (
+                add_additional_properties_false(json_schema) if strict else json_schema
+            )
 
             result = {
                 "type": "json_schema",
@@ -924,7 +929,7 @@ class OpenAILLM(BaseLLM):
                         "description", "Structured response"
                     ),
                     "schema": processed_schema,
-                    "strict": True,
+                    "strict": strict,
                 },
             }
 

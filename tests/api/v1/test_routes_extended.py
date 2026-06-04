@@ -541,7 +541,9 @@ class TestChatCompletionsHappyPath:
 
         translated_chunks: list = []
 
-        def _fake_translate_stream_event(event_data, completion_id, model_name):
+        def _fake_translate_stream_event(
+            event_data, completion_id, model_name, strip_reasoning_leak=False
+        ):
             translated_chunks.append(event_data)
             return ['data: x\n\n']
 
