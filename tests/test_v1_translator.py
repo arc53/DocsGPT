@@ -245,10 +245,12 @@ class TestTranslateRequest:
         assert len(result["tool_actions"]) == 1
         assert result["tool_actions"][0]["call_id"] == "c1"
 
-    def test_continuation_persists_by_default(self):
-        """A continuation implies the first turn was saved, so the resumed turn
-        must persist too (otherwise the final answer + WAL row are lost)."""
+    def test_stateful_continuation_persists_by_default(self):
+        """A stateful continuation (conversation_id present) implies the first
+        turn was saved, so the resumed turn must persist too (otherwise the
+        final answer + WAL row are lost)."""
         data = {
+            "conversation_id": "conv-1",
             "messages": [
                 {"role": "user", "content": "Search for X"},
                 {
@@ -260,6 +262,23 @@ class TestTranslateRequest:
         }
         result = translate_request(data, "key")
         assert result["save_conversation"] is True
+
+    def test_stateless_continuation_does_not_persist_by_default(self):
+        """A stateless continuation (no conversation_id, e.g. an OpenAI client
+        such as opencode) never persisted turn 1, so it must NOT default to
+        saving -- otherwise every tool round leaks an orphan conversation."""
+        data = {
+            "messages": [
+                {"role": "user", "content": "Search for X"},
+                {
+                    "role": "assistant",
+                    "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "search", "arguments": "{}"}}],
+                },
+                {"role": "tool", "tool_call_id": "c1", "content": "done"},
+            ],
+        }
+        result = translate_request(data, "key")
+        assert result["save_conversation"] is False
 
     def test_continuation_honours_explicit_save_conversation_override(self):
         """An explicit docsgpt.save_conversation=false on the continuation wins."""
@@ -650,15 +669,23 @@ class TestTranslateStreamEvent:
         assert parsed["docsgpt"]["type"] == "tool_call"
 
     def test_standard_clients_can_ignore_docsgpt(self):
-        """Standard clients parse only 'choices' — docsgpt namespace is ignored."""
+        """The docsgpt namespace rides on a valid empty chat.completion.chunk.
+
+        Standard OpenAI clients validate every streamed frame as a
+        ``chat.completion.chunk``; a frame without ``choices`` is rejected.
+        So docsgpt-only events (sources, ids, tool_calls) are emitted as a
+        valid chunk with an empty delta plus a ``docsgpt`` extension that
+        standard parsers simply ignore.
+        """
         chunks = translate_stream_event(
             {"type": "source", "source": [{"title": "t"}]},
             "chatcmpl-1", "agent",
         )
         parsed = json.loads(chunks[0].replace("data: ", "").strip())
-        # No "choices" key — standard parsers skip this chunk entirely
-        assert "choices" not in parsed
-        # docsgpt key is present
+        # Valid chunk envelope: standard parsers read choices[0].delta (empty)
+        assert isinstance(parsed.get("choices"), list)
+        assert parsed["choices"][0]["delta"] == {}
+        # docsgpt extension is present for clients that want it
         assert "docsgpt" in parsed
 
 
