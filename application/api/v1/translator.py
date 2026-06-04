@@ -402,9 +402,24 @@ def _make_chunk(
     return f"data: {json.dumps(chunk)}\n\n"
 
 
-def _make_docsgpt_chunk(data: Dict[str, Any]) -> str:
-    """Build a DocsGPT extension SSE chunk."""
-    return f"data: {json.dumps({'docsgpt': data})}\n\n"
+def _make_docsgpt_chunk(data: Dict[str, Any], completion_id: str, model_name: str) -> str:
+    """Build a DocsGPT extension chunk that is ALSO a valid ``chat.completion.chunk``.
+
+    Strict OpenAI clients (e.g. the Vercel AI SDK used by opencode) validate every
+    SSE ``data:`` frame as a chat.completion.chunk, so the DocsGPT extension is
+    attached to an otherwise-empty (no-op) chunk rather than sent as a bare
+    ``{"docsgpt": ...}`` object — which has no ``choices`` and fails validation.
+    OpenAI clients ignore the extra top-level ``docsgpt`` field.
+    """
+    chunk = {
+        "id": completion_id,
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": model_name,
+        "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
+        "docsgpt": data,
+    }
+    return f"data: {json.dumps(chunk)}\n\n"
 
 
 def translate_stream_event(
@@ -451,10 +466,10 @@ def translate_stream_event(
 
     elif event_type == "source":
         chunks.append(
-            _make_docsgpt_chunk({
-                "type": "source",
-                "sources": event_data.get("source", []),
-            })
+            _make_docsgpt_chunk(
+                {"type": "source", "sources": event_data.get("source", [])},
+                completion_id, model_name,
+            )
         )
 
     elif event_type == "tool_call":
@@ -480,10 +495,10 @@ def translate_stream_event(
             )
         elif status == "awaiting_approval":
             # Extension: approval needed
-            chunks.append(_make_docsgpt_chunk({"type": "tool_call", "data": tc_data}))
+            chunks.append(_make_docsgpt_chunk({"type": "tool_call", "data": tc_data}, completion_id, model_name))
         elif status in ("completed", "pending", "error", "denied", "skipped"):
             # Extension: tool call progress
-            chunks.append(_make_docsgpt_chunk({"type": "tool_call", "data": tc_data}))
+            chunks.append(_make_docsgpt_chunk({"type": "tool_call", "data": tc_data}, completion_id, model_name))
 
     elif event_type == "tool_calls_pending":
         # Standard: finish_reason = tool_calls
@@ -492,10 +507,13 @@ def translate_stream_event(
         )
         # Also emit as docsgpt extension
         chunks.append(
-            _make_docsgpt_chunk({
-                "type": "tool_calls_pending",
-                "pending_tool_calls": event_data.get("data", {}).get("pending_tool_calls", []),
-            })
+            _make_docsgpt_chunk(
+                {
+                    "type": "tool_calls_pending",
+                    "pending_tool_calls": event_data.get("data", {}).get("pending_tool_calls", []),
+                },
+                completion_id, model_name,
+            )
         )
 
     elif event_type == "end":
@@ -505,12 +523,16 @@ def translate_stream_event(
         chunks.append("data: [DONE]\n\n")
 
     elif event_type == "id":
-        chunks.append(
-            _make_docsgpt_chunk({
-                "type": "id",
-                "conversation_id": event_data.get("id", ""),
-            })
-        )
+        # Skip the "None" placeholder conversation_id emitted when the call is
+        # not persisted (save_conversation=false) — nothing useful to surface.
+        conv_id = event_data.get("id", "")
+        if conv_id and conv_id != "None":
+            chunks.append(
+                _make_docsgpt_chunk(
+                    {"type": "id", "conversation_id": conv_id},
+                    completion_id, model_name,
+                )
+            )
 
     elif event_type == "error":
         # Emit as standard error (non-standard but widely supported)
