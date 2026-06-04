@@ -243,6 +243,10 @@ def translate_request(
     ):
         if data.get(_k) is not None:
             sampling_params[_k] = data[_k]
+    # OpenAI rejects sending both; the provider maps max_tokens ->
+    # max_completion_tokens, so drop the alias when the canonical key is present.
+    if "max_completion_tokens" in sampling_params:
+        sampling_params.pop("max_tokens", None)
 
     # Check for continuation (tool results after assistant tool_calls)
     if is_continuation(messages):
@@ -259,11 +263,13 @@ def translate_request(
             # rebuilt from the resent messages instead of server-side state.
             "messages": messages,
         }
-        # A continuation only exists if turn 1 was saved, so default to True —
-        # otherwise the final turn and its WAL row are never persisted. An
-        # explicit override is honoured if the client resends it.
+        # Stateful continuations (with a conversation_id) default to True so the
+        # final turn / WAL row is persisted. Stateless continuations (no
+        # conversation_id, e.g. opencode) default to False — otherwise every
+        # tool round persists an orphan conversation with an empty question. An
+        # explicit ``docsgpt.save_conversation`` override is honoured either way.
         result["save_conversation"] = bool(
-            data.get("docsgpt", {}).get("save_conversation", True)
+            data.get("docsgpt", {}).get("save_conversation", bool(conversation_id))
         )
         # Carry tools forward for next iteration
         if data.get("tools"):
@@ -273,6 +279,8 @@ def translate_request(
             result["json_schema_strict"] = json_schema_strict
         if json_object_mode:
             result["json_object"] = True
+        if sampling_params:
+            result["llm_params"] = sampling_params
         return result
 
     # Normal request — extract the question (text) from the last user message,
@@ -337,6 +345,7 @@ def translate_response(
     thought: str,
     model_name: str,
     pending_tool_calls: Optional[List[Dict]] = None,
+    strip_reasoning_leak: bool = False,
 ) -> Dict[str, Any]:
     """Translate DocsGPT response to chat completions format.
 
@@ -378,7 +387,10 @@ def translate_response(
         ]
         finish_reason = "tool_calls"
     else:
-        clean_answer, leaked_reasoning = _split_leaked_reasoning(answer)
+        if strip_reasoning_leak:
+            clean_answer, leaked_reasoning = _split_leaked_reasoning(answer)
+        else:
+            clean_answer, leaked_reasoning = answer, ""
         message["content"] = clean_answer
         combined_reasoning = (thought or "") + leaked_reasoning
         if combined_reasoning:
@@ -470,6 +482,7 @@ def translate_stream_event(
     event_data: Dict[str, Any],
     completion_id: str,
     model_name: str,
+    strip_reasoning_leak: bool = False,
 ) -> List[str]:
     """Translate a DocsGPT SSE event dict to standard streaming chunks.
 
@@ -490,7 +503,10 @@ def translate_stream_event(
     chunks: List[str] = []
 
     if event_type == "answer":
-        clean, leaked = _split_leaked_reasoning(event_data.get("answer", ""))
+        raw = event_data.get("answer", "")
+        clean, leaked = (
+            _split_leaked_reasoning(raw) if strip_reasoning_leak else (raw, "")
+        )
         if leaked:
             chunks.append(
                 _make_chunk(completion_id, model_name, {"reasoning_content": leaked})
@@ -589,7 +605,10 @@ def translate_stream_event(
         chunks.append(f"data: {json.dumps(error_data)}\n\n")
 
     elif event_type == "structured_answer":
-        clean, leaked = _split_leaked_reasoning(event_data.get("answer", ""))
+        raw = event_data.get("answer", "")
+        clean, leaked = (
+            _split_leaked_reasoning(raw) if strip_reasoning_leak else (raw, "")
+        )
         if leaked:
             chunks.append(
                 _make_chunk(completion_id, model_name, {"reasoning_content": leaked})

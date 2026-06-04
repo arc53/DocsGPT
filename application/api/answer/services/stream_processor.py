@@ -715,6 +715,9 @@ class StreamProcessor:
             self.agent_config["json_schema_strict"] = self.data.get("json_schema_strict")
         if self.data.get("json_object"):
             self.agent_config["json_object"] = True
+            # An explicit json_object request beats an agent-configured schema
+            # (otherwise the configured json_schema would silently override it).
+            self.agent_config["json_schema"] = None
 
     def _configure_retriever(self):
         """Assemble retriever config; agent's values are authoritative when bound."""
@@ -1309,6 +1312,18 @@ class StreamProcessor:
         if client_tools:
             tool_executor.client_tools = client_tools
 
+        # OpenAI-style image_url content parts are only understood by the
+        # OpenAI-family providers; drop multimodal content for others (Google,
+        # Anthropic, ...) so a multimodal request degrades to text rather than
+        # erroring upstream.
+        from application.llm.openai import OpenAILLM
+
+        request_multimodal = (
+            self.data.get("multimodal_content")
+            if isinstance(llm, OpenAILLM)
+            else None
+        )
+
         agent_kwargs = {
             "endpoint": "stream",
             "llm_name": provider or settings.LLM_PROVIDER,
@@ -1326,7 +1341,7 @@ class StreamProcessor:
             "json_schema_strict": self.agent_config.get("json_schema_strict", True),
             "json_object": self.agent_config.get("json_object", False),
             "llm_params": self.data.get("llm_params") or {},
-            "multimodal_content": self.data.get("multimodal_content"),
+            "multimodal_content": request_multimodal,
             "compressed_summary": self.compressed_summary,
             "llm": llm,
             "llm_handler": llm_handler,
