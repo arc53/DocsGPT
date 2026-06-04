@@ -35,6 +35,7 @@ class BaseAgent(ABC):
         json_schema: Optional[Dict] = None,
         json_schema_strict: bool = True,
         json_object: bool = False,
+        llm_params: Optional[Dict] = None,
         limited_token_mode: Optional[bool] = False,
         token_limit: Optional[int] = settings.DEFAULT_AGENT_LIMITS["token_limit"],
         limited_request_mode: Optional[bool] = False,
@@ -115,6 +116,9 @@ class BaseAgent(ABC):
         # ``json_object`` mirrors response_format {"type":"json_object"}.
         self.json_schema_strict = json_schema_strict
         self.json_object = json_object
+        # OpenAI sampling params forwarded from the request (temperature,
+        # max_tokens, top_p, ...). Empty when the caller sent none.
+        self.llm_params = llm_params or {}
         self.limited_token_mode = limited_token_mode
         self.token_limit = token_limit
         self.limited_request_mode = limited_request_mode
@@ -602,6 +606,10 @@ class BaseAgent(ABC):
             previous_response_id = self._previous_response_id()
             if previous_response_id:
                 gen_kwargs["previous_response_id"] = previous_response_id
+
+        # Forward OpenAI sampling params (temperature, max_tokens, top_p, ...).
+        if self.llm_params:
+            gen_kwargs.update(self.llm_params)
         resp = self.llm.gen_stream(**gen_kwargs)
 
         if log_context:

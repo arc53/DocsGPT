@@ -172,6 +172,63 @@ class StreamProcessor:
             tools_data=tools_data,
         )
 
+    def build_continuation_from_messages(self, messages, tool_actions):
+        """Rebuild a tool continuation from the request messages (STATELESS).
+
+        OpenAI-compatible clients (opencode, etc.) resend the full conversation
+        -- system, user, assistant(tool_calls), tool(results) -- but carry no
+        conversation_id, so there is no server-side ``pending_tool_state`` to
+        load. Reconstruct the agent + continuation context directly from the
+        resent messages and return the same tuple as ``resume_from_tool_actions``:
+        (agent, messages, tools_dict, pending_tool_calls, tool_actions,
+        reasoning_content).
+        """
+        # Locate the last assistant message that issued tool calls.
+        pending_idx = None
+        for i in range(len(messages) - 1, -1, -1):
+            m = messages[i]
+            if m.get("role") == "assistant" and m.get("tool_calls"):
+                pending_idx = i
+                break
+        if pending_idx is None:
+            raise ValueError(
+                "No assistant message with tool_calls found for continuation"
+            )
+
+        pending_tool_calls = []
+        for tc in messages[pending_idx].get("tool_calls") or []:
+            fn = tc.get("function") or {}
+            raw_args = fn.get("arguments")
+            try:
+                args = (
+                    json.loads(raw_args)
+                    if isinstance(raw_args, str)
+                    else (raw_args or {})
+                )
+            except (json.JSONDecodeError, TypeError):
+                args = {}
+            name = fn.get("name", "")
+            pending_tool_calls.append(
+                {
+                    "call_id": tc.get("id", ""),
+                    "name": name,
+                    "tool_name": name,
+                    "action_name": name,
+                    "llm_name": name,
+                    "arguments": args,
+                }
+            )
+
+        # The conversation up to (but not including) the assistant tool_calls;
+        # gen_continuation re-appends the assistant message + tool results.
+        prior_messages = [dict(m) for m in messages[:pending_idx]]
+
+        # Build a normal agent (config / LLM / client tools), no new question.
+        agent = self.build_agent("")
+        tools_dict = agent.tool_executor.get_tools()
+
+        return agent, prior_messages, tools_dict, pending_tool_calls, tool_actions, ""
+
     def _load_conversation_history(self):
         """Load conversation history either from DB or request"""
         if self.conversation_id and self.initial_user_id:
@@ -1268,6 +1325,7 @@ class StreamProcessor:
             "json_schema": self.agent_config.get("json_schema"),
             "json_schema_strict": self.agent_config.get("json_schema_strict", True),
             "json_object": self.agent_config.get("json_object", False),
+            "llm_params": self.data.get("llm_params") or {},
             "compressed_summary": self.compressed_summary,
             "llm": llm,
             "llm_handler": llm_handler,

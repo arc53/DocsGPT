@@ -106,21 +106,32 @@ def chat_completions():
         if internal_data.get("tool_actions"):
             # Continuation mode
             conversation_id = internal_data.get("conversation_id")
-            if not conversation_id:
-                return make_response(
-                    jsonify({"error": {"message": "conversation_id required for tool continuation", "type": "invalid_request"}}),
-                    400,
+            if conversation_id:
+                (
+                    agent,
+                    messages,
+                    tools_dict,
+                    pending_tool_calls,
+                    tool_actions,
+                    reasoning_content,
+                ) = processor.resume_from_tool_actions(
+                    internal_data["tool_actions"], conversation_id
                 )
-            (
-                agent,
-                messages,
-                tools_dict,
-                pending_tool_calls,
-                tool_actions,
-                reasoning_content,
-            ) = processor.resume_from_tool_actions(
-                internal_data["tool_actions"], conversation_id
-            )
+            else:
+                # Stateless continuation: OpenAI-compatible clients (opencode,
+                # etc.) resend the full messages array but no conversation_id,
+                # so rebuild the agent + pending calls from the request itself.
+                (
+                    agent,
+                    messages,
+                    tools_dict,
+                    pending_tool_calls,
+                    tool_actions,
+                    reasoning_content,
+                ) = processor.build_continuation_from_messages(
+                    internal_data.get("messages", []),
+                    internal_data["tool_actions"],
+                )
             continuation = {
                 "messages": messages,
                 "tools_dict": tools_dict,

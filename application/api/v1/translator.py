@@ -212,6 +212,16 @@ def translate_request(
     json_schema_strict = bool((_rf.get("json_schema") or {}).get("strict", True))
     json_object_mode = _rf.get("type") == "json_object"
 
+    # OpenAI sampling params, forwarded to the LLM gen call (the agent otherwise
+    # uses its configured defaults).
+    sampling_params = {}
+    for _k in (
+        "temperature", "max_tokens", "max_completion_tokens",
+        "top_p", "frequency_penalty", "presence_penalty", "stop", "seed",
+    ):
+        if data.get(_k) is not None:
+            sampling_params[_k] = data[_k]
+
     # Check for continuation (tool results after assistant tool_calls)
     if is_continuation(messages):
         tool_actions = extract_tool_results(messages)
@@ -222,6 +232,10 @@ def translate_request(
             "conversation_id": conversation_id,
             "tool_actions": tool_actions,
             "api_key": api_key,
+            # Full messages array for STATELESS continuation: OpenAI clients
+            # (opencode, etc.) don't carry a conversation_id, so the agent is
+            # rebuilt from the resent messages instead of server-side state.
+            "messages": messages,
         }
         # A continuation only exists if turn 1 was saved, so default to True —
         # otherwise the final turn and its WAL row are never persisted. An
@@ -276,6 +290,8 @@ def translate_request(
         result["json_schema_strict"] = json_schema_strict
     if json_object_mode:
         result["json_object"] = True
+    if sampling_params:
+        result["llm_params"] = sampling_params
 
     return result
 
