@@ -120,6 +120,28 @@ def extract_conversation_id(messages: List[Dict]) -> Optional[str]:
     return None
 
 
+def content_to_text(content: Any) -> str:
+    """Flatten an OpenAI message ``content`` to plain text.
+
+    ``content`` may be a string or a list of typed parts
+    (``{"type":"text",...}`` / ``{"type":"image_url",...}`` / ...). Only text
+    parts contribute; image/other parts are dropped here. The full content
+    array is preserved separately (see ``multimodal_content``) so images still
+    reach the model in the final user message.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        out = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                out.append(part.get("text", "") or "")
+            elif isinstance(part, str):
+                out.append(part)
+        return "\n".join(out)
+    return "" if content is None else str(content)
+
+
 def extract_system_prompt(messages: List[Dict]) -> Optional[str]:
     """Extract the first system message content from the messages array.
 
@@ -127,7 +149,7 @@ def extract_system_prompt(messages: List[Dict]) -> Optional[str]:
     """
     for msg in messages:
         if msg.get("role") == "system":
-            return msg.get("content", "")
+            return content_to_text(msg.get("content", ""))
     return None
 
 
@@ -147,9 +169,9 @@ def convert_history(messages: List[Dict]) -> List[Dict]:
         if msg.get("role") == "user":
             # Look ahead for assistant response
             if i + 1 < len(messages) and messages[i + 1].get("role") == "assistant":
-                content = messages[i + 1].get("content") or ""
+                content = content_to_text(messages[i + 1].get("content") or "")
                 history.append({
-                    "prompt": msg.get("content", ""),
+                    "prompt": content_to_text(msg.get("content", "")),
                     "response": content,
                 })
                 i += 2
@@ -253,12 +275,16 @@ def translate_request(
             result["json_object"] = True
         return result
 
-    # Normal request — extract question from last user message
-    question = ""
+    # Normal request — extract the question (text) from the last user message,
+    # and keep its full content array (text + image_url parts) when multimodal so
+    # images still reach the model in the final user message.
+    last_user_content = None
     for msg in reversed(messages):
         if msg.get("role") == "user":
-            question = msg.get("content", "")
+            last_user_content = msg.get("content")
             break
+    question = content_to_text(last_user_content)
+    multimodal_content = last_user_content if isinstance(last_user_content, list) else None
 
     history = convert_history(messages)
     system_prompt_override = extract_system_prompt(messages)
@@ -292,6 +318,8 @@ def translate_request(
         result["json_object"] = True
     if sampling_params:
         result["llm_params"] = sampling_params
+    if multimodal_content is not None:
+        result["multimodal_content"] = multimodal_content
 
     return result
 

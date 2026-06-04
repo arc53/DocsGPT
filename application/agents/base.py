@@ -36,6 +36,7 @@ class BaseAgent(ABC):
         json_schema_strict: bool = True,
         json_object: bool = False,
         llm_params: Optional[Dict] = None,
+        multimodal_content: Optional[List] = None,
         limited_token_mode: Optional[bool] = False,
         token_limit: Optional[int] = settings.DEFAULT_AGENT_LIMITS["token_limit"],
         limited_request_mode: Optional[bool] = False,
@@ -119,6 +120,9 @@ class BaseAgent(ABC):
         # OpenAI sampling params forwarded from the request (temperature,
         # max_tokens, top_p, ...). Empty when the caller sent none.
         self.llm_params = llm_params or {}
+        # Full OpenAI content array (text + image_url parts) for the current
+        # user turn, when the request was multimodal; None otherwise.
+        self.multimodal_content = multimodal_content
         self.limited_token_mode = limited_token_mode
         self.token_limit = token_limit
         self.limited_request_mode = limited_request_mode
@@ -512,7 +516,15 @@ class BaseAgent(ABC):
                         "tool_call_id": call_id,
                         "content": result_str,
                     })
-        messages.append({"role": "user", "content": query})
+        # When the request was multimodal, send the full content array (text +
+        # image_url parts) so images reach the model; the text-only `query` above
+        # is used only for token budgeting / retrieval.
+        user_content = (
+            self.multimodal_content
+            if getattr(self, "multimodal_content", None)
+            else query
+        )
+        messages.append({"role": "user", "content": user_content})
         return messages
 
     def _truncate_history_to_fit(

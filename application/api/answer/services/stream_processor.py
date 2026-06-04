@@ -1326,6 +1326,7 @@ class StreamProcessor:
             "json_schema_strict": self.agent_config.get("json_schema_strict", True),
             "json_object": self.agent_config.get("json_object", False),
             "llm_params": self.data.get("llm_params") or {},
+            "multimodal_content": self.data.get("multimodal_content"),
             "compressed_summary": self.compressed_summary,
             "llm": llm,
             "llm_handler": llm_handler,
