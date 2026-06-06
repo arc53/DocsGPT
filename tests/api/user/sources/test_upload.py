@@ -181,6 +181,76 @@ class TestUploadFile:
         # save_file called at least twice (for 2 files in zip)
         assert fake_storage.save_file.call_count >= 2
 
+    def test_upload_rejects_zip_bomb_before_extracting(self, app):
+        from application.api.user.sources.upload import UploadFile
+        import zipfile
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("huge.txt", "A" * (1024 * 1024))
+        zip_buffer.seek(0)
+
+        fake_storage = MagicMock()
+
+        with patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "application.api.user.sources.upload.ingest.apply_async",
+        ) as mock_ingest, app.test_request_context(
+            "/api/upload", method="POST",
+            data={
+                "user": "alice", "name": "job",
+                "file": (zip_buffer, "bomb.zip"),
+            },
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "alice"}
+            response = UploadFile().post()
+
+        assert response.status_code == 413
+        assert "compression ratio" in response.json["message"]
+        fake_storage.save_file.assert_not_called()
+        mock_ingest.assert_not_called()
+
+    def test_upload_rejects_zip_with_too_many_files(self, app):
+        from application.api.user.sources.upload import (
+            UploadFile,
+            _MAX_UPLOAD_ZIP_FILE_COUNT,
+        )
+        import zipfile
+
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_STORED) as zf:
+            for index in range(_MAX_UPLOAD_ZIP_FILE_COUNT + 1):
+                zf.writestr(f"{index}.txt", "x")
+        zip_buffer.seek(0)
+
+        fake_storage = MagicMock()
+
+        with patch(
+            "application.api.user.sources.upload.StorageCreator.get_storage",
+            return_value=fake_storage,
+        ), patch(
+            "application.api.user.sources.upload.ingest.apply_async",
+        ) as mock_ingest, app.test_request_context(
+            "/api/upload", method="POST",
+            data={
+                "user": "alice", "name": "job",
+                "file": (zip_buffer, "many.zip"),
+            },
+            content_type="multipart/form-data",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "alice"}
+            response = UploadFile().post()
+
+        assert response.status_code == 413
+        assert "too many files" in response.json["message"]
+        fake_storage.save_file.assert_not_called()
+        mock_ingest.assert_not_called()
+
     def test_office_format_zip_saved_as_is(self, app):
         from application.api.user.sources.upload import UploadFile
         import zipfile

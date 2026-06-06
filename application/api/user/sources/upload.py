@@ -35,6 +35,55 @@ sources_upload_ns = Namespace(
 
 
 _IDEMPOTENCY_KEY_MAX_LEN = 256
+_MAX_UNCOMPRESSED_UPLOAD_ZIP_SIZE = 500 * 1024 * 1024
+_MAX_UPLOAD_ZIP_FILE_COUNT = 10000
+_MAX_UPLOAD_ZIP_COMPRESSION_RATIO = 100
+
+
+class ZipUploadValidationError(Exception):
+    """Raised when an uploaded zip fails pre-extraction safety checks."""
+
+
+def _is_zip_target_safe(base_path: str, member_name: str) -> bool:
+    base_resolved = os.path.realpath(base_path)
+    target_resolved = os.path.realpath(os.path.join(base_path, member_name))
+    return (
+        target_resolved == base_resolved
+        or target_resolved.startswith(base_resolved + os.sep)
+    )
+
+
+def _validate_upload_zip_safety(
+    zip_ref: zipfile.ZipFile, zip_path: str, extract_to: str
+) -> None:
+    compressed_size = os.path.getsize(zip_path)
+    total_uncompressed = 0
+    file_count = 0
+
+    for info in zip_ref.infolist():
+        file_count += 1
+        if file_count > _MAX_UPLOAD_ZIP_FILE_COUNT:
+            raise ZipUploadValidationError(
+                f"Zip file contains too many files (>{_MAX_UPLOAD_ZIP_FILE_COUNT})"
+            )
+
+        total_uncompressed += info.file_size
+        if total_uncompressed > _MAX_UNCOMPRESSED_UPLOAD_ZIP_SIZE:
+            raise ZipUploadValidationError(
+                "Zip file uncompressed size exceeds the upload limit"
+            )
+
+        if not _is_zip_target_safe(extract_to, info.filename):
+            raise ZipUploadValidationError(
+                f"Zip file contains an unsafe path: {info.filename}"
+            )
+
+    if compressed_size > 0 and total_uncompressed > 0:
+        compression_ratio = total_uncompressed / compressed_size
+        if compression_ratio > _MAX_UPLOAD_ZIP_COMPRESSION_RATIO:
+            raise ZipUploadValidationError(
+                "Zip file has a suspicious compression ratio"
+            )
 
 
 def _read_idempotency_key():
@@ -210,6 +259,9 @@ class UploadFile(Resource):
                     if zipfile.is_zipfile(temp_file_path) and not is_office_format:
                         try:
                             with zipfile.ZipFile(temp_file_path, "r") as zip_ref:
+                                _validate_upload_zip_safety(
+                                    zip_ref, temp_file_path, temp_dir
+                                )
                                 zip_ref.extractall(path=temp_dir)
 
                                 # Walk through extracted files and upload them
@@ -234,6 +286,8 @@ class UploadFile(Resource):
                                             os.path.join(root, extracted_file), "rb"
                                         ) as f:
                                             storage.save_file(f, storage_path)
+                        except ZipUploadValidationError:
+                            raise
                         except Exception as e:
                             current_app.logger.error(
                                 f"Error extracting zip: {e}", exc_info=True
@@ -285,6 +339,18 @@ class UploadFile(Resource):
                     {
                         "success": False,
                         "message": build_stt_file_size_limit_message(),
+                    }
+                ),
+                413,
+            )
+        except ZipUploadValidationError as err:
+            if scoped_key:
+                _release_claim(scoped_key)
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": str(err),
                     }
                 ),
                 413,
