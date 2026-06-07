@@ -2,6 +2,7 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 
 import reducer, {
   dismissToolApproval,
+  resolveToolApproval,
   sseEventReceived,
   sseLastEventIdReset,
   type SSEEvent,
@@ -105,5 +106,90 @@ describe('dismissToolApproval', () => {
     // The 200-cap keeps the most recently pushed ids.
     expect(state.dismissedToolApprovals[0].id).toBe('id-5');
     expect(state.dismissedToolApprovals[199].id).toBe('id-204');
+  });
+});
+
+describe('resolveToolApproval', () => {
+  const required = (overrides: Partial<SSEEvent> = {}): SSEEvent => ({
+    id: 'req-1',
+    type: 'tool.approval.required',
+    scope: { kind: 'conversation', id: 'conv-1' },
+    payload: { conversation_id: 'conv-1', message_id: 'msg-1' },
+    ...overrides,
+  });
+
+  const cleared = (overrides: Partial<SSEEvent> = {}): SSEEvent => ({
+    id: 'clr-1',
+    type: 'tool.approval.cleared',
+    scope: { kind: 'conversation', id: 'conv-1' },
+    payload: {
+      conversation_id: 'conv-1',
+      message_id: 'msg-1',
+      reason: 'failed',
+    },
+    ...overrides,
+  });
+
+  it('evicts the matching required by message_id and persists its id dismissed', () => {
+    let state = seedState();
+    state = reducer(state, sseEventReceived(required()));
+    expect(state.recentEvents).toHaveLength(1);
+
+    state = reducer(state, resolveToolApproval(cleared()));
+
+    expect(
+      state.recentEvents.some((e) => e.type === 'tool.approval.required'),
+    ).toBe(false);
+    expect(state.dismissedToolApprovals.map((d) => d.id)).toContain('req-1');
+  });
+
+  it('matches by conversation scope when the clear carries no message_id', () => {
+    let state = seedState();
+    state = reducer(
+      state,
+      sseEventReceived(
+        required({
+          id: 'req-2',
+          scope: { kind: 'conversation', id: 'conv-2' },
+          payload: { conversation_id: 'conv-2' },
+        }),
+      ),
+    );
+
+    state = reducer(
+      state,
+      resolveToolApproval(
+        cleared({
+          id: 'clr-2',
+          scope: { kind: 'conversation', id: 'conv-2' },
+          payload: { conversation_id: 'conv-2', reason: 'expired' },
+        }),
+      ),
+    );
+
+    expect(
+      state.recentEvents.some((e) => e.type === 'tool.approval.required'),
+    ).toBe(false);
+    expect(state.dismissedToolApprovals.map((d) => d.id)).toContain('req-2');
+  });
+
+  it('leaves a different message untouched so a new pause still surfaces', () => {
+    let state = seedState();
+    state = reducer(
+      state,
+      sseEventReceived(
+        required({
+          id: 'req-3',
+          payload: { conversation_id: 'conv-1', message_id: 'msg-OTHER' },
+        }),
+      ),
+    );
+
+    state = reducer(state, resolveToolApproval(cleared()));
+
+    expect(state.recentEvents.some((e) => e.id === 'req-3')).toBe(true);
+    expect(state.dismissedToolApprovals.map((d) => d.id)).not.toContain(
+      'req-3',
+    );
   });
 });

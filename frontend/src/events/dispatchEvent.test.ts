@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AppDispatch } from '../store';
 import {
+  resolveToolApproval,
   sseEventReceived,
   sseLastEventIdReset,
 } from '../notifications/notificationsSlice';
@@ -52,9 +53,31 @@ describe('dispatchSSEEvent', () => {
     'schedule.run.failed',
     'schedule.autopaused',
     'schedule.message.appended',
+    'tool.approval.cleared',
+    'schedule.resumed',
+    'schedule.cancelled',
+    'schedule.completed',
   ])('treats %s as a known envelope (no debug noise)', (type) => {
     const dispatch = vi.fn() as unknown as AppDispatch;
     dispatchSSEEvent({ id: `e-${type}`, type }, dispatch);
     expect(debugSpy).not.toHaveBeenCalled();
+  });
+
+  it('dispatches resolveToolApproval AND sseEventReceived for tool.approval.cleared', () => {
+    const dispatch = vi.fn() as unknown as AppDispatch;
+    const envelope = {
+      id: 'clr-1',
+      type: 'tool.approval.cleared' as const,
+      scope: { kind: 'conversation', id: 'conv-1' },
+      payload: { conversation_id: 'conv-1', message_id: 'msg-1' },
+    };
+
+    dispatchSSEEvent(envelope, dispatch);
+
+    const calls = (dispatch as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[0][0]).toEqual(resolveToolApproval(envelope));
+    expect(calls[1][0]).toEqual(sseEventReceived(envelope));
   });
 });

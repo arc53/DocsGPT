@@ -90,7 +90,13 @@ class TestCleanupExpired:
         # Create a state with TTL of 0 seconds (already expired)
         repo.save_state(conv["id"], "user-1", **_sample_state(), ttl_seconds=0)
         deleted = repo.cleanup_expired()
-        assert deleted >= 1
+        assert len(deleted) >= 1
+        # Deleted rows carry the keys needed to revoke a stale approval toast.
+        assert any(
+            str(row["conversation_id"]) == conv["id"]
+            and row["user_id"] == "user-1"
+            for row in deleted
+        )
         assert repo.load_state(conv["id"], "user-1") is None
 
 
@@ -204,7 +210,7 @@ class TestRevertStaleResuming:
         # and is well past — without the bump, cleanup_expired would
         # delete the just-reverted row.
         deleted = repo.cleanup_expired()
-        assert deleted == 0
+        assert deleted == []
         loaded = repo.load_state(conv["id"], "user-1")
         assert loaded is not None
         assert loaded["status"] == "pending"

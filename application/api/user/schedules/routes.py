@@ -117,6 +117,31 @@ def _user_id() -> Optional[str]:
     return decoded.get("sub")
 
 
+def _publish_schedule_event(
+    user_id: str, event_type: str, schedule_id: str, *, status: str,
+) -> None:
+    """Best-effort SSE so other clients revoke a stale schedule state.
+
+    A resume/cancel must override an earlier ``schedule.autopaused``; that
+    envelope is durable and replays from the backlog on reconnect, so
+    without a newer event the schedule reads 'paused' even though it will
+    fire on the next tick.
+    """
+    try:
+        from application.events.publisher import publish_user_event
+
+        publish_user_event(
+            user_id,
+            event_type,
+            {"schedule_id": str(schedule_id), "status": status},
+            scope={"kind": "schedule", "id": str(schedule_id)},
+        )
+    except Exception:
+        logger.exception(
+            "schedules: publish %s failed for %s", event_type, schedule_id,
+        )
+
+
 @schedules_ns.route("/agents/<string:agent_id>/schedules")
 class AgentSchedules(Resource):
     @api.doc(description="List schedules for an agent (recurring + one-time).")
@@ -468,6 +493,10 @@ class ScheduleResource(Resource):
             )
             if action == "resume":
                 SchedulesRepository(conn).reset_failure_count(schedule_id)
+        if action == "resume" and updated:
+            _publish_schedule_event(
+                user_id, "schedule.resumed", schedule_id, status="active",
+            )
         return _ok({"schedule": _format_schedule(updated or {})})
 
     @api.doc(description="Cancel / delete a schedule.")
@@ -482,6 +511,9 @@ class ScheduleResource(Resource):
             ok = SchedulesRepository(conn).delete(schedule_id, user_id)
         if not ok:
             return _err("schedule not found", 404)
+        _publish_schedule_event(
+            user_id, "schedule.cancelled", schedule_id, status="cancelled",
+        )
         return _ok({"success": True})
 
 
