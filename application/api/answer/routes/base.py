@@ -183,7 +183,8 @@ class BaseAnswerResource:
         decoded_token: Dict[str, Any],
         isNoneDoc: bool = False,
         index: Optional[int] = None,
-        should_save_conversation: bool = True,
+        should_persist: bool = True,
+        visibility: str = "listed",
         attachment_ids: Optional[List[str]] = None,
         agent_id: Optional[str] = None,
         is_shared_usage: bool = False,
@@ -204,7 +205,8 @@ class BaseAnswerResource:
             decoded_token: Decoded JWT token
             isNoneDoc: Flag for document-less responses
             index: Index of message to update
-            should_save_conversation: Whether to persist the conversation
+            should_persist: Whether to persist the conversation
+            visibility: ``listed`` (sidebar) or ``hidden`` for a new conversation
             attachment_ids: List of attachment IDs
             agent_id: ID of agent used
             is_shared_usage: Flag for shared agent usage
@@ -232,7 +234,7 @@ class BaseAnswerResource:
         # mid-stream still leaves the question queryable. Continuations
         # reuse the original placeholder.
         reserved_message_id: Optional[str] = None
-        wal_eligible = should_save_conversation and not _continuation
+        wal_eligible = should_persist and not _continuation
         if wal_eligible:
             try:
                 reservation = self.conversation_service.save_user_question(
@@ -244,6 +246,7 @@ class BaseAnswerResource:
                     agent_id=agent_id,
                     is_shared_usage=is_shared_usage,
                     shared_token=shared_token,
+                    visibility=visibility,
                     model_id=model_id or self.default_model_id,
                     request_id=request_id,
                     index=index,
@@ -489,7 +492,7 @@ class BaseAnswerResource:
                 continuation = getattr(agent, "_pending_continuation", None)
                 if continuation:
                     # First-turn pause needs a conversation row to attach to.
-                    if not conversation_id and should_save_conversation:
+                    if not conversation_id and should_persist:
                         try:
                             provider = (
                                 get_provider_from_model_id(
@@ -531,6 +534,7 @@ class BaseAnswerResource:
                                     agent_id=agent_id,
                                     is_shared_usage=is_shared_usage,
                                     shared_token=shared_token,
+                                    visibility=visibility,
                                 )
                             )
                         except Exception as e:
@@ -678,7 +682,7 @@ class BaseAnswerResource:
             # Title-gen only; agent stream tokens live on ``agent.llm``.
             llm._token_usage_source = "title"
 
-            if should_save_conversation:
+            if should_persist:
                 if reserved_message_id is not None:
                     self.conversation_service.finalize_message(
                         reserved_message_id,
@@ -717,6 +721,7 @@ class BaseAnswerResource:
                         shared_token=shared_token,
                         attachment_ids=attachment_ids,
                         metadata=query_metadata if query_metadata else None,
+                        visibility=visibility,
                     )
                 # Persist compression metadata/summary if it exists and wasn't saved mid-execution
                 compression_meta = getattr(agent, "compression_metadata", None)
@@ -823,7 +828,7 @@ class BaseAnswerResource:
             # else journal ``error`` so a reconnecting client sees a
             # failed terminal state instead of a blank "success".
             finalized_complete = False
-            if should_save_conversation and response_full:
+            if should_persist and response_full:
                 try:
                     if isNoneDoc:
                         for doc in source_log_docs:
@@ -903,6 +908,7 @@ class BaseAnswerResource:
                             shared_token=shared_token,
                             attachment_ids=attachment_ids,
                             metadata=query_metadata if query_metadata else None,
+                            visibility=visibility,
                         )
                         # No journal row to gate, but flag the save as
                         # successful for symmetry with the WAL path.

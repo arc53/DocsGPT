@@ -75,13 +75,27 @@ class TestListForUser:
         assert len(results) == 2
         assert all(r["user_id"] == "alice" for r in results)
 
-    def test_excludes_api_key_without_agent(self, pg_conn):
+    def test_excludes_hidden_conversations(self, pg_conn):
         repo = _repo(pg_conn)
         repo.create("alice", "normal")
-        repo.create("alice", "api-only", api_key="key-1")
+        repo.create("alice", "hidden-one", visibility="hidden")
         results = repo.list_for_user("alice")
         assert len(results) == 1
         assert results[0]["name"] == "normal"
+
+    def test_lists_api_key_conversation_when_listed(self, pg_conn):
+        # Visibility is explicit now: an api_key conversation created as
+        # ``listed`` surfaces (the old api_key/agent_id heuristic is gone).
+        repo = _repo(pg_conn)
+        repo.create("alice", "api-listed", api_key="key-1", visibility="listed")
+        results = repo.list_for_user("alice")
+        assert len(results) == 1
+        assert results[0]["name"] == "api-listed"
+
+    def test_create_defaults_to_listed(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("alice", "default-vis")
+        assert conv["visibility"] == "listed"
 
 
 class TestRename:

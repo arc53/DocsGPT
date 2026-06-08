@@ -98,7 +98,7 @@ class TestCompleteStreamToolCalls:
                     conversation_id=None,
                     user_api_key=None,
                     decoded_token={"sub": "u"},
-                    should_save_conversation=False,
+                    should_persist=False,
                 )
             )
             tool_chunks = [s for s in stream if '"type": "tool_calls"' in s]
@@ -124,7 +124,7 @@ class TestCompleteStreamToolCalls:
                     conversation_id=None,
                     user_api_key=None,
                     decoded_token={"sub": "u"},
-                    should_save_conversation=False,
+                    should_persist=False,
                 )
             )
             thought_chunks = [s for s in stream if '"type": "thought"' in s]
@@ -159,7 +159,7 @@ class TestCompleteStreamStructuredOutput:
                     conversation_id=None,
                     user_api_key=None,
                     decoded_token={"sub": "u"},
-                    should_save_conversation=False,
+                    should_persist=False,
                 )
             )
             structured_chunks = [
@@ -192,7 +192,7 @@ class TestCompleteStreamMetadata:
                     conversation_id=None,
                     user_api_key=None,
                     decoded_token={"sub": "u"},
-                    should_save_conversation=False,
+                    should_persist=False,
                 )
             )
             # Should not crash, metadata handled silently
@@ -225,7 +225,7 @@ class TestCompleteStreamIsNoneDoc:
                     user_api_key=None,
                     decoded_token={"sub": "u"},
                     isNoneDoc=True,
-                    should_save_conversation=False,
+                    should_persist=False,
                 )
             )
             # Verify stream completes without error
@@ -256,7 +256,7 @@ class TestCompleteStreamErrorType:
                     conversation_id=None,
                     user_api_key=None,
                     decoded_token={"sub": "u"},
-                    should_save_conversation=False,
+                    should_persist=False,
                 )
             )
             error_chunks = [s for s in stream if '"type": "error"' in s]
@@ -281,7 +281,7 @@ class TestCompleteStreamErrorType:
                     conversation_id=None,
                     user_api_key=None,
                     decoded_token={"sub": "u"},
-                    should_save_conversation=False,
+                    should_persist=False,
                 )
             )
             custom_chunks = [s for s in stream if '"type": "custom_event"' in s]
@@ -426,7 +426,7 @@ class TestCompleteStreamCompressionMetadata:
                     conversation_id=None,
                     user_api_key=None,
                     decoded_token={"sub": "u"},
-                    should_save_conversation=True,
+                    should_persist=True,
                     model_id="gpt-4",
                 )
             )
@@ -470,7 +470,7 @@ class TestCompleteStreamCompressionMetadata:
                     conversation_id=None,
                     user_api_key=None,
                     decoded_token={"sub": "u"},
-                    should_save_conversation=True,
+                    should_persist=True,
                     model_id="gpt-4",
                 )
             )
@@ -501,7 +501,7 @@ class TestCompleteStreamLogTruncation:
                     conversation_id=None,
                     user_api_key=None,
                     decoded_token={"sub": "u"},
-                    should_save_conversation=False,
+                    should_persist=False,
                 )
             )
 
@@ -545,7 +545,7 @@ class TestCompleteStreamGeneratorExit:
                 conversation_id="conv1",
                 user_api_key=None,
                 decoded_token={"sub": "u"},
-                should_save_conversation=True,
+                should_persist=True,
                 model_id="gpt-4",
             )
 
@@ -586,7 +586,7 @@ class TestCompleteStreamGeneratorExit:
                 conversation_id="conv1",
                 user_api_key=None,
                 decoded_token={"sub": "u"},
-                should_save_conversation=True,
+                should_persist=True,
                 model_id="gpt-4",
                 isNoneDoc=True,
             )
@@ -628,7 +628,7 @@ class TestCompleteStreamGeneratorExit:
                 conversation_id="conv1",
                 user_api_key=None,
                 decoded_token={"sub": "u"},
-                should_save_conversation=True,
+                should_persist=True,
                 model_id="gpt-4",
             )
 
@@ -688,7 +688,7 @@ class TestCompleteStreamGeneratorExit:
                     conversation_id="conv1",
                     user_api_key=None,
                     decoded_token={"sub": "u"},
-                    should_save_conversation=True,
+                    should_persist=True,
                     model_id="gpt-4",
                 )
                 # Drain the early ``message_id`` event, then close before
@@ -770,7 +770,7 @@ class TestCompleteStreamGeneratorExit:
                     conversation_id="conv1",
                     user_api_key=None,
                     decoded_token={"sub": "u"},
-                    should_save_conversation=True,
+                    should_persist=True,
                     model_id="gpt-4",
                 )
                 next(gen)  # message_id frame
@@ -850,7 +850,7 @@ class TestCompleteStreamGeneratorExit:
                     conversation_id="conv1",
                     user_api_key=None,
                     decoded_token={"sub": "u"},
-                    should_save_conversation=True,
+                    should_persist=True,
                     model_id="gpt-4",
                 )
                 next(gen)  # message_id frame
@@ -951,7 +951,7 @@ class TestCompleteStreamWalAcceptance:
                         conversation_id=None,
                         user_api_key=None,
                         decoded_token={"sub": "u-acceptance"},
-                        should_save_conversation=True,
+                        should_persist=True,
                         model_id="gpt-4",
                     )
                 )
@@ -1023,7 +1023,7 @@ class TestCompleteStreamWalAcceptance:
                         conversation_id=None,
                         user_api_key=None,
                         decoded_token={"sub": "u-tap"},
-                        should_save_conversation=True,
+                        should_persist=True,
                         model_id="gpt-4",
                     )
                 )
@@ -1103,7 +1103,7 @@ class TestCompleteStreamWalAcceptance:
                         conversation_id=str(conv_id),
                         user_api_key=None,
                         decoded_token={"sub": user_id},
-                        should_save_conversation=True,
+                        should_persist=True,
                         model_id="gpt-4",
                         _continuation={
                             "messages": [],
@@ -1153,7 +1153,7 @@ class TestCompleteStreamWalAcceptance:
                         conversation_id=None,
                         user_api_key=None,
                         decoded_token={"sub": "u-request-id"},
-                        should_save_conversation=True,
+                        should_persist=True,
                         model_id="gpt-4",
                     )
                 )
@@ -1215,7 +1215,7 @@ class TestStreamingHeartbeatSeed:
                     conversation_id="conv1",
                     user_api_key=None,
                     decoded_token={"sub": "u"},
-                    should_save_conversation=True,
+                    should_persist=True,
                     model_id="gpt-4",
                 )
             )
@@ -1270,7 +1270,7 @@ class TestStreamingHeartbeatSeed:
                     conversation_id="conv1",
                     user_api_key=None,
                     decoded_token={"sub": "u"},
-                    should_save_conversation=True,
+                    should_persist=True,
                     model_id="gpt-4",
                 )
             )

@@ -76,7 +76,7 @@ class DeleteAllConversations(Resource):
 @conversations_ns.route("/get_conversations")
 class GetConversations(Resource):
     @api.doc(
-        description="Retrieve a list of the latest 30 conversations (excluding API key conversations)",
+        description="Retrieve a list of the latest 30 sidebar conversations (visibility = listed)",
     )
     def get(self):
         decoded_token = request.decoded_token

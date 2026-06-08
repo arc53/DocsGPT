@@ -214,7 +214,8 @@ class TestTranslateRequest:
         result = translate_request(data, "test-key")
         assert result["question"] == "What's 2+2?"
         assert result["api_key"] == "test-key"
-        # Conversations are not persisted by default on the v1 endpoint.
+        # v1 conversations persist; ``save_conversation`` only controls whether
+        # they list in the sidebar (default off).
         assert result["save_conversation"] is False
         history = json.loads(result["history"])
         assert len(history) == 1
@@ -265,7 +266,7 @@ class TestTranslateRequest:
             ],
         }
         result = translate_request(data, "key")
-        assert result["save_conversation"] is True
+        assert result["persist"] is True
 
     def test_stateless_continuation_does_not_persist_by_default(self):
         """A stateless continuation (no conversation_id, e.g. an OpenAI client
@@ -282,7 +283,25 @@ class TestTranslateRequest:
             ],
         }
         result = translate_request(data, "key")
-        assert result["save_conversation"] is False
+        assert result["persist"] is False
+
+    def test_stateful_continuation_persist_override_via_docsgpt(self):
+        """``docsgpt.persist=false`` forces no persistence even with a
+        conversation_id."""
+        data = {
+            "conversation_id": "conv-1",
+            "docsgpt": {"persist": False},
+            "messages": [
+                {"role": "user", "content": "Search for X"},
+                {
+                    "role": "assistant",
+                    "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "search", "arguments": "{}"}}],
+                },
+                {"role": "tool", "tool_call_id": "c1", "content": "done"},
+            ],
+        }
+        result = translate_request(data, "key")
+        assert result["persist"] is False
 
     def test_continuation_honours_explicit_save_conversation_override(self):
         """An explicit docsgpt.save_conversation=false on the continuation wins."""
