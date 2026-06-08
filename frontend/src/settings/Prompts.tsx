@@ -232,6 +232,29 @@ export default function Prompts({
                   />
                 </Button>
               </PopoverTrigger>
+              {selectedPrompt && selectedPrompt.type !== 'public' && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setModalType('EDIT');
+                    setEditPromptName(selectedPrompt.name);
+                    handleFetchPromptContent(selectedPrompt.id);
+                    setCurrentPromptEdit({
+                      id: selectedPrompt.id,
+                      name: selectedPrompt.name,
+                      type: selectedPrompt.type,
+                    });
+                    setModalState('ACTIVE');
+                  }}
+                  className="h-auto w-auto rounded p-1"
+                  aria-label="Edit prompt"
+                >
+                  <Pencil className="text-muted-foreground h-4 w-4" />
+                </Button>
+              )}
               <PopoverContent
                 align="start"
                 className={cn(
