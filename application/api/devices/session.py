@@ -13,6 +13,7 @@ from flask import Response, jsonify, make_response, request, stream_with_context
 
 from application.api.devices.auth import verify_device_session
 from application.core.settings import settings
+from application.core.shutdown import is_shutting_down
 from application.devices.broker import get_broker
 from application.storage.db.repositories.device_audit_log import (
     DeviceAuditLogRepository,
@@ -107,6 +108,9 @@ def session_events(session_id: str) -> Response:
         try:
             last_keepalive = time.time()
             while not sess.closed.is_set():
+                # Break promptly on shutdown (see application/core/shutdown.py).
+                if is_shutting_down():
+                    break
                 now = time.time()
                 if now - sess.last_activity_at > idle_seconds:
                     yield _sse_event(

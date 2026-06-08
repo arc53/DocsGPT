@@ -31,23 +31,24 @@ source .venv/bin/activate  # macOS/Linux
 uv pip install -r application/requirements.txt  # or: pip install -r application/requirements.txt
 ```
 
-Run the Flask API (if needed):
-
-```bash
-flask --app application/app.py run --host=0.0.0.0 --port=7091
-```
-
-That's the fast inner-loop option — quick startup, the Werkzeug interactive
-debugger still works, and it hot-reloads on source changes. It serves the
-Flask routes only (`/api/*`, `/stream`, etc.).
-
-If you need to exercise the full ASGI stack — the `/mcp` FastMCP endpoint,
-or to match the production runtime exactly — run the ASGI composition under
-uvicorn instead:
+Run the API. For local dev, prefer the ASGI entrypoint under uvicorn — it
+serves the **whole** app, matches production, and hot-reloads:
 
 ```bash
 uvicorn application.asgi:asgi_app --host 0.0.0.0 --port 7091 --reload
 ```
+
+`flask --app application/app.py run --host=0.0.0.0 --port=7091` is a faster
+inner loop (quick startup, the Werkzeug interactive debugger), but it serves
+**only** the WSGI Flask app and omits the routes mounted on the ASGI shell
+in `application/asgi.py`:
+
+- the `/mcp` FastMCP endpoint, and
+- the native-async SSE reconnect reader `GET /api/messages/<id>/events`.
+
+Under `flask run` those paths 404. Chat still works (`POST /stream` is a
+Flask route), but a stream interrupted by a disconnect won't auto-resume on
+reconnect. Use `flask run` only when you don't need those routes.
 
 Production uses `gunicorn -k uvicorn_worker.UvicornWorker` against the same
 `application.asgi:asgi_app` target; see `application/Dockerfile` for the
