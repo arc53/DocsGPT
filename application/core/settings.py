@@ -215,6 +215,10 @@ class Settings(BaseSettings):
     # Per-user durable backlog cap (~entries). At typical event rates this
     # gives ~24h of replay; tune up for verbose feeds, down for memory.
     EVENTS_STREAM_MAXLEN: int = 1000
+    # Bounds uvicorn's graceful-shutdown drain (uvicorn_worker doesn't forward
+    # --graceful-timeout). Keep below the gunicorn --timeout (180) watchdog.
+    # Used by gunicorn_worker.BoundedDrainUvicornWorker.
+    GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: int = 30
     # SSE keepalive comment cadence. Must sit under Cloudflare's 100s idle
     # close and iOS Safari's ~60s — 15s gives generous headroom.
     SSE_KEEPALIVE_SECONDS: int = 15

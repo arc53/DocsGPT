@@ -18,6 +18,7 @@ from flask import Blueprint, Response, jsonify, make_response, request, stream_w
 
 from application.cache import get_redis_instance
 from application.core.settings import settings
+from application.core.shutdown import is_shutting_down
 from application.events.keys import (
     connection_counter_key,
     replay_budget_key,
@@ -411,6 +412,11 @@ def stream_events() -> Response:
                 on_subscribe=_on_subscribe_callback,
                 poll_timeout=SUBSCRIBE_POLL_INTERVAL_SECONDS,
             ):
+                # Break promptly on shutdown — this a2wsgi thread can't be
+                # cancelled by asyncio (see application/core/shutdown.py).
+                if is_shutting_down():
+                    break
+
                 # Flush snapshot on the first iteration after the SUBSCRIBE
                 # callback ran. This runs at most once per connection.
                 if replay_done and replay_lines:
