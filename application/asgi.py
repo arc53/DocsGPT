@@ -8,6 +8,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import Mount
 
+from application.api.async_sse import async_sse_routes
 from application.app import app as flask_app
 from application.mcp_server import mcp
 
@@ -18,6 +19,12 @@ mcp_app = mcp.http_app(path="/")
 asgi_app = Starlette(
     routes=[
         Mount("/mcp", app=mcp_app),
+        # Native-async SSE readers intercept their exact paths before the
+        # Flask catch-all, so a mostly-idle reconnect tail rides the event
+        # loop instead of pinning a WSGI threadpool slot. Order matters:
+        # Starlette matches routes top-to-bottom, so these must precede the
+        # Mount("/") that hands everything else to Flask.
+        *async_sse_routes,
         Mount("/", app=WSGIMiddleware(flask_app, workers=_WSGI_THREADPOOL)),
     ],
     middleware=[

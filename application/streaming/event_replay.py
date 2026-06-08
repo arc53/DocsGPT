@@ -1,8 +1,13 @@
-"""Snapshot+tail iterator for chat-stream reconnect-after-disconnect.
+"""Shared snapshot/replay primitives for chat-stream reconnect.
 
-Subscribe to ``channel:{message_id}``, snapshot ``message_events``
-rows past ``last_event_id`` inside the SUBSCRIBE-ack callback, flush
-snapshot, then tail live pub/sub (dedup'd by ``sequence_no``). See
+The reconnect reader itself is the native-async generator in
+``async_event_replay.build_message_event_stream_async``; this module holds
+the pieces both it and the producer's journal depend on: the SSE wire
+format (``format_sse_event``), the ``message_events`` snapshot read
+(``read_snapshot_lines``), the producer-liveness watchdog probe
+(``_check_producer_liveness``), and the pub/sub envelope encode/decode.
+Keeping them here lets the async reader and the sync journal agree on the
+exact wire shape and dedup/terminal rules. See
 ``docs/runbooks/sse-notifications.md``.
 """
 
@@ -11,8 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-import time
-from typing import Iterator, Optional
+from typing import Optional
 
 from sqlalchemy import text as sql_text
 
@@ -20,8 +24,6 @@ from application.storage.db.repositories.message_events import (
     MessageEventsRepository,
 )
 from application.storage.db.session import db_readonly
-from application.streaming.broadcast_channel import Topic
-from application.streaming.keys import message_topic_name
 
 logger = logging.getLogger(__name__)
 
@@ -81,10 +83,15 @@ def format_sse_event(payload: dict, sequence_no: int) -> str:
 
 
 def _check_producer_liveness(
-    message_id: str, idle_seconds: float
+    message_id: str, user_id: Optional[str], idle_seconds: float
 ) -> Optional[dict]:
     """Inspect ``conversation_messages`` and return a terminal SSE
     payload when the producer is no longer alive, else ``None``.
+
+    When ``user_id`` is given the lookup is scoped to ``AND user_id = :u``
+    (defence in depth: this long-lived re-read re-asserts the ownership the
+    route gated on, so a stream cannot keep tailing a row it no longer
+    owns). A non-matching row reads as missing → a terminal ``error``.
 
     Three terminal cases collapse into a single DB round-trip:
 
@@ -100,11 +107,17 @@ def _check_producer_liveness(
       Synthesise ``error`` so the client doesn't hang on keepalives
       until the proxy idle-timeout kicks in.
     """
+    owner_clause = " AND user_id = :u" if user_id is not None else ""
+    params = {"id": message_id, "idle_secs": float(idle_seconds)}
+    if user_id is not None:
+        params["u"] = user_id
     try:
         with db_readonly() as conn:
             row = conn.execute(
                 sql_text(
-                    """
+                    # ``owner_clause`` is a fixed literal (no user input in the
+                    # SQL string); ``user_id`` is bound via ``:u``.
+                    f"""
                     SELECT
                         status,
                         message_metadata->>'error' AS err,
@@ -118,10 +131,10 @@ def _check_producer_liveness(
                         ) < now() - make_interval(secs => :idle_secs)
                             AS is_stale
                     FROM conversation_messages
-                    WHERE id = CAST(:id AS uuid)
+                    WHERE id = CAST(:id AS uuid){owner_clause}
                     """
                 ),
-                {"id": message_id, "idle_secs": float(idle_seconds)},
+                params,
             ).first()
     except Exception:
         logger.exception(
@@ -161,236 +174,49 @@ def _check_producer_liveness(
     return None
 
 
-def build_message_event_stream(
-    message_id: str,
-    last_event_id: Optional[int] = None,
-    *,
-    keepalive_seconds: float = DEFAULT_KEEPALIVE_SECONDS,
-    poll_timeout_seconds: float = DEFAULT_POLL_TIMEOUT_SECONDS,
-    watchdog_interval_seconds: float = DEFAULT_WATCHDOG_INTERVAL_SECONDS,
-    producer_idle_seconds: float = DEFAULT_PRODUCER_IDLE_SECONDS,
-) -> Iterator[str]:
-    """Yield SSE-formatted lines for one ``message_id`` reconnect stream.
+def read_snapshot_lines(
+    message_id: str, last_event_id: Optional[int], user_id: Optional[str] = None
+) -> tuple[list[str], Optional[int], bool]:
+    """Read journal rows after ``last_event_id`` as SSE-formatted lines.
 
-    First frame is ``: connected``; subsequent frames are snapshot rows,
-    live-tail events, or ``: keepalive`` comments. Runs until the client
-    disconnects.
+    Returns ``(lines, max_sequence_no, terminal)``: ``max_sequence_no`` is
+    seeded with ``last_event_id`` and advanced past every row read,
+    ``terminal`` is True if any row carried a terminal ``end``/``error``.
+    Raises on DB error so the caller can drive its replay-failed path.
+
+    Used by ``async_event_replay.build_message_event_stream_async`` (the
+    reconnect reader); it shares ``format_sse_event`` / ``_payload_is_terminal``
+    with the producer's journal writer so reader and writer never drift on
+    wire shape or terminal semantics.
     """
-    yield ": connected\n\n"
-
-    # Replay buffer — populated inside ``_on_subscribe`` (or the
-    # Redis-unavailable fallback below), drained on the first iteration
-    # of the subscribe loop after the callback runs.
-    replay_buffer: list[str] = []
-    # Dedup floor: seeded with the client's cursor so an empty snapshot
-    # still rejects re-published live events with seq <= last_event_id.
-    # Advanced by snapshot rows AND by yielded live events, so any
-    # republish past the snapshot ceiling is also dropped.
-    max_replayed_seq: Optional[int] = last_event_id
-    replay_done = False
-    replay_failed = False
-    # Set when a snapshot row carries a terminal ``end`` / ``error``
-    # event. After flushing the buffer the generator returns; if we
-    # kept tailing we'd loop on keepalives forever for a stream that
-    # already finished.
-    terminal_in_snapshot = False
-
-    def _read_snapshot_into_buffer() -> None:
-        nonlocal max_replayed_seq, replay_failed, terminal_in_snapshot
-        try:
-            with db_readonly() as conn:
-                rows = MessageEventsRepository(conn).read_after(
-                    message_id, last_sequence_no=last_event_id
-                )
-            for row in rows:
-                seq = int(row["sequence_no"])
-                payload = row.get("payload")
-                if not isinstance(payload, dict):
-                    # ``record_event`` rejects non-dict payloads at the
-                    # write gate, so this can only be a legacy row from
-                    # before that contract or a direct SQL insert. The
-                    # original synthetic fallback (``{"type": event_type}``)
-                    # used to ship a malformed envelope here — drop the
-                    # row instead so a corrupt journal entry doesn't
-                    # poison a reconnect.
-                    logger.warning(
-                        "Skipping non-dict payload from message_events: "
-                        "message_id=%s seq=%s type=%s",
-                        message_id,
-                        seq,
-                        row.get("event_type"),
-                    )
-                    continue
-                replay_buffer.append(format_sse_event(payload, seq))
-                if max_replayed_seq is None or seq > max_replayed_seq:
-                    max_replayed_seq = seq
-                if _payload_is_terminal(payload, row.get("event_type")):
-                    terminal_in_snapshot = True
-        except Exception:
-            logger.exception(
-                "Snapshot read failed for message_id=%s last_event_id=%s",
+    lines: list[str] = []
+    max_seq = last_event_id
+    terminal = False
+    with db_readonly() as conn:
+        rows = MessageEventsRepository(conn).read_after(
+            message_id, last_sequence_no=last_event_id, user_id=user_id
+        )
+    for row in rows:
+        seq = int(row["sequence_no"])
+        payload = row.get("payload")
+        if not isinstance(payload, dict):
+            # ``record_event`` rejects non-dict payloads at the write gate,
+            # so this is a legacy/direct-SQL row — drop it rather than ship
+            # a malformed envelope that would poison a reconnect.
+            logger.warning(
+                "Skipping non-dict payload from message_events: "
+                "message_id=%s seq=%s type=%s",
                 message_id,
-                last_event_id,
+                seq,
+                row.get("event_type"),
             )
-            replay_failed = True
-
-    def _on_subscribe() -> None:
-        # SUBSCRIBE has been acked — Postgres reads from this point
-        # capture every row that's been committed. Pub/sub messages
-        # published after this point are queued at the connection level
-        # until the outer loop calls ``get_message`` again.
-        nonlocal replay_done
-        try:
-            _read_snapshot_into_buffer()
-        finally:
-            # Flip even on failure so the outer loop continues to live
-            # tail and the client doesn't hang waiting for a snapshot
-            # flush that will never come.
-            replay_done = True
-
-    topic = Topic(message_topic_name(message_id))
-    last_keepalive = time.monotonic()
-    # Rate-limit the watchdog's DB hit. ``-inf`` makes the first idle
-    # tick after replay_done fire immediately so a snapshot-already-
-    # terminal-in-DB case is surfaced before any keepalive cadence.
-    # Subsequent checks are gated by ``watchdog_interval_seconds``.
-    last_watchdog_check = float("-inf")
-    # Synthetic terminal events emitted by the watchdog use the same
-    # ``sequence_no=-1`` convention as the snapshot-failure path so the
-    # frontend's strict ``\d+`` cursor regex rejects them as a
-    # ``Last-Event-ID`` for any future reconnect. The chosen
-    # discriminator ensures a manual page refresh after a watchdog-fired
-    # error doesn't loop on the same synthetic id.
-    watchdog_synthetic_seq = -1
-
-    try:
-        for payload in topic.subscribe(
-            on_subscribe=_on_subscribe,
-            poll_timeout=poll_timeout_seconds,
-        ):
-            # Flush snapshot exactly once after the SUBSCRIBE callback
-            # has run and produced a buffer.
-            if replay_done and replay_buffer:
-                for line in replay_buffer:
-                    yield line
-                replay_buffer.clear()
-                if terminal_in_snapshot:
-                    # The original stream already finished; tailing
-                    # would just emit keepalives forever and pin both a
-                    # client reconnect promise and a server WSGI thread.
-                    return
-
-            if replay_failed:
-                # Snapshot read failed (DB blip / transient timeout). Emit a
-                # terminal ``error`` event and return — the client only
-                # reconnects after the original stream has already moved on,
-                # so without a snapshot there's nothing live left to tail and
-                # holding the connection open would just emit keepalives
-                # until the proxy idle-timeout fires. ``code`` preserves the
-                # snapshot-vs-agent-loop distinction so a future client can
-                # opt into a refetch instead of a hard failure.
-                yield format_sse_event(
-                    {
-                        "type": "error",
-                        "error": "Stream replay failed; please refresh to load the latest state.",
-                        "code": "snapshot_failed",
-                        "message_id": message_id,
-                    },
-                    sequence_no=-1,
-                )
-                return
-
-            now = time.monotonic()
-            if payload is None:
-                # Idle tick — check both keepalive and watchdog. The
-                # watchdog only kicks in once the snapshot half has been
-                # flushed (``replay_done``) so we don't race the
-                # snapshot read on the first iteration.
-                if (
-                    replay_done
-                    and watchdog_interval_seconds >= 0
-                    and now - last_watchdog_check >= watchdog_interval_seconds
-                ):
-                    last_watchdog_check = now
-                    terminal_payload = _check_producer_liveness(
-                        message_id, producer_idle_seconds
-                    )
-                    if terminal_payload is not None:
-                        yield format_sse_event(
-                            terminal_payload,
-                            sequence_no=watchdog_synthetic_seq,
-                        )
-                        return
-                if now - last_keepalive >= keepalive_seconds:
-                    yield ": keepalive\n\n"
-                    last_keepalive = now
-                continue
-
-            envelope = _decode_pubsub_message(payload)
-            if envelope is None:
-                continue
-            seq = envelope.get("sequence_no")
-            inner = envelope.get("payload")
-            if (
-                not isinstance(seq, int)
-                or isinstance(seq, bool)
-                or not isinstance(inner, dict)
-            ):
-                continue
-            if max_replayed_seq is not None and seq <= max_replayed_seq:
-                # Snapshot already covered this id — drop the duplicate.
-                continue
-            yield format_sse_event(inner, seq)
-            # Advance the dedup floor on the live path too, so a stale
-            # republish of an already-yielded seq (process restart, retry
-            # tool, etc.) is dropped on a later iteration.
-            max_replayed_seq = seq
-            last_keepalive = now
-            if _payload_is_terminal(inner, envelope.get("event_type")):
-                # Live tail just delivered the terminal event — close
-                # out the reconnect stream so the client's drain
-                # promise resolves and the WSGI thread is freed.
-                return
-
-        # Subscribe exited without ever yielding (Redis unavailable,
-        # ``pubsub.subscribe`` raised, or the inner loop died between
-        # SUBSCRIBE-ack and the first poll). The snapshot half is in
-        # Postgres and is still serviceable — read it directly so a
-        # Redis-only outage doesn't cost the client their reconnect
-        # backlog. Gate the read on ``replay_done`` rather than
-        # ``subscribe_started``: if ``_on_subscribe`` already populated
-        # the buffer, re-reading would append the same rows twice and
-        # double the answer chunks on the client (the per-message
-        # reconnect dispatcher does not dedup by ``id``).
-        if not replay_done:
-            _read_snapshot_into_buffer()
-            replay_done = True
-        for line in replay_buffer:
-            yield line
-        replay_buffer.clear()
-        if replay_failed:
-            # Mirror the live-tail branch: emit a terminal ``error`` so
-            # the frontend's existing end/error handling drives the UI
-            # to a failed state instead of relying on the proxy timeout.
-            yield format_sse_event(
-                {
-                    "type": "error",
-                    "error": "Stream replay failed; please refresh to load the latest state.",
-                    "code": "snapshot_failed",
-                    "message_id": message_id,
-                },
-                sequence_no=-1,
-            )
-            return
-        # Same close-on-terminal contract as the live-tail branch.
-        # Without it a Redis-down + already-completed-stream client
-        # would also hang on a never-ending generator.
-        if terminal_in_snapshot:
-            return
-    except GeneratorExit:
-        # Client disconnect — let the underlying ``Topic.subscribe``
-        # ``finally`` block tear down its pubsub cleanly.
-        return
+            continue
+        lines.append(format_sse_event(payload, seq))
+        if max_seq is None or seq > max_seq:
+            max_seq = seq
+        if _payload_is_terminal(payload, row.get("event_type")):
+            terminal = True
+    return lines, max_seq, terminal
 
 
 def _decode_pubsub_message(raw) -> Optional[dict]:
