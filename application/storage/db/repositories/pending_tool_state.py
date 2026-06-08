@@ -163,16 +163,21 @@ class PendingToolStateRepository:
         )
         return result.rowcount
 
-    def cleanup_expired(self) -> int:
-        """Delete rows where ``expires_at < now()``.
+    def cleanup_expired(self) -> list[dict]:
+        """Delete TTL-expired rows; return their ``(conversation_id, user_id)``.
 
         Replaces Mongo's ``expireAfterSeconds=0`` TTL index. Intended to
-        be called from a Celery beat task every 60 seconds.
+        be called from a Celery beat task every 60 seconds. The deleted
+        rows are returned so the caller can revoke any approval prompt
+        tied to the now-gone resumable state.
         """
         # clock_timestamp() — not now() — since the latter is frozen to the
         # start of the transaction, which would let state that has just
         # expired survive one more cleanup tick.
         result = self._conn.execute(
-            text("DELETE FROM pending_tool_state WHERE expires_at < clock_timestamp()")
+            text(
+                "DELETE FROM pending_tool_state WHERE expires_at < clock_timestamp() "
+                "RETURNING conversation_id, user_id"
+            )
         )
-        return result.rowcount
+        return [row_to_dict(r) for r in result.fetchall()]

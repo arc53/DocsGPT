@@ -10,7 +10,11 @@ import { sseEventReceived } from '../notifications/notificationsSlice';
 import { RootState } from '../store';
 
 const DISMISSED_SOURCE_IDS_STORAGE_KEY = 'docsgpt:dismissedUploadSourceIds';
-const DISMISSED_SOURCE_IDS_TTL_MS = 24 * 60 * 60 * 1000;
+// Must outlive the backend SSE backlog (``EVENTS_STREAM_MAXLEN`` ≈ 24h,
+// longer under light traffic). If the dismissal expires first, a replayed
+// ``source.ingest.*`` for a dismissed source auto-creates a fresh task
+// with ``dismissed=false`` and the toast re-pops. 7 days clears the window.
+const DISMISSED_SOURCE_IDS_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DISMISSED_SOURCE_IDS_CAP = 200;
 
 function recordDismissedSourceId(

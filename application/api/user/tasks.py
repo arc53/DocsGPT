@@ -149,8 +149,36 @@ def sync_source(
     return resp
 
 
+def _emit_attachment_poison_event(task_name, bound):
+    """Publish a terminal ``attachment.failed`` when the poison-guard trips.
+
+    Mirrors ``_emit_ingest_poison_event``: the guard returns before the
+    worker runs, so ``attachment_worker``'s own events never fire and the
+    upload toast would otherwise spin on "processing" forever.
+    """
+    user = bound.get("user")
+    file_info = bound.get("file_info") or {}
+    attachment_id = file_info.get("attachment_id")
+    if not user or not attachment_id:
+        return
+    from application.events.publisher import publish_user_event
+
+    publish_user_event(
+        user,
+        "attachment.failed",
+        {
+            "attachment_id": str(attachment_id),
+            "filename": file_info.get("filename") or "",
+            "error": "Attachment processing stopped after repeated failures.",
+        },
+        scope={"kind": "attachment", "id": str(attachment_id)},
+    )
+
+
 @celery.task(**DURABLE_TASK)
-@with_idempotency(task_name="store_attachment")
+@with_idempotency(
+    task_name="store_attachment", on_poison=_emit_attachment_poison_event,
+)
 def store_attachment(self, file_info, user, idempotency_key=None):
     resp = attachment_worker(self, file_info, user)
     return resp
@@ -325,7 +353,13 @@ def setup_periodic_tasks(sender, **kwargs):
     )
 
 
-@celery.task(bind=True)
+# Bound time limits so a hung OAuth discovery (user never finishes the
+# consent flow, upstream never redirects) self-terminates instead of
+# stranding the ``mcp.oauth.awaiting_redirect`` envelope forever. The
+# soft limit raises inside ``mcp_oauth``'s ``try`` so it publishes a
+# terminal ``mcp.oauth.failed``; the hard limit is the prefork backstop.
+# Generous so a human actively clicking through OAuth isn't cut off.
+@celery.task(bind=True, soft_time_limit=600, time_limit=660)
 def mcp_oauth_task(self, config, user):
     resp = mcp_oauth(self, config, user)
     return resp
@@ -347,8 +381,26 @@ def cleanup_pending_tool_state(self):
     with engine.begin() as conn:
         repo = PendingToolStateRepository(conn)
         reverted = repo.revert_stale_resuming(grace_seconds=600)
-        deleted = repo.cleanup_expired()
-    return {"deleted": deleted, "reverted": reverted}
+        cleared = repo.cleanup_expired()
+
+    # Reaping the resumable state retires any awaiting-approval prompt
+    # tied to it. Without a clearing event the durable
+    # ``tool.approval.required`` envelope replays on reconnect and the UI
+    # toast lingers for a conversation that can no longer be resumed.
+    from application.events.publisher import publish_user_event
+
+    for row in cleared:
+        user_id = row.get("user_id")
+        conversation_id = row.get("conversation_id")
+        if not user_id or not conversation_id:
+            continue
+        publish_user_event(
+            str(user_id),
+            "tool.approval.cleared",
+            {"conversation_id": str(conversation_id), "reason": "expired"},
+            scope={"kind": "conversation", "id": str(conversation_id)},
+        )
+    return {"deleted": len(cleared), "reverted": reverted}
 
 
 @celery.task(bind=True, acks_late=False)

@@ -581,6 +581,38 @@ def _ingest_status(conn, source_id: str) -> str | None:
     return row[0] if row is not None else None
 
 
+def _seed_source(
+    conn, *, source_id: str, user_id: str = "u-1", name: str = "My Doc.pdf",
+) -> str:
+    """Insert a minimal ``sources`` row so the ingest sweep can resolve its owner."""
+    conn.execute(
+        text(
+            "INSERT INTO sources (id, user_id, name, type) "
+            "VALUES (CAST(:id AS uuid), :user_id, :name, 'file')"
+        ),
+        {"id": source_id, "user_id": user_id, "name": name},
+    )
+    return source_id
+
+
+def _capture_published(pg_conn):
+    """Patch ``publish_user_event`` and collect ``(user, type, payload, scope)``.
+
+    Returns a ``(context_manager, captured_list)`` pair. The reconciler
+    imports the publisher lazily inside ``_publish_events``, so patching the
+    function on its home module is what intercepts the call.
+    """
+    captured: list = []
+
+    def _fake(user_id, event_type, payload, *, scope=None):
+        captured.append((user_id, event_type, payload, scope))
+        return "1-0"
+
+    return patch(
+        "application.events.publisher.publish_user_event", _fake,
+    ), captured
+
+
 class TestStalledIngests:
     @pytest.mark.unit
     def test_stalled_ingest_escalated_with_alert(self, pg_conn, caplog):
@@ -782,6 +814,121 @@ class TestStuckIdempotencyPending:
             r = run_reconciliation()
 
         assert r["idempotency_pending_failed"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Clearing / terminal user-facing events (revoke stale UI surfaces)
+# ---------------------------------------------------------------------------
+
+
+class TestApprovalClearedEvents:
+    @pytest.mark.unit
+    def test_message_failed_clears_pending_approval(self, pg_conn):
+        """A reconciled-to-failed message deletes its resumable state and
+        publishes ``tool.approval.cleared`` so the approval toast doesn't
+        linger after reconnect.
+        """
+        from application.api.user import reconciliation as recon
+
+        msg = _seed_pending_message(pg_conn)
+        # Expired PT row: doesn't shield the message (past TTL) but is the
+        # resumable state the failure path must delete + revoke.
+        _seed_pending_state(
+            pg_conn, msg["conversation_id"], msg["user_id"],
+            expires_in_minutes=-1,
+        )
+
+        ctx, published = _capture_published(pg_conn)
+        with _route_engine_to(pg_conn), ctx:
+            recon.run_reconciliation()
+            recon.run_reconciliation()
+            recon.run_reconciliation()
+
+        status = pg_conn.execute(
+            text(
+                "SELECT status FROM conversation_messages "
+                "WHERE id = CAST(:id AS uuid)"
+            ),
+            {"id": msg["id"]},
+        ).scalar()
+        assert status == "failed"
+
+        # Resumable state is gone.
+        pt_count = pg_conn.execute(
+            text(
+                "SELECT count(*) FROM pending_tool_state "
+                "WHERE conversation_id = CAST(:c AS uuid)"
+            ),
+            {"c": msg["conversation_id"]},
+        ).scalar()
+        assert pt_count == 0
+
+        cleared = [p for p in published if p[1] == "tool.approval.cleared"]
+        assert len(cleared) == 1
+        user_id, _, payload, scope = cleared[0]
+        assert user_id == msg["user_id"]
+        assert payload["conversation_id"] == msg["conversation_id"]
+        assert payload["message_id"] == msg["id"]
+        assert payload["reason"] == "failed"
+        assert scope == {"kind": "conversation", "id": msg["conversation_id"]}
+
+    @pytest.mark.unit
+    def test_message_failed_without_approval_emits_no_clear(self, pg_conn):
+        """A plain stuck message (no resumable state) must not emit a
+        spurious clearing event.
+        """
+        from application.api.user import reconciliation as recon
+
+        _seed_pending_message(pg_conn)
+
+        ctx, published = _capture_published(pg_conn)
+        with _route_engine_to(pg_conn), ctx:
+            recon.run_reconciliation()
+            recon.run_reconciliation()
+            recon.run_reconciliation()
+
+        assert not any(p[1] == "tool.approval.cleared" for p in published)
+
+
+class TestStalledIngestEvent:
+    @pytest.mark.unit
+    def test_stalled_ingest_emits_source_failed_event(self, pg_conn):
+        from application.api.user import reconciliation as recon
+
+        sid = "1a000000-0000-0000-0000-0000000000b1"
+        _seed_source(pg_conn, source_id=sid, user_id="u-ingest", name="report.pdf")
+        _seed_ingest_progress(pg_conn, source_id=sid, embedded=2, total=50)
+
+        ctx, published = _capture_published(pg_conn)
+        with _route_engine_to(pg_conn), ctx:
+            r = recon.run_reconciliation()
+
+        assert r["ingests_stalled"] == 1
+        failed = [p for p in published if p[1] == "source.ingest.failed"]
+        assert len(failed) == 1
+        user_id, _, payload, scope = failed[0]
+        assert user_id == "u-ingest"
+        assert payload["source_id"] == sid
+        assert payload["filename"] == "report.pdf"
+        assert scope == {"kind": "source", "id": sid}
+
+    @pytest.mark.unit
+    def test_orphan_source_stalls_without_event(self, pg_conn):
+        """An ingest row with no matching ``sources`` row (deleted source)
+        still escalates to 'stalled' but emits no user event.
+        """
+        from application.api.user import reconciliation as recon
+
+        sid = "1a000000-0000-0000-0000-0000000000b2"
+        _seed_ingest_progress(pg_conn, source_id=sid, embedded=1, total=20)
+
+        ctx, published = _capture_published(pg_conn)
+        with _route_engine_to(pg_conn), ctx:
+            r = recon.run_reconciliation()
+
+        assert r["ingests_stalled"] == 1
+        assert _ingest_status(pg_conn, sid) == "stalled"
+        assert not any(p[1] == "source.ingest.failed" for p in published)
 
 
 # ---------------------------------------------------------------------------

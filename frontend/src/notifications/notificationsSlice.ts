@@ -160,6 +160,63 @@ export const notificationsSlice = createSlice({
         state.dismissedToolApprovals,
       );
     },
+    /**
+     * Revoke a pending approval when the backend says it can no longer be
+     * acted on (``tool.approval.cleared`` — the message failed or the
+     * resumable state was reaped). Evicts the matching
+     * ``tool.approval.required`` from the ring AND records its (stable
+     * Redis-stream) id in the dismissed set, so the durable envelope
+     * replayed on reconnect stays suppressed without re-popping the toast.
+     *
+     * Match by ``payload.message_id`` when the clearing event carries one
+     * (precise — a later pause of the same conversation has a new message
+     * id and still surfaces); otherwise fall back to the conversation
+     * ``scope.id``.
+     */
+    resolveToolApproval: (state, action: PayloadAction<SSEEvent>) => {
+      const cleared = action.payload;
+      const conversationId = cleared.scope?.id;
+      const messageId = (cleared.payload as { message_id?: string } | undefined)
+        ?.message_id;
+      if (!conversationId && !messageId) return;
+
+      const now = Date.now();
+      const cutoff = now - DISMISSED_TOOL_APPROVALS_TTL_MS;
+      state.dismissedToolApprovals = state.dismissedToolApprovals.filter(
+        (entry) => entry.at >= cutoff,
+      );
+
+      const dismissedIds = new Set(
+        state.dismissedToolApprovals.map((entry) => entry.id),
+      );
+      let changed = false;
+      state.recentEvents = state.recentEvents.filter((e) => {
+        if (e.type !== 'tool.approval.required' || !e.id) return true;
+        const eMsg = (e.payload as { message_id?: string } | undefined)
+          ?.message_id;
+        const match = messageId
+          ? eMsg === messageId
+          : e.scope?.id === conversationId;
+        if (!match) return true;
+        if (!dismissedIds.has(e.id)) {
+          state.dismissedToolApprovals.push({ id: e.id, at: now });
+          dismissedIds.add(e.id);
+        }
+        changed = true;
+        return false;
+      });
+
+      if (!changed) return;
+      if (state.dismissedToolApprovals.length > DISMISSED_TOOL_APPROVALS_CAP) {
+        state.dismissedToolApprovals = state.dismissedToolApprovals.slice(
+          -DISMISSED_TOOL_APPROVALS_CAP,
+        );
+      }
+      saveDismissed(
+        DISMISSED_TOOL_APPROVALS_STORAGE_KEY,
+        state.dismissedToolApprovals,
+      );
+    },
   },
 });
 
@@ -171,6 +228,7 @@ export const {
   sseLastEventIdAdvanced,
   clearRecentEvents,
   dismissToolApproval,
+  resolveToolApproval,
 } = notificationsSlice.actions;
 
 export const selectSseHealth = (state: RootState): PushHealth =>

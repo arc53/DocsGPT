@@ -44,6 +44,7 @@ class ReconciliationRepository:
                       SELECT 1
                       FROM pending_tool_state pts
                       WHERE pts.conversation_id = cm.conversation_id
+                        AND pts.user_id = cm.user_id
                         AND (
                             (pts.status = 'pending'
                              AND pts.expires_at > now())
@@ -115,15 +116,17 @@ class ReconciliationRepository:
         result = self._conn.execute(
             text(
                 """
-                SELECT source_id, total_chunks, embedded_chunks,
-                       last_index, last_updated
-                FROM ingest_chunk_progress
-                WHERE last_updated < now() - make_interval(mins => :age)
-                  AND embedded_chunks < total_chunks
-                  AND status = 'active'
-                ORDER BY last_updated ASC
+                SELECT icp.source_id, icp.total_chunks, icp.embedded_chunks,
+                       icp.last_index, icp.last_updated,
+                       s.user_id, s.name AS source_name
+                FROM ingest_chunk_progress icp
+                LEFT JOIN sources s ON s.id = icp.source_id
+                WHERE icp.last_updated < now() - make_interval(mins => :age)
+                  AND icp.embedded_chunks < icp.total_chunks
+                  AND icp.status = 'active'
+                ORDER BY icp.last_updated ASC
                 LIMIT :limit
-                FOR UPDATE SKIP LOCKED
+                FOR UPDATE OF icp SKIP LOCKED
                 """
             ),
             {"age": age_minutes, "limit": limit},

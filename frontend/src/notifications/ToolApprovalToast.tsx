@@ -12,6 +12,10 @@ import {
   selectRecentEvents,
 } from './notificationsSlice';
 
+// Backend ``PENDING_STATE_TTL_SECONDS`` is 30 min; allow a margin for
+// clock skew before treating a still-present approval event as moot.
+const APPROVAL_EVENT_MAX_AGE_MS = 35 * 60 * 1000;
+
 /**
  * Surface ``tool.approval.required`` events as toasts that look like
  * ``UploadToast`` (same fixed bottom-right rail) — but only when the
@@ -62,10 +66,20 @@ export default function ToolApprovalToast() {
     string,
     { eventId: string; conversationId: string }
   >();
+  const now = Date.now();
   for (const event of events) {
     if (event.type !== 'tool.approval.required') continue;
     if (!event.id) continue; // can't dismiss without an id
     if (dismissedSet.has(event.id)) continue;
+    // Timestamp backstop: an approval is only resumable inside the
+    // backend pending-tool-state TTL. Past that window the prompt is
+    // moot, so don't surface it even if no clearing event arrived (lost
+    // publish, older backend). Keyed off the envelope's own ``ts`` so it
+    // holds across reload/backlog replay.
+    if (event.ts) {
+      const age = now - Date.parse(event.ts);
+      if (Number.isFinite(age) && age > APPROVAL_EVENT_MAX_AGE_MS) continue;
+    }
     const conversationId = event.scope?.id;
     if (!conversationId) continue;
     if (currentConversationId && conversationId === currentConversationId) {
