@@ -248,7 +248,7 @@ test.describe('tier-a · chat turn save', () => {
     }
   });
 
-  test('save_conversation=false skips all four tables', async ({ browser }) => {
+  test('save_conversation=false persists a hidden conversation (kept out of the sidebar)', async ({ browser }) => {
     const { sub, token } = await newUserContext(browser);
 
     // Sanity: the user has nothing yet.
@@ -266,23 +266,30 @@ test.describe('tier-a · chat turn save', () => {
       isNoneDoc: true,
     });
     expect(result.status).toBe(200);
-    // When save_conversation=false the route emits `{"type":"id","id":"None"}`
-    // (stringified None) — no real UUID persisted.
-    expect(result.conversationId).toBe('None');
+    // save_conversation now controls sidebar visibility, not persistence:
+    // the turn persists, so a real conversation UUID is emitted.
+    expect(result.conversationId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
 
-    // Key invariant: conversations + conversation_messages must be empty
-    // for this user. token_usage still fires (it's per-LLM-call, not per
-    // conversation); user_logs also fires (audit log). We only assert on
-    // the two "persistent chat state" tables.
+    // The conversation + its messages persist...
     expect(
       await countRows('conversations', {
         sql: 'user_id = $1',
         params: [sub],
       }),
-    ).toBe(0);
-
+    ).toBe(1);
     const msgs = await fetchMessagesForUser(sub);
-    expect(msgs).toHaveLength(0);
+    expect(msgs.length).toBeGreaterThan(0);
+
+    // ...but it is hidden, so it never surfaces in the sidebar
+    // (list_for_user filters visibility = 'listed').
+    expect(
+      await countRows('conversations', {
+        sql: "user_id = $1 AND visibility = 'listed'",
+        params: [sub],
+      }),
+    ).toBe(0);
   });
 
   test('silent-break: two concurrent /stream calls on the same conversation_id — neither 500s and positions stay unique', async ({

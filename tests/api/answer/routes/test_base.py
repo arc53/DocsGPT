@@ -139,7 +139,7 @@ class TestCompleteStreamMethod:
                     conversation_id=None,
                     user_api_key=None,
                     decoded_token=decoded_token,
-                    should_save_conversation=False,
+                    should_persist=False,
                 )
             )
 
@@ -171,7 +171,7 @@ class TestCompleteStreamMethod:
                     conversation_id=None,
                     user_api_key=None,
                     decoded_token=decoded_token,
-                    should_save_conversation=False,
+                    should_persist=False,
                 )
             )
 
@@ -197,7 +197,7 @@ class TestCompleteStreamMethod:
                     conversation_id=None,
                     user_api_key=None,
                     decoded_token=decoded_token,
-                    should_save_conversation=False,
+                    should_persist=False,
                 )
             )
 
@@ -239,7 +239,7 @@ class TestCompleteStreamMethod:
                         conversation_id=None,
                         user_api_key=None,
                         decoded_token=decoded_token,
-                        should_save_conversation=True,
+                        should_persist=True,
                     )
                 )
 
@@ -299,7 +299,7 @@ class TestCompleteStreamMethod:
                         conversation_id=None,  # caller had no conv yet
                         user_api_key=None,
                         decoded_token={"sub": "user-prop"},
-                        should_save_conversation=True,
+                        should_persist=True,
                     )
                 )
 
@@ -330,7 +330,7 @@ class TestCompleteStreamMethod:
                 conversation_id="conv-1",
                 user_api_key=None,
                 decoded_token={"sub": "user123"},
-                should_save_conversation=True,
+                should_persist=True,
             )
         )
 

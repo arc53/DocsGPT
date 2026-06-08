@@ -263,13 +263,15 @@ def translate_request(
             # rebuilt from the resent messages instead of server-side state.
             "messages": messages,
         }
-        # Stateful continuations (with a conversation_id) default to True so the
-        # final turn / WAL row is persisted. Stateless continuations (no
-        # conversation_id, e.g. opencode) default to False — otherwise every
-        # tool round persists an orphan conversation with an empty question. An
-        # explicit ``docsgpt.save_conversation`` override is honoured either way.
+        # Persistence: stateful continuations (carrying a conversation_id)
+        # persist the final turn; stateless ones (no conversation_id, e.g.
+        # opencode) skip it, else every tool round writes an orphan conversation
+        # with an empty question. ``docsgpt.persist`` overrides. Visibility is
+        # separate — hidden unless ``docsgpt.save_conversation`` opts in.
+        docsgpt_ext = data.get("docsgpt", {})
+        result["persist"] = bool(docsgpt_ext.get("persist", bool(conversation_id)))
         result["save_conversation"] = bool(
-            data.get("docsgpt", {}).get("save_conversation", bool(conversation_id))
+            docsgpt_ext.get("save_conversation", False)
         )
         # Carry tools forward for next iteration
         if data.get("tools"):
@@ -303,8 +305,8 @@ def translate_request(
         "question": question,
         "api_key": api_key,
         "history": json.dumps(history),
-        # Conversations are NOT persisted by default on the v1 endpoint.
-        # Callers opt in via ``docsgpt.save_conversation: true``.
+        # v1 conversations always persist; ``save_conversation`` only controls
+        # whether they list in the agent owner's sidebar (default hidden).
         "save_conversation": bool(docsgpt.get("save_conversation", False)),
     }
 

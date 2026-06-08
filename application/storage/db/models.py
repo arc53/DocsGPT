@@ -326,6 +326,9 @@ conversations_table = Table(
     Column("is_shared_usage", Boolean, nullable=False, server_default="false"),
     Column("shared_token", Text),
     Column("shared_with", ARRAY(Text), nullable=False, server_default="{}"),
+    # "listed" shows in the owner's sidebar; "hidden" persists silently
+    # (agent/API/OpenAI-compat traffic). See migration 0016.
+    Column("visibility", Text, nullable=False, server_default="listed"),
     Column("compression_metadata", JSONB),
     Column("date", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),

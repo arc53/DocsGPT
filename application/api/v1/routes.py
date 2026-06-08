@@ -15,6 +15,7 @@ from typing import Any, Dict, Generator, Optional
 from flask import Blueprint, jsonify, make_response, request, Response
 
 from application.api.answer.routes.base import BaseAnswerResource
+from application.api.answer.services.persistence_policy import resolve_persistence
 from application.api.answer.services.stream_processor import StreamProcessor
 from application.api.v1.translator import (
     translate_request,
@@ -157,7 +158,14 @@ def chat_completions():
         if usage_error:
             return usage_error
 
-        should_save_conversation = bool(internal_data.get("save_conversation", False))
+        # v1 always persists (unless the translator opted out for a stateless
+        # tool round); the agent owner's sidebar only lists it on explicit
+        # ``docsgpt.save_conversation: true``.
+        should_persist, visibility = resolve_persistence(
+            display_flag=internal_data.get("save_conversation"),
+            api_key=internal_data.get("api_key"),
+            persist_flag=internal_data.get("persist"),
+        )
         # Only strip leaked reasoning from content for structured requests -- the
         # only path where models echo reasoning into content -- so legitimate
         # answers that mention the marker text are never corrupted.
@@ -174,7 +182,8 @@ def chat_completions():
                     processor,
                     model_name,
                     continuation,
-                    should_save_conversation,
+                    should_persist,
+                    visibility,
                     strip_reasoning_leak,
                 ),
                 mimetype="text/event-stream",
@@ -191,7 +200,8 @@ def chat_completions():
                 processor,
                 model_name,
                 continuation,
-                should_save_conversation,
+                should_persist,
+                visibility,
                 strip_reasoning_leak,
             )
 
@@ -222,7 +232,8 @@ def _stream_response(
     processor: StreamProcessor,
     model_name: str,
     continuation: Optional[Dict],
-    should_save_conversation: bool,
+    should_persist: bool,
+    visibility: str,
     strip_reasoning_leak: bool = False,
 ) -> Generator[str, None, None]:
     """Generate translated SSE chunks for streaming response."""
@@ -237,7 +248,8 @@ def _stream_response(
         agent_id=processor.agent_id,
         model_id=processor.model_id,
         model_user_id=processor.model_user_id,
-        should_save_conversation=should_save_conversation,
+        should_persist=should_persist,
+        visibility=visibility,
         _continuation=continuation,
     )
 
@@ -285,7 +297,8 @@ def _non_stream_response(
     processor: StreamProcessor,
     model_name: str,
     continuation: Optional[Dict],
-    should_save_conversation: bool,
+    should_persist: bool,
+    visibility: str,
     strip_reasoning_leak: bool = False,
 ) -> Response:
     """Collect full response and return as single JSON."""
@@ -298,7 +311,8 @@ def _non_stream_response(
         agent_id=processor.agent_id,
         model_id=processor.model_id,
         model_user_id=processor.model_user_id,
-        should_save_conversation=should_save_conversation,
+        should_persist=should_persist,
+        visibility=visibility,
         _continuation=continuation,
     )
 
