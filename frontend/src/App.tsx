@@ -74,7 +74,7 @@ export default function App() {
     return <div />;
   }
   return (
-    <div className="relative h-full overflow-hidden">
+    <div className="bg-background relative h-dvh w-full overflow-hidden">
       {notificationLink &&
         notificationText &&
         showNotification &&
