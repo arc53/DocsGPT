@@ -1,0 +1,83 @@
+---
+title: SSO with OIDC
+description: Sign users into DocsGPT through any OpenID Connect identity provider — Authentik, Keycloak, Okta, and others.
+---
+
+# SSO with OIDC
+
+Setting `AUTH_TYPE=oidc` makes DocsGPT delegate sign-in to an external OpenID Connect identity provider (IdP). Any spec-compliant IdP with a discovery document works; this guide uses [Authentik](https://goauthentik.io/) as the reference provider and includes a short note for Keycloak.
+
+## How the flow works
+
+1. A user opens DocsGPT without a session. The frontend redirects the browser to `GET /api/auth/oidc/login` on the DocsGPT API.
+2. The backend starts an **OAuth2 Authorization Code + PKCE** flow and redirects to your IdP's sign-in page.
+3. After sign-in, the IdP redirects back to `GET /api/auth/oidc/callback`. The backend exchanges the code server-side, validates the ID token (signature via JWKS, issuer, audience, expiry, nonce), and mints a **DocsGPT session JWT** signed with `JWT_SECRET_KEY`.
+4. The browser returns to your frontend with a short-lived single-use code in the URL fragment; the frontend exchanges it for the session JWT and stores it. From here on, requests are authenticated exactly like the other `AUTH_TYPE` modes (`Authorization: Bearer <token>`).
+5. Signing out clears the local session and redirects through the IdP's end-session endpoint.
+
+The user's identity (`sub` claim by default) becomes the DocsGPT `user_id`, so every user gets their own conversations, sources, agents, and settings.
+
+> Redis must be reachable by the API (it stores the short-lived login state and handoff codes). Redis is already a required DocsGPT dependency, so no extra infrastructure is needed.
+
+## Settings reference
+
+| Setting | Required | Default | Description |
+| --- | --- | --- | --- |
+| `AUTH_TYPE` | yes | — | Set to `oidc`. |
+| `OIDC_ISSUER` | yes | — | Issuer URL of your IdP. Discovery is read from `<issuer>/.well-known/openid-configuration`. |
+| `OIDC_CLIENT_ID` | yes | — | Client ID registered at the IdP. |
+| `OIDC_FRONTEND_URL` | yes | — | Browser-facing URL of the DocsGPT frontend (where users land after login/logout), e.g. `https://docsgpt.example.com`. |
+| `OIDC_CLIENT_SECRET` | no | — | Set when the IdP client is *confidential*. PKCE is always used, so *public* clients work without a secret. |
+| `OIDC_SCOPES` | no | `openid profile email` | Scopes requested at the IdP. |
+| `OIDC_USER_ID_CLAIM` | no | `sub` | ID-token claim used as the DocsGPT user id. Set to `email` or `preferred_username` for human-readable ids. |
+| `OIDC_REDIRECT_URI` | no | derived | Full callback URL registered at the IdP. Defaults to `<request host>/api/auth/oidc/callback`; set it explicitly when the API runs behind a reverse proxy. |
+| `OIDC_SESSION_LIFETIME_SECONDS` | no | `28800` (8h) | Lifetime of the DocsGPT session JWT. After expiry the user is silently redirected through the IdP again. |
+| `JWT_SECRET_KEY` | recommended | auto-generated | Signs DocsGPT session tokens. Set it explicitly in production — required when running multiple API replicas. |
+
+## Setting up with Authentik
+
+1. **Create a provider.** In the Authentik admin UI go to **Applications → Providers → Create** and pick **OAuth2/OpenID Provider**:
+   - **Authorization flow**: your preferred flow (e.g. *explicit consent*).
+   - **Client type**: `Public` (no secret, PKCE only) or `Confidential` (also set `OIDC_CLIENT_SECRET` in DocsGPT).
+   - **Redirect URIs**: `https://<your-docsgpt-api>/api/auth/oidc/callback`
+   - **Signing key**: select a certificate so ID tokens are RS256-signed.
+2. **Create an application** (Applications → Applications → Create), link it to the provider, and note its **slug**.
+3. **Find the issuer.** With Authentik's default per-provider issuer mode it is:
+   ```
+   https://<your-authentik-host>/application/o/<application-slug>/
+   ```
+   (the trailing slash is part of the issuer — copy it exactly; the discovery document lives at `.../<application-slug>/.well-known/openid-configuration`).
+4. **Configure DocsGPT** in `.env` and restart:
+   ```env
+   AUTH_TYPE=oidc
+   OIDC_ISSUER=https://auth.example.com/application/o/docsgpt/
+   OIDC_CLIENT_ID=<client id from step 1>
+   # OIDC_CLIENT_SECRET=<only for Confidential client type>
+   OIDC_FRONTEND_URL=https://docsgpt.example.com
+   JWT_SECRET_KEY=<long random string>
+   ```
+
+### Which claim becomes the user id?
+
+Authentik's provider setting **Subject mode** controls what lands in the `sub` claim (the default is a hashed user ID — stable but opaque). If you'd rather key DocsGPT users on something readable, either change Subject mode (e.g. *based on username*) or leave Authentik alone and set `OIDC_USER_ID_CLAIM=email` in DocsGPT. Pick one strategy before going live: changing it later gives existing users fresh, empty accounts.
+
+## Keycloak (and other IdPs)
+
+Any OIDC provider with discovery works the same way. For Keycloak:
+
+```env
+OIDC_ISSUER=https://keycloak.example.com/realms/<realm>
+OIDC_CLIENT_ID=<client id>
+```
+
+Create the client with *Standard flow* enabled and PKCE method `S256`; register the same `/api/auth/oidc/callback` redirect URI.
+
+## Troubleshooting
+
+- **Redirected back with `oidc_error=auth_failed`** — check the API logs. The most common causes:
+  - *Issuer mismatch*: `OIDC_ISSUER` must be the URL the discovery document itself reports as `issuer` (for Authentik this includes the application slug and trailing slash).
+  - *Clock skew*: ID-token validation allows 60 seconds of skew; sync clocks if the API host drifts more than that.
+- **`oidc_error=missing_claim`** — the ID token doesn't contain `OIDC_USER_ID_CLAIM`. Make sure the matching scope is requested (`OIDC_SCOPES`) and the IdP actually emits the claim, or switch the setting back to `sub`.
+- **IdP shows a redirect URI error** — the callback URL registered at the IdP must match exactly. Behind a reverse proxy, set `OIDC_REDIRECT_URI` to the public callback URL instead of relying on the derived default.
+- **Revoked users can still access DocsGPT** — DocsGPT sessions outlive IdP revocation for up to `OIDC_SESSION_LIFETIME_SECONDS`. Lower it if you need tighter revocation latency.
+- **Login endpoints return 503** — Redis is unreachable or the IdP discovery document can't be fetched from the API host.

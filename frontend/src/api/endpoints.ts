@@ -2,6 +2,9 @@ const endpoints = {
   USER: {
     CONFIG: '/api/config',
     NEW_TOKEN: '/api/generate_token',
+    OIDC_LOGIN: '/api/auth/oidc/login',
+    OIDC_TOKEN: '/api/auth/oidc/token',
+    OIDC_LOGOUT: '/api/auth/oidc/logout',
     MODELS: '/api/models',
     DOCS: '/api/sources',
     DOCS_PAGINATED: '/api/sources/paginated',

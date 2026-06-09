@@ -46,9 +46,18 @@ export FLASK_DEBUG_MODE="false"
 # -----------------------------------------------------------------------------
 # Auth (specs can override AUTH_TYPE per-launch via process env)
 # -----------------------------------------------------------------------------
-export AUTH_TYPE="session_jwt"
+export AUTH_TYPE="${AUTH_TYPE:-session_jwt}"
 export JWT_SECRET_KEY="e2e-fixed-secret-never-use-in-prod"
 export ENCRYPTION_SECRET_KEY="e2e-fixed-encryption-key-never-use-in-prod"
+
+# OIDC mode (AUTH_TYPE=oidc) — points at the mock IdP that oidc.spec.ts
+# spawns on demand (scripts/e2e/mock_oidc_idp.py, port 7999). Discovery is
+# lazy, so Flask boots fine before the IdP is up.
+if [[ "${AUTH_TYPE}" == "oidc" ]]; then
+    export OIDC_ISSUER="${OIDC_ISSUER:-http://127.0.0.1:7999}"
+    export OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-docsgpt-e2e}"
+    export OIDC_FRONTEND_URL="${OIDC_FRONTEND_URL:-http://127.0.0.1:5179}"
+fi
 
 # -----------------------------------------------------------------------------
 # LLM → mock stub on 127.0.0.1:7899

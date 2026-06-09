@@ -17,7 +17,18 @@ from application.core.db_uri import (  # noqa: E402
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
-    AUTH_TYPE: Optional[str] = None  # simple_jwt, session_jwt, or None
+    AUTH_TYPE: Optional[str] = None  # simple_jwt, session_jwt, oidc, or None
+
+    # OIDC SSO (AUTH_TYPE=oidc) — any OpenID Connect IdP with discovery (Authentik, Keycloak, ...)
+    OIDC_ISSUER: Optional[str] = None  # e.g. https://auth.example.com/application/o/docsgpt/
+    OIDC_CLIENT_ID: Optional[str] = None
+    OIDC_CLIENT_SECRET: Optional[str] = None  # optional; PKCE is always used
+    OIDC_SCOPES: str = "openid profile email"
+    OIDC_USER_ID_CLAIM: str = "sub"  # ID-token claim mapped to the DocsGPT user id
+    OIDC_FRONTEND_URL: Optional[str] = None  # browser-facing app origin, e.g. http://localhost:5173
+    OIDC_REDIRECT_URI: Optional[str] = None  # override; default <request host>/api/auth/oidc/callback
+    OIDC_SESSION_LIFETIME_SECONDS: int = 28800  # minted session JWT lifetime (8h)
+
     LLM_PROVIDER: str = "docsgpt"
     LLM_NAME: Optional[str] = None  # if LLM_PROVIDER is openai, LLM_NAME can be gpt-4 or gpt-3.5-turbo
     EMBEDDINGS_NAME: str = "huggingface_sentence-transformers/all-mpnet-base-v2"

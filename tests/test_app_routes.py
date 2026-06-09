@@ -48,6 +48,21 @@ class TestConfigRoute:
         data = json.loads(response.data)
         assert "auth_type" in data
         assert "requires_auth" in data
+        assert "oidc" not in data
+
+    @pytest.mark.unit
+    def test_oidc_config_exposes_login_paths(self, client):
+        with patch("application.app.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = "oidc"
+            response = client.get("/api/config")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["auth_type"] == "oidc"
+        assert data["requires_auth"] is True
+        assert data["oidc"] == {
+            "login_path": "/api/auth/oidc/login",
+            "logout_path": "/api/auth/oidc/logout",
+        }
 
 
 class TestGenerateTokenRoute:
@@ -103,6 +118,20 @@ class TestAuthenticateRequest:
         with patch("application.app.handle_auth", return_value=None):
             response = client.get("/api/health")
             assert response.status_code == 200
+
+    @pytest.mark.unit
+    def test_oidc_auth_paths_exempt_from_jwt_check(self, client, app):
+        # A stale/expired Bearer header must never 401 the oidc login
+        # endpoints — they are the only path back to a fresh session.
+        with patch(
+            "application.app.handle_auth", return_value={"error": "invalid_token"}
+        ), patch(
+            "application.api.oidc.routes.get_redis_instance", return_value=None
+        ):
+            response = client.get(
+                "/api/auth/oidc/login", headers={"Authorization": "Bearer garbage"}
+            )
+        assert response.status_code == 503  # redis guard, not a 401
 
 
 class TestFlaskCors:

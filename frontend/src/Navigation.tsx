@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutGrid,
+  LogOut,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
@@ -78,7 +79,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const selectedAgent = useSelector(selectSelectedAgent);
 
   const { isMobile, isTablet } = useMediaQuery();
-  const { showTokenModal, handleTokenSubmit } = useTokenAuth();
+  const { showTokenModal, handleTokenSubmit, authType, logout, userEmail } =
+    useTokenAuth();
 
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [uploadModalState, setUploadModalState] =
@@ -647,6 +649,29 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 {t('settings.label')}
               </p>
             </NavLink>
+            {authType === 'oidc' && (
+              <button
+                onClick={logout}
+                data-testid="oidc-signout"
+                className="hover:bg-sidebar-accent mx-4 my-auto flex cursor-pointer items-center gap-2.5 rounded-3xl py-1.5 pl-3"
+              >
+                <LogOut
+                  className="text-muted-foreground size-5 shrink-0"
+                  strokeWidth={1.75}
+                  aria-label="Sign out"
+                />
+                <span className="flex min-w-0 flex-col items-start">
+                  <p className="text-foreground text-sm dark:text-white">
+                    {t('auth.signOut')}
+                  </p>
+                  {userEmail && (
+                    <p className="text-muted-foreground max-w-[170px] truncate text-xs">
+                      {userEmail}
+                    </p>
+                  )}
+                </span>
+              </button>
+            )}
           </div>
           <div className="text-foreground flex flex-col justify-end dark:text-white">
             <div className="flex items-center justify-between py-1">

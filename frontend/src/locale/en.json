@@ -30,6 +30,11 @@
       "query": "Write potential questions for context"
     }
   ],
+  "auth": {
+    "signInToContinue": "Sign in to continue to DocsGPT",
+    "signInWithSSO": "Sign in with SSO",
+    "signOut": "Sign out"
+  },
   "settings": {
     "label": "Settings",
     "general": {

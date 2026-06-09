@@ -230,6 +230,7 @@ The `AUTH_TYPE` setting in your `.env` file or `settings.py` determines the auth
 | `None`        | No authentication is used. Anyone can access the app.                                       |
 | `simple_jwt`  | A single, long-lived JWT token is generated at startup. All requests use this shared token. |
 | `session_jwt` | Unique JWT tokens are generated for each session/user.                                      |
+| `oidc`        | Users sign in through an external OpenID Connect provider (Authentik, Keycloak, Okta, ...). See [SSO with OIDC](/Deploying/OIDC-SSO). |
 
 #### How to Configure
 
@@ -245,6 +246,13 @@ JWT_SECRET_KEY=your_secret_key_here
 
 # OR: Session JWT (per-user/session tokens)
 AUTH_TYPE=session_jwt
+JWT_SECRET_KEY=your_secret_key_here
+
+# OR: SSO via an OpenID Connect provider (Authentik, Keycloak, Okta, ...)
+AUTH_TYPE=oidc
+OIDC_ISSUER=https://auth.example.com/application/o/docsgpt/
+OIDC_CLIENT_ID=your_client_id
+OIDC_FRONTEND_URL=https://docsgpt.example.com
 JWT_SECRET_KEY=your_secret_key_here
 ```
 
@@ -265,6 +273,10 @@ JWT_SECRET_KEY=your_secret_key_here
   - Clients can request a new token from `/api/generate_token`.
   - Use the received token in the `Authorization` header for subsequent requests.
   - Each user/session gets a unique token.
+- **oidc**:
+  - The frontend redirects users to your identity provider to sign in (OAuth2 Authorization Code + PKCE).
+  - After a successful sign-in, DocsGPT issues its own session JWT; API requests carry it in the `Authorization` header like the other modes.
+  - Stable per-user identities come from the provider — see the full setup guide: [SSO with OIDC](/Deploying/OIDC-SSO).
 
 #### Security Notes
 
