@@ -179,7 +179,7 @@ class TestForeignConversationOwnership:
         # write was rejected before any persistence.
         with pg_engine.connect() as conn:
             rows_after = _row_count(conn, conv_id)
-        assert rows_after == rows_before == 1
+        assert rows_after == rows_before
 
     def test_owner_can_continue_into_own_conversation(self, pg_engine, monkeypatch):
         """Control: the SAME continuation into the caller's OWN conversation

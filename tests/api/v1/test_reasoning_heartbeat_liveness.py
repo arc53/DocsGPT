@@ -365,7 +365,7 @@ class TestHeartbeatPumpsDuringReasoning:
             assert msg_id is not None
 
             # Drain the rest, snapshotting the row's heartbeat after each frame.
-            for _frame in gen:
+            for _ in gen:
                 with pg_engine.connect() as conn:
                     observed.append(_row(conn, str(msg_id)))
 
