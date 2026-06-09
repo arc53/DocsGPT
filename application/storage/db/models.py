@@ -49,8 +49,21 @@ users_table = Table(
         server_default='{"pinned": [], "shared_with_me": []}',
     ),
     Column("tool_preferences", JSONB, nullable=False, server_default="{}"),
+    Column("active", Boolean, nullable=False, server_default="true"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+auth_events_table = Table(
+    "auth_events",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("event", Text, nullable=False),
+    Column("ip", Text),
+    Column("user_agent", Text),
+    Column("metadata", JSONB, nullable=False, server_default="{}"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
 prompts_table = Table(

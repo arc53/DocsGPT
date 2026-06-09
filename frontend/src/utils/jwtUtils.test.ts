@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { decodeJwtPayload, isJwtExpired } from './jwtUtils';
+import { decodeJwtPayload, getJwtRemainingMs, isJwtExpired } from './jwtUtils';
 
 const b64url = (value: object) =>
   btoa(JSON.stringify(value))
@@ -48,5 +48,36 @@ describe('isJwtExpired', () => {
 
   it('returns false for undecodable tokens', () => {
     expect(isJwtExpired('garbage')).toBe(false);
+  });
+});
+
+describe('getJwtRemainingMs', () => {
+  it('returns the milliseconds left until expiry', () => {
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    const remaining = getJwtRemainingMs(makeToken({ sub: 'u', exp }));
+    expect(remaining).not.toBeNull();
+    // exp is truncated to whole seconds, so allow up to 1s of slack.
+    expect(remaining!).toBeGreaterThan(3599_000 - 1000);
+    expect(remaining!).toBeLessThanOrEqual(3600_000);
+  });
+
+  it('returns a negative value for an already-expired token', () => {
+    const exp = Math.floor(Date.now() / 1000) - 60;
+    const remaining = getJwtRemainingMs(makeToken({ sub: 'u', exp }));
+    expect(remaining).not.toBeNull();
+    expect(remaining!).toBeLessThan(0);
+  });
+
+  it('returns null when the exp claim is absent', () => {
+    expect(getJwtRemainingMs(makeToken({ sub: 'u' }))).toBeNull();
+  });
+
+  it('returns null when the exp claim is not a number', () => {
+    expect(getJwtRemainingMs(makeToken({ sub: 'u', exp: 'soon' }))).toBeNull();
+  });
+
+  it('returns null for undecodable tokens', () => {
+    expect(getJwtRemainingMs('garbage')).toBeNull();
+    expect(getJwtRemainingMs('')).toBeNull();
   });
 });

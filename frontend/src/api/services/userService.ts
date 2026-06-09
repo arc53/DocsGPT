@@ -11,6 +11,8 @@ const userService = {
   // to interfere with redeeming the one-time OIDC handoff code.
   exchangeOidcCode: (code: string): Promise<any> =>
     apiClient.post(endpoints.USER.OIDC_TOKEN, { code }, null),
+  refreshOidcSession: (token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.OIDC_REFRESH, {}, token),
   getDocs: (token: string | null): Promise<any> =>
     apiClient.get(`${endpoints.USER.DOCS}`, token),
   getDocsWithPagination: (query: string, token: string | null): Promise<any> =>

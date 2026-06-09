@@ -21,3 +21,9 @@ export function isJwtExpired(token: string, skewMs = 30000): boolean {
   if (typeof exp !== 'number') return false;
   return exp * 1000 <= Date.now() + skewMs;
 }
+
+export function getJwtRemainingMs(token: string): number | null {
+  const exp = decodeJwtPayload(token)?.exp;
+  if (typeof exp !== 'number') return null;
+  return exp * 1000 - Date.now();
+}

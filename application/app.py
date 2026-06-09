@@ -20,6 +20,8 @@ from application.api.devices import devices_bp  # noqa: E402
 from application.api.events.routes import events  # noqa: E402
 from application.api.internal.routes import internal  # noqa: E402
 from application.api.oidc import oidc_bp  # noqa: E402
+from application.api.oidc.denylist import is_denied as oidc_session_denied  # noqa: E402
+from application.api.scim import scim_bp  # noqa: E402
 from application.api.user.routes import user  # noqa: E402
 from application.api.connector.routes import connector  # noqa: E402
 from application.api.v1 import v1_bp  # noqa: E402
@@ -63,6 +65,7 @@ app.register_blueprint(internal)
 app.register_blueprint(connector)
 app.register_blueprint(devices_bp)
 app.register_blueprint(oidc_bp)
+app.register_blueprint(scim_bp)
 app.register_blueprint(v1_bp)
 app.config.update(
     UPLOAD_FOLDER="inputs",
@@ -123,6 +126,7 @@ def get_config():
         response["oidc"] = {
             "login_path": "/api/auth/oidc/login",
             "logout_path": "/api/auth/oidc/logout",
+            "provider_name": settings.OIDC_PROVIDER_NAME,
         }
     return jsonify(response)
 
@@ -216,11 +220,27 @@ def authenticate_request():
     if request.path.startswith("/api/auth/oidc/"):
         request.decoded_token = None
         return None
+    # SCIM provisioning authenticates with its own bearer token (SCIM_TOKEN),
+    # validated inside the blueprint.
+    if request.path.startswith("/scim/"):
+        request.decoded_token = None
+        return None
     decoded_token = handle_auth(request)
     if not decoded_token:
         request.decoded_token = None
     elif "error" in decoded_token:
         return jsonify(decoded_token), 401
+    elif settings.AUTH_TYPE == "oidc" and oidc_session_denied(decoded_token):
+        # Back-channel logout / SCIM deactivation revoked this session.
+        return (
+            jsonify(
+                {
+                    "message": "Authentication error: session revoked",
+                    "error": "token_revoked",
+                }
+            ),
+            401,
+        )
     else:
         request.decoded_token = decoded_token
 

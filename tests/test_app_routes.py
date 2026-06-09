@@ -43,7 +43,10 @@ class TestConfigRoute:
 
     @pytest.mark.unit
     def test_returns_auth_config(self, client):
-        response = client.get("/api/config")
+        # Pin AUTH_TYPE so the assertion doesn't depend on the dev .env.
+        with patch("application.app.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = None
+            response = client.get("/api/config")
         assert response.status_code == 200
         data = json.loads(response.data)
         assert "auth_type" in data
@@ -54,6 +57,7 @@ class TestConfigRoute:
     def test_oidc_config_exposes_login_paths(self, client):
         with patch("application.app.settings") as mock_settings:
             mock_settings.AUTH_TYPE = "oidc"
+            mock_settings.OIDC_PROVIDER_NAME = "Test SSO"
             response = client.get("/api/config")
         assert response.status_code == 200
         data = json.loads(response.data)
@@ -62,6 +66,7 @@ class TestConfigRoute:
         assert data["oidc"] == {
             "login_path": "/api/auth/oidc/login",
             "logout_path": "/api/auth/oidc/logout",
+            "provider_name": "Test SSO",
         }
 
 

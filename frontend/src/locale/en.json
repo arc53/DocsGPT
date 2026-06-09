@@ -33,6 +33,9 @@
   "auth": {
     "signInToContinue": "Sign in to continue to DocsGPT",
     "signInWithSSO": "Sign in with SSO",
+    "signInWith": "Sign in with {{provider}}",
+    "notAuthorized": "Your account isn't authorized to access this workspace. Sign in with a different account or contact your administrator.",
+    "accountDisabled": "Your account has been disabled. Contact your administrator.",
     "signOut": "Sign out"
   },
   "settings": {

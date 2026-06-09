@@ -4,6 +4,7 @@ const endpoints = {
     NEW_TOKEN: '/api/generate_token',
     OIDC_LOGIN: '/api/auth/oidc/login',
     OIDC_TOKEN: '/api/auth/oidc/token',
+    OIDC_REFRESH: '/api/auth/oidc/refresh',
     OIDC_LOGOUT: '/api/auth/oidc/logout',
     MODELS: '/api/models',
     DOCS: '/api/sources',

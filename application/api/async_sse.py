@@ -24,6 +24,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 
+from application.api.oidc.denylist import is_denied as oidc_session_denied
 from application.auth import handle_auth
 from application.core.settings import settings
 from application.events.keys import connection_counter_key
@@ -184,6 +185,10 @@ async def stream_message_events(request: Request) -> JSONResponse | StreamingRes
     user_id = decoded.get("sub") if isinstance(decoded, dict) else None
     if not user_id:
         return _json("Authentication required", 401)
+    if settings.AUTH_TYPE == "oidc" and await anyio.to_thread.run_sync(
+        oidc_session_denied, decoded
+    ):
+        return _json("Authentication error: session revoked", 401)
 
     message_id = request.path_params["message_id"]
     if not _MESSAGE_ID_RE.match(message_id):

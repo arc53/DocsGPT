@@ -277,6 +277,7 @@ JWT_SECRET_KEY=your_secret_key_here
   - The frontend redirects users to your identity provider to sign in (OAuth2 Authorization Code + PKCE).
   - After a successful sign-in, DocsGPT issues its own session JWT; API requests carry it in the `Authorization` header like the other modes.
   - Stable per-user identities come from the provider — see the full setup guide: [SSO with OIDC](/Deploying/OIDC-SSO).
+  - The same guide covers the optional access controls: group allowlists, silent session renewal, back-channel logout, SCIM provisioning, and login auditing.
 
 #### Security Notes
 

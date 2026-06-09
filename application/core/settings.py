@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     OIDC_FRONTEND_URL: Optional[str] = None  # browser-facing app origin, e.g. http://localhost:5173
     OIDC_REDIRECT_URI: Optional[str] = None  # override; default <request host>/api/auth/oidc/callback
     OIDC_SESSION_LIFETIME_SECONDS: int = 28800  # minted session JWT lifetime (8h)
+    OIDC_PROVIDER_NAME: Optional[str] = None  # sign-in button label, e.g. "Acme SSO"
+    OIDC_ALLOWED_GROUPS: Optional[str] = None  # comma-separated allowlist; unset = any authenticated user
+    OIDC_GROUPS_CLAIM: str = "groups"  # ID-token/userinfo claim carrying group membership
+
+    # SCIM 2.0 provisioning (IdP-driven user create/deactivate at /scim/v2)
+    SCIM_ENABLED: bool = False
+    SCIM_TOKEN: Optional[str] = None  # bearer token for IdP SCIM clients (required when enabled)
 
     LLM_PROVIDER: str = "docsgpt"
     LLM_NAME: Optional[str] = None  # if LLM_PROVIDER is openai, LLM_NAME can be gpt-4 or gpt-3.5-turbo

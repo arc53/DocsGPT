@@ -25,15 +25,27 @@ import ToolApprovalToast from './notifications/ToolApprovalToast';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
-  const { isAuthLoading, oidcFailed, retryOidcLogin } = useTokenAuth();
+  const {
+    isAuthLoading,
+    oidcFailed,
+    oidcErrorCode,
+    oidcProviderName,
+    retryOidcLogin,
+  } = useTokenAuth();
   useDataInitializer(isAuthLoading);
 
   if (oidcFailed) {
+    const message =
+      oidcErrorCode === 'not_authorized'
+        ? t('auth.notAuthorized')
+        : oidcErrorCode === 'account_disabled'
+          ? t('auth.accountDisabled')
+          : t('auth.signInToContinue');
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-6">
         <img src={DocsGPT3} alt="DocsGPT" className="size-14" />
-        <p className="text-foreground text-sm dark:text-white">
-          {t('auth.signInToContinue')}
+        <p className="text-foreground max-w-md px-6 text-center text-sm dark:text-white">
+          {message}
         </p>
         <Button
           type="button"
@@ -41,7 +53,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
           className="rounded-3xl px-5"
           data-testid="oidc-signin"
         >
-          {t('auth.signInWithSSO')}
+          {t('auth.signInWith', { provider: oidcProviderName || 'SSO' })}
         </Button>
       </div>
     );

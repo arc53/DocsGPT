@@ -52,11 +52,23 @@ export ENCRYPTION_SECRET_KEY="e2e-fixed-encryption-key-never-use-in-prod"
 
 # OIDC mode (AUTH_TYPE=oidc) — points at the mock IdP that oidc.spec.ts
 # spawns on demand (scripts/e2e/mock_oidc_idp.py, port 7999). Discovery is
-# lazy, so Flask boots fine before the IdP is up.
+# lazy, so Flask boots fine before the IdP is up. Every OIDC_* var is pinned
+# here because the app's load_dotenv() walks up and reads the repo .env —
+# whatever a developer keeps there must not leak into the e2e stack.
 if [[ "${AUTH_TYPE}" == "oidc" ]]; then
     export OIDC_ISSUER="${OIDC_ISSUER:-http://127.0.0.1:7999}"
     export OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-docsgpt-e2e}"
     export OIDC_FRONTEND_URL="${OIDC_FRONTEND_URL:-http://127.0.0.1:5179}"
+    export OIDC_CLIENT_SECRET="${OIDC_CLIENT_SECRET:-}"
+    export OIDC_SCOPES="${OIDC_SCOPES:-openid profile email}"
+    export OIDC_USER_ID_CLAIM="${OIDC_USER_ID_CLAIM:-sub}"
+    export OIDC_REDIRECT_URI="${OIDC_REDIRECT_URI:-}"
+    export OIDC_SESSION_LIFETIME_SECONDS="${OIDC_SESSION_LIFETIME_SECONDS:-28800}"
+    export OIDC_PROVIDER_NAME="${OIDC_PROVIDER_NAME:-}"
+    export OIDC_ALLOWED_GROUPS="${OIDC_ALLOWED_GROUPS:-}"
+    export OIDC_GROUPS_CLAIM="${OIDC_GROUPS_CLAIM:-groups}"
+    export SCIM_ENABLED="${SCIM_ENABLED:-false}"
+    export SCIM_TOKEN="${SCIM_TOKEN:-}"
 fi
 
 # -----------------------------------------------------------------------------
