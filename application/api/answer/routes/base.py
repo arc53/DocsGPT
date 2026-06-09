@@ -192,6 +192,7 @@ class BaseAnswerResource:
         model_id: Optional[str] = None,
         model_user_id: Optional[str] = None,
         _continuation: Optional[Dict] = None,
+        finalize_tool_pause_as_complete: bool = False,
     ) -> Generator[str, None, None]:
         """
         Generator function that streams the complete conversation response.
@@ -213,6 +214,22 @@ class BaseAnswerResource:
             shared_token: Token for shared agent
             model_id: Model ID used for the request
             retrieved_docs: Pre-fetched documents for sources (optional)
+            finalize_tool_pause_as_complete: Stateless-tool-round mode for
+                the OpenAI-compatible ``/v1/chat/completions`` endpoint.
+                OpenAI clients resume a tool call by re-POSTing the full
+                message history (no slot for our ``reserved_message_id``),
+                so the server cannot rely on a *native* resume to finalize
+                a paused assistant turn. When ``True`` and the agent pauses
+                for a client-executed tool, the reserved row is finalized
+                as ``status="complete"`` (recording the emitted
+                ``tool_calls``) and the stream ends, instead of writing a
+                ``pending_tool_state`` record and early-returning a
+                non-terminal row. This guarantees a ``/v1`` tool round
+                never strands a ``pending``/``streaming`` row for the
+                reconciler to fail. Defaults to ``False``, which preserves
+                the native ``/stream`` + ``/api/answer`` pause/resume UX
+                byte-for-byte (still writes ``pending_tool_state``, leaves
+                the row non-terminal, and resumes natively).
 
         Yields:
             Server-sent event strings
@@ -234,6 +251,9 @@ class BaseAnswerResource:
         # mid-stream still leaves the question queryable. Continuations
         # reuse the original placeholder.
         reserved_message_id: Optional[str] = None
+        # Intentional: a continuation round reserves no new WAL row, so on the
+        # stateless ``/v1`` path the intermediate tool rounds aren't persisted
+        # (only the first turn + the final answer turn are). Accepted as-is.
         wal_eligible = should_persist and not _continuation
         if wal_eligible:
             try:
@@ -265,16 +285,32 @@ class BaseAnswerResource:
         if primary_llm is not None:
             primary_llm._request_id = request_id
 
-        # Flipped to ``streaming`` on first chunk; reconciler uses this
-        # to tell "never started" from "in flight".
+        # Flipped to ``streaming`` on the first ``answer``/``sources`` chunk;
+        # the reconciler reads ``status`` to tell "never started" from "in
+        # flight". This is a *status* signal only — it is intentionally
+        # decoupled from the heartbeat below, which is an "agent is alive /
+        # producing output" signal (a reasoning model can stream ``thought``
+        # chunks for minutes before its first answer token, never marking
+        # ``streaming``, yet must still count as live).
         streaming_marked = False
         # Heartbeat goes into ``metadata.last_heartbeat_at`` (not
         # ``updated_at``, which reconciler-side writes share) and uses
         # ``time.monotonic`` so a blocked event loop can't fake fresh.
+        # ``heartbeat_message`` only touches non-terminal rows, so stamping a
+        # still-``pending`` row is safe and does NOT change its status.
         STREAM_HEARTBEAT_INTERVAL = 60
         last_heartbeat_at = time.monotonic()
 
         def _mark_streaming_once() -> None:
+            """Flip the reserved row ``pending → streaming`` exactly once.
+
+            Status-only: called on the first ``answer``/``sources`` chunk so
+            the reconciler can distinguish "never started" from "in flight".
+            It also re-stamps the heartbeat here for good measure, but the
+            heartbeat liveness no longer depends on this transition (see
+            ``_heartbeat_streaming``), so a thought-only reasoning phase that
+            never reaches this point still stays live.
+            """
             nonlocal streaming_marked, last_heartbeat_at
             if streaming_marked or not reserved_message_id:
                 return
@@ -287,8 +323,8 @@ class BaseAnswerResource:
                     "update_message_status streaming failed for %s",
                     reserved_message_id,
                 )
-            # Seed last_heartbeat_at so watchdog doesn't fall back to `timestamp`
-            # (creation time) before the first STREAM_HEARTBEAT_INTERVAL tick.
+            # Re-stamp last_heartbeat_at on the transition too; harmless given
+            # the seed at generation start and the per-interval pump below.
             try:
                 self.conversation_service.heartbeat_message(
                     reserved_message_id,
@@ -302,8 +338,26 @@ class BaseAnswerResource:
             last_heartbeat_at = time.monotonic()
 
         def _heartbeat_streaming() -> None:
+            """Pump the liveness heartbeat once per ``STREAM_HEARTBEAT_INTERVAL``.
+
+            Deliberately gated on ``reserved_message_id`` only — NOT on
+            ``streaming_marked``. The loop calls this for *every* chunk
+            (including ``thought``/``metadata``), so a reasoning model that
+            streams only ``thought`` chunks while it "thinks" keeps a still-
+            ``pending`` row's ``last_heartbeat_at`` fresh and stays out of the
+            reconciler's staleness sweep. ``heartbeat_message`` only updates
+            non-terminal rows, so this never resurrects or restatuses a
+            terminal row.
+
+            Residual: a model that emits NO chunks at all (not even
+            ``thought``) for longer than the reconciler threshold still goes
+            stale, because this pump only ticks when a chunk flows. Covering a
+            fully-silent stream would require a background-thread heartbeat or
+            a higher staleness threshold; both are out of scope here. The
+            realistic reasoning case (``thought`` chunks streaming) is covered.
+            """
             nonlocal last_heartbeat_at
-            if not reserved_message_id or not streaming_marked:
+            if not reserved_message_id:
                 return
             now_mono = time.monotonic()
             if now_mono - last_heartbeat_at < STREAM_HEARTBEAT_INTERVAL:
@@ -423,9 +477,29 @@ class BaseAnswerResource:
             else:
                 gen_iter = agent.gen(query=question)
 
+            # Seed a liveness heartbeat the moment generation starts, before
+            # the first chunk. The row is still ``pending`` here; this stamps a
+            # fresh ``last_heartbeat_at`` so a model that takes a while to emit
+            # its first token (or only streams ``thought`` chunks) is protected
+            # from the reconciler's staleness sweep from t=0 — not only from the
+            # first interval tick after the first answer chunk.
+            if reserved_message_id:
+                try:
+                    self.conversation_service.heartbeat_message(
+                        reserved_message_id,
+                    )
+                except Exception:
+                    logger.exception(
+                        "generation-start heartbeat seed failed for %s",
+                        reserved_message_id,
+                    )
+                last_heartbeat_at = time.monotonic()
+
             for line in gen_iter:
-                # Cheap closure check that only hits the DB when the
-                # heartbeat interval has elapsed.
+                # Cheap closure check that only hits the DB when the heartbeat
+                # interval has elapsed. Runs for *every* chunk (incl. ``thought``
+                # / ``metadata``), so a still-``pending`` reasoning stream stays
+                # live without waiting for the ``streaming`` status flip.
                 _heartbeat_streaming()
                 if "metadata" in line:
                     query_metadata.update(line["metadata"])
@@ -490,6 +564,35 @@ class BaseAnswerResource:
             # ---- Paused: save continuation state and end stream early ----
             if paused:
                 continuation = getattr(agent, "_pending_continuation", None)
+
+                # ---- Stateless-tool-round mode (OpenAI-compatible /v1) ----
+                # OpenAI clients resume by re-POSTing the whole message
+                # history with ``{role:"tool"}`` results — there is no slot
+                # for our ``reserved_message_id``, so a *native* resume can't
+                # finalize this paused turn. Finalize the reserved row as
+                # ``complete`` here (recording the emitted tool_calls) and end
+                # the stream, so the reconciler never sees a non-terminal row.
+                # The client still gets ``finish_reason:"tool_calls"`` + the
+                # calls from the ``tool_calls_pending`` event yielded above.
+                if finalize_tool_pause_as_complete:
+                    yield from self._finalize_stateless_tool_pause(
+                        continuation=continuation,
+                        reserved_message_id=reserved_message_id,
+                        conversation_id=conversation_id,
+                        question=question,
+                        response_full=response_full,
+                        thought=thought,
+                        source_log_docs=source_log_docs,
+                        tool_calls=tool_calls,
+                        query_metadata=query_metadata,
+                        model_id=model_id,
+                        should_persist=should_persist,
+                        emit=_emit,
+                    )
+                    if journal_writer is not None:
+                        journal_writer.close()
+                    return
+
                 if continuation:
                     # First-turn pause needs a conversation row to attach to.
                     if not conversation_id and should_persist:
@@ -1025,6 +1128,85 @@ class BaseAnswerResource:
             if journal_writer is not None:
                 journal_writer.close()
             return
+
+    def _finalize_stateless_tool_pause(
+        self,
+        *,
+        continuation: Optional[Dict[str, Any]],
+        reserved_message_id: Optional[str],
+        conversation_id: Optional[str],
+        question: str,
+        response_full: str,
+        thought: str,
+        source_log_docs: List[Dict[str, Any]],
+        tool_calls: List[Dict[str, Any]],
+        query_metadata: Dict[str, Any],
+        model_id: Optional[str],
+        should_persist: bool,
+        emit: Any,
+    ) -> Generator[str, None, None]:
+        """Finalize a client-tool pause as ``complete`` for the ``/v1`` path.
+
+        Used only when ``complete_stream`` runs with
+        ``finalize_tool_pause_as_complete=True`` (the OpenAI-compatible
+        ``/v1/chat/completions`` endpoint). Records the emitted/pending
+        ``tool_calls`` on the reserved row and flips it to ``complete`` so the
+        reconciler never sweeps it, then yields the terminal ``id``/``end``
+        events. No ``pending_tool_state`` is written: an OpenAI client resumes
+        statelessly (re-POSTing the full history) rather than via a native
+        resume, so there is no server-side continuation record to load.
+
+        Args:
+            continuation: The agent's ``_pending_continuation`` (may be None).
+            reserved_message_id: WAL placeholder row id, if one was reserved.
+            conversation_id: The conversation id to surface to the client.
+            question: The user's question for this turn.
+            response_full: Any assistant text produced before the pause.
+            thought: Reasoning tokens produced before the pause.
+            source_log_docs: Retrieval sources gathered before the pause.
+            tool_calls: Tool-call events emitted during this turn.
+            query_metadata: Accumulated stream metadata.
+            model_id: Model id used for the request.
+            should_persist: Whether persistence is enabled for this request.
+            emit: The stream's ``_emit`` callable for SSE framing/journaling.
+
+        Yields:
+            The terminal ``id`` and ``end`` SSE event strings.
+        """
+        # Prefer the structured pending tool calls (carry call_id / name /
+        # arguments) so the persisted row is a coherent record of what the
+        # client was asked to execute; fall back to whatever ``tool_calls``
+        # events were emitted.
+        pending_tool_calls = (
+            continuation.get("pending_tool_calls") if continuation else None
+        )
+        tool_calls_to_persist = pending_tool_calls or tool_calls or []
+
+        if should_persist and reserved_message_id is not None:
+            try:
+                self.conversation_service.finalize_message(
+                    reserved_message_id,
+                    response_full,
+                    thought=thought,
+                    sources=source_log_docs,
+                    tool_calls=tool_calls_to_persist,
+                    model_id=model_id or self.default_model_id,
+                    metadata=query_metadata if query_metadata else None,
+                    status="complete",
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to finalize stateless tool pause as complete "
+                    f"for message_id={reserved_message_id}: {e}",
+                    exc_info=True,
+                )
+        # When there is no reserved row (stateless OpenAI round with no
+        # conversation_id — the translator sets persist=false), there is
+        # nothing durable to finalize and nothing stranded: just end cleanly
+        # without writing an empty-prompt orphan conversation.
+
+        yield emit({"type": "id", "id": str(conversation_id)})
+        yield emit({"type": "end"})
 
     def process_response_stream(self, stream) -> Dict[str, Any]:
         """Process the stream response for non-streaming endpoint.
