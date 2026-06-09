@@ -1181,12 +1181,18 @@ class TestCompleteStreamWalAcceptance:
 
 @pytest.mark.unit
 class TestStreamingHeartbeatSeed:
-    """Regression guard: when the row flips to ``streaming`` we must seed
-    ``last_heartbeat_at`` so the watchdog doesn't fall back to
-    ``timestamp`` (creation time) on slow LLM cold-starts (>idle_secs).
+    """Regression guard: the reserved row must carry a fresh
+    ``last_heartbeat_at`` from generation start so the reconciler doesn't fall
+    back to ``timestamp`` (creation time) on slow LLM cold-starts or while a
+    reasoning model streams only ``thought`` chunks. The heartbeat is seeded
+    once before the first chunk and re-stamped when the row flips to
+    ``streaming``; the ``pending → streaming`` status transition itself still
+    fires exactly once on the first ``answer``/``sources`` chunk.
     """
 
-    def test_heartbeat_seeded_on_first_chunk(self, mock_mongo_db, flask_app):
+    def test_heartbeat_seeded_at_generation_start_and_on_first_chunk(
+        self, mock_mongo_db, flask_app,
+    ):
         from application.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
@@ -1221,7 +1227,7 @@ class TestStreamingHeartbeatSeed:
             )
 
             # update_message_status flips the row to ``streaming`` exactly
-            # once (idempotent via streaming_marked).
+            # once (idempotent via streaming_marked) on the first answer chunk.
             status_calls = [
                 c for c in resource.conversation_service
                 .update_message_status.call_args_list
@@ -1230,14 +1236,18 @@ class TestStreamingHeartbeatSeed:
             assert len(status_calls) == 1
             assert status_calls[0].args[0] == "msg1"
 
-            # heartbeat seed runs exactly once at the same flip — multiple
-            # chunks don't re-stamp inside this window (the throttled
-            # _heartbeat_streaming path is gated by STREAM_HEARTBEAT_INTERVAL).
+            # Heartbeat is stamped twice for this 2-answer-chunk stream: once at
+            # the generation-start seed (before the first chunk, while still
+            # ``pending``) and once when the first answer chunk flips the row to
+            # ``streaming``. The second answer chunk does NOT re-stamp — the
+            # per-chunk ``_heartbeat_streaming`` pump is throttled by
+            # STREAM_HEARTBEAT_INTERVAL and the two chunks fall inside one
+            # interval under real ``time.monotonic``.
             hb_calls = (
                 resource.conversation_service.heartbeat_message.call_args_list
             )
-            assert len(hb_calls) == 1
-            assert hb_calls[0].args[0] == "msg1"
+            assert len(hb_calls) == 2
+            assert all(c.args[0] == "msg1" for c in hb_calls)
 
     def test_heartbeat_seed_skipped_without_reserved_message_id(
         self, mock_mongo_db, flask_app,

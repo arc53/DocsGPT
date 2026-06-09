@@ -17,6 +17,7 @@ from flask import Blueprint, jsonify, make_response, request, Response
 from application.api.answer.routes.base import BaseAnswerResource
 from application.api.answer.services.persistence_policy import resolve_persistence
 from application.api.answer.services.stream_processor import StreamProcessor
+from application.api.v1 import idempotency as v1_idempotency
 from application.api.v1.translator import (
     translate_request,
     translate_response,
@@ -81,6 +82,28 @@ def chat_completions():
     agent_doc = _lookup_agent(api_key)
     model_name = _get_model_name(agent_doc, api_key)
 
+    # ---- Layer-1 idempotency (opt-in, non-streaming only) ----
+    # An ``Idempotency-Key`` header makes a retried non-streaming request
+    # return the stored first response instead of re-running the agent
+    # (restoring the guard lost when the v1 tool round dropped the native
+    # ``resume_from_tool_actions`` / ``mark_resuming`` path → would otherwise
+    # duplicate the answer row and double-bill tokens). Streaming replay is
+    # intentionally NOT supported (see the ``is_stream`` branch below), so we
+    # only resolve a key for non-streaming requests. No header → byte-for-byte
+    # today's behavior.
+    idem_key: Optional[str] = None
+    if not is_stream:
+        raw_key, key_error = v1_idempotency.read_idempotency_key()
+        if key_error is not None:
+            return key_error
+        # Scope per tenant: ``{agent_id}:{key}`` so two agents using the same
+        # key value never collide. Fall back to api_key scoping when the agent
+        # has no resolvable id (idempotency still keyed, just per api_key).
+        agent_scope = None
+        if agent_doc is not None:
+            agent_scope = str(agent_doc.get("id") or agent_doc.get("_id") or "") or None
+        idem_key = v1_idempotency.scoped_key(raw_key, agent_scope or api_key)
+
     try:
         internal_data = translate_request(data, api_key)
     except Exception as e:
@@ -105,34 +128,40 @@ def chat_completions():
         processor = StreamProcessor(internal_data, decoded_token)
 
         if internal_data.get("tool_actions"):
-            # Continuation mode
+            # Continuation mode — coherent Option B: the v1 tool round-trip is
+            # fully stateless. The pause finalized the prior turn's row as
+            # ``complete`` and wrote NO ``pending_tool_state`` (see
+            # ``complete_stream(finalize_tool_pause_as_complete=True)``), so we
+            # ALWAYS rebuild the agent + pending calls from the re-POSTed
+            # message history — even when the client threads back the
+            # ``conversation_id`` it got from the first response.
+            #
+            # We deliberately do NOT call ``resume_from_tool_actions`` here:
+            # its ``load_state`` would find no pending state and raise (→ HTTP
+            # 400), since OpenAI clients resume statelessly rather than via a
+            # native resume. ``resume_from_tool_actions`` stays in place for
+            # the native ``/stream`` + ``/api/answer`` routes, which are
+            # unchanged.
             conversation_id = internal_data.get("conversation_id")
+            (
+                agent,
+                messages,
+                tools_dict,
+                pending_tool_calls,
+                tool_actions,
+                reasoning_content,
+            ) = processor.build_continuation_from_messages(
+                internal_data.get("messages", []),
+                internal_data["tool_actions"],
+            )
+            # When a conversation_id is carried, target it for persistence so
+            # the final answer appends as a NEW terminal turn in that
+            # conversation (``save_conversation`` keys off ``conversation_id``)
+            # rather than creating an orphan sibling. ``build_continuation_from_messages``
+            # leaves the processor's ``conversation_id`` (set from the request
+            # in ``__init__``) intact; pin it explicitly for clarity.
             if conversation_id:
-                (
-                    agent,
-                    messages,
-                    tools_dict,
-                    pending_tool_calls,
-                    tool_actions,
-                    reasoning_content,
-                ) = processor.resume_from_tool_actions(
-                    internal_data["tool_actions"], conversation_id
-                )
-            else:
-                # Stateless continuation: OpenAI-compatible clients (opencode,
-                # etc.) resend the full messages array but no conversation_id,
-                # so rebuild the agent + pending calls from the request itself.
-                (
-                    agent,
-                    messages,
-                    tools_dict,
-                    pending_tool_calls,
-                    tool_actions,
-                    reasoning_content,
-                ) = processor.build_continuation_from_messages(
-                    internal_data.get("messages", []),
-                    internal_data["tool_actions"],
-                )
+                processor.conversation_id = conversation_id
             continuation = {
                 "messages": messages,
                 "tools_dict": tools_dict,
@@ -174,6 +203,10 @@ def chat_completions():
         )
 
         if is_stream:
+            # Idempotency replay is NOT supported for streaming: there is no
+            # safe way to re-emit a recorded SSE stream (and the regression /
+            # b2b client is non-streaming), so a streaming request never
+            # claims a key. This is a known, accepted limitation.
             return Response(
                 _stream_response(
                     helper,
@@ -192,20 +225,41 @@ def chat_completions():
                     "X-Accel-Buffering": "no",
                 },
             )
-        else:
-            return _non_stream_response(
-                helper,
-                question,
-                agent,
-                processor,
-                model_name,
-                continuation,
-                should_persist,
-                visibility,
-                strip_reasoning_leak,
-            )
+
+        # ---- Non-streaming: claim-before-process, then finalize/release ----
+        # Claim happens here (after auth + agent resolution + continuation
+        # build, immediately before running the agent) so a duplicate retry
+        # short-circuits to the cached body / 409 instead of re-running.
+        if idem_key:
+            claimed, replay = v1_idempotency.claim_or_replay(idem_key)
+            if not claimed:
+                # ``completed`` cache hit, or a 409 for an in-flight same-key
+                # request — either way return without re-running the agent.
+                return replay
+
+        # An exception from the agent run propagates to the ``except`` handlers
+        # below, which release the claim so a genuine retry can re-claim.
+        response = _non_stream_response(
+            helper,
+            question,
+            agent,
+            processor,
+            model_name,
+            continuation,
+            should_persist,
+            visibility,
+            strip_reasoning_leak,
+        )
+
+        # Cache only successful (2xx) responses; ``finalize`` releases the
+        # claim on a non-2xx so a real retry can still succeed (matches OpenAI).
+        if idem_key:
+            v1_idempotency.finalize(idem_key, response)
+        return response
 
     except ValueError as e:
+        if idem_key:
+            v1_idempotency.release(idem_key)
         logger.error(
             f"/v1/chat/completions error: {e} - {traceback.format_exc()}",
             extra={"error": str(e)},
@@ -215,6 +269,8 @@ def chat_completions():
             400,
         )
     except Exception as e:
+        if idem_key:
+            v1_idempotency.release(idem_key)
         logger.error(
             f"/v1/chat/completions error: {e} - {traceback.format_exc()}",
             extra={"error": str(e)},
@@ -251,6 +307,10 @@ def _stream_response(
         should_persist=should_persist,
         visibility=visibility,
         _continuation=continuation,
+        # OpenAI clients resume tool calls statelessly (no slot for our
+        # reserved_message_id), so a tool pause must finalize the row as
+        # ``complete`` here rather than stranding it for a native resume.
+        finalize_tool_pause_as_complete=True,
     )
 
     for line in internal_stream:
@@ -314,6 +374,10 @@ def _non_stream_response(
         should_persist=should_persist,
         visibility=visibility,
         _continuation=continuation,
+        # OpenAI clients resume tool calls statelessly (no slot for our
+        # reserved_message_id), so a tool pause must finalize the row as
+        # ``complete`` here rather than stranding it for a native resume.
+        finalize_tool_pause_as_complete=True,
     )
 
     result = helper.process_response_stream(stream)
