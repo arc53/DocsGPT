@@ -19,6 +19,9 @@ from application.api.answer import answer  # noqa: E402
 from application.api.devices import devices_bp  # noqa: E402
 from application.api.events.routes import events  # noqa: E402
 from application.api.internal.routes import internal  # noqa: E402
+from application.api.oidc import oidc_bp  # noqa: E402
+from application.api.oidc.denylist import is_denied as oidc_session_denied  # noqa: E402
+from application.api.scim import scim_bp  # noqa: E402
 from application.api.user.routes import user  # noqa: E402
 from application.api.connector.routes import connector  # noqa: E402
 from application.api.v1 import v1_bp  # noqa: E402
@@ -61,6 +64,8 @@ app.register_blueprint(events)
 app.register_blueprint(internal)
 app.register_blueprint(connector)
 app.register_blueprint(devices_bp)
+app.register_blueprint(oidc_bp)
+app.register_blueprint(scim_bp)
 app.register_blueprint(v1_bp)
 app.config.update(
     UPLOAD_FOLDER="inputs",
@@ -71,7 +76,7 @@ app.config.update(
 celery.config_from_object("application.celeryconfig")
 api.init_app(app)
 
-if settings.AUTH_TYPE in ("simple_jwt", "session_jwt") and not settings.JWT_SECRET_KEY:
+if settings.AUTH_TYPE in ("simple_jwt", "session_jwt", "oidc") and not settings.JWT_SECRET_KEY:
     key_file = ".jwt_secret_key"
     try:
         with open(key_file, "r") as f:
@@ -83,6 +88,14 @@ if settings.AUTH_TYPE in ("simple_jwt", "session_jwt") and not settings.JWT_SECR
         settings.JWT_SECRET_KEY = new_key
     except Exception as e:
         raise RuntimeError(f"Failed to setup JWT_SECRET_KEY: {e}")
+if settings.AUTH_TYPE == "oidc":
+    _missing_oidc = [
+        name
+        for name in ("OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_FRONTEND_URL")
+        if not getattr(settings, name)
+    ]
+    if _missing_oidc:
+        raise RuntimeError(f"AUTH_TYPE=oidc requires settings: {', '.join(_missing_oidc)}")
 SIMPLE_JWT_TOKEN = None
 if settings.AUTH_TYPE == "simple_jwt":
     payload = {"sub": "local"}
@@ -107,8 +120,14 @@ def health():
 def get_config():
     response = {
         "auth_type": settings.AUTH_TYPE,
-        "requires_auth": settings.AUTH_TYPE in ["simple_jwt", "session_jwt"],
+        "requires_auth": settings.AUTH_TYPE in ["simple_jwt", "session_jwt", "oidc"],
     }
+    if settings.AUTH_TYPE == "oidc":
+        response["oidc"] = {
+            "login_path": "/api/auth/oidc/login",
+            "logout_path": "/api/auth/oidc/logout",
+            "provider_name": settings.OIDC_PROVIDER_NAME,
+        }
     return jsonify(response)
 
 
@@ -195,11 +214,33 @@ def authenticate_request():
     ):
         request.decoded_token = None
         return None
+    # OIDC login/callback/token endpoints must stay reachable even when the
+    # browser still carries a stale or expired Bearer token — otherwise the
+    # 401 below would lock the user out of the only path to a fresh session.
+    if request.path.startswith("/api/auth/oidc/"):
+        request.decoded_token = None
+        return None
+    # SCIM provisioning authenticates with its own bearer token (SCIM_TOKEN),
+    # validated inside the blueprint.
+    if request.path.startswith("/scim/"):
+        request.decoded_token = None
+        return None
     decoded_token = handle_auth(request)
     if not decoded_token:
         request.decoded_token = None
     elif "error" in decoded_token:
         return jsonify(decoded_token), 401
+    elif settings.AUTH_TYPE == "oidc" and oidc_session_denied(decoded_token):
+        # Back-channel logout / SCIM deactivation revoked this session.
+        return (
+            jsonify(
+                {
+                    "message": "Authentication error: session revoked",
+                    "error": "token_revoked",
+                }
+            ),
+            401,
+        )
     else:
         request.decoded_token = decoded_token
 

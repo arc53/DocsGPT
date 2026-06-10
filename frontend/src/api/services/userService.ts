@@ -7,6 +7,12 @@ const userService = {
     throttledApiClient.get(endpoints.USER.CONFIG, null),
   getNewToken: (): Promise<any> =>
     throttledApiClient.get(endpoints.USER.NEW_TOKEN, null),
+  // Token deliberately null: a stale Authorization header must not be able
+  // to interfere with redeeming the one-time OIDC handoff code.
+  exchangeOidcCode: (code: string): Promise<any> =>
+    apiClient.post(endpoints.USER.OIDC_TOKEN, { code }, null),
+  refreshOidcSession: (token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.OIDC_REFRESH, {}, token),
   getDocs: (token: string | null): Promise<any> =>
     apiClient.get(`${endpoints.USER.DOCS}`, token),
   getDocsWithPagination: (query: string, token: string | null): Promise<any> =>

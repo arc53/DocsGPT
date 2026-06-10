@@ -1,12 +1,15 @@
 import './locale/i18n';
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Outlet, Route, Routes, useLocation } from 'react-router-dom';
 
 import Agents from './agents';
 import SharedAgentGate from './agents/SharedAgentGate';
+import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import ActionButtons from './components/ActionButtons';
 import Spinner from './components/Spinner';
+import { Button } from './components/ui/button';
 import UploadToast from './components/UploadToast';
 import Conversation from './conversation/Conversation';
 import { SharedConversation } from './conversation/SharedConversation';
@@ -21,9 +24,40 @@ import Notification from './components/Notification';
 import ToolApprovalToast from './notifications/ToolApprovalToast';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
-  const { isAuthLoading } = useTokenAuth();
+  const { t } = useTranslation();
+  const {
+    isAuthLoading,
+    oidcFailed,
+    oidcErrorCode,
+    oidcProviderName,
+    retryOidcLogin,
+  } = useTokenAuth();
   useDataInitializer(isAuthLoading);
 
+  if (oidcFailed) {
+    const message =
+      oidcErrorCode === 'not_authorized'
+        ? t('auth.notAuthorized')
+        : oidcErrorCode === 'account_disabled'
+          ? t('auth.accountDisabled')
+          : t('auth.signInToContinue');
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-6">
+        <img src={DocsGPT3} alt="DocsGPT" className="size-14" />
+        <p className="text-foreground max-w-md px-6 text-center text-sm dark:text-white">
+          {message}
+        </p>
+        <Button
+          type="button"
+          onClick={retryOidcLogin}
+          className="rounded-3xl px-5"
+          data-testid="oidc-signin"
+        >
+          {t('auth.signInWith', { provider: oidcProviderName || 'SSO' })}
+        </Button>
+      </div>
+    );
+  }
   if (isAuthLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
