@@ -331,7 +331,10 @@ def replace_user(user_pk: str):
         row = UsersRepository(conn).get_by_pk(user_pk)
         if not row:
             return _scim_error(404, "User not found")
-        if "userName" in body and body["userName"] != row["user_id"]:
+        if "userName" in body and str(body["userName"]).lower() != str(row["user_id"]).lower():
+            # userName is case-insensitive (caseExact=false), so a PUT that
+            # echoes the stored name under different casing is NOT a change —
+            # rejecting it would block deprovision for case-divergent IdPs.
             return _scim_error(400, "userName is immutable", "mutability")
         if desired is not None:
             row = _apply_active(conn, row, desired)

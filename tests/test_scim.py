@@ -393,6 +393,22 @@ class TestReplaceUser:
             "alice@example.com", "scim_deactivated", metadata={"via": "scim"}
         )
 
+    def test_put_differently_cased_username_deprovisions(self, client, scim_settings, scim_mocks):
+        # userName is case-insensitive: a PUT echoing the stored name under
+        # different casing must deactivate, not 400 "userName is immutable".
+        row = _user_row(active=True)  # user_id == "alice@example.com"
+        scim_mocks.users.get_by_pk.return_value = row
+        scim_mocks.users.set_active.return_value = {**row, "active": False}
+        response = client.put(
+            f"/scim/v2/Users/{USER_PK}",
+            headers=AUTH,
+            json={"userName": "Alice@Example.com", "active": False},
+        )
+        assert response.status_code == 200
+        assert response.get_json()["active"] is False
+        scim_mocks.users.set_active.assert_called_once_with(USER_PK, False)
+        scim_mocks.deny_user.assert_called_once_with("alice@example.com")
+
     def test_put_unchanged_active_has_no_side_effects(self, client, scim_settings, scim_mocks):
         scim_mocks.users.get_by_pk.return_value = _user_row(active=True)
         response = client.put(

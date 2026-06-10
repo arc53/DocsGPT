@@ -79,10 +79,7 @@ def _state_cookie_secure() -> bool:
 
 def _frontend_redirect(fragment: str):
     base = (settings.OIDC_FRONTEND_URL or "").rstrip("/")
-    response = redirect(f"{base}/#{fragment}", code=302)
-    # Every callback exit consumes the one-shot state cookie.
-    response.delete_cookie(STATE_COOKIE_NAME, path=STATE_COOKIE_PATH)
-    return response
+    return redirect(f"{base}/#{fragment}", code=302)
 
 
 def _no_store(payload, status: int = 200) -> Response:
@@ -452,6 +449,22 @@ def oidc_refresh():
         identity["oidc_sub"] = effective.get("sub") or identity["oidc_sub"]
         if effective.get("sid"):
             identity["oidc_sid"] = effective["sid"]
+
+    # Re-check revocation right before minting, against the (possibly remapped)
+    # identity but with the ORIGINAL session's iat: a back-channel logout or
+    # SCIM deny that landed during the IdP grant — or one targeting the
+    # refreshed sub/sid — sets a watermark newer than this iat and must block
+    # renewal. The renewed token's own (fresh) iat would post-date the
+    # watermark and slip past the per-request check, so anchor on the old iat.
+    if denylist.is_denied(
+        {
+            "sub": identity["sub"],
+            "oidc_sub": identity.get("oidc_sub"),
+            "oidc_sid": identity.get("oidc_sid"),
+            "iat": decoded.get("iat"),
+        }
+    ):
+        return make_response(jsonify({"error": "token_revoked"}), 401)
 
     new_token, new_jti = _mint_session_token(identity)
     new_refresh = tokens.get("refresh_token") or refresh_token

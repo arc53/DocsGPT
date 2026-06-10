@@ -1412,6 +1412,28 @@ class TestRefreshRoute:
         assert response.get_json() == {"error": "token_revoked"}
         assert "oidc:refresh:jti-1" in fake_redis.store
 
+    def test_revocation_during_grant_blocks_renewal(self, client, fake_redis):
+        # is_denied passes the pre-grant check, but a back-channel logout lands
+        # during the IdP grant; the pre-mint re-check (anchored on the old iat)
+        # must catch it instead of minting a session that escapes the watermark.
+        self.denylist.is_denied.side_effect = [False, True]
+        token = make_session_token()
+        fake_redis.store["oidc:refresh:jti-1"] = b"rt-old"
+        id_claims = id_token_claims(sid="sess-1")
+        del id_claims["nonce"]
+        response, _ = self._refresh(
+            client,
+            token,
+            idp_response={
+                "access_token": "at-2",
+                "refresh_token": "rt-new",
+                "id_token": sign_id_token(id_claims),
+            },
+        )
+
+        assert response.status_code == 401
+        assert response.get_json() == {"error": "token_revoked"}
+
     def test_disabled_user_rejected(self, client, fake_redis):
         self.db.users.get.return_value = {"user_id": "oidc-user-1", "active": False}
         token = make_session_token()
