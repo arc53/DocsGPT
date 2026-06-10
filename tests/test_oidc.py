@@ -549,6 +549,56 @@ class TestValidateLogoutToken:
             self._validate(sign_id_token(logout_token_claims(aud="someone-else")))
 
 
+class _WatermarkRedis:
+    """Minimal redis stand-in for the denylist (set + mget)."""
+
+    def __init__(self):
+        self.store = {}
+
+    def set(self, key, value, ex=None):
+        self.store[key] = value.encode("utf-8") if isinstance(value, str) else value
+        return True
+
+    def mget(self, keys):
+        return [self.store.get(key) for key in keys]
+
+
+@pytest.mark.unit
+class TestDenylistWatermark:
+    """is_denied compares the token iat against the stored revocation timestamp."""
+
+    def _wire(self, monkeypatch):
+        from application.api.oidc import denylist
+
+        redis = _WatermarkRedis()
+        monkeypatch.setattr(denylist, "get_redis_instance", lambda: redis)
+        return denylist, redis
+
+    def test_session_before_revocation_denied_after_allowed(self, monkeypatch):
+        denylist, redis = self._wire(monkeypatch)
+        denylist.deny_user("u1")
+        watermark = int(redis.store[denylist._USER_PREFIX + "u1"])
+        # Issued before the revocation -> denied.
+        assert denylist.is_denied({"sub": "u1", "iat": watermark - 5}) is True
+        # Issued at/after the revocation (e.g. an immediate re-login) -> allowed.
+        assert denylist.is_denied({"sub": "u1", "iat": watermark + 5}) is False
+
+    def test_unrelated_identity_not_denied(self, monkeypatch):
+        denylist, redis = self._wire(monkeypatch)
+        denylist.deny_user("u1")
+        watermark = int(redis.store[denylist._USER_PREFIX + "u1"])
+        assert denylist.is_denied({"sub": "u2", "iat": watermark - 5}) is False
+
+    def test_missing_iat_is_conservatively_denied(self, monkeypatch):
+        denylist, _ = self._wire(monkeypatch)
+        denylist.deny_idp_sub("idp-1")
+        assert denylist.is_denied({"oidc_sub": "idp-1"}) is True
+
+    def test_no_entry_means_allowed(self, monkeypatch):
+        denylist, _ = self._wire(monkeypatch)
+        assert denylist.is_denied({"sub": "u1", "iat": 1}) is False
+
+
 @pytest.fixture(scope="module")
 def app():
     with patch("application.app.handle_auth", return_value={"sub": "test_user"}):
@@ -592,11 +642,14 @@ def db_mocks():
         yield SimpleNamespace(users=users_repo, events=events_repo)
 
 
-def _seed_state(fake_redis, state="state-1", nonce="nonce-1"):
+def _seed_state(client, fake_redis, state="state-1", nonce="nonce-1"):
     fake_redis.set(
         f"oidc:state:{state}",
         json.dumps({"code_verifier": "verifier-1", "nonce": nonce}),
     )
+    # Mirror the browser cookie the login route sets, so the callback's
+    # state-binding (CSRF) check passes.
+    client.set_cookie("oidc_state", state)
     return state, nonce
 
 
@@ -658,17 +711,32 @@ class TestLoginRoute:
 
 
 @pytest.mark.unit
+class TestOidcDisabled:
+    """Outside AUTH_TYPE=oidc the routes 404 cleanly instead of 500-ing."""
+
+    def test_routes_404_when_not_oidc(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "AUTH_TYPE", "session_jwt")
+        assert client.get("/api/auth/oidc/login").status_code == 404
+        assert client.get("/api/auth/oidc/logout").status_code == 404
+        # Even a (would-be) RS256 logout token must not reach discovery.
+        post = client.post(
+            "/api/auth/oidc/backchannel-logout", data={"logout_token": "x"}
+        )
+        assert post.status_code == 404
+
+
+@pytest.mark.unit
 class TestCallbackRoute:
 
     @pytest.fixture(autouse=True)
     def _db(self, db_mocks):
         self.db = db_mocks
 
-    def _seed_state(self, fake_redis, state="state-1", nonce="nonce-1"):
-        return _seed_state(fake_redis, state=state, nonce=nonce)
+    def _seed_state(self, client, fake_redis, state="state-1", nonce="nonce-1"):
+        return _seed_state(client, fake_redis, state=state, nonce=nonce)
 
     def test_happy_path_mints_session_and_redirects_with_handoff(self, client, fake_redis):
-        state, nonce = self._seed_state(fake_redis)
+        state, nonce = self._seed_state(client, fake_redis)
         with patch("application.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = _mint_id_token_response(nonce)
@@ -690,7 +758,7 @@ class TestCallbackRoute:
         assert f"oidc:state:{state}" not in fake_redis.store
 
     def test_replayed_state_rejected(self, client, fake_redis):
-        state, nonce = self._seed_state(fake_redis)
+        state, nonce = self._seed_state(client, fake_redis)
         with patch("application.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = _mint_id_token_response(nonce)
@@ -701,7 +769,26 @@ class TestCallbackRoute:
         assert replay.headers["Location"] == f"{FRONTEND_URL}/#oidc_error=invalid_state"
 
     def test_unknown_state_rejected(self, client, fake_redis):
+        # Cookie matches the state (passes the CSRF binding) but the state was
+        # never stored in Redis — the server-side lookup must still reject it.
+        client.set_cookie("oidc_state", "forged")
         response = client.get("/api/auth/oidc/callback?code=abc&state=forged")
+        assert response.headers["Location"] == f"{FRONTEND_URL}/#oidc_error=invalid_state"
+
+    def test_missing_state_cookie_rejected(self, client, fake_redis):
+        # State is valid server-side, but no browser cookie binds it — a forged
+        # cross-browser callback (login CSRF) lands here.
+        self._seed_state(client, fake_redis)
+        client.delete_cookie("oidc_state")
+        response = client.get("/api/auth/oidc/callback?code=abc&state=state-1")
+        assert response.headers["Location"] == f"{FRONTEND_URL}/#oidc_error=invalid_state"
+
+    def test_mismatched_state_cookie_rejected(self, client, fake_redis):
+        # The cookie carries a different login attempt's state than the query
+        # param — reject rather than complete an attacker-seeded flow.
+        self._seed_state(client, fake_redis)
+        client.set_cookie("oidc_state", "attacker-state")
+        response = client.get("/api/auth/oidc/callback?code=abc&state=state-1")
         assert response.headers["Location"] == f"{FRONTEND_URL}/#oidc_error=invalid_state"
 
     def test_idp_error_forwarded(self, client, fake_redis):
@@ -712,7 +799,7 @@ class TestCallbackRoute:
         )
 
     def test_nonce_mismatch_fails_auth(self, client, fake_redis):
-        state, _ = self._seed_state(fake_redis, nonce="nonce-1")
+        state, _ = self._seed_state(client, fake_redis, nonce="nonce-1")
         with patch("application.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = _mint_id_token_response("evil-nonce")
@@ -722,7 +809,7 @@ class TestCallbackRoute:
 
     def test_missing_user_id_claim(self, client, fake_redis, monkeypatch):
         monkeypatch.setattr(settings, "OIDC_USER_ID_CLAIM", "preferred_username")
-        state, nonce = self._seed_state(fake_redis)
+        state, nonce = self._seed_state(client, fake_redis)
         with patch("application.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = _mint_id_token_response(nonce)
@@ -731,7 +818,7 @@ class TestCallbackRoute:
         assert response.headers["Location"] == f"{FRONTEND_URL}/#oidc_error=missing_claim"
 
     def test_optional_profile_claims_omitted_when_absent(self, client, fake_redis):
-        state, nonce = self._seed_state(fake_redis)
+        state, nonce = self._seed_state(client, fake_redis)
         claims = id_token_claims(nonce=nonce)
         del claims["email"]
         del claims["name"]
@@ -810,7 +897,7 @@ class TestCallbackGroups:
         self.db = db_mocks
 
     def _callback(self, client, fake_redis, claims, userinfo=None, userinfo_status=200):
-        state, nonce = _seed_state(fake_redis)
+        state, nonce = _seed_state(client, fake_redis)
         claims = {**claims, "nonce": nonce}
         with patch("application.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get(
@@ -909,7 +996,7 @@ class TestCallbackUserGate:
         self.db = db_mocks
 
     def _callback(self, client, fake_redis):
-        state, nonce = _seed_state(fake_redis)
+        state, nonce = _seed_state(client, fake_redis)
         with patch("application.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
             mock_requests.post.return_value = _mint_id_token_response(nonce)
@@ -957,25 +1044,25 @@ class TestCallbackUserGate:
 
         assert "#oidc_code=" in response.headers["Location"]
 
-    def test_successful_login_clears_session_revocations(self, client, fake_redis):
-        # A back-channel logout denylists the IdP sub; a fresh IdP-blessed
-        # login must lift session-level revocations or re-login would stay
-        # blocked until the denylist TTL expires.
+    def test_successful_login_does_not_touch_denylist(self, client, fake_redis):
+        # The denylist keys on a revocation timestamp and the minted session
+        # carries a newer iat, so a fresh login is allowed without clearing any
+        # entry — clearing would resurrect sessions revoked on other devices.
         with patch("application.api.oidc.routes.denylist") as deny:
             response = self._callback(client, fake_redis)
 
         assert "#oidc_code=" in response.headers["Location"]
-        deny.allow_user.assert_called_once_with("oidc-user-1")
-        deny.allow_idp_sub.assert_called_once_with("oidc-user-1")
+        assert not deny.allow_user.called
+        assert not deny.allow_idp_sub.called
 
-    def test_denied_login_does_not_clear_revocations(self, client, fake_redis):
+    def test_denied_login_does_not_touch_denylist(self, client, fake_redis):
         self.db.users.get.return_value = {"user_id": "oidc-user-1", "active": False}
         with patch("application.api.oidc.routes.denylist") as deny:
             response = self._callback(client, fake_redis)
 
         assert "account_disabled" in response.headers["Location"]
-        deny.allow_user.assert_not_called()
-        deny.allow_idp_sub.assert_not_called()
+        assert not deny.allow_user.called
+        assert not deny.allow_idp_sub.called
 
 
 @pytest.mark.unit
@@ -986,7 +1073,7 @@ class TestSessionTokenMint:
         self.db = db_mocks
 
     def _login_decoded(self, client, fake_redis, claims=None, **token_extra):
-        state, nonce = _seed_state(fake_redis)
+        state, nonce = _seed_state(client, fake_redis)
         claims = {**(claims or id_token_claims()), "nonce": nonce}
         with patch("application.api.oidc.provider.requests") as mock_requests:
             mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK])
@@ -1126,6 +1213,34 @@ class TestBackchannelLogoutRoute:
         assert first.status_code == 200
         assert replay.status_code == 400
         assert self.denylist.deny_idp_sub.call_count == 1
+
+    def test_missing_jti_rejected(self, client, fake_redis):
+        # jti is required (Back-Channel Logout 1.0) and underpins replay
+        # protection — a token without one must not be accepted.
+        claims = logout_token_claims()
+        del claims["jti"]
+        response = self._post(client, claims)
+
+        assert response.status_code == 400
+        self.denylist.deny_idp_sub.assert_not_called()
+
+    def test_stale_iat_rejected(self, client, fake_redis):
+        # Beyond the jti replay-cache window the token can no longer be deduped,
+        # so an old iat is rejected outright (bounds replay after eviction).
+        claims = logout_token_claims(jti="bcl-stale", iat=int(time.time()) - 10000)
+        response = self._post(client, claims)
+
+        assert response.status_code == 400
+        self.denylist.deny_idp_sub.assert_not_called()
+
+    def test_revocation_write_failure_returns_502(self, client, fake_redis):
+        # Redis down: report failure so the IdP retries instead of recording a
+        # logout that never revoked anything.
+        self.denylist.deny_idp_sub.return_value = False
+        response = self._post(client, logout_token_claims(jti="bcl-502"))
+
+        assert response.status_code == 502
+        assert response.get_json() == {"error": "revocation_unavailable"}
 
 
 @pytest.mark.unit
@@ -1328,3 +1443,37 @@ class TestRefreshRoute:
 
         assert response.status_code == 503
         assert response.get_json() == {"error": "redis_unavailable"}
+
+    def test_transient_idp_failure_503_and_token_restored(self, client, fake_redis):
+        # 5xx from the IdP is transient: keep the (still-valid) refresh token and
+        # tell the client to retry rather than dropping a live session.
+        token = make_session_token()
+        fake_redis.store["oidc:refresh:jti-1"] = b"rt-old"
+        response, _ = self._refresh(client, token, idp_status=503)
+
+        assert response.status_code == 503
+        assert response.get_json() == {"error": "refresh_unavailable"}
+        assert fake_redis.store["oidc:refresh:jti-1"] == b"rt-old"
+
+    def test_remapped_disabled_identity_rejected(self, client, fake_redis):
+        # The refreshed id_token maps to a different (disabled) user id than the
+        # session sub — the post-grant gate must refuse it.
+        token = make_session_token()
+        fake_redis.store["oidc:refresh:jti-1"] = b"rt-old"
+        self.db.users.get.side_effect = (
+            lambda uid: {"user_id": uid, "active": False} if uid == "oidc-user-2" else None
+        )
+        id_claims = id_token_claims(sub="oidc-user-2")
+        del id_claims["nonce"]
+        response, _ = self._refresh(
+            client,
+            token,
+            idp_response={
+                "access_token": "at-2",
+                "refresh_token": "rt-new",
+                "id_token": sign_id_token(id_claims),
+            },
+        )
+
+        assert response.status_code == 401
+        assert response.get_json() == {"error": "account_disabled"}

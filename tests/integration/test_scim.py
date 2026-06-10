@@ -58,10 +58,8 @@ def scim_env(monkeypatch):
     """Enable SCIM on the settings singleton and stub the Redis denylist."""
     monkeypatch.setattr(settings, "SCIM_ENABLED", True)
     monkeypatch.setattr(settings, "SCIM_TOKEN", SCIM_TOKEN)
-    with patch("application.api.scim.routes.deny_user") as deny_user_mock, patch(
-        "application.api.scim.routes.allow_user"
-    ) as allow_user_mock:
-        yield SimpleNamespace(deny_user=deny_user_mock, allow_user=allow_user_mock)
+    with patch("application.api.scim.routes.deny_user") as deny_user_mock:
+        yield SimpleNamespace(deny_user=deny_user_mock)
 
 
 @pytest.fixture
@@ -146,7 +144,8 @@ class TestScimLifecycle:
         assert response.status_code == 200
         assert response.get_json()["active"] is True
         assert _fetch_user(scim_user_name)["active"] is True
-        scim_env.allow_user.assert_called_once_with(scim_user_name)
+        # Reactivation no longer clears the denylist (watermark model).
+        scim_env.deny_user.assert_called_once_with(scim_user_name)
         assert any(e["event"] == "scim_reactivated" for e in _fetch_events(scim_user_name))
 
         # Soft delete deactivates again

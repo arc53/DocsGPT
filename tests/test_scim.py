@@ -63,17 +63,19 @@ def scim_mocks():
         "application.api.scim.routes.AuthEventsRepository"
     ) as audit_cls, patch(
         "application.api.scim.routes.deny_user"
-    ) as deny_user_mock, patch(
-        "application.api.scim.routes.allow_user"
-    ) as allow_user_mock:
+    ) as deny_user_mock:
         conn = MagicMock(name="conn")
         db_session_mock.return_value.__enter__.return_value = conn
         db_readonly_mock.return_value.__enter__.return_value = conn
+        # Don't let the mocked context manager swallow exceptions (a real
+        # ``engine.begin()`` __exit__ returns None) — _RevocationUnavailable
+        # must propagate to the blueprint error handler.
+        db_session_mock.return_value.__exit__.return_value = False
+        db_readonly_mock.return_value.__exit__.return_value = False
         yield SimpleNamespace(
             users=users_cls.return_value,
             audit=audit_cls.return_value,
             deny_user=deny_user_mock,
-            allow_user=allow_user_mock,
             conn=conn,
         )
 
@@ -355,7 +357,7 @@ class TestReplaceUser:
         assert response.get_json()["scimType"] == "mutability"
         scim_mocks.users.set_active.assert_not_called()
 
-    def test_put_active_true_triggers_allow(self, client, scim_settings, scim_mocks):
+    def test_put_active_true_reactivates(self, client, scim_settings, scim_mocks):
         row = _user_row(active=False)
         scim_mocks.users.get_by_pk.return_value = row
         scim_mocks.users.set_active.return_value = {**row, "active": True}
@@ -367,7 +369,8 @@ class TestReplaceUser:
         assert response.status_code == 200
         assert response.get_json()["active"] is True
         scim_mocks.users.set_active.assert_called_once_with(USER_PK, True)
-        scim_mocks.allow_user.assert_called_once_with("alice@example.com")
+        # Reactivation does not touch the denylist (the deactivation watermark
+        # already lets a fresh login through on a newer iat).
         scim_mocks.deny_user.assert_not_called()
         scim_mocks.audit.insert.assert_called_once_with(
             "alice@example.com", "scim_reactivated", metadata={"via": "scim"}
@@ -400,7 +403,6 @@ class TestReplaceUser:
         assert response.status_code == 200
         scim_mocks.users.set_active.assert_not_called()
         scim_mocks.deny_user.assert_not_called()
-        scim_mocks.allow_user.assert_not_called()
         scim_mocks.audit.insert.assert_not_called()
 
     def test_put_missing_user_returns_404(self, client, scim_settings, scim_mocks):
@@ -459,7 +461,7 @@ class TestPatchUser:
         assert response.status_code == 200
         assert response.get_json()["active"] is True
         scim_mocks.users.set_active.assert_called_once_with(USER_PK, True)
-        scim_mocks.allow_user.assert_called_once_with("alice@example.com")
+        scim_mocks.deny_user.assert_not_called()
         scim_mocks.audit.insert.assert_called_once_with(
             "alice@example.com", "scim_reactivated", metadata={"via": "scim"}
         )
@@ -536,6 +538,16 @@ class TestDeleteUser:
         scim_mocks.users.get_by_pk.return_value = None
         response = client.delete(f"/scim/v2/Users/{USER_PK}", headers=AUTH)
         assert response.status_code == 404
+
+    def test_deactivation_revocation_failure_returns_503(self, client, scim_settings, scim_mocks):
+        # Redis down: deny_user returns False, so the deactivation rolls back and
+        # the IdP gets a 503 to retry instead of a false deprovision success.
+        row = _user_row(active=True)
+        scim_mocks.users.get_by_pk.return_value = row
+        scim_mocks.users.set_active.return_value = {**row, "active": False}
+        scim_mocks.deny_user.return_value = False
+        response = client.delete(f"/scim/v2/Users/{USER_PK}", headers=AUTH)
+        assert response.status_code == 503
 
 
 @pytest.mark.unit

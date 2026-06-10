@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
 import logging
 import secrets
@@ -35,6 +36,11 @@ STATE_TTL_SECONDS = 600
 HANDOFF_TTL_SECONDS = 60
 LOGOUT_JTI_TTL_SECONDS = 600
 MAX_PICTURE_CLAIM_CHARS = 2048
+# Browser-bound CSRF guard for the login flow: the callback requires this
+# cookie to echo the ``state`` it received. Scoped to the oidc paths so it is
+# only ever sent on the callback.
+STATE_COOKIE_NAME = "oidc_state"
+STATE_COOKIE_PATH = "/api/auth/oidc/"
 
 
 def _state_key(state: str) -> str:
@@ -66,9 +72,17 @@ def _frontend_url() -> str:
     return (settings.OIDC_FRONTEND_URL or "").rstrip("/") or "/"
 
 
+def _state_cookie_secure() -> bool:
+    """Mark the state cookie ``Secure`` when the app is served over HTTPS."""
+    return (settings.OIDC_FRONTEND_URL or "").lower().startswith("https")
+
+
 def _frontend_redirect(fragment: str):
     base = (settings.OIDC_FRONTEND_URL or "").rstrip("/")
-    return redirect(f"{base}/#{fragment}", code=302)
+    response = redirect(f"{base}/#{fragment}", code=302)
+    # Every callback exit consumes the one-shot state cookie.
+    response.delete_cookie(STATE_COOKIE_NAME, path=STATE_COOKIE_PATH)
+    return response
 
 
 def _no_store(payload, status: int = 200) -> Response:
@@ -223,7 +237,20 @@ def oidc_login():
         "code_challenge": _pkce_challenge(code_verifier),
         "code_challenge_method": "S256",
     }
-    return redirect(f"{authorization_endpoint}?{urlencode(params)}", code=302)
+    response = redirect(f"{authorization_endpoint}?{urlencode(params)}", code=302)
+    # Bind this login to the browser: the callback rejects any state that
+    # isn't echoed by this cookie, so a code+state captured from another
+    # browser (login CSRF / session fixation) can't complete the flow.
+    response.set_cookie(
+        STATE_COOKIE_NAME,
+        state,
+        max_age=STATE_TTL_SECONDS,
+        httponly=True,
+        secure=_state_cookie_secure(),
+        samesite="Lax",
+        path=STATE_COOKIE_PATH,
+    )
+    return response
 
 
 def oidc_callback():
@@ -233,6 +260,14 @@ def oidc_callback():
     state = request.args.get("state")
     code = request.args.get("code")
     if not state or not code:
+        return _frontend_redirect("oidc_error=invalid_state")
+
+    # Browser binding: the state must match the cookie set at login. Without
+    # this, an attacker could feed a victim a code+state from the attacker's
+    # own login and silently sign the victim into the attacker's account.
+    cookie_state = request.cookies.get(STATE_COOKIE_NAME)
+    if not cookie_state or not hmac.compare_digest(cookie_state, state):
+        logger.warning("OIDC callback rejected: state cookie missing or mismatched")
         return _frontend_redirect("oidc_error=invalid_state")
 
     redis = get_redis_instance()
@@ -268,12 +303,10 @@ def oidc_callback():
     if not _gate_and_audit_login(user_id, effective, groups):
         return _frontend_redirect("oidc_error=account_disabled")
 
-    # A fresh IdP-blessed authentication supersedes session-level revocations
-    # (back-channel logout denylists the IdP sub; without this, re-login would
-    # stay blocked until the denylist TTL ran out).
-    denylist.allow_user(str(user_id))
-    denylist.allow_idp_sub(str(claims["sub"]))
-
+    # No need to lift prior revocations here: the denylist keys on a revocation
+    # timestamp and the session minted below carries a newer ``iat``, so it is
+    # allowed automatically while still-live sessions revoked on other devices
+    # stay denied.
     session_token, jti = _mint_session_token(
         {
             "sub": user_id,
@@ -313,6 +346,17 @@ def oidc_token():
     return jsonify({"token": token})
 
 
+def _is_account_disabled(user_id: str) -> bool:
+    """True only when a readable user row is marked inactive (DB outage fails open)."""
+    try:
+        with db_readonly() as conn:
+            row = UsersRepository(conn).get(user_id)
+    except Exception:
+        logger.error("User lookup failed during OIDC refresh", exc_info=True)
+        return False
+    return bool(row is not None and row.get("active") is False)
+
+
 def oidc_refresh():
     """Rotate the stored IdP refresh token and mint a fresh session JWT."""
     decoded = handle_auth(request)
@@ -330,13 +374,8 @@ def oidc_refresh():
     if denylist.is_denied(decoded):
         return make_response(jsonify({"error": "token_revoked"}), 401)
 
-    try:
-        with db_readonly() as conn:
-            row = UsersRepository(conn).get(str(decoded["sub"]))
-    except Exception:
-        logger.error("User lookup failed during OIDC refresh", exc_info=True)
-        row = None
-    if row is not None and row.get("active") is False:
+    # Gate the current session identity before spending the refresh token.
+    if _is_account_disabled(str(decoded["sub"])):
         return make_response(jsonify({"error": "account_disabled"}), 401)
 
     redis = get_redis_instance()
@@ -349,8 +388,24 @@ def oidc_refresh():
 
     try:
         tokens = provider.refresh_grant(refresh_token)
+    except provider.OIDCTransientError:
+        # IdP unreachable / 5xx — the refresh token is still valid. Put it back
+        # and tell the client to retry instead of killing a live session over a
+        # transient blip (the frontend reschedules a renewal on 503).
+        try:
+            redis.set(
+                _refresh_key(str(decoded["jti"])),
+                refresh_token,
+                ex=settings.OIDC_SESSION_LIFETIME_SECONDS,
+            )
+        except Exception:
+            logger.warning("Failed to restore refresh token after transient error", exc_info=True)
+        logger.warning("OIDC refresh grant failed transiently", exc_info=True)
+        return make_response(jsonify({"error": "refresh_unavailable"}), 503)
     except provider.OIDCError:
-        logger.warning("OIDC refresh grant failed", exc_info=True)
+        # invalid_grant / 4xx — the refresh token is spent or revoked; leave it
+        # consumed so the client falls back to a fresh login.
+        logger.warning("OIDC refresh grant rejected", exc_info=True)
         return make_response(jsonify({"error": "refresh_failed"}), 401)
 
     identity = {
@@ -384,7 +439,13 @@ def oidc_refresh():
             return make_response(jsonify({"error": "not_authorized"}), 401)
         user_id = effective.get(settings.OIDC_USER_ID_CLAIM)
         if user_id:
-            identity["sub"] = str(user_id)
+            user_id = str(user_id)
+            # The pre-grant gate only saw the old sub. If the refreshed identity
+            # maps to a different user id, re-check that account is enabled
+            # before minting a session for it.
+            if user_id != str(decoded["sub"]) and _is_account_disabled(user_id):
+                return make_response(jsonify({"error": "account_disabled"}), 401)
+            identity["sub"] = user_id
         for claim in ("email", "name", "picture"):
             if effective.get(claim):
                 identity[claim] = effective[claim]
@@ -429,24 +490,40 @@ def oidc_backchannel_logout():
         logger.warning("Rejected OIDC back-channel logout token", exc_info=True)
         return _no_store(jsonify({"error": "invalid_logout_token"}), 400)
 
+    # Reject stale tokens: past the jti replay-cache window we can no longer
+    # detect replays by jti, so bound acceptance to that window (logout tokens
+    # are short-lived). Combined with the always-on jti check below, a captured
+    # token can be replayed neither within the window (jti dedupe) nor after it
+    # (iat too old).
+    now = int(time.time())
+    iat = claims.get("iat")
+    if not isinstance(iat, (int, float)) or now - iat > LOGOUT_JTI_TTL_SECONDS:
+        logger.warning("Rejected stale OIDC back-channel logout token")
+        return _no_store(jsonify({"error": "invalid_logout_token"}), 400)
+
     jti = claims.get("jti")
-    if jti:
-        redis = get_redis_instance()
-        if redis is not None:
-            try:
-                fresh = redis.set(_logout_jti_key(str(jti)), "1", ex=LOGOUT_JTI_TTL_SECONDS, nx=True)
-            except Exception:
-                logger.warning("Logout-token jti replay check failed; accepting token", exc_info=True)
-                fresh = True
-            if not fresh:
-                return _no_store(jsonify({"error": "invalid_logout_token"}), 400)
+    redis = get_redis_instance()
+    if redis is not None and jti:
+        try:
+            fresh = redis.set(_logout_jti_key(str(jti)), "1", ex=LOGOUT_JTI_TTL_SECONDS, nx=True)
+        except Exception:
+            logger.warning("Logout-token jti replay check failed; accepting token", exc_info=True)
+            fresh = True
+        if not fresh:
+            return _no_store(jsonify({"error": "invalid_logout_token"}), 400)
 
     sub = claims.get("sub")
     sid = claims.get("sid")
+    revoked = True
     if sub:
-        denylist.deny_idp_sub(str(sub))
+        revoked = bool(denylist.deny_idp_sub(str(sub))) and revoked
     if sid:
-        denylist.deny_sid(str(sid))
+        revoked = bool(denylist.deny_sid(str(sid))) and revoked
+    if not revoked:
+        # The denylist write failed (Redis down). Report failure so the IdP
+        # retries rather than recording a logout that never took effect.
+        logger.error("Back-channel logout could not persist the revocation")
+        return _no_store(jsonify({"error": "revocation_unavailable"}), 502)
 
     user_id = str(sub) if sub else f"sid:{sid}"
     try:
@@ -480,8 +557,22 @@ def oidc_logout():
     return redirect(f"{end_session}?{urlencode(params)}", code=302)
 
 
+def _require_oidc_enabled() -> Response | None:
+    """404 every oidc route unless OIDC is the active auth mode.
+
+    Registration is unconditional (so the import-time auth mode doesn't matter),
+    but the endpoints only work under ``AUTH_TYPE=oidc`` — otherwise OIDC_ISSUER
+    is unset and ``get_discovery`` would dereference ``None`` and 500. Mirrors
+    SCIM's ``SCIM_ENABLED`` gate.
+    """
+    if settings.AUTH_TYPE != "oidc":
+        return make_response(jsonify({"error": "oidc_not_enabled"}), 404)
+    return None
+
+
 def register(bp: Blueprint) -> None:
     """Attach the oidc auth routes to ``bp``."""
+    bp.before_request(_require_oidc_enabled)
     bp.add_url_rule(
         "/api/auth/oidc/login", view_func=oidc_login, methods=["GET"], endpoint="login"
     )

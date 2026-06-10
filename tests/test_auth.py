@@ -46,7 +46,7 @@ class TestHandleAuth:
             "valid_token",
             "secret",
             algorithms=["HS256"],
-            options={"verify_exp": False},
+            options={"verify_exp": False, "require_exp": False},
         )
 
     def test_returns_error_on_invalid_jwt(self):
@@ -117,7 +117,7 @@ class TestHandleAuthOidc:
             "valid_token",
             "secret",
             algorithms=["HS256"],
-            options={"verify_exp": True},
+            options={"verify_exp": True, "require_exp": True},
         )
 
     def test_expired_token_returns_token_expired(self):
@@ -154,10 +154,10 @@ class TestHandleAuthOidc:
 
         assert result["error"] == "invalid_token"
 
-    def test_token_without_exp_passes_real_jose(self):
-        # Pins that e2e/integration helper tokens (signed without an exp
-        # claim) stay valid under oidc: python-jose only validates claims
-        # that are present.
+    def test_token_without_exp_rejected_under_oidc(self):
+        # Under oidc, exp is REQUIRED: an exp-less HS256 token signed with the
+        # shared secret (e.g. a legacy simple_jwt/session_jwt token) must not
+        # authenticate, or it would be valid forever and unrevocable.
         from jose import jwt as real_jwt
 
         from application.auth import handle_auth
@@ -171,7 +171,7 @@ class TestHandleAuthOidc:
             mock_settings.JWT_SECRET_KEY = "secret"
             result = handle_auth(mock_request)
 
-        assert result == {"sub": "helper_user"}
+        assert result["error"] == "invalid_token"
 
     def test_expired_token_real_jose(self):
         import time

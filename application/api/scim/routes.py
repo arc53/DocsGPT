@@ -18,7 +18,7 @@ from typing import Any, Optional
 from flask import Blueprint, Response, request
 from sqlalchemy import Connection
 
-from application.api.oidc.denylist import allow_user, deny_user
+from application.api.oidc.denylist import deny_user
 from application.core.settings import settings
 from application.storage.db.repositories.auth_events import AuthEventsRepository
 from application.storage.db.repositories.users import UsersRepository
@@ -74,7 +74,9 @@ _USER_SCHEMA = {
             "type": "string",
             "multiValued": False,
             "required": True,
-            "caseExact": True,
+            # RFC 7643 §8.7.1 defines userName as caseExact=false; matching is
+            # case-insensitive (see UsersRepository.list_paginated / create).
+            "caseExact": False,
             "mutability": "immutable",
             "returned": "default",
             "uniqueness": "server",
@@ -187,6 +189,14 @@ def _parse_filter(raw: Optional[str]) -> tuple[Optional[str], Optional[Response]
 # ----------------------------------------------------------------------
 # Side effects
 # ----------------------------------------------------------------------
+class _RevocationUnavailable(Exception):
+    """A SCIM deactivation could not persist its session revocation (Redis down)."""
+
+
+def _revocation_unavailable(_exc: _RevocationUnavailable) -> Response:
+    return _scim_error(503, "Session revocation backend unavailable; retry")
+
+
 def _audit(conn: Connection, user_id: str, event: str) -> None:
     """Best-effort audit insert in a savepoint; failure never fails the request."""
     try:
@@ -203,10 +213,16 @@ def _apply_active(conn: Connection, row: dict, desired: bool) -> dict:
     updated = UsersRepository(conn).set_active(str(row["id"]), desired) or row
     user_id = row["user_id"]
     if desired:
-        allow_user(user_id)
+        # Reactivation needs no denylist write: deactivation set a revocation
+        # watermark that already lets a fresh login through (newer iat) while
+        # keeping the pre-deactivation sessions revoked.
         _audit(conn, user_id, "scim_reactivated")
     else:
-        deny_user(user_id)
+        if not deny_user(user_id):
+            # Redis is down — we cannot revoke live sessions. Fail the request
+            # (the surrounding transaction rolls the deactivation back) so the
+            # IdP retries instead of recording a deprovision that didn't revoke.
+            raise _RevocationUnavailable(user_id)
         _audit(conn, user_id, "scim_deactivated")
     return updated
 
@@ -392,6 +408,7 @@ def group_detail(group_id: str):
 def register(bp: Blueprint) -> None:
     """Attach the SCIM routes and bearer-token gate to ``bp``."""
     bp.before_request(_enforce_scim_auth)
+    bp.register_error_handler(_RevocationUnavailable, _revocation_unavailable)
     bp.add_url_rule(
         "/scim/v2/ServiceProviderConfig", view_func=service_provider_config, methods=["GET"],
         endpoint="service_provider_config",

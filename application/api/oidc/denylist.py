@@ -1,9 +1,16 @@
 """Redis-backed session denylist for OIDC revocation.
 
 Back-channel logout and SCIM deactivation drop identifiers here; the
-request path refuses any session token whose identifiers match. Entries
-live slightly longer than ``OIDC_SESSION_LIFETIME_SECONDS`` — every
-session minted before the revocation expires before its denylist entry
+request path refuses any session token whose identifiers match. Each entry
+stores a revocation *watermark* (a Unix timestamp): a session is denied
+only when it was issued (``iat``) at or before the watermark. Storing a
+watermark instead of a boolean is what lets a fresh login self-supersede a
+prior revocation — its newer ``iat`` simply sits above the watermark —
+without deleting the entry and thereby resurrecting still-live sessions
+that were revoked on other devices.
+
+Entries live slightly longer than ``OIDC_SESSION_LIFETIME_SECONDS`` —
+every session issued at or before the watermark expires before the entry
 does, so nothing needs to be stored durably.
 
 Revocation is best-effort by design: if Redis is unreachable the check
@@ -13,6 +20,7 @@ fails open (sessions keep working) rather than taking the whole API down.
 from __future__ import annotations
 
 import logging
+import time
 
 from application.cache import get_redis_instance
 from application.core.settings import settings
@@ -34,7 +42,9 @@ def _set(key: str) -> bool:
         logger.error("Redis unavailable — could not denylist %s", key)
         return False
     try:
-        redis.set(key, "1", ex=_ttl_seconds())
+        # Store the revocation instant; existing entries are overwritten with a
+        # newer watermark (revoking again only ever moves it forward in time).
+        redis.set(key, str(int(time.time())), ex=_ttl_seconds())
         return True
     except Exception:
         logger.error("Failed to denylist %s", key, exc_info=True)
@@ -56,28 +66,19 @@ def deny_sid(sid: str) -> bool:
     return _set(_SID_PREFIX + sid)
 
 
-def allow_user(user_id: str) -> None:
-    """Clear a user-level denylist entry (SCIM reactivation)."""
-    _delete(_USER_PREFIX + user_id)
-
-
-def allow_idp_sub(sub: str) -> None:
-    """Clear an IdP-sub denylist entry (fresh login supersedes a back-channel logout)."""
-    _delete(_SUB_PREFIX + sub)
-
-
-def _delete(key: str) -> None:
-    redis = get_redis_instance()
-    if redis is None:
-        return
+def _watermark(value) -> float:
+    """Parse a stored watermark to a float; unparseable values deny everything."""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", "ignore")
     try:
-        redis.delete(key)
-    except Exception:
-        logger.warning("Failed to clear denylist key %s", key, exc_info=True)
+        return float(value)
+    except (TypeError, ValueError):
+        # Corrupt/legacy entry: treat as "deny" (a watermark far in the future).
+        return float("inf")
 
 
 def is_denied(decoded_token: dict) -> bool:
-    """True when any identifier in a decoded session token is denylisted."""
+    """True when the token was issued at/before a matching revocation watermark."""
     keys = []
     if decoded_token.get("sub"):
         keys.append(_USER_PREFIX + str(decoded_token["sub"]))
@@ -91,7 +92,16 @@ def is_denied(decoded_token: dict) -> bool:
     if redis is None:
         return False
     try:
-        return any(value is not None for value in redis.mget(keys))
+        values = redis.mget(keys)
     except Exception:
         logger.warning("Denylist check failed — allowing request", exc_info=True)
         return False
+    try:
+        iat = float(decoded_token.get("iat"))
+    except (TypeError, ValueError):
+        # No usable issue time — if any revocation exists for this identity we
+        # cannot prove the token post-dates it, so deny.
+        return any(value is not None for value in values)
+    # Strict ``<``: a session issued in the same second as (or after) the
+    # revocation — e.g. an immediate re-login — is allowed.
+    return any(value is not None and iat < _watermark(value) for value in values)

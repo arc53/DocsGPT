@@ -249,7 +249,20 @@ class UsersRepository:
     # SCIM provisioning
     # ------------------------------------------------------------------
     def create(self, user_id: str, active: bool = True) -> Optional[dict]:
-        """Insert a new user row; ``None`` means ``user_id`` already exists."""
+        """Insert a new user row; ``None`` means a user with that id already exists.
+
+        SCIM ``userName`` is case-insensitive (caseExact=false), so a row that
+        differs only by case counts as a duplicate. The pre-check keeps SCIM
+        from provisioning a second row for a user the OIDC login already
+        created under different casing; the ``ON CONFLICT`` clause remains an
+        exact-match backstop for the concurrent-insert race.
+        """
+        existing = self._conn.execute(
+            text("SELECT 1 FROM users WHERE lower(user_id) = lower(:user_id)"),
+            {"user_id": user_id},
+        ).first()
+        if existing is not None:
+            return None
         result = self._conn.execute(
             text(
                 """
@@ -302,7 +315,9 @@ class UsersRepository:
         where = ""
         filter_params: dict = {}
         if user_name is not None:
-            where = "WHERE user_id = :user_name"
+            # SCIM userName is case-insensitive (caseExact=false); match on
+            # lower(user_id) so the IdP finds the account regardless of casing.
+            where = "WHERE lower(user_id) = lower(:user_name)"
             filter_params = {"user_name": user_name}
         total = self._conn.execute(
             text(f"SELECT count(*) FROM users {where}"), filter_params

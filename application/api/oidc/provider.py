@@ -41,6 +41,14 @@ class OIDCError(Exception):
     """Raised when an OIDC flow step fails."""
 
 
+class OIDCTransientError(OIDCError):
+    """Raised when the IdP was unreachable or returned 5xx — the call can be retried.
+
+    Subclasses OIDCError so existing ``except OIDCError`` handlers still catch
+    it; callers that can retry (e.g. session refresh) catch this first.
+    """
+
+
 def reset_cache() -> None:
     """Clear the cached discovery document and JWKS (used by tests)."""
     with _lock:
@@ -180,6 +188,11 @@ def validate_logout_token(logout_token: str) -> dict:
             "require_iss": True,
             "require_aud": True,
             "require_iat": True,
+            # jti is REQUIRED by OIDC Back-Channel Logout 1.0 and underpins
+            # replay protection — reject tokens that omit it. exp is not a
+            # required logout-token claim, so it stays optional (the caller
+            # bounds replay via iat freshness instead).
+            "require_jti": True,
             "require_exp": False,
         },
     )
@@ -208,11 +221,16 @@ def _token_request(data: dict) -> dict:
     try:
         response = requests.post(discovery["token_endpoint"], **post_kwargs)
     except requests.RequestException as exc:
-        raise OIDCError(f"Token request failed: {exc}") from exc
+        # Network failure — retryable.
+        raise OIDCTransientError(f"Token request failed: {exc}") from exc
     if response.status_code != 200:
         logger.error(
             "OIDC token request failed (%s): %s", response.status_code, response.text[:500]
         )
+        # 5xx is an IdP-side hiccup (retryable); 4xx (e.g. invalid_grant) is a
+        # definitive rejection the caller must not retry.
+        if response.status_code >= 500:
+            raise OIDCTransientError(f"Token endpoint returned {response.status_code}")
         raise OIDCError(f"Token endpoint returned {response.status_code}")
     return response.json()
 

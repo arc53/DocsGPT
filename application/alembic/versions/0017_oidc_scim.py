@@ -21,10 +21,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE users ADD COLUMN active BOOLEAN NOT NULL DEFAULT TRUE;")
+    # IF NOT EXISTS keeps the migration idempotent: re-applying it over a
+    # partially-migrated or out-of-band-patched schema must not abort the whole
+    # upgrade (which would wedge startup with alembic_version stuck behind head).
+    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;")
     op.execute(
         """
-        CREATE TABLE auth_events (
+        CREATE TABLE IF NOT EXISTS auth_events (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             user_id TEXT NOT NULL,
             event TEXT NOT NULL,
@@ -36,7 +39,7 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "CREATE INDEX auth_events_user_idx ON auth_events (user_id, created_at DESC);"
+        "CREATE INDEX IF NOT EXISTS auth_events_user_idx ON auth_events (user_id, created_at DESC);"
     )
 
 
