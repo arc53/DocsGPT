@@ -4,7 +4,6 @@ import { useDispatch, useSelector } from 'react-redux';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutGrid,
-  LogOut,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
@@ -79,15 +78,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const selectedAgent = useSelector(selectSelectedAgent);
 
   const { isMobile, isTablet } = useMediaQuery();
-  const {
-    showTokenModal,
-    handleTokenSubmit,
-    authType,
-    logout,
-    userEmail,
-    userName,
-    userPicture,
-  } = useTokenAuth();
+  const { showTokenModal, handleTokenSubmit } = useTokenAuth();
 
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [uploadModalState, setUploadModalState] =
@@ -656,48 +647,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 {t('settings.label')}
               </p>
             </NavLink>
-            {authType === 'oidc' && (
-              <div className="mx-4 my-auto flex items-center gap-2.5 py-0.5 pr-1 pl-3">
-                {userPicture ? (
-                  <Avatar
-                    src={userPicture}
-                    alt={userName || userEmail || 'User avatar'}
-                    className="size-6"
-                    imgClassName="size-6 rounded-full object-cover"
-                  />
-                ) : (
-                  <Avatar className="size-6">
-                    <span className="bg-sidebar-accent text-foreground flex size-6 items-center justify-center rounded-full text-xs font-medium dark:text-white">
-                      {(userName || userEmail || '?').charAt(0).toUpperCase()}
-                    </span>
-                  </Avatar>
-                )}
-                <span className="flex min-w-0 flex-1 flex-col items-start">
-                  {userName && (
-                    <p className="text-foreground max-w-[160px] truncate text-sm dark:text-white">
-                      {userName}
-                    </p>
-                  )}
-                  {userEmail && (
-                    <p className="text-muted-foreground max-w-[160px] truncate text-xs">
-                      {userEmail}
-                    </p>
-                  )}
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={logout}
-                  data-testid="oidc-signout"
-                  aria-label={t('auth.signOut')}
-                  title={t('auth.signOut')}
-                  className="text-muted-foreground hover:text-foreground shrink-0 rounded-full"
-                >
-                  <LogOut className="size-5" strokeWidth={1.75} />
-                </Button>
-              </div>
-            )}
           </div>
           <div className="text-foreground flex flex-col justify-end dark:text-white">
             <div className="flex items-center justify-between py-1">

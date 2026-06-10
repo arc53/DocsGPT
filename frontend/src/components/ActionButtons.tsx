@@ -11,6 +11,7 @@ import {
   updateConversationId,
 } from '../conversation/conversationSlice';
 import { Button } from './ui/button';
+import ProfileButton from './ProfileButton';
 
 interface ActionButtonsProps {
   className?: string;
@@ -86,7 +87,7 @@ export default function ActionButtons({
             )}
           </>
         )}
-        <div>{/* <UserButton  /> */}</div>
+        <ProfileButton />
       </div>
     </div>
   );
