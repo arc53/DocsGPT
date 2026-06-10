@@ -184,7 +184,7 @@ class BaseAnswerResource:
         isNoneDoc: bool = False,
         index: Optional[int] = None,
         should_persist: bool = True,
-        visibility: str = "listed",
+        visibility: str = "hidden",
         attachment_ids: Optional[List[str]] = None,
         agent_id: Optional[str] = None,
         is_shared_usage: bool = False,
@@ -207,7 +207,9 @@ class BaseAnswerResource:
             isNoneDoc: Flag for document-less responses
             index: Index of message to update
             should_persist: Whether to persist the conversation
-            visibility: ``listed`` (sidebar) or ``hidden`` for a new conversation
+            visibility: ``listed`` (sidebar) or ``hidden`` for a new
+                conversation; defaults to ``hidden`` so only callers that
+                explicitly opt in (the first-party UI) list rows
             attachment_ids: List of attachment IDs
             agent_id: ID of agent used
             is_shared_usage: Flag for shared agent usage

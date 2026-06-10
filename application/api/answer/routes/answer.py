@@ -52,8 +52,18 @@ class AnswerResource(Resource, BaseAnswerResource):
             ),
             "save_conversation": fields.Boolean(
                 required=False,
-                default=True,
-                description="Whether to save the conversation",
+                description=(
+                    "Deprecated, no effect: conversations always persist. "
+                    "Use `visibility` to control sidebar listing."
+                ),
+            ),
+            "visibility": fields.String(
+                required=False,
+                default="hidden",
+                description=(
+                    "'listed' shows the conversation in the owner's sidebar; "
+                    "any other value (or omitting it) persists it hidden."
+                ),
             ),
             "model_id": fields.String(
                 required=False,
@@ -119,9 +129,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                     return error
 
                 should_persist, visibility = resolve_persistence(
-                    display_flag=data.get("save_conversation"),
-                    api_key=data.get("api_key"),
-                    is_shared_usage=processor.is_shared_usage,
+                    visibility_flag=data.get("visibility"),
                     persist_flag=data.get("persist"),
                 )
                 stream = self.complete_stream(

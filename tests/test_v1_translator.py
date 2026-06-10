@@ -214,25 +214,23 @@ class TestTranslateRequest:
         result = translate_request(data, "test-key")
         assert result["question"] == "What's 2+2?"
         assert result["api_key"] == "test-key"
-        # v1 conversations persist; ``save_conversation`` only controls whether
-        # they list in the sidebar (default off).
-        assert result["save_conversation"] is False
+        # v1 conversations persist but never list in the agent owner's
+        # sidebar; the translator no longer emits a display flag at all.
+        assert "save_conversation" not in result
         history = json.loads(result["history"])
         assert len(history) == 1
         assert history[0]["prompt"] == "Hello"
 
-    def test_save_conversation_opt_in_via_docsgpt_extension(self):
+    def test_legacy_save_conversation_flag_is_ignored(self):
+        # Pre-visibility clients send ``docsgpt.save_conversation: true``
+        # meaning "persist" (the old contract). It must not leak into the
+        # internal request — visibility is not request-controllable on v1.
         data = {
             "messages": [{"role": "user", "content": "Hi"}],
             "docsgpt": {"save_conversation": True},
         }
         result = translate_request(data, "key")
-        assert result["save_conversation"] is True
-
-    def test_save_conversation_default_false(self):
-        data = {"messages": [{"role": "user", "content": "Hi"}]}
-        result = translate_request(data, "key")
-        assert result["save_conversation"] is False
+        assert "save_conversation" not in result
 
     def test_continuation_request(self):
         data = {
@@ -303,10 +301,10 @@ class TestTranslateRequest:
         result = translate_request(data, "key")
         assert result["persist"] is False
 
-    def test_continuation_honours_explicit_save_conversation_override(self):
-        """An explicit docsgpt.save_conversation=false on the continuation wins."""
+    def test_continuation_ignores_legacy_save_conversation_flag(self):
+        """``docsgpt.save_conversation`` is a dead flag — persist is separate."""
         data = {
-            "docsgpt": {"save_conversation": False},
+            "docsgpt": {"save_conversation": True},
             "messages": [
                 {"role": "user", "content": "Search for X"},
                 {
@@ -317,7 +315,9 @@ class TestTranslateRequest:
             ],
         }
         result = translate_request(data, "key")
-        assert result["save_conversation"] is False
+        assert "save_conversation" not in result
+        # Stateless continuation (no conversation_id) still skips persistence.
+        assert result["persist"] is False
 
     def test_continuation_with_top_level_conversation_id(self):
         """Standard clients send conversation_id at request level, not in messages."""

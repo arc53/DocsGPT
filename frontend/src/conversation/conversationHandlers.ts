@@ -192,6 +192,10 @@ export function handleFetchAnswer(
     isNoneDoc: selectedDocs.length === 0,
     agent_id: agentId,
     save_conversation: save_conversation,
+    // The backend persists every conversation hidden unless the request
+    // explicitly opts into the sidebar; save_conversation alone no longer
+    // lists it.
+    visibility: save_conversation ? 'listed' : 'hidden',
   };
 
   if (modelId) {
@@ -265,6 +269,10 @@ export function handleFetchAnswerSteaming(
     index: indx,
     agent_id: agentId,
     save_conversation: save_conversation,
+    // The backend persists every conversation hidden unless the request
+    // explicitly opts into the sidebar; save_conversation alone no longer
+    // lists it.
+    visibility: save_conversation ? 'listed' : 'hidden',
   };
 
   if (modelId) {
@@ -909,6 +917,7 @@ export function handleFetchSharedAnswerStreaming(
       history: JSON.stringify(history),
       api_key: apiKey,
       save_conversation: false,
+      visibility: 'hidden',
       attachments: attachments.length > 0 ? attachments : undefined,
     };
     conversationService
@@ -984,6 +993,7 @@ export function handleFetchSharedAnswer(
   const payload = {
     question: question,
     api_key: apiKey,
+    visibility: 'hidden',
     attachments:
       attachments && attachments.length > 0 ? attachments : undefined,
   };

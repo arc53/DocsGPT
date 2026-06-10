@@ -2,11 +2,11 @@
  * Tier-B · agent preview persists a HIDDEN conversation
  *
  * Covers B14. The preview flow in `frontend/src/agents/agentPreviewSlice.ts`
- * calls `handleFetchAnswerSteaming(..., save_conversation=false)`. As of the
- * conversation-visibility change, `save_conversation` no longer gates
- * persistence — it controls sidebar visibility only. A preview turn therefore
- * persists a `conversations` row with `visibility = 'hidden'` (decided by
- * `resolve_persistence` in
+ * calls `handleFetchAnswerSteaming(..., save_conversation=false)`, which the
+ * handler maps to `visibility: 'hidden'`. Conversations always persist;
+ * visibility defaults to `hidden` for every request and only an explicit
+ * `visibility: 'listed'` (sent by the UI on normal chats) lists a row in the
+ * sidebar (decided by `resolve_persistence` in
  * application/api/answer/services/persistence_policy.py and threaded through
  * `BaseAnswerResource.complete_stream(visibility=...)`).
  *
@@ -17,10 +17,11 @@
  * traffic would pollute the user's sidebar history.
  *
  * API-driven: the frontend preview UI ultimately POSTs /stream with
- * `save_conversation:false` and `conversation_id:null`; we exercise that
+ * `visibility:'hidden'` and `conversation_id:null`; we exercise that
  * contract directly to keep the spec fast and isolated from the AgentPreview
- * modal's rendering quirks. A standard chat POST (save_conversation omitted)
- * is the control — it writes a `listed` row that DOES surface in the sidebar.
+ * modal's rendering quirks. A standard chat POST (visibility:'listed', as the
+ * UI sends) is the control — it writes a `listed` row that DOES surface in
+ * the sidebar.
  */
 
 import * as playwright from '@playwright/test';
@@ -116,12 +117,13 @@ test.describe('tier-b · agent preview', () => {
       expect(await countUserConversations(sub)).toBe(0);
 
       // Fire the preview payload that agentPreviewSlice.ts sends. Key
-      // fields: save_conversation=false, conversation_id=null, agent_id.
+      // fields: visibility='hidden', conversation_id=null, agent_id.
       await drainStream(api, {
         question: 'Hello preview',
         conversation_id: null,
         agent_id: agentId,
         save_conversation: false,
+        visibility: 'hidden',
         isNoneDoc: true,
         chunks: '0',
       });
@@ -146,7 +148,7 @@ test.describe('tier-b · agent preview', () => {
     }
   });
 
-  test('control: a non-preview stream (save_conversation omitted) writes a LISTED conversations row', async ({
+  test('control: a non-preview stream (visibility: listed, as the UI sends) writes a LISTED conversations row', async ({
     browser,
   }) => {
     const { context, sub, token } = await newUserContext(browser);
@@ -155,14 +157,15 @@ test.describe('tier-b · agent preview', () => {
       const agentId = await createDraftAgent(sub, 'non-preview-target');
       expect(await countUserConversations(sub)).toBe(0);
 
-      // Standard chat path — save_conversation omitted, so a first-party
-      // interactive turn defaults to `listed` (resolve_persistence). This is
-      // the "control" that makes the preview assertion meaningful: without
+      // Standard chat path — the UI sends `visibility: 'listed'` on normal
+      // chats (visibility defaults to hidden server-side). This is the
+      // "control" that makes the preview assertion meaningful: without
       // it, a spec where nothing ever surfaces could pass trivially.
       const conversationId = await streamOnce(api, {
         question: 'Hello persistence',
         conversation_id: null,
         agent_id: agentId,
+        visibility: 'listed',
         isNoneDoc: true,
         chunks: '0',
       });
@@ -195,6 +198,7 @@ test.describe('tier-b · agent preview', () => {
           conversation_id: null,
           agent_id: agentId,
           save_conversation: false,
+          visibility: 'hidden',
           isNoneDoc: true,
           chunks: '0',
         });

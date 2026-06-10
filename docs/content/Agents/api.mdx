@@ -59,7 +59,8 @@ Common request body fields:
 | `conversation_id` | `string` | No | `/api/answer`, `/stream` | Continue an existing conversation. |
 | `history` | `string` (JSON-encoded array) | No | `/api/answer`, `/stream` | Used for new conversations. Format: `[{\"prompt\":\"...\",\"response\":\"...\"}]`. |
 | `model_id` | `string` | No | `/api/answer`, `/stream` | Override model for this request. |
-| `save_conversation` | `boolean` | No | `/api/answer`, `/stream` | Default `true`. If `false`, no conversation is persisted. |
+| `save_conversation` | `boolean` | No | `/api/answer`, `/stream` | Deprecated, no effect. Conversations are always persisted; use `visibility` to control sidebar listing. |
+| `visibility` | `string` | No | `/api/answer`, `/stream` | `"listed"` shows the conversation in the owner's sidebar. Any other value (or omitting it) persists it hidden. Default `hidden`. |
 | `passthrough` | `object` | No | `/api/answer`, `/stream` | Dynamic values injected into prompt templates. |
 | `prompt_id` | `string` | No | `/api/answer`, `/stream` | Ignored when `api_key` already defines prompt. |
 | `active_docs` | `string` or `string[]` | No | `/api/answer`, `/stream` | Overrides active docs when not using key-owned source config. |
