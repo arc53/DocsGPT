@@ -88,5 +88,6 @@ export interface RetrievalPayload {
   agent_id?: string;
   attachments?: string[];
   save_conversation?: boolean;
+  visibility?: 'listed' | 'hidden';
   model_id?: string;
 }

@@ -80,14 +80,14 @@ When an override is active, the agent's prompt template is replaced wholesale â€
 
 ## Conversation Persistence
 
-Conversations are **not persisted by default** (stateless, like most OpenAI clients expect). Opt in per request:
+Conversations are **always persisted** server-side, and the response includes
+`docsgpt.conversation_id`. They never appear in the agent owner's sidebar â€”
+`/v1` traffic is stored hidden, so external clients can't clutter the owner's
+conversation list.
 
-```json
-{ "docsgpt": { "save_conversation": true } }
-```
-
-The response will include `docsgpt.conversation_id`.
+The legacy `{ "docsgpt": { "save_conversation": true } }` opt-in from older
+releases (when `/v1` was stateless by default) is deprecated and ignored.
 
 ## When to Use Native Endpoints Instead
 
-Use [`/api/answer` or `/stream`](/Agents/api) if you need server-side attachments, `passthrough` template variables, explicit `conversation_id` reuse, or persistence by default.
+Use [`/api/answer` or `/stream`](/Agents/api) if you need server-side attachments, `passthrough` template variables, explicit `conversation_id` reuse, or sidebar visibility control via `visibility`.

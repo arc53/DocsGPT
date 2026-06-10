@@ -188,11 +188,9 @@ def chat_completions():
             return usage_error
 
         # v1 always persists (unless the translator opted out for a stateless
-        # tool round); the agent owner's sidebar only lists it on explicit
-        # ``docsgpt.save_conversation: true``.
+        # tool round) and never lists in the agent owner's sidebar — only the
+        # first-party UI opts a conversation into ``visibility: "listed"``.
         should_persist, visibility = resolve_persistence(
-            display_flag=internal_data.get("save_conversation"),
-            api_key=internal_data.get("api_key"),
             persist_flag=internal_data.get("persist"),
         )
         # Only strip leaked reasoning from content for structured requests -- the

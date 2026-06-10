@@ -266,8 +266,9 @@ test.describe('tier-a · chat turn save', () => {
       isNoneDoc: true,
     });
     expect(result.status).toBe(200);
-    // save_conversation now controls sidebar visibility, not persistence:
-    // the turn persists, so a real conversation UUID is emitted.
+    // Conversations always persist and default to hidden;
+    // save_conversation is deprecated and has no effect. The turn
+    // persists, so a real conversation UUID is emitted.
     expect(result.conversationId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );

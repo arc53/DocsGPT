@@ -267,12 +267,10 @@ def translate_request(
         # persist the final turn; stateless ones (no conversation_id, e.g.
         # opencode) skip it, else every tool round writes an orphan conversation
         # with an empty question. ``docsgpt.persist`` overrides. Visibility is
-        # separate — hidden unless ``docsgpt.save_conversation`` opts in.
+        # not request-controllable on v1 — rows always persist hidden, so the
+        # legacy ``docsgpt.save_conversation`` flag is ignored.
         docsgpt_ext = data.get("docsgpt", {})
         result["persist"] = bool(docsgpt_ext.get("persist", bool(conversation_id)))
-        result["save_conversation"] = bool(
-            docsgpt_ext.get("save_conversation", False)
-        )
         # Carry tools forward for next iteration
         if data.get("tools"):
             result["client_tools"] = data["tools"]
@@ -305,9 +303,9 @@ def translate_request(
         "question": question,
         "api_key": api_key,
         "history": json.dumps(history),
-        # v1 conversations always persist; ``save_conversation`` only controls
-        # whether they list in the agent owner's sidebar (default hidden).
-        "save_conversation": bool(docsgpt.get("save_conversation", False)),
+        # v1 conversations always persist and stay hidden from the agent
+        # owner's sidebar; the legacy ``docsgpt.save_conversation`` flag
+        # (old meaning: "persist this conversation") is ignored.
     }
 
     if system_prompt_override is not None:
@@ -586,7 +584,7 @@ def translate_stream_event(
 
     elif event_type == "id":
         # Skip the "None" placeholder conversation_id emitted when the call is
-        # not persisted (save_conversation=false) — nothing useful to surface.
+        # not persisted (persist=false tool rounds) — nothing useful to surface.
         conv_id = event_data.get("id", "")
         if conv_id and conv_id != "None":
             chunks.append(

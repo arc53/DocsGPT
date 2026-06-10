@@ -78,7 +78,7 @@ class ConversationService:
         shared_token: Optional[str] = None,
         attachment_ids: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        visibility: str = "listed",
+        visibility: str = "hidden",
     ) -> str:
         """Save or update a conversation in Postgres.
 
@@ -204,7 +204,7 @@ class ConversationService:
         shared_token: Optional[str] = None,
         model_id: Optional[str] = None,
         request_id: Optional[str] = None,
-        visibility: str = "listed",
+        visibility: str = "hidden",
         status: str = "pending",
         index: Optional[int] = None,
     ) -> Dict[str, str]:
