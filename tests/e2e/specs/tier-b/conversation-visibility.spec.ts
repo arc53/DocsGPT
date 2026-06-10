@@ -1,18 +1,27 @@
 /**
  * Tier-B · conversation visibility (persist vs. sidebar display)
  *
- * Exercises the conversation-visibility change end-to-end against the live
- * stack. `save_conversation` no longer gates persistence — it controls sidebar
- * visibility only (resolve_persistence in
- * application/api/answer/services/persistence_policy.py). A conversation now
- * always persists; whether it surfaces in GET /api/get_conversations is
- * governed by the new `conversations.visibility` column ('listed' | 'hidden').
+ * Exercises the conversation-visibility contract end-to-end against the live
+ * stack. Conversations always persist; visibility defaults to `hidden` for
+ * EVERY request, and only an explicit request-level `visibility: "listed"` —
+ * which the first-party UI sends on normal chats — lists a row in the sidebar
+ * (resolve_persistence in
+ * application/api/answer/services/persistence_policy.py). The legacy
+ * `save_conversation` flag is deprecated and has no effect; whether a row
+ * surfaces in GET /api/get_conversations is governed by the
+ * `conversations.visibility` column ('listed' | 'hidden').
  *
  * Matrix covered:
- *   1. first-party /stream, save_conversation omitted  → listed,  in sidebar
- *   2. first-party /stream, save_conversation=false     → hidden,  not in sidebar (but persisted)
- *   3. api-key agent /stream                            → hidden by default; listed on opt-in
- *   4. /v1/chat/completions (OpenAI-compat)             → hidden by default; listed on docsgpt.save_conversation
+ *   1. first-party /stream, visibility:'listed' (as the UI sends) → listed, in sidebar
+ *   2. first-party /stream, visibility omitted                    → hidden, not in sidebar (but persisted)
+ *   3. api-key agent /stream                                      → hidden by default; legacy
+ *      save_conversation:true must NOT list; explicit visibility:'listed' does
+ *   4. /v1/chat/completions (OpenAI-compat)                       → always hidden, even with
+ *      docsgpt.save_conversation:true (the legacy flag external clients still send)
+ *
+ * Cases 3 and 4 are the regression guard for the sidebar-pollution bug where
+ * API clients sending the legacy flag listed conversations into the agent
+ * owner's sidebar.
  *
  * API-driven: assertions read the DB (`conversations.visibility`) and the real
  * sidebar endpoint, not stream internals.
@@ -67,7 +76,7 @@ test.describe('tier-b · conversation visibility', () => {
     await resetDb();
   });
 
-  test('first-party chat (save_conversation omitted) persists as listed and appears in the sidebar', async ({
+  test('first-party chat (visibility: listed, as the UI sends) persists as listed and appears in the sidebar', async ({
     browser,
   }) => {
     const { context, token } = await newUserContext(browser);
@@ -76,6 +85,7 @@ test.describe('tier-b · conversation visibility', () => {
       const convId = await streamOnce(api, {
         question: 'first-party listed turn',
         conversation_id: null,
+        visibility: 'listed',
         isNoneDoc: true,
         chunks: '0',
       });
@@ -88,7 +98,7 @@ test.describe('tier-b · conversation visibility', () => {
     }
   });
 
-  test('first-party chat with save_conversation=false persists hidden and is excluded from the sidebar', async ({
+  test('first-party chat without a visibility opt-in persists hidden and is excluded from the sidebar', async ({
     browser,
   }) => {
     const { context, sub, token } = await newUserContext(browser);
@@ -97,7 +107,6 @@ test.describe('tier-b · conversation visibility', () => {
       const convId = await streamOnce(api, {
         question: 'first-party hidden turn',
         conversation_id: null,
-        save_conversation: false,
         isNoneDoc: true,
         chunks: '0',
       });
@@ -119,7 +128,7 @@ test.describe('tier-b · conversation visibility', () => {
     }
   });
 
-  test('api-key agent chat hides by default and lists only on explicit opt-in', async ({
+  test('api-key agent chat hides by default; legacy save_conversation must not list, explicit visibility does', async ({
     browser,
   }) => {
     const { context, sub, token } = await newUserContext(browser);
@@ -128,7 +137,7 @@ test.describe('tier-b · conversation visibility', () => {
     try {
       const { key } = await publishClassicAgent(api, multipart, sub, 'vis-agent');
 
-      // api_key present → hidden by default.
+      // api_key present, no flags → hidden by default.
       const hidden = await streamOnce(api, {
         question: 'agent default hidden',
         conversation_id: null,
@@ -138,12 +147,25 @@ test.describe('tier-b · conversation visibility', () => {
       });
       expect(await visibilityOf(hidden)).toBe('hidden');
 
+      // Regression guard: the legacy flag — which external integrations
+      // still send meaning "persist" — must NOT list into the owner's
+      // sidebar.
+      const legacy = await streamOnce(api, {
+        question: 'agent legacy flag stays hidden',
+        conversation_id: null,
+        api_key: key,
+        save_conversation: true,
+        isNoneDoc: true,
+        chunks: '0',
+      });
+      expect(await visibilityOf(legacy)).toBe('hidden');
+
       // Explicit opt-in → listed.
       const listed = await streamOnce(api, {
         question: 'agent opt-in listed',
         conversation_id: null,
         api_key: key,
-        save_conversation: true,
+        visibility: 'listed',
         isNoneDoc: true,
         chunks: '0',
       });
@@ -153,6 +175,7 @@ test.describe('tier-b · conversation visibility', () => {
       const ids = await sidebarIds(api);
       expect(ids).toContain(listed);
       expect(ids).not.toContain(hidden);
+      expect(ids).not.toContain(legacy);
     } finally {
       await multipart.dispose();
       await api.dispose();
@@ -160,7 +183,7 @@ test.describe('tier-b · conversation visibility', () => {
     }
   });
 
-  test('v1 chat completions persist hidden by default and list only on docsgpt.save_conversation', async ({
+  test('v1 chat completions always persist hidden — even with the legacy docsgpt.save_conversation flag', async ({
     browser,
   }) => {
     const { context, sub, token } = await newUserContext(browser);
@@ -190,11 +213,13 @@ test.describe('tier-b · conversation visibility', () => {
         ).toBe(0);
         expect(await sidebarIds(api)).toHaveLength(0);
 
-        // Opt-in via the docsgpt extension → listed.
+        // Regression guard: the legacy docsgpt.save_conversation flag —
+        // which external clients built on the old contract still send —
+        // must NOT list the conversation into the agent owner's sidebar.
         const r2 = await v1.post('/v1/chat/completions', {
           data: {
             model: 'docsgpt',
-            messages: [{ role: 'user', content: 'hi v1 listed' }],
+            messages: [{ role: 'user', content: 'hi v1 legacy flag' }],
             stream: false,
             docsgpt: { save_conversation: true },
           },
@@ -208,9 +233,9 @@ test.describe('tier-b · conversation visibility', () => {
             sql: "user_id = $1 AND visibility = 'listed'",
             params: [sub],
           }),
-        ).toBe(1);
-        // Exactly the opted-in conversation surfaces in the sidebar.
-        expect(await sidebarIds(api)).toHaveLength(1);
+        ).toBe(0);
+        // The owner's sidebar stays empty no matter what v1 clients send.
+        expect(await sidebarIds(api)).toHaveLength(0);
       } finally {
         await v1.dispose();
       }
