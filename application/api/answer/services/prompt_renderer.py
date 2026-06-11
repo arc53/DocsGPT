@@ -8,6 +8,27 @@ from application.templates.template_engine import TemplateEngine, TemplateRender
 logger = logging.getLogger(__name__)
 
 
+def format_docs_for_prompt(docs: Optional[list]) -> Optional[str]:
+    """Format retrieved chunks as XML-tagged documents for prompt injection.
+
+    Each chunk is wrapped in a ``<document index="n">`` block with a
+    ``<source>`` subtag (when a filename/title is known) so the model can
+    tell chunks apart and cite them by name.
+    """
+    if not docs:
+        return None
+    parts = []
+    for i, doc in enumerate(docs, start=1):
+        source = doc.get("filename") or doc.get("title") or doc.get("source")
+        lines = [f'<document index="{i}">']
+        if source:
+            lines.append(f"<source>{source}</source>")
+        lines.append(f"<content>\n{doc.get('text', '')}\n</content>")
+        lines.append("</document>")
+        parts.append("\n".join(lines))
+    return "\n\n".join(parts)
+
+
 class PromptRenderer:
     """Service for rendering prompts with dynamic context using namespaces"""
 
@@ -82,11 +103,11 @@ class PromptRenderer:
         """
         Apply backward-compatible substitutions for old prompt format.
 
-        Handles legacy {summaries} and {query} placeholders during transition period.
+        Handles the legacy {summaries} placeholder. When no documents were
+        retrieved the placeholder is removed so the model never sees the
+        raw template artifact.
         """
-        if docs_together:
-            prompt_content = prompt_content.replace("{summaries}", docs_together)
-        return prompt_content
+        return prompt_content.replace("{summaries}", docs_together or "")
 
     def validate_template(self, prompt_content: str) -> bool:
         """Validate prompt template syntax"""

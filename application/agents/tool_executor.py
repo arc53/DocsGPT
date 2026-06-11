@@ -1,4 +1,5 @@
 import logging
+import re
 import uuid
 from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
@@ -21,6 +22,11 @@ from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_tool_prefix(tool_name: Optional[str]) -> str:
+    """Reduce a tool name to characters allowed in function-call names."""
+    return re.sub(r"[^a-zA-Z0-9_-]+", "_", str(tool_name or "")).strip("_")
 
 
 def _record_proposed(
@@ -254,15 +260,17 @@ class ToolExecutor:
 
         Action names are kept clean for the LLM:
         - Unique action names appear as-is (e.g. ``get_weather``).
-        - Duplicate action names get numbered suffixes (e.g. ``search_1``,
-          ``search_2``).
+        - Duplicate action names are disambiguated with the owning tool's
+          name (e.g. ``brave_search``, ``duckduckgo_search``); a numeric
+          suffix only breaks ties between same-named tools.
 
         A reverse mapping is stored in ``_name_to_tool`` so that tool calls
         can be routed back to the correct ``(tool_id, action_name)`` without
         brittle string splitting.
         """
         # Pass 1: collect entries and count action name occurrences
-        entries: List[Tuple[str, str, Dict, bool]] = []  # (tool_id, action_name, action, is_client)
+        # (tool_id, tool_name, action_name, action, is_client)
+        entries: List[Tuple[str, str, str, Dict, bool]] = []
         name_counts: Counter = Counter()
 
         for tool_id, tool in tools_dict.items():
@@ -283,29 +291,38 @@ class ToolExecutor:
             for action in actions:
                 if not action.get("active", True):
                     continue
-                entries.append((tool_id, action["name"], action, is_client))
+                entries.append(
+                    (tool_id, tool.get("name", ""), action["name"], action, is_client)
+                )
                 name_counts[action["name"]] += 1
 
         # Pass 2: assign LLM-visible names and build mappings
         self._name_to_tool = {}
         self._tool_to_name = {}
-        collision_counters: Dict[str, int] = {}
         all_llm_names: set = set()
 
         result = []
-        for tool_id, action_name, action, is_client in entries:
+        for tool_id, tool_name, action_name, action, is_client in entries:
             if name_counts[action_name] == 1:
                 llm_name = action_name
             else:
-                counter = collision_counters.get(action_name, 1)
-                candidate = f"{action_name}_{counter}"
-                # Skip if candidate collides with a unique action name
-                while candidate in all_llm_names or (
-                    candidate in name_counts and name_counts[candidate] == 1
+                prefix = _sanitize_tool_prefix(tool_name)
+                base = (
+                    f"{prefix}_{action_name}"
+                    if prefix and not action_name.startswith(f"{prefix}_")
+                    else action_name
+                )
+                # A duplicated bare name stays ambiguous, and a candidate
+                # must not steal a unique action's name or one already taken.
+                candidate = base
+                counter = 1
+                while (
+                    candidate == action_name
+                    or candidate in all_llm_names
+                    or name_counts.get(candidate, 0) == 1
                 ):
+                    candidate = f"{base}_{counter}"
                     counter += 1
-                    candidate = f"{action_name}_{counter}"
-                collision_counters[action_name] = counter + 1
                 llm_name = candidate
 
             all_llm_names.add(llm_name)

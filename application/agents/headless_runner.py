@@ -7,6 +7,10 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from application.agents.agent_creator import AgentCreator
 from application.agents.tool_executor import ToolExecutor
+from application.api.answer.services.prompt_renderer import (
+    PromptRenderer,
+    format_docs_for_prompt,
+)
 from application.api.answer.services.stream_processor import get_prompt
 from application.core.settings import settings
 from application.retriever.retriever_creator import RetrieverCreator
@@ -104,6 +108,18 @@ def run_agent_headless(
             retrieved_docs = docs
     except Exception as exc:
         logger.warning("Headless retrieve failed: %s", exc)
+
+    # Render the prompt (Jinja namespaces / legacy {summaries}) so retrieved
+    # docs actually reach the model — mirroring StreamProcessor.create_agent.
+    try:
+        prompt = PromptRenderer().render_prompt(
+            prompt_content=prompt,
+            user_id=owner,
+            docs=retrieved_docs or None,
+            docs_together=format_docs_for_prompt(retrieved_docs),
+        )
+    except Exception as exc:
+        logger.warning("Headless prompt rendering failed; using raw prompt: %s", exc)
 
     tool_executor = ToolExecutor(
         user_api_key=user_api_key,

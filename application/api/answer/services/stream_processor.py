@@ -10,7 +10,10 @@ from application.agents.default_tools import synthesized_default_tools
 from application.api.answer.services.compression import CompressionOrchestrator
 from application.api.answer.services.compression.token_counter import TokenCounter
 from application.api.answer.services.conversation_service import ConversationService
-from application.api.answer.services.prompt_renderer import PromptRenderer
+from application.api.answer.services.prompt_renderer import (
+    PromptRenderer,
+    format_docs_for_prompt,
+)
 from application.core.model_utils import (
     get_api_key_for_provider,
     get_default_model_id,
@@ -803,15 +806,7 @@ class StreamProcessor:
                 return None, None
             self.retrieved_docs = docs
 
-            docs_with_filenames = []
-            for doc in docs:
-                filename = doc.get("filename") or doc.get("title") or doc.get("source")
-                if filename:
-                    chunk_header = str(filename)
-                    docs_with_filenames.append(f"{chunk_header}\n{doc['text']}")
-                else:
-                    docs_with_filenames.append(doc["text"])
-            docs_together = "\n\n".join(docs_with_filenames)
+            docs_together = format_docs_for_prompt(docs)
 
             logger.info(f"Pre-fetch docs_together size: {len(docs_together)} chars")
 
@@ -877,10 +872,13 @@ class StreamProcessor:
 
                 tool_data = self._fetch_tool_data(tool_doc, required_actions)
                 if tool_data:
-                    # Defaults reachable by synthetic id only — the name
-                    # key stays bound to an explicit row of the same name.
+                    # Explicit rows claim the name key; a default tool takes
+                    # it only when no explicit row of the same name exists
+                    # (explicit rows are processed first).
                     if not is_default:
                         tools_data[tool_name] = tool_data
+                    else:
+                        tools_data.setdefault(tool_name, tool_data)
                     tools_data[tool_id] = tool_data
 
             return tools_data if tools_data else None
@@ -982,13 +980,18 @@ class StreamProcessor:
         """Retrieve and cache the raw prompt content for the current agent configuration."""
         if self._prompt_content is not None:
             return self._prompt_content
-        prompt_id = (
-            self.agent_config.get("prompt_id")
-            if isinstance(self.agent_config, dict)
-            else None
-        )
+        if not isinstance(self.agent_config, dict):
+            return None
+        prompt_id = self.agent_config.get("prompt_id")
         if not prompt_id:
             return None
+        # Agentic/research agents use the agentic preset variants (search
+        # tool guidance instead of a pre-fetched document block); custom
+        # prompt ids pass through unchanged.
+        if self.agent_config.get("agent_type") in ("agentic", "research") and (
+            prompt_id in ("default", "creative", "strict")
+        ):
+            prompt_id = f"agentic_{prompt_id}"
         try:
             self._prompt_content = get_prompt(prompt_id, self.prompts_collection)
         except ValueError as e:
@@ -1036,7 +1039,7 @@ class StreamProcessor:
 
             memory_tool = MemoryTool(tool_config, self.initial_user_id)
 
-            root_view = memory_tool.execute_action("view", path="/")
+            root_view = memory_tool.execute_action("memory_view", path="/")
 
             if "Error:" in root_view or not root_view.strip():
                 return None
@@ -1230,19 +1233,15 @@ class StreamProcessor:
         """Create and return the configured agent with rendered prompt"""
         agent_type = self.agent_config["agent_type"]
 
-        # For agentic agents, swap standard presets for their agentic
-        # counterparts (which include search tool instructions instead of
-        # {summaries}). Custom / user-provided prompts pass through as-is.
+        # _get_prompt_content handles the agentic preset swap and caching;
+        # it returns None only for unknown custom ids — re-fetch strictly so
+        # the underlying error surfaces to the caller.
         raw_prompt = self._get_prompt_content()
         if raw_prompt is None:
-            prompt_id = self.agent_config.get("prompt_id", "default")
-            agentic_presets = {"default", "creative", "strict"}
-            if agent_type in ("agentic", "research") and prompt_id in agentic_presets:
-                raw_prompt = get_prompt(
-                    f"agentic_{prompt_id}", self.prompts_collection
-                )
-            else:
-                raw_prompt = get_prompt(prompt_id, self.prompts_collection)
+            raw_prompt = get_prompt(
+                self.agent_config.get("prompt_id", "default"),
+                self.prompts_collection,
+            )
             self._prompt_content = raw_prompt
 
         # Allow API callers to override the system prompt when the agent

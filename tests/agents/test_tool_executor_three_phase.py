@@ -270,7 +270,7 @@ class TestDefaultToolJournaling:
             "application.agents.tool_executor.ToolActionParser",
             lambda _cls, **kw: Mock(
                 parse_args=Mock(
-                    return_value=(memory_row["id"], "view", {"path": "/"})
+                    return_value=(memory_row["id"], "memory_view", {"path": "/"})
                 )
             ),
         )

@@ -291,7 +291,7 @@ class TestToolExecutorPrepare:
         assert executor._name_to_tool["do_thing"] == ("t1", "do_thing")
         assert executor._tool_to_name[("t1", "do_thing")] == "do_thing"
 
-    def test_prepare_tools_duplicate_names_get_numbered_suffixes(self):
+    def test_prepare_tools_duplicate_names_get_tool_prefixes(self):
         executor = ToolExecutor()
         tools_dict = {
             "t1": {
@@ -309,10 +309,34 @@ class TestToolExecutorPrepare:
         }
         result = executor.prepare_tools_for_llm(tools_dict)
         names = [r["function"]["name"] for r in result]
-        assert "search_1" in names
-        assert "search_2" in names
-        assert executor._name_to_tool["search_1"][1] == "search"
-        assert executor._name_to_tool["search_2"][1] == "search"
+        assert "tool_a_search" in names
+        assert "tool_b_search" in names
+        assert executor._name_to_tool["tool_a_search"] == ("t1", "search")
+        assert executor._name_to_tool["tool_b_search"] == ("t2", "search")
+
+    def test_prepare_tools_same_named_tools_fall_back_to_numbers(self):
+        """Two tools with the same name (e.g. two MCP rows) still get unique names."""
+        executor = ToolExecutor()
+        tools_dict = {
+            "t1": {
+                "name": "mcp",
+                "actions": [
+                    {"name": "search", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+            "t2": {
+                "name": "mcp",
+                "actions": [
+                    {"name": "search", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+        }
+        result = executor.prepare_tools_for_llm(tools_dict)
+        names = [r["function"]["name"] for r in result]
+        assert "mcp_search" in names
+        assert "mcp_search_1" in names
+        assert executor._name_to_tool["mcp_search"][1] == "search"
+        assert executor._name_to_tool["mcp_search_1"][1] == "search"
 
     def test_prepare_tools_unique_name_no_suffix(self):
         executor = ToolExecutor()
@@ -335,8 +359,8 @@ class TestToolExecutorPrepare:
         assert "get_weather" in names
         assert "send_email" in names
 
-    def test_prepare_tools_suffix_skips_collision_with_unique_name(self):
-        """If action 'foo_1' exists as unique and 'foo' is duplicated, skip '_1'."""
+    def test_prepare_tools_prefix_skips_collision_with_unique_name(self):
+        """A prefixed candidate must not steal another action's unique name."""
         executor = ToolExecutor()
         tools_dict = {
             "t1": {
@@ -354,17 +378,19 @@ class TestToolExecutorPrepare:
             "t3": {
                 "name": "tool_c",
                 "actions": [
-                    {"name": "foo_1", "description": "D", "active": True, "parameters": {"properties": {}}},
+                    {"name": "tool_a_foo", "description": "D", "active": True, "parameters": {"properties": {}}},
                 ],
             },
         }
         result = executor.prepare_tools_for_llm(tools_dict)
         names = [r["function"]["name"] for r in result]
-        # foo_1 is taken by the unique action, so duplicates skip to _2 and _3
-        assert "foo_1" in names  # The unique action
-        assert "foo_2" in names
-        assert "foo_3" in names
-        assert executor._name_to_tool["foo_1"] == ("t3", "foo_1")
+        # tool_a_foo is taken by the unique action, so t1's duplicate
+        # falls back to a numbered variant of its prefixed name.
+        assert "tool_a_foo" in names  # The unique action
+        assert "tool_a_foo_1" in names
+        assert "tool_b_foo" in names
+        assert executor._name_to_tool["tool_a_foo"] == ("t3", "tool_a_foo")
+        assert executor._name_to_tool["tool_a_foo_1"] == ("t1", "foo")
 
     def test_build_tool_parameters_filters_non_llm_fields(self):
         executor = ToolExecutor()
