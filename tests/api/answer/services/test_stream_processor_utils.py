@@ -533,6 +533,57 @@ class TestGetPromptContent:
         # Even with no agent_config, cached value returned
         assert sp._get_prompt_content() == "cached"
 
+    def test_agentic_agent_gets_agentic_preset(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        sp = StreamProcessor({}, {"sub": "u"})
+        sp.agent_config = {"prompt_id": "default", "agent_type": "agentic"}
+        content = sp._get_prompt_content()
+        assert "`search` tool" in content
+        assert "source.summaries" not in content
+
+    def test_research_agent_gets_agentic_preset(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        sp = StreamProcessor({}, {"sub": "u"})
+        sp.agent_config = {"prompt_id": "strict", "agent_type": "research"}
+        content = sp._get_prompt_content()
+        assert "`search` tool" in content
+
+    def test_classic_agent_gets_classic_preset(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        sp = StreamProcessor({}, {"sub": "u"})
+        sp.agent_config = {"prompt_id": "default", "agent_type": "classic"}
+        content = sp._get_prompt_content()
+        assert "source.summaries" in content
+
+    def test_null_prompt_id_agentic_agent_gets_agentic_preset(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        # PG ``agents.prompt_id`` is NULL for agents that never chose a
+        # prompt — the agentic swap must still apply.
+        sp = StreamProcessor({}, {"sub": "u"})
+        sp.agent_config = {"prompt_id": None, "agent_type": "agentic"}
+        content = sp._get_prompt_content()
+        assert content is not None
+        assert "`search` tool" in content
+        assert "source.summaries" not in content
+
+    def test_null_prompt_id_classic_agent_gets_default_preset(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        sp = StreamProcessor({}, {"sub": "u"})
+        sp.agent_config = {"prompt_id": None}
+        content = sp._get_prompt_content()
+        assert content is not None
+        assert "source.summaries" in content
+
 
 class TestPreFetchDocs:
     def test_skips_when_no_active_docs(self):
@@ -599,6 +650,7 @@ class TestPreFetchTools:
         )
 
         sp = StreamProcessor({}, {"sub": "no-tools-user"})
+        sp._prompt_content = "No template syntax here"
         with _patch_db(pg_conn), patch(
             "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
             True,
@@ -606,7 +658,7 @@ class TestPreFetchTools:
             got = sp.pre_fetch_tools()
         assert got is None
 
-    def test_no_template_skips_only_default_rows_not_explicit(self, pg_conn):
+    def test_unresolvable_prompt_prefetches_only_explicit_rows(self, pg_conn):
         from application.api.answer.services.stream_processor import (
             StreamProcessor,
         )
@@ -618,6 +670,11 @@ class TestPreFetchTools:
             user_id="u-explicit-prefetch", name="read_webpage", status=True
         )
         sp = StreamProcessor({}, {"sub": "u-explicit-prefetch"})
+        # A broken custom prompt id disables action filtering; explicit
+        # rows still prefetch, defaults stay skipped.
+        sp.agent_config = {
+            "prompt_id": "00000000-0000-0000-0000-000000000000"
+        }
         fetched = []
 
         def _fake_fetch(tool_doc, required_actions):
@@ -660,8 +717,67 @@ class TestPreFetchTools:
             d.get("name") == "read_webpage" and d.get("default")
             for d in fetched
         )
-        # Defaults are reachable by synthetic id only — not by name.
         assert default_tool_id("read_webpage") in got
+        # No explicit row of the same name exists, so the default also
+        # claims the name key (what preset templates reference).
+        assert got.get("read_webpage") == {"ok": True}
+
+    def test_explicit_row_keeps_name_key_over_default(self, pg_conn):
+        from application.agents.default_tools import default_tool_id
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        from application.storage.db.repositories.user_tools import (
+            UserToolsRepository,
+        )
+
+        UserToolsRepository(pg_conn).create(
+            user_id="u-shadow-default", name="read_webpage", status=True
+        )
+        sp = StreamProcessor({}, {"sub": "u-shadow-default"})
+        sp._required_tool_actions = {"read_webpage": {None}}
+
+        def _fake_fetch(tool_doc, required_actions):
+            return {"is_default": bool(tool_doc.get("default"))}
+
+        with _patch_db(pg_conn), patch(
+            "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            True,
+        ), patch.object(sp, "_fetch_tool_data", _fake_fetch):
+            got = sp.pre_fetch_tools()
+        assert got is not None
+        # The explicit row owns the name key; the default stays reachable
+        # by its synthetic id.
+        assert got["read_webpage"] == {"is_default": False}
+        assert got[default_tool_id("read_webpage")] == {"is_default": True}
+
+    def test_fetch_tool_data_executes_referenced_memory_view(self, pg_conn):
+        from unittest.mock import MagicMock
+
+        from application.agents.default_tools import synthesize_default_tool
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+
+        sp = StreamProcessor({}, {"sub": "u-mem-prefetch"})
+        tool_doc = synthesize_default_tool("memory")
+
+        mock_tool = MagicMock()
+        mock_tool.get_actions_metadata.return_value = tool_doc["actions"]
+        mock_tool.execute_action.return_value = "Directory: /\n(empty)"
+        mock_manager = MagicMock()
+        mock_manager.load_tool.return_value = mock_tool
+
+        with patch(
+            "application.agents.tools.tool_manager.ToolManager",
+            return_value=mock_manager,
+        ):
+            got = sp._fetch_tool_data(tool_doc, {"memory_view"})
+
+        # Only the referenced action ran, with no path kwarg — the tool's
+        # own "/" default applies.
+        assert got == {"memory_view": "Directory: /\n(empty)"}
+        mock_tool.execute_action.assert_called_once_with("memory_view")
 
     def test_agent_bound_invocation_omits_default_tool_prefetch(self, pg_conn):
         from application.api.answer.services.stream_processor import (

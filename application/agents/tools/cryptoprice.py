@@ -52,7 +52,11 @@ class CryptoPriceTool(Tool):
         return [
             {
                 "name": "cryptoprice_get",
-                "description": "Retrieve the price of a specified cryptocurrency in a given currency",
+                "description": (
+                    "Get the current price of a cryptocurrency from the public "
+                    "CryptoCompare API. Use ticker symbols, e.g. symbol='BTC', "
+                    "currency='USD'."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
