@@ -359,6 +359,52 @@ class TestToolExecutorPrepare:
         assert "get_weather" in names
         assert "send_email" in names
 
+    def test_prepare_tools_prefixed_names_clamped_to_64_chars(self):
+        """Prefixed names must fit the 64-char provider function-name limit."""
+        executor = ToolExecutor()
+        name_a = "server_" + "x" * 60
+        name_b = "server_" + "x" * 60 + "_b"  # same first 64 chars as name_a
+        tools_dict = {
+            "t1": {
+                "name": name_a,
+                "actions": [
+                    {"name": "search_documents_in_collection", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+            "t2": {
+                "name": name_b,
+                "actions": [
+                    {"name": "search_documents_in_collection", "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+        }
+        result = executor.prepare_tools_for_llm(tools_dict)
+        names = [r["function"]["name"] for r in result]
+        assert all(len(n) <= 64 for n in names)
+        assert len(set(names)) == 2
+        # Routing still resolves each clamped name to its original action.
+        assert {executor._name_to_tool[n] for n in names} == {
+            ("t1", "search_documents_in_collection"),
+            ("t2", "search_documents_in_collection"),
+        }
+
+    def test_prepare_tools_long_unique_name_clamped(self):
+        """A unique action name over the limit is truncated, not passed through."""
+        executor = ToolExecutor()
+        long_action = "fetch_" + "y" * 70
+        tools_dict = {
+            "t1": {
+                "name": "tool_a",
+                "actions": [
+                    {"name": long_action, "description": "D", "active": True, "parameters": {"properties": {}}},
+                ],
+            },
+        }
+        result = executor.prepare_tools_for_llm(tools_dict)
+        names = [r["function"]["name"] for r in result]
+        assert names == [long_action[:64]]
+        assert executor._name_to_tool[long_action[:64]] == ("t1", long_action)
+
     def test_prepare_tools_prefix_skips_collision_with_unique_name(self):
         """A prefixed candidate must not steal another action's unique name."""
         executor = ToolExecutor()

@@ -982,9 +982,10 @@ class StreamProcessor:
             return self._prompt_content
         if not isinstance(self.agent_config, dict):
             return None
-        prompt_id = self.agent_config.get("prompt_id")
-        if not prompt_id:
-            return None
+        # PG ``agents.prompt_id`` is NULL for agents that never chose a
+        # prompt — treat missing/empty as the default preset so the
+        # agentic swap below still applies.
+        prompt_id = self.agent_config.get("prompt_id") or "default"
         # Agentic/research agents use the agentic preset variants (search
         # tool guidance instead of a pre-fetched document block); custom
         # prompt ids pass through unchanged.
@@ -1234,8 +1235,9 @@ class StreamProcessor:
         agent_type = self.agent_config["agent_type"]
 
         # _get_prompt_content handles the agentic preset swap and caching;
-        # it returns None only for unknown custom ids — re-fetch strictly so
-        # the underlying error surfaces to the caller.
+        # it returns None only when the prompt couldn't be fetched (unknown
+        # or broken custom ids) — re-fetch strictly so the underlying error
+        # surfaces to the caller.
         raw_prompt = self._get_prompt_content()
         if raw_prompt is None:
             raw_prompt = get_prompt(

@@ -561,6 +561,29 @@ class TestGetPromptContent:
         content = sp._get_prompt_content()
         assert "source.summaries" in content
 
+    def test_null_prompt_id_agentic_agent_gets_agentic_preset(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        # PG ``agents.prompt_id`` is NULL for agents that never chose a
+        # prompt — the agentic swap must still apply.
+        sp = StreamProcessor({}, {"sub": "u"})
+        sp.agent_config = {"prompt_id": None, "agent_type": "agentic"}
+        content = sp._get_prompt_content()
+        assert content is not None
+        assert "`search` tool" in content
+        assert "source.summaries" not in content
+
+    def test_null_prompt_id_classic_agent_gets_default_preset(self):
+        from application.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+        sp = StreamProcessor({}, {"sub": "u"})
+        sp.agent_config = {"prompt_id": None}
+        content = sp._get_prompt_content()
+        assert content is not None
+        assert "source.summaries" in content
+
 
 class TestPreFetchDocs:
     def test_skips_when_no_active_docs(self):
@@ -627,6 +650,7 @@ class TestPreFetchTools:
         )
 
         sp = StreamProcessor({}, {"sub": "no-tools-user"})
+        sp._prompt_content = "No template syntax here"
         with _patch_db(pg_conn), patch(
             "application.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
             True,
@@ -634,7 +658,7 @@ class TestPreFetchTools:
             got = sp.pre_fetch_tools()
         assert got is None
 
-    def test_no_template_skips_only_default_rows_not_explicit(self, pg_conn):
+    def test_unresolvable_prompt_prefetches_only_explicit_rows(self, pg_conn):
         from application.api.answer.services.stream_processor import (
             StreamProcessor,
         )
@@ -646,6 +670,11 @@ class TestPreFetchTools:
             user_id="u-explicit-prefetch", name="read_webpage", status=True
         )
         sp = StreamProcessor({}, {"sub": "u-explicit-prefetch"})
+        # A broken custom prompt id disables action filtering; explicit
+        # rows still prefetch, defaults stay skipped.
+        sp.agent_config = {
+            "prompt_id": "00000000-0000-0000-0000-000000000000"
+        }
         fetched = []
 
         def _fake_fetch(tool_doc, required_actions):

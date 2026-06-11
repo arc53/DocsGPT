@@ -335,7 +335,7 @@ class TestGetPromptContent:
         assert result1 is not None
 
     @pytest.mark.unit
-    def test_no_prompt_id(self):
+    def test_no_prompt_id_falls_back_to_default_preset(self):
         mock_db = MagicMock()
         with patch("application.api.answer.services.stream_processor.MongoDB") as MockMongo, \
              patch("application.api.answer.services.stream_processor.settings") as mock_settings:
@@ -345,7 +345,9 @@ class TestGetPromptContent:
             from application.api.answer.services.stream_processor import StreamProcessor
             sp = StreamProcessor(request_data={}, decoded_token={"sub": "u"})
         sp.agent_config = {}
-        assert sp._get_prompt_content() is None
+        content = sp._get_prompt_content()
+        assert content is not None
+        assert "source.summaries" in content
 
     @pytest.mark.unit
     def test_invalid_prompt_id_returns_none(self):
@@ -381,7 +383,7 @@ class TestGetPromptContent:
 class TestGetRequiredToolActions:
 
     @pytest.mark.unit
-    def test_no_prompt_returns_none(self):
+    def test_no_prompt_id_uses_default_preset(self):
         mock_db = MagicMock()
         with patch("application.api.answer.services.stream_processor.MongoDB") as MockMongo, \
              patch("application.api.answer.services.stream_processor.settings") as mock_settings:
@@ -391,7 +393,9 @@ class TestGetRequiredToolActions:
             from application.api.answer.services.stream_processor import StreamProcessor
             sp = StreamProcessor(request_data={}, decoded_token={"sub": "u"})
         sp.agent_config = {}
-        assert sp._get_required_tool_actions() is None
+        # Missing prompt_id resolves to the default preset, so filtering
+        # stays enabled instead of falling back to "prefetch everything".
+        assert sp._get_required_tool_actions() is not None
 
     @pytest.mark.unit
     def test_no_template_syntax_returns_empty(self):
