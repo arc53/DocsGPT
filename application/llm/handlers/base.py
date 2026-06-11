@@ -956,6 +956,9 @@ class LLMHandler(ABC):
                         pause_info["action_name"],
                         pause_info.get("arguments") or {},
                         tool_id=pause_info.get("tool_id"),
+                        message_id=agent.tool_executor.message_id,
+                        user_id=agent.tool_executor.user,
+                        agent_id=agent.tool_executor.agent_id,
                     )
                     _mark_failed(
                         pause_info["call_id"],

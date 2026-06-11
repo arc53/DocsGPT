@@ -30,6 +30,9 @@ def _record_proposed(
     arguments: Any,
     *,
     tool_id: Optional[str] = None,
+    message_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
 ) -> bool:
     """Insert a ``proposed`` row; swallow infra failures so tool calls
     still run when the journal is unreachable. Returns True iff the row
@@ -43,6 +46,13 @@ def _record_proposed(
                 action_name,
                 arguments,
                 tool_id=tool_id if tool_id and looks_like_uuid(tool_id) else None,
+                message_id=message_id,
+                user_id=user_id,
+                agent_id=(
+                    str(agent_id)
+                    if agent_id and looks_like_uuid(str(agent_id))
+                    else None
+                ),
             )
         if not inserted:
             logger.warning(
@@ -518,6 +528,17 @@ class ToolExecutor:
                 "arguments": call_args or {},
                 "result": f"Failed to parse tool call. Invalid tool name format: {llm_name}",
             }
+            # Journal the malformed call so it still shows up in tool analytics.
+            if _record_proposed(
+                call_id,
+                "unknown",
+                llm_name or "unknown",
+                call_args if isinstance(call_args, dict) else {},
+                message_id=self.message_id,
+                user_id=self.user,
+                agent_id=self.agent_id,
+            ):
+                _mark_failed(call_id, tool_call_data["result"])
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
             return "Failed to parse tool call.", call_id
@@ -541,6 +562,17 @@ class ToolExecutor:
                 "arguments": call_args,
                 "result": f"Tool with ID {tool_id} not found. Available tools: {list(tools_dict.keys())}",
             }
+            # Journal the unresolvable call so it still shows up in tool analytics.
+            if _record_proposed(
+                call_id,
+                "unknown",
+                llm_name or "unknown",
+                call_args if isinstance(call_args, dict) else {},
+                message_id=self.message_id,
+                user_id=self.user,
+                agent_id=self.agent_id,
+            ):
+                _mark_failed(call_id, f"Tool with ID {tool_id} not found.")
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
             return f"Tool with ID {tool_id} not found.", call_id
@@ -566,6 +598,9 @@ class ToolExecutor:
             action_name,
             call_args if isinstance(call_args, dict) else {},
             tool_id=tool_data.get("id"),
+            message_id=self.message_id,
+            user_id=self.user,
+            agent_id=self.agent_id,
         )
         # Defensive guard: a non-dict ``call_args`` (e.g. malformed
         # JSON on the resume path) would crash the param walk below

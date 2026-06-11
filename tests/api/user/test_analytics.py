@@ -74,33 +74,54 @@ class TestRangeForFilter:
         assert bucket_unit in {"minute", "hour", "day"}
 
 
-class TestResolveApiKey:
-    def test_none_when_no_id(self, pg_conn):
-        from application.api.user.analytics.routes import _resolve_api_key
+class TestResolveAgent:
+    def test_no_agent_when_no_id(self, pg_conn):
+        from application.api.user.analytics.routes import _resolve_agent
 
-        assert _resolve_api_key(pg_conn, None, "u") is None
-        assert _resolve_api_key(pg_conn, "", "u") is None
+        assert _resolve_agent(pg_conn, None, "u") == (None, "", None)
+        assert _resolve_agent(pg_conn, "", "u") == (None, "", None)
 
-    def test_returns_key_for_owned_agent(self, pg_conn):
-        from application.api.user.analytics.routes import _resolve_api_key
+    def test_returns_key_and_id_for_owned_agent(self, pg_conn):
+        from application.api.user.analytics.routes import _resolve_agent
         from application.storage.db.repositories.agents import AgentsRepository
 
         agent = AgentsRepository(pg_conn).create(
             "owner", "test-agent", "published", key="secret-api-key",
         )
-        assert (
-            _resolve_api_key(pg_conn, str(agent["id"]), "owner")
-            == "secret-api-key"
+        resolved, api_key, agent_pg_id = _resolve_agent(
+            pg_conn, str(agent["id"]), "owner"
         )
+        assert resolved is not None
+        assert api_key == "secret-api-key"
+        assert agent_pg_id == str(agent["id"])
 
-    def test_none_for_other_users_agent(self, pg_conn):
-        from application.api.user.analytics.routes import _resolve_api_key
+    def test_keyless_agent_gets_no_match_sentinel(self, pg_conn):
+        from application.api.user.analytics.routes import _resolve_agent
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        agent = AgentsRepository(pg_conn).create(
+            "owner", "test-agent", "draft", key="",
+        )
+        resolved, api_key, agent_pg_id = _resolve_agent(
+            pg_conn, str(agent["id"]), "owner"
+        )
+        # The empty-string key matches no rows; agent_id still matches.
+        assert resolved is not None
+        assert api_key == ""
+        assert agent_pg_id == str(agent["id"])
+
+    def test_no_match_for_other_users_agent(self, pg_conn):
+        from application.api.user.analytics.routes import _resolve_agent
         from application.storage.db.repositories.agents import AgentsRepository
 
         agent = AgentsRepository(pg_conn).create(
             "owner", "test-agent", "published", key="secret"
         )
-        assert _resolve_api_key(pg_conn, str(agent["id"]), "other-user") is None
+        assert _resolve_agent(pg_conn, str(agent["id"]), "other-user") == (
+            None,
+            "",
+            None,
+        )
 
 
 class TestGetMessageAnalytics:

@@ -73,6 +73,10 @@ const userService = {
     apiClient.post(endpoints.USER.TOKEN_ANALYTICS, data, token),
   getFeedbackAnalytics: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.FEEDBACK_ANALYTICS, data, token),
+  getToolAnalytics: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.TOOL_ANALYTICS, data, token),
+  getScheduleAnalytics: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.SCHEDULE_ANALYTICS, data, token),
   getLogs: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.LOGS, data, token),
   manageSync: (data: any, token: string | null): Promise<any> =>

@@ -22,6 +22,9 @@ class ToolCallAttemptsRepository:
         arguments: Any,
         *,
         tool_id: Optional[str] = None,
+        message_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> bool:
         """Insert a ``proposed`` row before the tool executes.
 
@@ -29,15 +32,22 @@ class ToolCallAttemptsRepository:
         guards against the LLM emitting a duplicate ``call_id``: the
         existing row stays put rather than a re-insert raising
         ``IntegrityError``.
+
+        ``message_id`` / ``user_id`` / ``agent_id`` attribute the attempt
+        from the start — headless runs and parse-failure rows never reach
+        ``mark_executed``, and headless runs have no message at all.
         """
         result = self._conn.execute(
             text(
                 """
                 INSERT INTO tool_call_attempts
-                    (call_id, tool_id, tool_name, action_name, arguments, status)
+                    (call_id, tool_id, tool_name, action_name, arguments,
+                     message_id, user_id, agent_id, status)
                 VALUES
                     (:call_id, CAST(:tool_id AS uuid), :tool_name,
-                     :action_name, CAST(:arguments AS jsonb), 'proposed')
+                     :action_name, CAST(:arguments AS jsonb),
+                     CAST(:message_id AS uuid), :user_id,
+                     CAST(:agent_id AS uuid), 'proposed')
                 ON CONFLICT (call_id) DO NOTHING
                 """
             ),
@@ -47,6 +57,9 @@ class ToolCallAttemptsRepository:
                 "tool_name": tool_name,
                 "action_name": action_name,
                 "arguments": json.dumps(arguments if arguments is not None else {}, cls=PGNativeJSONEncoder),
+                "message_id": message_id,
+                "user_id": user_id,
+                "agent_id": agent_id,
             },
         )
         return result.rowcount > 0
