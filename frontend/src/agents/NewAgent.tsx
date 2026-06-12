@@ -1523,7 +1523,7 @@ function AddPromptModal({
       onClose();
       setNewPromptName('');
       setNewPromptContent('');
-      onSelect?.(newPromptName, newPrompt.id, newPromptContent);
+      onSelect?.(newPromptName, newPrompt.id, 'private');
     } catch (error) {
       console.error('Error adding prompt:', error);
     }
