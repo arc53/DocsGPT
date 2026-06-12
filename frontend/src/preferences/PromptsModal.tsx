@@ -175,6 +175,7 @@ type PromptTextareaProps = {
   value: string;
   onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
   ariaLabel: string;
+  readOnly?: boolean;
 };
 
 function PromptTextarea({
@@ -182,6 +183,7 @@ function PromptTextarea({
   value,
   onChange,
   ariaLabel,
+  readOnly = false,
 }: PromptTextareaProps) {
   const [scrollOffsets, setScrollOffsets] = React.useState({ top: 0, left: 0 });
   const highlightedValue = React.useMemo(
@@ -220,6 +222,7 @@ function PromptTextarea({
         onScroll={handleScroll}
         placeholder=" "
         aria-label={ariaLabel}
+        readOnly={readOnly}
       />
     </>
   );
@@ -298,6 +301,7 @@ function AddPrompt({
   newPromptContent,
   setNewPromptContent,
   disableSave,
+  duplicateSourceName,
 }: {
   setModalState: (state: ActiveState) => void;
   handleAddPrompt?: () => void;
@@ -306,6 +310,7 @@ function AddPrompt({
   newPromptContent: string;
   setNewPromptContent: (content: string) => void;
   disableSave: boolean;
+  duplicateSourceName?: string | null;
 }) {
   const { t } = useTranslation();
   const systemVariableOptions = React.useMemo(
@@ -317,10 +322,16 @@ function AddPrompt({
   return (
     <div>
       <p className="mb-1 text-xl font-semibold text-[#2B2B2B] dark:text-white">
-        {t('modals.prompts.addPrompt')}
+        {duplicateSourceName
+          ? t('modals.prompts.duplicatePrompt')
+          : t('modals.prompts.addPrompt')}
       </p>
       <p className="dark:text-muted-foreground mb-6 text-sm text-[#6B6B6B]">
-        {t('modals.prompts.addDescription')}
+        {duplicateSourceName
+          ? t('modals.prompts.duplicateDescription', {
+              name: duplicateSourceName,
+            })
+          : t('modals.prompts.addDescription')}
       </p>
       <div>
         <Input
@@ -433,6 +444,7 @@ function EditPrompt({
   setEditPromptContent,
   currentPromptEdit,
   disableSave,
+  onDuplicate,
 }: {
   setModalState: (state: ActiveState) => void;
   handleEditPrompt?: (id: string, type: string) => void;
@@ -442,6 +454,7 @@ function EditPrompt({
   setEditPromptContent: (content: string) => void;
   currentPromptEdit: { name: string; id: string; type: string };
   disableSave: boolean;
+  onDuplicate?: () => void;
 }) {
   const { t } = useTranslation();
   const systemVariableOptions = React.useMemo(
@@ -449,14 +462,23 @@ function EditPrompt({
     [t],
   );
   const toolVariables = useToolVariables();
+  const isReadOnly = currentPromptEdit.type === 'public';
 
   return (
     <div>
       <p className="mb-1 text-xl font-semibold text-[#2B2B2B] dark:text-white">
-        {t('modals.prompts.editPrompt')}
+        {t(
+          isReadOnly
+            ? 'modals.prompts.viewPrompt'
+            : 'modals.prompts.editPrompt',
+        )}
       </p>
       <p className="dark:text-muted-foreground mb-6 text-sm text-[#6B6B6B]">
-        {t('modals.prompts.editDescription')}
+        {t(
+          isReadOnly
+            ? 'modals.prompts.viewDescription'
+            : 'modals.prompts.editDescription',
+        )}
       </p>
       <div>
         <Input
@@ -466,6 +488,7 @@ function EditPrompt({
           value={editPromptName}
           onChange={(e) => setEditPromptName(e.target.value)}
           labelBgClassName="bg-card"
+          disabled={isReadOnly}
         />
 
         <div className="relative w-full">
@@ -474,6 +497,7 @@ function EditPrompt({
             value={editPromptContent}
             onChange={(e) => setEditPromptContent(e.target.value)}
             ariaLabel={t('prompts.textAriaLabel')}
+            readOnly={isReadOnly}
           />
           <label
             htmlFor="edit-prompt-content"
@@ -486,36 +510,38 @@ function EditPrompt({
         </div>
       </div>
 
-      <div className="mt-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center sm:gap-4">
-        <p className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
-          <span className="font-bold">
-            {t('modals.prompts.variablesLabel')}
-          </span>
-          <span className="text-muted-foreground text-xs font-medium">
-            {t('modals.prompts.variablesDescription')}
-          </span>
-        </p>
+      {!isReadOnly && (
+        <div className="mt-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center sm:gap-4">
+          <p className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
+            <span className="font-bold">
+              {t('modals.prompts.variablesLabel')}
+            </span>
+            <span className="text-muted-foreground text-xs font-medium">
+              {t('modals.prompts.variablesDescription')}
+            </span>
+          </p>
 
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <VariableMenu
-            options={systemVariableOptions}
-            label={t('modals.prompts.systemVariablesDropdownLabel')}
-            textareaId="edit-prompt-content"
-            content={editPromptContent}
-            setContent={setEditPromptContent}
-            triggerClassName="w-[140px] sm:w-[185px]"
-          />
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <VariableMenu
+              options={systemVariableOptions}
+              label={t('modals.prompts.systemVariablesDropdownLabel')}
+              textareaId="edit-prompt-content"
+              content={editPromptContent}
+              setContent={setEditPromptContent}
+              triggerClassName="w-[140px] sm:w-[185px]"
+            />
 
-          <VariableMenu
-            options={toolVariables}
-            label="Tool Variables"
-            textareaId="edit-prompt-content"
-            content={editPromptContent}
-            setContent={setEditPromptContent}
-            triggerClassName="w-[140px] sm:w-[171px]"
-          />
+            <VariableMenu
+              options={toolVariables}
+              label="Tool Variables"
+              textareaId="edit-prompt-content"
+              content={editPromptContent}
+              setContent={setEditPromptContent}
+              triggerClassName="w-[140px] sm:w-[171px]"
+            />
+          </div>
         </div>
-      </div>
+      )}
       <div className="mt-4 flex flex-col justify-between gap-4 text-sm sm:flex-row sm:gap-0">
         <div className="flex justify-start">
           <Link
@@ -546,26 +572,37 @@ function EditPrompt({
             {t('modals.prompts.cancel')}
           </Button>
 
-          <Button
-            type="button"
-            onClick={() => {
-              handleEditPrompt &&
-                handleEditPrompt(currentPromptEdit.id, currentPromptEdit.type);
-            }}
-            className="h-auto rounded-3xl px-6 py-2 text-sm font-medium text-white"
-            disabled={
-              currentPromptEdit.type === 'public' ||
-              disableSave ||
-              !editPromptName
-            }
-            title={
-              disableSave && editPromptName
-                ? t('modals.prompts.nameExists')
-                : ''
-            }
-          >
-            {t('modals.prompts.save')}
-          </Button>
+          {isReadOnly ? (
+            onDuplicate && (
+              <Button
+                type="button"
+                onClick={onDuplicate}
+                className="h-auto rounded-3xl px-6 py-2 text-sm font-medium text-white"
+              >
+                {t('modals.prompts.duplicate')}
+              </Button>
+            )
+          ) : (
+            <Button
+              type="button"
+              onClick={() => {
+                handleEditPrompt &&
+                  handleEditPrompt(
+                    currentPromptEdit.id,
+                    currentPromptEdit.type,
+                  );
+              }}
+              className="h-auto rounded-3xl px-6 py-2 text-sm font-medium text-white"
+              disabled={disableSave || !editPromptName}
+              title={
+                disableSave && editPromptName
+                  ? t('modals.prompts.nameExists')
+                  : ''
+              }
+            >
+              {t('modals.prompts.save')}
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -588,6 +625,8 @@ export default function PromptsModal({
   currentPromptEdit,
   handleAddPrompt,
   handleEditPrompt,
+  onDuplicate,
+  duplicateSourceName,
 }: {
   existingPrompts: { name: string; id: string; type: string }[];
   modalState: ActiveState;
@@ -609,53 +648,30 @@ export default function PromptsModal({
   };
   handleAddPrompt?: () => void;
   handleEditPrompt?: (id: string, type: string) => void;
+  onDuplicate?: () => void;
+  duplicateSourceName?: string | null;
 }) {
-  const [disableSave, setDisableSave] = React.useState(true);
-  const handlePromptNameChange = (edit: boolean, newName: string) => {
-    if (edit) {
-      const nameExists = existingPrompts.find(
+  const disableSave = React.useMemo(() => {
+    if (type === 'EDIT') {
+      const nameExists = existingPrompts.some(
         (prompt) =>
-          newName === prompt.name && prompt.id !== currentPromptEdit.id,
+          prompt.name === editPromptName && prompt.id !== currentPromptEdit.id,
       );
-      setDisableSave(
-        !(
-          newName &&
-          !nameExists &&
-          editPromptName &&
-          editPromptContent.trim() !== ''
-        ),
-      );
-      setEditPromptName(newName);
-    } else {
-      const nameExists = existingPrompts.find(
-        (prompt) => newName === prompt.name,
-      );
-      setDisableSave(
-        !(newName && !nameExists && newPromptContent.trim() !== ''),
-      );
-      setNewPromptName(newName);
+      return !editPromptName || nameExists || editPromptContent.trim() === '';
     }
-  };
-
-  const handleContentChange = (edit: boolean, newContent: string) => {
-    if (edit) {
-      const nameValid =
-        editPromptName &&
-        !existingPrompts.find(
-          (prompt) =>
-            editPromptName === prompt.name &&
-            prompt.id !== currentPromptEdit.id,
-        );
-      setDisableSave(!(nameValid && newContent.trim() !== ''));
-      setEditPromptContent(newContent);
-    } else {
-      const nameValid =
-        newPromptName &&
-        !existingPrompts.find((prompt) => newPromptName === prompt.name);
-      setDisableSave(!(nameValid && newContent.trim() !== ''));
-      setNewPromptContent(newContent);
-    }
-  };
+    const nameExists = existingPrompts.some(
+      (prompt) => prompt.name === newPromptName,
+    );
+    return !newPromptName || nameExists || newPromptContent.trim() === '';
+  }, [
+    type,
+    existingPrompts,
+    editPromptName,
+    editPromptContent,
+    currentPromptEdit.id,
+    newPromptName,
+    newPromptContent,
+  ]);
 
   let view;
 
@@ -665,10 +681,11 @@ export default function PromptsModal({
         setModalState={setModalState}
         handleAddPrompt={handleAddPrompt}
         newPromptName={newPromptName}
-        setNewPromptName={handlePromptNameChange.bind(null, false)}
+        setNewPromptName={setNewPromptName}
         newPromptContent={newPromptContent}
-        setNewPromptContent={handleContentChange.bind(null, false)}
+        setNewPromptContent={setNewPromptContent}
         disableSave={disableSave}
+        duplicateSourceName={duplicateSourceName}
       />
     );
   } else if (type === 'EDIT') {
@@ -677,11 +694,12 @@ export default function PromptsModal({
         setModalState={setModalState}
         handleEditPrompt={handleEditPrompt}
         editPromptName={editPromptName}
-        setEditPromptName={handlePromptNameChange.bind(null, true)}
+        setEditPromptName={setEditPromptName}
         editPromptContent={editPromptContent}
-        setEditPromptContent={handleContentChange.bind(null, true)}
+        setEditPromptContent={setEditPromptContent}
         currentPromptEdit={currentPromptEdit}
         disableSave={disableSave}
+        onDuplicate={onDuplicate}
       />
     );
   } else {
@@ -701,7 +719,15 @@ export default function PromptsModal({
         }
       }}
       hideTitle
-      title={type === 'ADD' ? 'Add Prompt' : 'Edit Prompt'}
+      title={
+        type === 'ADD'
+          ? duplicateSourceName
+            ? 'Duplicate Prompt'
+            : 'Add Prompt'
+          : currentPromptEdit.type === 'public'
+            ? 'View Prompt'
+            : 'Edit Prompt'
+      }
       size="lg"
       mobileVariant="sheet"
       className="bg-card dark:bg-card w-[95vw] max-w-[650px] rounded-2xl px-4 py-4 sm:px-6 sm:py-6 md:max-w-[860px] md:px-8 md:py-6 lg:max-w-[980px]"
