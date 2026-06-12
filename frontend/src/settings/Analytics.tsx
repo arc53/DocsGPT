@@ -7,7 +7,7 @@ import {
   Title,
   Tooltip,
 } from 'chart.js';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -162,7 +162,20 @@ export default function Analytics({ agentId }: AnalyticsProps) {
       ? primaryColor
       : SERIES_COLORS[(index - 1) % SERIES_COLORS.length];
 
+  // Monotonic request ids, one per chart: a response only lands if no
+  // newer request for that chart was issued meanwhile, so an
+  // out-of-order response can't leave a chart showing data for a
+  // different filter combination than the controls.
+  const requestIds = useRef({
+    messages: 0,
+    tokens: 0,
+    feedback: 0,
+    tools: 0,
+    schedules: 0,
+  });
+
   const fetchMessagesData = async (agent_id?: string, filter?: string) => {
+    const reqId = ++requestIds.current.messages;
     setLoadingMessages(true);
     try {
       const response = await userService.getMessageAnalytics(
@@ -174,11 +187,12 @@ export default function Analytics({ agentId }: AnalyticsProps) {
       );
       if (!response.ok) throw new Error('Failed to fetch analytics data');
       const data = await response.json();
+      if (reqId !== requestIds.current.messages) return;
       setMessagesData(data.messages);
     } catch (error) {
       console.error(error);
     } finally {
-      setLoadingMessages(false);
+      if (reqId === requestIds.current.messages) setLoadingMessages(false);
     }
   };
 
@@ -188,6 +202,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
     groupBy?: TokenGroupBy,
     sideChannel?: boolean,
   ) => {
+    const reqId = ++requestIds.current.tokens;
     setLoadingTokens(true);
     try {
       const response = await userService.getTokenAnalytics(
@@ -201,16 +216,18 @@ export default function Analytics({ agentId }: AnalyticsProps) {
       );
       if (!response.ok) throw new Error('Failed to fetch analytics data');
       const data = await response.json();
+      if (reqId !== requestIds.current.tokens) return;
       setTokenUsageData(data.token_usage);
       setTokenSeries(data.series);
     } catch (error) {
       console.error(error);
     } finally {
-      setLoadingTokens(false);
+      if (reqId === requestIds.current.tokens) setLoadingTokens(false);
     }
   };
 
   const fetchFeedbackData = async (agent_id?: string, filter?: string) => {
+    const reqId = ++requestIds.current.feedback;
     setLoadingFeedback(true);
     try {
       const response = await userService.getFeedbackAnalytics(
@@ -222,15 +239,17 @@ export default function Analytics({ agentId }: AnalyticsProps) {
       );
       if (!response.ok) throw new Error('Failed to fetch analytics data');
       const data = await response.json();
+      if (reqId !== requestIds.current.feedback) return;
       setFeedbackData(data.feedback);
     } catch (error) {
       console.error(error);
     } finally {
-      setLoadingFeedback(false);
+      if (reqId === requestIds.current.feedback) setLoadingFeedback(false);
     }
   };
 
   const fetchToolsData = async (agent_id?: string, filter?: string) => {
+    const reqId = ++requestIds.current.tools;
     setLoadingTools(true);
     try {
       const response = await userService.getToolAnalytics(
@@ -242,15 +261,17 @@ export default function Analytics({ agentId }: AnalyticsProps) {
       );
       if (!response.ok) throw new Error('Failed to fetch analytics data');
       const data = await response.json();
+      if (reqId !== requestIds.current.tools) return;
       setToolsData(data.tools);
     } catch (error) {
       console.error(error);
     } finally {
-      setLoadingTools(false);
+      if (reqId === requestIds.current.tools) setLoadingTools(false);
     }
   };
 
   const fetchScheduleData = async (agent_id?: string, filter?: string) => {
+    const reqId = ++requestIds.current.schedules;
     setLoadingSchedules(true);
     try {
       const response = await userService.getScheduleAnalytics(
@@ -262,11 +283,12 @@ export default function Analytics({ agentId }: AnalyticsProps) {
       );
       if (!response.ok) throw new Error('Failed to fetch analytics data');
       const data = await response.json();
+      if (reqId !== requestIds.current.schedules) return;
       setScheduleData(data.runs);
     } catch (error) {
       console.error(error);
     } finally {
-      setLoadingSchedules(false);
+      if (reqId === requestIds.current.schedules) setLoadingSchedules(false);
     }
   };
 

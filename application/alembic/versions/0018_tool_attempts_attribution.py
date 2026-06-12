@@ -3,8 +3,13 @@
 Adds ``tool_call_attempts.user_id`` / ``agent_id`` so tool analytics can
 attribute attempts that never get a ``message_id`` — headless runs
 (scheduled / webhook) execute tools before any conversation message
-exists, and parse-failure rows never reach one at all. Existing rows are
-backfilled through their parent message where one exists.
+exists, and parse-failure rows never reach one at all.
+
+DDL only — a whole-table UPDATE here would hold the ALTERs' ACCESS
+EXCLUSIVE lock across the rewrite and stall live tool journaling. The
+backfill lives in ``scripts/db/backfill_tool_attempts_attribution.py``;
+until it runs, the analytics reader falls back to the parent message's
+user for unstamped rows.
 
 Revision ID: 0018_tool_attempts_attribution
 Revises: 0017_oidc_scim
@@ -24,17 +29,6 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.execute("ALTER TABLE tool_call_attempts ADD COLUMN user_id TEXT;")
     op.execute("ALTER TABLE tool_call_attempts ADD COLUMN agent_id UUID;")
-    op.execute(
-        """
-        UPDATE tool_call_attempts t
-           SET user_id = m.user_id,
-               agent_id = c.agent_id
-          FROM conversation_messages m
-          LEFT JOIN conversations c ON c.id = m.conversation_id
-         WHERE t.message_id = m.id
-           AND t.user_id IS NULL;
-        """
-    )
     op.execute(
         "CREATE INDEX tool_call_attempts_user_ts_idx "
         "ON tool_call_attempts (user_id, attempted_at DESC) "

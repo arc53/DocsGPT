@@ -372,9 +372,10 @@ test.describe('tier-a · token usage analytics', () => {
     browser,
   }) => {
     // User A and user B each have data. A queries with B's api_key_id.
-    // `_resolve_api_key(conn, b_agent_id, a_sub)` returns None (agent
-    // lookup is user-scoped), so the filter is dropped and A sees only
-    // A's own data — never any of B's rows.
+    // `_resolve_agent(conn, b_agent_id, a_sub)` finds nothing (agent
+    // lookup is user-scoped), and the endpoint short-circuits to an
+    // explicit EMPTY result — a filter that doesn't resolve must never
+    // silently widen to "all your data" (and certainly not to B's).
     const aSub = 'e2e-analytics-cross-a';
     const bSub = 'e2e-analytics-cross-b';
     const aToken = signJwt(aSub);
@@ -429,14 +430,16 @@ test.describe('tier-a · token usage analytics', () => {
       expect(body.success).toBe(true);
       const buckets = body.token_usage ?? {};
 
-      // A's total is 10 + 5 = 15. B's 777+333=1110 MUST NOT appear.
+      // An unresolved agent filter returns all-zero buckets. B's
+      // 777+333=1110 MUST NOT appear, and neither must A's own 15 —
+      // the filter explicitly matched nothing.
       const total = Object.values(buckets).reduce((a, b) => a + b, 0);
-      expect(total).toBe(15);
+      expect(total).toBe(0);
 
       // Double-check: B's bucket value cannot have bled in under any
-      // key. No single bucket should exceed A's total.
+      // key.
       for (const value of Object.values(buckets)) {
-        expect(value).toBeLessThanOrEqual(15);
+        expect(value).toBe(0);
       }
     } finally {
       await apiA.dispose();

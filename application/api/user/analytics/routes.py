@@ -70,18 +70,21 @@ def _intervals_for_filter(filter_option, start_date, end_date):
 def _resolve_agent(conn, api_key_id, user_id):
     """Owner-scoped agent lookup for analytics filters.
 
-    Returns ``(agent, api_key, agent_pg_id)``. ``api_key`` falls back to
-    ``""`` and ``agent_pg_id`` to ``None``, neither of which matches any
-    row, so filtering by an unknown (or another user's) agent returns
-    nothing rather than everything. Accepts UUID or legacy Mongo
-    ObjectId ids.
+    Returns ``(agent, api_key, agent_pg_id)``. ``agent`` is ``None`` when
+    the id doesn't resolve to one of the caller's agents — callers must
+    short-circuit with an empty result, not fall back to sentinel filter
+    values. ``api_key`` is ``None`` (never ``""``) for key-less agents:
+    draft agents store ``key = ''``, and an ``''`` filter would match the
+    ``''`` that writers like ``stack_logs`` stamp on every key-less
+    request — leaking rows across users. NULL matches nothing. Accepts
+    UUID or legacy Mongo ObjectId ids.
     """
     agent = (
         AgentsRepository(conn).get_any(api_key_id, user_id)
         if api_key_id
         else None
     )
-    api_key = (agent or {}).get("key") or ""
+    api_key = (agent or {}).get("key") or None
     agent_pg_id = str(agent["id"]) if agent else None
     return agent, api_key, agent_pg_id
 
@@ -121,9 +124,24 @@ class GetMessageAnalytics(Resource):
 
         try:
             with db_readonly() as conn:
-                _agent, api_key, agent_pg_id = _resolve_agent(
+                agent, api_key, agent_pg_id = _resolve_agent(
                     conn, api_key_id, user
                 )
+                if api_key_id and agent is None:
+                    # Unknown / not-owned agent: empty result, not a
+                    # sentinel filter (see _resolve_agent).
+                    intervals = _intervals_for_filter(
+                        filter_option, start_date, end_date
+                    )
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": True,
+                                "messages": {i: 0 for i in intervals},
+                            }
+                        ),
+                        200,
+                    )
 
                 # Count messages per bucket, filtered by the conversation's
                 # owner (user_id) and optionally the agent. The ``user_id``
@@ -214,7 +232,17 @@ class GetTokenAnalytics(Resource):
         api_key_id = data.get("api_key_id")
         filter_option = data.get("filter_option", "last_30_days")
         group_by = data.get("group_by") or "none"
-        include_side_channel = bool(data.get("include_side_channel", True))
+        # ``@api.expect`` documents but never validates/coerces — a JSON
+        # string like "false" must not truthy-coerce to True.
+        raw_side = data.get("include_side_channel", True)
+        if isinstance(raw_side, str):
+            include_side_channel = raw_side.strip().lower() not in (
+                "false",
+                "0",
+                "no",
+            )
+        else:
+            include_side_channel = bool(raw_side)
 
         window = _range_for_filter(filter_option)
         if window is None or group_by not in ("none", "model", "agent", "source"):
@@ -225,22 +253,29 @@ class GetTokenAnalytics(Resource):
 
         try:
             with db_readonly() as conn:
-                _agent, api_key, agent_pg_id = _resolve_agent(
+                agent, api_key, agent_pg_id = _resolve_agent(
                     conn, api_key_id, user
                 )
-                # The owner-scoped lookup above gates access, so the
-                # user_id filter is dropped when agent-filtering —
-                # external API-key rows have no user_id.
-                rows = TokenUsageRepository(conn).bucketed_totals(
-                    bucket_unit=bucket_unit,
-                    user_id=None if api_key_id else user,
-                    api_key=api_key if api_key_id else None,
-                    agent_id=agent_pg_id,
-                    timestamp_gte=start_date,
-                    timestamp_lt=end_date,
-                    group_by=None if group_by == "none" else group_by,
-                    include_side_channel=include_side_channel,
-                )
+                if api_key_id and agent is None:
+                    # Unknown / not-owned agent: empty result, not a
+                    # sentinel filter (see _resolve_agent).
+                    rows = []
+                else:
+                    # The owner-scoped lookup gates access, so the
+                    # user_id filter is dropped when agent-filtering
+                    # (shared-agent rows carry the caller's user_id).
+                    # The agent match is key-OR-id: chat stamps the
+                    # key, headless runs stamp agent_id.
+                    rows = TokenUsageRepository(conn).bucketed_totals(
+                        bucket_unit=bucket_unit,
+                        user_id=None if api_key_id else user,
+                        api_key=api_key,
+                        agent_id=agent_pg_id,
+                        timestamp_gte=start_date,
+                        timestamp_lt=end_date,
+                        group_by=None if group_by == "none" else group_by,
+                        include_side_channel=include_side_channel,
+                    )
 
             intervals = _intervals_for_filter(filter_option, start_date, end_date)
             daily_token_usage = {interval: 0 for interval in intervals}
@@ -324,9 +359,25 @@ class GetFeedbackAnalytics(Resource):
 
         try:
             with db_readonly() as conn:
-                _agent, api_key, agent_pg_id = _resolve_agent(
+                agent, api_key, agent_pg_id = _resolve_agent(
                     conn, api_key_id, user
                 )
+                if api_key_id and agent is None:
+                    intervals = _intervals_for_filter(
+                        filter_option, start_date, end_date
+                    )
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": True,
+                                "feedback": {
+                                    i: {"positive": 0, "negative": 0}
+                                    for i in intervals
+                                },
+                            }
+                        ),
+                        200,
+                    )
 
                 # Feedback lives inside the ``conversation_messages.feedback``
                 # JSONB as ``{"text": "like"|"dislike", "timestamp": "..."}``.
@@ -421,21 +472,23 @@ class GetToolAnalytics(Resource):
 
         try:
             with db_readonly() as conn:
-                _agent, api_key, agent_pg_id = _resolve_agent(
+                agent, api_key, agent_pg_id = _resolve_agent(
                     conn, api_key_id, user
                 )
+                if api_key_id and agent is None:
+                    return make_response(
+                        jsonify({"success": True, "tools": []}), 200
+                    )
 
-                # Attribution: ``t.user_id`` is stamped at propose time
-                # (0018); rows from before the migration fall back to the
-                # parent message's user. Headless runs (scheduled / webhook)
-                # have no message, so the message join is LEFT.
+                # Exclude non-terminal rows: a stuck ``proposed`` attempt
+                # (stream died, approval never granted) would otherwise
+                # render as a phantom success (successful = calls - failures).
                 clauses = [
-                    "COALESCE(t.user_id, m.user_id) = :user_id",
+                    "t.status <> 'proposed'",
                     "t.attempted_at >= :start",
                     "t.attempted_at <= :end",
                 ]
                 params: dict = {
-                    "user_id": user,
                     "start": start_date,
                     "end": end_date,
                 }
@@ -444,10 +497,12 @@ class GetToolAnalytics(Resource):
                     "LEFT JOIN conversations c ON c.id = m.conversation_id "
                 )
                 if api_key_id:
-                    # Match by direct agent stamp (headless), by the
-                    # conversation's api_key (external chat), or by the
-                    # conversation's agent_id (owner chats / rows from
-                    # before 0018 stamped attempts directly).
+                    # Match by direct agent stamp (headless), the
+                    # conversation's api_key (external chat), or the
+                    # conversation's agent_id (owner chats / pre-0018
+                    # rows). The owner-scoped lookup gates access, so
+                    # no user clause — the owner also sees shared-agent
+                    # traffic logged under callers' user_ids.
                     clauses.append(
                         "(t.agent_id = CAST(:agent_pg_id AS uuid)"
                         " OR c.api_key = :api_key"
@@ -455,6 +510,16 @@ class GetToolAnalytics(Resource):
                     )
                     params["agent_pg_id"] = agent_pg_id
                     params["api_key"] = api_key
+                else:
+                    # ``t.user_id`` is stamped at propose time (0018);
+                    # pre-migration rows fall back to the parent
+                    # message's user (LEFT join — headless runs have no
+                    # message). OR rather than COALESCE keeps the first
+                    # arm index-sargable.
+                    clauses.append(
+                        "(t.user_id = :user_id OR m.user_id = :user_id)"
+                    )
+                    params["user_id"] = user
                 where = " AND ".join(clauses)
                 sql = (
                     "SELECT t.tool_name, "
@@ -519,9 +584,29 @@ class GetScheduleAnalytics(Resource):
 
         try:
             with db_readonly() as conn:
-                _agent, _api_key, agent_pg_id = _resolve_agent(
+                agent, _api_key, agent_pg_id = _resolve_agent(
                     conn, api_key_id, user
                 )
+                if api_key_id and agent is None:
+                    intervals = _intervals_for_filter(
+                        filter_option, start_date, end_date
+                    )
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": True,
+                                "runs": {
+                                    i: {
+                                        "completed": 0,
+                                        "failed": 0,
+                                        "skipped": 0,
+                                    }
+                                    for i in intervals
+                                },
+                            }
+                        ),
+                        200,
+                    )
 
                 # A run's effective time is when it finished (fell back to
                 # started/scheduled for runs that never got that far).
@@ -538,8 +623,6 @@ class GetScheduleAnalytics(Resource):
                     "fmt": pg_fmt,
                 }
                 if api_key_id:
-                    # Filtering by an agent that doesn't exist (or isn't
-                    # the caller's) must return nothing, not everything.
                     clauses.append("r.agent_id = CAST(:agent_id AS uuid)")
                     params["agent_id"] = agent_pg_id
                 where = " AND ".join(clauses)
@@ -622,9 +705,14 @@ class GetUserLogs(Resource):
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
         data = request.get_json() or {}
-        page = int(data.get("page", 1))
+        try:
+            page = max(1, int(data.get("page") or 1))
+            page_size = max(1, min(100, int(data.get("page_size") or 10)))
+        except (TypeError, ValueError):
+            return make_response(
+                jsonify({"success": False, "message": "Invalid option"}), 400
+            )
         api_key_id = data.get("api_key_id")
-        page_size = int(data.get("page_size", 10))
         level = data.get("level")
         event_type = data.get("event_type")
         search = data.get("search")
@@ -645,6 +733,21 @@ class GetUserLogs(Resource):
                 agent, api_key, agent_pg_id = _resolve_agent(
                     conn, api_key_id, user
                 )
+                if api_key_id and agent is None:
+                    # Unknown / not-owned agent: empty page, not a
+                    # sentinel filter (see _resolve_agent).
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": True,
+                                "logs": [],
+                                "page": page,
+                                "page_size": page_size,
+                                "has_more": False,
+                            }
+                        ),
+                        200,
+                    )
                 params: dict = {
                     "user_id": user,
                     "limit": page_size + 1,
@@ -653,34 +756,22 @@ class GetUserLogs(Resource):
 
                 # ``schedule`` / ``webhook`` errors are first-class events in
                 # their own branches; keep them out of ``system`` so a failed
-                # run doesn't appear twice.
-                chat_where = ["l.user_id = :user_id"]
-                webhook_where = [
-                    "s.user_id = :user_id",
-                    "COALESCE(s.endpoint, '') = 'webhook'",
-                ]
-                system_where = [
-                    "s.user_id = :user_id",
-                    "s.level = 'error'",
-                    "COALESCE(s.endpoint, '') NOT IN ('webhook', 'schedule')",
-                ]
-                # Terminal statuses only (worker writes ``success`` /
-                # ``failed`` / ``timeout`` / ``skipped``; ``completed`` kept
-                # defensively). Pending/running runs aren't log entries yet.
-                schedule_where = [
-                    "r.user_id = :user_id",
-                    "r.status IN ('success', 'completed', 'failed', 'timeout', 'skipped')",
-                ]
-                workflow_where = ["wr.user_id = :user_id"]
+                # run doesn't appear twice. A failed webhook activity writes
+                # both an error row and an info row for the same activity_id
+                # (logging.py:_consume_and_log); NOT-EXISTS drops the info twin.
+                webhook_dedupe = (
+                    "NOT (s.level = 'info' AND EXISTS ("
+                    "SELECT 1 FROM stack_logs e "
+                    "WHERE e.activity_id = s.activity_id "
+                    "AND e.level = 'error'))"
+                )
                 if api_key_id:
-                    # Filter each source by the selected agent. An unknown
-                    # agent (or one without a key) must match nothing. The
-                    # agent lookup above is already owner-scoped, so the
-                    # chat/webhook/system branches match on the agent key
-                    # alone — shared agents log external callers under the
-                    # caller's user_id, and the owner should still see that
-                    # traffic on the agent's own logs page (legacy
-                    # ``find_by_api_key`` behavior).
+                    # The owner-scoped lookup gates access, so the
+                    # chat/webhook/system branches match on the agent
+                    # key/id alone — the owner also sees shared-agent
+                    # traffic logged under callers' user_ids. The
+                    # agent_id arm covers key-less (draft) agents,
+                    # whose owner chats log a null api_key.
                     params["api_key"] = api_key
                     params["agent_pg_id"] = agent_pg_id
                     params["agent_workflow_id"] = (
@@ -688,77 +779,135 @@ class GetUserLogs(Resource):
                         if agent and agent.get("workflow_id")
                         else None
                     )
-                    chat_where = ["l.data->>'api_key' = :api_key"]
+                    chat_where = [
+                        "(l.data->>'api_key' = :api_key"
+                        " OR l.data->>'agent_id' = :agent_pg_id)"
+                    ]
                     webhook_where = [
                         "COALESCE(s.endpoint, '') = 'webhook'",
                         "s.api_key = :api_key",
+                        webhook_dedupe,
                     ]
                     system_where = [
                         "s.level = 'error'",
                         "COALESCE(s.endpoint, '') NOT IN ('webhook', 'schedule')",
                         "s.api_key = :api_key",
                     ]
-                    schedule_where.append(
-                        "r.agent_id = CAST(:agent_pg_id AS uuid)"
-                    )
-                    workflow_where.append(
-                        "wr.workflow_id = CAST(:agent_workflow_id AS uuid)"
-                    )
+                    schedule_where = [
+                        "r.user_id = :user_id",
+                        "r.status IN ('success', 'completed', 'failed', 'timeout', 'skipped')",
+                        "r.agent_id = CAST(:agent_pg_id AS uuid)",
+                    ]
+                    workflow_where = [
+                        "wr.user_id = :user_id",
+                        "wr.workflow_id = CAST(:agent_workflow_id AS uuid)",
+                    ]
+                else:
+                    chat_where = ["l.user_id = :user_id"]
+                    webhook_where = [
+                        "s.user_id = :user_id",
+                        "COALESCE(s.endpoint, '') = 'webhook'",
+                        webhook_dedupe,
+                    ]
+                    system_where = [
+                        "s.user_id = :user_id",
+                        "s.level = 'error'",
+                        "COALESCE(s.endpoint, '') NOT IN ('webhook', 'schedule')",
+                    ]
+                    # Terminal statuses only (worker writes ``success`` /
+                    # ``failed`` / ``timeout`` / ``skipped``; ``completed``
+                    # kept defensively). Pending/running runs aren't log
+                    # entries yet.
+                    schedule_where = [
+                        "r.user_id = :user_id",
+                        "r.status IN ('success', 'completed', 'failed', 'timeout', 'skipped')",
+                    ]
+                    workflow_where = ["wr.user_id = :user_id"]
 
-                # One normalized timeline over the three event sources.
+                # One normalized timeline over five event sources.
                 # ``payload`` carries the per-type detail; the outer query
-                # paginates the merged, time-ordered result.
-                sql = f"""
-                    SELECT * FROM (
+                # paginates the merged, time-ordered result. level /
+                # event_type / search are pushed into each branch so a
+                # filtered request only scans the branches it can match.
+                branches = [
+                    {
+                        "name": "chat",
+                        "level": "COALESCE(l.data->>'level', 'info')",
+                        "summary": "l.data->>'question'",
+                        "where": chat_where,
+                        "sql": """
                         SELECT 'chat' AS event_type,
                                CAST(l.id AS text) AS id,
                                l.user_id AS user_id,
                                l.timestamp AS timestamp,
-                               COALESCE(l.data->>'level', 'info') AS level,
+                               {level} AS level,
                                COALESCE(l.data->>'action', 'stream_answer') AS action,
-                               l.data->>'question' AS summary,
+                               {summary} AS summary,
                                l.data AS payload
                         FROM user_logs l
-                        WHERE {' AND '.join(chat_where)}
-                        UNION ALL
-                        SELECT 'system',
-                               CAST(s.id AS text),
-                               s.user_id,
-                               s.timestamp,
-                               COALESCE(s.level, 'error'),
-                               COALESCE(s.endpoint, 'request'),
-                               s.query,
+                        WHERE {where}
+                        """,
+                    },
+                    {
+                        "name": "system",
+                        "level": "'error'",
+                        "summary": "s.query",
+                        "where": system_where,
+                        "sql": """
+                        SELECT 'system' AS event_type,
+                               CAST(s.id AS text) AS id,
+                               s.user_id AS user_id,
+                               s.timestamp AS timestamp,
+                               {level} AS level,
+                               COALESCE(s.endpoint, 'request') AS action,
+                               {summary} AS summary,
                                jsonb_build_object(
                                    'endpoint', s.endpoint,
                                    'stacks', s.stacks
-                               )
+                               ) AS payload
                         FROM stack_logs s
-                        WHERE {' AND '.join(system_where)}
-                        UNION ALL
-                        SELECT 'webhook',
-                               CAST(s.id AS text),
-                               s.user_id,
-                               s.timestamp,
-                               COALESCE(s.level, 'info'),
-                               'webhook_run',
-                               s.query,
+                        WHERE {where}
+                        """,
+                    },
+                    {
+                        "name": "webhook",
+                        "level": "COALESCE(s.level, 'info')",
+                        "summary": "s.query",
+                        "where": webhook_where,
+                        "sql": """
+                        SELECT 'webhook' AS event_type,
+                               CAST(s.id AS text) AS id,
+                               s.user_id AS user_id,
+                               s.timestamp AS timestamp,
+                               {level} AS level,
+                               'webhook_run' AS action,
+                               {summary} AS summary,
                                jsonb_build_object(
                                    'endpoint', s.endpoint,
                                    'stacks', s.stacks
-                               )
+                               ) AS payload
                         FROM stack_logs s
-                        WHERE {' AND '.join(webhook_where)}
-                        UNION ALL
-                        SELECT 'workflow',
-                               CAST(wr.id AS text),
-                               wr.user_id,
-                               COALESCE(wr.ended_at, wr.started_at),
-                               CASE
-                                   WHEN wr.status = 'failed' THEN 'error'
-                                   ELSE 'info'
-                               END,
-                               'workflow_run',
-                               COALESCE(wr.inputs->>'query', w.name, 'Workflow run'),
+                        WHERE {where}
+                        """,
+                    },
+                    {
+                        "name": "workflow",
+                        "level": (
+                            "CASE WHEN wr.status = 'failed' "
+                            "THEN 'error' ELSE 'info' END"
+                        ),
+                        "summary": (
+                            "COALESCE(wr.inputs->>'query', w.name, 'Workflow run')"
+                        ),
+                        "where": workflow_where,
+                        "sql": """
+                        SELECT 'workflow' AS event_type,
+                               CAST(wr.id AS text) AS id,
+                               wr.user_id AS user_id,
+                               COALESCE(wr.ended_at, wr.started_at) AS timestamp,
+                               {level} AS level,
+                               'workflow_run' AS action,
+                               {summary} AS summary,
                                jsonb_build_object(
                                    'status', wr.status,
                                    'workflow_name', w.name,
@@ -766,22 +915,31 @@ class GetUserLogs(Resource):
                                    'steps', wr.steps,
                                    'started_at', wr.started_at,
                                    'finished_at', wr.ended_at
-                               )
+                               ) AS payload
                         FROM workflow_runs wr
                         LEFT JOIN workflows w ON w.id = wr.workflow_id
-                        WHERE {' AND '.join(workflow_where)}
-                        UNION ALL
-                        SELECT 'schedule',
-                               CAST(r.id AS text),
-                               r.user_id,
-                               COALESCE(r.finished_at, r.started_at, r.scheduled_for),
-                               CASE
-                                   WHEN r.status IN ('failed', 'timeout') THEN 'error'
-                                   WHEN r.status = 'skipped' THEN 'warning'
-                                   ELSE 'info'
-                               END,
-                               'scheduled_run',
-                               COALESCE(sc.name, sc.instruction, 'Scheduled run'),
+                        WHERE {where}
+                        """,
+                    },
+                    {
+                        "name": "schedule",
+                        "level": (
+                            "CASE WHEN r.status IN ('failed', 'timeout') "
+                            "THEN 'error' WHEN r.status = 'skipped' "
+                            "THEN 'warning' ELSE 'info' END"
+                        ),
+                        "summary": (
+                            "COALESCE(sc.name, sc.instruction, 'Scheduled run')"
+                        ),
+                        "where": schedule_where,
+                        "sql": """
+                        SELECT 'schedule' AS event_type,
+                               CAST(r.id AS text) AS id,
+                               r.user_id AS user_id,
+                               COALESCE(r.finished_at, r.started_at, r.scheduled_for) AS timestamp,
+                               {level} AS level,
+                               'scheduled_run' AS action,
+                               {summary} AS summary,
                                jsonb_build_object(
                                    'status', r.status,
                                    'trigger_source', r.trigger_source,
@@ -796,30 +954,49 @@ class GetUserLogs(Resource):
                                    'scheduled_for', r.scheduled_for,
                                    'started_at', r.started_at,
                                    'finished_at', r.finished_at
-                               )
+                               ) AS payload
                         FROM schedule_runs r
                         LEFT JOIN schedules sc ON sc.id = r.schedule_id
-                        WHERE {' AND '.join(schedule_where)}
-                    ) ev
-                """
-                outer = []
+                        WHERE {where}
+                        """,
+                    },
+                ]
+
                 if level:
-                    outer.append("ev.level = :level")
                     params["level"] = level
-                if event_type:
-                    outer.append("ev.event_type = :event_type")
-                    params["event_type"] = event_type
                 if search:
-                    outer.append("ev.summary ILIKE :search ESCAPE '\\'")
                     escaped = (
                         search.replace("\\", "\\\\")
                         .replace("%", "\\%")
                         .replace("_", "\\_")
                     )
                     params["search"] = f"%{escaped}%"
-                if outer:
-                    sql += " WHERE " + " AND ".join(outer)
-                sql += " ORDER BY ev.timestamp DESC LIMIT :limit OFFSET :offset"
+
+                branch_sqls = []
+                for branch in branches:
+                    if event_type and branch["name"] != event_type:
+                        continue
+                    where = list(branch["where"])
+                    if level:
+                        where.append(f"{branch['level']} = :level")
+                    if search:
+                        where.append(
+                            f"{branch['summary']} ILIKE :search ESCAPE '\\'"
+                        )
+                    branch_sqls.append(
+                        branch["sql"].format(
+                            level=branch["level"],
+                            summary=branch["summary"],
+                            where=" AND ".join(where),
+                        )
+                    )
+
+                sql = (
+                    "SELECT * FROM ("
+                    + " UNION ALL ".join(branch_sqls)
+                    + ") ev ORDER BY ev.timestamp DESC"
+                    " LIMIT :limit OFFSET :offset"
+                )
 
                 rows = conn.execute(_sql_text(sql), params).fetchall()
 

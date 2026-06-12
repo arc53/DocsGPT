@@ -153,11 +153,18 @@ class ToolCallAttemptsRepository:
         return result_proxy.rowcount > 0
 
     def mark_failed(self, call_id: str, error: str) -> bool:
-        """Flip ``proposed`` → ``failed`` with the exception text."""
+        """Flip ``proposed`` → ``failed`` with the exception text.
+
+        The status guard matters: ``call_id`` is the table-wide PK and
+        LLMs have been observed reusing ids ("call_0"-style). Without it,
+        a duplicate id hitting an error path would flip an already
+        ``executed``/``confirmed`` row — possibly another request's —
+        to ``failed``, and nothing ever repairs that.
+        """
         result = self._conn.execute(
             text(
                 "UPDATE tool_call_attempts SET status = 'failed', error = :error "
-                "WHERE call_id = :call_id"
+                "WHERE call_id = :call_id AND status = 'proposed'"
             ),
             {"call_id": call_id, "error": error},
         )

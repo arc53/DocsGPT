@@ -45,6 +45,11 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   const filterKeyRef = useRef(filterKey);
   filterKeyRef.current = filterKey;
   const isFirstRender = useRef(true);
+  // Set synchronously by the reset effect so the fetch effect — which
+  // runs later in the same commit, still seeing the pre-reset `page` —
+  // skips that cycle instead of fetching a stale page under the new
+  // filters (which could latch hasMore=false and freeze the list).
+  const resetPendingRef = useRef(false);
 
   useEffect(() => {
     const handle = setTimeout(() => setSearch(searchInput.trim()), 400);
@@ -56,6 +61,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       isFirstRender.current = false;
       return;
     }
+    resetPendingRef.current = true;
     setLogsByPage({});
     setPage(1);
     setHasMore(true);
@@ -65,6 +71,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     if (logsByPage[page] && logsByPage[page].length > 0) return;
 
     const issuedKey = filterKey;
+    const issuedPage = page;
     setLoadingLogs(true);
     try {
       const response = await userService.getLogs(
@@ -80,11 +87,11 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       );
       if (!response.ok) throw new Error('Failed to fetch logs');
       const data = await response.json();
-      if (issuedKey !== filterKeyRef.current) return;
+      if (issuedKey !== filterKeyRef.current || resetPendingRef.current) return;
 
       setLogsByPage((prev) => ({
         ...prev,
-        [page]: data.logs,
+        [issuedPage]: data.logs,
       }));
       setHasMore(data.has_more);
     } catch (error) {
@@ -97,6 +104,13 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   // `logsByPage` is a dependency so the fetch re-fires after a filter
   // change clears the cache; the early-return guard keeps it from looping.
   useEffect(() => {
+    if (resetPendingRef.current) {
+      // The reset effect ran in this commit; this closure still sees
+      // pre-reset state. Its queued updates re-run this effect with
+      // the clean values.
+      resetPendingRef.current = false;
+      return;
+    }
     if (hasMore) fetchLogs();
   }, [page, agentId, levelFilter, typeFilter, search, logsByPage]);
 

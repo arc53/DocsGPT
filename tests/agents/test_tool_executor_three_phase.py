@@ -251,6 +251,23 @@ class TestRepository:
         assert row["status"] == "failed"
         assert row["error"] == "kaboom"
 
+    def test_mark_failed_leaves_executed_row_untouched(self, pg_conn):
+        """A late error for a reused ``call_id`` ("call_0"-style) must
+        not flip an already-executed row (see ``mark_failed``)."""
+        from application.storage.db.repositories.tool_call_attempts import (
+            ToolCallAttemptsRepository,
+        )
+
+        repo = ToolCallAttemptsRepository(pg_conn)
+        repo.record_proposed("c-dup", "tool", "act", {})
+        # No message_id ⇒ lands straight in 'confirmed' (still non-proposed).
+        assert repo.mark_executed("c-dup", {"out": "ok"}) is True
+        # Late error path hits the same id — the guard rejects the update.
+        assert repo.mark_failed("c-dup", "boom") is False
+        row = _select_attempt(pg_conn, "c-dup")
+        assert row["status"] == "confirmed"
+        assert row["error"] is None
+
 
 @pytest.mark.unit
 class TestDefaultToolJournaling:
