@@ -28,7 +28,12 @@ export function formatDate(dateString: string): string {
       minute: '2-digit',
     });
   } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
-    const date = new Date(dateString);
+    // `new Date('YYYY-MM-DD')` parses as UTC midnight, so rendering it
+    // in a timezone west of UTC shows the previous day. Construct from
+    // parts so the date is interpreted in local time (matching the
+    // space-separated hourly buckets, which already parse as local).
+    const [year, month, day] = dateString.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',

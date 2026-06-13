@@ -950,7 +950,7 @@ class LLMHandler(ABC):
                         _record_proposed,
                     )
 
-                    _record_proposed(
+                    if _record_proposed(
                         pause_info["call_id"],
                         pause_info["tool_name"],
                         pause_info["action_name"],
@@ -959,11 +959,12 @@ class LLMHandler(ABC):
                         message_id=agent.tool_executor.message_id,
                         user_id=agent.tool_executor.user,
                         agent_id=agent.tool_executor.agent_id,
-                    )
-                    _mark_failed(
-                        pause_info["call_id"],
-                        f"headless: {deny_reason}",
-                    )
+                    ):
+                        _mark_failed(
+                            pause_info["call_id"],
+                            f"headless: {deny_reason}",
+                            user_id=agent.tool_executor.user,
+                        )
                     yield {
                         "type": "tool_call",
                         "data": {

@@ -8,16 +8,14 @@ Tiers
 -----
 1. Parent message (high confidence). Rows with a ``message_id`` copy the
    message's ``user_id`` and the conversation's ``agent_id``.
-2. Schedule-run window (medium confidence). Headless rows never had a
-   message; a run's tool calls always fall inside that run's
-   started/finished window, so copy attribution from ``schedule_runs`` —
-   but only when exactly one run window contains the attempt, to avoid
-   cross-user misattribution on overlapping runs.
 
-Rows matching neither tier (e.g. pre-0018 webhook runs, or attempts
-whose parent message was deleted) are left NULL on purpose: the
-analytics reader treats unattributable rows as invisible rather than
-guessing an owner.
+Message-less rows (headless: scheduled / webhook runs, plus pre-0018
+parse-failure rows) are left NULL on purpose: there is no FK linking an
+attempt to its run, so any inference from a schedule-run *time window*
+would also catch webhook attempts and misattribute them to an unrelated
+tenant whose run happened to span the same instant. The analytics reader
+treats unattributable rows as invisible rather than guessing an owner,
+and new headless rows are stamped at propose time by the executor.
 
 Usage::
 
@@ -58,27 +56,6 @@ _TIER1 = text(
     """
 )
 
-# Tier 2: headless rows via an unambiguous schedule-run time window.
-_TIER2 = text(
-    """
-    UPDATE tool_call_attempts t
-       SET user_id = r.user_id,
-           agent_id = r.agent_id
-      FROM schedule_runs r
-     WHERE t.user_id IS NULL
-       AND t.message_id IS NULL
-       AND r.started_at IS NOT NULL
-       AND r.finished_at IS NOT NULL
-       AND t.attempted_at BETWEEN r.started_at AND r.finished_at
-       AND (
-           SELECT COUNT(*) FROM schedule_runs r2
-            WHERE r2.started_at IS NOT NULL
-              AND r2.finished_at IS NOT NULL
-              AND t.attempted_at BETWEEN r2.started_at AND r2.finished_at
-       ) = 1
-    """
-)
-
 _COUNT_NULL = text(
     "SELECT count(*) FROM tool_call_attempts WHERE user_id IS NULL"
 )
@@ -108,14 +85,13 @@ def main() -> int:
             before = conn.execute(_COUNT_NULL).scalar_one()
 
             t1 = conn.execute(_TIER1).rowcount or 0
-            t2 = conn.execute(_TIER2).rowcount or 0
 
             after = conn.execute(_COUNT_NULL).scalar_one()
 
             print(f"NULL user_id rows before:           {before}")
             print(f"  tier 1 (parent message):          {t1}")
-            print(f"  tier 2 (schedule-run window):     {t2}")
             print(f"NULL user_id rows remaining:        {after}")
+            print("  (message-less headless rows left NULL by design)")
 
             if args.apply:
                 trans.commit()

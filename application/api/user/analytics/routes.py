@@ -143,19 +143,19 @@ class GetMessageAnalytics(Resource):
                         200,
                     )
 
-                # Count messages per bucket, filtered by the conversation's
-                # owner (user_id) and optionally the agent. The ``user_id``
-                # filter is always applied post-cutover to prevent
-                # cross-tenant leakage on admin dashboards. Agent matching
-                # covers both shapes: external traffic stamps ``api_key``,
-                # owner chats stamp ``agent_id``.
+                # Count messages per bucket. When filtering by agent the
+                # owner-scoped lookup above already gates access, so the
+                # user clause is dropped (matching tokens / tools / logs):
+                # a shared agent's conversations carry the caller's
+                # user_id, and the owner should see that traffic on their
+                # own agent's dashboard. Agent matching covers both
+                # shapes: external traffic stamps ``api_key``, owner /
+                # shared chats stamp ``agent_id``.
                 clauses = [
-                    "c.user_id = :user_id",
                     "m.timestamp >= :start",
                     "m.timestamp <= :end",
                 ]
                 params: dict = {
-                    "user_id": user,
                     "start": start_date,
                     "end": end_date,
                     "fmt": pg_fmt,
@@ -167,6 +167,9 @@ class GetMessageAnalytics(Resource):
                     )
                     params["api_key"] = api_key
                     params["agent_pg_id"] = agent_pg_id
+                else:
+                    clauses.append("c.user_id = :user_id")
+                    params["user_id"] = user
                 where = " AND ".join(clauses)
                 sql = (
                     "SELECT to_char(m.timestamp AT TIME ZONE 'UTC', :fmt) AS bucket, "
@@ -385,24 +388,29 @@ class GetFeedbackAnalytics(Resource):
                 # the timestamp from the JSONB and cast it to timestamptz for
                 # the range filter + bucket grouping.
                 clauses = [
-                    "c.user_id = :user_id",
                     "m.feedback IS NOT NULL",
                     "(m.feedback->>'timestamp')::timestamptz >= :start",
                     "(m.feedback->>'timestamp')::timestamptz <= :end",
                 ]
                 params: dict = {
-                    "user_id": user,
                     "start": start_date,
                     "end": end_date,
                     "fmt": pg_fmt,
                 }
                 if api_key_id:
+                    # Owner-gated agent match (see GetMessageAnalytics):
+                    # drop the user clause so shared-agent feedback is
+                    # visible to the owner, consistent with the other
+                    # per-agent charts.
                     clauses.append(
                         "(c.api_key = :api_key"
                         " OR c.agent_id = CAST(:agent_pg_id AS uuid))"
                     )
                     params["api_key"] = api_key
                     params["agent_pg_id"] = agent_pg_id
+                else:
+                    clauses.append("c.user_id = :user_id")
+                    params["user_id"] = user
                 where = " AND ".join(clauses)
                 sql = (
                     "SELECT to_char("
@@ -480,11 +488,15 @@ class GetToolAnalytics(Resource):
                         jsonify({"success": True, "tools": []}), 200
                     )
 
-                # Exclude non-terminal rows: a stuck ``proposed`` attempt
-                # (stream died, approval never granted) would otherwise
-                # render as a phantom success (successful = calls - failures).
+                # Terminal rows only. ``proposed`` (pending) and
+                # ``executed`` (ran, not yet finalized) are non-terminal:
+                # counting them inflates ``calls`` and — since the client
+                # computes successful = calls - failures — renders them as
+                # phantom successes that later flip to failures when the
+                # reconciler escalates a stuck row. ``confirmed`` is the
+                # only success state; ``failed`` the only failure.
                 clauses = [
-                    "t.status <> 'proposed'",
+                    "t.status IN ('confirmed', 'failed')",
                     "t.attempted_at >= :start",
                     "t.attempted_at <= :end",
                 ]
@@ -612,19 +624,24 @@ class GetScheduleAnalytics(Resource):
                 # started/scheduled for runs that never got that far).
                 ts = "COALESCE(r.finished_at, r.started_at, r.scheduled_for)"
                 clauses = [
-                    "r.user_id = :user_id",
                     f"{ts} >= :start",
                     f"{ts} <= :end",
                 ]
                 params: dict = {
-                    "user_id": user,
                     "start": start_date,
                     "end": end_date,
                     "fmt": pg_fmt,
                 }
                 if api_key_id:
+                    # Owner-gated agent match: drop the user clause so a
+                    # shared agent's runs (created by callers under their
+                    # own user_id via the scheduler tool) are visible to
+                    # the owner, consistent with the per-agent timeline.
                     clauses.append("r.agent_id = CAST(:agent_id AS uuid)")
                     params["agent_id"] = agent_pg_id
+                else:
+                    clauses.append("r.user_id = :user_id")
+                    params["user_id"] = user
                 where = " AND ".join(clauses)
                 # The worker writes ``success`` / ``failed`` / ``timeout`` /
                 # ``skipped`` (scheduler_worker.py); ``completed`` is kept in
@@ -793,8 +810,11 @@ class GetUserLogs(Resource):
                         "COALESCE(s.endpoint, '') NOT IN ('webhook', 'schedule')",
                         "s.api_key = :api_key",
                     ]
+                    # Owner-gated agent match: drop the user clause so a
+                    # shared agent's runs (stamped with the caller's
+                    # user_id by the scheduler tool) appear on the owner's
+                    # per-agent timeline, consistent with the chat branch.
                     schedule_where = [
-                        "r.user_id = :user_id",
                         "r.status IN ('success', 'completed', 'failed', 'timeout', 'skipped')",
                         "r.agent_id = CAST(:agent_pg_id AS uuid)",
                     ]
@@ -991,10 +1011,15 @@ class GetUserLogs(Resource):
                         )
                     )
 
+                # ``ev.id`` is a unique per-branch tiebreaker: equal
+                # timestamps (transaction-stable ``now()`` makes ties
+                # routine) would otherwise sort non-deterministically
+                # across page queries, duplicating a row on one page and
+                # dropping its sibling from the next under OFFSET paging.
                 sql = (
                     "SELECT * FROM ("
                     + " UNION ALL ".join(branch_sqls)
-                    + ") ev ORDER BY ev.timestamp DESC"
+                    + ") ev ORDER BY ev.timestamp DESC, ev.id DESC"
                     " LIMIT :limit OFFSET :offset"
                 )
 

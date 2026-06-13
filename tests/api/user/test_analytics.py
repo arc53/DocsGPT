@@ -31,12 +31,13 @@ def _patch_analytics_db(conn):
 
 def _seed_conversation_with_messages(
     pg_conn, user_id, *, count=3, api_key=None, feedback_text=None,
+    agent_id=None,
 ):
     from application.storage.db.repositories.conversations import (
         ConversationsRepository,
     )
     repo = ConversationsRepository(pg_conn)
-    conv = repo.create(user_id, name="t", api_key=api_key)
+    conv = repo.create(user_id, name="t", api_key=api_key, agent_id=agent_id)
     conv_id = str(conv["id"])
     for i in range(count):
         repo.append_message(conv_id, {"prompt": f"p{i}", "response": f"r{i}"})
@@ -1104,3 +1105,83 @@ class TestUnifiedLogsWorkflowBranch:
         assert by_level["error"]["workflow_name"] == "My Flow"
         # Summary falls back to the workflow name when inputs lack a query.
         assert by_level["info"]["question"] == "My Flow"
+
+
+class TestSharedAgentVisibility:
+    """Per-agent dashboards show the agent's full traffic, including
+    conversations a *shared* agent's callers create under their own
+    user_id. Messages / feedback / schedule must agree with the chat
+    timeline, which already exposes that traffic — they used to keep a
+    ``c.user_id``/``r.user_id`` clause that hid it (one screen, two
+    populations)."""
+
+    def _owned_agent(self, pg_conn, owner):
+        from application.storage.db.repositories.agents import AgentsRepository
+
+        return AgentsRepository(pg_conn).create(
+            owner, "shared-agent", "published", key="shared-key",
+        )
+
+    def test_message_analytics_includes_shared_caller(self, app, pg_conn):
+        from application.api.user.analytics.routes import GetMessageAnalytics
+
+        agent = self._owned_agent(pg_conn, "owner-a")
+        # Caller B chats with A's shared agent: conversation.user_id = B,
+        # agent_id = A's agent.
+        _seed_conversation_with_messages(
+            pg_conn, "caller-b", count=3, agent_id=str(agent["id"])
+        )
+        response = _post_resource(
+            app, pg_conn, GetMessageAnalytics, "/api/get_message_analytics",
+            "owner-a", {"api_key_id": str(agent["id"])},
+        )
+        assert response.status_code == 200
+        assert sum(response.json["messages"].values()) == 3
+
+    def test_feedback_analytics_includes_shared_caller(self, app, pg_conn):
+        from application.api.user.analytics.routes import GetFeedbackAnalytics
+
+        agent = self._owned_agent(pg_conn, "owner-a")
+        _seed_conversation_with_messages(
+            pg_conn, "caller-b", count=2, agent_id=str(agent["id"]),
+            feedback_text="like",
+        )
+        response = _post_resource(
+            app, pg_conn, GetFeedbackAnalytics, "/api/get_feedback_analytics",
+            "owner-a", {"api_key_id": str(agent["id"])},
+        )
+        assert response.status_code == 200
+        totals = {"positive": 0, "negative": 0}
+        for bucket in response.json["feedback"].values():
+            totals["positive"] += bucket["positive"]
+            totals["negative"] += bucket["negative"]
+        assert totals == {"positive": 1, "negative": 1}
+
+    def test_schedule_analytics_includes_shared_caller(self, app, pg_conn):
+        helper = TestGetScheduleAnalytics()
+        agent = self._owned_agent(pg_conn, "owner-a")
+        # Run created by caller B against A's agent (scheduler tool stamps
+        # the caller's user_id).
+        helper._seed_run(
+            pg_conn, "caller-b", "success", agent_id=str(agent["id"])
+        )
+        response = helper._post(
+            app, pg_conn, "owner-a", {"api_key_id": str(agent["id"])}
+        )
+        assert response.status_code == 200
+        completed = sum(b["completed"] for b in response.json["runs"].values())
+        assert completed == 1
+
+    def test_schedule_timeline_includes_shared_caller(self, app, pg_conn):
+        helper = TestGetScheduleAnalytics()
+        agent = self._owned_agent(pg_conn, "owner-a")
+        helper._seed_run(
+            pg_conn, "caller-b", "failed", agent_id=str(agent["id"])
+        )
+        response = _post_logs(
+            app, pg_conn, "owner-a",
+            {"api_key_id": str(agent["id"]), "event_type": "schedule"},
+        )
+        assert response.status_code == 200
+        assert len(response.json["logs"]) == 1
+        assert response.json["logs"][0]["level"] == "error"

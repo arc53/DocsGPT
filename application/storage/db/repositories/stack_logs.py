@@ -17,6 +17,32 @@ from application.storage.db.serialization import PGNativeJSONEncoder
 
 from sqlalchemy import Connection, text
 
+_REDACTED = "[REDACTED]"
+
+
+def _is_secret_key(key: str) -> bool:
+    k = key.lower()
+    return k.endswith("api_key") or "secret" in k or "password" in k
+
+
+def _redact_secrets(obj):
+    """Strip provider/agent keys from ``stacks`` before they persist.
+
+    The ``llm`` stack component is built from every public attribute of
+    the LLM instance, which includes ``api_key`` (the deployment provider
+    secret) and ``user_api_key``. The unified-logs endpoint returns
+    ``stacks`` verbatim, so these must never reach the table.
+    """
+    if isinstance(obj, dict):
+        return {
+            k: (_REDACTED if isinstance(k, str) and _is_secret_key(k)
+                else _redact_secrets(v))
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_redact_secrets(v) for v in obj]
+    return obj
+
 
 class StackLogsRepository:
     """Postgres-backed replacement for Mongo ``stack_logs`` collection."""
@@ -54,7 +80,9 @@ class StackLogsRepository:
                 "user_id": user_id,
                 "api_key": api_key,
                 "query": query,
-                "stacks": json.dumps(stacks or [], cls=PGNativeJSONEncoder),
+                "stacks": json.dumps(
+                    _redact_secrets(stacks or []), cls=PGNativeJSONEncoder
+                ),
                 "timestamp": timestamp,
             },
         )
