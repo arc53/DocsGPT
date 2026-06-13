@@ -525,6 +525,11 @@ tool_call_attempts_table = Table(
         ForeignKey("conversation_messages.id", ondelete="SET NULL"),
     ),
     Column("tool_id", UUID(as_uuid=True)),
+    # Direct attribution (0018): headless runs (scheduled / webhook) and
+    # parse-failure rows never get a message_id, so user/agent are stamped
+    # at propose time instead of derived through the parent message.
+    Column("user_id", Text),
+    Column("agent_id", UUID(as_uuid=True)),
     Column("tool_name", Text, nullable=False),
     Column("action_name", Text, nullable=False),
     Column("arguments", JSONB, nullable=False),

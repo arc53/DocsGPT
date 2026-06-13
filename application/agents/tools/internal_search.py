@@ -233,8 +233,10 @@ class InternalSearchTool(Tool):
                 "name": "search",
                 "description": (
                     "Search the user's uploaded documents and knowledge base. "
-                    "Use this to find relevant information before answering questions. "
-                    "You can call this multiple times with different queries."
+                    "Use this before answering questions about their content. "
+                    "Results include each document's source title — cite those "
+                    "titles in your answer. You can call this multiple times "
+                    "with different phrasings to improve coverage."
                 ),
                 "parameters": {
                     "properties": {

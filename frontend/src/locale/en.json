@@ -147,15 +147,74 @@
       "filterPlaceholder": "Filter",
       "none": "None",
       "positiveFeedback": "Positive Feedback",
-      "negativeFeedback": "Negative Feedback"
+      "negativeFeedback": "Negative Feedback",
+      "groupBy": "Group by",
+      "groupOptions": {
+        "total": "Total",
+        "model": "By model",
+        "agent": "By agent",
+        "source": "By source"
+      },
+      "includeSideChannel": "Background tokens",
+      "promptTokens": "Prompt Tokens",
+      "generatedTokens": "Generated Tokens",
+      "scheduledRuns": "Scheduled Runs",
+      "toolUsage": "Tool Usage",
+      "completed": "Completed",
+      "failed": "Failed",
+      "skipped": "Skipped",
+      "successful": "Successful",
+      "stats": {
+        "messages": "Messages",
+        "tokens": "Tokens",
+        "toolCalls": "Tool Calls",
+        "runSuccess": "Run Success",
+        "feedback": "Feedback"
+      }
     },
     "logs": {
       "label": "Logs",
-      "subtitle": "View and monitor API calls and conversation logs",
+      "subtitle": "View and monitor API calls, scheduled runs and errors across your account",
       "filterByChatbot": "Filter by chatbot",
       "selectChatbot": "Select chatbot",
       "none": "None",
-      "tableHeader": "API generated / chatbot conversations"
+      "tableHeader": "API generated / chatbot conversations",
+      "searchPlaceholder": "Search logs...",
+      "noLogs": "No logs found",
+      "levels": {
+        "all": "All levels",
+        "info": "Info",
+        "error": "Error",
+        "warning": "Warning"
+      },
+      "types": {
+        "all": "All events",
+        "chat": "Chat",
+        "schedule": "Scheduled",
+        "webhook": "Webhook",
+        "workflow": "Workflow",
+        "system": "System"
+      },
+      "detail": {
+        "agent": "Agent",
+        "status": "Status",
+        "trigger": "Trigger",
+        "errorType": "Error type",
+        "tokens": "Tokens",
+        "duration": "Duration",
+        "conversation": "Conversation",
+        "endpoint": "Endpoint",
+        "instruction": "Instruction",
+        "response": "Response",
+        "output": "Output",
+        "error": "Error",
+        "toolCalls": "Tool calls",
+        "sources": "Sources",
+        "workflow": "Workflow",
+        "activity": "Activity",
+        "steps": "Steps",
+        "result": "Result"
+      }
     },
     "tools": {
       "label": "Tools",
@@ -574,6 +633,11 @@
       "addDescription": "Add your custom prompt and save it to DocsGPT",
       "editPrompt": "Edit Prompt",
       "editDescription": "Edit your custom prompt and save it to DocsGPT",
+      "viewPrompt": "View Prompt",
+      "viewDescription": "Built-in prompts can't be edited. Duplicate to create your own editable copy.",
+      "duplicate": "Duplicate",
+      "duplicatePrompt": "Duplicate Prompt",
+      "duplicateDescription": "You're editing a copy of \"{{name}}\" — save it as your own prompt",
       "promptName": "Prompt Name",
       "promptText": "Prompt Text",
       "save": "Save",

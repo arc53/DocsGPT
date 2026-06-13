@@ -89,7 +89,11 @@ class NtfyTool(Tool):
         return [
             {
                 "name": "ntfy_send_message",
-                "description": "Send a notification to an ntfy topic",
+                "description": (
+                    "Send a push notification to an ntfy topic on the "
+                    "configured server. Provide the message text; title and "
+                    "priority (1-5) are optional."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {

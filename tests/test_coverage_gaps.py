@@ -611,11 +611,11 @@ class TestNotesToolEdgeCases:
     def test_get_actions_metadata(self, notes_tool):
         meta = notes_tool.get_actions_metadata()
         names = {a["name"] for a in meta}
-        assert "view" in names
-        assert "overwrite" in names
-        assert "str_replace" in names
-        assert "insert" in names
-        assert "delete" in names
+        assert "note_view" in names
+        assert "note_overwrite" in names
+        assert "note_str_replace" in names
+        assert "note_insert" in names
+        assert "note_delete" in names
 
     def test_get_config_requirements(self, notes_tool):
         assert notes_tool.get_config_requirements() == {}

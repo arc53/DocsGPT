@@ -56,7 +56,12 @@ class ReadWebpageTool(Tool):
         return [
             {
                 "name": "read_webpage",
-                "description": "Fetches the HTML content of a given URL and returns it as clean Markdown text. Input must be a valid URL.",
+                "description": (
+                    "Fetch a webpage and return its content as clean Markdown "
+                    "text. Use it whenever the user shares a URL or the answer "
+                    "depends on a specific page. Input must be a fully "
+                    "qualified URL."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {

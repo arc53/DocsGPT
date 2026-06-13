@@ -38,6 +38,8 @@ const endpoints = {
     MESSAGE_ANALYTICS: '/api/get_message_analytics',
     TOKEN_ANALYTICS: '/api/get_token_analytics',
     FEEDBACK_ANALYTICS: '/api/get_feedback_analytics',
+    TOOL_ANALYTICS: '/api/get_tool_analytics',
+    SCHEDULE_ANALYTICS: '/api/get_schedule_analytics',
     LOGS: `/api/get_user_logs`,
     MANAGE_SYNC: '/api/manage_sync',
     SYNC_SOURCE: '/api/sync_source',
