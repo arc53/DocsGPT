@@ -578,6 +578,34 @@
       "cancel": "キャンセル",
       "parse": "解析",
       "import": "インポート ({{count}})"
+    },
+    "importAgent": {
+      "title": "Import agent from YAML",
+      "description": "Upload an agent YAML file. Sources and tools are matched to your account; anything missing can be mapped or created in the next step. The agent is always imported as a draft.",
+      "dropzoneText": "Click to upload or drag and drop a .yaml file",
+      "invalidFileType": "Only .yaml or .yml files are supported",
+      "readError": "Could not read this agent file",
+      "importError": "Import failed",
+      "willCreate": "Creates a new agent.",
+      "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
+      "sources": "Sources",
+      "tools": "Tools",
+      "models": "Models",
+      "sourceMatched": "{{name}} — using your existing source",
+      "sourceMissing": "{{name}} — not found",
+      "leaveUnattached": "Leave unattached",
+      "toolBuiltin": "{{type}} — built-in",
+      "toolReuse": "{{name}} — reusing your existing tool",
+      "toolUnavailable": "{{type}} — not available on this instance, will be skipped",
+      "toolCreate": "{{name}} — will be created",
+      "secretPlaceholder": "{{field}} (leave blank to skip this tool)",
+      "modelCustom": "{{name}} — custom model",
+      "apiKeyPlaceholder": "API key (leave blank to skip this model)",
+      "warningsTitle": "Agent imported as a draft. Some items need your attention:",
+      "cancel": "Cancel",
+      "review": "Review",
+      "import": "Import",
+      "continueToAgent": "Continue to agent"
     }
   },
   "sharedConv": {
@@ -770,7 +798,9 @@
       "backToRoot": "戻る",
       "noSubfolders": "サブフォルダなし",
       "noFolders": "フォルダがありません"
-    }
+    },
+    "importAgent": "Import",
+    "exportAgent": "Export as YAML"
   },
   "components": {
     "fileUpload": {
