@@ -731,6 +731,49 @@ class TestUnifiedLogsBranches:
         assert response.status_code == 200
         assert [log["level"] for log in response.json["logs"]] == ["error"]
 
+    def test_system_stacks_redacted_on_read(self, app, pg_conn):
+        # A row written before write-time redaction existed still holds
+        # the reflected provider secret in ``stacks``. The endpoint must
+        # scrub it on the way out, not hand it back to the client.
+        import json
+
+        from sqlalchemy import text
+
+        pg_conn.execute(
+            text(
+                """
+                INSERT INTO stack_logs
+                    (activity_id, endpoint, level, user_id, stacks)
+                VALUES
+                    ('act-leak', 'stream', 'error', 'u-redact',
+                     CAST(:stacks AS jsonb))
+                """
+            ),
+            {
+                "stacks": json.dumps(
+                    [
+                        {
+                            "component": "llm",
+                            "data": {
+                                "api_key": "sk-deployment-secret",
+                                "user_api_key": "agent-key",
+                                "model": "gpt-x",
+                            },
+                        }
+                    ]
+                )
+            },
+        )
+
+        response = _post_logs(app, pg_conn, "u-redact", {"event_type": "system"})
+        assert response.status_code == 200
+        logs = response.json["logs"]
+        assert len(logs) == 1
+        data = logs[0]["stacks"][0]["data"]
+        assert data["api_key"] == "[REDACTED]"
+        assert data["user_api_key"] == "[REDACTED]"
+        assert data["model"] == "gpt-x"
+
     def test_non_numeric_page_returns_400(self, app, pg_conn):
         response = _post_logs(app, pg_conn, "u", {"page": "abc"})
         assert response.status_code == 400

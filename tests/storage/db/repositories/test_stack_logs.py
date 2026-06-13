@@ -83,3 +83,46 @@ class TestInsert:
         # Non-secret fields (incl. token *counts*) are untouched.
         assert data["model"] == "gpt-x"
         assert data["prompt_tokens"] == 42
+
+    def test_redacts_broadened_secret_keys(self, pg_conn):
+        # Credentials beyond ``*api_key`` — OAuth tokens, bearer/auth
+        # headers, private keys — must also be scrubbed, while token
+        # *count* fields are preserved.
+        repo = _repo(pg_conn)
+        repo.insert(
+            activity_id="act-broad",
+            level="error",
+            stacks=[
+                {
+                    "component": "tool",
+                    "data": {
+                        "access_token": "ya29.secret",
+                        "api_token": "r8_secret",
+                        "token": "hf_secret",
+                        "Authorization": "Bearer xyz",
+                        "private_key": "-----BEGIN-----",
+                        "client_secret": "cs_secret",
+                        "prompt_tokens": 10,
+                        "generated_tokens": 5,
+                        "token_budget": 1000,
+                    },
+                }
+            ],
+        )
+        row = pg_conn.execute(
+            text("SELECT stacks FROM stack_logs WHERE activity_id = 'act-broad'")
+        ).fetchone()
+        data = dict(row._mapping)["stacks"][0]["data"]
+        for key in (
+            "access_token",
+            "api_token",
+            "token",
+            "Authorization",
+            "private_key",
+            "client_secret",
+        ):
+            assert data[key] == "[REDACTED]", key
+        # Token *counts* / budgets are not credentials and must survive.
+        assert data["prompt_tokens"] == 10
+        assert data["generated_tokens"] == 5
+        assert data["token_budget"] == 1000

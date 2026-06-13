@@ -12,6 +12,7 @@ from application.api.user.base import (
     generate_hourly_range,
     generate_minute_range,
 )
+from application.storage.db.redaction import redact_secrets
 from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.token_usage import TokenUsageRepository
 from application.storage.db.session import db_readonly
@@ -1059,7 +1060,10 @@ class GetUserLogs(Resource):
                     item.update(
                         {
                             "endpoint": payload.get("endpoint"),
-                            "stacks": payload.get("stacks"),
+                            # Redact on the way out too: rows written
+                            # before write-time redaction still carry the
+                            # reflected provider/user secrets in ``stacks``.
+                            "stacks": redact_secrets(payload.get("stacks")),
                         }
                     )
                 elif m["event_type"] == "workflow":
