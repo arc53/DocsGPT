@@ -37,6 +37,15 @@ const userService = {
     apiClient.putFormData(endpoints.USER.UPDATE_AGENT(agent_id), data, token),
   deleteAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.delete(endpoints.USER.DELETE_AGENT(id), token),
+  exportAgent: (id: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.EXPORT_AGENT(id), token),
+  planImportAgent: (yaml: string, token: string | null): Promise<Response> =>
+    apiClient.post(endpoints.USER.IMPORT_AGENT_PLAN, { yaml }, token),
+  importAgent: (
+    payload: { yaml: string; resolution?: unknown },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.IMPORT_AGENT, payload, token),
   getPinnedAgents: (token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.PINNED_AGENTS, token),
   togglePinAgent: (id: string, token: string | null): Promise<any> =>

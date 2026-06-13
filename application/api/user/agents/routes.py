@@ -181,6 +181,7 @@ def _format_agent_output(agent: dict, *, pinned: bool = False, include_key_maske
     out = {
         "id": str(agent["id"]),
         "name": agent.get("name", ""),
+        "slug": agent.get("slug", "") or "",
         "description": agent.get("description", "") or "",
         "image": (
             generate_image_url(agent["image"]) if agent.get("image") else ""
@@ -1297,6 +1298,10 @@ class AdoptAgent(Resource):
 
                 now = datetime.datetime.now(datetime.timezone.utc)
                 new_key = str(uuid.uuid4())
+                # Copy content columns only. Identity / idempotency columns
+                # (key, slug, shared_token, incoming_webhook_token) are
+                # deliberately NOT copied — the adopted agent is a fresh copy
+                # and must get its own values (slug stays NULL until exported).
                 create_kwargs: dict = {}
                 for col in (
                     "description", "agent_type", "image", "retriever",

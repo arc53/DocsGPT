@@ -23,6 +23,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     MetaData,
     UniqueConstraint,
@@ -204,6 +205,11 @@ agents_table = Table(
     Column("agent_type", Text),
     Column("status", Text, nullable=False),
     Column("key", CITEXT, unique=True),
+    # Stable per-user human identifier used to match an agent across
+    # YAML export/import (idempotent re-import / GitOps). Uniqueness is
+    # enforced by a partial unique index in migration 0018, not here, so
+    # multiple agents may carry NULL.
+    Column("slug", CITEXT),
     Column("image", Text),
     Column("source_id", UUID(as_uuid=True), ForeignKey("sources.id", ondelete="SET NULL")),
     Column("extra_source_ids", ARRAY(UUID(as_uuid=True)), nullable=False, server_default="{}"),
@@ -229,6 +235,17 @@ agents_table = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("last_used_at", DateTime(timezone=True)),
     Column("legacy_mongo_id", Text),
+)
+
+# Per-user uniqueness of the export/import slug. Mirrors the partial unique
+# index created in migration 0018 so a schema built from this metadata
+# (e.g. create_all) matches an Alembic-built one.
+Index(
+    "ix_agents_user_slug",
+    agents_table.c.user_id,
+    agents_table.c.slug,
+    unique=True,
+    postgresql_where=agents_table.c.slug.isnot(None),
 )
 
 user_custom_models_table = Table(

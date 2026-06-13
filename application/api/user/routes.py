@@ -5,7 +5,13 @@ Main user API routes - registers all namespace modules.
 from flask import Blueprint
 
 from application.api import api
-from .agents import agents_ns, agents_sharing_ns, agents_webhooks_ns, agents_folders_ns
+from .agents import (
+    agents_folders_ns,
+    agents_ns,
+    agents_portability_ns,
+    agents_sharing_ns,
+    agents_webhooks_ns,
+)
 from .analytics import analytics_ns
 from .attachments import attachments_ns
 from .conversations import conversations_ns
@@ -32,11 +38,12 @@ api.add_namespace(conversations_ns)
 # Models
 api.add_namespace(models_ns)
 
-# Agents (main, sharing, webhooks, folders)
+# Agents (main, sharing, webhooks, folders, import/export)
 api.add_namespace(agents_ns)
 api.add_namespace(agents_sharing_ns)
 api.add_namespace(agents_webhooks_ns)
 api.add_namespace(agents_folders_ns)
+api.add_namespace(agents_portability_ns)
 
 # Prompts
 api.add_namespace(prompts_ns)
