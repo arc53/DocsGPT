@@ -22,6 +22,9 @@ class ToolCallAttemptsRepository:
         arguments: Any,
         *,
         tool_id: Optional[str] = None,
+        message_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> bool:
         """Insert a ``proposed`` row before the tool executes.
 
@@ -29,15 +32,22 @@ class ToolCallAttemptsRepository:
         guards against the LLM emitting a duplicate ``call_id``: the
         existing row stays put rather than a re-insert raising
         ``IntegrityError``.
+
+        ``message_id`` / ``user_id`` / ``agent_id`` attribute the attempt
+        from the start — headless runs and parse-failure rows never reach
+        ``mark_executed``, and headless runs have no message at all.
         """
         result = self._conn.execute(
             text(
                 """
                 INSERT INTO tool_call_attempts
-                    (call_id, tool_id, tool_name, action_name, arguments, status)
+                    (call_id, tool_id, tool_name, action_name, arguments,
+                     message_id, user_id, agent_id, status)
                 VALUES
                     (:call_id, CAST(:tool_id AS uuid), :tool_name,
-                     :action_name, CAST(:arguments AS jsonb), 'proposed')
+                     :action_name, CAST(:arguments AS jsonb),
+                     CAST(:message_id AS uuid), :user_id,
+                     CAST(:agent_id AS uuid), 'proposed')
                 ON CONFLICT (call_id) DO NOTHING
                 """
             ),
@@ -47,6 +57,9 @@ class ToolCallAttemptsRepository:
                 "tool_name": tool_name,
                 "action_name": action_name,
                 "arguments": json.dumps(arguments if arguments is not None else {}, cls=PGNativeJSONEncoder),
+                "message_id": message_id,
+                "user_id": user_id,
+                "agent_id": agent_id,
             },
         )
         return result.rowcount > 0
@@ -62,13 +75,22 @@ class ToolCallAttemptsRepository:
         tool_id: Optional[str] = None,
         message_id: Optional[str] = None,
         artifact_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> None:
         """Insert OR upgrade a row to ``executed`` — or ``confirmed`` when
         there is no ``message_id``, as in ``mark_executed``.
 
         Used as a fallback when ``record_proposed`` failed (DB outage)
         and the tool ran anyway — preserves the journal so the
-        reconciler can still see the attempt.
+        reconciler can still see the attempt. ``user_id`` / ``agent_id``
+        attribute the synthesized row so it stays visible to per-user /
+        per-agent analytics.
+
+        The ``ON CONFLICT`` upgrade is guarded to a still-``proposed`` row
+        owned by the same ``user_id``: ``call_id`` is the table-wide PK
+        and LLMs reuse ids, so without it a colliding write could upgrade
+        another request's (possibly another tenant's) row.
         """
         result_payload: dict = {"result": result}
         if artifact_id:
@@ -79,16 +101,18 @@ class ToolCallAttemptsRepository:
                 """
                 INSERT INTO tool_call_attempts
                     (call_id, tool_id, tool_name, action_name, arguments,
-                     result, message_id, status)
+                     result, message_id, user_id, agent_id, status)
                 VALUES
                     (:call_id, CAST(:tool_id AS uuid), :tool_name,
                      :action_name, CAST(:arguments AS jsonb),
                      CAST(:result AS jsonb), CAST(:message_id AS uuid),
-                     :status)
+                     :user_id, CAST(:agent_id AS uuid), :status)
                 ON CONFLICT (call_id) DO UPDATE
                    SET status     = :status,
                        result     = EXCLUDED.result,
                        message_id = COALESCE(EXCLUDED.message_id, tool_call_attempts.message_id)
+                 WHERE tool_call_attempts.status = 'proposed'
+                   AND tool_call_attempts.user_id IS NOT DISTINCT FROM EXCLUDED.user_id
                 """
             ),
             {
@@ -99,6 +123,8 @@ class ToolCallAttemptsRepository:
                 "arguments": json.dumps(arguments if arguments is not None else {}, cls=PGNativeJSONEncoder),
                 "result": json.dumps(result_payload, cls=PGNativeJSONEncoder),
                 "message_id": message_id,
+                "user_id": user_id,
+                "agent_id": agent_id,
                 "status": status,
             },
         )
@@ -110,6 +136,7 @@ class ToolCallAttemptsRepository:
         *,
         message_id: Optional[str] = None,
         artifact_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> bool:
         """Flip ``proposed`` → ``executed``, or straight to ``confirmed``
         when there is no ``message_id`` (a ``save_conversation=False``
@@ -118,6 +145,11 @@ class ToolCallAttemptsRepository:
         ``artifact_id`` (when present) is stored alongside ``result`` in
         the JSONB as audit data — the reconciler reads it for diagnostic
         alerts when escalating stuck rows to ``failed``.
+
+        Guarded to a still-``proposed`` row (and, when ``user_id`` is
+        given, to one owned by that user): ``call_id`` is the table-wide
+        PK and LLMs reuse ids, so an unguarded update could flip another
+        request's already-terminal — or another tenant's — row.
         """
         result_payload: dict = {"result": result}
         if artifact_id:
@@ -135,17 +167,33 @@ class ToolCallAttemptsRepository:
         if message_id is not None:
             sql += ", message_id = CAST(:message_id AS uuid)"
             params["message_id"] = message_id
-        sql += " WHERE call_id = :call_id"
+        sql += " WHERE call_id = :call_id AND status = 'proposed'"
+        if user_id is not None:
+            sql += " AND user_id IS NOT DISTINCT FROM :user_id"
+            params["user_id"] = user_id
         result_proxy = self._conn.execute(text(sql), params)
         return result_proxy.rowcount > 0
 
-    def mark_failed(self, call_id: str, error: str) -> bool:
-        """Flip ``proposed`` → ``failed`` with the exception text."""
-        result = self._conn.execute(
-            text(
-                "UPDATE tool_call_attempts SET status = 'failed', error = :error "
-                "WHERE call_id = :call_id"
-            ),
-            {"call_id": call_id, "error": error},
+    def mark_failed(
+        self, call_id: str, error: str, *, user_id: Optional[str] = None
+    ) -> bool:
+        """Flip ``proposed`` → ``failed`` with the exception text.
+
+        The status guard matters: ``call_id`` is the table-wide PK and
+        LLMs have been observed reusing ids ("call_0"-style). Without it,
+        a duplicate id hitting an error path would flip an already
+        ``executed``/``confirmed`` row — possibly another request's —
+        to ``failed``, and nothing ever repairs that. When ``user_id`` is
+        given the update is additionally scoped to that owner, so a
+        colliding id from another tenant can't fail this row.
+        """
+        sql = (
+            "UPDATE tool_call_attempts SET status = 'failed', error = :error "
+            "WHERE call_id = :call_id AND status = 'proposed'"
         )
+        params: dict[str, Any] = {"call_id": call_id, "error": error}
+        if user_id is not None:
+            sql += " AND user_id IS NOT DISTINCT FROM :user_id"
+            params["user_id"] = user_id
+        result = self._conn.execute(text(sql), params)
         return result.rowcount > 0

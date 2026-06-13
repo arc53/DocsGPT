@@ -40,10 +40,18 @@ def _record_proposed(
     arguments: Any,
     *,
     tool_id: Optional[str] = None,
+    message_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
 ) -> bool:
     """Insert a ``proposed`` row; swallow infra failures so tool calls
-    still run when the journal is unreachable. Returns True iff the row
-    is now journaled (newly created or already present).
+    still run when the journal is unreachable. Returns True iff THIS call
+    created the row.
+
+    A duplicate ``call_id`` (LLMs reuse "call_0"-style ids) hits
+    ``ON CONFLICT DO NOTHING`` and returns False: the existing row may
+    belong to another in-flight request, so callers must not then flip it
+    via ``_mark_failed`` / ``_mark_executed``.
     """
     try:
         with db_session() as conn:
@@ -53,6 +61,13 @@ def _record_proposed(
                 action_name,
                 arguments,
                 tool_id=tool_id if tool_id and looks_like_uuid(tool_id) else None,
+                message_id=message_id,
+                user_id=user_id,
+                agent_id=(
+                    str(agent_id)
+                    if agent_id and looks_like_uuid(str(agent_id))
+                    else None
+                ),
             )
         if not inserted:
             logger.warning(
@@ -60,7 +75,7 @@ def _record_proposed(
                 call_id,
                 extra={"alert": "tool_call_id_collision", "call_id": call_id},
             )
-        return True
+        return inserted
     except Exception:
         logger.exception("tool_call_attempts proposed write failed for %s", call_id)
         return False
@@ -77,11 +92,14 @@ def _mark_executed(
     action_name: Optional[str] = None,
     arguments: Any = None,
     tool_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
 ) -> None:
     """Flip the row to ``executed``. If ``proposed_ok`` is False (the
     proposed write failed earlier), upsert a fresh row in ``executed`` so
     the reconciler can still see the attempt — without this, the side
-    effect would be invisible to the journal.
+    effect would be invisible to the journal. Both paths are scoped to
+    the owning ``user_id`` so a reused ``call_id`` can't cross tenants.
     """
     try:
         with db_session() as conn:
@@ -92,6 +110,7 @@ def _mark_executed(
                     result,
                     message_id=message_id,
                     artifact_id=artifact_id,
+                    user_id=user_id,
                 )
                 if updated:
                     return
@@ -105,15 +124,23 @@ def _mark_executed(
                 tool_id=tool_id if tool_id and looks_like_uuid(tool_id) else None,
                 message_id=message_id,
                 artifact_id=artifact_id,
+                user_id=user_id,
+                agent_id=(
+                    str(agent_id)
+                    if agent_id and looks_like_uuid(str(agent_id))
+                    else None
+                ),
             )
     except Exception:
         logger.exception("tool_call_attempts executed write failed for %s", call_id)
 
 
-def _mark_failed(call_id: str, error: str) -> None:
+def _mark_failed(call_id: str, error: str, *, user_id: Optional[str] = None) -> None:
     try:
         with db_session() as conn:
-            ToolCallAttemptsRepository(conn).mark_failed(call_id, error)
+            ToolCallAttemptsRepository(conn).mark_failed(
+                call_id, error, user_id=user_id
+            )
     except Exception:
         logger.exception("tool_call_attempts failed-write failed for %s", call_id)
 
@@ -551,6 +578,19 @@ class ToolExecutor:
                 "arguments": call_args or {},
                 "result": f"Failed to parse tool call. Invalid tool name format: {llm_name}",
             }
+            # Journal the malformed call so it still shows up in tool analytics.
+            if _record_proposed(
+                call_id,
+                "unknown",
+                llm_name or "unknown",
+                call_args if isinstance(call_args, dict) else {},
+                message_id=self.message_id,
+                user_id=self.user,
+                agent_id=self.agent_id,
+            ):
+                _mark_failed(
+                    call_id, tool_call_data["result"], user_id=self.user
+                )
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
             return "Failed to parse tool call.", call_id
@@ -574,6 +614,21 @@ class ToolExecutor:
                 "arguments": call_args,
                 "result": f"Tool with ID {tool_id} not found. Available tools: {list(tools_dict.keys())}",
             }
+            # Journal the unresolvable call so it still shows up in tool analytics.
+            if _record_proposed(
+                call_id,
+                "unknown",
+                llm_name or "unknown",
+                call_args if isinstance(call_args, dict) else {},
+                message_id=self.message_id,
+                user_id=self.user,
+                agent_id=self.agent_id,
+            ):
+                _mark_failed(
+                    call_id,
+                    f"Tool with ID {tool_id} not found.",
+                    user_id=self.user,
+                )
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
             return f"Tool with ID {tool_id} not found.", call_id
@@ -599,6 +654,9 @@ class ToolExecutor:
             action_name,
             call_args if isinstance(call_args, dict) else {},
             tool_id=tool_data.get("id"),
+            message_id=self.message_id,
+            user_id=self.user,
+            agent_id=self.agent_id,
         )
         # Defensive guard: a non-dict ``call_args`` (e.g. malformed
         # JSON on the resume path) would crash the param walk below
@@ -612,7 +670,8 @@ class ToolExecutor:
             )
             tool_call_data["result"] = error_message
             tool_call_data["arguments"] = {}
-            _mark_failed(call_id, error_message)
+            if proposed_ok:
+                _mark_failed(call_id, error_message, user_id=self.user)
             yield {
                 "type": "tool_call",
                 "data": {**tool_call_data, "status": "error"},
@@ -675,7 +734,8 @@ class ToolExecutor:
                 },
             )
             tool_call_data["result"] = error_message
-            _mark_failed(call_id, error_message)
+            if proposed_ok:
+                _mark_failed(call_id, error_message, user_id=self.user)
             yield {"type": "tool_call", "data": {**tool_call_data, "status": "error"}}
             self.tool_calls.append(tool_call_data)
             return error_message, call_id
@@ -695,7 +755,8 @@ class ToolExecutor:
                 logger.debug(f"Executing tool: {action_name} with args: {call_args}")
                 result = tool.execute_action(action_name, **parameters)
         except Exception as exc:
-            _mark_failed(call_id, str(exc))
+            if proposed_ok:
+                _mark_failed(call_id, str(exc), user_id=self.user)
             raise
 
         get_artifact_id = (
@@ -739,6 +800,8 @@ class ToolExecutor:
             action_name=action_name,
             arguments=call_args,
             tool_id=tool_data.get("id"),
+            user_id=self.user,
+            agent_id=self.agent_id,
         )
 
         stream_tool_call_data = {
