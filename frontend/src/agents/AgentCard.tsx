@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import userService from '../api/services/userService';
-import ArrowDown from '../assets/arrow-down.svg';
+import Download from '../assets/download.svg';
 import Duplicate from '../assets/duplicate.svg';
 import Edit from '../assets/edit.svg';
 import FolderIcon from '../assets/folder.svg';
@@ -106,7 +106,7 @@ export default function AgentCard({
         iconHeight: 14,
       },
       {
-        icon: ArrowDown,
+        icon: Download,
         label: t('agents.exportAgent'),
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
