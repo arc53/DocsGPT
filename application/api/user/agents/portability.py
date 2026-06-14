@@ -751,6 +751,11 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
     agents_repo = AgentsRepository(conn)
     is_update = bool(target.get("action") == "update" and target.get("agent_id"))
     exclude_id = str(target["agent_id"]) if is_update else None
+    # Slug is recomputed from the file, not preserved from the matched row:
+    # a round-tripped export carries metadata.slug so it stays stable, but an
+    # update-by-id whose file omits the slug and renames the agent rewrites the
+    # slug to follow the new name (excluding the row's own slug from collision
+    # checks). Intended — the slug tracks the file.
     slug = _unique_slug(agents_repo, user, metadata.get("slug") or spec.get("name"), exclude_id=exclude_id)
 
     try:

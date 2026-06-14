@@ -207,7 +207,7 @@ agents_table = Table(
     Column("key", CITEXT, unique=True),
     # Stable per-user human identifier used to match an agent across
     # YAML export/import (idempotent re-import / GitOps). Uniqueness is
-    # enforced by a partial unique index in migration 0018, not here, so
+    # enforced by a partial unique index in migration 0019, not here, so
     # multiple agents may carry NULL.
     Column("slug", CITEXT),
     Column("image", Text),
@@ -238,7 +238,7 @@ agents_table = Table(
 )
 
 # Per-user uniqueness of the export/import slug. Mirrors the partial unique
-# index created in migration 0018 so a schema built from this metadata
+# index created in migration 0019 so a schema built from this metadata
 # (e.g. create_all) matches an Alembic-built one.
 Index(
     "ix_agents_user_slug",
