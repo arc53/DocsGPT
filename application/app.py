@@ -15,7 +15,6 @@ from application.core.logging_config import setup_logging
 setup_logging()
 
 from application.api import api  # noqa: E402
-from application.api.admin import admin_ns  # noqa: E402
 from application.api.answer import answer  # noqa: E402
 from application.api.devices import devices_bp  # noqa: E402
 from application.api.events.routes import events  # noqa: E402
@@ -69,7 +68,6 @@ app.register_blueprint(devices_bp)
 app.register_blueprint(oidc_bp)
 app.register_blueprint(scim_bp)
 app.register_blueprint(v1_bp)
-api.add_namespace(admin_ns)
 app.config.update(
     UPLOAD_FOLDER="inputs",
     CELERY_BROKER_URL=settings.CELERY_BROKER_URL,

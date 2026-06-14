@@ -5,6 +5,7 @@ Main user API routes - registers all namespace modules.
 from flask import Blueprint
 
 from application.api import api
+from application.api.admin import admin_ns
 from .agents import (
     agents_folders_ns,
     agents_ns,
@@ -69,3 +70,9 @@ api.add_namespace(tools_mcp_ns)
 
 # Workflows
 api.add_namespace(workflows_ns)
+
+# Admin (admin-gated management endpoints). Registered here, in this
+# import-cached module, rather than in app.py's body so a re-import of
+# application.app (e.g. coverage tests that reload the module) doesn't re-fire
+# add_namespace against the already-initialized Api.
+api.add_namespace(admin_ns)
