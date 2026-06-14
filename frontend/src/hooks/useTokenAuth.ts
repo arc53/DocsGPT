@@ -4,7 +4,12 @@ import { useDispatch, useSelector } from 'react-redux';
 import { baseURL } from '../api/client';
 import endpoints from '../api/endpoints';
 import userService from '../api/services/userService';
-import { selectToken, setToken } from '../preferences/preferenceSlice';
+import {
+  clearRoles,
+  selectToken,
+  setRoles,
+  setToken,
+} from '../preferences/preferenceSlice';
 import {
   decodeJwtPayload,
   getJwtRemainingMs,
@@ -39,6 +44,37 @@ let oidcRenewalPromise: Promise<void> | null = null;
 // new token is stored. Expiry then falls back to the redirect-login path,
 // which re-authenticates silently while the IdP session is still alive.
 let oidcRenewalUnavailable = false;
+
+// Dedupe the /api/user/me fetch across the two hook instances (AuthWrapper +
+// Navigation) and StrictMode's double-invoked effects, keyed by the active
+// token. A failed fetch clears the cache so a later run can retry; a successful
+// one stays cached for that token.
+let meFetchKey: string | null = null;
+let meFetchPromise: Promise<string[] | null> | null = null;
+
+export function fetchMeRoles(token: string | null): Promise<string[] | null> {
+  const key = token ?? '__anon__';
+  if (meFetchKey === key && meFetchPromise) return meFetchPromise;
+  meFetchKey = key;
+  const promise = (async () => {
+    try {
+      const response = await userService.getMe(token);
+      if (!response.ok) return null;
+      const data = await response.json();
+      return Array.isArray(data.roles) ? data.roles : [];
+    } catch {
+      return null;
+    }
+  })();
+  meFetchPromise = promise;
+  promise.then((roles) => {
+    if (roles === null && meFetchPromise === promise) {
+      meFetchKey = null;
+      meFetchPromise = null;
+    }
+  });
+  return promise;
+}
 
 const claimString = (value: unknown): string | undefined =>
   typeof value === 'string' && value !== '' ? value : undefined;
@@ -288,6 +324,30 @@ export default function useAuth() {
       }
     };
   }, [authType, token, dispatch]);
+
+  useEffect(() => {
+    // Resolve RBAC roles from the server once auth has settled. Roles are
+    // DB-authoritative and mode-agnostic — even no-auth ('local') can be admin
+    // via LOCAL_MODE_ADMIN — so /me is fetched whenever we're authenticated (or
+    // running token-less in no-auth mode), and cleared while a login is pending.
+    if (isAuthLoading) return; // auth still resolving — leave roles unresolved
+    if (oidcFailed || showTokenModal) {
+      dispatch(clearRoles());
+      return;
+    }
+    // Token-required modes that don't have a token yet: stay unresolved.
+    if (authType && authType !== 'none' && !token) {
+      dispatch(clearRoles());
+      return;
+    }
+    let cancelled = false;
+    fetchMeRoles(token).then((roles) => {
+      if (!cancelled) dispatch(setRoles(roles ?? []));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [authType, token, isAuthLoading, oidcFailed, showTokenModal, dispatch]);
 
   const handleTokenSubmit = (enteredToken: string) => {
     localStorage.setItem('authToken', enteredToken);

@@ -15,6 +15,7 @@ from .agents import (
 from .analytics import analytics_ns
 from .attachments import attachments_ns
 from .conversations import conversations_ns
+from .me import me_ns
 from .models import models_ns
 from .prompts import prompts_ns
 from .schedules import schedules_ns
@@ -34,6 +35,9 @@ api.add_namespace(attachments_ns)
 
 # Conversations
 api.add_namespace(conversations_ns)
+
+# Current user (identity + roles)
+api.add_namespace(me_ns)
 
 # Models
 api.add_namespace(models_ns)

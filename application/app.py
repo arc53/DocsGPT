@@ -15,6 +15,7 @@ from application.core.logging_config import setup_logging
 setup_logging()
 
 from application.api import api  # noqa: E402
+from application.api.admin import admin_ns  # noqa: E402
 from application.api.answer import answer  # noqa: E402
 from application.api.devices import devices_bp  # noqa: E402
 from application.api.events.routes import events  # noqa: E402
@@ -22,6 +23,7 @@ from application.api.internal.routes import internal  # noqa: E402
 from application.api.oidc import oidc_bp  # noqa: E402
 from application.api.oidc.denylist import is_denied as oidc_session_denied  # noqa: E402
 from application.api.scim import scim_bp  # noqa: E402
+from application.api.user.authz import resolve_roles  # noqa: E402
 from application.api.user.routes import user  # noqa: E402
 from application.api.connector.routes import connector  # noqa: E402
 from application.api.v1 import v1_bp  # noqa: E402
@@ -67,6 +69,7 @@ app.register_blueprint(devices_bp)
 app.register_blueprint(oidc_bp)
 app.register_blueprint(scim_bp)
 app.register_blueprint(v1_bp)
+api.add_namespace(admin_ns)
 app.config.update(
     UPLOAD_FOLDER="inputs",
     CELERY_BROKER_URL=settings.CELERY_BROKER_URL,
@@ -242,6 +245,11 @@ def authenticate_request():
             401,
         )
     else:
+        # Resolve roles once here, the single authenticated chokepoint. Roles
+        # are computed (never read from the JWT) and overwrite any inbound
+        # 'roles' claim. /v1, device, oidc, and scim paths set decoded_token
+        # above and never reach here, so they stay role-less by design.
+        decoded_token["roles"] = resolve_roles(decoded_token)
         request.decoded_token = decoded_token
 
 

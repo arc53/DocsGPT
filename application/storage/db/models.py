@@ -19,6 +19,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CHAR,
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
@@ -26,6 +27,7 @@ from sqlalchemy import (
     Index,
     Integer,
     MetaData,
+    PrimaryKeyConstraint,
     UniqueConstraint,
     Table,
     Text,
@@ -65,6 +67,23 @@ auth_events_table = Table(
     Column("user_agent", Text),
     Column("metadata", JSONB, nullable=False, server_default="{}"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+# Elevated RBAC role grants. The ``user`` role is implicit (no row); only
+# admin grants are stored. ``(user_id, role, source)`` is the key so manual and
+# oidc_group grants coexist and revoke independently. ``user_id`` is the auth
+# ``sub`` (no FK/trigger, mirroring ``auth_events``). See migration 0020.
+user_roles_table = Table(
+    "user_roles",
+    metadata,
+    Column("user_id", Text, nullable=False),
+    Column("role", Text, nullable=False),
+    Column("source", Text, nullable=False, server_default="manual"),
+    Column("granted_by", Text),
+    Column("granted_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    PrimaryKeyConstraint("user_id", "role", "source"),
+    CheckConstraint("role IN ('admin')", name="user_roles_role_check"),
+    CheckConstraint("source IN ('manual', 'oidc_group')", name="user_roles_source_check"),
 )
 
 prompts_table = Table(

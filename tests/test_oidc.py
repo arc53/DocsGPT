@@ -989,6 +989,105 @@ class TestCallbackGroups:
 
 
 @pytest.mark.unit
+class TestCallbackAdminReconcile:
+    """OIDC group -> admin reconcile fires on the login callback."""
+
+    @pytest.fixture(autouse=True)
+    def _db(self, db_mocks):
+        self.db = db_mocks
+
+    @pytest.fixture
+    def roles_repo(self):
+        repo = Mock()
+        repo.reconcile_oidc_admin.return_value = None
+        with patch("application.api.oidc.routes.UserRolesRepository", return_value=repo):
+            yield repo
+
+    def _callback(self, client, fake_redis, claims, userinfo=None):
+        state, nonce = _seed_state(client, fake_redis)
+        claims = {**claims, "nonce": nonce}
+        with patch("application.api.oidc.provider.requests") as mock_requests:
+            mock_requests.get.side_effect = make_fake_get([PUBLIC_JWK], userinfo=userinfo)
+            mock_requests.post.return_value = _signed_token_response(claims)
+            return client.get(f"/api/auth/oidc/callback?code=abc&state={state}")
+
+    def _role_events(self, name):
+        return [
+            c
+            for c in self.db.events.insert.call_args_list
+            if len(c.args) >= 2 and c.args[1] == name
+        ]
+
+    def test_no_admin_groups_is_a_noop(self, client, fake_redis, roles_repo):
+        # OIDC_ADMIN_GROUPS unset (default) — reconcile must never run.
+        response = self._callback(client, fake_redis, id_token_claims(groups=["devs"]))
+        assert "#oidc_code=" in response.headers["Location"]
+        roles_repo.reconcile_oidc_admin.assert_not_called()
+
+    def test_matching_group_grants_admin_and_audits(
+        self, client, fake_redis, roles_repo, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "OIDC_ADMIN_GROUPS", "admins")
+        roles_repo.reconcile_oidc_admin.return_value = "granted"
+        response = self._callback(client, fake_redis, id_token_claims(groups=["admins", "devs"]))
+        assert "#oidc_code=" in response.headers["Location"]
+        roles_repo.reconcile_oidc_admin.assert_called_once_with("oidc-user-1", True)
+        granted = self._role_events("role_granted")
+        assert len(granted) == 1
+        assert granted[0].kwargs["metadata"] == {"role": "admin", "source": "oidc_group"}
+
+    def test_non_matching_group_revokes_and_audits(
+        self, client, fake_redis, roles_repo, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "OIDC_ADMIN_GROUPS", "admins")
+        roles_repo.reconcile_oidc_admin.return_value = "revoked"
+        response = self._callback(client, fake_redis, id_token_claims(groups=["devs"]))
+        assert "#oidc_code=" in response.headers["Location"]
+        roles_repo.reconcile_oidc_admin.assert_called_once_with("oidc-user-1", False)
+        assert len(self._role_events("role_revoked")) == 1
+
+    def test_absent_groups_claim_does_not_revoke(
+        self, client, fake_redis, roles_repo, monkeypatch
+    ):
+        # Admin mapping configured, but the IdP asserts NO groups claim (absent
+        # from both id_token and userinfo) — must skip, not revoke.
+        monkeypatch.setattr(settings, "OIDC_ADMIN_GROUPS", "admins")
+        response = self._callback(
+            client,
+            fake_redis,
+            id_token_claims(),
+            userinfo={"sub": "oidc-user-1"},
+        )
+        assert "#oidc_code=" in response.headers["Location"]
+        roles_repo.reconcile_oidc_admin.assert_not_called()
+
+    def test_reconcile_failure_does_not_block_login(
+        self, client, fake_redis, roles_repo, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "OIDC_ADMIN_GROUPS", "admins")
+        roles_repo.reconcile_oidc_admin.side_effect = RuntimeError("db down")
+        response = self._callback(client, fake_redis, id_token_claims(groups=["admins"]))
+        assert "#oidc_code=" in response.headers["Location"]
+
+    def test_admin_group_backfilled_from_userinfo_grants(
+        self, client, fake_redis, roles_repo, monkeypatch
+    ):
+        # OIDC_ALLOWED_GROUPS unset but OIDC_ADMIN_GROUPS set, and the id_token
+        # omits groups: userinfo backfill (driven by the admin-groups clause in
+        # _effective_claims) must still surface the group and grant admin.
+        monkeypatch.setattr(settings, "OIDC_ADMIN_GROUPS", "admins")
+        roles_repo.reconcile_oidc_admin.return_value = "granted"
+        response = self._callback(
+            client,
+            fake_redis,
+            id_token_claims(),  # no groups claim in the id_token
+            userinfo={"sub": "oidc-user-1", "groups": ["admins"]},
+        )
+        assert "#oidc_code=" in response.headers["Location"]
+        roles_repo.reconcile_oidc_admin.assert_called_once_with("oidc-user-1", True)
+
+
+@pytest.mark.unit
 class TestCallbackUserGate:
 
     @pytest.fixture(autouse=True)
@@ -1317,6 +1416,57 @@ class TestRefreshRoute:
         assert decoded["oidc_sid"] == "sess-2"
         # IdP kept the old refresh token, so it is re-stored under the new jti.
         assert fake_redis.store[f"oidc:refresh:{decoded['jti']}"] == b"rt-old"
+
+    def test_refresh_reconciles_oidc_admin_with_fresh_claims(
+        self, client, fake_redis, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "OIDC_ADMIN_GROUPS", "admins")
+        token = make_session_token()
+        fake_redis.store["oidc:refresh:jti-1"] = b"rt-old"
+        id_claims = id_token_claims(groups=["admins"])
+        del id_claims["nonce"]
+        roles_repo = Mock()
+        roles_repo.reconcile_oidc_admin.return_value = "granted"
+        with patch(
+            "application.api.oidc.routes.UserRolesRepository", return_value=roles_repo
+        ):
+            response, _ = self._refresh(
+                client,
+                token,
+                idp_response={
+                    "access_token": "at-2",
+                    "refresh_token": "rt-new",
+                    "id_token": sign_id_token(id_claims),
+                },
+            )
+        assert response.status_code == 200
+        roles_repo.reconcile_oidc_admin.assert_called_once_with("oidc-user-1", True)
+
+    def test_refresh_absent_groups_claim_does_not_revoke(
+        self, client, fake_redis, monkeypatch
+    ):
+        # Same absent-claim guard as the login path: a refresh id_token carrying
+        # no groups claim (and no userinfo backfill) must NOT revoke admin.
+        monkeypatch.setattr(settings, "OIDC_ADMIN_GROUPS", "admins")
+        token = make_session_token()
+        fake_redis.store["oidc:refresh:jti-1"] = b"rt-old"
+        id_claims = id_token_claims()  # no groups claim
+        del id_claims["nonce"]
+        roles_repo = Mock()
+        with patch(
+            "application.api.oidc.routes.UserRolesRepository", return_value=roles_repo
+        ):
+            response, _ = self._refresh(
+                client,
+                token,
+                idp_response={
+                    "access_token": "at-2",
+                    "refresh_token": "rt-new",
+                    "id_token": sign_id_token(id_claims),
+                },
+            )
+        assert response.status_code == 200
+        roles_repo.reconcile_oidc_admin.assert_not_called()
 
     def test_refresh_denied_when_groups_no_longer_allowed(
         self, client, fake_redis, monkeypatch

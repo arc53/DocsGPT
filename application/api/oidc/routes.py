@@ -27,6 +27,7 @@ from application.auth import handle_auth
 from application.cache import get_redis_instance
 from application.core.settings import settings
 from application.storage.db.repositories.auth_events import AuthEventsRepository
+from application.storage.db.repositories.user_roles import UserRolesRepository
 from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.session import db_readonly, db_session
 
@@ -95,6 +96,44 @@ def _allowed_groups() -> list[str]:
     return [group.strip() for group in raw.split(",") if group.strip()]
 
 
+def _admin_groups() -> list[str]:
+    """Parse the comma-separated admin-group list; empty/unset disables OIDC admin mapping."""
+    raw = settings.OIDC_ADMIN_GROUPS or ""
+    return [group.strip() for group in raw.split(",") if group.strip()]
+
+
+def _reconcile_oidc_admin(user_id: str, groups: list[str] | None) -> None:
+    """Sync the OIDC-group-derived admin grant for ``user_id``; best-effort, never raises.
+
+    Empty/unset ``OIDC_ADMIN_GROUPS`` disables the mapping entirely (no-op), so a
+    blank env var never mass-revokes. ``groups`` is ``None`` when the IdP asserted
+    no groups claim at all (absent from both id_token and userinfo); admin-ness is
+    then unknowable, so we skip rather than revoke — otherwise a silent refresh
+    whose token omits groups would demote a still-eligible admin. Only the
+    ``oidc_group`` grant source is touched — manual grants are left intact. A
+    change is audited.
+    """
+    admin_groups = _admin_groups()
+    if not admin_groups:
+        return
+    if groups is None:
+        return
+    is_admin = bool(set(groups) & set(admin_groups))
+    try:
+        with db_session() as conn:
+            change = UserRolesRepository(conn).reconcile_oidc_admin(user_id, is_admin)
+            if change:
+                AuthEventsRepository(conn).insert(
+                    user_id,
+                    "role_granted" if change == "granted" else "role_revoked",
+                    ip=request.remote_addr,
+                    user_agent=request.headers.get("User-Agent"),
+                    metadata={"role": "admin", "source": "oidc_group"},
+                )
+    except Exception:
+        logger.error("OIDC admin reconcile failed for %s", user_id, exc_info=True)
+
+
 def _claim_groups(claims: dict) -> list[str]:
     """Read the groups claim as a list of strings; missing means no groups."""
     value = claims.get(settings.OIDC_GROUPS_CLAIM)
@@ -111,7 +150,12 @@ def _effective_claims(tokens: dict, claims: dict) -> dict:
     """Merge userinfo into the id_token claims when required claims are missing."""
     effective = dict(claims)
     need_user_id = not effective.get(settings.OIDC_USER_ID_CLAIM)
-    need_groups = bool(_allowed_groups()) and settings.OIDC_GROUPS_CLAIM not in effective
+    # Fetch userinfo to backfill groups when EITHER a login allowlist or an admin
+    # mapping is configured — many IdPs (Okta/Auth0/Azure AD) only expose groups
+    # via userinfo, and without this the admin reconcile would see no groups.
+    need_groups = (
+        bool(_allowed_groups()) or bool(_admin_groups())
+    ) and settings.OIDC_GROUPS_CLAIM not in effective
     if not (need_user_id or need_groups) or not tokens.get("access_token"):
         return effective
     try:
@@ -300,6 +344,12 @@ def oidc_callback():
     if not _gate_and_audit_login(user_id, effective, groups):
         return _frontend_redirect("oidc_error=account_disabled")
 
+    # Reconcile OIDC-group-derived admin against the fresh group claims so
+    # adds/removals take effect at login (manual grants are untouched). Pass
+    # None when the claim is absent entirely so a missing claim never revokes.
+    groups_present = settings.OIDC_GROUPS_CLAIM in effective
+    _reconcile_oidc_admin(user_id, groups if groups_present else None)
+
     # No need to lift prior revocations here: the denylist keys on a revocation
     # timestamp and the session minted below carries a newer ``iat``, so it is
     # allowed automatically while still-live sessions revoked on other devices
@@ -449,6 +499,11 @@ def oidc_refresh():
         identity["oidc_sub"] = effective.get("sub") or identity["oidc_sub"]
         if effective.get("sid"):
             identity["oidc_sid"] = effective["sid"]
+        # Re-reconcile admin on every renewal carrying fresh group claims, so an
+        # OIDC group add/remove takes effect without waiting for a full re-login.
+        # None when the claim is absent so a missing claim never revokes admin.
+        groups_present = settings.OIDC_GROUPS_CLAIM in effective
+        _reconcile_oidc_admin(identity["sub"], groups if groups_present else None)
 
     # Re-check revocation right before minting, against the (possibly remapped)
     # identity but with the ORIGINAL session's iat: a back-channel logout or

@@ -4,10 +4,12 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Outlet, Route, Routes, useLocation } from 'react-router-dom';
 
+import Admin from './admin';
 import Agents from './agents';
 import SharedAgentGate from './agents/SharedAgentGate';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import ActionButtons from './components/ActionButtons';
+import AdminRoute from './components/AdminRoute';
 import Spinner from './components/Spinner';
 import { Button } from './components/ui/button';
 import UploadToast from './components/UploadToast';
@@ -140,6 +142,14 @@ export default function App() {
           />
           <Route path="/settings/*" element={<Setting />} />
           <Route path="/agents/*" element={<Agents />} />
+          <Route
+            path="/admin/*"
+            element={
+              <AdminRoute>
+                <Admin />
+              </AdminRoute>
+            }
+          />
         </Route>
         <Route path="/share/:identifier" element={<SharedConversation />} />
         <Route path="/shared/agent/:agentId" element={<SharedAgentGate />} />

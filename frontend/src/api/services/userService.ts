@@ -5,6 +5,8 @@ import endpoints from '../endpoints';
 const userService = {
   getConfig: (): Promise<any> =>
     throttledApiClient.get(endpoints.USER.CONFIG, null),
+  getMe: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.ME, token),
   getNewToken: (): Promise<any> =>
     throttledApiClient.get(endpoints.USER.NEW_TOKEN, null),
   // Token deliberately null: a stale Authorization header must not be able

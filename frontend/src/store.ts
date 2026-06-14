@@ -61,6 +61,8 @@ const preloadedState: { preference: Preference } = {
     availableModels: [],
     modelsLoading: false,
     agentFolders: null,
+    roles: [],
+    rolesResolved: false,
   },
 };
 const store = configureStore({
