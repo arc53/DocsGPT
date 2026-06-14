@@ -10,7 +10,6 @@ import {
   Plus,
   Search as SearchIcon,
   Settings as SettingsIcon,
-  ShieldCheck as ShieldCheckIcon,
 } from 'lucide-react';
 
 import { Agent } from './agents/types';
@@ -45,7 +44,6 @@ import {
   selectAgents,
   selectConversationId,
   selectConversations,
-  selectIsAdmin,
   selectModalStateDeleteConv,
   selectSelectedAgent,
   selectSharedAgents,
@@ -74,7 +72,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const queries = useSelector(selectQueries);
   const conversations = useSelector(selectConversations);
   const conversationId = useSelector(selectConversationId);
-  const isAdmin = useSelector(selectIsAdmin);
   const modalStateDeleteConv = useSelector(selectModalStateDeleteConv);
   const agents = useSelector(selectAgents);
   const sharedAgents = useSelector(selectSharedAgents);
@@ -627,31 +624,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </div>
         <div className="text-foreground flex h-auto flex-col justify-end dark:text-white">
           <div className="dark:border-b-sidebar-border flex flex-col gap-2 border-b py-2">
-            {isAdmin && (
-              <NavLink
-                onClick={() => {
-                  if (isMobile || isTablet) {
-                    setNavOpen(false);
-                  }
-                  resetConversation();
-                }}
-                to="/admin"
-                className={({ isActive }) =>
-                  `hover:bg-sidebar-accent mx-4 my-auto flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${
-                    isActive ? 'bg-sidebar-accent' : ''
-                  }`
-                }
-              >
-                <ShieldCheckIcon
-                  className="text-muted-foreground size-5 shrink-0"
-                  strokeWidth={1.75}
-                  aria-label="Admin"
-                />
-                <p className="text-foreground text-sm dark:text-white">
-                  {t('admin.label', 'Admin')}
-                </p>
-              </NavLink>
-            )}
             <NavLink
               onClick={() => {
                 if (isMobile || isTablet) {
