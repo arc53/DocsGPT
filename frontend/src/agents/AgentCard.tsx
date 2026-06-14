@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import userService from '../api/services/userService';
+import Download from '../assets/download.svg';
 import Duplicate from '../assets/duplicate.svg';
 import Edit from '../assets/edit.svg';
 import FolderIcon from '../assets/folder.svg';
@@ -99,6 +100,17 @@ export default function AgentCard({
           } else {
             navigate(`/agents/edit/${agent.id}`);
           }
+        },
+        variant: 'default',
+        iconWidth: 14,
+        iconHeight: 14,
+      },
+      {
+        icon: Download,
+        label: t('agents.exportAgent'),
+        onClick: (e: SyntheticEvent) => {
+          e.stopPropagation();
+          handleExport();
         },
         variant: 'default',
         iconWidth: 14,
@@ -218,6 +230,25 @@ export default function AgentCard({
         (prevAgent) => prevAgent.id !== agent.id,
       );
       updateAgents?.(updatedAgents);
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const response = await userService.exportAgent(agent.id ?? '', token);
+      if (!response.ok) throw new Error('Failed to export agent');
+      const yamlText = await response.text();
+      const blob = new Blob([yamlText], { type: 'application/x-yaml' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${agent.slug || agent.name || 'agent'}.agent.yaml`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error:', error);
     }

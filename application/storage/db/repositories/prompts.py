@@ -161,11 +161,8 @@ class PromptsRepository:
         )
         return result.rowcount > 0
 
-    def find_or_create(self, user_id: str, name: str, content: str) -> dict:
-        """Return existing prompt matching (user, name, content), or create one.
-
-        Used by the seeder to avoid duplicating template prompts.
-        """
+    def find(self, user_id: str, name: str, content: str) -> Optional[dict]:
+        """Return a prompt exactly matching (user, name, content), or None."""
         result = self._conn.execute(
             text(
                 "SELECT * FROM prompts WHERE user_id = :user_id AND name = :name AND content = :content"
@@ -173,6 +170,14 @@ class PromptsRepository:
             {"user_id": user_id, "name": name, "content": content},
         )
         row = result.fetchone()
-        if row is not None:
-            return row_to_dict(row)
+        return row_to_dict(row) if row is not None else None
+
+    def find_or_create(self, user_id: str, name: str, content: str) -> dict:
+        """Return existing prompt matching (user, name, content), or create one.
+
+        Used by the seeder and agent YAML import to avoid duplicating prompts.
+        """
+        existing = self.find(user_id, name, content)
+        if existing is not None:
+            return existing
         return self.create(user_id, name, content)

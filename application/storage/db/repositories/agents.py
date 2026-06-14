@@ -27,7 +27,7 @@ class AgentsRepository:
     @staticmethod
     def _normalize_unique_text(col: str, val):
         """Coerce blank strings for nullable unique text columns to NULL."""
-        if col == "key" and val == "":
+        if col in ("key", "slug") and val == "":
             return None
         return val
 
@@ -35,7 +35,7 @@ class AgentsRepository:
         values: dict = {"user_id": user_id, "name": name, "status": status}
 
         _ALLOWED = {
-            "description", "agent_type", "key", "retriever",
+            "description", "agent_type", "key", "slug", "retriever",
             "default_model_id", "incoming_webhook_token",
             "source_id", "prompt_id", "folder_id", "workflow_id",
             "extra_source_ids", "image",
@@ -142,6 +142,17 @@ class AgentsRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def find_by_slug(self, user_id: str, slug: str) -> Optional[dict]:
+        """Resolve one of a user's agents by its stable export/import slug."""
+        if not slug:
+            return None
+        result = self._conn.execute(
+            text("SELECT * FROM agents WHERE user_id = :user_id AND slug = :slug"),
+            {"user_id": user_id, "slug": slug},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
     def list_for_user(self, user_id: str) -> list[dict]:
         result = self._conn.execute(
             text("SELECT * FROM agents WHERE user_id = :user_id ORDER BY created_at DESC"),
@@ -150,14 +161,20 @@ class AgentsRepository:
         return [row_to_dict(r) for r in result.fetchall()]
 
     def list_templates(self) -> list[dict]:
+        # Template/system agents are seeded under ``__system__`` (migration
+        # 0001 + the seeder); the legacy ``'system'`` value is kept in the
+        # match so older rows still surface.
         result = self._conn.execute(
-            text("SELECT * FROM agents WHERE user_id = 'system' ORDER BY name"),
+            text(
+                "SELECT * FROM agents WHERE user_id IN ('system', '__system__') "
+                "ORDER BY name"
+            ),
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
     def update(self, agent_id: str, user_id: str, fields: dict) -> bool:
         allowed = {
-            "name", "description", "agent_type", "status", "key", "source_id",
+            "name", "description", "agent_type", "status", "key", "slug", "source_id",
             "chunks", "retriever", "prompt_id", "tools", "json_schema", "models",
             "default_model_id", "folder_id", "workflow_id",
             "extra_source_ids", "image",

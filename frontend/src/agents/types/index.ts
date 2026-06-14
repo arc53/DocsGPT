@@ -7,6 +7,7 @@ export type ToolSummary = {
 export type Agent = {
   id?: string;
   name: string;
+  slug?: string;
   description: string;
   image: string;
   source: string;

@@ -12,6 +12,7 @@ import {
   setConversation,
   updateConversationId,
 } from '../conversation/conversationSlice';
+import ImportAgentModal from '../modals/ImportAgentModal';
 import {
   selectAgentFolders,
   selectSelectedAgent,
@@ -284,6 +285,7 @@ function AgentSection({
   const allAgents = useSelector(config.selectData);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [showImportModal, setShowImportModal] = useState(false);
   const newFolderInputRef = useRef<HTMLInputElement>(null);
 
   const currentFolderId =
@@ -540,6 +542,16 @@ function AgentSection({
                 {t('agents.folders.newFolder')}
               </Button>
             ))}
+          {config.id === 'user' && (
+            <Button
+              type="button"
+              variant="outline"
+              className="bg-card shrink-0 rounded-full whitespace-nowrap"
+              onClick={() => setShowImportModal(true)}
+            >
+              {t('agents.importAgent')}
+            </Button>
+          )}
           {config.showNewAgentButton && (
             <Button
               type="button"
@@ -554,6 +566,10 @@ function AgentSection({
           )}
         </div>
       </div>
+      <ImportAgentModal
+        modalState={showImportModal ? 'ACTIVE' : 'INACTIVE'}
+        setModalState={(state) => setShowImportModal(state === 'ACTIVE')}
+      />
 
       <div className="flex flex-col gap-4">
         {isLoading ? (

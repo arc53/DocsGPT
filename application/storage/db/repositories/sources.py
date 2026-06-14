@@ -174,6 +174,25 @@ class SourcesRepository:
                 return row
         return self.get_by_legacy_id(source_id, user_id)
 
+    def find_by_name(self, user_id: str, name: str) -> Optional[dict]:
+        """Return a user's source whose name matches ``name`` (case-insensitive).
+
+        Used by agent YAML import to map a portable source name back to a
+        concrete source id. Returns the oldest match when names collide.
+        """
+        if not name:
+            return None
+        result = self._conn.execute(
+            text(
+                "SELECT * FROM sources "
+                "WHERE user_id = :user_id AND lower(name) = lower(:name) "
+                "ORDER BY created_at LIMIT 1"
+            ),
+            {"user_id": user_id, "name": name},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
     def list_for_user(
         self,
         user_id: str,
