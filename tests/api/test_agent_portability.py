@@ -126,9 +126,41 @@ def test_round_trip_same_user_idempotent(pg_conn):
     assert r1["agent_id"] == r2["agent_id"] == str(agent["id"])  # matched by id
     assert len(PromptsRepository(pg_conn).list_for_user(user)) == 1  # no dup prompt
     imported = AgentsRepository(pg_conn).get(r1["agent_id"], user)
-    assert imported["status"] == "draft"
+    assert imported["status"] == "published"  # update preserves the live status
     assert [str(s) for s in imported["extra_source_ids"]] == [str(src["id"])]
     assert imported["tools"] == [scheduler_id]  # builtin passthrough
+
+
+def test_update_preserves_published_status(pg_conn):
+    """Re-importing over a published agent must not revert it to draft.
+
+    The agent's API key and any active users keep working; only the content
+    is synced. A new agent (no match) still lands as a draft.
+    """
+    user = "u_pub"
+    agent = AgentsRepository(pg_conn).create(
+        user,
+        "Live Bot",
+        "published",
+        description="old",
+        chunks=2,
+        retriever="classic",
+    )
+    slug = ensure_agent_slug(pg_conn, agent, user)
+    doc = {
+        "apiVersion": API_VERSION,
+        "kind": "Agent",
+        "metadata": {"id": str(agent["id"]), "slug": slug},
+        "spec": {"name": "Live Bot", "description": "new", "retriever": "classic"},
+    }
+
+    result = apply_import(pg_conn, user, doc)
+
+    assert result["action"] == "updated"
+    assert result["status"] == "published"  # response reports the preserved status
+    updated = AgentsRepository(pg_conn).get(str(agent["id"]), user)
+    assert updated["status"] == "published"  # stayed live
+    assert updated["description"] == "new"  # content still synced
 
 
 def test_import_by_slug_idempotent(pg_conn):
@@ -154,6 +186,7 @@ def test_import_missing_source_drafts_and_warns(pg_conn):
 
     result = apply_import(pg_conn, user, doc)
 
+    assert result["status"] == "draft"  # new agents are created as drafts
     assert any("Nonexistent KB" in w for w in result["warnings"])
     agent = AgentsRepository(pg_conn).get(result["agent_id"], user)
     assert agent["status"] == "draft"

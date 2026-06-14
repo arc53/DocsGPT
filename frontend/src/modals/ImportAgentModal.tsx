@@ -84,6 +84,7 @@ export default function ImportAgentModal({
   >({});
   const [modelKeys, setModelKeys] = useState<Record<string, string>>({});
   const [warnings, setWarnings] = useState<string[] | null>(null);
+  const [importedStatus, setImportedStatus] = useState<string | null>(null);
   const [goToAgentId, setGoToAgentId] = useState<string | null>(null);
 
   const reset = () => {
@@ -97,6 +98,7 @@ export default function ImportAgentModal({
     setToolSecrets({});
     setModelKeys({});
     setWarnings(null);
+    setImportedStatus(null);
     setGoToAgentId(null);
   };
 
@@ -189,6 +191,7 @@ export default function ImportAgentModal({
         // Keep the modal open so the user sees what was skipped.
         setGoToAgentId(agentId);
         setWarnings(data.warnings as string[]);
+        setImportedStatus((data.status as string) || null);
         setPlan(null);
         return;
       }
@@ -278,7 +281,9 @@ export default function ImportAgentModal({
         {warnings ? (
           <div className="flex flex-col gap-3">
             <p className="text-foreground text-sm">
-              {t('modals.importAgent.warningsTitle')}
+              {importedStatus === 'published'
+                ? t('modals.importAgent.warningsTitlePublished')
+                : t('modals.importAgent.warningsTitle')}
             </p>
             <ul className="list-disc space-y-1 pl-5 text-sm text-yellow-700 dark:text-yellow-400">
               {warnings.map((w, i) => (

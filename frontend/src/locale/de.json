@@ -563,7 +563,7 @@
     },
     "importAgent": {
       "title": "Import agent from YAML",
-      "description": "Upload an agent YAML file. Sources and tools are matched to your account; anything missing can be mapped or created in the next step. The agent is always imported as a draft.",
+      "description": "Upload an agent YAML file. Sources and tools are matched to your account; anything missing can be mapped or created in the next step. A new agent is imported as a draft; re-importing updates the matching agent and keeps its current status.",
       "dropzoneText": "Click to upload or drag and drop a .yaml file",
       "invalidFileType": "Only .yaml or .yml files are supported",
       "readError": "Could not read this agent file",
@@ -584,6 +584,7 @@
       "modelCustom": "{{name}} — custom model",
       "apiKeyPlaceholder": "API key (leave blank to skip this model)",
       "warningsTitle": "Agent imported as a draft. Some items need your attention:",
+      "warningsTitlePublished": "Your live agent was updated. Some items need your attention:",
       "cancel": "Cancel",
       "review": "Review",
       "import": "Import",

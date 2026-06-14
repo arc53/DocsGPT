@@ -366,13 +366,23 @@ def _resolve_target(conn, user: str, metadata: dict) -> dict:
     if agent_id and looks_like_uuid(str(agent_id)):
         row = repo.get(str(agent_id), user)
         if row:
-            return {"action": "update", "agent_id": str(row["id"]), "matched_by": "id"}
+            return {
+                "action": "update",
+                "agent_id": str(row["id"]),
+                "matched_by": "id",
+                "status": row.get("status"),
+            }
     slug = metadata.get("slug")
     if slug:
         row = repo.find_by_slug(user, str(slug))
         if row:
-            return {"action": "update", "agent_id": str(row["id"]), "matched_by": "slug"}
-    return {"action": "create", "agent_id": None, "matched_by": None}
+            return {
+                "action": "update",
+                "agent_id": str(row["id"]),
+                "matched_by": "slug",
+                "status": row.get("status"),
+            }
+    return {"action": "create", "agent_id": None, "matched_by": None, "status": None}
 
 
 def _find_user_tool(user_tools: list, tool_type: str, custom_name: str):
@@ -728,7 +738,12 @@ def _limit(spec: dict, key: str):
 
 
 def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) -> dict:
-    """Create or update an agent from a parsed YAML doc. Always lands as draft.
+    """Create or update an agent from a parsed YAML doc.
+
+    A newly created agent lands as a draft. An update to an existing agent
+    (matched by id or slug) preserves that agent's current status, so
+    re-importing over a published agent keeps it live — its API key and any
+    active users are unaffected — rather than silently reverting it to draft.
 
     On update the YAML is authoritative: fields it specifies are written even
     when that clears a value (e.g. removing all models, dropping ``json_schema``,
@@ -791,18 +806,29 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
     optional = {k: v for k, v in optional.items() if v is not None}
 
     if is_update:
-        fields = {**authoritative, **optional, "name": spec.get("name"), "status": "draft"}
+        # Status is intentionally omitted so an update never changes it:
+        # re-importing over a published agent keeps it live (its API key and
+        # any active users are unaffected) instead of reverting it to draft.
+        # Only a brand-new agent (the create path below) starts as a draft.
+        fields = {**authoritative, **optional, "name": spec.get("name")}
         if agents_repo.update(str(target["agent_id"]), user, fields):
             return {
                 "agent_id": str(target["agent_id"]),
                 "action": "updated",
+                "status": target.get("status") or "draft",
                 "slug": slug,
                 "warnings": warnings,
             }
         # Row vanished between resolve and write — fall through to create.
 
     row = agents_repo.create(user, spec.get("name"), "draft", **{**authoritative, **optional})
-    return {"agent_id": str(row["id"]), "action": "created", "slug": slug, "warnings": warnings}
+    return {
+        "agent_id": str(row["id"]),
+        "action": "created",
+        "status": "draft",
+        "slug": slug,
+        "warnings": warnings,
+    }
 
 
 # ---------------------------------------------------------------------------
