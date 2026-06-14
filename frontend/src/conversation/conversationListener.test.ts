@@ -79,6 +79,8 @@ const makeStore = (
     availableModels: [],
     modelsLoading: false,
     agentFolders: null,
+    roles: [],
+    rolesResolved: false,
   };
   const conversation: ConversationState = {
     queries: [],

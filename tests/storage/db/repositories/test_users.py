@@ -356,3 +356,40 @@ class TestDefaultToolPreferences:
         doc = repo.get("u-tp-mix")
         assert doc["agent_preferences"]["pinned"] == ["agent-99"]
         assert doc["tool_preferences"]["disabled_default_tools"] == ["memory"]
+
+
+class TestListPaginated:
+    """Validates the (filter, offset, limit) contract + the row keys the admin
+    /users endpoint reads, against real SQL output — a mock can't catch a column
+    rename or a swapped positional arg."""
+
+    def test_returns_rows_with_admin_endpoint_keys(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.upsert("page-a")
+        repo.upsert("page-b")
+        total, rows = repo.list_paginated(None, 0, 10)
+        assert total >= 2
+        assert {"page-a", "page-b"} <= {r["user_id"] for r in rows}
+        sample = next(r for r in rows if r["user_id"] == "page-a")
+        # the keys application/api/admin/routes.py projects must be real columns
+        assert "active" in sample and "created_at" in sample
+
+    def test_first_positional_arg_is_the_filter(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.upsert("page-a")
+        repo.upsert("page-b")
+        total, rows = repo.list_paginated("page-a", 0, 10)
+        assert total == 1
+        assert [r["user_id"] for r in rows] == ["page-a"]
+
+    def test_offset_and_limit_paginate_without_overlap(self, pg_conn):
+        repo = _repo(pg_conn)
+        for i in range(3):
+            repo.upsert(f"pg-{i}")
+        total, first = repo.list_paginated(None, 0, 2)
+        assert total >= 3
+        assert len(first) == 2
+        _, second = repo.list_paginated(None, 2, 2)
+        assert {r["user_id"] for r in first}.isdisjoint(
+            {r["user_id"] for r in second}
+        )

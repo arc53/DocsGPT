@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     OIDC_PROVIDER_NAME: Optional[str] = None  # sign-in button label, e.g. "Acme SSO"
     OIDC_ALLOWED_GROUPS: Optional[str] = None  # comma-separated allowlist; unset = any authenticated user
     OIDC_GROUPS_CLAIM: str = "groups"  # ID-token/userinfo claim carrying group membership
+    OIDC_ADMIN_GROUPS: Optional[str] = None  # comma-separated groups granted admin; unset = no OIDC admin mapping
+
+    # RBAC (admin/user roles). Persisted admin grants live in the user_roles
+    # table and apply only under AUTH_TYPE=oidc. LOCAL_MODE_ADMIN is the only
+    # non-DB admin path and applies only to AUTH_TYPE=None (no-auth self-host).
+    # It MUST stay False in any networked deployment.
+    LOCAL_MODE_ADMIN: bool = False
 
     # SCIM 2.0 provisioning (IdP-driven user create/deactivate at /scim/v2)
     SCIM_ENABLED: bool = False

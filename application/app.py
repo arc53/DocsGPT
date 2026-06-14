@@ -22,6 +22,7 @@ from application.api.internal.routes import internal  # noqa: E402
 from application.api.oidc import oidc_bp  # noqa: E402
 from application.api.oidc.denylist import is_denied as oidc_session_denied  # noqa: E402
 from application.api.scim import scim_bp  # noqa: E402
+from application.api.user.authz import resolve_roles  # noqa: E402
 from application.api.user.routes import user  # noqa: E402
 from application.api.connector.routes import connector  # noqa: E402
 from application.api.v1 import v1_bp  # noqa: E402
@@ -242,6 +243,11 @@ def authenticate_request():
             401,
         )
     else:
+        # Resolve roles once here, the single authenticated chokepoint. Roles
+        # are computed (never read from the JWT) and overwrite any inbound
+        # 'roles' claim. /v1, device, oidc, and scim paths set decoded_token
+        # above and never reach here, so they stay role-less by design.
+        decoded_token["roles"] = resolve_roles(decoded_token)
         request.decoded_token = decoded_token
 
 

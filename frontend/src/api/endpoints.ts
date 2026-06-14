@@ -1,6 +1,7 @@
 const endpoints = {
   USER: {
     CONFIG: '/api/config',
+    ME: '/api/user/me',
     NEW_TOKEN: '/api/generate_token',
     OIDC_LOGIN: '/api/auth/oidc/login',
     OIDC_TOKEN: '/api/auth/oidc/token',
