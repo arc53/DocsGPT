@@ -8,6 +8,7 @@ import Spinner from '../components/Spinner';
 import { selectToken } from '../preferences/preferenceSlice';
 import Analytics from '../settings/Analytics';
 import Logs from '../settings/Logs';
+import { formatDateTime } from '../utils/dateTimeUtils';
 import AgentPageHeader from './AgentPageHeader';
 import { Agent } from './types';
 
@@ -59,7 +60,7 @@ export default function AgentLogs() {
               {agent.last_used_at
                 ? t('agents.logs.lastUsedAt') +
                   ' ' +
-                  new Date(agent.last_used_at).toLocaleString()
+                  formatDateTime(agent.last_used_at)
                 : t('agents.logs.noUsageHistory')}
             </p>
           </div>

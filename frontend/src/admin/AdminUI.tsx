@@ -1,4 +1,5 @@
 import Spinner from '../components/Spinner';
+import { formatDateOnly, formatDateTime } from '../utils/dateTimeUtils';
 
 export function Loading() {
   return (
@@ -68,21 +69,11 @@ export function Pill({
 }
 
 export function fmtDate(value?: string | null): string {
-  if (!value) return '—';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+  return value ? formatDateTime(value) : '—';
 }
 
 export function fmtDateShort(value?: string | null): string {
-  if (!value) return '—';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? String(value)
-    : date.toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
+  return value ? formatDateOnly(value) : '—';
 }
 
 export function fmtRelative(value?: string | null): string {
