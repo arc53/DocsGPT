@@ -113,6 +113,19 @@ const endpoints = {
     CHAT_COMPLETIONS: '/v1/chat/completions',
     MODELS: '/v1/models',
   },
+  ADMIN: {
+    OVERVIEW: '/api/admin/overview',
+    USERS: '/api/admin/users',
+    USER: (id: string) => `/api/admin/users/${encodeURIComponent(id)}`,
+    USER_ROLE: (id: string) =>
+      `/api/admin/users/${encodeURIComponent(id)}/role`,
+    USER_REVOKE_SESSIONS: (id: string) =>
+      `/api/admin/users/${encodeURIComponent(id)}/revoke-sessions`,
+    ADMINS: '/api/admin/admins',
+    USAGE: '/api/admin/usage',
+    AUDIT: '/api/admin/audit',
+    DEVICE_AUDIT: '/api/admin/devices/audit',
+  },
   CONVERSATION: {
     ANSWER: '/api/answer',
     ANSWER_STREAMING: '/stream',

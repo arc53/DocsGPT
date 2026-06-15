@@ -15,6 +15,7 @@ from application.core.logging_config import setup_logging
 setup_logging()
 
 from application.api import api  # noqa: E402
+from application.api.admin import admin_ns  # noqa: E402
 from application.api.answer import answer  # noqa: E402
 from application.api.devices import devices_bp  # noqa: E402
 from application.api.events.routes import events  # noqa: E402
@@ -68,6 +69,12 @@ app.register_blueprint(devices_bp)
 app.register_blueprint(oidc_bp)
 app.register_blueprint(scim_bp)
 app.register_blueprint(v1_bp)
+# Register the admin namespace once. The membership guard makes this idempotent
+# if application.app is re-imported (coverage tests reload the module): without
+# it, re-running add_namespace would re-register routes on the already-served
+# first app and raise "add_url_rule can no longer be called".
+if admin_ns not in api.namespaces:
+    api.add_namespace(admin_ns)
 app.config.update(
     UPLOAD_FOLDER="inputs",
     CELERY_BROKER_URL=settings.CELERY_BROKER_URL,
