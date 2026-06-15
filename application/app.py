@@ -15,6 +15,7 @@ from application.core.logging_config import setup_logging
 setup_logging()
 
 from application.api import api  # noqa: E402
+from application.api.admin import routes as _admin_routes  # noqa: E402,F401  (registers admin_ns)
 from application.api.answer import answer  # noqa: E402
 from application.api.devices import devices_bp  # noqa: E402
 from application.api.events.routes import events  # noqa: E402

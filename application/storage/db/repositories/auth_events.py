@@ -57,3 +57,52 @@ class AuthEventsRepository:
             {"user_id": user_id, "limit": limit},
         )
         return [row_to_dict(row) for row in result.fetchall()]
+
+    @staticmethod
+    def _filter_clauses(event, user_id, since) -> tuple[str, dict]:
+        clauses: list[str] = []
+        params: dict = {}
+        if event:
+            clauses.append("event = :event")
+            params["event"] = event
+        if user_id:
+            clauses.append("user_id = :user_id")
+            params["user_id"] = user_id
+        if since is not None:
+            clauses.append("created_at >= :since")
+            params["since"] = since
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        return where, params
+
+    def list_all(
+        self,
+        *,
+        event: Optional[str] = None,
+        user_id: Optional[str] = None,
+        since=None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict]:
+        """Global audit feed (admin), newest first; optional event/user/since filters."""
+        where, params = self._filter_clauses(event, user_id, since)
+        params.update({"limit": int(limit), "offset": int(offset)})
+        result = self._conn.execute(
+            text(
+                f"SELECT * FROM auth_events {where} "
+                "ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
+            ),
+            params,
+        )
+        return [row_to_dict(row) for row in result.fetchall()]
+
+    def count_all(
+        self, *, event: Optional[str] = None, user_id: Optional[str] = None, since=None
+    ) -> int:
+        """Total matching the same filters as :meth:`list_all` (for pagination)."""
+        where, params = self._filter_clauses(event, user_id, since)
+        return int(
+            self._conn.execute(
+                text(f"SELECT count(*) FROM auth_events {where}"), params
+            ).scalar()
+            or 0
+        )

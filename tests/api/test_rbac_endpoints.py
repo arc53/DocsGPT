@@ -64,66 +64,70 @@ class TestAdminUsersEndpoint:
 
     @staticmethod
     def _admin_get(client, repo, query=""):
+        # The list endpoint resolves users (with last_seen) via AdminStatsRepository.
         with patch("application.app.handle_auth", return_value={"sub": "a1"}), patch(
             "application.app.resolve_roles", return_value=["admin", "user"]
         ), patch("application.api.admin.routes.db_readonly", _fake_readonly), patch(
-            "application.api.admin.routes.UsersRepository", return_value=repo
+            "application.api.admin.routes.AdminStatsRepository", return_value=repo
         ):
             return client.get(f"/api/admin/users{query}")
 
     @staticmethod
     def _rows(n):
         return [
-            {"user_id": f"u{i}", "active": True, "created_at": "2026-01-01"}
+            {
+                "user_id": f"u{i}",
+                "active": True,
+                "created_at": "2026-01-01",
+                "last_seen": "2026-02-01",
+            }
             for i in range(n)
         ]
 
     def test_admin_gets_user_list(self, client):
         repo = Mock()
-        repo.list_paginated.return_value = (
-            1,
-            [{"user_id": "u1", "active": True, "created_at": "2026-01-01"}],
-        )
+        repo.list_users.return_value = (1, self._rows(1))
         resp = self._admin_get(client, repo)
         assert resp.status_code == 200
         data = json.loads(resp.data)
         assert data["success"] is True
         assert data["total"] == 1
         assert data["users"][0] == {
-            "user_id": "u1",
+            "user_id": "u0",
             "active": True,
             "created_at": "2026-01-01",
+            "last_seen": "2026-02-01",
         }
-        repo.list_paginated.assert_called_once_with(None, 0, 25)
+        repo.list_users.assert_called_once_with(None, 0, 25)
 
     def test_page_size_clamped_and_offset_computed(self, client):
         repo = Mock()
-        repo.list_paginated.return_value = (0, [])
+        repo.list_users.return_value = (0, [])
         self._admin_get(client, repo, "?page=2&page_size=999")
         # page_size clamps to _MAX_PAGE_SIZE=100, offset=(2-1)*100
-        repo.list_paginated.assert_called_once_with(None, 100, 100)
+        repo.list_users.assert_called_once_with(None, 100, 100)
 
     def test_non_int_params_fall_back_to_defaults(self, client):
         repo = Mock()
-        repo.list_paginated.return_value = (0, [])
+        repo.list_users.return_value = (0, [])
         self._admin_get(client, repo, "?page=abc&page_size=xyz")
-        repo.list_paginated.assert_called_once_with(None, 0, 25)
+        repo.list_users.assert_called_once_with(None, 0, 25)
 
     def test_user_id_filter_passed_first_positional(self, client):
         repo = Mock()
-        repo.list_paginated.return_value = (0, [])
+        repo.list_users.return_value = (0, [])
         self._admin_get(client, repo, "?user_id=foo")
-        repo.list_paginated.assert_called_once_with("foo", 0, 25)
+        repo.list_users.assert_called_once_with("foo", 0, 25)
 
     def test_has_more_true_when_more_pages_remain(self, client):
         repo = Mock()
-        repo.list_paginated.return_value = (5, self._rows(3))
+        repo.list_users.return_value = (5, self._rows(3))
         resp = self._admin_get(client, repo, "?page=1&page_size=3")
         assert json.loads(resp.data)["has_more"] is True
 
     def test_has_more_false_at_last_page(self, client):
         repo = Mock()
-        repo.list_paginated.return_value = (3, self._rows(3))
+        repo.list_users.return_value = (3, self._rows(3))
         resp = self._admin_get(client, repo, "?page=1&page_size=3")
         assert json.loads(resp.data)["has_more"] is False
 
@@ -188,7 +192,7 @@ class TestChokepointOverwritesForgedRoles:
         authz_repo = Mock()
         authz_repo.role_names_for.return_value = ["admin"]
         admin_repo = Mock()
-        admin_repo.list_paginated.return_value = (0, [])
+        admin_repo.list_users.return_value = (0, [])
         with patch(
             "application.app.handle_auth", return_value={"sub": "alice"}
         ), patch("application.app.oidc_session_denied", return_value=False), patch.object(
@@ -196,7 +200,7 @@ class TestChokepointOverwritesForgedRoles:
         ), patch.object(authz, "db_readonly", _fake_readonly), patch.object(
             authz, "UserRolesRepository", return_value=authz_repo
         ), patch("application.api.admin.routes.db_readonly", _fake_readonly), patch(
-            "application.api.admin.routes.UsersRepository", return_value=admin_repo
+            "application.api.admin.routes.AdminStatsRepository", return_value=admin_repo
         ):
             admin_resp = client.get("/api/admin/users")
             me_resp = client.get("/api/user/me")
