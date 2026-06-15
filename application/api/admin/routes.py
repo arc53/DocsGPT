@@ -18,7 +18,6 @@ from datetime import datetime, timedelta, timezone
 from flask import jsonify, make_response, request
 from flask_restx import Namespace, Resource
 
-from application.api import api
 from application.api.oidc import denylist
 from application.api.user.authz import ROLE_ADMIN, admin_required
 from application.storage.db.repositories.admin_stats import AdminStatsRepository
@@ -374,10 +373,3 @@ class AdminDeviceAuditResource(Resource):
             ),
             200,
         )
-
-
-# Register here, in this import-cached module, rather than in app.py's body so a
-# re-import of application.app (coverage tests reload the module) doesn't re-fire
-# add_namespace against the already-initialized Api. app.py imports this module
-# for the side effect.
-api.add_namespace(admin_ns)
