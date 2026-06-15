@@ -53,7 +53,7 @@
 - [x] Postgres migration for user data ( April 2026 )
 - [x] OpenTelemetry observability ( April 2026 )
 - [x] Bring Your Own Model (BYOM) ( April 2026 )
-- [ ] Agent scheduling (RedBeat-backed) ( Q2 2026 )
+- [x] Agent scheduling (RedBeat-backed) ( Q2 2026 )
 
 You can find our full roadmap [here](https://github.com/orgs/arc53/projects/2). Please don't hesitate to contribute or create issues, it helps us improve DocsGPT!
 
