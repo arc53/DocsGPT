@@ -6,6 +6,7 @@ import os
 import re
 import uuid
 from typing import List
+from urllib.parse import urlparse
 
 import tiktoken
 from flask import jsonify, make_response
@@ -197,8 +198,20 @@ def generate_image_url(image_path):
         return image_path
     strategy = getattr(settings, "URL_STRATEGY", "backend")
     if strategy == "s3":
-        bucket_name = getattr(settings, "S3_BUCKET_NAME", "docsgpt-test-bucket")
-        region_name = getattr(settings, "SAGEMAKER_REGION", "eu-central-1")
+        bucket_name = settings.S3_BUCKET_NAME
+        endpoint_url = settings.S3_ENDPOINT_URL
+        if endpoint_url:
+            # S3-compatible service (MinIO, R2, B2, Spaces, ...).
+            base = endpoint_url.rstrip("/")
+            if settings.S3_PATH_STYLE:
+                return f"{base}/{bucket_name}/{image_path}"
+            parsed = urlparse(base)
+            return f"{parsed.scheme}://{bucket_name}.{parsed.netloc}/{image_path}"
+        region_name = (
+            settings.S3_REGION
+            or getattr(settings, "SAGEMAKER_REGION", None)
+            or "eu-central-1"
+        )
         return f"https://{bucket_name}.s3.{region_name}.amazonaws.com/{image_path}"
     else:
         base_url = getattr(settings, "API_URL", "http://localhost:7091")

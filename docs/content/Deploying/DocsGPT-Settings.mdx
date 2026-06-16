@@ -306,28 +306,46 @@ If you have configured `AUTH_TYPE=simple_jwt`, the DocsGPT frontend will prompt 
 
 ## S3 Storage Backend
 
-By default DocsGPT stores files locally. Set `STORAGE_TYPE=s3` to use Amazon S3 instead.
+By default DocsGPT stores files locally. Set `STORAGE_TYPE=s3` to use Amazon S3 — or any S3-compatible service (MinIO, Cloudflare R2, Backblaze B2, DigitalOcean Spaces, …) — instead.
 
 | Setting | Description | Default |
 | --- | --- | --- |
 | `STORAGE_TYPE` | `local` or `s3` | `local` |
-| `S3_BUCKET_NAME` | S3 bucket name | `docsgpt-test-bucket` |
-| `SAGEMAKER_ACCESS_KEY` | AWS access key ID | — |
-| `SAGEMAKER_SECRET_KEY` | AWS secret access key | — |
-| `SAGEMAKER_REGION` | AWS region | — |
-| `URL_STRATEGY` | `backend` (proxy through API) or `s3` (direct S3 URLs) | `backend` |
+| `S3_BUCKET_NAME` | Bucket name | `docsgpt-test-bucket` |
+| `S3_ACCESS_KEY_ID` | Access key ID | — |
+| `S3_SECRET_ACCESS_KEY` | Secret access key | — |
+| `S3_REGION` | Region (use `auto` for Cloudflare R2) | — |
+| `S3_ENDPOINT_URL` | Custom endpoint for S3-compatible services; leave unset for AWS S3 | — |
+| `S3_PATH_STYLE` | Use path-style addressing (required by most non-AWS services) | `false` |
+| `URL_STRATEGY` | `backend` (proxy through API) or `s3` (direct object URLs) | `backend` |
 
-The S3 credentials use `SAGEMAKER_*` variable names because they are shared with the SageMaker integration.
+### AWS S3
 
 ```env
 STORAGE_TYPE=s3
 S3_BUCKET_NAME=your-bucket-name
-SAGEMAKER_ACCESS_KEY=your-aws-access-key-id
-SAGEMAKER_SECRET_KEY=your-aws-secret-access-key
-SAGEMAKER_REGION=us-east-1
+S3_ACCESS_KEY_ID=your-access-key-id
+S3_SECRET_ACCESS_KEY=your-secret-access-key
+S3_REGION=us-east-1
 ```
 
-Your IAM user needs these permissions on the bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`, `s3:HeadObject`.
+### S3-compatible services (MinIO, Cloudflare R2, …)
+
+Set `S3_ENDPOINT_URL` and usually `S3_PATH_STYLE=true`:
+
+```env
+STORAGE_TYPE=s3
+S3_BUCKET_NAME=your-bucket-name
+S3_ACCESS_KEY_ID=your-access-key-id
+S3_SECRET_ACCESS_KEY=your-secret-access-key
+S3_REGION=auto
+S3_ENDPOINT_URL=https://<account>.r2.cloudflarestorage.com
+S3_PATH_STYLE=true
+```
+
+Your credentials need these permissions on the bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`, `s3:HeadObject`.
+
+> **Deprecated:** earlier versions reused the `SAGEMAKER_ACCESS_KEY`, `SAGEMAKER_SECRET_KEY`, and `SAGEMAKER_REGION` variables for S3 credentials. These are still honored as a fallback (with a deprecation warning) but you should migrate to the `S3_*` variables above.
 
 ## User-Data Storage (Postgres)
 

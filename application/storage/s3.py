@@ -1,19 +1,55 @@
 """S3 storage implementation."""
 
 import io
+import logging
 import os
 import posixpath
-from typing import BinaryIO, Callable, List
+from typing import BinaryIO, Callable, List, Optional, Tuple
 
 import boto3
 from application.core.settings import settings
 
 from application.storage.base import BaseStorage
+from botocore.config import Config
 from botocore.exceptions import ClientError
+
+logger = logging.getLogger(__name__)
 
 
 class S3Storage(BaseStorage):
-    """AWS S3 storage implementation."""
+    """S3-compatible object storage (AWS S3, MinIO, Cloudflare R2, etc.)."""
+
+    @staticmethod
+    def _resolve_credentials() -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        """Resolve S3 credentials, falling back to deprecated SAGEMAKER_* vars.
+
+        Returns:
+            Tuple of (access_key_id, secret_access_key, region).
+        """
+        access_key = settings.S3_ACCESS_KEY_ID
+        secret_key = settings.S3_SECRET_ACCESS_KEY
+        region = settings.S3_REGION
+
+        legacy_access = getattr(settings, "SAGEMAKER_ACCESS_KEY", None)
+        legacy_secret = getattr(settings, "SAGEMAKER_SECRET_KEY", None)
+        legacy_region = getattr(settings, "SAGEMAKER_REGION", None)
+
+        used_legacy = (
+            (not access_key and legacy_access)
+            or (not secret_key and legacy_secret)
+            or (not region and legacy_region)
+        )
+        if used_legacy:
+            logger.warning(
+                "Using SAGEMAKER_* credentials for S3 storage is deprecated; "
+                "set S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, and S3_REGION instead."
+            )
+
+        return (
+            access_key or legacy_access,
+            secret_key or legacy_secret,
+            region or legacy_region,
+        )
 
     @staticmethod
     def _validate_path(path: str) -> str:
@@ -36,22 +72,24 @@ class S3Storage(BaseStorage):
         Args:
             bucket_name: S3 bucket name (optional, defaults to settings)
         """
-        self.bucket_name = bucket_name or getattr(
-            settings, "S3_BUCKET_NAME", "docsgpt-test-bucket"
-        )
+        self.bucket_name = bucket_name or settings.S3_BUCKET_NAME
 
-        # Get credentials from settings
+        aws_access_key_id, aws_secret_access_key, region_name = self._resolve_credentials()
+        self.region = region_name
 
-        aws_access_key_id = getattr(settings, "SAGEMAKER_ACCESS_KEY", None)
-        aws_secret_access_key = getattr(settings, "SAGEMAKER_SECRET_KEY", None)
-        region_name = getattr(settings, "SAGEMAKER_REGION", None)
+        client_kwargs = {
+            "aws_access_key_id": aws_access_key_id,
+            "aws_secret_access_key": aws_secret_access_key,
+            "region_name": region_name,
+        }
+        # Custom endpoint for S3-compatible services (MinIO, R2, B2, Spaces, ...).
+        if settings.S3_ENDPOINT_URL:
+            client_kwargs["endpoint_url"] = settings.S3_ENDPOINT_URL
+        # Most non-AWS services require path-style addressing.
+        if settings.S3_PATH_STYLE:
+            client_kwargs["config"] = Config(s3={"addressing_style": "path"})
 
-        self.s3 = boto3.client(
-            "s3",
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key,
-            region_name=region_name,
-        )
+        self.s3 = boto3.client("s3", **client_kwargs)
 
     def save_file(
         self,
@@ -66,13 +104,11 @@ class S3Storage(BaseStorage):
             file_data, self.bucket_name, path, ExtraArgs={"StorageClass": storage_class}
         )
 
-        region = getattr(settings, "SAGEMAKER_REGION", None)
-
         return {
             "storage_type": "s3",
             "bucket_name": self.bucket_name,
             "uri": f"s3://{self.bucket_name}/{path}",
-            "region": region,
+            "region": self.region,
         }
 
     def get_file(self, path: str) -> BinaryIO:

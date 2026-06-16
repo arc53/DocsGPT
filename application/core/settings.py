@@ -193,6 +193,18 @@ class Settings(BaseSettings):
     FLASK_DEBUG_MODE: bool = False
     STORAGE_TYPE: str = "local"  # local or s3
 
+    # S3-compatible object storage (used when STORAGE_TYPE=s3). Works with AWS
+    # S3 and any S3-compatible service (MinIO, Cloudflare R2, Backblaze B2,
+    # DigitalOcean Spaces, ...). For non-AWS services, set S3_ENDPOINT_URL and
+    # usually S3_PATH_STYLE=true. The SAGEMAKER_* credentials are still read as
+    # a deprecated fallback for backward compatibility.
+    S3_BUCKET_NAME: str = "docsgpt-test-bucket"
+    S3_ENDPOINT_URL: Optional[str] = None  # custom endpoint for S3-compatible services; omit for AWS
+    S3_ACCESS_KEY_ID: Optional[str] = None
+    S3_SECRET_ACCESS_KEY: Optional[str] = None
+    S3_REGION: Optional[str] = None  # AWS region; use "auto" for Cloudflare R2
+    S3_PATH_STYLE: bool = False  # path-style addressing (required by most non-AWS services)
+
     # Anonymous startup version check for security issues.
     VERSION_CHECK: bool = True
     URL_STRATEGY: str = "backend"  # backend or s3

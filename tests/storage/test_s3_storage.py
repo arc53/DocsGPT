@@ -42,15 +42,21 @@ class TestS3StorageInitialization:
             assert storage.bucket_name == "custom-bucket"
 
     @pytest.mark.unit
-    def test_init_creates_boto3_client(self):
-        """Should create boto3 S3 client with credentials from settings."""
+    def test_init_creates_boto3_client_with_s3_credentials(self):
+        """Should create boto3 S3 client with dedicated S3_* credentials."""
         with patch("boto3.client") as mock_client, patch(
             "application.storage.s3.settings"
         ) as mock_settings:
 
-            mock_settings.SAGEMAKER_ACCESS_KEY = "test-key"
-            mock_settings.SAGEMAKER_SECRET_KEY = "test-secret"
-            mock_settings.SAGEMAKER_REGION = "us-west-2"
+            mock_settings.S3_BUCKET_NAME = "docsgpt-test-bucket"
+            mock_settings.S3_ACCESS_KEY_ID = "test-key"
+            mock_settings.S3_SECRET_ACCESS_KEY = "test-secret"
+            mock_settings.S3_REGION = "us-west-2"
+            mock_settings.S3_ENDPOINT_URL = None
+            mock_settings.S3_PATH_STYLE = False
+            mock_settings.SAGEMAKER_ACCESS_KEY = None
+            mock_settings.SAGEMAKER_SECRET_KEY = None
+            mock_settings.SAGEMAKER_REGION = None
 
             S3Storage()
 
@@ -60,6 +66,56 @@ class TestS3StorageInitialization:
                 aws_secret_access_key="test-secret",
                 region_name="us-west-2",
             )
+
+    @pytest.mark.unit
+    def test_init_falls_back_to_sagemaker_credentials(self):
+        """Should fall back to deprecated SAGEMAKER_* credentials when S3_* unset."""
+        with patch("boto3.client") as mock_client, patch(
+            "application.storage.s3.settings"
+        ) as mock_settings, patch("application.storage.s3.logger") as mock_logger:
+
+            mock_settings.S3_BUCKET_NAME = "docsgpt-test-bucket"
+            mock_settings.S3_ACCESS_KEY_ID = None
+            mock_settings.S3_SECRET_ACCESS_KEY = None
+            mock_settings.S3_REGION = None
+            mock_settings.S3_ENDPOINT_URL = None
+            mock_settings.S3_PATH_STYLE = False
+            mock_settings.SAGEMAKER_ACCESS_KEY = "legacy-key"
+            mock_settings.SAGEMAKER_SECRET_KEY = "legacy-secret"
+            mock_settings.SAGEMAKER_REGION = "eu-central-1"
+
+            S3Storage()
+
+            mock_client.assert_called_once_with(
+                "s3",
+                aws_access_key_id="legacy-key",
+                aws_secret_access_key="legacy-secret",
+                region_name="eu-central-1",
+            )
+            mock_logger.warning.assert_called_once()
+
+    @pytest.mark.unit
+    def test_init_with_custom_endpoint_and_path_style(self):
+        """Should pass endpoint_url and path-style config for S3-compatible services."""
+        with patch("boto3.client") as mock_client, patch(
+            "application.storage.s3.settings"
+        ) as mock_settings:
+
+            mock_settings.S3_BUCKET_NAME = "my-bucket"
+            mock_settings.S3_ACCESS_KEY_ID = "key"
+            mock_settings.S3_SECRET_ACCESS_KEY = "secret"
+            mock_settings.S3_REGION = "auto"
+            mock_settings.S3_ENDPOINT_URL = "https://account.r2.cloudflarestorage.com"
+            mock_settings.S3_PATH_STYLE = True
+            mock_settings.SAGEMAKER_ACCESS_KEY = None
+            mock_settings.SAGEMAKER_SECRET_KEY = None
+            mock_settings.SAGEMAKER_REGION = None
+
+            S3Storage()
+
+            _, kwargs = mock_client.call_args
+            assert kwargs["endpoint_url"] == "https://account.r2.cloudflarestorage.com"
+            assert kwargs["config"].s3 == {"addressing_style": "path"}
 
 
 class TestS3StorageSaveFile:
@@ -71,9 +127,8 @@ class TestS3StorageSaveFile:
         file_data = io.BytesIO(b"test content")
         path = "documents/test.txt"
 
-        with patch("application.storage.s3.settings") as mock_settings:
-            mock_settings.SAGEMAKER_REGION = "us-east-1"
-            result = s3_storage.save_file(file_data, path)
+        s3_storage.region = "us-east-1"
+        result = s3_storage.save_file(file_data, path)
         mock_boto3_client.upload_fileobj.assert_called_once_with(
             file_data,
             "test-bucket",
