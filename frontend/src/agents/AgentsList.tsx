@@ -32,6 +32,7 @@ const FILTER_TABS: { id: AgentFilterTab; labelKey: string }[] = [
   { id: 'all', labelKey: 'agents.filters.all' },
   { id: 'template', labelKey: 'agents.filters.byDocsGPT' },
   { id: 'user', labelKey: 'agents.filters.byMe' },
+  { id: 'team', labelKey: 'agents.filters.team' },
   { id: 'shared', labelKey: 'agents.filters.shared' },
 ];
 

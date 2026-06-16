@@ -62,7 +62,12 @@ class TeamsRepository:
                 """
                 SELECT t.*,
                        CASE WHEN bool_or(m.role = 'team_admin') THEN 'team_admin'
-                            ELSE 'team_member' END AS member_role
+                            ELSE 'team_member' END AS member_role,
+                       (SELECT count(DISTINCT mm.user_id) FROM team_members mm
+                        WHERE mm.team_id = t.id) AS member_count,
+                       (SELECT count(DISTINCT g.resource_id)
+                        FROM team_resource_grants g
+                        WHERE g.team_id = t.id) AS shared_count
                 FROM teams t
                 JOIN team_members m ON m.team_id = t.id
                 WHERE m.user_id = :user_id

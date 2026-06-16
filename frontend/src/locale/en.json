@@ -224,10 +224,18 @@
       "backToTeams": "Back to teams",
       "createTeam": "Create a team",
       "createTeamDescription": "Give your team a name. You can add members and share resources once it's created.",
+      "editTeam": "Edit",
       "teamNamePlaceholder": "Team name",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "What's this team for? (optional)",
       "create": "Create",
+      "save": "Save",
       "createTeamError": "Could not create team.",
       "noTeams": "No teams yet.",
+      "noDescription": "No description",
+      "memberCountOne": "{{count}} member",
+      "memberCountOther": "{{count}} members",
+      "sharedCount": "{{count}} shared",
       "loadError": "Failed to load teams.",
       "roleAdmin": "admin",
       "roleMember": "member",
@@ -241,6 +249,10 @@
       "deleteTeam": "Delete team",
       "deleteTeamConfirmation": "Are you sure you want to delete \"{{name}}\"? This cannot be undone.",
       "members": "Members",
+      "addMember": "Add member",
+      "addMemberTitle": "Add a member",
+      "addMemberDescription": "Invite someone by email. They must have signed in at least once.",
+      "teamActions": "Team actions",
       "memberEmailLabel": "Member email",
       "memberEmailPlaceholder": "name@example.com",
       "memberRoleLabel": "Role",
@@ -891,25 +903,35 @@
     "tryDifferentSearch": "Try a different search term",
     "filters": {
       "all": "All",
-      "byDocsGPT": "By DocsGPT",
-      "byMe": "By Me",
-      "shared": "Shared With Me"
+      "byDocsGPT": "Templates",
+      "byMe": "My agents",
+      "team": "Team",
+      "shared": "Discovered"
+    },
+    "teamBadge": {
+      "editor": "Editor",
+      "viewer": "Viewer"
     },
     "sections": {
       "template": {
-        "title": "By DocsGPT",
+        "title": "Templates",
         "description": "Agents provided by DocsGPT",
         "emptyState": "No template agents found."
       },
       "user": {
-        "title": "By me",
+        "title": "My agents",
         "description": "Agents created or published by you",
         "emptyState": "You don't have any created agents yet."
       },
+      "team": {
+        "title": "Team",
+        "description": "Agents your teammates shared with you",
+        "emptyState": "No agents have been shared with your team yet."
+      },
       "shared": {
-        "title": "Shared with me",
-        "description": "Agents imported by using a public link",
-        "emptyState": "No shared agents found."
+        "title": "Discovered",
+        "description": "Public agents you've opened via a link",
+        "emptyState": "You haven't opened any public agents yet."
       }
     },
     "form": {

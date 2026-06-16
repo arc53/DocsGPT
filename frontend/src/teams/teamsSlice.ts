@@ -9,6 +9,9 @@ export type Team = {
   description?: string | null;
   owner_id: string;
   member_role?: TeamRole;
+  // Annotations from the list endpoint for the teams grid cards.
+  member_count?: number;
+  shared_count?: number;
 };
 
 export type TeamsState = {

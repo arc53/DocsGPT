@@ -4,8 +4,11 @@ import {
   ChevronRight,
   FileText,
   MessageSquare,
+  MoreVertical,
+  Pencil,
   Plus,
   Trash2,
+  Users,
   Wrench,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
@@ -23,6 +26,12 @@ import NoFilesIcon from '../assets/no-files.svg';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
 import {
@@ -109,8 +118,14 @@ export default function Teams() {
   const [newTeamName, setNewTeamName] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [newMemberRole, setNewMemberRole] = useState<TeamRole>('team_member');
+  const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [addMemberError, setAddMemberError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [deleteTeamModalState, setDeleteTeamModalState] =
@@ -284,6 +299,42 @@ export default function Teams() {
     setCreateError(null);
   };
 
+  const openEditModal = () => {
+    if (!selected) return;
+    setEditName(selected.name);
+    setEditDescription(selected.description ?? '');
+    setEditError(null);
+    setEditOpen(true);
+  };
+
+  const closeEditModal = () => {
+    setEditOpen(false);
+    setEditError(null);
+  };
+
+  const handleEditSave = async () => {
+    if (!selected || !editName.trim()) return;
+    const name = editName.trim();
+    const description = editDescription.trim();
+    try {
+      const res = await teamsService.update(
+        selected.id,
+        { name, description },
+        token,
+      );
+      if (!res || res.success === false) {
+        setEditError(t('settings.teams.updateFailed'));
+        return;
+      }
+      // Reflect locally and refresh the list so the card/switcher update too.
+      setSelected({ ...selected, name, description });
+      dispatch(loadTeams({ token }));
+      setEditOpen(false);
+    } catch {
+      setEditError(t('settings.teams.updateFailed'));
+    }
+  };
+
   // Consume navigation intent from the team switcher: "Manage team" passes
   // openTeamId (open that team's detail directly); "Create team" passes
   // create:true (pop the create modal). Consumed once, then the history state
@@ -321,9 +372,21 @@ export default function Teams() {
     }
   }, [teams]);
 
+  const openAddMemberModal = () => {
+    setNewMemberEmail('');
+    setNewMemberRole('team_member');
+    setAddMemberError(null);
+    setAddMemberOpen(true);
+  };
+
+  const closeAddMemberModal = () => {
+    setAddMemberOpen(false);
+    setAddMemberError(null);
+  };
+
   const handleAddMember = async () => {
     if (!selected || !newMemberEmail.trim()) return;
-    setError(null);
+    setAddMemberError(null);
     try {
       const res = await teamsService.addMember(
         selected.id,
@@ -333,13 +396,15 @@ export default function Teams() {
       if (res?.success === false) {
         // The backend returns 404 with a message when the email maps to no
         // known user; surface its message (e.g. "they must sign in first").
-        setError(res.message ?? t('settings.teams.memberNotFound'));
+        setAddMemberError(res.message ?? t('settings.teams.memberNotFound'));
         return;
       }
       setNewMemberEmail('');
+      setNewMemberRole('team_member');
+      setAddMemberOpen(false);
       openTeam(selected);
     } catch {
-      setError(t('settings.teams.addMemberError'));
+      setAddMemberError(t('settings.teams.addMemberError'));
     }
   };
 
@@ -419,7 +484,7 @@ export default function Teams() {
     <span
       className={`rounded-full px-2 py-0.5 text-xs ${
         role === 'team_admin'
-          ? 'bg-primary/10 text-primary dark:bg-primary/20'
+          ? 'bg-muted-foreground/15 text-foreground'
           : 'bg-muted-foreground/10 text-muted-foreground'
       }`}
     >
@@ -446,7 +511,7 @@ export default function Teams() {
 
   return (
     <div className="h-full overflow-auto p-4 md:p-12">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="text-foreground text-2xl font-bold">
             {t('settings.teams.label')}
@@ -462,7 +527,7 @@ export default function Teams() {
       </div>
 
       {!selected ? (
-        <div className="mt-8 space-y-2">
+        <div className="mx-auto mt-8 w-full max-w-5xl">
           {teamsLoading ? (
             <SkeletonLoader component="default" />
           ) : teamsError ? (
@@ -482,36 +547,66 @@ export default function Teams() {
               </Button>,
             )
           ) : (
-            teams.map((team) => (
-              <button
-                key={team.id}
-                className="border-border bg-muted dark:bg-accent hover:border-primary/40 flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors"
-                onClick={() => openTeam(team)}
-              >
-                <span aria-hidden="true" className="contents">
-                  <Avatar
-                    alt=""
-                    className="bg-primary/10 text-primary dark:bg-primary/20 flex size-9 items-center justify-center rounded-md text-sm font-medium"
-                  >
-                    {initialOf(team.name)}
-                  </Avatar>
-                </span>
-                <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
-                  {team.name}
-                </span>
-                {roleBadge(team.member_role ?? 'team_member')}
-                <ChevronRight
-                  className="text-muted-foreground shrink-0"
-                  size={18}
-                  strokeWidth={1.75}
-                  aria-hidden
-                />
-              </button>
-            ))
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {teams.map((team) => (
+                <button
+                  key={team.id}
+                  className="border-border bg-muted dark:bg-accent hover:border-primary/40 group flex h-full flex-col gap-3 rounded-2xl border p-4 text-left transition-colors"
+                  onClick={() => openTeam(team)}
+                >
+                  <div className="flex items-center gap-3">
+                    <span aria-hidden="true" className="contents">
+                      <Avatar
+                        alt=""
+                        className="bg-muted-foreground/15 text-foreground flex size-9 shrink-0 items-center justify-center rounded-md text-sm font-medium"
+                      >
+                        {initialOf(team.name)}
+                      </Avatar>
+                    </span>
+                    <span className="text-foreground min-w-0 flex-1 truncate text-sm font-semibold">
+                      {team.name}
+                    </span>
+                    {roleBadge(team.member_role ?? 'team_member')}
+                    <ChevronRight
+                      className="text-muted-foreground shrink-0 transition-transform group-hover:translate-x-0.5"
+                      size={18}
+                      strokeWidth={1.75}
+                      aria-hidden
+                    />
+                  </div>
+                  {team.description ? (
+                    <p className="text-muted-foreground line-clamp-2 text-xs leading-relaxed">
+                      {team.description}
+                    </p>
+                  ) : (
+                    <p className="text-muted-foreground/50 text-xs italic">
+                      {t('settings.teams.noDescription')}
+                    </p>
+                  )}
+                  <div className="text-muted-foreground mt-auto flex items-center gap-1.5 text-xs">
+                    <Users size={13} strokeWidth={1.75} aria-hidden />
+                    <span>
+                      {t(
+                        (team.member_count ?? 0) === 1
+                          ? 'settings.teams.memberCountOne'
+                          : 'settings.teams.memberCountOther',
+                        { count: team.member_count ?? 0 },
+                      )}
+                    </span>
+                    <span aria-hidden>·</span>
+                    <span>
+                      {t('settings.teams.sharedCount', {
+                        count: team.shared_count ?? 0,
+                      })}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
           )}
         </div>
       ) : (
-        <div className="mt-8 space-y-6">
+        <div className="mx-auto mt-8 max-w-5xl space-y-6">
           <Button
             variant="ghost"
             size="sm"
@@ -532,29 +627,48 @@ export default function Teams() {
               <span aria-hidden="true" className="contents">
                 <Avatar
                   alt=""
-                  className="bg-primary/10 text-primary dark:bg-primary/20 flex size-10 shrink-0 items-center justify-center rounded-md text-base font-medium"
+                  className="bg-muted-foreground/15 text-foreground flex size-10 shrink-0 items-center justify-center rounded-md text-base font-medium"
                 >
                   {initialOf(selected.name)}
                 </Avatar>
               </span>
               <div className="min-w-0">
-                <p className="text-muted-foreground text-xs">
-                  {t('settings.teams.label')} /
-                </p>
                 <h3 className="text-foreground truncate text-xl font-bold">
                   {selected.name}
                 </h3>
+                {selected.description && (
+                  <p className="text-muted-foreground mt-1 line-clamp-2 text-sm">
+                    {selected.description}
+                  </p>
+                )}
               </div>
             </div>
             {isAdmin && (
-              <Button
-                variant="destructive-outline"
-                size="sm"
-                className="shrink-0"
-                onClick={() => requestDeleteTeam(selected)}
-              >
-                {t('settings.teams.deleteTeam')}
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-muted-foreground shrink-0"
+                    aria-label={t('settings.teams.teamActions')}
+                  >
+                    <MoreVertical size={18} strokeWidth={1.75} aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[160px]">
+                  <DropdownMenuItem onSelect={openEditModal}>
+                    <Pencil size={15} strokeWidth={1.75} aria-hidden />
+                    <span>{t('settings.teams.editTeam')}</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onSelect={() => requestDeleteTeam(selected)}
+                  >
+                    <Trash2 size={15} strokeWidth={1.75} aria-hidden />
+                    <span>{t('settings.teams.deleteTeam')}</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
 
@@ -565,9 +679,22 @@ export default function Teams() {
           )}
 
           <div className="border-border mt-6 border-t pt-6">
-            <h4 className="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
-              {t('settings.teams.members')} · {members.length}
-            </h4>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h4 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+                {t('settings.teams.members')} · {members.length}
+              </h4>
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={openAddMemberModal}
+                >
+                  <Plus size={15} strokeWidth={1.75} aria-hidden />
+                  {t('settings.teams.addMember')}
+                </Button>
+              )}
+            </div>
             {members.length === 0 ? (
               emptyState(t('settings.teams.noMembers'))
             ) : (
@@ -580,7 +707,7 @@ export default function Teams() {
                     <span aria-hidden="true" className="contents">
                       <Avatar
                         alt=""
-                        className="bg-primary/10 text-primary dark:bg-primary/20 flex size-8 items-center justify-center rounded-full text-sm font-medium"
+                        className="bg-muted-foreground/15 text-foreground flex size-8 items-center justify-center rounded-full text-sm font-medium"
                       >
                         {initialOf(memberLabel(m))}
                       </Avatar>
@@ -637,49 +764,6 @@ export default function Teams() {
                   </li>
                 ))}
               </ul>
-            )}
-
-            {isAdmin && (
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-stretch">
-                <div className="flex-1">
-                  <Input
-                    type="email"
-                    label={t('settings.teams.memberEmailLabel')}
-                    aria-label={t('settings.teams.memberEmailLabel')}
-                    placeholder={t('settings.teams.memberEmailPlaceholder')}
-                    value={newMemberEmail}
-                    labelBgClassName="bg-background"
-                    onChange={(e) => setNewMemberEmail(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleAddMember()}
-                  />
-                </div>
-                <Select
-                  value={newMemberRole}
-                  onValueChange={(value) => setNewMemberRole(value as TeamRole)}
-                >
-                  <SelectTrigger
-                    className="h-[42px] sm:w-36"
-                    aria-label={t('settings.teams.memberRoleLabel')}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="team_member">
-                      {t('settings.teams.roleMember')}
-                    </SelectItem>
-                    <SelectItem value="team_admin">
-                      {t('settings.teams.roleAdmin')}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  className="h-[42px]"
-                  onClick={handleAddMember}
-                  disabled={!newMemberEmail.trim()}
-                >
-                  {t('settings.teams.add')}
-                </Button>
-              </div>
             )}
           </div>
 
@@ -764,6 +848,122 @@ export default function Teams() {
         {createError && (
           <p className="text-destructive mt-3 text-sm" role="alert">
             {createError}
+          </p>
+        )}
+      </Modal>
+
+      <Modal
+        open={editOpen}
+        onOpenChange={(open) => (open ? setEditOpen(true) : closeEditModal())}
+        size="sm"
+        mobileVariant="sheet"
+        title={t('settings.teams.editTeam')}
+        footer={
+          <>
+            <Button variant="ghost" onClick={closeEditModal}>
+              {t('cancel')}
+            </Button>
+            <Button onClick={handleEditSave} disabled={!editName.trim()}>
+              {t('settings.teams.save')}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <Input
+            type="text"
+            autoFocus
+            label={t('settings.teams.teamNamePlaceholder')}
+            aria-label={t('settings.teams.teamNamePlaceholder')}
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+          />
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="team-edit-description"
+              className="text-foreground text-sm font-medium"
+            >
+              {t('settings.teams.descriptionLabel')}
+            </label>
+            <textarea
+              id="team-edit-description"
+              rows={3}
+              className="border-border bg-background text-foreground focus-visible:ring-ring/50 focus-visible:border-ring placeholder:text-muted-foreground w-full resize-none rounded-lg border px-3 py-2 text-sm outline-none focus-visible:ring-[3px]"
+              placeholder={t('settings.teams.descriptionPlaceholder')}
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+            />
+          </div>
+        </div>
+        {editError && (
+          <p className="text-destructive mt-3 text-sm" role="alert">
+            {editError}
+          </p>
+        )}
+      </Modal>
+
+      <Modal
+        open={addMemberOpen}
+        onOpenChange={(open) =>
+          open ? setAddMemberOpen(true) : closeAddMemberModal()
+        }
+        size="sm"
+        mobileVariant="sheet"
+        title={t('settings.teams.addMemberTitle')}
+        description={t('settings.teams.addMemberDescription')}
+        footer={
+          <>
+            <Button variant="ghost" onClick={closeAddMemberModal}>
+              {t('cancel')}
+            </Button>
+            <Button onClick={handleAddMember} disabled={!newMemberEmail.trim()}>
+              {t('settings.teams.add')}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <Input
+            type="email"
+            autoFocus
+            label={t('settings.teams.memberEmailLabel')}
+            aria-label={t('settings.teams.memberEmailLabel')}
+            placeholder={t('settings.teams.memberEmailPlaceholder')}
+            value={newMemberEmail}
+            onChange={(e) => setNewMemberEmail(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAddMember()}
+          />
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="add-member-role"
+              className="text-foreground text-sm font-medium"
+            >
+              {t('settings.teams.memberRoleLabel')}
+            </label>
+            <Select
+              value={newMemberRole}
+              onValueChange={(value) => setNewMemberRole(value as TeamRole)}
+            >
+              <SelectTrigger
+                id="add-member-role"
+                aria-label={t('settings.teams.memberRoleLabel')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="team_member">
+                  {t('settings.teams.roleMember')}
+                </SelectItem>
+                <SelectItem value="team_admin">
+                  {t('settings.teams.roleAdmin')}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {addMemberError && (
+          <p className="text-destructive mt-3 text-sm" role="alert">
+            {addMemberError}
           </p>
         )}
       </Modal>

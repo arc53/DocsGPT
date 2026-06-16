@@ -175,6 +175,42 @@ export default function AgentCard({
         iconHeight: 13,
       },
     ],
+    // Agents shared with the user via a team. They don't own it, so only
+    // non-destructive, non-owner actions are offered: open the config
+    // (editors can save, viewers see it read-only) and pin for quick access.
+    // Logs / Export / Share / Move-to-folder / Delete stay owner-only.
+    team: [
+      {
+        icon: Edit,
+        label: 'Edit',
+        onClick: (e: SyntheticEvent) => {
+          e.stopPropagation();
+          if (agent.agent_type === 'workflow') {
+            navigate(`/agents/workflow/edit/${agent.id}`);
+          } else {
+            navigate(`/agents/edit/${agent.id}`);
+          }
+        },
+        variant: 'default',
+        iconWidth: 14,
+        iconHeight: 14,
+      },
+      ...(agent.status === 'published'
+        ? [
+            {
+              icon: agent.pinned ? UnPin : Pin,
+              label: agent.pinned ? 'Unpin' : 'Pin agent',
+              onClick: (e: SyntheticEvent) => {
+                e.stopPropagation();
+                togglePin();
+              },
+              variant: 'default' as const,
+              iconWidth: 18,
+              iconHeight: 18,
+            },
+          ]
+        : []),
+    ],
     shared: [
       {
         icon: Link,
@@ -214,7 +250,9 @@ export default function AgentCard({
   const menuOptions = menuOptionsConfig[section] || [];
 
   const handleClick = () => {
-    if (section === 'user') {
+    // Team-shared agents open/run exactly like the user's own published
+    // agents (the run + GetAgent routes authorize team grantees server-side).
+    if (section === 'user' || section === 'team') {
       if (agent.status === 'published') {
         dispatch(setSelectedAgent(agent));
         navigate(agent.id ? `/agents/${agent.id}/c/new` : '/c/new');
@@ -378,6 +416,16 @@ export default function AgentCard({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+      {/* Team access badge — pinned to the top row, left of the ⋯ menu
+          (right-11 clears the 19px trigger at right-4) so the two align. */}
+      {agent.ownership === 'team' && (
+        <span className="bg-muted dark:bg-accent text-muted-foreground absolute top-4 right-11 z-10 flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium">
+          <Users size={11} strokeWidth={2} aria-hidden="true" />
+          {agent.team_access === 'editor'
+            ? t('agents.teamBadge.editor')
+            : t('agents.teamBadge.viewer')}
+        </span>
+      )}
       <div className="w-full">
         <div className="flex w-full items-center gap-1 px-1">
           <Avatar
