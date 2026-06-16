@@ -41,6 +41,7 @@ import {
 } from '../components/ui/select';
 import { selectToken } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
+import { decodeJwtPayload } from '../utils/jwtUtils';
 import { cn } from '@/lib/utils';
 import { loadTeams, selectTeams } from './teamsSlice';
 
@@ -93,6 +94,12 @@ export default function ShareToTeamModal({
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const teams = useSelector(selectTeams);
+  // The caller's own OIDC sub — you're the owner, so you're excluded from the
+  // "share with a specific person" suggestions (can't share with yourself).
+  const currentUserId = useMemo(() => {
+    const payload = token ? decodeJwtPayload(token) : null;
+    return typeof payload?.sub === 'string' ? payload.sub : undefined;
+  }, [token]);
 
   const [shares, setShares] = useState<ResourceShare[]>([]);
   const [loadError, setLoadError] = useState(false);
@@ -259,6 +266,8 @@ export default function ShareToTeamModal({
       // grants. (Whole-team key convention is `${team_id}:`.)
       if (grantedKeys.has(`${team.id}:`)) return;
       (membersByTeam[team.id] ?? []).forEach((member) => {
+        // You can't share a resource with yourself — you own it.
+        if (member.user_id === currentUserId) return;
         const key = `${team.id}:${member.user_id}`;
         // Exclude (team, member) pairs already granted.
         if (grantedKeys.has(key)) return;
@@ -275,7 +284,7 @@ export default function ShareToTeamModal({
       });
     });
     return out;
-  }, [teams, membersByTeam, grantedKeys, query]);
+  }, [teams, membersByTeam, grantedKeys, query, currentUserId]);
 
   const hasSuggestions =
     teamSuggestions.length > 0 || memberSuggestions.length > 0;
