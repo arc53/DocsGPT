@@ -30,8 +30,12 @@ from application.api.user.team_authz import (
     team_member_required,
 )
 from application.api.user.team_sharing import is_valid_resource_type, owns_resource
+from application.events.publisher import publish_user_event
 from application.storage.db.base_repository import looks_like_uuid
+from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.auth_events import AuthEventsRepository
+from application.storage.db.repositories.prompts import PromptsRepository
+from application.storage.db.repositories.sources import SourcesRepository
 from application.storage.db.repositories.team_members import (
     ROLE_TEAM_ADMIN,
     ROLE_TEAM_MEMBER,
@@ -41,6 +45,7 @@ from application.storage.db.repositories.team_resource_grants import (
     TeamResourceGrantsRepository,
 )
 from application.storage.db.repositories.teams import TeamsRepository
+from application.storage.db.repositories.user_tools import UserToolsRepository
 from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.session import db_readonly, db_session
 
@@ -93,6 +98,99 @@ def _unique_slug(repo: TeamsRepository, base: str) -> str:
         if not repo.slug_exists(candidate):
             return candidate
     return f"{base}-{uuid.uuid4().hex}"
+
+
+# --- Notifications (best-effort, fire-and-forget; never fail the request) ----
+# Emitted AFTER the mutation commits, over their own read connection, so a
+# name-lookup or Redis hiccup can never roll back the share/membership change.
+
+
+def _resource_display_name(conn, resource_type: str, resource_id: str) -> str | None:
+    """Best-effort human label for a shared resource (ownerless fetch)."""
+    try:
+        if resource_type == "agent":
+            row = AgentsRepository(conn).get_by_id(resource_id)
+        elif resource_type == "source":
+            row = SourcesRepository(conn).get_by_id(resource_id)
+        elif resource_type == "prompt":
+            row = PromptsRepository(conn).get_for_rendering(resource_id)
+        elif resource_type == "tool":
+            row = UserToolsRepository(conn).get_by_id(resource_id)
+        else:
+            return None
+        if not row:
+            return None
+        return row.get("custom_name") or row.get("display_name") or row.get("name")
+    except Exception:
+        logger.warning("resource name resolve failed (%s)", resource_type, exc_info=True)
+        return None
+
+
+def _notify_member_added(
+    team_id: str, new_user: str | None, role: str, actor: str | None
+) -> None:
+    """Toast the new member that they were added to a team."""
+    if not new_user or new_user == actor:
+        return
+    try:
+        with db_readonly() as conn:
+            team = TeamsRepository(conn).get(team_id)
+        publish_user_event(
+            new_user,
+            "team.member_added",
+            {
+                "team_id": str(team_id),
+                "team_name": team.get("name") if team else None,
+                "role": role,
+                "added_by": actor,
+            },
+            scope={"kind": "team", "id": str(team_id)},
+        )
+    except Exception:
+        logger.warning("member_added notify failed", exc_info=True)
+
+
+def _notify_resource_shared(
+    actor: str | None,
+    team_id: str,
+    resource_type: str,
+    resource_id: str,
+    access_level: str,
+    target_user_id: str | None,
+) -> None:
+    """Toast the recipient(s) of a share.
+
+    Per-member share notifies just that member; whole-team share notifies every
+    current member except the sharer.
+    """
+    try:
+        with db_readonly() as conn:
+            resource_name = _resource_display_name(conn, resource_type, resource_id)
+            team = TeamsRepository(conn).get(team_id)
+            if target_user_id:
+                recipients = [target_user_id]
+            else:
+                members = TeamMembersRepository(conn).list_members(team_id)
+                recipients = list({m["user_id"] for m in members})
+        payload = {
+            "resource_type": resource_type,
+            "resource_id": str(resource_id),
+            "resource_name": resource_name,
+            "access_level": access_level,
+            "team_id": str(team_id),
+            "team_name": team.get("name") if team else None,
+            "shared_by": actor,
+        }
+        for recipient in recipients:
+            if recipient and recipient != actor:
+                publish_user_event(
+                    recipient,
+                    "resource.shared",
+                    payload,
+                    scope={"kind": "resource", "id": str(resource_id)},
+                )
+    except Exception:
+        logger.warning("resource_shared notify failed", exc_info=True)
 
 
 @teams_ns.route("/teams")
@@ -238,6 +336,8 @@ class TeamMembers(Resource):
                     target_user=new_user,
                     role=role,
                 )
+            # Post-commit, best-effort: tell the new member they were added.
+            _notify_member_added(team_id, new_user, role, _current_user())
             return make_response(jsonify({"success": True}), 200)
         except Exception as err:
             logger.error("Add member failed: %s", err, exc_info=True)
@@ -388,6 +488,10 @@ class TeamGrants(Resource):
                     access_level=access_level,
                     target_user_id=target_user_id,
                 )
+            # Post-commit, best-effort: tell the recipient(s) it was shared.
+            _notify_resource_shared(
+                user, team_id, resource_type, resource_id, access_level, target_user_id
+            )
             return make_response(jsonify({"success": True, "grant": grant}), 201)
         except Exception as err:
             logger.error("Share resource failed: %s", err, exc_info=True)

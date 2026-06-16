@@ -395,3 +395,176 @@ class TestAdminOversight:
             _stop(patches)
         assert resp.status_code == 200
         assert json.loads(resp.data)["teams"][0]["member_count"] == 3
+
+
+@pytest.mark.unit
+class TestTeamNotifications:
+    """Best-effort, post-commit toasts via publish_user_event."""
+
+    def test_add_member_notifies_new_member(self, client):
+        members_repo = Mock()
+        teams_repo = Mock()
+        teams_repo.get.return_value = {"id": "team-1", "name": "Acme"}
+        publish = Mock()
+        patches = _auth(sub="alice", team_role="team_admin") + [
+            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("application.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
+            patch(
+                "application.api.user.teams.routes.TeamMembersRepository",
+                return_value=members_repo,
+            ),
+            patch(
+                "application.api.user.teams.routes.TeamsRepository",
+                return_value=teams_repo,
+            ),
+            patch("application.api.user.teams.routes.publish_user_event", publish),
+        ]
+        _apply(patches)
+        try:
+            resp = client.post(
+                "/api/teams/team-1/members",
+                json={"user_id": "carol", "role": "team_member"},
+            )
+        finally:
+            _stop(patches)
+        assert resp.status_code == 200
+        publish.assert_called_once()
+        args, _ = publish.call_args
+        assert args[0] == "carol"
+        assert args[1] == "team.member_added"
+        assert args[2]["team_name"] == "Acme"
+        assert args[2]["role"] == "team_member"
+        assert args[2]["added_by"] == "alice"
+
+    def test_add_member_skips_self(self, client):
+        members_repo = Mock()
+        teams_repo = Mock()
+        teams_repo.get.return_value = {"id": "team-1", "name": "Acme"}
+        publish = Mock()
+        patches = _auth(sub="alice", team_role="team_admin") + [
+            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("application.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
+            patch(
+                "application.api.user.teams.routes.TeamMembersRepository",
+                return_value=members_repo,
+            ),
+            patch(
+                "application.api.user.teams.routes.TeamsRepository",
+                return_value=teams_repo,
+            ),
+            patch("application.api.user.teams.routes.publish_user_event", publish),
+        ]
+        _apply(patches)
+        try:
+            resp = client.post(
+                "/api/teams/team-1/members",
+                json={"user_id": "alice", "role": "team_admin"},
+            )
+        finally:
+            _stop(patches)
+        assert resp.status_code == 200
+        publish.assert_not_called()
+
+    def test_whole_team_share_notifies_all_but_sharer(self, client):
+        grants_repo = Mock()
+        grants_repo.grant.return_value = {"id": "g1", "access_level": "editor"}
+        members_repo = Mock()
+        members_repo.list_members.return_value = [
+            {"user_id": "alice"},
+            {"user_id": "bob"},
+            {"user_id": "carol"},
+        ]
+        teams_repo = Mock()
+        teams_repo.get.return_value = {"id": "team-1", "name": "Acme"}
+        publish = Mock()
+        patches = _auth(sub="alice", team_role="team_member") + [
+            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("application.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
+            patch("application.api.user.teams.routes.owns_resource", return_value=True),
+            patch(
+                "application.api.user.teams.routes.TeamResourceGrantsRepository",
+                return_value=grants_repo,
+            ),
+            patch(
+                "application.api.user.teams.routes.TeamMembersRepository",
+                return_value=members_repo,
+            ),
+            patch(
+                "application.api.user.teams.routes.TeamsRepository",
+                return_value=teams_repo,
+            ),
+            patch(
+                "application.api.user.teams.routes._resource_display_name",
+                return_value="My Agent",
+            ),
+            patch("application.api.user.teams.routes.publish_user_event", publish),
+        ]
+        _apply(patches)
+        try:
+            resp = client.post(
+                "/api/teams/team-1/grants",
+                json={
+                    "resource_type": "agent",
+                    "resource_id": "22222222-2222-2222-2222-222222222222",
+                    "access_level": "editor",
+                },
+            )
+        finally:
+            _stop(patches)
+        assert resp.status_code == 201
+        recipients = {call.args[0] for call in publish.call_args_list}
+        assert recipients == {"bob", "carol"}  # never the sharer (alice)
+        first = publish.call_args_list[0].args
+        assert first[1] == "resource.shared"
+        assert first[2]["resource_name"] == "My Agent"
+        assert first[2]["access_level"] == "editor"
+        assert first[2]["shared_by"] == "alice"
+
+    def test_per_member_share_notifies_only_target(self, client):
+        grants_repo = Mock()
+        grants_repo.grant.return_value = {"id": "g1", "access_level": "viewer"}
+        members_repo = Mock()
+        members_repo.is_member.return_value = True
+        teams_repo = Mock()
+        teams_repo.get.return_value = {"id": "team-1", "name": "Acme"}
+        publish = Mock()
+        patches = _auth(sub="alice", team_role="team_member") + [
+            patch("application.api.user.teams.routes.db_session", lambda: _cm(Mock())),
+            patch("application.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
+            patch("application.api.user.teams.routes.owns_resource", return_value=True),
+            patch(
+                "application.api.user.teams.routes.TeamResourceGrantsRepository",
+                return_value=grants_repo,
+            ),
+            patch(
+                "application.api.user.teams.routes.TeamMembersRepository",
+                return_value=members_repo,
+            ),
+            patch(
+                "application.api.user.teams.routes.TeamsRepository",
+                return_value=teams_repo,
+            ),
+            patch(
+                "application.api.user.teams.routes._resource_display_name",
+                return_value="My Agent",
+            ),
+            patch("application.api.user.teams.routes.publish_user_event", publish),
+        ]
+        _apply(patches)
+        try:
+            resp = client.post(
+                "/api/teams/team-1/grants",
+                json={
+                    "resource_type": "agent",
+                    "resource_id": "22222222-2222-2222-2222-222222222222",
+                    "access_level": "viewer",
+                    "target_user_id": "bob",
+                },
+            )
+        finally:
+            _stop(patches)
+        assert resp.status_code == 201
+        publish.assert_called_once()
+        args, _ = publish.call_args
+        assert args[0] == "bob"
+        assert args[1] == "resource.shared"

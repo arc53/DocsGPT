@@ -25,6 +25,7 @@ import Setting from './settings';
 import Teams from './settings/Teams';
 import Notification from './components/Notification';
 import ToolApprovalToast from './notifications/ToolApprovalToast';
+import TeamNotificationToast from './notifications/TeamNotificationToast';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
@@ -90,6 +91,7 @@ function MainLayout() {
       </div>
       <UploadToast />
       <ToolApprovalToast />
+      <TeamNotificationToast />
     </div>
   );
 }

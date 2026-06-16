@@ -4,6 +4,8 @@ import { RootState } from '../store';
 import { loadDismissed, saveDismissed } from './dismissedPersistence';
 
 const DISMISSED_TOOL_APPROVALS_STORAGE_KEY = 'docsgpt:dismissedToolApprovals';
+const DISMISSED_SHARE_NOTIFICATIONS_STORAGE_KEY =
+  'docsgpt:dismissedShareNotifications';
 
 /**
  * Envelope shape published by the backend SSE endpoint
@@ -59,11 +61,20 @@ interface NotificationsState {
    * plausible approval-pending window.
    */
   dismissedToolApprovals: Array<{ id: string; at: number }>;
+  /**
+   * Event ids of team-sharing notifications (``team.member_added`` /
+   * ``resource.shared``) the user dismissed or that auto-dismissed,
+   * persisted so SSE backlog replay doesn't re-pop them. Same TTL + FIFO
+   * eviction as the tool-approval set.
+   */
+  dismissedShareNotifications: Array<{ id: string; at: number }>;
 }
 
 const RECENT_EVENTS_CAP = 100;
 const DISMISSED_TOOL_APPROVALS_CAP = 200;
 const DISMISSED_TOOL_APPROVALS_TTL_MS = 24 * 60 * 60 * 1000;
+const DISMISSED_SHARE_NOTIFICATIONS_CAP = 200;
+const DISMISSED_SHARE_NOTIFICATIONS_TTL_MS = 24 * 60 * 60 * 1000;
 
 const initialState: NotificationsState = {
   health: 'connecting',
@@ -75,6 +86,10 @@ const initialState: NotificationsState = {
   dismissedToolApprovals: loadDismissed(
     DISMISSED_TOOL_APPROVALS_STORAGE_KEY,
     DISMISSED_TOOL_APPROVALS_TTL_MS,
+  ),
+  dismissedShareNotifications: loadDismissed(
+    DISMISSED_SHARE_NOTIFICATIONS_STORAGE_KEY,
+    DISMISSED_SHARE_NOTIFICATIONS_TTL_MS,
   ),
 };
 
@@ -161,6 +176,35 @@ export const notificationsSlice = createSlice({
       );
     },
     /**
+     * Suppress a team-sharing notification (``team.member_added`` /
+     * ``resource.shared``) by SSE event id — fired on close OR on the
+     * informational auto-dismiss timer. Persisted so backlog replay on
+     * reload doesn't re-pop an already-seen notification.
+     */
+    dismissShareNotification: (state, action: PayloadAction<string>) => {
+      const id = action.payload;
+      const now = Date.now();
+      const cutoff = now - DISMISSED_SHARE_NOTIFICATIONS_TTL_MS;
+      state.dismissedShareNotifications =
+        state.dismissedShareNotifications.filter(
+          (entry) => entry.at >= cutoff && entry.id !== id,
+        );
+      state.dismissedShareNotifications.push({ id, at: now });
+      if (
+        state.dismissedShareNotifications.length >
+        DISMISSED_SHARE_NOTIFICATIONS_CAP
+      ) {
+        state.dismissedShareNotifications =
+          state.dismissedShareNotifications.slice(
+            -DISMISSED_SHARE_NOTIFICATIONS_CAP,
+          );
+      }
+      saveDismissed(
+        DISMISSED_SHARE_NOTIFICATIONS_STORAGE_KEY,
+        state.dismissedShareNotifications,
+      );
+    },
+    /**
      * Revoke a pending approval when the backend says it can no longer be
      * acted on (``tool.approval.cleared`` — the message failed or the
      * resumable state was reaped). Evicts the matching
@@ -228,6 +272,7 @@ export const {
   sseLastEventIdAdvanced,
   clearRecentEvents,
   dismissToolApproval,
+  dismissShareNotification,
   resolveToolApproval,
 } = notificationsSlice.actions;
 
@@ -252,6 +297,11 @@ export const selectRecentEvents = (state: RootState): SSEEvent[] =>
 // projected ``.map`` would otherwise return a fresh array each call.
 export const selectDismissedToolApprovals = createSelector(
   (state: RootState) => state.notifications.dismissedToolApprovals,
+  (entries) => entries.map((entry) => entry.id),
+);
+
+export const selectDismissedShareNotifications = createSelector(
+  (state: RootState) => state.notifications.dismissedShareNotifications,
   (entries) => entries.map((entry) => entry.id),
 );
 

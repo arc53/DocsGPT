@@ -16,6 +16,14 @@
     "editor": "Editor",
     "viewer": "Viewer"
   },
+  "notifications": {
+    "memberAddedTitle": "Added to a team",
+    "memberAddedBody": "You were added to {{team}} as {{role}}",
+    "sharedTitle": "Shared with you",
+    "sharedBody": "{{type}} shared with your team: {{name}} ({{access}})",
+    "sharedBodyNoName": "A {{type}} was shared with your team ({{access}})",
+    "dismiss": "Dismiss"
+  },
   "demo": [
     {
       "header": "Learn about DocsGPT",

@@ -36,6 +36,10 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set([
   'schedule.cancelled',
   'schedule.completed',
   'schedule.message.appended',
+  // Team-sharing notifications (teams/routes.py); consumed by
+  // TeamNotificationToast via selectRecentEvents.
+  'team.member_added',
+  'resource.shared',
 ]);
 
 /**
