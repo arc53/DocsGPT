@@ -177,6 +177,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     return jsonSchemaText.trim() !== '' && !jsonSchemaValid;
   };
 
+  // Resolve a selected source id to its display name. Prefer the caller's own
+  // source list; fall back to the owner-resolved name embedded in the agent
+  // payload (source_details) so a team member viewing a shared agent sees the
+  // source name instead of "External KB"; only then show the generic label.
+  const resolveSourceLabel = (id: string): string => {
+    const matchedDoc = sourceDocs?.find(
+      (source) =>
+        source.id === id || source.name === id || source.retriever === id,
+    );
+    if (matchedDoc?.name) return matchedDoc.name;
+    const detail = agent.source_details?.find((d) => d.id === id);
+    if (detail?.name) return detail.name;
+    return t('agents.form.externalKb');
+  };
+
   const handleUpload = useCallback((files: File[]) => {
     if (files && files.length > 0) {
       const file = files[0];
@@ -952,17 +967,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     >
                       {selectedSourceIds.size > 0
                         ? Array.from(selectedSourceIds)
-                            .map((id) => {
-                              const matchedDoc = sourceDocs?.find(
-                                (source) =>
-                                  source.id === id ||
-                                  source.name === id ||
-                                  source.retriever === id,
-                              );
-                              return (
-                                matchedDoc?.name || t('agents.form.externalKb')
-                              );
-                            })
+                            .map((id) => resolveSourceLabel(id))
                             .filter(Boolean)
                             .join(', ')
                         : t('agents.form.placeholders.selectSources')}
@@ -1003,7 +1008,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   prompts={prompts}
                   selectedPrompt={
                     prompts.find((prompt) => prompt.id === agent.prompt_id) ||
-                    prompts[0] || {
+                    // Owner-resolved name from the agent payload: lets a team
+                    // member see the owner's prompt name (which isn't in their
+                    // own prompts list). 'public' hides owner-only edit/share
+                    // affordances on a prompt the viewer doesn't own.
+                    (agent.prompt_name
+                      ? {
+                          name: agent.prompt_name,
+                          id: agent.prompt_id || 'default',
+                          type: 'public',
+                        }
+                      : prompts[0]) || {
                       name: 'default',
                       id: 'default',
                       type: 'public',

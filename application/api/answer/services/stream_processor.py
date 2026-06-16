@@ -28,6 +28,7 @@ from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.attachments import AttachmentsRepository
 from application.storage.db.repositories.prompts import PromptsRepository
 from application.storage.db.repositories.sources import SourcesRepository
+from application.storage.db.repositories.team_scope import TeamScopeRepository
 from application.storage.db.repositories.user_tools import UserToolsRepository
 from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.session import db_readonly, db_session
@@ -427,7 +428,7 @@ class StreamProcessor:
             with db_readonly() as conn:
                 # Lookup without user scoping — access control is done
                 # against ``user_id`` / ``shared_with`` / ``shared`` flags
-                # right below, matching the legacy Mongo semantics.
+                # below, matching the legacy Mongo semantics.
                 repo = AgentsRepository(conn)
                 agent = None
                 if looks_like_uuid(str(agent_id)):
@@ -442,13 +443,29 @@ class StreamProcessor:
                         agent = row_to_dict(row)
                 if agent is None:
                     agent = repo.get_by_legacy_id(str(agent_id))
-            if agent is None:
-                raise Exception("Agent not found")
-            agent_owner = agent.get("user_id")
-            is_owner = agent_owner == user_id
-            is_shared_with_user = bool(agent.get("shared", False))
+                if agent is None:
+                    raise Exception("Agent not found")
+                agent_owner = agent.get("user_id")
+                is_owner = agent_owner == user_id
+                is_shared_with_user = bool(agent.get("shared", False))
 
-            if not (is_owner or is_shared_with_user):
+                # Team-shared agents are runnable by any member with a grant
+                # (viewer is enough to run). Resolved live against team_members
+                # on the SAME connection so a revoked grant/membership denies on
+                # the next call; resolution failure fails closed.
+                is_team_shared = False
+                if not (is_owner or is_shared_with_user) and user_id:
+                    try:
+                        is_team_shared = TeamScopeRepository(conn).can_read(
+                            user_id, "agent", str(agent["id"])
+                        )
+                    except Exception:
+                        logger.error(
+                            "team access check failed for agent run", exc_info=True
+                        )
+                        is_team_shared = False
+
+            if not (is_owner or is_shared_with_user or is_team_shared):
                 raise Exception("Unauthorized access to the agent")
             if is_owner:
                 now = datetime.datetime.now(datetime.timezone.utc)
@@ -1362,6 +1379,10 @@ class StreamProcessor:
                 ),
                 "model_id": self.model_id,
                 "model_user_id": self.model_user_id,
+                # Agent owner — internal_search resolves the agent's sources as
+                # their owner so a team member running a shared agent can read
+                # nested-source structure (the sources aren't theirs).
+                "source_owner_id": self.agent_config.get("user_id"),
                 "user_api_key": self.agent_config["user_api_key"],
                 "agent_id": self.agent_id,
                 "llm_name": provider or settings.LLM_PROVIDER,

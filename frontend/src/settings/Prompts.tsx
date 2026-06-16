@@ -1,4 +1,4 @@
-import { ChevronDown, Copy, Eye, Pencil, Trash2 } from 'lucide-react';
+import { ChevronDown, Copy, Eye, Pencil, Trash2, Users } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -21,6 +21,7 @@ import {
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, PromptProps } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
+import ShareToTeamModal from '../teams/ShareToTeamModal';
 import PromptsModal from '../preferences/PromptsModal';
 import { cn } from '@/lib/utils';
 
@@ -65,6 +66,11 @@ export default function Prompts({
   const [open, setOpen] = React.useState(false);
 
   const [promptToDelete, setPromptToDelete] = React.useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+
+  const [promptToShare, setPromptToShare] = React.useState<{
     id: string;
     name: string;
   } | null>(null);
@@ -332,6 +338,11 @@ export default function Prompts({
                     {prompts.map((prompt) => {
                       const isActive = selectedPrompt?.id === prompt.id;
                       const canModify = prompt.type !== 'public';
+                      // Sharing is an owner-only action: hide it for public
+                      // prompts and prompts shared into the workspace by a
+                      // team.
+                      const canShare =
+                        prompt.type !== 'public' && prompt.type !== 'team';
                       return (
                         <CommandItem
                           key={prompt.id}
@@ -376,6 +387,26 @@ export default function Prompts({
                             >
                               <Copy className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
                             </Button>
+                            {canShare && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpen(false);
+                                  setPromptToShare({
+                                    id: prompt.id,
+                                    name: prompt.name,
+                                  });
+                                }}
+                                className="group/btn hover:bg-foreground/15 dark:hover:bg-foreground/20 h-auto w-auto rounded p-1"
+                                aria-label={t('agents.shareWithTeam')}
+                                title={t('agents.shareWithTeam')}
+                              >
+                                <Users className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
+                              </Button>
+                            )}
                             {canModify && (
                               <Button
                                 type="button"
@@ -445,6 +476,14 @@ export default function Prompts({
           handleSubmit={confirmDeletePrompt}
           handleCancel={() => setPromptToDelete(null)}
           variant="danger"
+        />
+      )}
+      {promptToShare && (
+        <ShareToTeamModal
+          resourceType="prompt"
+          resourceId={promptToShare.id}
+          resourceName={promptToShare.name}
+          onClose={() => setPromptToShare(null)}
         />
       )}
     </>

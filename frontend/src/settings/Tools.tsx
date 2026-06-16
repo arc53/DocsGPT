@@ -1,4 +1,4 @@
-import { RefreshCcw, Search as SearchIcon, Trash } from 'lucide-react';
+import { RefreshCcw, Search as SearchIcon, Trash, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +27,7 @@ import ConfirmationModal from '../modals/ConfirmationModal';
 import MCPServerModal from '../modals/MCPServerModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
+import ShareToTeamModal from '../teams/ShareToTeamModal';
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
 import { APIToolType, UserToolType } from './types';
@@ -62,6 +63,9 @@ export default function Tools() {
   const [reconnectModalState, setReconnectModalState] =
     React.useState<ActiveState>('INACTIVE');
   const [reconnectTool, setReconnectTool] = React.useState<any>(null);
+  const [toolToShare, setToolToShare] = React.useState<UserToolType | null>(
+    null,
+  );
   const [mcpStatuses, setMcpStatuses] = React.useState<{
     [toolId: string]: string;
   }>({});
@@ -133,6 +137,18 @@ export default function Tools() {
         iconHeight: 16,
       },
     ];
+    // Sharing is an owner-only action: hide it for tools shared into the
+    // user's workspace by a team.
+    if (tool.ownership !== 'team') {
+      options.splice(options.length - 1, 0, {
+        icon: Users,
+        label: t('settings.tools.shareWithTeam'),
+        onClick: () => setToolToShare(tool),
+        variant: 'default',
+        iconWidth: 16,
+        iconHeight: 16,
+      });
+    }
     if (tool.name === 'mcp_tool') {
       options.splice(1, 0, {
         icon: RefreshCcw,
@@ -500,6 +516,14 @@ export default function Tools() {
               fetchMcpStatuses();
             }}
           />
+          {toolToShare && (
+            <ShareToTeamModal
+              resourceType="tool"
+              resourceId={toolToShare.id}
+              resourceName={toolToShare.customName || toolToShare.displayName}
+              onClose={() => setToolToShare(null)}
+            />
+          )}
         </div>
       )}
     </div>

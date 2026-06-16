@@ -230,7 +230,13 @@ def _gate_and_audit_login(user_id: str, effective: dict, groups: list[str]) -> b
                 )
             else:
                 if row is None:
-                    users.upsert(user_id)
+                    # New user: provision with the email claim so a team admin
+                    # can later add them by email.
+                    users.upsert(user_id, email=effective.get("email"))
+                else:
+                    # Existing user: targeted email backfill only (don't re-run
+                    # the full upsert — preserves the no-upsert-on-login path).
+                    users.set_email(user_id, effective.get("email"))
                 AuthEventsRepository(conn).insert(
                     user_id,
                     "oidc_login",

@@ -30,6 +30,16 @@ const endpoints = {
     EXPORT_AGENT: (id: string) => `/api/export_agent?id=${id}`,
     IMPORT_AGENT_PLAN: '/api/import_agent/plan',
     IMPORT_AGENT: '/api/import_agent',
+    TEAMS: '/api/teams',
+    TEAM: (id: string) => `/api/teams/${id}`,
+    TEAM_MEMBERS: (id: string) => `/api/teams/${id}/members`,
+    TEAM_MEMBER: (id: string, memberId: string) =>
+      `/api/teams/${id}/members/${encodeURIComponent(memberId)}`,
+    TEAM_GRANTS: (id: string) => `/api/teams/${id}/grants`,
+    TEAM_TRANSFER_OWNER: (id: string) => `/api/teams/${id}/transfer_owner`,
+    RESOURCE_SHARES: (resourceType: string, resourceId: string) =>
+      `/api/resource_shares?resource_type=${resourceType}&resource_id=${resourceId}`,
+    ALL_TEAMS: '/api/admin/teams',
     PROMPTS: '/api/get_prompts',
     CREATE_PROMPT: '/api/create_prompt',
     DELETE_PROMPT: '/api/delete_prompt',

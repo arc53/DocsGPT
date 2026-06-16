@@ -174,6 +174,32 @@ class SourcesRepository:
                 return row
         return self.get_by_legacy_id(source_id, user_id)
 
+    def get_by_id(self, source_id: str) -> Optional[dict]:
+        """Fetch a source by id with NO ownership scoping.
+
+        Used ONLY after a team-grant authorization check (team sharing). Never
+        call on a raw user-supplied id without that check.
+        """
+        if not looks_like_uuid(source_id):
+            return None
+        result = self._conn.execute(
+            text("SELECT * FROM sources WHERE id = CAST(:id AS uuid)"),
+            {"id": source_id},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def list_by_ids(self, source_ids) -> list[dict]:
+        """Fetch sources whose id is in ``source_ids`` (team-shared listing path)."""
+        ids = [str(s) for s in source_ids if looks_like_uuid(str(s))]
+        if not ids:
+            return []
+        result = self._conn.execute(
+            text("SELECT * FROM sources WHERE id = ANY(CAST(:ids AS uuid[])) ORDER BY created_at DESC"),
+            {"ids": ids},
+        )
+        return [row_to_dict(r) for r in result.fetchall()]
+
     def find_by_name(self, user_id: str, name: str) -> Optional[dict]:
         """Return a user's source whose name matches ``name`` (case-insensitive).
 

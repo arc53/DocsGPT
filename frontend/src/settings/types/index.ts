@@ -87,6 +87,9 @@ export type UserToolType = {
   // from the Add-Tool modal; surfaced to the agent picker. May coexist
   // with ``default`` for dual-registered tools.
   builtin?: boolean;
+  // Whether the current user owns this tool ('user') or only has access to
+  // it via a team share ('team'). Owner-only actions are gated on 'user'.
+  ownership?: 'user' | 'team';
   config: {
     [key: string]: any;
   };

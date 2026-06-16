@@ -8,6 +8,10 @@ from flask_restx import fields, Namespace, Resource
 
 from application.api import api
 from application.api.user.tasks import reingest_source_task, sync_source
+from application.api.user.team_sharing import (
+    effective_write_owner,
+    visible_with_access,
+)
 from application.core.settings import settings
 from application.parser.remote.remote_creator import normalize_remote_data
 from application.storage.db.repositories.ingest_chunk_progress import (
@@ -61,7 +65,14 @@ class CombinedJson(Resource):
 
         try:
             with db_readonly() as conn:
-                indexes = SourcesRepository(conn).list_for_user(user)
+                repo = SourcesRepository(conn)
+                indexes = repo.list_for_user(user)
+                owned_ids = {str(i["id"]) for i in indexes}
+                # Sources shared with the caller's teams — surfaced here so they
+                # are attachable to the member's own agents (direct sharing).
+                team_shared = visible_with_access(conn, user, "source")
+                shared_ids = [sid for sid in team_shared if sid not in owned_ids]
+                shared_sources = repo.list_by_ids(shared_ids)
             # list_for_user sorts by created_at DESC; legacy shape sorted by
             # "date" DESC. Both are monotonic on creation so the ordering is
             # equivalent for dev; re-sort defensively.
@@ -69,22 +80,34 @@ class CombinedJson(Resource):
                 indexes, key=lambda r: r.get("date") or r.get("created_at") or "",
                 reverse=True,
             )
-            for index in indexes:
+
+            def _source_entry(index, *, ownership="user", team_access=None):
                 provider = _get_provider_from_remote_data(index.get("remote_data"))
+                return {
+                    "id": str(index["id"]),
+                    "name": index.get("name"),
+                    "date": index.get("date"),
+                    "model": settings.EMBEDDINGS_NAME,
+                    "location": "local",
+                    "tokens": index.get("tokens", ""),
+                    "retriever": index.get("retriever", "classic"),
+                    "syncFrequency": index.get("sync_frequency", ""),
+                    "provider": provider,
+                    "is_nested": bool(index.get("directory_structure")),
+                    "type": index.get("type", "file"),
+                    "ownership": ownership,
+                    "team_access": team_access,
+                }
+
+            for index in indexes:
+                data.append(_source_entry(index))
+            for index in shared_sources:
                 data.append(
-                    {
-                        "id": str(index["id"]),
-                        "name": index.get("name"),
-                        "date": index.get("date"),
-                        "model": settings.EMBEDDINGS_NAME,
-                        "location": "local",
-                        "tokens": index.get("tokens", ""),
-                        "retriever": index.get("retriever", "classic"),
-                        "syncFrequency": index.get("sync_frequency", ""),
-                        "provider": provider,
-                        "is_nested": bool(index.get("directory_structure")),
-                        "type": index.get("type", "file"),
-                    }
+                    _source_entry(
+                        index,
+                        ownership="team",
+                        team_access=team_shared.get(str(index["id"])),
+                    )
                 )
         except Exception as err:
             current_app.logger.error(f"Error retrieving sources: {err}", exc_info=True)
@@ -271,12 +294,19 @@ class ManageSync(Resource):
             with db_session() as conn:
                 repo = SourcesRepository(conn)
                 doc = repo.get_any(source_id, user)
-                if doc is None:
-                    return make_response(
-                        jsonify({"success": False, "message": "Source not found"}),
-                        404,
-                    )
-                repo.update(str(doc["id"]), user, {"sync_frequency": sync_frequency})
+                if doc is not None:
+                    repo.update(str(doc["id"]), user, {"sync_frequency": sync_frequency})
+                else:
+                    # Team editor write path (sync_frequency is metadata, no
+                    # ingestion side effects). Reingest/sync triggers stay
+                    # owner-only pending a cost/side-effect decision.
+                    owner = effective_write_owner(conn, "source", source_id, user)
+                    if not owner:
+                        return make_response(
+                            jsonify({"success": False, "message": "Source not found"}),
+                            404,
+                        )
+                    repo.update(source_id, owner, {"sync_frequency": sync_frequency})
         except Exception as err:
             current_app.logger.error(
                 f"Error updating sync frequency: {err}", exc_info=True
@@ -305,9 +335,18 @@ class SyncSource(Resource):
         if missing_fields:
             return missing_fields
         source_id = data["source_id"]
+        # Resolve the owner to run the sync AS: ``user`` when they own the
+        # source, the real owner when ``user`` holds a team ``editor`` grant
+        # (re-sync is an editor-allowed write). Vector partitions are keyed by
+        # source_id (owner-agnostic), so dispatching as the owner is correct.
         try:
             with db_readonly() as conn:
                 doc = SourcesRepository(conn).get_any(source_id, user)
+                owner = user
+                if doc is None:
+                    owner = effective_write_owner(conn, "source", source_id, user)
+                    if owner:
+                        doc = SourcesRepository(conn).get_any(source_id, owner)
         except Exception as err:
             current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
             return make_response(
@@ -315,7 +354,7 @@ class SyncSource(Resource):
             )
         if not doc:
             return make_response(
-                jsonify({"success": False, "message": "Source not found"}), 404
+                jsonify({"success": False, "message": "Source not accessible"}), 403
             )
         source_type = doc.get("type", "")
         if source_type and source_type.startswith("connector"):
@@ -337,7 +376,7 @@ class SyncSource(Resource):
             task = sync_source.delay(
                 source_data=source_data,
                 job_name=doc.get("name", ""),
-                user=user,
+                user=owner,
                 loader=source_type,
                 sync_frequency=doc.get("sync_frequency", "never"),
                 retriever=doc.get("retriever", "classic"),
@@ -374,9 +413,18 @@ class ReingestSource(Resource):
         if missing_fields:
             return missing_fields
         source_id = data["source_id"]
+        # Run the reingest AS the owner: ``user`` when they own the source,
+        # the real owner when ``user`` holds a team ``editor`` grant (reingest
+        # is an editor-allowed write). Vector partitions are keyed by source_id
+        # (owner-agnostic), so dispatching as the owner is correct.
         try:
             with db_readonly() as conn:
                 doc = SourcesRepository(conn).get_any(source_id, user)
+                owner = user
+                if doc is None:
+                    owner = effective_write_owner(conn, "source", source_id, user)
+                    if owner:
+                        doc = SourcesRepository(conn).get_any(source_id, owner)
         except Exception as err:
             current_app.logger.error(
                 f"Error looking up source: {err}", exc_info=True
@@ -386,7 +434,7 @@ class ReingestSource(Resource):
             )
         if not doc:
             return make_response(
-                jsonify({"success": False, "message": "Source not found"}), 404
+                jsonify({"success": False, "message": "Source not accessible"}), 403
             )
         resolved_source_id = str(doc["id"])
         # Drop the stale chunk-progress row so the sources list stops
@@ -404,8 +452,8 @@ class ReingestSource(Resource):
             # Scoped key so repeated clicks collapse onto one reingest.
             task = reingest_source_task.delay(
                 source_id=resolved_source_id,
-                user=user,
-                idempotency_key=f"reingest-source:{user}:{resolved_source_id}",
+                user=owner,
+                idempotency_key=f"reingest-source:{owner}:{resolved_source_id}",
             )
         except Exception as err:
             current_app.logger.error(

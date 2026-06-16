@@ -91,6 +91,7 @@
       },
       "actions": "Actions",
       "view": "View",
+      "shareWithTeam": "Share with team",
       "deleteWarning": "Are you sure you want to delete \"{{name}}\"?",
       "confirmDelete": "Are you sure you want to delete this file? This action cannot be undone.",
       "backToAll": "Back to all sources",
@@ -216,6 +217,83 @@
         "result": "Result"
       }
     },
+    "teams": {
+      "label": "Teams",
+      "subtitle": "Manage your teams, members, and shared resources.",
+      "newTeam": "New team",
+      "backToTeams": "Back to teams",
+      "createTeam": "Create a team",
+      "createTeamDescription": "Give your team a name. You can add members and share resources once it's created.",
+      "teamNamePlaceholder": "Team name",
+      "create": "Create",
+      "createTeamError": "Could not create team.",
+      "noTeams": "No teams yet.",
+      "loadError": "Failed to load teams.",
+      "roleAdmin": "admin",
+      "roleMember": "member",
+      "sourceManual": "Added manually",
+      "sourceSso": "via SSO",
+      "sourceScim": "via SCIM",
+      "teamsHeading": "Your teams",
+      "selectTeamHint": "Select a team to manage its members and shared resources.",
+      "selectTeamTitle": "No team selected",
+      "teamSubtitle": "Manage members and the resources shared with this team.",
+      "deleteTeam": "Delete team",
+      "deleteTeamConfirmation": "Are you sure you want to delete \"{{name}}\"? This cannot be undone.",
+      "members": "Members",
+      "memberEmailLabel": "Member email",
+      "memberEmailPlaceholder": "name@example.com",
+      "memberRoleLabel": "Role",
+      "addMemberPlaceholder": "User id (OIDC sub) to add",
+      "add": "Add",
+      "remove": "Remove",
+      "removeMemberConfirmation": "Remove this member from the team?",
+      "addMemberError": "Failed to add member (team admins only).",
+      "memberNotFound": "No user with that email — they must sign in once first.",
+      "noMembers": "No members yet. Add someone by email below.",
+      "roleChangeError": "Could not change role (last admin is protected).",
+      "removeMemberError": "Could not remove member.",
+      "deleteTeamError": "Could not delete team.",
+      "updateFailed": "Update failed",
+      "openTeamError": "Could not load team details.",
+      "sharedResources": "Shared resources",
+      "sharedWithTeam": "Shared with this team ({{count}})",
+      "nothingShared": "Nothing shared yet. Share an agent, source, prompt, or tool from its menu.",
+      "unshare": "Unshare",
+      "unshareError": "Could not unshare resource.",
+      "resourceType": {
+        "agent": "Agent",
+        "source": "Source",
+        "prompt": "Prompt",
+        "tool": "Tool"
+      },
+      "share": {
+        "titleNamed": "Share \"{{name}}\"",
+        "titleGeneric": "Share this {{type}}",
+        "subtitle": "Team members can use it; editors can also modify it. You stay the owner.",
+        "noTeams": "You're not a member of any team yet. Create one in Settings → Teams.",
+        "accessLevel": {
+          "viewer": "Viewer",
+          "editor": "Editor"
+        },
+        "done": "Done",
+        "loadError": "Could not load current shares.",
+        "shareError": "Could not share with the team.",
+        "unshareError": "Could not unshare from the team.",
+        "addPlaceholder": "Add people or teams…",
+        "searchPlaceholder": "Add people or teams…",
+        "noMatches": "No people or teams found.",
+        "peopleWithAccess": "People with access",
+        "you": "You",
+        "owner": "Owner",
+        "teamsGroup": "Teams",
+        "peopleGroup": "People",
+        "teamLabel": "Team",
+        "viaTeam": "via {{team}}",
+        "removeAccess": "Remove access",
+        "access": "Access"
+      }
+    },
     "tools": {
       "label": "Tools",
       "subtitle": "Browse, connect, and configure the tools and integrations that power your agents",
@@ -230,6 +308,7 @@
       "edit": "Edit",
       "delete": "Delete",
       "reconnect": "Reconnect",
+      "shareWithTeam": "Share with team",
       "builtIn": "Built-in",
       "authStatus": {
         "connected": "Connected",
@@ -793,6 +872,7 @@
     "newAgent": "New Agent",
     "importAgent": "Import",
     "exportAgent": "Export as YAML",
+    "shareWithTeam": "Share with team",
     "backToAll": "Back to all agents",
     "pageHeader": {
       "crumbs": {
@@ -1060,6 +1140,17 @@
   },
   "navigation": {
     "agents": "Agents"
+  },
+  "teams": {
+    "switcher": {
+      "ariaLabel": "Switch team",
+      "personal": "Personal account",
+      "personalSubtitle": "Personal workspace",
+      "roleAdmin": "Admin",
+      "roleMember": "Member",
+      "manageTeam": "Manage team",
+      "createTeam": "Create team"
+    }
   },
   "notification": {
     "ariaLabel": "Notification",

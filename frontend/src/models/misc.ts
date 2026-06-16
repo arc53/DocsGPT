@@ -16,6 +16,9 @@ export type Doc = {
   provider?: string;
   // Derived server-side from ingest_chunk_progress (sources API).
   ingestStatus?: 'processing' | 'failed';
+  // Whether the current user owns this source ('user') or only has access to
+  // it via a team share ('team'). Owner-only actions are gated on 'user'.
+  ownership?: 'user' | 'team';
 };
 
 export type GetDocsResponse = {

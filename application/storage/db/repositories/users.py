@@ -67,7 +67,7 @@ class UsersRepository:
     # ------------------------------------------------------------------
     # Upsert
     # ------------------------------------------------------------------
-    def upsert(self, user_id: str) -> dict:
+    def upsert(self, user_id: str, email: Optional[str] = None) -> dict:
         """Ensure a row exists for ``user_id`` and return it.
 
         Matches Mongo's ``find_one_and_update(..., $setOnInsert, upsert=True,
@@ -75,23 +75,57 @@ class UsersRepository:
         are preserved untouched; if it doesn't, a new row is created with
         default preferences.
 
-        The ``DO UPDATE SET user_id = EXCLUDED.user_id`` branch is a
-        deliberate no-op that lets ``RETURNING *`` fire on both the insert
-        and conflict paths (``DO NOTHING`` would suppress the returning).
+        ``email`` (from the OIDC claim) is set on insert and refreshed on
+        conflict, but only when provided — ``COALESCE`` preserves a previously
+        stored email when a non-OIDC caller upserts with ``email=None`` (most
+        upserts come from request paths that don't carry the email claim).
+
+        The conflict branch also updates ``user_id`` (a no-op) so ``RETURNING *``
+        fires on both the insert and conflict paths.
         """
         result = self._conn.execute(
             text(
                 """
-                INSERT INTO users (user_id, agent_preferences)
-                VALUES (:user_id, CAST(:default_prefs AS jsonb))
+                INSERT INTO users (user_id, email, agent_preferences)
+                VALUES (:user_id, :email, CAST(:default_prefs AS jsonb))
                 ON CONFLICT (user_id) DO UPDATE
-                    SET user_id = EXCLUDED.user_id
+                    SET user_id = EXCLUDED.user_id,
+                        email = COALESCE(EXCLUDED.email, users.email)
                 RETURNING *
                 """
             ),
-            {"user_id": user_id, "default_prefs": _DEFAULT_PREFERENCES},
+            {"user_id": user_id, "email": email, "default_prefs": _DEFAULT_PREFERENCES},
         )
         return row_to_dict(result.fetchone())
+
+    def set_email(self, user_id: str, email: Optional[str]) -> None:
+        """Set a user's email when provided (targeted update, no full upsert).
+
+        Used to backfill an existing user's email from the OIDC claim on login
+        without re-running the upsert. No-op when ``email`` is falsy so a login
+        without the claim never wipes a stored value.
+        """
+        if not email:
+            return
+        self._conn.execute(
+            text("UPDATE users SET email = :email WHERE user_id = :user_id"),
+            {"user_id": user_id, "email": email},
+        )
+
+    def find_by_email(self, email: str) -> Optional[dict]:
+        """Return the user row whose email matches ``email`` (case-insensitive).
+
+        Used by the add-team-member-by-email flow to resolve an email to its
+        ``user_id`` (sub). Returns None when no user has that email.
+        """
+        if not email or not email.strip():
+            return None
+        result = self._conn.execute(
+            text("SELECT * FROM users WHERE lower(email) = lower(:email) LIMIT 1"),
+            {"email": email.strip()},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
 
     # ------------------------------------------------------------------
     # Pinned agents

@@ -512,7 +512,9 @@ class TestSyncSource:
             response = SyncSource().post()
         assert response.status_code == 400
 
-    def test_returns_404_missing_source(self, app, pg_conn):
+    def test_returns_403_inaccessible_source(self, app, pg_conn):
+        # No ownership and no team editor grant resolves to None, which the
+        # owner-or-editor gate answers as 403 "Source not accessible".
         from application.api.user.sources.routes import SyncSource
 
         with _patch_db(pg_conn), app.test_request_context(
@@ -523,7 +525,7 @@ class TestSyncSource:
             from flask import request
             request.decoded_token = {"sub": "u"}
             response = SyncSource().post()
-        assert response.status_code == 404
+        assert response.status_code == 403
 
     def test_returns_400_for_connector_type(self, app, pg_conn):
         from application.api.user.sources.routes import SyncSource
@@ -659,7 +661,9 @@ class TestReingestSource:
             response = ReingestSource().post()
         assert response.status_code == 400
 
-    def test_returns_404_missing_source(self, app, pg_conn):
+    def test_returns_403_inaccessible_source(self, app, pg_conn):
+        # No ownership and no team editor grant resolves to None, which the
+        # owner-or-editor gate answers as 403 "Source not accessible".
         from application.api.user.sources.routes import ReingestSource
 
         with _patch_db(pg_conn), app.test_request_context(
@@ -670,7 +674,7 @@ class TestReingestSource:
             from flask import request
             request.decoded_token = {"sub": "u"}
             response = ReingestSource().post()
-        assert response.status_code == 404
+        assert response.status_code == 403
 
     def test_triggers_reingest_task(self, app, pg_conn):
         from application.api.user.sources.routes import ReingestSource
@@ -699,6 +703,58 @@ class TestReingestSource:
         # clicks collapse onto one reingest instead of racing.
         assert mock_delay.call_args.kwargs["idempotency_key"] == (
             f"reingest-source:{user}:{src['id']}"
+        )
+
+    def test_team_editor_reingests_as_owner(self, app, pg_conn):
+        """A team editor (not the owner) can reingest a shared source; the
+        task dispatches AS the real owner so the owner-scoped pipeline and
+        the owner-agnostic vector partition stay consistent.
+        """
+        import uuid
+
+        from application.api.user.sources.routes import ReingestSource
+        from application.storage.db.repositories.team_members import (
+            TeamMembersRepository,
+        )
+        from application.storage.db.repositories.team_resource_grants import (
+            TeamResourceGrantsRepository,
+        )
+        from application.storage.db.repositories.teams import TeamsRepository
+
+        owner = "alice-reingest"
+        editor = "bob-reingest"
+        src = _seed_source(pg_conn, owner, name="shared-src", type="file")
+        sid = str(src["id"])
+        team = TeamsRepository(pg_conn).create(
+            "Acme", f"acme-{uuid.uuid4().hex[:8]}", owner
+        )
+        TeamMembersRepository(pg_conn).add_member(
+            team["id"], editor, role="team_member"
+        )
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team["id"], "source", sid, owner_id=owner, granted_by=owner,
+            access_level="editor",
+        )
+
+        fake_task = MagicMock(id="reingest-task-editor")
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.reingest_source_task.delay",
+            return_value=fake_task,
+        ) as mock_delay, app.test_request_context(
+            "/api/sources/reingest",
+            method="POST",
+            json={"source_id": sid},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": editor}
+            response = ReingestSource().post()
+
+        assert response.status_code == 200
+        assert mock_delay.call_args.kwargs["source_id"] == sid
+        # Dispatched AS the owner, not the editor caller.
+        assert mock_delay.call_args.kwargs["user"] == owner
+        assert mock_delay.call_args.kwargs["idempotency_key"] == (
+            f"reingest-source:{owner}:{sid}"
         )
 
     def test_clears_stalled_ingest_progress_row(self, app, pg_conn):

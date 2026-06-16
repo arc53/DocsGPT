@@ -22,6 +22,7 @@ import useTokenAuth from './hooks/useTokenAuth';
 import Navigation from './Navigation';
 import PageNotFound from './PageNotFound';
 import Setting from './settings';
+import Teams from './settings/Teams';
 import Notification from './components/Notification';
 import ToolApprovalToast from './notifications/ToolApprovalToast';
 
@@ -141,6 +142,7 @@ export default function App() {
             element={<Conversation />}
           />
           <Route path="/settings/*" element={<Setting />} />
+          <Route path="/teams" element={<Teams />} />
           <Route path="/agents/*" element={<Agents />} />
           <Route
             path="/admin/*"

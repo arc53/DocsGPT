@@ -72,7 +72,17 @@ class InternalSearchTool(Tool):
                 active_docs = [active_docs]
 
             decoded_token = self.config.get("decoded_token") or {}
-            user_id = decoded_token.get("sub") if decoded_token else None
+            # Resolve the agent's sources as their OWNER: for a team-shared
+            # agent run by a member, the sources belong to the owner, so using
+            # the member's sub would 404. ``source_owner_id`` is the agent owner
+            # (set at config-build time); fall back to the BYOM model_user_id,
+            # then the invoker. Running the agent already authorized these
+            # sources.
+            user_id = (
+                self.config.get("source_owner_id")
+                or self.config.get("model_user_id")
+                or (decoded_token.get("sub") if decoded_token else None)
+            )
 
             merged_structure = {}
             with db_readonly() as conn:
@@ -439,6 +449,7 @@ def build_internal_tool_config(
     doc_token_limit: int = 50000,
     model_id: str = "docsgpt-local",
     model_user_id: Optional[str] = None,
+    source_owner_id: Optional[str] = None,
     user_api_key: Optional[str] = None,
     agent_id: Optional[str] = None,
     llm_name: str = None,
@@ -454,6 +465,10 @@ def build_internal_tool_config(
         "doc_token_limit": doc_token_limit,
         "model_id": model_id,
         "model_user_id": model_user_id,
+        # The agent owner — the sources belong to them, so directory-structure
+        # resolution uses this (a team member running a shared agent has a
+        # different sub). Independent of the BYOM ``model_user_id``.
+        "source_owner_id": source_owner_id,
         "user_api_key": user_api_key,
         "agent_id": agent_id,
         "llm_name": llm_name or settings.LLM_PROVIDER,

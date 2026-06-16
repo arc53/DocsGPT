@@ -25,6 +25,17 @@ export type Agent = {
   shared?: boolean;
   shared_token?: string;
   shared_metadata?: any;
+  // Whether the current user owns this agent ('user') or only has access to
+  // it because a team shared it with them ('team'). Owner-only actions (e.g.
+  // sharing with a team) are gated on 'user'.
+  ownership?: 'user' | 'team';
+  team_access?: 'viewer' | 'editor' | null;
+  // Owner-agnostic display names resolved server-side (GET /api/get_agent) so a
+  // team member viewing a shared agent sees the owner's prompt/source names
+  // instead of a blank prompt / "External KB" (the client can only resolve
+  // names for resources the caller themselves owns).
+  prompt_name?: string | null;
+  source_details?: { id: string; name: string | null }[];
   created_at?: string;
   updated_at?: string;
   last_used_at?: string;

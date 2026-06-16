@@ -22,6 +22,7 @@ from .prompts import prompts_ns
 from .schedules import schedules_ns
 from .sharing import sharing_ns
 from .sources import sources_chunks_ns, sources_ns, sources_upload_ns
+from .teams import teams_ns
 from .tools import tools_mcp_ns, tools_ns
 from .workflows import workflows_ns
 
@@ -63,6 +64,9 @@ api.add_namespace(sharing_ns)
 api.add_namespace(sources_ns)
 api.add_namespace(sources_chunks_ns)
 api.add_namespace(sources_upload_ns)
+
+# Teams (CRUD, membership, resource-sharing grants)
+api.add_namespace(teams_ns)
 
 # Tools (main, MCP)
 api.add_namespace(tools_ns)
