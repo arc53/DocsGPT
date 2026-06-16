@@ -980,7 +980,7 @@ def reingest_source_worker(self, source_id, user):
                         directory_structure, file_name_map
                     )
 
-                    now = datetime.datetime.now()
+                    now = datetime.datetime.now(datetime.timezone.utc)
                     with db_session() as conn:
                         SourcesRepository(conn).update(
                             source_id, user,
@@ -1230,7 +1230,7 @@ def remote_worker(
         }
 
         if operation_mode == "sync":
-            last_sync_now = datetime.datetime.now()
+            last_sync_now = datetime.datetime.now(datetime.timezone.utc)
             file_data["last_sync"] = last_sync_now
 
             try:
@@ -1796,7 +1796,7 @@ def ingest_connector(
                 "sync_frequency": sync_frequency,
             }
 
-            file_data["last_sync"] = datetime.datetime.now()
+            file_data["last_sync"] = datetime.datetime.now(datetime.timezone.utc)
 
             if operation_mode == "sync":
                 try:
