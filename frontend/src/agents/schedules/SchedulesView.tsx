@@ -10,6 +10,7 @@ import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
 import { selectToken } from '../../preferences/preferenceSlice';
 import type { AppDispatch, RootState } from '../../store';
+import { formatDateTime } from '../../utils/dateTimeUtils';
 import AgentPageHeader from '../AgentPageHeader';
 import type { Agent } from '../types';
 import type {
@@ -33,10 +34,7 @@ import {
 } from './schedulesSlice';
 
 const formatTimestamp = (value?: string | null): string => {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
+  return value ? formatDateTime(value) : '—';
 };
 
 /** Standalone Schedules page for an agent: list, create, edit, pause, run, delete. */
@@ -170,7 +168,7 @@ export default function SchedulesView() {
               {agent.last_used_at
                 ? t('agents.logs.lastUsedAt') +
                   ' ' +
-                  new Date(agent.last_used_at).toLocaleString()
+                  formatDateTime(agent.last_used_at)
                 : t('agents.logs.noUsageHistory')}
             </p>
           </div>

@@ -30,6 +30,7 @@ import {
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
+import { formatDateTime } from '../utils/dateTimeUtils';
 import { UserToolType } from './types';
 
 /** ms-since-last-seen threshold for the online pill. */
@@ -43,12 +44,7 @@ function isOnline(device: Device | null): boolean {
 }
 
 function formatTimestamp(value: string | null | undefined): string {
-  if (!value) return '-';
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return value;
-  }
+  return value ? formatDateTime(value) : '-';
 }
 
 /** Compact relative span (e.g. "12s", "5m", "3h", "2d") since `value`. */

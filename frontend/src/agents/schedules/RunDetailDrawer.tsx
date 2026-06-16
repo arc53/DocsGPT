@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 
 import { Button } from '../../components/ui/button';
+import { formatDateTime } from '../../utils/dateTimeUtils';
 import type { ScheduleRun } from '../types/schedule';
 import ScheduleStatusBadge from './StatusBadge';
 
@@ -10,10 +11,7 @@ export type RunDetailDrawerProps = {
 };
 
 const formatTimestamp = (value?: string | null): string => {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
+  return value ? formatDateTime(value) : '—';
 };
 
 /** Side drawer with a single run's output / error (terminal-state only). */

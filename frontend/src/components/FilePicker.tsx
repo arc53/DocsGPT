@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import userService from '../api/services/userService';
 import { formatBytes } from '../utils/stringUtils';
-import { formatDate } from '../utils/dateTimeUtils';
+import { formatDateTime } from '../utils/dateTimeUtils';
 import {
   getSessionToken,
   setSessionToken,
@@ -599,7 +599,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-xs">
-                                  {formatDate(file.modifiedTime)}
+                                  {formatDateTime(file.modifiedTime)}
                                 </TableCell>
                                 <TableCell className="text-xs">
                                   {file.size ? formatBytes(file.size) : '-'}
