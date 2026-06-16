@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
-
 from application.storage.db.repositories.prompts import PromptsRepository
 from application.storage.db.repositories.sources import SourcesRepository
 from application.storage.db.repositories.user_tools import UserToolsRepository

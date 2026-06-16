@@ -116,14 +116,22 @@ class TeamsRepository:
         )
         return row_to_dict(result.fetchone())
 
+    # Each updatable column maps to a CONSTANT SQL fragment. The SET clause is
+    # assembled only from these literals (selected by whitelisted keys), so no
+    # user-controlled string ever reaches the query text — values travel as
+    # bound parameters. Keeps the query injection-free by construction.
+    _UPDATABLE_COLUMNS = {
+        "name": "name = :name",
+        "description": "description = :description",
+    }
+
     def update(self, team_id: str, fields: dict) -> bool:
         """Update mutable team fields (``name``, ``description``). updated_at is
         bumped by the ``teams_set_updated_at`` trigger."""
-        allowed = {"name", "description"}
-        values = {k: v for k, v in fields.items() if k in allowed}
+        values = {k: v for k, v in fields.items() if k in self._UPDATABLE_COLUMNS}
         if not values:
             return False
-        set_clause = ", ".join(f"{k} = :{k}" for k in values)
+        set_clause = ", ".join(self._UPDATABLE_COLUMNS[k] for k in values)
         params = dict(values)
         params["id"] = team_id
         result = self._conn.execute(

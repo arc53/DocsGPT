@@ -67,7 +67,10 @@ class TestTeamsRepository:
         members = TeamMembersRepository(pg_conn)
         team = _new_team(pg_conn)
         members.add_member(team["id"], "alice", role="team_admin")
-        assert teams.delete(team["id"]) is True
+        # Keep the side-effecting call off the assert line so it always runs,
+        # even under `python -O` (asserts stripped).
+        deleted = teams.delete(team["id"])
+        assert deleted is True
         assert members.list_members(team["id"]) == []
 
 
