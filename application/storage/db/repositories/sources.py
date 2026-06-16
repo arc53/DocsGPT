@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any, Optional
 
-from sqlalchemy import case, Connection, func, select, text
+from sqlalchemy import case, Connection, func, or_, select, text
 
 from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.models import ingest_chunk_progress_table, sources_table
@@ -22,6 +23,37 @@ _ALLOWED_COLUMNS = _SCALAR_COLUMNS | _JSONB_COLUMNS
 # this set falls back to ``date`` so user-supplied sort params can't be
 # interpolated into SQL unchecked.
 _SORTABLE_COLUMNS = {"date", "name", "tokens", "type", "created_at", "updated_at"}
+
+
+def _coerce_uuid_ids(extra_ids: Optional[list]) -> list:
+    """Coerce id strings to ``uuid.UUID`` for binding against UUID columns.
+
+    Non-UUID-looking ids (e.g. legacy/synthetic) are dropped — they can never
+    match a ``sources.id`` value. Used to OR team-shared source ids into the
+    owner-scoped queries.
+    """
+    if not extra_ids:
+        return []
+    out: list = []
+    for raw in extra_ids:
+        s = str(raw)
+        if looks_like_uuid(s):
+            out.append(uuid.UUID(s))
+    return out
+
+
+def _owned_or_shared_scope(user_id: str, extra_ids: Optional[list]):
+    """WHERE predicate matching the owner's rows plus any ``extra_ids``.
+
+    Lets the paginated/count queries include team-shared sources (passed by id)
+    alongside owned ones in a single query, so count/sort/search/pagination
+    stay correct across the union.
+    """
+    scope = sources_table.c.user_id == user_id
+    ids = _coerce_uuid_ids(extra_ids)
+    if ids:
+        scope = or_(scope, sources_table.c.id.in_(ids))
+    return scope
 
 
 def _escape_like(pattern: str) -> str:
@@ -228,6 +260,7 @@ class SourcesRepository:
         search_term: Optional[str] = None,
         sort_field: str = "created_at",
         sort_order: str = "desc",
+        extra_ids: Optional[list] = None,
     ) -> list[dict]:
         """Return sources owned by ``user_id``, paginated and optionally filtered.
 
@@ -269,7 +302,7 @@ class SourcesRepository:
                     == sources_table.c.id,
                 )
             )
-            .where(sources_table.c.user_id == user_id)
+            .where(_owned_or_shared_scope(user_id, extra_ids))
         )
         if search_term:
             stmt = stmt.where(
@@ -298,6 +331,7 @@ class SourcesRepository:
         user_id: str,
         *,
         search_term: Optional[str] = None,
+        extra_ids: Optional[list] = None,
     ) -> int:
         """Return the count of rows that ``list_for_user`` would produce.
 
@@ -315,7 +349,7 @@ class SourcesRepository:
         stmt = (
             select(func.count())
             .select_from(sources_table)
-            .where(sources_table.c.user_id == user_id)
+            .where(_owned_or_shared_scope(user_id, extra_ids))
         )
         if search_term:
             stmt = stmt.where(

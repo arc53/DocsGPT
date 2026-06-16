@@ -90,6 +90,9 @@ export type UserToolType = {
   // Whether the current user owns this tool ('user') or only has access to
   // it via a team share ('team'). Owner-only actions are gated on 'user'.
   ownership?: 'user' | 'team';
+  // Access level when shared via a team: 'viewer' (use) or 'editor' (edit
+  // actions; secrets stay owner-only). Null/absent for tools the caller owns.
+  team_access?: 'viewer' | 'editor' | null;
   config: {
     [key: string]: any;
   };

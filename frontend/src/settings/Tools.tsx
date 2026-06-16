@@ -451,6 +451,18 @@ export default function Tools() {
                                           )}
                                   </span>
                                 )}
+                              {tool.ownership === 'team' && (
+                                <span className="bg-muted-foreground/10 text-muted-foreground inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-none font-medium">
+                                  <Users
+                                    size={11}
+                                    strokeWidth={2}
+                                    aria-hidden="true"
+                                  />
+                                  {tool.team_access === 'editor'
+                                    ? t('teamAccess.editor')
+                                    : t('teamAccess.viewer')}
+                                </span>
+                              )}
                             </div>
                             <div className="mt-[9px]">
                               <p

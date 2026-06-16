@@ -132,8 +132,13 @@ class PaginatedSources(Resource):
         try:
             with db_readonly() as conn:
                 repo = SourcesRepository(conn)
+                # Include sources shared with the caller's teams so the settings
+                # list matches the /api/sources dropdown. Unioned into the query
+                # by id so count/sort/search/pagination stay correct.
+                team_shared = visible_with_access(conn, user, "source")
+                extra_ids = list(team_shared.keys())
                 total_documents = repo.count_for_user(
-                    user, search_term=search_term,
+                    user, search_term=search_term, extra_ids=extra_ids,
                 )
                 # Prior in-Python implementation returned ``totalPages = 1``
                 # for empty result sets (``max(1, ceil(0/rows))``); we
@@ -148,11 +153,15 @@ class PaginatedSources(Resource):
                     search_term=search_term,
                     sort_field=sort_field,
                     sort_order=sort_order,
+                    extra_ids=extra_ids,
                 )
 
             paginated_docs = []
             for doc in window:
                 provider = _get_provider_from_remote_data(doc.get("remote_data"))
+                # Owner vs team-shared: a row in the window is the caller's own
+                # when its user_id matches; otherwise it arrived via extra_ids.
+                owned = str(doc.get("user_id")) == str(user)
                 paginated_docs.append(
                     {
                         "id": str(doc["id"]),
@@ -168,6 +177,10 @@ class PaginatedSources(Resource):
                         "type": doc.get("type", "file"),
                         # Derived in SourcesRepository.list_for_user.
                         "ingestStatus": doc.get("ingest_status"),
+                        "ownership": "user" if owned else "team",
+                        "team_access": (
+                            None if owned else team_shared.get(str(doc["id"]))
+                        ),
                     }
                 )
             response = {

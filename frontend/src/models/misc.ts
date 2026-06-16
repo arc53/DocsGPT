@@ -19,6 +19,9 @@ export type Doc = {
   // Whether the current user owns this source ('user') or only has access to
   // it via a team share ('team'). Owner-only actions are gated on 'user'.
   ownership?: 'user' | 'team';
+  // Access level when shared via a team: 'viewer' (read-only) or 'editor'
+  // (full write). Null/absent for sources the caller owns.
+  team_access?: 'viewer' | 'editor' | null;
 };
 
 export type GetDocsResponse = {

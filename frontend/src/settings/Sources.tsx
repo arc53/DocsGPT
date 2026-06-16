@@ -611,6 +611,18 @@ export default function Sources({
                       </div>
 
                       <div className="flex flex-col items-start justify-start gap-1">
+                        {document.ownership === 'team' && (
+                          <span className="bg-muted-foreground/10 text-muted-foreground flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium">
+                            <Users
+                              size={11}
+                              strokeWidth={2}
+                              aria-hidden="true"
+                            />
+                            {document.team_access === 'editor'
+                              ? t('teamAccess.editor')
+                              : t('teamAccess.viewer')}
+                          </span>
+                        )}
                         {document.ingestStatus === 'failed' && (
                           <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs leading-[16px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
                             {t('settings.sources.ingestFailed')}

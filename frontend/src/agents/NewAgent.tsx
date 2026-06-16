@@ -35,6 +35,7 @@ import {
 import Spinner from '../components/Spinner';
 import ToolIcon from '../components/ToolIcon';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
+import ShareToTeamModal from '../teams/ShareToTeamModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import {
@@ -117,6 +118,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
+  const [shareModalOpen, setShareModalOpen] = useState(false);
   const [addPromptModal, setAddPromptModal] = useState<ActiveState>('INACTIVE');
   const [hasChanges, setHasChanges] = useState(false);
   const [draftLoading, setDraftLoading] = useState(false);
@@ -863,6 +865,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 <DropdownMenuItem onSelect={() => setAgentDetails('ACTIVE')}>
                   {t('agents.form.buttons.accessDetails')}
                 </DropdownMenuItem>
+                {/* Sharing is owner-only — hidden for agents shared into the
+                    workspace by a team (ownership === 'team'). */}
+                {agent.ownership !== 'team' && agent.id && (
+                  <DropdownMenuItem onSelect={() => setShareModalOpen(true)}>
+                    {t('agents.shareWithTeam')}
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -1465,6 +1474,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         modalState={agentDetails}
         setModalState={setAgentDetails}
       />
+      {shareModalOpen && agent.id && (
+        <ShareToTeamModal
+          resourceType="agent"
+          resourceId={agent.id}
+          resourceName={agent.name}
+          onClose={() => setShareModalOpen(false)}
+        />
+      )}
       <AddPromptModal
         prompts={prompts}
         isOpen={addPromptModal}

@@ -12,6 +12,10 @@
   "emailUs": "Email us",
   "documentation": "Documentation",
   "manageAgents": "Manage Agents",
+  "teamAccess": {
+    "editor": "Editor",
+    "viewer": "Viewer"
+  },
   "demo": [
     {
       "header": "Learn about DocsGPT",
