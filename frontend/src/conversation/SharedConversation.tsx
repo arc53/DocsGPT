@@ -8,7 +8,7 @@ import MessageInput from '../components/MessageInput';
 import { Button } from '../components/ui/button';
 import { selectToken } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
-import { formatDate } from '../utils/dateTimeUtils';
+import { formatDateTime } from '../utils/dateTimeUtils';
 import ConversationMessages from './ConversationMessages';
 import {
   addQuery,
@@ -69,7 +69,7 @@ export const SharedConversation = () => {
               setFetchedData({
                 queries: data.queries,
                 title: data.title,
-                date: formatDate(data.timestamp),
+                date: formatDateTime(data.timestamp),
                 identifier,
               }),
             );

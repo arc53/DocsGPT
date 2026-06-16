@@ -20,6 +20,7 @@ import { TimePicker } from '@/components/ui/time-picker';
 import { cn } from '@/lib/utils';
 
 import { Modal } from '../../components/ui/modal';
+import { formatDateOnly } from '../../utils/dateTimeUtils';
 import type { Schedule, ScheduleCreatePayload } from '../types/schedule';
 import {
   browserTimezone,
@@ -91,13 +92,7 @@ const dateToDateString = (d: Date): string => {
 };
 
 const formatDateLabel = (value: string): string => {
-  const d = dateStringToDate(value);
-  if (!d) return '';
-  return d.toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
+  return formatDateOnly(value);
 };
 
 /** Create/edit a Schedule via a modal dialog. */

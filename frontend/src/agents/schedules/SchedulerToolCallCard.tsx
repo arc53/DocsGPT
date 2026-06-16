@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Button } from '../../components/ui/button';
 import { selectToken } from '../../preferences/preferenceSlice';
 import type { AppDispatch } from '../../store';
+import { formatDateTime } from '../../utils/dateTimeUtils';
 import { deleteSchedule, loadSchedulesForAgent } from './schedulesSlice';
 
 export type SchedulerToolCallCardProps = {
@@ -18,10 +19,7 @@ export type SchedulerToolCallCardProps = {
 };
 
 const formatTimestamp = (value?: string | null): string => {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
+  return value ? formatDateTime(value) : '—';
 };
 
 const parseResult = (result: unknown): Record<string, unknown> | null => {
