@@ -109,6 +109,12 @@ celerybeat.pid
 .env
 .env.local
 .env.*.local
+# Backups of env files (e.g. .env.local.bak, .env.bak.1781108407)
+*.env.bak
+*.env.bak.*
+.env.bak
+.env.bak.*
+.env.local.bak
 .venv
 # Machine-specific Claude Code guidance (see CLAUDE.md preamble)
 CLAUDE.md
