@@ -48,12 +48,18 @@
 
 ## Roadmap
 - [x] Agent Workflow Builder with conditional nodes ( February 2026 )
-- [x] SharePoint & Confluence connectors ( March – April 2026 )
 - [x] Research mode ( March 2026 )
+- [x] SharePoint & Confluence connectors ( March – April 2026 )
 - [x] Postgres migration for user data ( April 2026 )
 - [x] OpenTelemetry observability ( April 2026 )
 - [x] Bring Your Own Model (BYOM) ( April 2026 )
-- [x] Agent scheduling (RedBeat-backed) ( Q2 2026 )
+- [x] Agent scheduling (RedBeat-backed) ( April 2026 )
+- [x] Notifications & conversation search ( May 2026 )
+- [x] Analytics & logs revamp with per-agent attribution ( June 2026 )
+- [x] OIDC / SSO login with SCIM provisioning & groups ( June 2026 )
+- [x] Admin dashboard & role-based access control (RBAC) ( June 2026 )
+- [x] Agent import / export ( June 2026 )
+- [x] Teams with team-scoped sharing & roles ( June 2026 )
 
 You can find our full roadmap [here](https://github.com/orgs/arc53/projects/2). Please don't hesitate to contribute or create issues, it helps us improve DocsGPT!
 
