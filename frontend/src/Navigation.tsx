@@ -15,7 +15,6 @@ import {
 import { Agent } from './agents/types';
 import conversationService from './api/services/conversationService';
 import userService from './api/services/userService';
-import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import Discord from './assets/discord.svg';
 import Github from './assets/git_nav.svg';
 import Pin from './assets/pin.svg';
@@ -55,6 +54,7 @@ import {
   setSharedAgents,
 } from './preferences/preferenceSlice';
 import { AppDispatch } from './store';
+import TeamSwitcher from './teams/TeamSwitcher';
 import Upload from './upload/Upload';
 
 interface NavigationProps {
@@ -392,29 +392,23 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       >
         <div
           className={
-            'visible mt-2 flex h-[6vh] w-full items-center justify-between md:h-12'
+            'visible mt-2 flex h-[6vh] w-full items-center justify-between gap-1 px-2 md:h-12'
           }
         >
-          <div
-            className="mx-4 flex cursor-pointer items-center gap-1.5"
-            onClick={() => {
-              if (isMobile) {
-                setNavOpen(!navOpen);
-              }
-            }}
-          >
-            <a href="/" className="flex items-center gap-1.5">
-              <img className="h-9" src={DocsGPT3} alt="DocsGPT Logo" />
-              <p className="text-foreground text-xl font-semibold dark:text-white">
-                DocsGPT
-              </p>
-            </a>
+          <div className="min-w-0 flex-1">
+            <TeamSwitcher
+              onNavigate={() => {
+                if (isMobile || isTablet) {
+                  setNavOpen(false);
+                }
+              }}
+            />
           </div>
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="text-muted-foreground hover:text-foreground mr-3"
+            className="text-muted-foreground hover:text-foreground shrink-0"
             onClick={() => {
               setNavOpen(!navOpen);
             }}
@@ -709,19 +703,15 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           >
             <Menu className="size-5" strokeWidth={1.75} />
           </Button>
-          <a
-            href="/"
-            className="absolute left-1/2 flex -translate-x-1/2 items-center"
-          >
-            <img
-              className="absolute right-full mr-1.5 h-9"
-              src={DocsGPT3}
-              alt="DocsGPT Logo"
+          <div className="absolute left-1/2 flex -translate-x-1/2 items-center">
+            <TeamSwitcher
+              onNavigate={() => {
+                if (isMobile || isTablet) {
+                  setNavOpen(false);
+                }
+              }}
             />
-            <p className="text-foreground text-xl font-semibold dark:text-white">
-              DocsGPT
-            </p>
-          </a>
+          </div>
         </div>
       </div>
       <ConfirmationModal

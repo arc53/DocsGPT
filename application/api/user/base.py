@@ -167,6 +167,58 @@ def resolve_tool_details(tool_ids):
     ]
 
 
+_BUILTIN_PROMPT_NAMES = {
+    "default": "Default",
+    "creative": "Creative",
+    "strict": "Strict",
+}
+
+
+def resolve_prompt_name(prompt_id) -> Optional[str]:
+    """Resolve a prompt id to its display name by id (owner-agnostic).
+
+    Mirrors ``resolve_tool_details``: looks the prompt up by id without user
+    scoping, so a team member viewing a shared agent sees the OWNER's prompt
+    name rather than nothing. Built-in prompt sentinels map to friendly labels.
+    Returns None when the prompt is missing/unknown.
+    """
+    if not prompt_id:
+        return None
+    pid = str(prompt_id)
+    if pid in _BUILTIN_PROMPT_NAMES:
+        return _BUILTIN_PROMPT_NAMES[pid]
+    if not looks_like_uuid(pid):
+        return None
+    with db_readonly() as conn:
+        result = conn.execute(
+            _sql_text("SELECT name FROM prompts WHERE id = CAST(:id AS uuid)"),
+            {"id": pid},
+        )
+        row = result.fetchone()
+    return row[0] if row is not None else None
+
+
+def resolve_source_details(source_ids) -> list[dict]:
+    """Resolve source ids to ``[{"id", "name"}]`` by id (owner-agnostic).
+
+    Order-preserving; an id with no matching source row yields ``name: None`` so
+    the client can fall back. Lets a team member viewing a shared agent see the
+    owner's source names instead of a raw id / "External KB".
+    """
+    ids = [str(s) for s in (source_ids or []) if s and looks_like_uuid(str(s))]
+    if not ids:
+        return []
+    with db_readonly() as conn:
+        result = conn.execute(
+            _sql_text(
+                "SELECT id, name FROM sources WHERE id = ANY(CAST(:ids AS uuid[]))"
+            ),
+            {"ids": ids},
+        )
+        by_id = {str(r[0]): r[1] for r in result.fetchall()}
+    return [{"id": sid, "name": by_id.get(sid)} for sid in ids]
+
+
 def get_vector_store(source_id):
     """
     Get the Vector Store for a given source ID.

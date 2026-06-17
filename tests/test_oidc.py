@@ -625,7 +625,10 @@ def db_mocks():
     """Patch the DB seams of the oidc routes; default: unknown user, active on upsert."""
     users_repo = Mock()
     users_repo.get.return_value = None
-    users_repo.upsert.side_effect = lambda user_id: {"user_id": user_id, "active": True}
+    users_repo.upsert.side_effect = lambda user_id, email=None: {
+        "user_id": user_id,
+        "active": True,
+    }
     events_repo = Mock()
 
     @contextmanager
@@ -1115,7 +1118,10 @@ class TestCallbackUserGate:
         response = self._callback(client, fake_redis)
 
         assert "#oidc_code=" in response.headers["Location"]
-        self.db.users.upsert.assert_called_once_with("oidc-user-1")
+        # New user is provisioned with the email claim (for add-by-email).
+        self.db.users.upsert.assert_called_once_with(
+            "oidc-user-1", email="user@example.com"
+        )
         call = self.db.events.insert.call_args
         assert call.args == ("oidc-user-1", "oidc_login")
         assert call.kwargs["metadata"] == {"email": "user@example.com", "groups": None}
@@ -1127,6 +1133,10 @@ class TestCallbackUserGate:
 
         assert "#oidc_code=" in response.headers["Location"]
         self.db.users.upsert.assert_not_called()
+        # Existing user still gets a targeted email backfill (not a full upsert).
+        self.db.users.set_email.assert_called_once_with(
+            "oidc-user-1", "user@example.com"
+        )
 
     def test_db_outage_does_not_block_login(self, client, fake_redis):
         with patch(

@@ -45,6 +45,9 @@ users_table = Table(
     metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
     Column("user_id", Text, nullable=False, unique=True),
+    # Populated from the OIDC email claim at login (migration 0023); used to add
+    # a team member by email instead of raw sub. Nullable / backfilled on login.
+    Column("email", Text),
     Column(
         "agent_preferences",
         JSONB,
@@ -85,6 +88,97 @@ user_roles_table = Table(
     CheckConstraint("role IN ('admin')", name="user_roles_role_check"),
     CheckConstraint("source IN ('manual', 'oidc_group')", name="user_roles_source_check"),
 )
+
+# --- Teams: multi-team membership, team-scoped roles, resource sharing -------
+# See migration 0021. Three additive tables; no existing table is altered.
+
+# A team. ``owner_id`` is the creator's auth ``sub`` and the deletion anchor —
+# intentionally no FK/trigger (like ``user_roles``) so user deletion isn't
+# blocked by an ON DELETE RESTRICT.
+teams_table = Table(
+    "teams",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("name", Text, nullable=False),
+    Column("slug", CITEXT, nullable=False, unique=True),
+    Column("description", Text),
+    Column("owner_id", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+Index("teams_owner_idx", teams_table.c.owner_id)
+
+# Membership + team-scoped role grant, field-for-field on ``user_roles``.
+# ``(team_id, user_id, role, source)`` so manual and IdP-derived grants coexist
+# and revoke independently. ``user_id`` is the auth ``sub`` (no FK/trigger).
+team_members_table = Table(
+    "team_members",
+    metadata,
+    Column("team_id", UUID(as_uuid=True), nullable=False),
+    Column("user_id", Text, nullable=False),
+    Column("role", Text, nullable=False),
+    Column("source", Text, nullable=False, server_default="manual"),
+    Column("granted_by", Text),
+    Column("granted_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    PrimaryKeyConstraint("team_id", "user_id", "role", "source"),
+    CheckConstraint("role IN ('team_admin', 'team_member')", name="team_members_role_check"),
+    CheckConstraint(
+        "source IN ('manual', 'oidc_group', 'scim')", name="team_members_source_check"
+    ),
+)
+
+Index("team_members_user_idx", team_members_table.c.user_id)
+
+# One polymorphic share table for all four shareable resource types. Sharing is
+# additive visibility, never ownership transfer. ``owner_id`` is denormalised
+# owner-at-share-time so visibility queries skip the resource-table join.
+# ``resource_id`` has no cross-table FK (polymorphic); dangling rows are scrubbed
+# by AFTER DELETE triggers on each resource table (see migration 0021).
+team_resource_grants_table = Table(
+    "team_resource_grants",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("team_id", UUID(as_uuid=True), nullable=False),
+    Column("resource_type", Text, nullable=False),
+    Column("resource_id", UUID(as_uuid=True), nullable=False),
+    Column("owner_id", Text, nullable=False),
+    Column("access_level", Text, nullable=False, server_default="viewer"),
+    # NULL = shared with the whole team; a sub = shared with that one member
+    # (who must also be a team member). See migration 0022.
+    Column("target_user_id", Text),
+    Column("granted_by", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint(
+        "resource_type IN ('agent', 'source', 'prompt', 'tool')",
+        name="team_resource_grants_type_check",
+    ),
+    CheckConstraint(
+        "access_level IN ('viewer', 'editor')", name="team_resource_grants_access_check"
+    ),
+)
+
+# Functional unique dedup: a whole-team grant (target NULL → '') and each
+# per-member grant are distinct. Mirrors migration 0022.
+Index(
+    "team_resource_grants_dedup_uidx",
+    team_resource_grants_table.c.team_id,
+    team_resource_grants_table.c.resource_type,
+    team_resource_grants_table.c.resource_id,
+    func.coalesce(team_resource_grants_table.c.target_user_id, ""),
+    unique=True,
+)
+Index(
+    "team_resource_grants_team_type_idx",
+    team_resource_grants_table.c.team_id,
+    team_resource_grants_table.c.resource_type,
+)
+Index(
+    "team_resource_grants_resource_idx",
+    team_resource_grants_table.c.resource_type,
+    team_resource_grants_table.c.resource_id,
+)
+
 
 prompts_table = Table(
     "prompts",

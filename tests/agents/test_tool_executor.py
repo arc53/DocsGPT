@@ -1187,6 +1187,37 @@ class TestToolExecutorExecute:
         tool_config = call_kwargs[1]["tool_config"] if "tool_config" in call_kwargs[1] else call_kwargs[0][1]
         assert "api_key" in tool_config.get("auth_credentials", tool_config)
 
+    def test_get_or_load_tool_decrypts_with_tool_owner(self, monkeypatch):
+        """Team-shared tool: credentials decrypt with the OWNER's sub, not the
+        invoker's (teams OQ2 — delegation). The tool row carries user_id=owner
+        while the executor runs as a different member."""
+        executor = ToolExecutor(user="member_bob")
+
+        mock_tm = Mock()
+        mock_tm.load_tool.return_value = Mock()
+        monkeypatch.setattr(
+            "application.agents.tool_executor.ToolManager", lambda config: mock_tm
+        )
+        captured = {}
+
+        def _fake_decrypt(creds, user):
+            captured["user"] = user
+            return {"api_key": "owner_secret"}
+
+        monkeypatch.setattr(
+            "application.agents.tool_executor.decrypt_credentials", _fake_decrypt
+        )
+
+        tool_data = {
+            "id": "00000000-0000-0000-0000-000000000009",
+            "name": "custom_tool",
+            "user_id": "owner_alice",
+            "config": {"encrypted_credentials": "blob"},
+        }
+        executor._get_or_load_tool(tool_data, "t9", "act")
+        # Decrypted under the tool owner, NOT the invoking member.
+        assert captured["user"] == "owner_alice"
+
     def test_get_or_load_tool_mcp_tool(self, monkeypatch):
         """Cover lines 281-283: mcp_tool path sets query_mode."""
         executor = ToolExecutor(user="test_user")

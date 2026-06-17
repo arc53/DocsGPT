@@ -15,6 +15,7 @@ from application.agents.default_tools import (
 from application.agents.tools.spec_parser import parse_spec
 from application.agents.tools.tool_manager import ToolManager
 from application.api import api
+from application.api.user.team_sharing import effective_write_owner, visible_with_access
 from application.core.url_validation import SSRFError, validate_url
 from application.security.encryption import decrypt_credentials, encrypt_credentials
 from application.storage.db.repositories.notes import NotesRepository
@@ -217,27 +218,43 @@ class GetTools(Resource):
                 return make_response(jsonify({"success": False}), 401)
             user = decoded_token.get("sub")
             with db_readonly() as conn:
-                rows = UserToolsRepository(conn).list_for_user(user)
+                tools_repo = UserToolsRepository(conn)
+                rows = tools_repo.list_for_user(user)
                 user_doc = UsersRepository(conn).get(user)
+                owned_ids = {str(r["id"]) for r in rows}
+                # Tools shared with the caller's teams. Secrets are stripped
+                # unconditionally below — a grantee never sees the owner's
+                # credentials (they only run with the owner's creds server-side).
+                team_shared = visible_with_access(conn, user, "tool")
+                shared_ids = [tid for tid in team_shared if tid not in owned_ids]
+                shared_rows = tools_repo.list_by_ids(shared_ids)
             user_tools = []
-            for row in rows:
-                tool_copy = _row_to_api(row)
 
+            def _shape_tool(row, *, ownership="user", force_strip_secret=False):
+                tool_copy = _row_to_api(row)
                 config_req = tool_copy.get("configRequirements", {})
                 if not config_req:
                     tool_instance = tool_manager.tools.get(tool_copy.get("name"))
                     if tool_instance:
                         config_req = tool_instance.get_config_requirements()
                         tool_copy["configRequirements"] = config_req
-
                 has_secrets = any(
                     spec.get("secret") for spec in config_req.values()
                 ) if config_req else False
-                if has_secrets and "encrypted_credentials" in tool_copy.get("config", {}):
+                if (has_secrets or force_strip_secret) and "encrypted_credentials" in tool_copy.get(
+                    "config", {}
+                ):
                     tool_copy["config"]["has_encrypted_credentials"] = True
                     tool_copy["config"].pop("encrypted_credentials", None)
+                tool_copy["ownership"] = ownership
+                return tool_copy
 
-                user_tools.append(tool_copy)
+            for row in rows:
+                user_tools.append(_shape_tool(row))
+            for row in shared_rows:
+                shaped = _shape_tool(row, ownership="team", force_strip_secret=True)
+                shaped["team_access"] = team_shared.get(str(row["id"]))
+                user_tools.append(shaped)
 
             # ``scheduler`` is dual-registered (default chat tool + agent-
             # selectable builtin) and resolves to the same synthetic uuid5 id.
@@ -649,14 +666,18 @@ class UpdateToolActions(Resource):
             with db_session() as conn:
                 repo = UserToolsRepository(conn)
                 tool_doc = repo.get_any(data["id"], user)
-                if not tool_doc:
-                    return make_response(
-                        jsonify({"success": False, "message": "Tool not found"}),
-                        404,
-                    )
-                repo.update(
-                    str(tool_doc["id"]), user, {"actions": data["actions"]},
-                )
+                if tool_doc:
+                    repo.update(str(tool_doc["id"]), user, {"actions": data["actions"]})
+                else:
+                    # Team editor write path (secrets stay owner-only — actions
+                    # carry no credentials, so editing them is safe).
+                    owner = effective_write_owner(conn, "tool", data["id"], user)
+                    if not owner:
+                        return make_response(
+                            jsonify({"success": False, "message": "Tool not found"}),
+                            404,
+                        )
+                    repo.update(data["id"], owner, {"actions": data["actions"]})
         except Exception as err:
             current_app.logger.error(
                 f"Error updating tool actions: {err}", exc_info=True

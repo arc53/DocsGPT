@@ -842,9 +842,31 @@ class ToolExecutor:
                 )
         else:
             tool_config = tool_data["config"].copy() if tool_data["config"] else {}
-            if tool_config.get("encrypted_credentials") and self.user:
+            # Credentials are PBKDF2-bound to the tool OWNER's sub, not the
+            # invoker's. Decrypt with the tool row's user_id so a team member
+            # running an owner's shared tool authenticates with the owner's
+            # credentials (deliberate delegation — see teams-spec OQ2), and so
+            # the long-standing agent-key path (tools resolved by owner) stops
+            # silently decrypt-failing. Falls back to self.user for the
+            # agentless path where the tool row carries no user_id.
+            tool_owner = tool_data.get("user_id") or self.user
+            if tool_config.get("encrypted_credentials") and tool_owner:
+                if tool_owner != self.user:
+                    # Credential delegation: the invoker is running a shared
+                    # tool with the owner's secrets. Audit it (the agent-run
+                    # authorization upstream is the access boundary).
+                    logger.info(
+                        "tool_credential_delegation",
+                        extra={
+                            "invoker": self.user,
+                            "tool_owner": tool_owner,
+                            "tool_id": str(tool_data.get("id") or tool_id),
+                            "tool_name": tool_data.get("name"),
+                            "agent_id": self.agent_id,
+                        },
+                    )
                 decrypted = decrypt_credentials(
-                    tool_config["encrypted_credentials"], self.user
+                    tool_config["encrypted_credentials"], tool_owner
                 )
                 tool_config.update(decrypted)
                 tool_config["auth_credentials"] = decrypted
