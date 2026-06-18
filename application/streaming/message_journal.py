@@ -59,6 +59,27 @@ def _strip_null_bytes(value: Any) -> Any:
     return value
 
 
+# Postgres SQLSTATE for a foreign-key violation. ``message_events`` has
+# an FK to ``conversation_messages(id)``, so a 23503 means that parent
+# row was never committed — the event can't be journaled and a
+# ``sequence_no`` retry is pointless churn. A 23505 (PK collision), by
+# contrast, is recoverable by rewriting at a fresh seq.
+_FK_VIOLATION_SQLSTATE = "23503"
+
+
+def _is_foreign_key_violation(exc: IntegrityError) -> bool:
+    """Return ``True`` when ``exc`` wraps a Postgres FK violation (23503).
+
+    ``IntegrityError.orig`` is the underlying driver error, which carries
+    the SQLSTATE on ``.sqlstate`` (psycopg3) or ``.pgcode`` (psycopg2).
+    When neither is present (an error we can't classify) this returns
+    ``False`` so the caller keeps its existing seq-retry behavior.
+    """
+    orig = getattr(exc, "orig", None)
+    sqlstate = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+    return sqlstate == _FK_VIOLATION_SQLSTATE
+
+
 def record_event(
     message_id: str,
     sequence_no: int,
@@ -108,59 +129,75 @@ def record_event(
                 message_id, sequence_no, event_type, materialised_payload
             )
         journal_committed = True
-    except IntegrityError:
-        # Composite-PK collision on (message_id, sequence_no). Most
-        # likely cause is a stale ``latest_sequence_no`` seed on a
-        # continuation retry — the route read MAX(seq) from a separate
-        # connection before another writer committed past it. Look up
-        # the live latest and retry once with latest+1 so the event is
-        # not silently lost. Bounded to a single retry — if two
-        # writers keep racing in lockstep the route-level retry will
-        # converge them across attempts.
-        try:
-            with db_readonly() as conn:
-                latest = MessageEventsRepository(conn).latest_sequence_no(
-                    message_id
-                )
-            materialised_seq = (latest if latest is not None else -1) + 1
-            with db_session() as conn:
-                MessageEventsRepository(conn).record(
+    except IntegrityError as exc:
+        if _is_foreign_key_violation(exc):
+            # No ``conversation_messages`` parent row — the event
+            # references a message that was never committed. A
+            # ``sequence_no`` retry can't fix that, so log the real
+            # cause and drop instead of churning the readonly probe +
+            # retry (which would just FK-fail again).
+            logger.warning(
+                "record_event: no conversation_messages row for "
+                "message_id=%s (foreign-key violation); dropping "
+                "(seq=%s type=%s). The parent message row must be "
+                "committed before its events are journaled.",
+                message_id,
+                sequence_no,
+                event_type,
+            )
+        else:
+            # Composite-PK collision on (message_id, sequence_no). Most
+            # likely cause is a stale ``latest_sequence_no`` seed on a
+            # continuation retry — the route read MAX(seq) from a
+            # separate connection before another writer committed past
+            # it. Look up the live latest and retry once with latest+1
+            # so the event is not silently lost. Bounded to a single
+            # retry — if two writers keep racing in lockstep the
+            # route-level retry will converge them across attempts.
+            try:
+                with db_readonly() as conn:
+                    latest = MessageEventsRepository(conn).latest_sequence_no(
+                        message_id
+                    )
+                materialised_seq = (latest if latest is not None else -1) + 1
+                with db_session() as conn:
+                    MessageEventsRepository(conn).record(
+                        message_id,
+                        materialised_seq,
+                        event_type,
+                        materialised_payload,
+                    )
+                journal_committed = True
+                logger.info(
+                    "record_event: collision at seq=%s recovered → wrote at "
+                    "seq=%s message_id=%s type=%s",
+                    sequence_no,
+                    materialised_seq,
                     message_id,
+                    event_type,
+                )
+            except IntegrityError:
+                # Second collision under the same retry — give up and
+                # log. The route's nonlocal counter will continue at
+                # ``sequence_no+1`` on the next emit; the next call may
+                # land cleanly past the contended window.
+                logger.warning(
+                    "record_event: IntegrityError persists after seq+1 "
+                    "retry; dropping. message_id=%s original_seq=%s "
+                    "retry_seq=%s type=%s",
+                    message_id,
+                    sequence_no,
                     materialised_seq,
                     event_type,
-                    materialised_payload,
                 )
-            journal_committed = True
-            logger.info(
-                "record_event: collision at seq=%s recovered → wrote at "
-                "seq=%s message_id=%s type=%s",
-                sequence_no,
-                materialised_seq,
-                message_id,
-                event_type,
-            )
-        except IntegrityError:
-            # Second collision under the same retry — give up and log.
-            # The route's nonlocal counter will continue at
-            # ``sequence_no+1`` on the next emit; the next call may
-            # land cleanly past the contended window.
-            logger.warning(
-                "record_event: IntegrityError persists after seq+1 retry; "
-                "dropping. message_id=%s original_seq=%s retry_seq=%s "
-                "type=%s",
-                message_id,
-                sequence_no,
-                materialised_seq,
-                event_type,
-            )
-        except Exception:
-            logger.exception(
-                "record_event: retry path failed unexpectedly "
-                "(message_id=%s seq=%s type=%s)",
-                message_id,
-                sequence_no,
-                event_type,
-            )
+            except Exception:
+                logger.exception(
+                    "record_event: retry path failed unexpectedly "
+                    "(message_id=%s seq=%s type=%s)",
+                    message_id,
+                    sequence_no,
+                    event_type,
+                )
     except Exception:
         logger.exception(
             "message_events INSERT failed: message_id=%s seq=%s type=%s",
@@ -297,7 +334,21 @@ class BatchedJournalWriter:
                 MessageEventsRepository(conn).bulk_record(
                     self._message_id, pending
                 )
-        except IntegrityError:
+        except IntegrityError as exc:
+            if _is_foreign_key_violation(exc):
+                # The whole batch references a conversation_messages
+                # parent that doesn't exist — every per-row retry would
+                # FK-fail too, so drop the batch once instead of N
+                # pointless re-attempts. The buffer is already cleared.
+                logger.warning(
+                    "BatchedJournalWriter: no conversation_messages row "
+                    "for message_id=%s (foreign-key violation); dropping "
+                    "%d event(s). The parent message row must be committed "
+                    "before its events are journaled.",
+                    self._message_id,
+                    len(pending),
+                )
+                return
             logger.info(
                 "BatchedJournalWriter: bulk INSERT collided for "
                 "message_id=%s n=%d; falling back to per-row writes",

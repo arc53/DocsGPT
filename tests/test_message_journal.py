@@ -18,6 +18,21 @@ from application.streaming.message_journal import (
 )
 
 
+def _integrity_error(sqlstate: str):
+    """Build an ``IntegrityError`` whose ``.orig`` reports ``sqlstate``.
+
+    Mirrors how psycopg3 surfaces a Postgres error code on the DBAPI
+    exception that SQLAlchemy wraps: ``23503`` = foreign-key violation
+    (the ``conversation_messages`` parent row is missing), ``23505`` =
+    unique/PK collision (a duplicate ``sequence_no``).
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    orig = Exception("pg error")
+    orig.sqlstate = sqlstate
+    return IntegrityError("stmt", {}, orig)
+
+
 @pytest.mark.unit
 class TestRecordEvent:
     def test_invalid_args_return_false(self):
@@ -244,6 +259,85 @@ class TestRecordEvent:
             # on this event, which is correct since the journal can't
             # serve it on a future reconnect anyway.
             mock_topic.publish.assert_called_once()
+
+    def test_foreign_key_violation_drops_without_seq_retry(self):
+        """A 23503 (foreign-key violation) means the
+        ``conversation_messages`` parent row was never committed — a
+        ``sequence_no`` retry can never land the row, so the write is
+        dropped immediately without probing ``latest_sequence_no`` or
+        re-attempting. The live publish still fires (best-effort tail).
+        """
+        repo_first = MagicMock(name="repo_first")
+        repo_first.record.side_effect = _integrity_error("23503")
+        repo_readonly = MagicMock(name="repo_readonly")
+        repo_retry = MagicMock(name="repo_retry")
+
+        repo_instances = iter([repo_first, repo_readonly, repo_retry])
+
+        with patch(
+            "application.streaming.message_journal.db_session"
+        ) as mock_session, patch(
+            "application.streaming.message_journal.db_readonly"
+        ) as mock_readonly, patch(
+            "application.streaming.message_journal.MessageEventsRepository",
+            side_effect=lambda conn: next(repo_instances),
+        ), patch(
+            "application.streaming.message_journal.Topic"
+        ) as mock_topic_cls:
+            mock_session.return_value.__enter__.return_value = MagicMock()
+            mock_readonly.return_value.__enter__.return_value = MagicMock()
+            mock_topic = MagicMock()
+            mock_topic_cls.return_value = mock_topic
+
+            result = record_event("msg-1", 3, "answer", {"text": "hi"})
+
+            assert result is False
+            repo_first.record.assert_called_once_with(
+                "msg-1", 3, "answer", {"text": "hi"}
+            )
+            # No seq+1 retry: the readonly probe and retry insert never run.
+            mock_readonly.assert_not_called()
+            repo_readonly.latest_sequence_no.assert_not_called()
+            repo_retry.record.assert_not_called()
+            # Live tail still gets the frame at the original seq.
+            mock_topic.publish.assert_called_once()
+            wire = json.loads(mock_topic.publish.call_args[0][0])
+            assert wire["sequence_no"] == 3
+
+    def test_pk_collision_still_retries_with_seq_plus_one(self):
+        """An explicit 23505 (unique/PK collision) keeps the existing
+        recover-by-retry behavior: probe ``latest_sequence_no`` and
+        rewrite at latest+1. Regression guard pinning the FK-vs-PK split.
+        """
+        repo_first = MagicMock(name="repo_first")
+        repo_first.record.side_effect = _integrity_error("23505")
+        repo_readonly = MagicMock(name="repo_readonly")
+        repo_readonly.latest_sequence_no.return_value = 7
+        repo_retry = MagicMock(name="repo_retry")
+
+        repo_instances = iter([repo_first, repo_readonly, repo_retry])
+
+        with patch(
+            "application.streaming.message_journal.db_session"
+        ) as mock_session, patch(
+            "application.streaming.message_journal.db_readonly"
+        ) as mock_readonly, patch(
+            "application.streaming.message_journal.MessageEventsRepository",
+            side_effect=lambda conn: next(repo_instances),
+        ), patch(
+            "application.streaming.message_journal.Topic"
+        ) as mock_topic_cls:
+            mock_session.return_value.__enter__.return_value = MagicMock()
+            mock_readonly.return_value.__enter__.return_value = MagicMock()
+            mock_topic_cls.return_value = MagicMock()
+
+            result = record_event("msg-1", 3, "answer", {"text": "hi"})
+
+            assert result is True
+            repo_readonly.latest_sequence_no.assert_called_once_with("msg-1")
+            repo_retry.record.assert_called_once_with(
+                "msg-1", 8, "answer", {"text": "hi"}
+            )
 
     def test_payload_with_null_byte_stripped_before_insert(self):
         """``\\x00`` in a string value would crash JSONB INSERT — strip
@@ -521,6 +615,62 @@ class TestBatchedJournalWriter:
             assert per_row_repo.record.call_count == 2
             assert per_row_repo.record.call_args_list[0].args[1] == 0
             assert per_row_repo.record.call_args_list[1].args[1] == 1
+
+    def test_bulk_foreign_key_violation_drops_batch_without_per_row(self):
+        """A 23503 (foreign-key violation) on the bulk INSERT means the
+        whole batch references a ``conversation_messages`` parent that
+        doesn't exist — every per-row retry would FK-fail too. The
+        batch is dropped once without the per-row fallback (no latest
+        probe, no re-attempts, no publish), and the buffer is cleared.
+        """
+        session_cm, readonly_cm, repo_cls_p, topic_cls_p = self._patch_io()
+        with session_cm as mock_session, readonly_cm as mock_readonly, repo_cls_p as mock_repo_cls, topic_cls_p as mock_topic_cls:
+            mock_session.return_value.__enter__.return_value = MagicMock()
+            mock_readonly.return_value.__enter__.return_value = MagicMock()
+
+            bulk_repo = MagicMock(name="bulk_repo")
+            bulk_repo.bulk_record.side_effect = _integrity_error("23503")
+            per_row_repo = MagicMock(name="per_row_repo")
+            mock_repo_cls.side_effect = [bulk_repo, per_row_repo]
+
+            mock_topic = MagicMock()
+            mock_topic_cls.return_value = mock_topic
+
+            writer = BatchedJournalWriter("msg-1", batch_size=2)
+            writer.record(0, "answer", {"text": "a"})
+            writer.record(1, "answer", {"text": "b"})
+
+            bulk_repo.bulk_record.assert_called_once()
+            # No per-row fallback: the parent is missing for the whole batch.
+            mock_readonly.assert_not_called()
+            per_row_repo.record.assert_not_called()
+            mock_topic.publish.assert_not_called()
+            # Buffer cleared so close() is a no-op and memory stays bounded.
+            assert writer._buffer == []
+
+    def test_bulk_collision_23505_still_falls_back_to_per_row(self):
+        """An explicit 23505 (unique/PK collision) keeps the per-row
+        fallback — the parent exists, only a ``sequence_no`` collided.
+        Regression guard for the FK-vs-PK split at the bulk boundary.
+        """
+        session_cm, readonly_cm, repo_cls_p, topic_cls_p = self._patch_io()
+        with session_cm as mock_session, readonly_cm as mock_readonly, repo_cls_p as mock_repo_cls, topic_cls_p as mock_topic_cls:
+            mock_session.return_value.__enter__.return_value = MagicMock()
+            mock_readonly.return_value.__enter__.return_value = MagicMock()
+
+            bulk_repo = MagicMock(name="bulk_repo")
+            bulk_repo.bulk_record.side_effect = _integrity_error("23505")
+            per_row_repo = MagicMock(name="per_row_repo")
+            mock_repo_cls.side_effect = [bulk_repo, per_row_repo, per_row_repo]
+
+            mock_topic_cls.return_value = MagicMock()
+
+            writer = BatchedJournalWriter("msg-1", batch_size=2)
+            writer.record(0, "answer", {"text": "a"})
+            writer.record(1, "answer", {"text": "b"})
+
+            bulk_repo.bulk_record.assert_called_once()
+            assert per_row_repo.record.call_count == 2
 
     def test_flush_clears_buffer_even_on_total_failure(self):
         """A flush that fails with a non-IntegrityError exception must
