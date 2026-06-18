@@ -152,6 +152,11 @@ class Settings(BaseSettings):
     ELASTIC_URL: Optional[str] = None  # url for elasticsearch
     ELASTIC_INDEX: Optional[str] = "docsgpt"  # index name for elasticsearch
 
+    # Oracle Vector Store
+    ORACLE_USER: Optional[str] = None  # Oracle database username
+    ORACLE_PASSWORD: Optional[str] = None  # Oracle database password
+    ORACLE_DSN: Optional[str] = None  # Oracle DSN, e.g. "localhost:1521/FREEPDB1"
+
     # SageMaker config
     SAGEMAKER_ENDPOINT: Optional[str] = None  # SageMaker endpoint name
     SAGEMAKER_REGION: Optional[str] = None  # SageMaker region name
