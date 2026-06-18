@@ -1076,8 +1076,6 @@ class OpenAILLM(BaseLLM):
         Returns:
             str: OpenAI file_id for the uploaded file.
         """
-        import logging
-
         if "openai_file_id" in attachment:
             return attachment["openai_file_id"]
         file_path = attachment.get("path")
@@ -1085,12 +1083,14 @@ class OpenAILLM(BaseLLM):
         if not self.storage.file_exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
         try:
-            file_id = self.storage.process_file(
-                file_path,
-                lambda local_path, **kwargs: self.client.files.create(
-                    file=open(local_path, "rb"), purpose="assistants"
-                ).id,
-            )
+            def _upload(local_path, **_kwargs):
+                with open(local_path, "rb") as uploaded_file:
+                    return self.client.files.create(
+                        file=uploaded_file,
+                        purpose="assistants",
+                    ).id
+
+            file_id = self.storage.process_file(file_path, _upload)
 
             # Cache the OpenAI file id on the attachment row so we don't
             # re-upload the same blob on the next LLM call. Prefer the PG
