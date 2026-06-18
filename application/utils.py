@@ -36,6 +36,7 @@ def get_gpt_model() -> str:
         "anthropic": "claude-2",
         "groq": "llama3-8b-8192",
         "novita": "deepseek/deepseek-r1",
+        "atlascloud": "deepseek-ai/deepseek-v4-pro",
     }
     return settings.LLM_NAME or model_map.get(settings.LLM_PROVIDER, "")
 
