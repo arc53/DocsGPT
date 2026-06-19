@@ -17,7 +17,6 @@ from application.parser.schema.base import Document
 
 @pytest.mark.unit
 class TestChunkerInit:
-
     def test_default_init(self):
         chunker = Chunker()
         assert chunker.chunking_strategy == "classic_chunk"
@@ -31,10 +30,22 @@ class TestChunkerInit:
             max_tokens=1000,
             min_tokens=50,
             duplicate_headers=True,
+            chunk_overlap=150,
         )
         assert chunker.max_tokens == 1000
         assert chunker.min_tokens == 50
         assert chunker.duplicate_headers is True
+        assert chunker.chunk_overlap == 150
+
+    def test_recursive_strategy_init(self):
+        chunker = Chunker(
+            chunking_strategy="recursive_chunk",
+            max_tokens=500,
+            chunk_overlap=50,
+        )
+        assert chunker.chunking_strategy == "recursive_chunk"
+        assert chunker.max_tokens == 500
+        assert chunker.chunk_overlap == 50
 
     def test_invalid_strategy_raises(self):
         with pytest.raises(ValueError, match="Unsupported chunking strategy"):
@@ -44,11 +55,8 @@ class TestChunkerInit:
 # =====================================================================
 # Separate Header and Body
 # =====================================================================
-
-
 @pytest.mark.unit
 class TestSeparateHeaderAndBody:
-
     def test_with_header(self):
         chunker = Chunker()
         text = "line1\nline2\nline3\nbody content here"
@@ -86,7 +94,6 @@ class TestSeparateHeaderAndBody:
 
 @pytest.mark.unit
 class TestSplitDocument:
-
     def test_split_large_document(self):
         chunker = Chunker(max_tokens=50, min_tokens=5)
         long_text = "word " * 200
@@ -152,7 +159,6 @@ class TestSplitDocument:
 
 @pytest.mark.unit
 class TestClassicChunk:
-
     def test_small_doc_passes_through(self):
         chunker = Chunker(max_tokens=2000, min_tokens=1)
         doc = Document(text="Short text", doc_id="d1")
@@ -227,9 +233,15 @@ class TestClassicChunk:
 
 @pytest.mark.unit
 class TestChunkDispatcher:
-
     def test_dispatch_classic_chunk(self):
         chunker = Chunker(chunking_strategy="classic_chunk")
+        doc = Document(text="content", doc_id="d1")
+
+        result = chunker.chunk([doc])
+        assert len(result) == 1
+
+    def test_dispatch_recursive_chunk(self):
+        chunker = Chunker(chunking_strategy="recursive_chunk")
         doc = Document(text="content", doc_id="d1")
 
         result = chunker.chunk([doc])
@@ -244,13 +256,58 @@ class TestChunkDispatcher:
 
 
 # =====================================================================
+# Recursive Chunk Strategy Tests
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestRecursiveChunk:
+    def test_recursive_chunk_splits_large_text(self):
+        chunker = Chunker(
+            chunking_strategy="recursive_chunk",
+            max_tokens=30,
+            chunk_overlap=5,
+        )
+        long_text = "This is a very long sentence that will be split recursively by semantic character bounds. " * 5
+        doc = Document(text=long_text, doc_id="doc1")
+
+        result = chunker.recursive_chunk([doc])
+        assert len(result) > 1
+        for idx, chunk_doc in enumerate(result):
+            assert chunk_doc.doc_id == f"doc1-{idx}"
+            assert chunk_doc.extra_info is not None
+            assert "token_count" in chunk_doc.extra_info
+            assert chunk_doc.extra_info["token_count"] > 0
+            assert chunk_doc.extra_info["token_count"] <= chunker.max_tokens
+
+    def test_recursive_chunk_preserves_embedding_and_extra_info(self):
+        chunker = Chunker(
+            chunking_strategy="recursive_chunk",
+            max_tokens=20,
+            chunk_overlap=2,
+        )
+        doc = Document(
+            text="First sentence here. Second sentence here. Third sentence here.",
+            doc_id="doc1",
+            embedding=[0.5, -0.5],
+            extra_info={"source": "recursive_test"},
+        )
+
+        result = chunker.recursive_chunk([doc])
+        assert len(result) > 0
+        for chunk_doc in result:
+            assert chunk_doc.embedding == [0.5, -0.5]
+            assert chunk_doc.extra_info["source"] == "recursive_test"
+            assert "token_count" in chunk_doc.extra_info
+
+
+# =====================================================================
 # Integration-like test
 # =====================================================================
 
 
 @pytest.mark.unit
 class TestChunkerIntegration:
-
     def test_mixed_document_sizes(self):
         chunker = Chunker(max_tokens=50, min_tokens=5)
         docs = [

@@ -26,16 +26,16 @@ class EmbeddingPipelineError(Exception):
 def sanitize_content(content: str) -> str:
     """
     Remove NUL characters that can cause vector store ingestion to fail.
-    
+
     Args:
         content (str): Raw content that may contain NUL characters
-        
+
     Returns:
         str: Sanitized content with NUL characters removed
     """
     if not content:
         return content
-    return content.replace('\x00', '')
+    return content.replace("\x00", "")
 
 
 # Per-chunk inline retry. Aggressive defaults (tries=10, delay=60) blocked
@@ -45,19 +45,19 @@ def sanitize_content(content: str) -> str:
 @retry(tries=3, delay=5, backoff=2)
 def add_text_to_store_with_retry(store: Any, doc: Any, source_id: str) -> None:
     """Add a document's text and metadata to the vector store with retry logic.
-    
+
     Args:
         store: The vector store object.
         doc: The document to be added.
         source_id: Unique identifier for the source.
-        
+
     Raises:
         Exception: If document addition fails after all retry attempts.
     """
     try:
         # Sanitize content to remove NUL characters that cause ingestion failures
         doc.page_content = sanitize_content(doc.page_content)
-        
+
         doc.metadata["source_id"] = str(source_id)
         store.add_texts([doc.page_content], metadatas=[doc.metadata])
     except Exception as e:
@@ -65,8 +65,36 @@ def add_text_to_store_with_retry(store: Any, doc: Any, source_id: str) -> None:
         raise
 
 
+@retry(tries=3, delay=5, backoff=2)
+def add_texts_to_store_with_retry(store: Any, batch_docs: List[Any], source_id: str) -> None:
+    """Add a batch of documents' texts and metadata to the vector store with retry logic.
+
+    Args:
+        store: The vector store object.
+        batch_docs: List of documents to be added.
+        source_id: Unique identifier for the source.
+
+    Raises:
+        Exception: If document addition fails after all retry attempts.
+    """
+    try:
+        texts = []
+        metadatas = []
+        for doc in batch_docs:
+            doc.page_content = sanitize_content(doc.page_content)
+            doc.metadata["source_id"] = str(source_id)
+            texts.append(doc.page_content)
+            metadatas.append(doc.metadata)
+        store.add_texts(texts, metadatas=metadatas)
+    except Exception as e:
+        logging.error(f"Failed to add document batch with retry: {e}", exc_info=True)
+        raise
+
+
 def _init_progress_and_resume_index(
-    source_id: str, total_chunks: int, attempt_id: Optional[str],
+    source_id: str,
+    total_chunks: int,
+    attempt_id: Optional[str],
 ) -> int:
     """Upsert the progress row and return the next chunk index to embed.
 
@@ -85,7 +113,9 @@ def _init_progress_and_resume_index(
     try:
         with db_session() as conn:
             progress = IngestChunkProgressRepository(conn).init_progress(
-                source_id, total_chunks, attempt_id,
+                source_id,
+                total_chunks,
+                attempt_id,
             )
     except Exception as e:
         logging.warning(
@@ -109,9 +139,7 @@ def _record_progress(source_id: str, last_index: int, embedded_chunks: int) -> N
                 source_id, last_index=last_index, embedded_chunks=embedded_chunks
             )
     except Exception as e:
-        logging.warning(
-            f"Could not record ingest progress for {source_id}: {e}", exc_info=True
-        )
+        logging.warning(f"Could not record ingest progress for {source_id}: {e}", exc_info=True)
 
 
 def assert_index_complete(source_id: str) -> None:
@@ -130,8 +158,7 @@ def assert_index_complete(source_id: str) -> None:
             progress = IngestChunkProgressRepository(conn).get_progress(source_id)
     except Exception as e:
         logging.warning(
-            f"assert_index_complete: progress lookup failed for "
-            f"{source_id}: {e}",
+            f"assert_index_complete: progress lookup failed for {source_id}: {e}",
             exc_info=True,
         )
         return
@@ -140,10 +167,7 @@ def assert_index_complete(source_id: str) -> None:
     embedded = int(progress.get("embedded_chunks") or 0)
     total = int(progress.get("total_chunks") or 0)
     if embedded < total:
-        raise EmbeddingPipelineError(
-            f"partial index for source {source_id}: "
-            f"{embedded}/{total} chunks embedded"
-        )
+        raise EmbeddingPipelineError(f"partial index for source {source_id}: {embedded}/{total} chunks embedded")
 
 
 def embed_and_store_documents(
@@ -204,7 +228,9 @@ def embed_and_store_documents(
     # (autoretry of same task) and resets it on mismatch (fresh sync /
     # reingest). Returns the new resume index — 0 means "start fresh".
     resume_index = _init_progress_and_resume_index(
-        source_id, total_docs, attempt_id,
+        source_id,
+        total_docs,
+        attempt_id,
     )
     is_resume = resume_index > 0
 
@@ -259,31 +285,34 @@ def embed_and_store_documents(
         # tripwire still validates ``embedded == total`` afterwards.
         loop_start = total_docs
 
-    # Process and embed documents
+    # Process and embed documents in batches
     chunk_error: Exception | None = None
     failed_idx: int | None = None
     last_published_pct = -1
     source_id_str = str(source_id)
     progress_span = progress_end - progress_start
-    for idx in tqdm(
-        range(loop_start, total_docs),
+    try:
+        batch_size = int(getattr(settings, "EMBEDDING_BATCH_SIZE", 100))
+    except (TypeError, ValueError):
+        batch_size = 100
+
+    for idx_start in tqdm(
+        range(loop_start, total_docs, batch_size),
         desc="Embedding 🦖",
-        unit="docs",
-        total=total_docs - loop_start,
+        unit="batches",
+        total=(total_docs - loop_start + batch_size - 1) // batch_size,
         bar_format="{l_bar}{bar}| Time Left: {remaining}",
     ):
-        doc = docs[idx]
+        idx_end = min(idx_start + batch_size, total_docs)
+        batch_docs = docs[idx_start:idx_end]
         try:
             # Map the embed loop into [progress_start, progress_end].
-            progress = progress_start + int(
-                ((idx + 1) / total_docs) * progress_span
-            )
+            progress = progress_start + int((idx_end / total_docs) * progress_span)
             task_status.update_state(state="PROGRESS", meta={"current": progress})
 
             # SSE push for sub-second upload-toast updates. Throttled to one
             # event per percent so a 10k-chunk ingest emits ~100 events,
-            # not 10k. The Celery update_state above stays the source of
-            # truth for the polling-fallback path.
+            # not 10k.
             if user_id and progress > last_published_pct:
                 publish_user_event(
                     user_id,
@@ -291,27 +320,26 @@ def embed_and_store_documents(
                     {
                         "current": progress,
                         "total": total_docs,
-                        "embedded_chunks": idx + 1,
+                        "embedded_chunks": idx_end,
                         "stage": "embedding",
                     },
                     scope={"kind": "source", "id": source_id_str},
                 )
                 last_published_pct = progress
 
-            # Add document to vector store
-            add_text_to_store_with_retry(store, doc, source_id)
-            _record_progress(source_id, last_index=idx, embedded_chunks=idx + 1)
+            # Add batch of documents to vector store
+            add_texts_to_store_with_retry(store, batch_docs, source_id)
+            _record_progress(source_id, last_index=idx_end - 1, embedded_chunks=idx_end)
         except Exception as e:
             chunk_error = e
-            failed_idx = idx
-            logging.error(f"Error embedding document {idx}: {e}", exc_info=True)
-            logging.info(f"Saving progress at document {idx} out of {total_docs}")
+            failed_idx = idx_start
+            logging.error(f"Error embedding batch starting at {idx_start}: {e}", exc_info=True)
+            logging.info(f"Saving progress at document {idx_start} out of {total_docs}")
             try:
                 store.save_local(folder_name)
                 logging.info("Progress saved successfully")
             except Exception as save_error:
                 logging.error(f"CRITICAL: Failed to save progress: {save_error}", exc_info=True)
-                # Continue without breaking to attempt final save
             break
 
     # Save the vector store
@@ -334,6 +362,5 @@ def embed_and_store_documents(
     # the cache for 24h.
     if chunk_error is not None:
         raise EmbeddingPipelineError(
-            f"embed failure at chunk {failed_idx}/{total_docs} "
-            f"for source {source_id}"
+            f"embed failure at chunk {failed_idx}/{total_docs} for source {source_id}"
         ) from chunk_error

@@ -11,7 +11,6 @@ from application.parser.embedding_pipeline import (
 )
 
 
-
 def test_sanitize_content_removes_nulls():
     content = "This\x00is\x00a\x00test"
     result = sanitize_content(content)
@@ -24,7 +23,6 @@ def test_sanitize_content_empty_or_none():
     assert sanitize_content(None) is None
 
 
-
 def test_add_text_to_store_with_retry_success():
     store = MagicMock()
     doc = MagicMock()
@@ -33,28 +31,21 @@ def test_add_text_to_store_with_retry_success():
 
     add_text_to_store_with_retry(store, doc, "123")
 
-    store.add_texts.assert_called_once_with(
-        ["Test content"], metadatas=[{"source_id": "123"}]
-    )
+    store.add_texts.assert_called_once_with(["Test content"], metadatas=[{"source_id": "123"}])
 
 
 @pytest.fixture
 def mock_settings(monkeypatch):
     mock_settings = MagicMock()
-    monkeypatch.setattr(
-        "application.parser.embedding_pipeline.settings", mock_settings
-    )
+    monkeypatch.setattr("application.parser.embedding_pipeline.settings", mock_settings)
     return mock_settings
 
 
 @pytest.fixture
 def mock_vector_creator(monkeypatch):
     mock_creator = MagicMock()
-    monkeypatch.setattr(
-        "application.parser.embedding_pipeline.VectorCreator", mock_creator
-    )
+    monkeypatch.setattr("application.parser.embedding_pipeline.VectorCreator", mock_creator)
     return mock_creator
-
 
 
 def test_embed_and_store_documents_creates_folder(tmp_path, mock_settings, mock_vector_creator):
@@ -94,9 +85,7 @@ def test_embed_and_store_documents_non_faiss(tmp_path, mock_settings, mock_vecto
     assert folder_name.exists()
 
 
-def test_embed_and_store_documents_progress_band(
-    tmp_path, mock_settings, mock_vector_creator
-):
+def test_embed_and_store_documents_progress_band(tmp_path, mock_settings, mock_vector_creator):
     """progress_start/progress_end remap the embed loop into a sub-band
     so an earlier stage (parsing) can own the lower part of the bar.
     """
@@ -107,8 +96,12 @@ def test_embed_and_store_documents_progress_band(
     mock_vector_creator.create_vectorstore.return_value = MagicMock()
 
     embed_and_store_documents(
-        docs, str(tmp_path / "store"), "sid", task_status,
-        progress_start=50, progress_end=100,
+        docs,
+        str(tmp_path / "store"),
+        "sid",
+        task_status,
+        progress_start=50,
+        progress_end=100,
     )
 
     currents = [
@@ -123,7 +116,7 @@ def test_embed_and_store_documents_progress_band(
     assert currents == sorted(currents)
 
 
-@patch("application.parser.embedding_pipeline.add_text_to_store_with_retry")
+@patch("application.parser.embedding_pipeline.add_texts_to_store_with_retry")
 def test_embed_and_store_documents_partial_failure_raises(
     mock_add_retry, tmp_path, mock_settings, mock_vector_creator, caplog
 ):
@@ -145,29 +138,36 @@ def test_embed_and_store_documents_partial_failure_raises(
     mock_store = MagicMock()
     mock_vector_creator.create_vectorstore.return_value = mock_store
 
-    # First document succeeds (FAISS init seeds with docs[0]; the loop
-    # picks up at idx=1 and raises on the bad chunk).
     def side_effect(*args, **kwargs):
-        if "bad" in args[1].page_content:
-            raise RuntimeError("Embedding failed")
+        batch_docs = args[1]
+        for d in batch_docs:
+            if "bad" in d.page_content:
+                raise RuntimeError("Embedding failed")
+
     mock_add_retry.side_effect = side_effect
 
     with caplog.at_level(logging.ERROR):
         with pytest.raises(EmbeddingPipelineError) as exc_info:
             embed_and_store_documents(
-                docs, str(folder_name), source_id, task_status,
+                docs,
+                str(folder_name),
+                source_id,
+                task_status,
             )
 
     # Original cause is chained via ``raise ... from`` for diagnostics.
     assert isinstance(exc_info.value.__cause__, RuntimeError)
-    assert "Error embedding document" in caplog.text
+    assert "Error embedding batch" in caplog.text
     # Partial save still ran (chunks that did embed are flushed to disk).
     mock_store.save_local.assert_called()
 
 
-@patch("application.parser.embedding_pipeline.add_text_to_store_with_retry")
+@patch("application.parser.embedding_pipeline.add_texts_to_store_with_retry")
 def test_embed_and_store_documents_all_chunks_succeed_no_raise(
-    mock_add_retry, tmp_path, mock_settings, mock_vector_creator,
+    mock_add_retry,
+    tmp_path,
+    mock_settings,
+    mock_vector_creator,
 ):
     """Happy path: no exception escapes when every chunk succeeds."""
     mock_settings.VECTOR_STORE = "faiss"
@@ -180,7 +180,10 @@ def test_embed_and_store_documents_all_chunks_succeed_no_raise(
     mock_vector_creator.create_vectorstore.return_value = mock_store
 
     embed_and_store_documents(
-        docs, str(tmp_path / "ok"), "id-ok", MagicMock(),
+        docs,
+        str(tmp_path / "ok"),
+        "id-ok",
+        MagicMock(),
     )
     mock_store.save_local.assert_called()
 
@@ -192,7 +195,8 @@ def test_assert_index_complete_raises_on_partial(monkeypatch):
     """Worker-level tripwire: chunk-progress with embedded < total raises."""
     fake_repo = MagicMock()
     fake_repo.get_progress.return_value = {
-        "embedded_chunks": 4, "total_chunks": 10,
+        "embedded_chunks": 4,
+        "total_chunks": 10,
     }
     monkeypatch.setattr(
         "application.parser.embedding_pipeline.IngestChunkProgressRepository",
@@ -205,7 +209,8 @@ def test_assert_index_complete_raises_on_partial(monkeypatch):
         yield None
 
     monkeypatch.setattr(
-        "application.parser.embedding_pipeline.db_session", _fake_session,
+        "application.parser.embedding_pipeline.db_session",
+        _fake_session,
     )
     with pytest.raises(EmbeddingPipelineError, match=r"4/10"):
         assert_index_complete("src-partial")
@@ -214,7 +219,8 @@ def test_assert_index_complete_raises_on_partial(monkeypatch):
 def test_assert_index_complete_passes_on_full(monkeypatch):
     fake_repo = MagicMock()
     fake_repo.get_progress.return_value = {
-        "embedded_chunks": 10, "total_chunks": 10,
+        "embedded_chunks": 10,
+        "total_chunks": 10,
     }
     monkeypatch.setattr(
         "application.parser.embedding_pipeline.IngestChunkProgressRepository",
@@ -227,7 +233,8 @@ def test_assert_index_complete_passes_on_full(monkeypatch):
         yield None
 
     monkeypatch.setattr(
-        "application.parser.embedding_pipeline.db_session", _fake_session,
+        "application.parser.embedding_pipeline.db_session",
+        _fake_session,
     )
     assert_index_complete("src-full")  # no raise
 
@@ -247,7 +254,8 @@ def test_assert_index_complete_no_op_when_no_progress_row(monkeypatch):
         yield None
 
     monkeypatch.setattr(
-        "application.parser.embedding_pipeline.db_session", _fake_session,
+        "application.parser.embedding_pipeline.db_session",
+        _fake_session,
     )
     assert_index_complete("src-missing")
 
@@ -265,18 +273,15 @@ def test_assert_index_complete_no_op_when_lookup_fails(monkeypatch, caplog):
         yield  # pragma: no cover
 
     monkeypatch.setattr(
-        "application.parser.embedding_pipeline.db_session", _broken_session,
+        "application.parser.embedding_pipeline.db_session",
+        _broken_session,
     )
     with caplog.at_level(logging.WARNING, logger="root"):
         assert_index_complete("src-db-down")  # no raise
-    assert any(
-        "progress lookup failed" in r.getMessage() for r in caplog.records
-    )
+    assert any("progress lookup failed" in r.getMessage() for r in caplog.records)
 
 
-def test_embed_and_store_documents_save_fails_raises_oserror(
-    tmp_path, mock_settings, mock_vector_creator
-):
+def test_embed_and_store_documents_save_fails_raises_oserror(tmp_path, mock_settings, mock_vector_creator):
     mock_settings.VECTOR_STORE = "faiss"
 
     docs = [MagicMock(page_content="good", metadata={})]
@@ -290,4 +295,3 @@ def test_embed_and_store_documents_save_fails_raises_oserror(
 
     with pytest.raises(OSError, match="Unable to save vector store"):
         embed_and_store_documents(docs, str(folder_name), source_id, task_status)
-
