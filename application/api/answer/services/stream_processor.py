@@ -10,7 +10,10 @@ from application.agents.default_tools import synthesized_default_tools
 from application.api.answer.services.compression import CompressionOrchestrator
 from application.api.answer.services.compression.token_counter import TokenCounter
 from application.api.answer.services.conversation_service import ConversationService
-from application.api.answer.services.prompt_renderer import PromptRenderer
+from application.api.answer.services.prompt_renderer import (
+    PromptRenderer,
+    format_docs_for_prompt,
+)
 from application.core.model_utils import (
     get_api_key_for_provider,
     get_default_model_id,
@@ -25,6 +28,7 @@ from application.storage.db.repositories.agents import AgentsRepository
 from application.storage.db.repositories.attachments import AttachmentsRepository
 from application.storage.db.repositories.prompts import PromptsRepository
 from application.storage.db.repositories.sources import SourcesRepository
+from application.storage.db.repositories.team_scope import TeamScopeRepository
 from application.storage.db.repositories.user_tools import UserToolsRepository
 from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.session import db_readonly, db_session
@@ -171,6 +175,63 @@ class StreamProcessor:
             docs=docs_list,
             tools_data=tools_data,
         )
+
+    def build_continuation_from_messages(self, messages, tool_actions):
+        """Rebuild a tool continuation from the request messages (STATELESS).
+
+        OpenAI-compatible clients (opencode, etc.) resend the full conversation
+        -- system, user, assistant(tool_calls), tool(results) -- but carry no
+        conversation_id, so there is no server-side ``pending_tool_state`` to
+        load. Reconstruct the agent + continuation context directly from the
+        resent messages and return the same tuple as ``resume_from_tool_actions``:
+        (agent, messages, tools_dict, pending_tool_calls, tool_actions,
+        reasoning_content).
+        """
+        # Locate the last assistant message that issued tool calls.
+        pending_idx = None
+        for i in range(len(messages) - 1, -1, -1):
+            m = messages[i]
+            if m.get("role") == "assistant" and m.get("tool_calls"):
+                pending_idx = i
+                break
+        if pending_idx is None:
+            raise ValueError(
+                "No assistant message with tool_calls found for continuation"
+            )
+
+        pending_tool_calls = []
+        for tc in messages[pending_idx].get("tool_calls") or []:
+            fn = tc.get("function") or {}
+            raw_args = fn.get("arguments")
+            try:
+                args = (
+                    json.loads(raw_args)
+                    if isinstance(raw_args, str)
+                    else (raw_args or {})
+                )
+            except (json.JSONDecodeError, TypeError):
+                args = {}
+            name = fn.get("name", "")
+            pending_tool_calls.append(
+                {
+                    "call_id": tc.get("id", ""),
+                    "name": name,
+                    "tool_name": name,
+                    "action_name": name,
+                    "llm_name": name,
+                    "arguments": args,
+                }
+            )
+
+        # The conversation up to (but not including) the assistant tool_calls;
+        # gen_continuation re-appends the assistant message + tool results.
+        prior_messages = [dict(m) for m in messages[:pending_idx]]
+
+        # Build a normal agent (config / LLM / client tools), no new question.
+        agent = self.build_agent("")
+        tools_dict = agent.tool_executor.get_tools()
+
+        return agent, prior_messages, tools_dict, pending_tool_calls, tool_actions, ""
 
     def _load_conversation_history(self):
         """Load conversation history either from DB or request"""
@@ -367,7 +428,7 @@ class StreamProcessor:
             with db_readonly() as conn:
                 # Lookup without user scoping — access control is done
                 # against ``user_id`` / ``shared_with`` / ``shared`` flags
-                # right below, matching the legacy Mongo semantics.
+                # below, matching the legacy Mongo semantics.
                 repo = AgentsRepository(conn)
                 agent = None
                 if looks_like_uuid(str(agent_id)):
@@ -382,13 +443,29 @@ class StreamProcessor:
                         agent = row_to_dict(row)
                 if agent is None:
                     agent = repo.get_by_legacy_id(str(agent_id))
-            if agent is None:
-                raise Exception("Agent not found")
-            agent_owner = agent.get("user_id")
-            is_owner = agent_owner == user_id
-            is_shared_with_user = bool(agent.get("shared", False))
+                if agent is None:
+                    raise Exception("Agent not found")
+                agent_owner = agent.get("user_id")
+                is_owner = agent_owner == user_id
+                is_shared_with_user = bool(agent.get("shared", False))
 
-            if not (is_owner or is_shared_with_user):
+                # Team-shared agents are runnable by any member with a grant
+                # (viewer is enough to run). Resolved live against team_members
+                # on the SAME connection so a revoked grant/membership denies on
+                # the next call; resolution failure fails closed.
+                is_team_shared = False
+                if not (is_owner or is_shared_with_user) and user_id:
+                    try:
+                        is_team_shared = TeamScopeRepository(conn).can_read(
+                            user_id, "agent", str(agent["id"])
+                        )
+                    except Exception:
+                        logger.error(
+                            "team access check failed for agent run", exc_info=True
+                        )
+                        is_team_shared = False
+
+            if not (is_owner or is_shared_with_user or is_team_shared):
                 raise Exception("Unauthorized access to the agent")
             if is_owner:
                 now = datetime.datetime.now(datetime.timezone.utc)
@@ -647,6 +724,21 @@ class StreamProcessor:
                 }
             )
 
+        # Per-request structured output: a ``response_format`` / ``response_schema``
+        # in the request (surfaced by the v1 translator as ``json_schema``) overrides
+        # the agent's configured schema for this call. Invalid schemas are ignored
+        # downstream by the agent (normalize_json_schema_payload).
+        request_json_schema = self.data.get("json_schema")
+        if request_json_schema is not None:
+            self.agent_config["json_schema"] = request_json_schema
+        if self.data.get("json_schema_strict") is not None:
+            self.agent_config["json_schema_strict"] = self.data.get("json_schema_strict")
+        if self.data.get("json_object"):
+            self.agent_config["json_object"] = True
+            # An explicit json_object request beats an agent-configured schema
+            # (otherwise the configured json_schema would silently override it).
+            self.agent_config["json_schema"] = None
+
     def _configure_retriever(self):
         """Assemble retriever config; agent's values are authoritative when bound."""
         # BYOM scope: owner for shared-agent BYOM, caller for own BYOM,
@@ -731,15 +823,7 @@ class StreamProcessor:
                 return None, None
             self.retrieved_docs = docs
 
-            docs_with_filenames = []
-            for doc in docs:
-                filename = doc.get("filename") or doc.get("title") or doc.get("source")
-                if filename:
-                    chunk_header = str(filename)
-                    docs_with_filenames.append(f"{chunk_header}\n{doc['text']}")
-                else:
-                    docs_with_filenames.append(doc["text"])
-            docs_together = "\n\n".join(docs_with_filenames)
+            docs_together = format_docs_for_prompt(docs)
 
             logger.info(f"Pre-fetch docs_together size: {len(docs_together)} chars")
 
@@ -805,10 +889,13 @@ class StreamProcessor:
 
                 tool_data = self._fetch_tool_data(tool_doc, required_actions)
                 if tool_data:
-                    # Defaults reachable by synthetic id only — the name
-                    # key stays bound to an explicit row of the same name.
+                    # Explicit rows claim the name key; a default tool takes
+                    # it only when no explicit row of the same name exists
+                    # (explicit rows are processed first).
                     if not is_default:
                         tools_data[tool_name] = tool_data
+                    else:
+                        tools_data.setdefault(tool_name, tool_data)
                     tools_data[tool_id] = tool_data
 
             return tools_data if tools_data else None
@@ -910,13 +997,19 @@ class StreamProcessor:
         """Retrieve and cache the raw prompt content for the current agent configuration."""
         if self._prompt_content is not None:
             return self._prompt_content
-        prompt_id = (
-            self.agent_config.get("prompt_id")
-            if isinstance(self.agent_config, dict)
-            else None
-        )
-        if not prompt_id:
+        if not isinstance(self.agent_config, dict):
             return None
+        # PG ``agents.prompt_id`` is NULL for agents that never chose a
+        # prompt — treat missing/empty as the default preset so the
+        # agentic swap below still applies.
+        prompt_id = self.agent_config.get("prompt_id") or "default"
+        # Agentic/research agents use the agentic preset variants (search
+        # tool guidance instead of a pre-fetched document block); custom
+        # prompt ids pass through unchanged.
+        if self.agent_config.get("agent_type") in ("agentic", "research") and (
+            prompt_id in ("default", "creative", "strict")
+        ):
+            prompt_id = f"agentic_{prompt_id}"
         try:
             self._prompt_content = get_prompt(prompt_id, self.prompts_collection)
         except ValueError as e:
@@ -964,7 +1057,7 @@ class StreamProcessor:
 
             memory_tool = MemoryTool(tool_config, self.initial_user_id)
 
-            root_view = memory_tool.execute_action("view", path="/")
+            root_view = memory_tool.execute_action("memory_view", path="/")
 
             if "Error:" in root_view or not root_view.strip():
                 return None
@@ -1003,6 +1096,22 @@ class StreamProcessor:
         from application.agents.tool_executor import ToolExecutor
         from application.llm.handlers.handler_creator import LLMHandlerCreator
         from application.llm.llm_creator import LLMCreator
+
+        # api_key-in-body auth carries no JWT, so initial_user_id is None — but
+        # the state was saved under the agent owner. Resolve the owner so the
+        # lookup / mark_resuming / delete_state key on the same id. (No-op for
+        # v1, which already passes an owner-scoped decoded_token.)
+        if self.initial_user_id is None and self.data.get("api_key"):
+            with db_readonly() as conn:
+                agent_doc = AgentsRepository(conn).find_by_key(self.data["api_key"])
+            owner = (
+                (agent_doc.get("user_id") or agent_doc.get("user"))
+                if agent_doc
+                else None
+            )
+            if owner:
+                self.initial_user_id = owner
+                self.decoded_token = {"sub": owner}
 
         cont_service = ContinuationService()
         state = cont_service.load_state(conversation_id, self.initial_user_id)
@@ -1142,19 +1251,16 @@ class StreamProcessor:
         """Create and return the configured agent with rendered prompt"""
         agent_type = self.agent_config["agent_type"]
 
-        # For agentic agents, swap standard presets for their agentic
-        # counterparts (which include search tool instructions instead of
-        # {summaries}). Custom / user-provided prompts pass through as-is.
+        # _get_prompt_content handles the agentic preset swap and caching;
+        # it returns None only when the prompt couldn't be fetched (unknown
+        # or broken custom ids) — re-fetch strictly so the underlying error
+        # surfaces to the caller.
         raw_prompt = self._get_prompt_content()
         if raw_prompt is None:
-            prompt_id = self.agent_config.get("prompt_id", "default")
-            agentic_presets = {"default", "creative", "strict"}
-            if agent_type in ("agentic", "research") and prompt_id in agentic_presets:
-                raw_prompt = get_prompt(
-                    f"agentic_{prompt_id}", self.prompts_collection
-                )
-            else:
-                raw_prompt = get_prompt(prompt_id, self.prompts_collection)
+            raw_prompt = get_prompt(
+                self.agent_config.get("prompt_id", "default"),
+                self.prompts_collection,
+            )
             self._prompt_content = raw_prompt
 
         # Allow API callers to override the system prompt when the agent
@@ -1224,6 +1330,18 @@ class StreamProcessor:
         if client_tools:
             tool_executor.client_tools = client_tools
 
+        # OpenAI-style image_url content parts are only understood by the
+        # OpenAI-family providers; drop multimodal content for others (Google,
+        # Anthropic, ...) so a multimodal request degrades to text rather than
+        # erroring upstream.
+        from application.llm.openai import OpenAILLM
+
+        request_multimodal = (
+            self.data.get("multimodal_content")
+            if isinstance(llm, OpenAILLM)
+            else None
+        )
+
         agent_kwargs = {
             "endpoint": "stream",
             "llm_name": provider or settings.LLM_PROVIDER,
@@ -1238,6 +1356,10 @@ class StreamProcessor:
             "decoded_token": self.decoded_token,
             "attachments": self.attachments,
             "json_schema": self.agent_config.get("json_schema"),
+            "json_schema_strict": self.agent_config.get("json_schema_strict", True),
+            "json_object": self.agent_config.get("json_object", False),
+            "llm_params": self.data.get("llm_params") or {},
+            "multimodal_content": request_multimodal,
             "compressed_summary": self.compressed_summary,
             "llm": llm,
             "llm_handler": llm_handler,
@@ -1257,6 +1379,10 @@ class StreamProcessor:
                 ),
                 "model_id": self.model_id,
                 "model_user_id": self.model_user_id,
+                # Agent owner — internal_search resolves the agent's sources as
+                # their owner so a team member running a shared agent can read
+                # nested-source structure (the sources aren't theirs).
+                "source_owner_id": self.agent_config.get("user_id"),
                 "user_api_key": self.agent_config["user_api_key"],
                 "agent_id": self.agent_id,
                 "llm_name": provider or settings.LLM_PROVIDER,

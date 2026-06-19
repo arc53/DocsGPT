@@ -38,6 +38,12 @@ class BaseLLM(ABC):
         # BYOM-resolution scope captured at LLM creation time so backup
         # / fallback lookups hit the same per-user layer as the primary.
         self.model_user_id = model_user_id
+        # Provider whose model actually produced the most recent response.
+        # Equals ``provider_name`` until a cross-provider fallback swaps the
+        # responding model mid-call (see ``_stream_with_fallback``); the
+        # handler layer reads this to parse chunks with the right provider's
+        # handler instead of the primary's.
+        self._responding_provider = self.provider_name
 
     @property
     def fallback_llm(self):
@@ -136,31 +142,21 @@ class BaseLLM(ABC):
             return args_dict
         return {k: v for k, v in args_dict.items() if v is not None}
 
-    @staticmethod
-    def _is_non_retriable_client_error(exc: BaseException) -> bool:
-        """4xx errors mean the request itself is malformed — retrying with
-        a different model fails identically and doubles the work. Only
-        transient/5xx/connection errors should trigger fallback."""
-        try:
-            from google.genai.errors import ClientError as _GenaiClientError
-
-            if isinstance(exc, _GenaiClientError):
-                return True
-        except ImportError:
-            pass
-        for attr in ("status_code", "code", "http_status"):
-            v = getattr(exc, attr, None)
-            if isinstance(v, int) and 400 <= v < 500:
-                return True
-        resp = getattr(exc, "response", None)
-        v = getattr(resp, "status_code", None)
-        return isinstance(v, int) and 400 <= v < 500
-
     def _execute_with_fallback(
         self, method_name: str, decorators: list, *args, **kwargs
     ):
         """
         Execute method with fallback support.
+
+        Any error raised by the primary model triggers a single attempt on
+        the fallback model, when one is configured. There is no error
+        classification: 5xx/transient failures are obviously recoverable on a
+        different model, and for client-side (4xx) errors — including rate
+        limits (429) and provider-specific payload rejections — the one extra
+        attempt is cheap insurance, since a second provider often accepts what
+        the first refused. ``GeneratorExit``/cancellation are ``BaseException``
+        subclasses and so bypass this handler (no fallback on client
+        disconnect), which is intentional.
 
         Args:
             method_name: Name of the raw method ('_raw_gen' or '_raw_gen_stream')
@@ -182,24 +178,32 @@ class BaseLLM(ABC):
                 decorated_method, method_name, decorators, *args, **kwargs
             )
 
+        self._responding_provider = self.provider_name
         try:
             return decorated_method()
         except Exception as e:
-            if self._is_non_retriable_client_error(e):
-                logger.error(
-                    f"Primary LLM failed with non-retriable client error; "
-                    f"skipping fallback: {str(e)}"
-                )
-                raise
             if not self.fallback_llm:
                 logger.error(f"Primary LLM failed and no fallback configured: {str(e)}")
                 raise
             fallback = self.fallback_llm
+            self._responding_provider = fallback.provider_name
             logger.warning(
                 f"Primary LLM failed. Falling back to "
                 f"{fallback.model_id}. Error: {str(e)}"
             )
 
+            # Mirror the streaming path: emit the fallback's own start event so
+            # dashboards attribute the response to the backup provider, not the
+            # failed primary.
+            fallback._emit_gen_start_log(
+                fallback.model_id,
+                kwargs.get("messages"),
+                kwargs.get("tools"),
+                bool(
+                    kwargs.get("_usage_attachments")
+                    or kwargs.get("attachments")
+                ),
+            )
             # Apply decorators to fallback's raw method directly — calling
             # fallback.gen() would re-enter the orchestrator and recurse via
             # fallback.fallback_llm.
@@ -210,13 +214,7 @@ class BaseLLM(ABC):
             try:
                 return fallback_method(fallback, *args, **fallback_kwargs)
             except Exception as e2:
-                if self._is_non_retriable_client_error(e2):
-                    logger.error(
-                        f"Fallback LLM failed with non-retriable client "
-                        f"error; giving up: {str(e2)}"
-                    )
-                else:
-                    logger.error(f"Fallback LLM also failed; giving up: {str(e2)}")
+                logger.error(f"Fallback LLM also failed; giving up: {str(e2)}")
                 raise
 
     def _stream_with_fallback(
@@ -230,21 +228,17 @@ class BaseLLM(ABC):
         ensures that if the primary LLM fails at any point during streaming
         (creation or mid-stream), we fall back to the backup model.
         """
+        self._responding_provider = self.provider_name
         try:
             yield from decorated_method()
         except Exception as e:
-            if self._is_non_retriable_client_error(e):
-                logger.error(
-                    f"Primary LLM failed mid-stream with non-retriable client "
-                    f"error; skipping fallback: {str(e)}"
-                )
-                raise
             if not self.fallback_llm:
                 logger.error(
                     f"Primary LLM failed and no fallback configured: {str(e)}"
                 )
                 raise
             fallback = self.fallback_llm
+            self._responding_provider = fallback.provider_name
             logger.warning(
                 f"Primary LLM failed mid-stream. Falling back to "
                 f"{fallback.model_id}. Error: {str(e)}"
@@ -270,18 +264,18 @@ class BaseLLM(ABC):
             try:
                 yield from fallback_method(fallback, *args, **fallback_kwargs)
             except Exception as e2:
-                if self._is_non_retriable_client_error(e2):
-                    logger.error(
-                        f"Fallback LLM failed mid-stream with non-retriable "
-                        f"client error; giving up: {str(e2)}"
-                    )
-                else:
-                    logger.error(
-                        f"Fallback LLM also failed mid-stream; giving up: {str(e2)}"
-                    )
+                logger.error(
+                    f"Fallback LLM also failed mid-stream; giving up: {str(e2)}"
+                )
                 raise
 
     def gen(self, model, messages, stream=False, tools=None, *args, **kwargs):
+        # Mirror gen_stream: emit the start event before the decorators run so
+        # ``_usage_attachments`` is still in kwargs (the gen decorators pop it).
+        has_attachments = bool(
+            kwargs.get("_usage_attachments") or kwargs.get("attachments")
+        )
+        self._emit_gen_start_log(model, messages, tools, has_attachments)
         decorators = [gen_token_usage, gen_cache]
         return self._execute_with_fallback(
             "_raw_gen",
@@ -293,6 +287,53 @@ class BaseLLM(ABC):
             *args,
             **kwargs,
         )
+
+    def _emit_gen_start_log(self, model, messages, tools, has_attachments):
+        # Non-streaming counterpart to ``_emit_stream_start_log``. Emitted by
+        # ``gen()`` before the call — and again for the fallback provider in
+        # ``_execute_with_fallback`` — so non-streaming invocations are
+        # observable from the first log line, not just streaming ones. A
+        # distinct event name keeps non-stream calls out of stream dashboards.
+        logging.info(
+            "llm_gen_start",
+            extra={
+                "model": model,
+                "provider": self.provider_name,
+                "message_count": len(messages) if messages is not None else 0,
+                "has_attachments": bool(has_attachments),
+                "has_tools": bool(tools),
+            },
+        )
+
+    def _emit_gen_finished_log(
+        self,
+        model,
+        *,
+        prompt_tokens,
+        completion_tokens,
+        latency_ms,
+        cached_tokens=None,
+        error=None,
+    ):
+        # Non-streaming counterpart to ``_emit_stream_finished_log``. Paired
+        # with ``llm_gen_start`` so cost dashboards can join start/finish for
+        # non-streaming calls just as they do for streams. Token counts are
+        # client-side estimates from ``gen_token_usage``; ``status`` is
+        # ``"error"`` when the call raised. A distinct event name keeps
+        # non-stream calls out of stream dashboards.
+        extra = {
+            "model": model,
+            "provider": self.provider_name,
+            "prompt_tokens": int(prompt_tokens),
+            "completion_tokens": int(completion_tokens),
+            "latency_ms": int(latency_ms),
+            "status": "error" if error is not None else "ok",
+        }
+        if cached_tokens is not None:
+            extra["cached_tokens"] = int(cached_tokens)
+        if error is not None:
+            extra["error_class"] = type(error).__name__
+        logging.info("llm_gen_finished", extra=extra)
 
     def _emit_stream_start_log(self, model, messages, tools, has_attachments):
         # Stamped with ``self.provider_name`` so dashboards can group calls

@@ -123,6 +123,7 @@ class MessageEventsRepository:
         self,
         message_id: str,
         last_sequence_no: Optional[int] = None,
+        user_id: Optional[str] = None,
     ) -> list[dict]:
         """Return events with ``sequence_no > last_sequence_no``.
 
@@ -133,23 +134,38 @@ class MessageEventsRepository:
         data the planner may pick a bitmap+sort. Either way the result
         is sorted on ``sequence_no``.
 
+        When ``user_id`` is given the scan joins ``conversation_messages``
+        and filters on ``cm.user_id`` — a non-owner gets an empty result.
+        This lets the reconnect reader re-assert ownership at the data
+        layer rather than trusting only the route gate.
+
         Returns a ``list`` (not a generator) so the underlying
         ``Result`` is fully drained before the caller can issue
         another query on the same connection.
         """
         cursor = -1 if last_sequence_no is None else int(last_sequence_no)
-        rows = self._conn.execute(
-            text(
-                """
+        params = {"message_id": str(message_id), "cursor": cursor}
+        if user_id is None:
+            sql = """
                 SELECT message_id, sequence_no, event_type, payload, created_at
                 FROM message_events
                 WHERE message_id = CAST(:message_id AS uuid)
                   AND sequence_no > :cursor
                 ORDER BY sequence_no ASC
                 """
-            ),
-            {"message_id": str(message_id), "cursor": cursor},
-        ).fetchall()
+        else:
+            params["u"] = user_id
+            sql = """
+                SELECT me.message_id, me.sequence_no, me.event_type,
+                       me.payload, me.created_at
+                FROM message_events me
+                JOIN conversation_messages cm ON cm.id = me.message_id
+                WHERE me.message_id = CAST(:message_id AS uuid)
+                  AND cm.user_id = :u
+                  AND me.sequence_no > :cursor
+                ORDER BY me.sequence_no ASC
+                """
+        rows = self._conn.execute(text(sql), params).fetchall()
         return [row_to_dict(row) for row in rows]
 
     def cleanup_older_than(self, ttl_days: int) -> int:

@@ -5,8 +5,16 @@ import endpoints from '../endpoints';
 const userService = {
   getConfig: (): Promise<any> =>
     throttledApiClient.get(endpoints.USER.CONFIG, null),
+  getMe: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.ME, token),
   getNewToken: (): Promise<any> =>
     throttledApiClient.get(endpoints.USER.NEW_TOKEN, null),
+  // Token deliberately null: a stale Authorization header must not be able
+  // to interfere with redeeming the one-time OIDC handoff code.
+  exchangeOidcCode: (code: string): Promise<any> =>
+    apiClient.post(endpoints.USER.OIDC_TOKEN, { code }, null),
+  refreshOidcSession: (token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.OIDC_REFRESH, {}, token),
   getDocs: (token: string | null): Promise<any> =>
     apiClient.get(`${endpoints.USER.DOCS}`, token),
   getDocsWithPagination: (query: string, token: string | null): Promise<any> =>
@@ -31,6 +39,15 @@ const userService = {
     apiClient.putFormData(endpoints.USER.UPDATE_AGENT(agent_id), data, token),
   deleteAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.delete(endpoints.USER.DELETE_AGENT(id), token),
+  exportAgent: (id: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.EXPORT_AGENT(id), token),
+  planImportAgent: (yaml: string, token: string | null): Promise<Response> =>
+    apiClient.post(endpoints.USER.IMPORT_AGENT_PLAN, { yaml }, token),
+  importAgent: (
+    payload: { yaml: string; resolution?: unknown },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.IMPORT_AGENT, payload, token),
   getPinnedAgents: (token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.PINNED_AGENTS, token),
   togglePinAgent: (id: string, token: string | null): Promise<any> =>
@@ -67,6 +84,10 @@ const userService = {
     apiClient.post(endpoints.USER.TOKEN_ANALYTICS, data, token),
   getFeedbackAnalytics: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.FEEDBACK_ANALYTICS, data, token),
+  getToolAnalytics: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.TOOL_ANALYTICS, data, token),
+  getScheduleAnalytics: (data: any, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.SCHEDULE_ANALYTICS, data, token),
   getLogs: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.LOGS, data, token),
   manageSync: (data: any, token: string | null): Promise<any> =>

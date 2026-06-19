@@ -15,6 +15,7 @@ import {
   prefListenerMiddleware,
   prefSlice,
 } from './preferences/preferenceSlice';
+import teamsReducer from './teams/teamsSlice';
 import uploadReducer from './upload/uploadSlice';
 
 const key = localStorage.getItem('DocsGPTApiKey');
@@ -61,6 +62,8 @@ const preloadedState: { preference: Preference } = {
     availableModels: [],
     modelsLoading: false,
     agentFolders: null,
+    roles: [],
+    rolesResolved: false,
   },
 };
 const store = configureStore({
@@ -74,6 +77,7 @@ const store = configureStore({
     workflowPreview: workflowPreviewReducer,
     notifications: notificationsReducer,
     schedules: schedulesReducer,
+    teams: teamsReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(

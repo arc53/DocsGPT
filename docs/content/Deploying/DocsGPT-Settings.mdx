@@ -48,7 +48,6 @@ Here are some of the most fundamental settings you'll likely want to configure:
     - `anthropic`: Use Anthropic's Claude models.
     - `groq`: Use Groq's models.
     - `huggingface`: Use HuggingFace Inference API.
-    - `azure_openai`: Use Azure OpenAI Service.
     - `openai` (when using local inference engines like Ollama, Llama.cpp, TGI, etc.): This signals DocsGPT to use an OpenAI-compatible API format, even if the actual LLM is running locally.
 
 - **`LLM_NAME`**: Specifies the specific model to use from the chosen LLM provider. The available models depend on the `LLM_PROVIDER` you've selected.
@@ -103,7 +102,7 @@ In this case, even though you are using Ollama locally, `LLM_PROVIDER` is set to
 
 DocsGPT ships with a built-in catalog of models for the providers it
 supports out of the box (OpenAI, Anthropic, Google, Groq, OpenRouter,
-Novita, Azure OpenAI, Hugging Face, DocsGPT). To add **your own
+Novita, Hugging Face, DocsGPT). To add **your own
 models** without forking the repo — for example, a Mistral or Together
 account, a self-hosted vLLM endpoint, or any other OpenAI-compatible
 API — point `MODELS_CONFIG_DIR` at a directory of YAML files.
@@ -231,6 +230,7 @@ The `AUTH_TYPE` setting in your `.env` file or `settings.py` determines the auth
 | `None`        | No authentication is used. Anyone can access the app.                                       |
 | `simple_jwt`  | A single, long-lived JWT token is generated at startup. All requests use this shared token. |
 | `session_jwt` | Unique JWT tokens are generated for each session/user.                                      |
+| `oidc`        | Users sign in through an external OpenID Connect provider (Authentik, Keycloak, Okta, ...). See [SSO with OIDC](/Deploying/OIDC-SSO). |
 
 #### How to Configure
 
@@ -246,6 +246,13 @@ JWT_SECRET_KEY=your_secret_key_here
 
 # OR: Session JWT (per-user/session tokens)
 AUTH_TYPE=session_jwt
+JWT_SECRET_KEY=your_secret_key_here
+
+# OR: SSO via an OpenID Connect provider (Authentik, Keycloak, Okta, ...)
+AUTH_TYPE=oidc
+OIDC_ISSUER=https://auth.example.com/application/o/docsgpt/
+OIDC_CLIENT_ID=your_client_id
+OIDC_FRONTEND_URL=https://docsgpt.example.com
 JWT_SECRET_KEY=your_secret_key_here
 ```
 
@@ -266,6 +273,11 @@ JWT_SECRET_KEY=your_secret_key_here
   - Clients can request a new token from `/api/generate_token`.
   - Use the received token in the `Authorization` header for subsequent requests.
   - Each user/session gets a unique token.
+- **oidc**:
+  - The frontend redirects users to your identity provider to sign in (OAuth2 Authorization Code + PKCE).
+  - After a successful sign-in, DocsGPT issues its own session JWT; API requests carry it in the `Authorization` header like the other modes.
+  - Stable per-user identities come from the provider — see the full setup guide: [SSO with OIDC](/Deploying/OIDC-SSO).
+  - The same guide covers the optional access controls: group allowlists, silent session renewal, back-channel logout, SCIM provisioning, and login auditing.
 
 #### Security Notes
 
@@ -294,28 +306,46 @@ If you have configured `AUTH_TYPE=simple_jwt`, the DocsGPT frontend will prompt 
 
 ## S3 Storage Backend
 
-By default DocsGPT stores files locally. Set `STORAGE_TYPE=s3` to use Amazon S3 instead.
+By default DocsGPT stores files locally. Set `STORAGE_TYPE=s3` to use Amazon S3 — or any S3-compatible service (MinIO, Cloudflare R2, Backblaze B2, DigitalOcean Spaces, …) — instead.
 
 | Setting | Description | Default |
 | --- | --- | --- |
 | `STORAGE_TYPE` | `local` or `s3` | `local` |
-| `S3_BUCKET_NAME` | S3 bucket name | `docsgpt-test-bucket` |
-| `SAGEMAKER_ACCESS_KEY` | AWS access key ID | — |
-| `SAGEMAKER_SECRET_KEY` | AWS secret access key | — |
-| `SAGEMAKER_REGION` | AWS region | — |
-| `URL_STRATEGY` | `backend` (proxy through API) or `s3` (direct S3 URLs) | `backend` |
+| `S3_BUCKET_NAME` | Bucket name | `docsgpt-test-bucket` |
+| `S3_ACCESS_KEY_ID` | Access key ID | — |
+| `S3_SECRET_ACCESS_KEY` | Secret access key | — |
+| `S3_REGION` | Region (use `auto` for Cloudflare R2) | — |
+| `S3_ENDPOINT_URL` | Custom endpoint for S3-compatible services; leave unset for AWS S3 | — |
+| `S3_PATH_STYLE` | Use path-style addressing (required by most non-AWS services) | `false` |
+| `URL_STRATEGY` | `backend` (proxy through API) or `s3` (direct object URLs) | `backend` |
 
-The S3 credentials use `SAGEMAKER_*` variable names because they are shared with the SageMaker integration.
+### AWS S3
 
 ```env
 STORAGE_TYPE=s3
 S3_BUCKET_NAME=your-bucket-name
-SAGEMAKER_ACCESS_KEY=your-aws-access-key-id
-SAGEMAKER_SECRET_KEY=your-aws-secret-access-key
-SAGEMAKER_REGION=us-east-1
+S3_ACCESS_KEY_ID=your-access-key-id
+S3_SECRET_ACCESS_KEY=your-secret-access-key
+S3_REGION=us-east-1
 ```
 
-Your IAM user needs these permissions on the bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`, `s3:HeadObject`.
+### S3-compatible services (MinIO, Cloudflare R2, …)
+
+Set `S3_ENDPOINT_URL` and usually `S3_PATH_STYLE=true`:
+
+```env
+STORAGE_TYPE=s3
+S3_BUCKET_NAME=your-bucket-name
+S3_ACCESS_KEY_ID=your-access-key-id
+S3_SECRET_ACCESS_KEY=your-secret-access-key
+S3_REGION=auto
+S3_ENDPOINT_URL=https://<account>.r2.cloudflarestorage.com
+S3_PATH_STYLE=true
+```
+
+Your credentials need these permissions on the bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`, `s3:HeadObject`.
+
+> **Deprecated:** earlier versions reused the `SAGEMAKER_ACCESS_KEY`, `SAGEMAKER_SECRET_KEY`, and `SAGEMAKER_REGION` variables for S3 credentials. These are still honored as a fallback (with a deprecation warning) but you should migrate to the `S3_*` variables above.
 
 ## User-Data Storage (Postgres)
 

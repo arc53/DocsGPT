@@ -1,3 +1,5 @@
+import { Search as SearchIcon, Users } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -8,7 +10,6 @@ import EyeView from '../assets/eye-view.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import Trash from '../assets/red-trash.svg';
-import SearchIcon from '../assets/search.svg';
 import SyncIcon from '../assets/sync.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import CalendarIcon from '../assets/calendar.svg';
@@ -26,6 +27,7 @@ import { Input } from '../components/ui/input';
 import { useDarkTheme, useDebouncedValue, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
+import ShareToTeamModal from '../teams/ShareToTeamModal';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import {
   selectToken,
@@ -45,7 +47,7 @@ import ConnectorTree from '../components/ConnectorTree';
 import Chunks from '../components/Chunks';
 
 type SourceMenuOption = {
-  icon: string;
+  icon: string | LucideIcon;
   label: string;
   onClick: () => void;
   variant: 'default' | 'destructive';
@@ -101,6 +103,7 @@ export default function Sources({
     { label: t('settings.sources.syncFrequency.monthly'), value: 'monthly' },
   ];
   const [documentToView, setDocumentToView] = useState<Doc>();
+  const [documentToShare, setDocumentToShare] = useState<Doc | null>(null);
   const [syncMenuState, setSyncMenuState] = useState<{
     isOpen: boolean;
     docId: string | null;
@@ -371,6 +374,21 @@ export default function Sources({
       });
     }
 
+    // Sharing is an owner-only action: hide it for sources shared into the
+    // user's workspace by a team.
+    if (document.ownership !== 'team' && document.id) {
+      actions.push({
+        icon: Users,
+        label: t('settings.sources.shareWithTeam'),
+        onClick: () => {
+          setDocumentToShare(document);
+        },
+        iconWidth: 16,
+        iconHeight: 16,
+        variant: 'default',
+      });
+    }
+
     actions.push({
       icon: Trash,
       label: t('convTile.delete'),
@@ -434,7 +452,10 @@ export default function Sources({
               labelBgClassName="bg-background"
               className="rounded-full"
               leftIcon={
-                <img src={SearchIcon} alt="" className="h-4 w-4 opacity-40" />
+                <SearchIcon
+                  className="text-muted-foreground size-4"
+                  strokeWidth={1.75}
+                />
               }
             />
           </div>
@@ -562,12 +583,23 @@ export default function Sources({
                                       variant={option.variant}
                                       onSelect={() => option.onClick()}
                                     >
-                                      <img
-                                        src={option.icon}
-                                        alt=""
-                                        width={option.iconWidth ?? 16}
-                                        height={option.iconHeight ?? 16}
-                                      />
+                                      {typeof option.icon === 'string' ? (
+                                        <img
+                                          src={option.icon}
+                                          alt=""
+                                          width={option.iconWidth ?? 16}
+                                          height={option.iconHeight ?? 16}
+                                        />
+                                      ) : (
+                                        <option.icon
+                                          size={Math.max(
+                                            option.iconWidth ?? 16,
+                                            option.iconHeight ?? 16,
+                                          )}
+                                          strokeWidth={1.75}
+                                          aria-hidden="true"
+                                        />
+                                      )}
                                       <span>{option.label}</span>
                                     </DropdownMenuItem>
                                   ),
@@ -579,6 +611,18 @@ export default function Sources({
                       </div>
 
                       <div className="flex flex-col items-start justify-start gap-1">
+                        {document.ownership === 'team' && (
+                          <span className="bg-muted-foreground/10 text-muted-foreground flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium">
+                            <Users
+                              size={11}
+                              strokeWidth={2}
+                              aria-hidden="true"
+                            />
+                            {document.team_access === 'editor'
+                              ? t('teamAccess.editor')
+                              : t('teamAccess.viewer')}
+                          </span>
+                        )}
                         {document.ingestStatus === 'failed' && (
                           <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs leading-[16px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
                             {t('settings.sources.ingestFailed')}
@@ -663,6 +707,15 @@ export default function Sources({
           }}
           submitLabel={t('convTile.delete')}
           variant="danger"
+        />
+      )}
+
+      {documentToShare && documentToShare.id && (
+        <ShareToTeamModal
+          resourceType="source"
+          resourceId={documentToShare.id}
+          resourceName={documentToShare.name}
+          onClose={() => setDocumentToShare(null)}
         />
       )}
     </div>

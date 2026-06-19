@@ -105,6 +105,40 @@ class PromptsRepository:
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
+    def list_by_ids(self, prompt_ids) -> list[dict]:
+        """Fetch prompts whose id is in ``prompt_ids`` (team-shared listing path)."""
+        ids = [str(p) for p in prompt_ids if looks_like_uuid(str(p))]
+        if not ids:
+            return []
+        result = self._conn.execute(
+            text("SELECT * FROM prompts WHERE id = ANY(CAST(:ids AS uuid[])) ORDER BY created_at"),
+            {"ids": ids},
+        )
+        return [row_to_dict(r) for r in result.fetchall()]
+
+    def update_by_id(
+        self, prompt_id: str, name: str, content: str, expected_updated_at=None
+    ) -> Optional[bool]:
+        """Update a prompt by id WITHOUT user scoping (team ``editor`` write path).
+
+        Caller must have verified an ``editor`` grant first. Returns None on an
+        optimistic-lock version mismatch so the route can answer 409.
+        """
+        sql = (
+            "UPDATE prompts SET name = :name, content = :content, updated_at = now() "
+            "WHERE id = CAST(:id AS uuid)"
+        )
+        params: dict = {"id": prompt_id, "name": name, "content": content}
+        if expected_updated_at is not None:
+            sql += " AND updated_at = CAST(:expected AS timestamptz)"
+            params["expected"] = expected_updated_at
+        result = self._conn.execute(text(sql), params)
+        if result.rowcount > 0:
+            return True
+        if expected_updated_at is not None and self.get_for_rendering(str(prompt_id)) is not None:
+            return None
+        return False
+
     def update(self, prompt_id: str, user_id: str, name: str, content: str) -> None:
         self._conn.execute(
             text(
@@ -161,11 +195,8 @@ class PromptsRepository:
         )
         return result.rowcount > 0
 
-    def find_or_create(self, user_id: str, name: str, content: str) -> dict:
-        """Return existing prompt matching (user, name, content), or create one.
-
-        Used by the seeder to avoid duplicating template prompts.
-        """
+    def find(self, user_id: str, name: str, content: str) -> Optional[dict]:
+        """Return a prompt exactly matching (user, name, content), or None."""
         result = self._conn.execute(
             text(
                 "SELECT * FROM prompts WHERE user_id = :user_id AND name = :name AND content = :content"
@@ -173,6 +204,14 @@ class PromptsRepository:
             {"user_id": user_id, "name": name, "content": content},
         )
         row = result.fetchone()
-        if row is not None:
-            return row_to_dict(row)
+        return row_to_dict(row) if row is not None else None
+
+    def find_or_create(self, user_id: str, name: str, content: str) -> dict:
+        """Return existing prompt matching (user, name, content), or create one.
+
+        Used by the seeder and agent YAML import to avoid duplicating prompts.
+        """
+        existing = self.find(user_id, name, content)
+        if existing is not None:
+            return existing
         return self.create(user_id, name, content)

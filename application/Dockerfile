@@ -93,15 +93,18 @@ EXPOSE 7091
 # Switch to non-root user
 USER appuser
 
+# BoundedDrainUvicornWorker makes max_requests recycles safe with held-open SSE
+# connections (see application/gunicorn_worker.py); with recycles now safe,
+# --max-requests is raised (kept for memory hygiene) to cut churn.
 CMD ["gunicorn", \
      "-w", "1", \
-     "-k", "uvicorn_worker.UvicornWorker", \
+     "-k", "application.gunicorn_worker.BoundedDrainUvicornWorker", \
      "--bind", "0.0.0.0:7091", \
      "--timeout", "180", \
      "--graceful-timeout", "120", \
      "--keep-alive", "5", \
      "--worker-tmp-dir", "/dev/shm", \
-     "--max-requests", "1000", \
-     "--max-requests-jitter", "100", \
+     "--max-requests", "5000", \
+     "--max-requests-jitter", "500", \
      "--config", "application/gunicorn_conf.py", \
      "application.asgi:asgi_app"]

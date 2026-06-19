@@ -1,4 +1,4 @@
-import { ChevronDown, Pencil, Trash2 } from 'lucide-react';
+import { ChevronDown, Copy, Eye, Pencil, Trash2, Users } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -14,12 +14,14 @@ import {
 import { Button } from '../components/ui/button';
 import {
   Popover,
+  PopoverAnchor,
   PopoverContent,
   PopoverTrigger,
 } from '../components/ui/popover';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, PromptProps } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
+import ShareToTeamModal from '../teams/ShareToTeamModal';
 import PromptsModal from '../preferences/PromptsModal';
 import { cn } from '@/lib/utils';
 
@@ -57,10 +59,18 @@ export default function Prompts({
     type: '',
   });
   const [modalType, setModalType] = React.useState<'ADD' | 'EDIT'>('ADD');
+  const [duplicateSource, setDuplicateSource] = React.useState<string | null>(
+    null,
+  );
   const [modalState, setModalState] = React.useState<ActiveState>('INACTIVE');
   const [open, setOpen] = React.useState(false);
 
   const [promptToDelete, setPromptToDelete] = React.useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+
+  const [promptToShare, setPromptToShare] = React.useState<{
     id: string;
     name: string;
   } | null>(null);
@@ -95,7 +105,7 @@ export default function Prompts({
         ]);
       }
       setModalState('INACTIVE');
-      onSelectPrompt(newPromptName, newPrompt.id, newPromptContent);
+      onSelectPrompt(newPromptName, newPrompt.id, 'private');
       setNewPromptName('');
       setNewPromptContent('');
     } catch (error) {
@@ -155,6 +165,62 @@ export default function Prompts({
     }
   };
 
+  const openEditModal = (prompt: {
+    id: string;
+    name: string;
+    type: string;
+  }) => {
+    setModalType('EDIT');
+    setEditPromptName(prompt.name);
+    setEditPromptContent('');
+    handleFetchPromptContent(prompt.id);
+    setCurrentPromptEdit({
+      id: prompt.id,
+      name: prompt.name,
+      type: prompt.type,
+    });
+    setModalState('ACTIVE');
+    setOpen(false);
+  };
+
+  const generateCopyName = (baseName: string) => {
+    let candidate = `${baseName} copy`;
+    let counter = 2;
+    while (prompts.some((prompt) => prompt.name === candidate)) {
+      candidate = `${baseName} copy ${counter}`;
+      counter += 1;
+    }
+    return candidate;
+  };
+
+  const handleDuplicatePrompt = async (prompt: {
+    id: string;
+    name: string;
+  }) => {
+    try {
+      const response = await userService.getSinglePrompt(prompt.id, token);
+      if (!response.ok) {
+        throw new Error('Failed to fetch prompt content');
+      }
+      const promptContent = await response.json();
+      setModalType('ADD');
+      setDuplicateSource(prompt.name);
+      setNewPromptName(generateCopyName(prompt.name));
+      setNewPromptContent(promptContent.content);
+      setModalState('ACTIVE');
+      setOpen(false);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleDuplicateFromModal = () => {
+    setDuplicateSource(currentPromptEdit.name);
+    setNewPromptName(generateCopyName(currentPromptEdit.name));
+    setNewPromptContent(editPromptContent);
+    setModalType('ADD');
+  };
+
   const handleSaveChanges = (id: string, type: string) => {
     userService
       .updatePrompt(
@@ -196,8 +262,8 @@ export default function Prompts({
       });
   };
 
-  const triggerClassName = cn(
-    'border-border bg-card text-foreground hover:bg-accent flex w-56 items-center justify-between rounded-3xl border px-5 py-3 text-sm',
+  const pillClassName = cn(
+    'border-border bg-card text-foreground hover:bg-accent flex w-56 items-stretch rounded-3xl border text-sm transition-colors',
     dropdownProps.className,
   );
 
@@ -210,28 +276,54 @@ export default function Prompts({
           </p>
           <div className="flex flex-row flex-wrap items-end justify-start gap-6">
             <Popover open={open} onOpenChange={setOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className={cn('h-auto justify-between', triggerClassName)}
-                >
-                  <span
-                    className={cn(
-                      'truncate',
-                      !selectedPrompt?.name && 'text-muted-foreground',
-                    )}
+              <PopoverAnchor asChild>
+                <div className={pillClassName}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="focus-visible:ring-ring/50 flex min-w-0 flex-1 items-center rounded-l-3xl py-3 pl-5 text-left outline-none focus-visible:ring-[3px]"
+                    >
+                      <span
+                        className={cn(
+                          'truncate',
+                          !selectedPrompt?.name && 'text-muted-foreground',
+                        )}
+                      >
+                        {selectedPrompt?.name || 'Select a prompt'}
+                      </span>
+                    </button>
+                  </PopoverTrigger>
+                  {selectedPrompt?.id && selectedPrompt.type !== 'public' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(selectedPrompt)}
+                        className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20 focus-visible:ring-ring/50 mx-1 my-auto shrink-0 rounded-full p-1.5 transition-colors outline-none focus-visible:ring-[3px]"
+                        aria-label="Edit prompt"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <div
+                        className="bg-border my-2.5 w-px shrink-0"
+                        aria-hidden="true"
+                      />
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setOpen(!open)}
+                    className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20 focus-visible:ring-ring/50 my-auto mr-2.5 ml-1 shrink-0 rounded-full p-1.5 transition-colors outline-none focus-visible:ring-[3px]"
+                    aria-label="Toggle prompt list"
                   >
-                    {selectedPrompt?.name || 'Select a prompt'}
-                  </span>
-                  <ChevronDown
-                    className={cn(
-                      'text-muted-foreground ml-2 h-4 w-4 shrink-0 transition-transform',
-                      open && 'rotate-180',
-                    )}
-                  />
-                </Button>
-              </PopoverTrigger>
+                    <ChevronDown
+                      className={cn(
+                        'h-4 w-4 transition-transform',
+                        open && 'rotate-180',
+                      )}
+                    />
+                  </button>
+                </div>
+              </PopoverAnchor>
               <PopoverContent
                 align="start"
                 className={cn(
@@ -245,7 +337,12 @@ export default function Prompts({
                     <CommandEmpty>No results found</CommandEmpty>
                     {prompts.map((prompt) => {
                       const isActive = selectedPrompt?.id === prompt.id;
-                      const canDelete = prompt.type !== 'public';
+                      const canModify = prompt.type !== 'public';
+                      // Sharing is an owner-only action: hide it for public
+                      // prompts and prompts shared into the workspace by a
+                      // team.
+                      const canShare =
+                        prompt.type !== 'public' && prompt.type !== 'team';
                       return (
                         <CommandItem
                           key={prompt.id}
@@ -258,31 +355,59 @@ export default function Prompts({
                         >
                           <span className="truncate">{prompt.name}</span>
                           <div className="flex shrink-0 items-center gap-1">
-                            {prompt.type !== 'public' && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditModal(prompt);
+                              }}
+                              className="group/btn hover:bg-foreground/15 dark:hover:bg-foreground/20 h-auto w-auto rounded p-1"
+                              aria-label={
+                                canModify ? 'Edit prompt' : 'View prompt'
+                              }
+                            >
+                              {canModify ? (
+                                <Pencil className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
+                              ) : (
+                                <Eye className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDuplicatePrompt(prompt);
+                              }}
+                              className="group/btn hover:bg-foreground/15 dark:hover:bg-foreground/20 h-auto w-auto rounded p-1"
+                              aria-label="Duplicate prompt"
+                            >
+                              <Copy className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
+                            </Button>
+                            {canShare && (
                               <Button
                                 type="button"
                                 variant="ghost"
                                 size="icon-sm"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setModalType('EDIT');
-                                  setEditPromptName(prompt.name);
-                                  handleFetchPromptContent(prompt.id);
-                                  setCurrentPromptEdit({
+                                  setOpen(false);
+                                  setPromptToShare({
                                     id: prompt.id,
                                     name: prompt.name,
-                                    type: prompt.type,
                                   });
-                                  setModalState('ACTIVE');
-                                  setOpen(false);
                                 }}
-                                className="h-auto w-auto rounded p-1"
-                                aria-label="Edit prompt"
+                                className="group/btn hover:bg-foreground/15 dark:hover:bg-foreground/20 h-auto w-auto rounded p-1"
+                                aria-label={t('agents.shareWithTeam')}
+                                title={t('agents.shareWithTeam')}
                               >
-                                <Pencil className="text-muted-foreground h-3.5 w-3.5" />
+                                <Users className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
                               </Button>
                             )}
-                            {canDelete && (
+                            {canModify && (
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -291,10 +416,10 @@ export default function Prompts({
                                   e.stopPropagation();
                                   handleDeletePrompt(prompt.id);
                                 }}
-                                className="h-auto w-auto rounded p-1"
+                                className="group/btn hover:bg-destructive/15 dark:hover:bg-destructive/25 h-auto w-auto rounded p-1"
                                 aria-label="Delete prompt"
                               >
-                                <Trash2 className="text-muted-foreground h-3.5 w-3.5" />
+                                <Trash2 className="text-muted-foreground group-hover/btn:text-destructive h-3.5 w-3.5" />
                               </Button>
                             )}
                           </div>
@@ -311,6 +436,7 @@ export default function Prompts({
                 className="h-auto w-20 rounded-3xl border border-transparent py-3"
                 onClick={() => {
                   setModalType('ADD');
+                  setDuplicateSource(null);
                   setModalState('ACTIVE');
                 }}
               >
@@ -336,6 +462,8 @@ export default function Prompts({
         currentPromptEdit={currentPromptEdit}
         handleAddPrompt={handleAddPrompt}
         handleEditPrompt={handleSaveChanges}
+        onDuplicate={handleDuplicateFromModal}
+        duplicateSourceName={duplicateSource}
       />
       {promptToDelete && (
         <ConfirmationModal
@@ -348,6 +476,14 @@ export default function Prompts({
           handleSubmit={confirmDeletePrompt}
           handleCancel={() => setPromptToDelete(null)}
           variant="danger"
+        />
+      )}
+      {promptToShare && (
+        <ShareToTeamModal
+          resourceType="prompt"
+          resourceId={promptToShare.id}
+          resourceName={promptToShare.name}
+          onClose={() => setPromptToShare(null)}
         />
       )}
     </>

@@ -499,6 +499,11 @@
       "addDescription": "新增自定義提示並儲存到 DocsGPT",
       "editPrompt": "編輯提示",
       "editDescription": "編輯自定義提示並儲存到 DocsGPT",
+      "viewPrompt": "檢視提示",
+      "viewDescription": "內建提示無法編輯。建立副本後即可自行編輯。",
+      "duplicate": "建立副本",
+      "duplicatePrompt": "建立提示副本",
+      "duplicateDescription": "正在編輯「{{name}}」的副本，儲存後即為您自己的提示",
       "promptName": "提示名稱",
       "promptText": "提示文字",
       "save": "儲存",
@@ -573,6 +578,35 @@
       "cancel": "取消",
       "parse": "解析",
       "import": "匯入 ({{count}})"
+    },
+    "importAgent": {
+      "title": "Import agent from YAML",
+      "description": "Upload an agent YAML file. Sources and tools are matched to your account; anything missing can be mapped or created in the next step. A new agent is imported as a draft; re-importing updates the matching agent and keeps its current status.",
+      "dropzoneText": "Click to upload or drag and drop a .yaml file",
+      "invalidFileType": "Only .yaml or .yml files are supported",
+      "readError": "Could not read this agent file",
+      "importError": "Import failed",
+      "willCreate": "Creates a new agent.",
+      "willUpdate": "Updates an existing agent (matched by {{matchedBy}}).",
+      "sources": "Sources",
+      "tools": "Tools",
+      "models": "Models",
+      "sourceMatched": "{{name}}: using your existing source",
+      "sourceMissing": "{{name}}: not found",
+      "leaveUnattached": "Leave unattached",
+      "toolBuiltin": "{{type}}: built-in",
+      "toolReuse": "{{name}}: reusing your existing tool",
+      "toolUnavailable": "{{type}}: not available on this instance, will be skipped",
+      "toolCreate": "{{name}}: will be created",
+      "secretPlaceholder": "{{field}} (leave blank to skip this tool)",
+      "modelCustom": "{{name}}: custom model",
+      "apiKeyPlaceholder": "API key (leave blank to skip this model)",
+      "warningsTitle": "Agent imported as a draft. Some items need your attention:",
+      "warningsTitlePublished": "Your live agent was updated. Some items need your attention:",
+      "cancel": "Cancel",
+      "review": "Review",
+      "import": "Import",
+      "continueToAgent": "Continue to agent"
     }
   },
   "sharedConv": {
@@ -765,7 +799,9 @@
       "backToRoot": "返回",
       "noSubfolders": "沒有子資料夾",
       "noFolders": "暫無資料夾"
-    }
+    },
+    "importAgent": "Import",
+    "exportAgent": "Export as YAML"
   },
   "components": {
     "fileUpload": {

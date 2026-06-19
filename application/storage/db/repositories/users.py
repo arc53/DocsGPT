@@ -24,6 +24,7 @@ rollback-per-test connection (tests).
 from __future__ import annotations
 
 from typing import Iterable, Optional
+from uuid import UUID
 
 from sqlalchemy import Connection, text
 
@@ -31,6 +32,14 @@ from application.storage.db.base_repository import row_to_dict
 
 
 _DEFAULT_PREFERENCES = '{"pinned": [], "shared_with_me": []}'
+
+
+def _canonical_uuid(value: str) -> Optional[str]:
+    """Return the canonical UUID string for ``value``, or ``None`` when malformed."""
+    try:
+        return str(UUID(str(value)))
+    except (TypeError, ValueError):
+        return None
 
 
 class UsersRepository:
@@ -58,7 +67,7 @@ class UsersRepository:
     # ------------------------------------------------------------------
     # Upsert
     # ------------------------------------------------------------------
-    def upsert(self, user_id: str) -> dict:
+    def upsert(self, user_id: str, email: Optional[str] = None) -> dict:
         """Ensure a row exists for ``user_id`` and return it.
 
         Matches Mongo's ``find_one_and_update(..., $setOnInsert, upsert=True,
@@ -66,23 +75,57 @@ class UsersRepository:
         are preserved untouched; if it doesn't, a new row is created with
         default preferences.
 
-        The ``DO UPDATE SET user_id = EXCLUDED.user_id`` branch is a
-        deliberate no-op that lets ``RETURNING *`` fire on both the insert
-        and conflict paths (``DO NOTHING`` would suppress the returning).
+        ``email`` (from the OIDC claim) is set on insert and refreshed on
+        conflict, but only when provided — ``COALESCE`` preserves a previously
+        stored email when a non-OIDC caller upserts with ``email=None`` (most
+        upserts come from request paths that don't carry the email claim).
+
+        The conflict branch also updates ``user_id`` (a no-op) so ``RETURNING *``
+        fires on both the insert and conflict paths.
         """
         result = self._conn.execute(
             text(
                 """
-                INSERT INTO users (user_id, agent_preferences)
-                VALUES (:user_id, CAST(:default_prefs AS jsonb))
+                INSERT INTO users (user_id, email, agent_preferences)
+                VALUES (:user_id, :email, CAST(:default_prefs AS jsonb))
                 ON CONFLICT (user_id) DO UPDATE
-                    SET user_id = EXCLUDED.user_id
+                    SET user_id = EXCLUDED.user_id,
+                        email = COALESCE(EXCLUDED.email, users.email)
                 RETURNING *
                 """
             ),
-            {"user_id": user_id, "default_prefs": _DEFAULT_PREFERENCES},
+            {"user_id": user_id, "email": email, "default_prefs": _DEFAULT_PREFERENCES},
         )
         return row_to_dict(result.fetchone())
+
+    def set_email(self, user_id: str, email: Optional[str]) -> None:
+        """Set a user's email when provided (targeted update, no full upsert).
+
+        Used to backfill an existing user's email from the OIDC claim on login
+        without re-running the upsert. No-op when ``email`` is falsy so a login
+        without the claim never wipes a stored value.
+        """
+        if not email:
+            return
+        self._conn.execute(
+            text("UPDATE users SET email = :email WHERE user_id = :user_id"),
+            {"user_id": user_id, "email": email},
+        )
+
+    def find_by_email(self, email: str) -> Optional[dict]:
+        """Return the user row whose email matches ``email`` (case-insensitive).
+
+        Used by the add-team-member-by-email flow to resolve an email to its
+        ``user_id`` (sub). Returns None when no user has that email.
+        """
+        if not email or not email.strip():
+            return None
+        result = self._conn.execute(
+            text("SELECT * FROM users WHERE lower(email) = lower(:email) LIMIT 1"),
+            {"email": email.strip()},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
 
     # ------------------------------------------------------------------
     # Pinned agents
@@ -235,6 +278,96 @@ class UsersRepository:
                 ),
                 {"user_id": user_id, "tool_name": tool_name},
             )
+
+    # ------------------------------------------------------------------
+    # SCIM provisioning
+    # ------------------------------------------------------------------
+    def create(self, user_id: str, active: bool = True) -> Optional[dict]:
+        """Insert a new user row; ``None`` means a user with that id already exists.
+
+        SCIM ``userName`` is case-insensitive (caseExact=false), so a row that
+        differs only by case counts as a duplicate. The pre-check keeps SCIM
+        from provisioning a second row for a user the OIDC login already
+        created under different casing; the ``ON CONFLICT`` clause remains an
+        exact-match backstop for the concurrent-insert race.
+        """
+        existing = self._conn.execute(
+            text("SELECT 1 FROM users WHERE lower(user_id) = lower(:user_id)"),
+            {"user_id": user_id},
+        ).first()
+        if existing is not None:
+            return None
+        result = self._conn.execute(
+            text(
+                """
+                INSERT INTO users (user_id, agent_preferences, active)
+                VALUES (:user_id, CAST(:default_prefs AS jsonb), :active)
+                ON CONFLICT (user_id) DO NOTHING
+                RETURNING *
+                """
+            ),
+            {"user_id": user_id, "default_prefs": _DEFAULT_PREFERENCES, "active": active},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def get_by_pk(self, pk: str) -> Optional[dict]:
+        """Return the user row by primary-key ``id``, or ``None`` (including malformed UUIDs)."""
+        canonical = _canonical_uuid(pk)
+        if canonical is None:
+            return None
+        result = self._conn.execute(
+            text("SELECT * FROM users WHERE id = CAST(:pk AS uuid)"),
+            {"pk": canonical},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def set_active(self, pk: str, active: bool) -> Optional[dict]:
+        """Set ``active`` on the row with primary-key ``id`` and return the updated row."""
+        canonical = _canonical_uuid(pk)
+        if canonical is None:
+            return None
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE users
+                SET active = :active, updated_at = now()
+                WHERE id = CAST(:pk AS uuid)
+                RETURNING *
+                """
+            ),
+            {"pk": canonical, "active": active},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def list_paginated(
+        self, user_name: Optional[str], offset: int, limit: int
+    ) -> tuple[int, list[dict]]:
+        """Return ``(total, page)`` ordered by ``created_at, id``; optional exact ``user_id`` filter."""
+        where = ""
+        filter_params: dict = {}
+        if user_name is not None:
+            # SCIM userName is case-insensitive (caseExact=false); match on
+            # lower(user_id) so the IdP finds the account regardless of casing.
+            where = "WHERE lower(user_id) = lower(:user_name)"
+            filter_params = {"user_name": user_name}
+        total = self._conn.execute(
+            text(f"SELECT count(*) FROM users {where}"), filter_params
+        ).scalar_one()
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT * FROM users
+                {where}
+                ORDER BY created_at, id
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {**filter_params, "limit": limit, "offset": offset},
+        )
+        return int(total), [row_to_dict(row) for row in result.fetchall()]
 
     # ------------------------------------------------------------------
     # Private helpers

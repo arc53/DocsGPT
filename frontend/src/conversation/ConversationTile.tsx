@@ -1,10 +1,11 @@
-import { X } from 'lucide-react';
+import { ExternalLink, X } from 'lucide-react';
 import {
   SyntheticEvent,
   useCallback,
   useEffect,
   useRef,
   useState,
+  type ReactNode,
 } from 'react';
 import { useSelector } from 'react-redux';
 import Edit from '../assets/edit.svg';
@@ -12,7 +13,6 @@ import { useDarkTheme } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import CheckMark2 from '../assets/checkMark2.svg';
 import Trash from '../assets/red-trash.svg';
-import Share from '../assets/share.svg';
 import threeDots from '../assets/three-dots.svg';
 import { selectConversationId } from '../preferences/preferenceSlice';
 import { ActiveState } from '../models/misc';
@@ -127,17 +127,15 @@ export default function ConversationTile({
   };
 
   type ConversationMenuOption = {
-    icon: string;
+    icon: ReactNode;
     label: string;
     onClick: (event: SyntheticEvent) => void;
     variant: 'default' | 'destructive';
-    iconWidth?: number;
-    iconHeight?: number;
   };
 
   const menuOptions: ConversationMenuOption[] = [
     {
-      icon: Share,
+      icon: <ExternalLink className="size-3.5" strokeWidth={1.75} />,
       label: t('convTile.share'),
       onClick: (event: SyntheticEvent) => {
         event.stopPropagation();
@@ -145,25 +143,21 @@ export default function ConversationTile({
         setOpen(false);
       },
       variant: 'default',
-      iconWidth: 14,
-      iconHeight: 14,
     },
     {
-      icon: Edit,
+      icon: <img src={Edit} alt="" width={16} height={16} />,
       label: t('convTile.rename'),
       onClick: handleEditConversation,
       variant: 'default',
     },
     {
-      icon: Trash,
+      icon: <img src={Trash} alt="" width={18} height={18} />,
       label: t('convTile.delete'),
       onClick: (event: SyntheticEvent) => {
         event.stopPropagation();
         setDeleteModalState('ACTIVE');
         setOpen(false);
       },
-      iconWidth: 18,
-      iconHeight: 18,
       variant: 'destructive',
     },
   ];
@@ -274,12 +268,7 @@ export default function ConversationTile({
                         option.onClick(event as unknown as SyntheticEvent);
                       }}
                     >
-                      <img
-                        src={option.icon}
-                        alt=""
-                        width={option.iconWidth ?? 16}
-                        height={option.iconHeight ?? 16}
-                      />
+                      {option.icon}
                       <span>{option.label}</span>
                     </DropdownMenuItem>
                   ))}

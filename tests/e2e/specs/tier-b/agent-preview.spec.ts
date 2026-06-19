@@ -1,27 +1,27 @@
 /**
- * Tier-B · agent preview does NOT persist conversations
+ * Tier-B · agent preview persists a HIDDEN conversation
  *
  * Covers B14. The preview flow in `frontend/src/agents/agentPreviewSlice.ts`
- * calls `handleFetchAnswerSteaming(..., save_conversation=false)` — see the
- * `false` positional arg at line 126. That flag flows through
- * `POST /stream` (application/api/answer/routes/stream.py:55-59,142) into
- * `BaseAnswerResource.complete_stream(should_save_conversation=...)`
- * (application/api/answer/routes/base.py:174,290,389,479), where the
- * branches that insert `conversations` / `conversation_messages` rows are
- * gated on `should_save_conversation`.
+ * calls `handleFetchAnswerSteaming(..., save_conversation=false)`, which the
+ * handler maps to `visibility: 'hidden'`. Conversations always persist;
+ * visibility defaults to `hidden` for every request and only an explicit
+ * `visibility: 'listed'` (sent by the UI on normal chats) lists a row in the
+ * sidebar (decided by `resolve_persistence` in
+ * application/api/answer/services/persistence_policy.py and threaded through
+ * `BaseAnswerResource.complete_stream(visibility=...)`).
  *
- * The load-bearing assertion is: after a preview stream completes, the
- * `conversations` table still has zero rows for this user. If a
- * regression drops the `save_conversation` flag (or flips the default),
- * preview traffic would silently pollute the user's sidebar history.
+ * The load-bearing assertion is: after a preview stream completes, the row
+ * exists but is `hidden`, so it is excluded from the sidebar query
+ * (`ConversationsRepository.list_for_user`, which filters `visibility =
+ * 'listed'`). If a regression flips the preview default to `listed`, preview
+ * traffic would pollute the user's sidebar history.
  *
  * API-driven: the frontend preview UI ultimately POSTs /stream with
- * `save_conversation:false` and `conversation_id:null`; we exercise that
- * contract directly to keep the spec fast and isolated from the
- * AgentPreview modal's rendering quirks. A standard chat POST
- * (save_conversation defaulted to true) is included as a control — it
- * MUST write a conversation row, so "preview wrote zero" is a meaningful
- * contrast rather than "nothing ever writes".
+ * `visibility:'hidden'` and `conversation_id:null`; we exercise that
+ * contract directly to keep the spec fast and isolated from the AgentPreview
+ * modal's rendering quirks. A standard chat POST (visibility:'listed', as the
+ * UI sends) is the control — it writes a `listed` row that DOES surface in
+ * the sidebar.
  */
 
 import * as playwright from '@playwright/test';
@@ -58,6 +58,16 @@ async function countUserConversations(userSub: string): Promise<number> {
   return Number(rows[0]?.n ?? 0);
 }
 
+/** Conversations that surface in the sidebar (the `list_for_user` filter). */
+async function countListedConversations(userSub: string): Promise<number> {
+  const { rows } = await pg.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM conversations
+      WHERE user_id = $1 AND visibility = 'listed'`,
+    [userSub],
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
 async function countConversationMessages(userSub: string): Promise<number> {
   const { rows } = await pg.query<{ n: string }>(
     `SELECT count(*)::text AS n
@@ -71,10 +81,9 @@ async function countConversationMessages(userSub: string): Promise<number> {
 
 /**
  * POST /stream with save_conversation=false and drain the SSE body. The
- * stream emits `{type:"id", id:"None"}` in preview mode (preview has no
- * conversation_id to echo back) — we can't use `streamOnce` here because
- * that helper insists on a UUID-shaped id. Instead, just drain the
- * response and assert 200.
+ * stream emits `{type:"id", id:"<uuid>"}` once the (hidden) conversation is
+ * persisted. Sidebar membership is asserted via the DB helpers below rather
+ * than the stream id, so we just drain the response and assert 200.
  */
 async function drainStream(
   api: import('@playwright/test').APIRequestContext,
@@ -96,7 +105,7 @@ test.describe('tier-b · agent preview', () => {
     await resetDb();
   });
 
-  test('preview stream with save_conversation=false writes NO conversations row', async ({
+  test('preview stream with save_conversation=false persists a hidden conversation excluded from the sidebar', async ({
     browser,
   }) => {
     const { context, sub, token } = await newUserContext(browser);
@@ -108,24 +117,30 @@ test.describe('tier-b · agent preview', () => {
       expect(await countUserConversations(sub)).toBe(0);
 
       // Fire the preview payload that agentPreviewSlice.ts sends. Key
-      // fields: save_conversation=false, conversation_id=null, agent_id.
+      // fields: visibility='hidden', conversation_id=null, agent_id.
       await drainStream(api, {
         question: 'Hello preview',
         conversation_id: null,
         agent_id: agentId,
         save_conversation: false,
+        visibility: 'hidden',
         isNoneDoc: true,
         chunks: '0',
       });
 
-      // Core assertion: preview MUST NOT persist to conversations.
+      // The turn persists (a row + messages exist)...
       expect(
         await countUserConversations(sub),
-        'preview stream must not write a conversations row',
-      ).toBe(0);
+        'preview stream persists a conversation row',
+      ).toBe(1);
       expect(
         await countConversationMessages(sub),
-        'preview stream must not write conversation_messages rows',
+        'preview stream persists conversation_messages rows',
+      ).toBeGreaterThan(0);
+      // ...but it is hidden, so the sidebar query returns nothing.
+      expect(
+        await countListedConversations(sub),
+        'preview conversation must not surface in the sidebar',
       ).toBe(0);
     } finally {
       await api.dispose();
@@ -133,7 +148,7 @@ test.describe('tier-b · agent preview', () => {
     }
   });
 
-  test('control: a non-preview stream (save_conversation omitted) DOES write a conversations row', async ({
+  test('control: a non-preview stream (visibility: listed, as the UI sends) writes a LISTED conversations row', async ({
     browser,
   }) => {
     const { context, sub, token } = await newUserContext(browser);
@@ -142,14 +157,15 @@ test.describe('tier-b · agent preview', () => {
       const agentId = await createDraftAgent(sub, 'non-preview-target');
       expect(await countUserConversations(sub)).toBe(0);
 
-      // Standard chat path — save_conversation defaults to true at the
-      // backend (stream_model field default + get() fallback in stream.py).
-      // This is the "control" that makes the preview assertion meaningful:
-      // without it, a spec where nothing ever writes could pass trivially.
+      // Standard chat path — the UI sends `visibility: 'listed'` on normal
+      // chats (visibility defaults to hidden server-side). This is the
+      // "control" that makes the preview assertion meaningful: without
+      // it, a spec where nothing ever surfaces could pass trivially.
       const conversationId = await streamOnce(api, {
         question: 'Hello persistence',
         conversation_id: null,
         agent_id: agentId,
+        visibility: 'listed',
         isNoneDoc: true,
         chunks: '0',
       });
@@ -157,8 +173,9 @@ test.describe('tier-b · agent preview', () => {
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
       );
 
-      // Exactly one conversation row landed.
+      // Exactly one conversation row landed, and it surfaces in the sidebar.
       expect(await countUserConversations(sub)).toBe(1);
+      expect(await countListedConversations(sub)).toBe(1);
       expect(await countConversationMessages(sub)).toBeGreaterThan(0);
     } finally {
       await api.dispose();
@@ -166,7 +183,7 @@ test.describe('tier-b · agent preview', () => {
     }
   });
 
-  test('multiple preview turns still produce zero conversations rows', async ({
+  test('multiple preview turns persist hidden rows that never surface in the sidebar', async ({
     browser,
   }) => {
     const { context, sub, token } = await newUserContext(browser);
@@ -181,15 +198,17 @@ test.describe('tier-b · agent preview', () => {
           conversation_id: null,
           agent_id: agentId,
           save_conversation: false,
+          visibility: 'hidden',
           isNoneDoc: true,
           chunks: '0',
         });
       }
 
-      // Still zero — no preview turn ever persists, regardless of how
-      // many times the user clicks "Test message".
-      expect(await countUserConversations(sub)).toBe(0);
-      expect(await countConversationMessages(sub)).toBe(0);
+      // Each turn persisted its own hidden conversation...
+      expect(await countUserConversations(sub)).toBe(3);
+      // ...yet the sidebar stays empty no matter how many "Test message"
+      // clicks the user makes.
+      expect(await countListedConversations(sub)).toBe(0);
     } finally {
       await api.dispose();
       await context.close();

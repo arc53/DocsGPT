@@ -109,6 +109,63 @@ class DeviceAuditLogRepository:
         )
         return result.rowcount > 0
 
+    @staticmethod
+    def _global_filters(decision, user_id, device_id, since) -> tuple[str, dict]:
+        clauses: list[str] = []
+        params: dict = {}
+        if decision:
+            clauses.append("decision = :decision")
+            params["decision"] = decision
+        if user_id:
+            clauses.append("user_id = :user_id")
+            params["user_id"] = user_id
+        if device_id:
+            clauses.append("device_id = CAST(:device_id AS uuid)")
+            params["device_id"] = device_id
+        if since is not None:
+            clauses.append("created_at >= :since")
+            params["since"] = since
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        return where, params
+
+    def list_global(
+        self,
+        *,
+        decision: Optional[str] = None,
+        user_id: Optional[str] = None,
+        device_id: Optional[str] = None,
+        since=None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict]:
+        """Cross-device admin feed of remote-command invocations, newest first."""
+        where, params = self._global_filters(decision, user_id, device_id, since)
+        params.update({"limit": int(limit), "offset": int(offset)})
+        result = self._conn.execute(
+            text(
+                f"SELECT * FROM device_audit_log {where} "
+                "ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
+            ),
+            params,
+        )
+        return [row_to_dict(r) for r in result.fetchall()]
+
+    def count_global(
+        self,
+        *,
+        decision: Optional[str] = None,
+        user_id: Optional[str] = None,
+        device_id: Optional[str] = None,
+        since=None,
+    ) -> int:
+        where, params = self._global_filters(decision, user_id, device_id, since)
+        return int(
+            self._conn.execute(
+                text(f"SELECT count(*) FROM device_audit_log {where}"), params
+            ).scalar()
+            or 0
+        )
+
     def list_for_device(
         self, device_id: str, user_id: str, *, limit: int = 100
     ) -> list[dict]:

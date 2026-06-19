@@ -19,12 +19,15 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CHAR,
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     MetaData,
+    PrimaryKeyConstraint,
     UniqueConstraint,
     Table,
     Text,
@@ -42,6 +45,9 @@ users_table = Table(
     metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
     Column("user_id", Text, nullable=False, unique=True),
+    # Populated from the OIDC email claim at login (migration 0023); used to add
+    # a team member by email instead of raw sub. Nullable / backfilled on login.
+    Column("email", Text),
     Column(
         "agent_preferences",
         JSONB,
@@ -49,9 +55,130 @@ users_table = Table(
         server_default='{"pinned": [], "shared_with_me": []}',
     ),
     Column("tool_preferences", JSONB, nullable=False, server_default="{}"),
+    Column("active", Boolean, nullable=False, server_default="true"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
+
+auth_events_table = Table(
+    "auth_events",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("event", Text, nullable=False),
+    Column("ip", Text),
+    Column("user_agent", Text),
+    Column("metadata", JSONB, nullable=False, server_default="{}"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+# Elevated RBAC role grants. The ``user`` role is implicit (no row); only
+# admin grants are stored. ``(user_id, role, source)`` is the key so manual and
+# oidc_group grants coexist and revoke independently. ``user_id`` is the auth
+# ``sub`` (no FK/trigger, mirroring ``auth_events``). See migration 0020.
+user_roles_table = Table(
+    "user_roles",
+    metadata,
+    Column("user_id", Text, nullable=False),
+    Column("role", Text, nullable=False),
+    Column("source", Text, nullable=False, server_default="manual"),
+    Column("granted_by", Text),
+    Column("granted_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    PrimaryKeyConstraint("user_id", "role", "source"),
+    CheckConstraint("role IN ('admin')", name="user_roles_role_check"),
+    CheckConstraint("source IN ('manual', 'oidc_group')", name="user_roles_source_check"),
+)
+
+# --- Teams: multi-team membership, team-scoped roles, resource sharing -------
+# See migration 0021. Three additive tables; no existing table is altered.
+
+# A team. ``owner_id`` is the creator's auth ``sub`` and the deletion anchor —
+# intentionally no FK/trigger (like ``user_roles``) so user deletion isn't
+# blocked by an ON DELETE RESTRICT.
+teams_table = Table(
+    "teams",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("name", Text, nullable=False),
+    Column("slug", CITEXT, nullable=False, unique=True),
+    Column("description", Text),
+    Column("owner_id", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+Index("teams_owner_idx", teams_table.c.owner_id)
+
+# Membership + team-scoped role grant, field-for-field on ``user_roles``.
+# ``(team_id, user_id, role, source)`` so manual and IdP-derived grants coexist
+# and revoke independently. ``user_id`` is the auth ``sub`` (no FK/trigger).
+team_members_table = Table(
+    "team_members",
+    metadata,
+    Column("team_id", UUID(as_uuid=True), nullable=False),
+    Column("user_id", Text, nullable=False),
+    Column("role", Text, nullable=False),
+    Column("source", Text, nullable=False, server_default="manual"),
+    Column("granted_by", Text),
+    Column("granted_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    PrimaryKeyConstraint("team_id", "user_id", "role", "source"),
+    CheckConstraint("role IN ('team_admin', 'team_member')", name="team_members_role_check"),
+    CheckConstraint(
+        "source IN ('manual', 'oidc_group', 'scim')", name="team_members_source_check"
+    ),
+)
+
+Index("team_members_user_idx", team_members_table.c.user_id)
+
+# One polymorphic share table for all four shareable resource types. Sharing is
+# additive visibility, never ownership transfer. ``owner_id`` is denormalised
+# owner-at-share-time so visibility queries skip the resource-table join.
+# ``resource_id`` has no cross-table FK (polymorphic); dangling rows are scrubbed
+# by AFTER DELETE triggers on each resource table (see migration 0021).
+team_resource_grants_table = Table(
+    "team_resource_grants",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("team_id", UUID(as_uuid=True), nullable=False),
+    Column("resource_type", Text, nullable=False),
+    Column("resource_id", UUID(as_uuid=True), nullable=False),
+    Column("owner_id", Text, nullable=False),
+    Column("access_level", Text, nullable=False, server_default="viewer"),
+    # NULL = shared with the whole team; a sub = shared with that one member
+    # (who must also be a team member). See migration 0022.
+    Column("target_user_id", Text),
+    Column("granted_by", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint(
+        "resource_type IN ('agent', 'source', 'prompt', 'tool')",
+        name="team_resource_grants_type_check",
+    ),
+    CheckConstraint(
+        "access_level IN ('viewer', 'editor')", name="team_resource_grants_access_check"
+    ),
+)
+
+# Functional unique dedup: a whole-team grant (target NULL → '') and each
+# per-member grant are distinct. Mirrors migration 0022.
+Index(
+    "team_resource_grants_dedup_uidx",
+    team_resource_grants_table.c.team_id,
+    team_resource_grants_table.c.resource_type,
+    team_resource_grants_table.c.resource_id,
+    func.coalesce(team_resource_grants_table.c.target_user_id, ""),
+    unique=True,
+)
+Index(
+    "team_resource_grants_team_type_idx",
+    team_resource_grants_table.c.team_id,
+    team_resource_grants_table.c.resource_type,
+)
+Index(
+    "team_resource_grants_resource_idx",
+    team_resource_grants_table.c.resource_type,
+    team_resource_grants_table.c.resource_id,
+)
+
 
 prompts_table = Table(
     "prompts",
@@ -191,6 +318,11 @@ agents_table = Table(
     Column("agent_type", Text),
     Column("status", Text, nullable=False),
     Column("key", CITEXT, unique=True),
+    # Stable per-user human identifier used to match an agent across
+    # YAML export/import (idempotent re-import / GitOps). Uniqueness is
+    # enforced by a partial unique index in migration 0019, not here, so
+    # multiple agents may carry NULL.
+    Column("slug", CITEXT),
     Column("image", Text),
     Column("source_id", UUID(as_uuid=True), ForeignKey("sources.id", ondelete="SET NULL")),
     Column("extra_source_ids", ARRAY(UUID(as_uuid=True)), nullable=False, server_default="{}"),
@@ -216,6 +348,17 @@ agents_table = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("last_used_at", DateTime(timezone=True)),
     Column("legacy_mongo_id", Text),
+)
+
+# Per-user uniqueness of the export/import slug. Mirrors the partial unique
+# index created in migration 0019 so a schema built from this metadata
+# (e.g. create_all) matches an Alembic-built one.
+Index(
+    "ix_agents_user_slug",
+    agents_table.c.user_id,
+    agents_table.c.slug,
+    unique=True,
+    postgresql_where=agents_table.c.slug.isnot(None),
 )
 
 user_custom_models_table = Table(
@@ -326,6 +469,9 @@ conversations_table = Table(
     Column("is_shared_usage", Boolean, nullable=False, server_default="false"),
     Column("shared_token", Text),
     Column("shared_with", ARRAY(Text), nullable=False, server_default="{}"),
+    # "listed" shows in the owner's sidebar; "hidden" persists silently
+    # (agent/API/OpenAI-compat traffic). See migration 0016.
+    Column("visibility", Text, nullable=False, server_default="listed"),
     Column("compression_metadata", JSONB),
     Column("date", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
@@ -492,6 +638,11 @@ tool_call_attempts_table = Table(
         ForeignKey("conversation_messages.id", ondelete="SET NULL"),
     ),
     Column("tool_id", UUID(as_uuid=True)),
+    # Direct attribution (0018): headless runs (scheduled / webhook) and
+    # parse-failure rows never get a message_id, so user/agent are stamped
+    # at propose time instead of derived through the parent message.
+    Column("user_id", Text),
+    Column("agent_id", UUID(as_uuid=True)),
     Column("tool_name", Text, nullable=False),
     Column("action_name", Text, nullable=False),
     Column("arguments", JSONB, nullable=False),

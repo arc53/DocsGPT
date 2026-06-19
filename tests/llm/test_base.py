@@ -81,6 +81,160 @@ class TestGenMethods:
         result = llm.gen(model="m", messages=[{"role": "user", "content": "hi"}])
         assert result == "hello"
 
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    def test_gen_emits_llm_gen_start_event(self, caplog):
+        # Non-streaming counterpart to the llm_stream_start event: gen() must
+        # log before the model is queried so every call is observable.
+        import logging as _logging
+
+        class FakeProvider(StubLLM):
+            provider_name = "fake-provider"
+
+        llm = FakeProvider(raw_gen_return="hi")
+        with caplog.at_level(_logging.INFO, logger="root"):
+            llm.gen(
+                model="m1",
+                messages=[
+                    {"role": "user", "content": "hi"},
+                    {"role": "assistant", "content": "hey"},
+                ],
+                tools=[{"name": "t"}],
+                _usage_attachments=[{"path": "/tmp/a.png"}],
+            )
+
+        starts = [r for r in caplog.records if r.message == "llm_gen_start"]
+        assert len(starts) == 1
+        evt = starts[0]
+        assert evt.model == "m1"
+        assert evt.provider == "fake-provider"
+        assert evt.message_count == 2
+        assert evt.has_attachments is True
+        assert evt.has_tools is True
+
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    def test_gen_emits_event_without_attachments_or_tools(self, caplog):
+        import logging as _logging
+
+        llm = StubLLM(raw_gen_return="hi")
+        with caplog.at_level(_logging.INFO, logger="root"):
+            llm.gen(model="m1", messages=[])
+
+        evt = next(r for r in caplog.records if r.message == "llm_gen_start")
+        assert evt.message_count == 0
+        assert evt.has_attachments is False
+        assert evt.has_tools is False
+        # BaseLLM default — concrete providers always override.
+        assert evt.provider == "unknown"
+
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    def test_gen_fallback_emits_gen_start_for_fallback_provider(self, caplog):
+        # The fallback raw path bypasses gen(), so _execute_with_fallback must
+        # emit a second llm_gen_start tagged with the backup vendor/model —
+        # otherwise dashboards record only the failed primary.
+        import logging as _logging
+
+        class PrimaryProvider(FailingLLM):
+            provider_name = "primary-vendor"
+
+        class FallbackProvider(FallbackLLM):
+            provider_name = "fallback-vendor"
+
+        primary = PrimaryProvider()
+        primary._fallback_llm = FallbackProvider(model_id="backup-model-id")
+
+        with caplog.at_level(_logging.INFO, logger="root"):
+            result = primary.gen(
+                model="primary-model",
+                messages=[{"role": "user", "content": "hi"}],
+            )
+
+        assert result == "fallback_result"
+        starts = [r for r in caplog.records if r.message == "llm_gen_start"]
+        assert len(starts) == 2
+        assert starts[0].provider == "primary-vendor"
+        assert starts[0].model == "primary-model"
+        assert starts[1].provider == "fallback-vendor"
+        assert starts[1].model == "backup-model-id"
+
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    def test_gen_emits_llm_gen_finished_on_success(self, caplog):
+        # Real gen_token_usage (only gen_cache patched) so the emit-from-
+        # finally path runs. user_api_key=None makes _persist_call_usage
+        # short-circuit before any DB access — same trick as the stream test.
+        import logging as _logging
+
+        class FakeProvider(StubLLM):
+            provider_name = "fake-provider"
+
+        llm = FakeProvider(raw_gen_return="alpha beta")
+        llm.user_api_key = None
+        with caplog.at_level(_logging.INFO, logger="root"):
+            llm.gen(model="m1", messages=[{"role": "user", "content": "hi"}])
+
+        finished = [r for r in caplog.records if r.message == "llm_gen_finished"]
+        assert len(finished) == 1
+        evt = finished[0]
+        assert evt.model == "m1"
+        assert evt.provider == "fake-provider"
+        assert evt.status == "ok"
+        assert isinstance(evt.prompt_tokens, int) and evt.prompt_tokens >= 0
+        assert isinstance(evt.completion_tokens, int) and evt.completion_tokens > 0
+        assert isinstance(evt.latency_ms, int) and evt.latency_ms >= 0
+        # cached_tokens / error_class are intentionally absent on success.
+        assert not hasattr(evt, "cached_tokens")
+        assert not hasattr(evt, "error_class")
+
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    def test_gen_emits_llm_gen_finished_on_error(self, caplog):
+        import logging as _logging
+
+        class FakeProvider(BaseLLM):
+            provider_name = "fake-provider"
+
+            def _raw_gen(self, baseself, model, messages, stream=False, tools=None, **kw):
+                raise RuntimeError("gen_boom")
+
+            def _raw_gen_stream(self, baseself, model, messages, stream=True, tools=None, **kw):
+                yield "x"
+
+        llm = FakeProvider()
+        llm.user_api_key = None
+        with caplog.at_level(_logging.INFO, logger="root"), pytest.raises(RuntimeError):
+            llm.gen(model="m1", messages=[{"role": "user", "content": "hi"}])
+
+        finished = [r for r in caplog.records if r.message == "llm_gen_finished"]
+        assert len(finished) == 1
+        evt = finished[0]
+        assert evt.status == "error"
+        assert evt.error_class == "RuntimeError"
+        # Prompt tokens are still recorded — the request was sent and billed.
+        assert evt.prompt_tokens > 0
+
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    def test_gen_finished_event_paired_with_gen_start(self, caplog):
+        # The two events form a pair the cost dashboards join on; verify they
+        # come in order and from the same provider/model.
+        import logging as _logging
+
+        class FakeProvider(StubLLM):
+            provider_name = "fake-provider"
+
+        llm = FakeProvider(raw_gen_return="x")
+        llm.user_api_key = None
+        with caplog.at_level(_logging.INFO, logger="root"):
+            llm.gen(model="m1", messages=[])
+
+        records = [
+            r for r in caplog.records
+            if r.message in ("llm_gen_start", "llm_gen_finished")
+        ]
+        assert [r.message for r in records] == ["llm_gen_start", "llm_gen_finished"]
+        assert records[0].model == records[1].model == "m1"
+        assert records[0].provider == records[1].provider == "fake-provider"
+
     @patch("application.llm.base.stream_cache", lambda f: f)
     @patch("application.llm.base.stream_token_usage", lambda f: f)
     def test_gen_stream_yields_results(self):
@@ -367,54 +521,39 @@ class _ClientErrorLLM(BaseLLM):
 
 
 @pytest.mark.unit
-class TestNonRetriableClientError:
+class TestClientErrorFallback:
+    """Any primary error triggers a single fallback attempt.
 
-    def test_helper_detects_4xx_status_code(self):
-        assert BaseLLM._is_non_retriable_client_error(_StatusError(400))
-        assert BaseLLM._is_non_retriable_client_error(_StatusError(404))
-        assert BaseLLM._is_non_retriable_client_error(_StatusError(429))
+    There is no error-class gate: 4xx (including 429 rate limits and
+    provider-specific payload rejections) and Gemini ``ClientError`` now
+    fall back just like 5xx/transient failures. Client disconnect
+    (``GeneratorExit``) is a ``BaseException`` and still bypasses fallback.
+    """
 
-    def test_helper_passes_5xx_through(self):
-        # 5xx and connection errors should still trigger fallback.
-        assert not BaseLLM._is_non_retriable_client_error(_StatusError(500))
-        assert not BaseLLM._is_non_retriable_client_error(_StatusError(503))
-        assert not BaseLLM._is_non_retriable_client_error(RuntimeError("oops"))
-
-    def test_helper_detects_genai_client_error(self):
-        try:
-            from google.genai.errors import ClientError
-        except ImportError:
-            pytest.skip("google-genai not installed")
-        # ClientError(code, response_json, response=None)
-        exc = ClientError(400, {"error": {"message": "bad", "code": 400}}, None)
-        assert BaseLLM._is_non_retriable_client_error(exc)
-
-    def test_helper_detects_response_status_code(self):
-        exc = RuntimeError("wrapped")
-        exc.response = type("R", (), {"status_code": 401})()
-        assert BaseLLM._is_non_retriable_client_error(exc)
-
+    # 4xx that used to be force-skipped; each should now reach the fallback.
+    @pytest.mark.parametrize("status_code", [400, 401, 403, 404, 413, 422, 429])
     @patch("application.llm.base.gen_cache", lambda f: f)
     @patch("application.llm.base.gen_token_usage", lambda f: f)
-    def test_4xx_skips_fallback(self):
+    def test_4xx_now_falls_back(self, status_code):
         fallback = FallbackLLM(model_id="fallback-model")
-        llm = _ClientErrorLLM(status_code=400)
+        llm = _ClientErrorLLM(status_code=status_code)
         llm._fallback_llm = fallback
 
-        with pytest.raises(_StatusError):
-            llm.gen(model="m", messages=[])
-        assert not fallback.gen_called
+        result = llm.gen(model="m", messages=[])
+        assert result == "fallback_result"
+        assert fallback.gen_called
 
+    @pytest.mark.parametrize("status_code", [400, 429])
     @patch("application.llm.base.stream_cache", lambda f: f)
     @patch("application.llm.base.stream_token_usage", lambda f: f)
-    def test_4xx_skips_stream_fallback(self):
+    def test_4xx_now_falls_back_stream(self, status_code):
         fallback = FallbackLLM(model_id="fallback-model")
-        llm = _ClientErrorLLM(status_code=400)
+        llm = _ClientErrorLLM(status_code=status_code)
         llm._fallback_llm = fallback
 
-        with pytest.raises(_StatusError):
-            list(llm.gen_stream(model="m", messages=[]))
-        assert not fallback.gen_stream_called
+        result = list(llm.gen_stream(model="m", messages=[]))
+        assert "fallback_chunk" in result
+        assert fallback.gen_stream_called
 
     @patch("application.llm.base.gen_cache", lambda f: f)
     @patch("application.llm.base.gen_token_usage", lambda f: f)
@@ -426,6 +565,50 @@ class TestNonRetriableClientError:
         result = llm.gen(model="m", messages=[])
         assert result == "fallback_result"
         assert fallback.gen_called
+
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    def test_genai_client_error_now_falls_back(self):
+        """A Gemini ClientError (4xx) is no longer force-skipped."""
+        try:
+            from google.genai.errors import ClientError
+        except ImportError:
+            pytest.skip("google-genai not installed")
+
+        class _GenaiErrorLLM(BaseLLM):
+            def _raw_gen(self, baseself, model, messages, stream=False, tools=None, **kw):
+                raise ClientError(400, {"error": {"message": "bad", "code": 400}}, None)
+
+            def _raw_gen_stream(self, baseself, model, messages, stream=True, tools=None, **kw):
+                raise ClientError(400, {"error": {"message": "bad", "code": 400}}, None)
+                yield  # unreachable; makes this a generator
+
+        fallback = FallbackLLM(model_id="fallback-model")
+        llm = _GenaiErrorLLM()
+        llm._fallback_llm = fallback
+
+        result = llm.gen(model="m", messages=[])
+        assert result == "fallback_result"
+        assert fallback.gen_called
+
+    @patch("application.llm.base.gen_cache", lambda f: f)
+    @patch("application.llm.base.gen_token_usage", lambda f: f)
+    def test_fallback_failure_propagates(self):
+        """When the fallback also fails, its error propagates to the caller."""
+
+        class _FailingFallback(BaseLLM):
+            def _raw_gen(self, baseself, model, messages, stream=False, tools=None, **kw):
+                raise _StatusError(400, "fallback_failed")
+
+            def _raw_gen_stream(self, baseself, model, messages, stream=True, tools=None, **kw):
+                raise _StatusError(400, "fallback_failed")
+                yield  # unreachable; makes this a generator
+
+        llm = _ClientErrorLLM(status_code=429)
+        llm._fallback_llm = _FailingFallback(model_id="fb")
+
+        with pytest.raises(_StatusError, match="fallback_failed"):
+            llm.gen(model="m", messages=[])
 
 
 # ---------------------------------------------------------------------------

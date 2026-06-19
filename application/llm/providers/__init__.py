@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import Dict, List
 
 from application.llm.providers.anthropic import AnthropicProvider
-from application.llm.providers.azure_openai import AzureOpenAIProvider
 from application.llm.providers.base import Provider
 from application.llm.providers.docsgpt import DocsGPTProvider
 from application.llm.providers.google import GoogleProvider
@@ -34,7 +33,6 @@ ALL_PROVIDERS: List[Provider] = [
     DocsGPTProvider(),
     OpenAIProvider(),
     OpenAICompatibleProvider(),
-    AzureOpenAIProvider(),
     AnthropicProvider(),
     GoogleProvider(),
     GroqProvider(),

@@ -135,7 +135,11 @@ class DuckDuckGoSearchTool(Tool):
         return [
             {
                 "name": "ddg_web_search",
-                "description": "Search the web using DuckDuckGo. Returns titles, URLs, and snippets.",
+                "description": (
+                    "Search the web using DuckDuckGo. Returns titles, URLs, "
+                    "and snippets. Use it for current events or information "
+                    "not found in the user's documents."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -183,7 +187,10 @@ class DuckDuckGoSearchTool(Tool):
             },
             {
                 "name": "ddg_news_search",
-                "description": "Search for news articles using DuckDuckGo. Returns recent news.",
+                "description": (
+                    "Search recent news articles using DuckDuckGo. Returns "
+                    "headlines with dates, sources, and URLs."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {

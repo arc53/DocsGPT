@@ -111,6 +111,50 @@ describe('schedulesSlice SSE event handling', () => {
     expect(schedules[0].status).toBe('paused');
   });
 
+  it('schedule.resumed flips a paused schedule back to active', () => {
+    let state = seedState();
+    state = {
+      ...state,
+      byAgent: {
+        'agent-1': [sampleSchedule({ status: 'paused' })],
+      } as Record<string, Schedule[]>,
+    };
+    state = reducer(
+      state,
+      sseEventReceived({
+        id: 'evt-r',
+        ts: '2026-05-19T12:07:30Z',
+        type: 'schedule.resumed',
+        payload: { schedule_id: 'sched-1', status: 'active' },
+      }),
+    );
+    const schedules = selectSchedulesForAgent({ schedules: state }, 'agent-1');
+    expect(schedules[0].status).toBe('active');
+  });
+
+  it('schedule.cancelled and schedule.completed set their terminal status', () => {
+    for (const [type, expected] of [
+      ['schedule.cancelled', 'cancelled'],
+      ['schedule.completed', 'completed'],
+    ] as const) {
+      let state = seedWithSchedule();
+      state = reducer(
+        state,
+        sseEventReceived({
+          id: `evt-${type}`,
+          ts: '2026-05-19T12:09:00Z',
+          type,
+          payload: { schedule_id: 'sched-1', status: expected },
+        }),
+      );
+      const schedules = selectSchedulesForAgent(
+        { schedules: state },
+        'agent-1',
+      );
+      expect(schedules[0].status).toBe(expected);
+    }
+  });
+
   it('schedule.message.appended is acknowledged without mutating run state', () => {
     let state = seedWithSchedule();
     const envelope: SSEEvent = {

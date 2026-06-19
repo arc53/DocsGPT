@@ -78,6 +78,7 @@ class ConversationService:
         shared_token: Optional[str] = None,
         attachment_ids: Optional[List[str]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        visibility: str = "hidden",
     ) -> str:
         """Save or update a conversation in Postgres.
 
@@ -182,6 +183,7 @@ class ConversationService:
                         if (resolved_agent_id and is_shared_usage)
                         else None
                     ),
+                    visibility=visibility,
                 )
                 conv_pg_id = str(conv["id"])
                 append_payload = dict(message_payload)
@@ -202,6 +204,7 @@ class ConversationService:
         shared_token: Optional[str] = None,
         model_id: Optional[str] = None,
         request_id: Optional[str] = None,
+        visibility: str = "hidden",
         status: str = "pending",
         index: Optional[int] = None,
     ) -> Dict[str, str]:
@@ -257,6 +260,7 @@ class ConversationService:
                         if (resolved_agent_id and is_shared_usage)
                         else None
                     ),
+                    visibility=visibility,
                 )
                 conv_pg_id = str(conv["id"])
 

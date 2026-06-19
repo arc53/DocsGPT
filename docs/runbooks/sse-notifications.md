@@ -360,6 +360,16 @@ running task and the terminal SSE arrives later, the toast pops
 back. Intentional ("notify the user it's done"); revisit if the
 re-surface UX is too aggressive for v2.
 
+### Reconnect reader needs the ASGI entrypoint
+
+The chat-stream reconnect reader `GET /api/messages/<id>/events`
+is a native-async Starlette route mounted in
+`application/asgi.py`, not a Flask route. Plain `flask run`
+serves only the WSGI Flask app, so under it that endpoint 404s
+and reconnect-after-disconnect can't resume. Run the backend via
+`uvicorn application.asgi:asgi_app --reload` (or the production
+gunicorn uvicorn-worker) to exercise it.
+
 ### Werkzeug doesn't auto-reload route files
 
 The dev server (`flask run`) doesn't watch

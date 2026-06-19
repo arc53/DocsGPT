@@ -1,7 +1,12 @@
 const endpoints = {
   USER: {
     CONFIG: '/api/config',
+    ME: '/api/user/me',
     NEW_TOKEN: '/api/generate_token',
+    OIDC_LOGIN: '/api/auth/oidc/login',
+    OIDC_TOKEN: '/api/auth/oidc/token',
+    OIDC_REFRESH: '/api/auth/oidc/refresh',
+    OIDC_LOGOUT: '/api/auth/oidc/logout',
     MODELS: '/api/models',
     DOCS: '/api/sources',
     DOCS_PAGINATED: '/api/sources/paginated',
@@ -22,6 +27,19 @@ const endpoints = {
     TEMPLATE_AGENTS: '/api/template_agents',
     ADOPT_AGENT: (id: string) => `/api/adopt_agent?id=${id}`,
     AGENT_WEBHOOK: (id: string) => `/api/agent_webhook?id=${id}`,
+    EXPORT_AGENT: (id: string) => `/api/export_agent?id=${id}`,
+    IMPORT_AGENT_PLAN: '/api/import_agent/plan',
+    IMPORT_AGENT: '/api/import_agent',
+    TEAMS: '/api/teams',
+    TEAM: (id: string) => `/api/teams/${id}`,
+    TEAM_MEMBERS: (id: string) => `/api/teams/${id}/members`,
+    TEAM_MEMBER: (id: string, memberId: string) =>
+      `/api/teams/${id}/members/${encodeURIComponent(memberId)}`,
+    TEAM_GRANTS: (id: string) => `/api/teams/${id}/grants`,
+    TEAM_TRANSFER_OWNER: (id: string) => `/api/teams/${id}/transfer_owner`,
+    RESOURCE_SHARES: (resourceType: string, resourceId: string) =>
+      `/api/resource_shares?resource_type=${resourceType}&resource_id=${resourceId}`,
+    ALL_TEAMS: '/api/admin/teams',
     PROMPTS: '/api/get_prompts',
     CREATE_PROMPT: '/api/create_prompt',
     DELETE_PROMPT: '/api/delete_prompt',
@@ -31,6 +49,8 @@ const endpoints = {
     MESSAGE_ANALYTICS: '/api/get_message_analytics',
     TOKEN_ANALYTICS: '/api/get_token_analytics',
     FEEDBACK_ANALYTICS: '/api/get_feedback_analytics',
+    TOOL_ANALYTICS: '/api/get_tool_analytics',
+    SCHEDULE_ANALYTICS: '/api/get_schedule_analytics',
     LOGS: `/api/get_user_logs`,
     MANAGE_SYNC: '/api/manage_sync',
     SYNC_SOURCE: '/api/sync_source',
@@ -102,6 +122,19 @@ const endpoints = {
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',
     MODELS: '/v1/models',
+  },
+  ADMIN: {
+    OVERVIEW: '/api/admin/overview',
+    USERS: '/api/admin/users',
+    USER: (id: string) => `/api/admin/users/${encodeURIComponent(id)}`,
+    USER_ROLE: (id: string) =>
+      `/api/admin/users/${encodeURIComponent(id)}/role`,
+    USER_REVOKE_SESSIONS: (id: string) =>
+      `/api/admin/users/${encodeURIComponent(id)}/revoke-sessions`,
+    ADMINS: '/api/admin/admins',
+    USAGE: '/api/admin/usage',
+    AUDIT: '/api/admin/audit',
+    DEVICE_AUDIT: '/api/admin/devices/audit',
   },
   CONVERSATION: {
     ANSWER: '/api/answer',

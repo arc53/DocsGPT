@@ -1,10 +1,10 @@
+import { Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
-import Search from '../assets/search.svg';
 import Spinner from '../components/Spinner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -12,6 +12,7 @@ import {
   setConversation,
   updateConversationId,
 } from '../conversation/conversationSlice';
+import ImportAgentModal from '../modals/ImportAgentModal';
 import {
   selectAgentFolders,
   selectSelectedAgent,
@@ -31,6 +32,7 @@ const FILTER_TABS: { id: AgentFilterTab; labelKey: string }[] = [
   { id: 'all', labelKey: 'agents.filters.all' },
   { id: 'template', labelKey: 'agents.filters.byDocsGPT' },
   { id: 'user', labelKey: 'agents.filters.byMe' },
+  { id: 'team', labelKey: 'agents.filters.team' },
   { id: 'shared', labelKey: 'agents.filters.shared' },
 ];
 
@@ -178,7 +180,10 @@ export default function AgentsList() {
             labelBgClassName="bg-background"
             className="rounded-full"
             leftIcon={
-              <img src={Search} alt="" className="h-4 w-4 opacity-40" />
+              <Search
+                className="text-muted-foreground size-4"
+                strokeWidth={1.75}
+              />
             }
           />
         </div>
@@ -281,6 +286,7 @@ function AgentSection({
   const allAgents = useSelector(config.selectData);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [showImportModal, setShowImportModal] = useState(false);
   const newFolderInputRef = useRef<HTMLInputElement>(null);
 
   const currentFolderId =
@@ -537,6 +543,16 @@ function AgentSection({
                 {t('agents.folders.newFolder')}
               </Button>
             ))}
+          {config.id === 'user' && (
+            <Button
+              type="button"
+              variant="outline"
+              className="bg-card shrink-0 rounded-full whitespace-nowrap"
+              onClick={() => setShowImportModal(true)}
+            >
+              {t('agents.importAgent')}
+            </Button>
+          )}
           {config.showNewAgentButton && (
             <Button
               type="button"
@@ -551,6 +567,10 @@ function AgentSection({
           )}
         </div>
       </div>
+      <ImportAgentModal
+        modalState={showImportModal ? 'ACTIVE' : 'INACTIVE'}
+        setModalState={(state) => setShowImportModal(state === 'ACTIVE')}
+      />
 
       <div className="flex flex-col gap-4">
         {isLoading ? (

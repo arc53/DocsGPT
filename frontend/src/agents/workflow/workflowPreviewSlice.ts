@@ -80,6 +80,7 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
         question,
         workflow: workflowData,
         save_conversation: false,
+        visibility: 'hidden',
       };
 
       await new Promise<void>((resolve, reject) => {

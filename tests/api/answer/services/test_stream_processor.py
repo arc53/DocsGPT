@@ -177,5 +177,142 @@ class TestToolPreFetch:
     """Tests for tool pre-fetching with saved parameter values."""
 
 
+@pytest.mark.unit
+class TestBuildContinuationFromMessages:
+    """Stateless tool continuation rebuilt from the resent messages array.
+
+    OpenAI-compatible clients (opencode, etc.) resend the full conversation but
+    carry no conversation_id, so the agent + pending tool calls are reconstructed
+    directly from the request instead of from server-side ``pending_tool_state``.
+    """
+
+    @staticmethod
+    def _make_processor():
+        from unittest.mock import MagicMock
+
+        from application.api.answer.services.stream_processor import StreamProcessor
+
+        processor = StreamProcessor({"question": ""}, {"sub": "user_123"})
+        fake_agent = MagicMock()
+        fake_agent.tool_executor.get_tools.return_value = {"search": object()}
+        # build_agent touches the DB / config; stub it for this unit test.
+        processor.build_agent = MagicMock(return_value=fake_agent)
+        return processor, fake_agent
+
+    def _messages_with_tool_call(self, arguments):
+        return [
+            {"role": "system", "content": "You are a bot"},
+            {"role": "user", "content": "search the docs"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "search", "arguments": arguments},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "call_1", "content": "found it"},
+        ]
+
+    def test_rebuilds_pending_tool_calls_and_prior_messages(self):
+        processor, fake_agent = self._make_processor()
+        messages = self._messages_with_tool_call('{"q": "docs"}')
+        tool_actions = [{"call_id": "call_1", "result": "found it"}]
+
+        (
+            agent,
+            prior_messages,
+            tools_dict,
+            pending_tool_calls,
+            returned_actions,
+            reasoning,
+        ) = processor.build_continuation_from_messages(messages, tool_actions)
+
+        assert agent is fake_agent
+        assert tools_dict == fake_agent.tool_executor.get_tools.return_value
+        assert returned_actions is tool_actions
+        assert reasoning == ""
+        # prior_messages stop before the assistant-with-tool_calls message.
+        assert prior_messages == messages[:2]
+        assert len(pending_tool_calls) == 1
+        call = pending_tool_calls[0]
+        assert call["call_id"] == "call_1"
+        assert call["name"] == "search"
+        assert call["tool_name"] == "search"
+        assert call["action_name"] == "search"
+        assert call["arguments"] == {"q": "docs"}
+        processor.build_agent.assert_called_once_with("")
+
+    def test_invalid_json_arguments_default_to_empty_dict(self):
+        processor, _ = self._make_processor()
+        messages = self._messages_with_tool_call("not-json")
+
+        _, _, _, pending_tool_calls, _, _ = (
+            processor.build_continuation_from_messages(messages, [])
+        )
+
+        assert pending_tool_calls[0]["arguments"] == {}
+
+    def test_dict_arguments_passed_through(self):
+        processor, _ = self._make_processor()
+        messages = self._messages_with_tool_call({"already": "parsed"})
+
+        _, _, _, pending_tool_calls, _, _ = (
+            processor.build_continuation_from_messages(messages, [])
+        )
+
+        assert pending_tool_calls[0]["arguments"] == {"already": "parsed"}
+
+    def test_uses_last_assistant_tool_call_message(self):
+        processor, _ = self._make_processor()
+        messages = [
+            {"role": "user", "content": "first"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "old",
+                        "type": "function",
+                        "function": {"name": "search", "arguments": "{}"},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "old", "content": "r1"},
+            {"role": "user", "content": "second"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "new",
+                        "type": "function",
+                        "function": {"name": "search", "arguments": "{}"},
+                    }
+                ],
+            },
+            {"role": "tool", "tool_call_id": "new", "content": "r2"},
+        ]
+
+        _, prior_messages, _, pending_tool_calls, _, _ = (
+            processor.build_continuation_from_messages(messages, [])
+        )
+
+        assert pending_tool_calls[0]["call_id"] == "new"
+        # Everything up to (not including) the last assistant tool_calls message.
+        assert prior_messages == messages[:4]
+
+    def test_raises_when_no_assistant_tool_calls(self):
+        processor, _ = self._make_processor()
+        messages = [
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "no tools here"},
+        ]
+
+        with pytest.raises(ValueError, match="No assistant message with tool_calls"):
+            processor.build_continuation_from_messages(messages, [])
 
 

@@ -35,6 +35,7 @@ import {
 import Spinner from '../components/Spinner';
 import ToolIcon from '../components/ToolIcon';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
+import ShareToTeamModal from '../teams/ShareToTeamModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, Prompt } from '../models/misc';
 import {
@@ -117,6 +118,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
+  const [shareModalOpen, setShareModalOpen] = useState(false);
   const [addPromptModal, setAddPromptModal] = useState<ActiveState>('INACTIVE');
   const [hasChanges, setHasChanges] = useState(false);
   const [draftLoading, setDraftLoading] = useState(false);
@@ -175,6 +177,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   const isJsonSchemaInvalid = () => {
     return jsonSchemaText.trim() !== '' && !jsonSchemaValid;
+  };
+
+  // Resolve a selected source id to its display name. Prefer the caller's own
+  // source list; fall back to the owner-resolved name embedded in the agent
+  // payload (source_details) so a team member viewing a shared agent sees the
+  // source name instead of "External KB"; only then show the generic label.
+  const resolveSourceLabel = (id: string): string => {
+    const matchedDoc = sourceDocs?.find(
+      (source) =>
+        source.id === id || source.name === id || source.retriever === id,
+    );
+    if (matchedDoc?.name) return matchedDoc.name;
+    const detail = agent.source_details?.find((d) => d.id === id);
+    if (detail?.name) return detail.name;
+    return t('agents.form.externalKb');
   };
 
   const handleUpload = useCallback((files: File[]) => {
@@ -848,6 +865,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 <DropdownMenuItem onSelect={() => setAgentDetails('ACTIVE')}>
                   {t('agents.form.buttons.accessDetails')}
                 </DropdownMenuItem>
+                {/* Sharing is owner-only — hidden for agents shared into the
+                    workspace by a team (ownership === 'team'). */}
+                {agent.ownership !== 'team' && agent.id && (
+                  <DropdownMenuItem onSelect={() => setShareModalOpen(true)}>
+                    {t('agents.shareWithTeam')}
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -952,17 +976,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     >
                       {selectedSourceIds.size > 0
                         ? Array.from(selectedSourceIds)
-                            .map((id) => {
-                              const matchedDoc = sourceDocs?.find(
-                                (source) =>
-                                  source.id === id ||
-                                  source.name === id ||
-                                  source.retriever === id,
-                              );
-                              return (
-                                matchedDoc?.name || t('agents.form.externalKb')
-                              );
-                            })
+                            .map((id) => resolveSourceLabel(id))
                             .filter(Boolean)
                             .join(', ')
                         : t('agents.form.placeholders.selectSources')}
@@ -1003,7 +1017,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   prompts={prompts}
                   selectedPrompt={
                     prompts.find((prompt) => prompt.id === agent.prompt_id) ||
-                    prompts[0] || {
+                    // Owner-resolved name from the agent payload: lets a team
+                    // member see the owner's prompt name (which isn't in their
+                    // own prompts list). 'public' hides owner-only edit/share
+                    // affordances on a prompt the viewer doesn't own.
+                    (agent.prompt_name
+                      ? {
+                          name: agent.prompt_name,
+                          id: agent.prompt_id || 'default',
+                          type: 'public',
+                        }
+                      : prompts[0]) || {
                       name: 'default',
                       id: 'default',
                       type: 'public',
@@ -1450,6 +1474,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         modalState={agentDetails}
         setModalState={setAgentDetails}
       />
+      {shareModalOpen && agent.id && (
+        <ShareToTeamModal
+          resourceType="agent"
+          resourceId={agent.id}
+          resourceName={agent.name}
+          onClose={() => setShareModalOpen(false)}
+        />
+      )}
       <AddPromptModal
         prompts={prompts}
         isOpen={addPromptModal}
@@ -1523,7 +1555,7 @@ function AddPromptModal({
       onClose();
       setNewPromptName('');
       setNewPromptContent('');
-      onSelect?.(newPromptName, newPrompt.id, newPromptContent);
+      onSelect?.(newPromptName, newPrompt.id, 'private');
     } catch (error) {
       console.error('Error adding prompt:', error);
     }

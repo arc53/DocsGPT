@@ -4,6 +4,7 @@ import EditIcon from '../assets/edit.svg';
 import ToolIcon from '../components/ToolIcon';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
+import { formatDateTime } from '../utils/dateTimeUtils';
 import { getToolDisplayName } from '../utils/toolUtils';
 import { Agent } from './types';
 
@@ -61,18 +62,7 @@ export default function SharedAgentCard({
           )}
           {agent.shared_metadata?.shared_at && (
             <p className="text-muted-foreground text-xs font-light sm:text-sm">
-              Shared on{' '}
-              {new Date(agent.shared_metadata.shared_at).toLocaleString(
-                'en-US',
-                {
-                  month: 'long',
-                  day: 'numeric',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  hour12: true,
-                },
-              )}
+              Shared on {formatDateTime(agent.shared_metadata.shared_at)}
             </p>
           )}
         </div>

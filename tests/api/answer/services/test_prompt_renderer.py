@@ -479,7 +479,9 @@ class TestPromptRenderer:
 
         result = renderer.render_prompt(prompt)
 
-        assert "Context: {summaries}" in result
+        # The placeholder must never leak to the model when no docs exist.
+        assert "{summaries}" not in result
+        assert "Question: What is this?" in result
 
     def test_render_prompt_combined_namespace_variables(self):
         from application.api.answer.services.prompt_renderer import PromptRenderer
@@ -610,7 +612,8 @@ Memory: {{ tools.memory.root }}
 
         result = renderer._apply_legacy_substitutions(prompt, None)
 
-        assert result == prompt
+        assert result == "Use  to answer"
+        assert "{summaries}" not in result
 
 
 @pytest.mark.unit

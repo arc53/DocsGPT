@@ -8,6 +8,7 @@ from application.api import api
 
 from application.api.answer.routes.base import answer_ns, BaseAnswerResource
 
+from application.api.answer.services.persistence_policy import resolve_persistence
 from application.api.answer.services.stream_processor import StreamProcessor
 
 logger = logging.getLogger(__name__)
@@ -51,8 +52,18 @@ class AnswerResource(Resource, BaseAnswerResource):
             ),
             "save_conversation": fields.Boolean(
                 required=False,
-                default=True,
-                description="Whether to save the conversation",
+                description=(
+                    "Deprecated, no effect: conversations always persist. "
+                    "Use `visibility` to control sidebar listing."
+                ),
+            ),
+            "visibility": fields.String(
+                required=False,
+                default="hidden",
+                description=(
+                    "'listed' shows the conversation in the owner's sidebar; "
+                    "any other value (or omitting it) persists it hidden."
+                ),
             ),
             "model_id": fields.String(
                 required=False,
@@ -117,6 +128,10 @@ class AnswerResource(Resource, BaseAnswerResource):
                 if error := self.check_usage(processor.agent_config):
                     return error
 
+                should_persist, visibility = resolve_persistence(
+                    visibility_flag=data.get("visibility"),
+                    persist_flag=data.get("persist"),
+                )
                 stream = self.complete_stream(
                     question=data["question"],
                     agent=agent,
@@ -125,7 +140,8 @@ class AnswerResource(Resource, BaseAnswerResource):
                     decoded_token=processor.decoded_token,
                     isNoneDoc=data.get("isNoneDoc"),
                     index=None,
-                    should_save_conversation=data.get("save_conversation", True),
+                    should_persist=should_persist,
+                    visibility=visibility,
                     agent_id=processor.agent_id,
                     is_shared_usage=processor.is_shared_usage,
                     shared_token=processor.shared_token,

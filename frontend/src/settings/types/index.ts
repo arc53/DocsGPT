@@ -15,16 +15,48 @@ export type APIKeyData = {
   chunks: string;
 };
 
+export type LogEventType =
+  | 'chat'
+  | 'schedule'
+  | 'webhook'
+  | 'workflow'
+  | 'system';
+
 export type LogData = {
   id: string;
+  event_type?: LogEventType;
   action: string;
   level: 'info' | 'error' | 'warning';
   user: string;
   question: string;
-  response: string;
-  sources: Record<string, any>[];
-  retriever_params: Record<string, any>;
   timestamp: string;
+  // chat events (user_logs)
+  response?: string;
+  sources?: Record<string, any>[];
+  tool_calls?: Record<string, any>[];
+  agent_id?: string;
+  attachments?: string[];
+  // system + webhook events (stack_logs)
+  endpoint?: string;
+  stacks?: Record<string, any>[];
+  // workflow events (workflow_runs)
+  workflow_name?: string;
+  result?: Record<string, any>;
+  steps?: Record<string, any>[];
+  // schedule events (schedule_runs)
+  status?: string;
+  trigger_source?: string;
+  schedule_name?: string;
+  instruction?: string;
+  output?: string;
+  error?: string;
+  error_type?: string;
+  prompt_tokens?: number;
+  generated_tokens?: number;
+  conversation_id?: string;
+  scheduled_for?: string;
+  started_at?: string;
+  finished_at?: string;
 };
 
 export type ParameterGroupType = {
@@ -55,6 +87,12 @@ export type UserToolType = {
   // from the Add-Tool modal; surfaced to the agent picker. May coexist
   // with ``default`` for dual-registered tools.
   builtin?: boolean;
+  // Whether the current user owns this tool ('user') or only has access to
+  // it via a team share ('team'). Owner-only actions are gated on 'user'.
+  ownership?: 'user' | 'team';
+  // Access level when shared via a team: 'viewer' (use) or 'editor' (edit
+  // actions; secrets stay owner-only). Null/absent for tools the caller owns.
+  team_access?: 'viewer' | 'editor' | null;
   config: {
     [key: string]: any;
   };

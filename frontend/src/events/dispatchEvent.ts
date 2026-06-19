@@ -1,5 +1,6 @@
 import type { AppDispatch } from '../store';
 import {
+  resolveToolApproval,
   sseEventReceived,
   sseLastEventIdReset,
   type SSEEvent,
@@ -24,11 +25,21 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set([
   'mcp.oauth.completed',
   'mcp.oauth.failed',
   'tool.approval.required',
+  // Revokes a stale tool.approval.required (reconciler / TTL cleanup).
+  'tool.approval.cleared',
   // Scheduler envelopes (scheduler_worker.py); consumed by schedulesSlice.
   'schedule.run.completed',
   'schedule.run.failed',
   'schedule.autopaused',
+  // Revoke a stale schedule.autopaused / surface a once-schedule finish.
+  'schedule.resumed',
+  'schedule.cancelled',
+  'schedule.completed',
   'schedule.message.appended',
+  // Team-sharing notifications (teams/routes.py); consumed by
+  // TeamNotificationToast via selectRecentEvents.
+  'team.member_added',
+  'resource.shared',
 ]);
 
 /**
@@ -53,6 +64,12 @@ export function dispatchSSEEvent(
       // retained window. Slices that care about full-state freshness
       // can subscribe to ``sseEventReceived`` and refetch.
       dispatch(sseLastEventIdReset());
+      break;
+    case 'tool.approval.cleared':
+      // Evict the matching tool.approval.required and persist its id as
+      // dismissed BEFORE it lands in the ring, so the toast surface never
+      // sees a revoked approval (live or on backlog replay).
+      dispatch(resolveToolApproval(envelope));
       break;
     default:
       // No central side effect; rely on slice-level extraReducers.

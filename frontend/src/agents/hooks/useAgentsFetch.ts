@@ -25,6 +25,9 @@ export function useAgentsFetch(): UseAgentsFetchResult {
   const [isLoading, setIsLoading] = useState<Record<AgentSectionId, boolean>>({
     template: true,
     user: true,
+    // 'team' agents are split out of the same /api/get_agents payload, so
+    // their loading state tracks the user fetch.
+    team: true,
     shared: true,
   });
 
@@ -50,7 +53,7 @@ export function useAgentsFetch(): UseAgentsFetchResult {
     } catch (error) {
       dispatch(setAgents([]));
     } finally {
-      setIsLoading((prev) => ({ ...prev, user: false }));
+      setIsLoading((prev) => ({ ...prev, user: false, team: false }));
     }
   }, [token, dispatch]);
 
@@ -79,7 +82,7 @@ export function useAgentsFetch(): UseAgentsFetchResult {
   }, [token, dispatch]);
 
   useEffect(() => {
-    setIsLoading({ template: true, user: true, shared: true });
+    setIsLoading({ template: true, user: true, team: true, shared: true });
     Promise.all([
       fetchTemplateAgents(),
       fetchUserAgents(),
@@ -89,7 +92,10 @@ export function useAgentsFetch(): UseAgentsFetchResult {
   }, [fetchTemplateAgents, fetchUserAgents, fetchSharedAgents, fetchFolders]);
 
   const isAllLoaded =
-    !isLoading.template && !isLoading.user && !isLoading.shared;
+    !isLoading.template &&
+    !isLoading.user &&
+    !isLoading.team &&
+    !isLoading.shared;
 
   return {
     isLoading,

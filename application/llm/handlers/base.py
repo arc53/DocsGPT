@@ -65,11 +65,52 @@ class LLMHandler(ABC):
     def __init__(self):
         self.llm_calls = []
         self.tool_calls = []
+        # Cache of provider-name -> handler used by ``_parse_for_response``
+        # to parse chunks from a model that a cross-provider fallback
+        # swapped in underneath this handler.
+        self._parser_by_provider = {}
 
     @abstractmethod
     def parse_response(self, response: Any) -> LLMResponse:
         """Parse raw LLM response into standardized format."""
         pass
+
+    def _parse_for_response(self, agent, response: Any) -> "LLMResponse":
+        """Parse ``response`` with the handler matching the model that
+        actually produced it.
+
+        ``BaseLLM`` runs model fallback *below* the agent (see
+        ``BaseLLM._stream_with_fallback``): a Google-primary agent that is
+        rate-limited can fail over to an OpenAI-compatible backup inside the
+        same ``gen_stream`` call. This handler was built for the primary
+        provider, so its ``parse_response`` cannot read the backup's chunk
+        shape and silently drops tool calls — the agent then stops after the
+        first text instead of running the tool loop.
+
+        ``parse_response`` is the only provider-specific step that matters
+        here: both providers' ``_iterate_stream`` and ``create_tool_message``
+        are identical, so only this call is routed. The orchestration state
+        (buffers, ``tool_calls``, ``llm_calls``) stays on ``self``.
+        """
+        provider = getattr(getattr(agent, "llm", None), "_responding_provider", None)
+        if not isinstance(provider, str):
+            return self.parse_response(response)
+        return self._handler_for_provider(provider).parse_response(response)
+
+    def _handler_for_provider(self, provider: str) -> "LLMHandler":
+        """Resolve (and cache) the handler for ``provider``. Reuses ``self``
+        when it already matches that provider, so the common no-fallback path
+        is unchanged."""
+        cached = self._parser_by_provider.get(provider)
+        if cached is not None:
+            return cached
+        from application.llm.handlers.handler_creator import LLMHandlerCreator
+
+        handler = LLMHandlerCreator.create_handler(provider)
+        if type(handler) is type(self):
+            handler = self
+        self._parser_by_provider[provider] = handler
+        return handler
 
     @abstractmethod
     def create_tool_message(self, tool_call: ToolCall, result: Any) -> Dict:
@@ -909,17 +950,21 @@ class LLMHandler(ABC):
                         _record_proposed,
                     )
 
-                    _record_proposed(
+                    if _record_proposed(
                         pause_info["call_id"],
                         pause_info["tool_name"],
                         pause_info["action_name"],
                         pause_info.get("arguments") or {},
                         tool_id=pause_info.get("tool_id"),
-                    )
-                    _mark_failed(
-                        pause_info["call_id"],
-                        f"headless: {deny_reason}",
-                    )
+                        message_id=agent.tool_executor.message_id,
+                        user_id=agent.tool_executor.user,
+                        agent_id=agent.tool_executor.agent_id,
+                    ):
+                        _mark_failed(
+                            pause_info["call_id"],
+                            f"headless: {deny_reason}",
+                            user_id=agent.tool_executor.user,
+                        )
                     yield {
                         "type": "tool_call",
                         "data": {
@@ -1044,7 +1089,7 @@ class LLMHandler(ABC):
         Returns:
             Final response after processing all tool calls
         """
-        parsed = self.parse_response(response)
+        parsed = self._parse_for_response(agent, response)
         self.llm_calls.append(build_stack_data(agent.llm))
 
         iteration = 0
@@ -1094,7 +1139,7 @@ class LLMHandler(ABC):
                     messages=messages,
                     tools=None,
                 )
-                parsed = self.parse_response(response)
+                parsed = self._parse_for_response(agent, response)
                 self.llm_calls.append(build_stack_data(agent.llm))
                 break
 
@@ -1108,7 +1153,7 @@ class LLMHandler(ABC):
                 messages=messages,
                 tools=agent.tools,
             )
-            parsed = self.parse_response(response)
+            parsed = self._parse_for_response(agent, response)
             self.llm_calls.append(build_stack_data(agent.llm))
         return parsed.content
 
@@ -1144,7 +1189,7 @@ class LLMHandler(ABC):
             if isinstance(chunk, str):
                 yield chunk
                 continue
-            parsed = self.parse_response(chunk)
+            parsed = self._parse_for_response(agent, chunk)
             if parsed.reasoning_content:
                 reasoning_buffer += parsed.reasoning_content
 

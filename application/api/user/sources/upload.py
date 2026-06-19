@@ -12,6 +12,7 @@ from sqlalchemy import text as sql_text
 
 from application.api import api
 from application.api.user.tasks import ingest, ingest_connector_task, ingest_remote
+from application.api.user.team_sharing import effective_write_owner
 from application.core.settings import settings
 from application.storage.db.source_ids import derive_source_id as _derive_source_id
 from application.parser.connectors.connector_creator import ConnectorCreator
@@ -541,9 +542,19 @@ class ManageSourceFiles(Resource):
                 ),
                 400,
             )
+        # Resolve the owner to run the file mutation + reingest AS: ``user``
+        # when they own the source, the real owner when ``user`` holds a team
+        # ``editor`` grant (add/remove files is an editor-allowed write). The
+        # storage layout and vector partition are keyed by source_id
+        # (owner-agnostic), so running the ops as the owner is correct.
         try:
             with db_readonly() as conn:
                 source = SourcesRepository(conn).get_any(source_id, user)
+                owner = user
+                if source is None:
+                    owner = effective_write_owner(conn, "source", source_id, user)
+                    if owner:
+                        source = SourcesRepository(conn).get_any(source_id, owner)
             if not source:
                 return make_response(
                     jsonify(
@@ -654,7 +665,7 @@ class ManageSourceFiles(Resource):
                 if map_updated:
                     with db_session() as conn:
                         SourcesRepository(conn).update(
-                            resolved_source_id, user,
+                            resolved_source_id, owner,
                             {"file_name_map": dict(file_name_map)},
                         )
                 # Trigger re-ingestion pipeline
@@ -664,7 +675,7 @@ class ManageSourceFiles(Resource):
                 task = reingest_source_task.apply_async(
                     kwargs={
                         "source_id": resolved_source_id,
-                        "user": user,
+                        "user": owner,
                         "idempotency_key": scoped_key or idempotency_key,
                     },
                     task_id=predetermined_task_id,
@@ -766,7 +777,7 @@ class ManageSourceFiles(Resource):
                 if map_updated and isinstance(file_name_map, dict):
                     with db_session() as conn:
                         SourcesRepository(conn).update(
-                            resolved_source_id, user,
+                            resolved_source_id, owner,
                             {"file_name_map": dict(file_name_map)},
                         )
                 # Trigger re-ingestion pipeline
@@ -776,7 +787,7 @@ class ManageSourceFiles(Resource):
                 task = reingest_source_task.apply_async(
                     kwargs={
                         "source_id": resolved_source_id,
-                        "user": user,
+                        "user": owner,
                         "idempotency_key": scoped_key or idempotency_key,
                     },
                     task_id=predetermined_task_id,
@@ -895,7 +906,7 @@ class ManageSourceFiles(Resource):
                             file_name_map.pop(key, None)
                         with db_session() as conn:
                             SourcesRepository(conn).update(
-                                resolved_source_id, user,
+                                resolved_source_id, owner,
                                 {"file_name_map": dict(file_name_map)},
                             )
 
@@ -906,7 +917,7 @@ class ManageSourceFiles(Resource):
                 task = reingest_source_task.apply_async(
                     kwargs={
                         "source_id": resolved_source_id,
-                        "user": user,
+                        "user": owner,
                         "idempotency_key": scoped_key or idempotency_key,
                     },
                     task_id=predetermined_task_id,

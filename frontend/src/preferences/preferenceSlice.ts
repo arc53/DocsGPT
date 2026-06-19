@@ -38,6 +38,12 @@ export interface Preference {
   availableModels: Model[];
   modelsLoading: boolean;
   agentFolders: AgentFolder[] | null;
+  // RBAC roles for the current principal, fetched fresh from /api/user/me each
+  // session (DB-authoritative — deliberately NOT persisted to localStorage, so
+  // a demotion can't survive a reload). ``rolesResolved`` gates UI that must
+  // not act before the first /me response (avoids a first-paint admin bounce).
+  roles: string[];
+  rolesResolved: boolean;
 }
 
 const initialState: Preference = {
@@ -75,6 +81,8 @@ const initialState: Preference = {
   availableModels: [],
   modelsLoading: false,
   agentFolders: null,
+  roles: [],
+  rolesResolved: false,
 };
 
 export const prefSlice = createSlice({
@@ -135,6 +143,14 @@ export const prefSlice = createSlice({
     setAgentFolders: (state, action: PayloadAction<AgentFolder[] | null>) => {
       state.agentFolders = action.payload;
     },
+    setRoles: (state, action: PayloadAction<string[]>) => {
+      state.roles = action.payload;
+      state.rolesResolved = true;
+    },
+    clearRoles: (state) => {
+      state.roles = [];
+      state.rolesResolved = false;
+    },
   },
 });
 
@@ -157,6 +173,8 @@ export const {
   setAvailableModels,
   setModelsLoading,
   setAgentFolders,
+  setRoles,
+  clearRoles,
 } = prefSlice.actions;
 export default prefSlice.reducer;
 
@@ -302,3 +320,8 @@ export const selectModelsLoading = (state: RootState) =>
   state.preference.modelsLoading;
 export const selectAgentFolders = (state: RootState) =>
   state.preference.agentFolders;
+export const selectRoles = (state: RootState) => state.preference.roles;
+export const selectRolesResolved = (state: RootState) =>
+  state.preference.rolesResolved;
+export const selectIsAdmin = (state: RootState) =>
+  state.preference.roles.includes('admin');

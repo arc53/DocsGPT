@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Button } from '../../components/ui/button';
 import { selectToken } from '../../preferences/preferenceSlice';
 import type { AppDispatch, RootState } from '../../store';
+import { formatDateTime } from '../../utils/dateTimeUtils';
 import type { ScheduleRun } from '../types/schedule';
 import ScheduleStatusBadge from './StatusBadge';
 import { loadRunsForSchedule, selectRunsForSchedule } from './schedulesSlice';
@@ -14,10 +15,7 @@ export type RunLogProps = {
 };
 
 const formatTimestamp = (value?: string | null): string => {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
+  return value ? formatDateTime(value) : '—';
 };
 
 /** Paginated run log for a schedule (SSE updates merge via schedulesSlice). */

@@ -47,7 +47,6 @@ interface GetLogsResponse {
     user: string | null;
     question: string | null;
     sources: unknown;
-    retriever_params: unknown;
     timestamp: string | null;
   }>;
   page: number;

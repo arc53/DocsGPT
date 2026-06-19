@@ -3,6 +3,10 @@ export default {
     "title": "⚙️ App Configuration",
     "href": "/Deploying/DocsGPT-Settings"
   },
+  "OIDC-SSO": {
+    "title": "🔐 SSO with OIDC",
+    "href": "/Deploying/OIDC-SSO"
+  },
   "Docker-Deploying": {
     "title": "🛳️ Docker Setup",
     "href": "/Deploying/Docker-Deploying"

@@ -320,9 +320,30 @@ class TestGenerateImageUrl:
         with patch("application.utils.settings") as s:
             s.URL_STRATEGY = "s3"
             s.S3_BUCKET_NAME = "my-bucket"
-            s.SAGEMAKER_REGION = "us-west-2"
+            s.S3_ENDPOINT_URL = None
+            s.S3_REGION = "us-west-2"
             result = generate_image_url("path/to/img.png")
-            assert "my-bucket.s3.us-west-2" in result
+            assert result == "https://my-bucket.s3.us-west-2.amazonaws.com/path/to/img.png"
+
+    @pytest.mark.unit
+    def test_s3_strategy_custom_endpoint_path_style(self):
+        with patch("application.utils.settings") as s:
+            s.URL_STRATEGY = "s3"
+            s.S3_BUCKET_NAME = "my-bucket"
+            s.S3_ENDPOINT_URL = "https://account.r2.cloudflarestorage.com"
+            s.S3_PATH_STYLE = True
+            result = generate_image_url("path/to/img.png")
+            assert result == "https://account.r2.cloudflarestorage.com/my-bucket/path/to/img.png"
+
+    @pytest.mark.unit
+    def test_s3_strategy_custom_endpoint_virtual_host(self):
+        with patch("application.utils.settings") as s:
+            s.URL_STRATEGY = "s3"
+            s.S3_BUCKET_NAME = "my-bucket"
+            s.S3_ENDPOINT_URL = "https://minio.example.com"
+            s.S3_PATH_STYLE = False
+            result = generate_image_url("path/to/img.png")
+            assert result == "https://my-bucket.minio.example.com/path/to/img.png"
 
     @pytest.mark.unit
     def test_backend_strategy(self):

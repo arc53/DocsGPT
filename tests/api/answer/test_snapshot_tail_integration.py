@@ -1,14 +1,17 @@
 """Integration tests for the end-to-end snapshot+tail handoff.
 
-Exercises the publisher → journal → reconnect endpoint round-trip
-without mocking the journal layer, so a regression in any of:
+Exercises the publisher → journal → reconnect-reader round-trip without
+mocking the journal layer, so a regression in any of:
 - complete_stream's _emit closure
 - record_event's commit-per-call contract
-- build_message_event_stream's snapshot-from-DB path
-- the reconnect route's auth + ownership gates
+- the shared snapshot read (``event_replay.read_snapshot_lines``)
+- the reconnect route's ownership SQL (``async_sse._user_owns_message``)
 - message_events repo SQL
-
 would surface here as a failed integration assertion.
+
+The live tail itself (pub/sub) and the full async HTTP route are covered by
+``scripts/e2e_async_sse.py`` against a real Redis + uvicorn. These tests pin
+the DB-backed halves against a transactional ``pg_conn`` fixture.
 """
 
 from __future__ import annotations
@@ -56,55 +59,47 @@ def _seed_message(conn, user_id: str | None = None):
     return user_id, str(msg_id)
 
 
+def _emitted_ids(lines: list[str]) -> list[int]:
+    """Extract the ``id:`` sequence numbers from formatted SSE frames."""
+    return sorted(
+        int(line.split("\n", 1)[0].split(": ", 1)[1])
+        for line in lines
+        if line.startswith("id: ")
+    )
+
+
 @pytest.mark.integration
 class TestSnapshotPlusTailRoundTrip:
     def test_record_event_then_snapshot_returns_what_was_journaled(
         self, pg_conn,
     ):
-        """End-to-end of the journal half: ``record_event`` writes through
-        a real ``MessageEventsRepository``, ``build_message_event_stream``
-        reads the snapshot back via the same repo + a stub Topic.
+        """End-to-end of the journal half: ``record_event`` writes through a
+        real ``MessageEventsRepository``, ``read_snapshot_lines`` reads the
+        snapshot back via the same repo and formats it for the wire — the
+        exact primitive the async reader replays through.
         """
-        from application.streaming import event_replay
+        from application.streaming.event_replay import read_snapshot_lines
         from application.streaming.message_journal import record_event
 
         _, message_id = _seed_message(pg_conn)
 
         with _patch_journal_session(pg_conn):
-            # Three events stamp the journal.
             record_event(message_id, 0, "answer", {"type": "answer", "answer": "A"})
             record_event(message_id, 1, "answer", {"type": "answer", "answer": "B"})
             record_event(message_id, 2, "end", {"type": "end"})
 
-            # Reconnect path: subscribe yields nothing (Redis-down
-            # branch); the post-loop fallback runs the snapshot read
-            # synchronously and yields the journal contents.
-            def _empty_subscribe(self, on_subscribe=None, poll_timeout=1.0):
-                return
-                yield  # pragma: no cover
+            lines, max_seq, terminal = read_snapshot_lines(message_id, None)
 
-            with patch.object(
-                event_replay.Topic,
-                "subscribe",
-                _empty_subscribe,
-                create=False,
-            ):
-                gen = event_replay.build_message_event_stream(
-                    message_id,
-                    last_event_id=None,
-                    keepalive_seconds=0.05,
-                    poll_timeout_seconds=0.01,
-                )
-                out = list(gen)
-
-        # Prelude + 3 snapshot frames.
-        assert out[0] == ": connected\n\n"
-        assert "id: 0" in out[1] and '"answer": "A"' in out[1]
-        assert "id: 1" in out[2] and '"answer": "B"' in out[2]
-        assert "id: 2" in out[3] and '"type": "end"' in out[3]
+        assert len(lines) == 3
+        assert "id: 0" in lines[0] and '"answer": "A"' in lines[0]
+        assert "id: 1" in lines[1] and '"answer": "B"' in lines[1]
+        assert "id: 2" in lines[2] and '"type": "end"' in lines[2]
+        assert max_seq == 2
+        # A terminal event in the snapshot tells the reader to close.
+        assert terminal is True
 
     def test_snapshot_resumes_past_last_event_id(self, pg_conn):
-        from application.streaming import event_replay
+        from application.streaming.event_replay import read_snapshot_lines
         from application.streaming.message_journal import record_event
 
         _, message_id = _seed_message(pg_conn)
@@ -115,119 +110,81 @@ class TestSnapshotPlusTailRoundTrip:
                     message_id, seq, "answer", {"type": "answer", "answer": str(seq)}
                 )
 
-            def _empty_subscribe(self, on_subscribe=None, poll_timeout=1.0):
-                return
-                yield  # pragma: no cover
+            # Client says it has seen up through seq=2; expect 3 + 4.
+            lines, max_seq, terminal = read_snapshot_lines(message_id, 2)
 
-            with patch.object(
-                event_replay.Topic,
-                "subscribe",
-                _empty_subscribe,
-                create=False,
-            ):
-                # Client says it has seen up through seq=2; expect 3 + 4.
-                out = list(
-                    event_replay.build_message_event_stream(
-                        message_id,
-                        last_event_id=2,
-                        keepalive_seconds=0.05,
-                        poll_timeout_seconds=0.01,
-                    )
-                )
+        assert _emitted_ids(lines) == [3, 4]
+        assert max_seq == 4
+        assert terminal is False
 
-        ids_seen = [line for line in out if line.startswith("id: ")]
-        # Multi-line records: extract the id integers we delivered.
-        emitted = sorted(
-            int(line.split(": ", 1)[1].split("\n")[0])
-            for line in out
-            if line.startswith("id: ")
-        )
-        # Filter for non-negative (the snapshot-failure synthetic uses -1).
-        emitted = [e for e in emitted if e >= 0]
-        assert emitted == [3, 4]
-        assert ids_seen  # sanity
-
-    def test_reconnect_route_round_trip(self, pg_conn, flask_app):
-        """``/api/messages/<id>/events`` returns the journaled events
-        for an authenticated owner.
+    def test_ownership_sql_accepts_owner_and_rejects_others(self, pg_conn):
+        """The async route's ownership gate runs real SQL against
+        ``conversation_messages`` — the owner passes, everyone else 404s.
         """
-        from flask import Flask, request
+        from application.api import async_sse
 
-        from application.api.answer.routes.messages import messages_bp
+        user_id, message_id = _seed_message(pg_conn)
+
+        @contextmanager
+        def _yield():
+            yield pg_conn
+
+        with patch("application.api.async_sse.db_readonly", _yield):
+            assert async_sse._user_owns_message(message_id, user_id) is True
+            assert async_sse._user_owns_message(message_id, "different-user") is False
+            # A well-formed but unknown id is also not owned.
+            assert async_sse._user_owns_message(str(_uuid.uuid4()), user_id) is False
+
+    def test_snapshot_read_is_user_scoped(self, pg_conn):
+        """``read_snapshot_lines(..., user_id=)`` re-asserts ownership at the
+        data layer: the owner gets the journal rows, a non-owner gets none.
+        """
+        from application.streaming.event_replay import read_snapshot_lines
         from application.streaming.message_journal import record_event
 
-        # Build a fresh Flask app routing to the reconnect blueprint
-        # plus a tiny auth shim that injects the test user.
         user_id, message_id = _seed_message(pg_conn)
-        app = Flask(__name__)
-        app.register_blueprint(messages_bp)
-        app.config["TESTING"] = True
-
-        @app.before_request
-        def _shim_auth():
-            request.decoded_token = {"sub": user_id}
 
         with _patch_journal_session(pg_conn):
             record_event(message_id, 0, "answer", {"type": "answer", "answer": "x"})
             record_event(message_id, 1, "end", {"type": "end"})
 
-            from application.streaming import event_replay
+            owner_lines, _, owner_terminal = read_snapshot_lines(
+                message_id, None, user_id
+            )
+            other_lines, _, other_terminal = read_snapshot_lines(
+                message_id, None, "different-user"
+            )
+            # Unscoped (user_id=None) still returns everything.
+            unscoped_lines, _, _ = read_snapshot_lines(message_id, None)
 
-            def _empty_subscribe(self, on_subscribe=None, poll_timeout=1.0):
-                return
-                yield  # pragma: no cover
+        assert _emitted_ids(owner_lines) == [0, 1] and owner_terminal is True
+        assert other_lines == [] and other_terminal is False
+        assert _emitted_ids(unscoped_lines) == [0, 1]
 
-            with patch.object(
-                event_replay.Topic,
-                "subscribe",
-                _empty_subscribe,
-                create=False,
-            ), patch(
-                "application.api.answer.routes.messages.db_readonly"
-            ) as ro:
-                ro.return_value.__enter__.return_value = pg_conn
+    def test_watchdog_is_user_scoped(self, pg_conn):
+        """``_check_producer_liveness(..., user_id)`` only sees the caller's
+        own row; a non-owner reads as missing (terminal), not as the row's
+        real status.
+        """
+        from application.streaming.event_replay import _check_producer_liveness
 
-                with app.test_client() as c:
-                    r = c.get(f"/api/messages/{message_id}/events")
-                    assert r.status_code == 200
-                    body = b""
-                    for chunk in r.iter_encoded():
-                        body += chunk
-                        if body.count(b"\n\n") >= 4:
-                            break
-                    r.close()
-                # Both journaled events present in the response.
-                text = body.decode("utf-8")
-                assert ": connected" in text
-                assert '"answer": "x"' in text
-                assert '"type": "end"' in text
-                # The seq lines are correct.
-                assert "id: 0" in text and "id: 1" in text
-
-    def test_reconnect_rejects_non_owner(self, pg_conn, flask_app):
-        from flask import Flask, request
-
-        from application.api.answer.routes.messages import messages_bp
-
+        # Seed a row and flip it to a terminal status the watchdog reports.
         user_id, message_id = _seed_message(pg_conn)
-        app = Flask(__name__)
-        app.register_blueprint(messages_bp)
+        pg_conn.execute(
+            sql_text(
+                "UPDATE conversation_messages SET status='complete' WHERE id = :id"
+            ),
+            {"id": message_id},
+        )
 
-        @app.before_request
-        def _shim_auth():
-            request.decoded_token = {"sub": "different-user"}
+        @contextmanager
+        def _yield():
+            yield pg_conn
 
-        # Make the ownership check use the test connection.
-        with patch(
-            "application.api.answer.routes.messages.db_readonly"
-        ) as ro:
-            from contextlib import contextmanager as _cm
+        with patch("application.streaming.event_replay.db_readonly", _yield):
+            owner = _check_producer_liveness(message_id, user_id, 90.0)
+            other = _check_producer_liveness(message_id, "different-user", 90.0)
 
-            @_cm
-            def _yield():
-                yield pg_conn
-
-            ro.side_effect = lambda: _yield()
-            with app.test_client() as c:
-                r = c.get(f"/api/messages/{message_id}/events")
-            assert r.status_code == 404
+        # Owner sees the real terminal state; non-owner sees "missing".
+        assert owner == {"type": "end"}
+        assert other is not None and other.get("code") == "message_missing"

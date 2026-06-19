@@ -133,10 +133,12 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
           {descriptionNode}
           <div
             className={cn(
-              'no-scrollbar text-foreground overflow-y-auto',
-              // overflow-y-auto forces overflow-x:auto, clipping focus-ring
-              // box-shadows; px-1 keeps them inside the clip rect.
-              isMobileSheet && 'min-h-0 grow px-1',
+              // overflow-y-auto forces overflow-x:auto and establishes a clip
+              // box. pt-3 reserves room so a floating Input label (which sits
+              // ~10px above its field) at the top of the scroll area isn't
+              // clipped; px-1 keeps focus-ring box-shadows inside the clip rect.
+              'no-scrollbar text-foreground overflow-y-auto px-1 pt-3',
+              isMobileSheet && 'min-h-0 grow',
               contentClassName,
             )}
           >

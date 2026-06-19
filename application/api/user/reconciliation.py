@@ -12,6 +12,9 @@ from sqlalchemy import Connection
 from application.api.user.idempotency import MAX_TASK_ATTEMPTS
 from application.core.settings import settings
 from application.storage.db.engine import get_engine
+from application.storage.db.repositories.pending_tool_state import (
+    PendingToolStateRepository,
+)
 from application.storage.db.repositories.reconciliation import (
     ReconciliationRepository,
 )
@@ -52,9 +55,14 @@ def run_reconciliation() -> Dict[str, Any]:
         "idempotency_pending_failed": 0,
         "schedule_runs_failed": 0,
     }
+    # User-facing events to fan out once their DB writes have committed
+    # (publish-after-commit). Each item is
+    # ``(user_id, event_type, payload, scope)``.
+    events: list[tuple] = []
 
     with engine.begin() as conn:
         repo = ReconciliationRepository(conn)
+        pt_repo = PendingToolStateRepository(conn)
         for msg in repo.find_and_lock_stuck_messages():
             new_count = repo.increment_message_reconcile_attempts(msg["id"])
             if new_count >= MAX_MESSAGE_RECONCILE_ATTEMPTS:
@@ -66,6 +74,30 @@ def run_reconciliation() -> Dict[str, Any]:
                     ),
                 )
                 summary["messages_failed"] += 1
+                # Revoke any awaiting-approval prompt: the resumable state
+                # dies with the message, so the durable
+                # ``tool.approval.required`` envelope must be cleared or the
+                # UI toast lingers on reconnect. Only emit when a row was
+                # actually deleted so non-approval failures stay quiet.
+                user_id = msg.get("user_id")
+                conversation_id = msg.get("conversation_id")
+                if (
+                    user_id
+                    and conversation_id
+                    and pt_repo.delete_state(str(conversation_id), str(user_id))
+                ):
+                    events.append(
+                        (
+                            str(user_id),
+                            "tool.approval.cleared",
+                            {
+                                "conversation_id": str(conversation_id),
+                                "message_id": str(msg["id"]),
+                                "reason": "failed",
+                            },
+                            {"kind": "conversation", "id": str(conversation_id)},
+                        )
+                    )
                 _emit_alert(
                     conn,
                     name="reconciler_message_failed",
@@ -131,7 +163,7 @@ def run_reconciliation() -> Dict[str, Any]:
             _emit_alert(
                 conn,
                 name="reconciler_ingest_stalled",
-                user_id=None,
+                user_id=row.get("user_id"),
                 detail={
                     "source_id": str(row.get("source_id")),
                     "embedded_chunks": row.get("embedded_chunks"),
@@ -140,6 +172,25 @@ def run_reconciliation() -> Dict[str, Any]:
                 },
             )
             repo.mark_ingest_stalled(str(row["source_id"]))
+            # Tell the upload toast the ingest is done-for. Without it the
+            # toast spins on "Training…" for the whole live session; only
+            # ``source.ingest.failed`` flips it to a terminal error.
+            user_id = row.get("user_id")
+            source_id = row.get("source_id")
+            if user_id and source_id:
+                events.append(
+                    (
+                        str(user_id),
+                        "source.ingest.failed",
+                        {
+                            "source_id": str(source_id),
+                            "filename": row.get("source_name") or "",
+                            "operation": "upload",
+                            "error": "Indexing stopped after a stall.",
+                        },
+                        {"kind": "source", "id": str(source_id)},
+                    )
+                )
 
     # Q5: idempotency rows whose lease expired with attempts exhausted.
     # The wrapper's poison-loop guard normally finalises these, but if
@@ -201,10 +252,21 @@ def run_reconciliation() -> Dict[str, Any]:
                 },
             )
             schedules_repo.bump_failure_count(str(run["schedule_id"]))
-            _terminal_flip_once_schedule(
+            flipped = _terminal_flip_once_schedule(
                 schedules_repo, str(run["schedule_id"]),
             )
             summary["schedule_runs_failed"] += 1
+            events.extend(
+                _schedule_terminal_events(
+                    run,
+                    error_type="timeout",
+                    error=(
+                        "reconciler: schedule_run stuck in 'running' past "
+                        f"{stuck_age} min"
+                    ),
+                    once_completed=flipped,
+                )
+            )
             _emit_alert(
                 conn,
                 name="reconciler_schedule_run_timeout",
@@ -234,10 +296,21 @@ def run_reconciliation() -> Dict[str, Any]:
                 },
             )
             schedules_repo.bump_failure_count(str(run["schedule_id"]))
-            _terminal_flip_once_schedule(
+            flipped = _terminal_flip_once_schedule(
                 schedules_repo, str(run["schedule_id"]),
             )
             summary["schedule_runs_failed"] += 1
+            events.extend(
+                _schedule_terminal_events(
+                    run,
+                    error_type="internal",
+                    error=(
+                        "reconciler: schedule_run stuck in 'pending' past "
+                        f"{stuck_age} min (worker_never_started)"
+                    ),
+                    once_completed=flipped,
+                )
+            )
             _emit_alert(
                 conn,
                 name="reconciler_schedule_run_pending",
@@ -248,25 +321,95 @@ def run_reconciliation() -> Dict[str, Any]:
                 },
             )
 
+    _publish_events(events)
     return summary
 
 
 def _terminal_flip_once_schedule(
     schedules_repo: "SchedulesRepository", schedule_id: str,
-) -> None:
+) -> bool:
     """Flip a once-schedule to 'completed' after its run terminates.
 
     Recurring schedules keep firing; once-schedules would otherwise read
-    'active forever' since next_run_at is already NULL.
+    'active forever' since next_run_at is already NULL. Returns ``True``
+    when the flip happened so the caller can publish a status event.
     """
     schedule = schedules_repo.get_internal(schedule_id)
     if schedule is None or schedule.get("trigger_type") != "once":
-        return
+        return False
     if schedule.get("status") in {"completed", "cancelled"}:
-        return
+        return False
     schedules_repo.update_internal(
         schedule_id, {"status": "completed", "next_run_at": None},
     )
+    return True
+
+
+def _schedule_terminal_events(
+    run: Dict[str, Any],
+    *,
+    error_type: str,
+    error: str,
+    once_completed: bool,
+) -> list:
+    """Build the user-facing events for a reconciler-failed schedule run.
+
+    Always a ``schedule.run.failed`` (so a watching run-log updates live),
+    plus ``schedule.completed`` when a once-schedule flipped terminal — the
+    UI otherwise shows it 'active' with stale Edit/Cancel actions until a
+    manual refresh.
+    """
+    user_id = run.get("user_id")
+    schedule_id = run.get("schedule_id")
+    if not user_id or not schedule_id:
+        return []
+    scope = {"kind": "schedule", "id": str(schedule_id)}
+    out: list = [
+        (
+            str(user_id),
+            "schedule.run.failed",
+            {
+                "run_id": str(run["id"]),
+                "schedule_id": str(schedule_id),
+                "status": "failed",
+                "error_type": error_type,
+                "error": error,
+            },
+            scope,
+        )
+    ]
+    if once_completed:
+        out.append(
+            (
+                str(user_id),
+                "schedule.completed",
+                {"schedule_id": str(schedule_id), "status": "completed"},
+                scope,
+            )
+        )
+    return out
+
+
+def _publish_events(events: list) -> None:
+    """Fan out user-facing events after their DB writes have committed.
+
+    Each item is ``(user_id, event_type, payload, scope)``. Best-effort:
+    a publish miss is swallowed per event so one failure can't strand the
+    rest, and notifications never surface as a reconciler-task failure.
+    """
+    if not events:
+        return
+    from application.events.publisher import publish_user_event
+
+    for user_id, event_type, payload, scope in events:
+        try:
+            publish_user_event(user_id, event_type, payload, scope=scope)
+        except Exception:
+            logger.exception(
+                "reconciler: failed to publish %s for user=%s",
+                event_type,
+                user_id,
+            )
 
 
 def _emit_alert(

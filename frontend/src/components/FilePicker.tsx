@@ -1,8 +1,9 @@
+import { Search as SearchIcon } from 'lucide-react';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import userService from '../api/services/userService';
 import { formatBytes } from '../utils/stringUtils';
-import { formatDate } from '../utils/dateTimeUtils';
+import { formatDateTime } from '../utils/dateTimeUtils';
 import {
   getSessionToken,
   setSessionToken,
@@ -12,7 +13,6 @@ import ConnectorAuth from '../components/ConnectorAuth';
 import FileIcon from '../assets/file.svg';
 import FolderIcon from '../assets/folder.svg';
 import CheckIcon from '../assets/checkmark.svg';
-import SearchIcon from '../assets/search.svg';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import {
@@ -493,7 +493,10 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                   onChange={(e) => handleSearchChange(e.target.value)}
                   labelBgClassName="bg-[#EEE6FF78] dark:bg-muted"
                   leftIcon={
-                    <img src={SearchIcon} alt="Search" width={16} height={16} />
+                    <SearchIcon
+                      className="text-muted-foreground size-4"
+                      strokeWidth={1.75}
+                    />
                   }
                 />
               </div>
@@ -596,7 +599,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-xs">
-                                  {formatDate(file.modifiedTime)}
+                                  {formatDateTime(file.modifiedTime)}
                                 </TableCell>
                                 <TableCell className="text-xs">
                                   {file.size ? formatBytes(file.size) : '-'}

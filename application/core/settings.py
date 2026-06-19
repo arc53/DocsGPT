@@ -17,7 +17,32 @@ from application.core.db_uri import (  # noqa: E402
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
-    AUTH_TYPE: Optional[str] = None  # simple_jwt, session_jwt, or None
+    AUTH_TYPE: Optional[str] = None  # simple_jwt, session_jwt, oidc, or None
+
+    # OIDC SSO (AUTH_TYPE=oidc) — any OpenID Connect IdP with discovery (Authentik, Keycloak, ...)
+    OIDC_ISSUER: Optional[str] = None  # e.g. https://auth.example.com/application/o/docsgpt/
+    OIDC_CLIENT_ID: Optional[str] = None
+    OIDC_CLIENT_SECRET: Optional[str] = None  # optional; PKCE is always used
+    OIDC_SCOPES: str = "openid profile email"
+    OIDC_USER_ID_CLAIM: str = "sub"  # ID-token claim mapped to the DocsGPT user id
+    OIDC_FRONTEND_URL: Optional[str] = None  # browser-facing app origin, e.g. http://localhost:5173
+    OIDC_REDIRECT_URI: Optional[str] = None  # override; default <request host>/api/auth/oidc/callback
+    OIDC_SESSION_LIFETIME_SECONDS: int = 28800  # minted session JWT lifetime (8h)
+    OIDC_PROVIDER_NAME: Optional[str] = None  # sign-in button label, e.g. "Acme SSO"
+    OIDC_ALLOWED_GROUPS: Optional[str] = None  # comma-separated allowlist; unset = any authenticated user
+    OIDC_GROUPS_CLAIM: str = "groups"  # ID-token/userinfo claim carrying group membership
+    OIDC_ADMIN_GROUPS: Optional[str] = None  # comma-separated groups granted admin; unset = no OIDC admin mapping
+
+    # RBAC (admin/user roles). Persisted admin grants live in the user_roles
+    # table and apply only under AUTH_TYPE=oidc. LOCAL_MODE_ADMIN is the only
+    # non-DB admin path and applies only to AUTH_TYPE=None (no-auth self-host).
+    # It MUST stay False in any networked deployment.
+    LOCAL_MODE_ADMIN: bool = False
+
+    # SCIM 2.0 provisioning (IdP-driven user create/deactivate at /scim/v2)
+    SCIM_ENABLED: bool = False
+    SCIM_TOKEN: Optional[str] = None  # bearer token for IdP SCIM clients (required when enabled)
+
     LLM_PROVIDER: str = "docsgpt"
     LLM_NAME: Optional[str] = None  # if LLM_PROVIDER is openai, LLM_NAME can be gpt-4 or gpt-3.5-turbo
     EMBEDDINGS_NAME: str = "huggingface_sentence-transformers/all-mpnet-base-v2"
@@ -180,6 +205,18 @@ class Settings(BaseSettings):
     FLASK_DEBUG_MODE: bool = False
     STORAGE_TYPE: str = "local"  # local or s3
 
+    # S3-compatible object storage (used when STORAGE_TYPE=s3). Works with AWS
+    # S3 and any S3-compatible service (MinIO, Cloudflare R2, Backblaze B2,
+    # DigitalOcean Spaces, ...). For non-AWS services, set S3_ENDPOINT_URL and
+    # usually S3_PATH_STYLE=true. The SAGEMAKER_* credentials are still read as
+    # a deprecated fallback for backward compatibility.
+    S3_BUCKET_NAME: str = "docsgpt-test-bucket"
+    S3_ENDPOINT_URL: Optional[str] = None  # custom endpoint for S3-compatible services; omit for AWS
+    S3_ACCESS_KEY_ID: Optional[str] = None
+    S3_SECRET_ACCESS_KEY: Optional[str] = None
+    S3_REGION: Optional[str] = None  # AWS region; use "auto" for Cloudflare R2
+    S3_PATH_STYLE: bool = False  # path-style addressing (required by most non-AWS services)
+
     # Anonymous startup version check for security issues.
     VERSION_CHECK: bool = True
     URL_STRATEGY: str = "backend"  # backend or s3
@@ -201,6 +238,13 @@ class Settings(BaseSettings):
     # Tool pre-fetch settings
     ENABLE_TOOL_PREFETCH: bool = True
 
+    # When True, OpenAI Responses API calls are persisted server-side
+    # (store=true) so a previous_response_id can chain turns. When False
+    # (the default) Responses calls are stateless (store=false) and any
+    # reasoning is carried across the in-turn tool loop via encrypted
+    # reasoning items instead.
+    OPENAI_RESPONSES_STORE: bool = False
+
     # Config-free tools on by default in agentless chats. ``scheduler`` is
     # dual-registered (also in ``BUILTIN_AGENT_TOOLS``) so the same synthetic id
     # resolves whether reached via defaults or the agent picker.
@@ -220,6 +264,10 @@ class Settings(BaseSettings):
     # Per-user durable backlog cap (~entries). At typical event rates this
     # gives ~24h of replay; tune up for verbose feeds, down for memory.
     EVENTS_STREAM_MAXLEN: int = 1000
+    # Bounds uvicorn's graceful-shutdown drain (uvicorn_worker doesn't forward
+    # --graceful-timeout). Keep below the gunicorn --timeout (180) watchdog.
+    # Used by gunicorn_worker.BoundedDrainUvicornWorker.
+    GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: int = 30
     # SSE keepalive comment cadence. Must sit under Cloudflare's 100s idle
     # close and iOS Safari's ~60s — 15s gives generous headroom.
     SSE_KEEPALIVE_SECONDS: int = 15

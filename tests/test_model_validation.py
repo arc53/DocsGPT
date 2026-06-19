@@ -111,3 +111,116 @@ def test_model_validation_error_message():
     error_msg = str(exc_info.value)
     assert "Invalid model_id 'invalid-model-xyz'" in error_msg
     assert "Available models:" in error_msg
+
+
+@pytest.mark.unit
+def test_capabilities_reasoning_effort_defaults_none():
+    """reasoning_effort is an optional capability, None by default."""
+    assert ModelCapabilities().reasoning_effort is None
+
+
+@pytest.mark.unit
+def test_yaml_reasoning_effort_and_upstream_model_id(tmp_path):
+    """Two distinct ids can share one upstream model, each with its own effort."""
+    from application.core.model_yaml import load_model_yamls
+
+    (tmp_path / "openai.yaml").write_text(
+        "provider: openai\n"
+        "models:\n"
+        "  - id: mini-low\n"
+        "    upstream_model_id: mini\n"
+        "    reasoning_effort: low\n"
+        "  - id: mini-high\n"
+        "    upstream_model_id: mini\n"
+        "    reasoning_effort: high\n"
+        "  - id: plain\n",
+        encoding="utf-8",
+    )
+
+    catalogs = load_model_yamls([tmp_path])
+    models = {m.id: m for c in catalogs for m in c.models}
+
+    assert models["mini-low"].upstream_model_id == "mini"
+    assert models["mini-low"].capabilities.reasoning_effort == "low"
+    assert models["mini-high"].upstream_model_id == "mini"
+    assert models["mini-high"].capabilities.reasoning_effort == "high"
+
+    # No upstream_model_id / reasoning_effort given → fall back to id / None.
+    assert models["plain"].upstream_model_id is None
+    assert models["plain"].capabilities.reasoning_effort is None
+
+
+@pytest.mark.unit
+def test_yaml_invalid_reasoning_effort_rejected(tmp_path):
+    """A bad reasoning_effort value aborts the YAML load."""
+    from application.core.model_yaml import ModelYAMLError, load_model_yamls
+
+    (tmp_path / "openai.yaml").write_text(
+        "provider: openai\n"
+        "models:\n"
+        "  - id: bad\n"
+        "    reasoning_effort: turbo\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ModelYAMLError):
+        load_model_yamls([tmp_path])
+
+
+@pytest.mark.unit
+def test_yaml_reasoning_effort_accepts_full_enum(tmp_path):
+    """Every value OpenAI documents across the GPT-5 series must parse."""
+    from application.core.model_yaml import (
+        VALID_REASONING_EFFORTS,
+        load_model_yamls,
+    )
+
+    assert VALID_REASONING_EFFORTS == {
+        "none",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+    }
+
+    lines = ["provider: openai", "models:"]
+    for effort in sorted(VALID_REASONING_EFFORTS):
+        lines.append(f"  - id: m-{effort}")
+        lines.append(f"    reasoning_effort: {effort}")
+    (tmp_path / "openai.yaml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    catalogs = load_model_yamls([tmp_path])
+    parsed = {m.id: m.capabilities.reasoning_effort for c in catalogs for m in c.models}
+    for effort in VALID_REASONING_EFFORTS:
+        assert parsed[f"m-{effort}"] == effort
+
+
+@pytest.mark.unit
+def test_openai_apply_reasoning_effort():
+    """OpenAILLM injects reasoning_effort from capabilities; caller wins."""
+    from application.llm.openai import OpenAILLM
+
+    llm = OpenAILLM.__new__(OpenAILLM)
+
+    # Pulled from capabilities when the caller didn't set one.
+    llm.capabilities = ModelCapabilities(reasoning_effort="high")
+    kwargs: dict = {}
+    llm._apply_reasoning_effort(kwargs)
+    assert kwargs["reasoning_effort"] == "high"
+
+    # A caller-supplied value is never overridden.
+    kwargs = {"reasoning_effort": "low"}
+    llm._apply_reasoning_effort(kwargs)
+    assert kwargs["reasoning_effort"] == "low"
+
+    # No capabilities / no configured effort → key is not added.
+    llm.capabilities = None
+    kwargs = {}
+    llm._apply_reasoning_effort(kwargs)
+    assert "reasoning_effort" not in kwargs
+
+    llm.capabilities = ModelCapabilities()
+    kwargs = {}
+    llm._apply_reasoning_effort(kwargs)
+    assert "reasoning_effort" not in kwargs

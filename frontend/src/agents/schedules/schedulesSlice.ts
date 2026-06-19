@@ -9,6 +9,7 @@ import type {
   Schedule,
   ScheduleCreatePayload,
   ScheduleRun,
+  ScheduleStatus,
   ScheduleUpdatePayload,
 } from '../types/schedule';
 
@@ -287,6 +288,30 @@ const schedulesSlice = createSlice({
               const found = findAgentForSchedule(state, scheduleId);
               if (found) {
                 const next: Schedule = { ...found.schedule, status: 'paused' };
+                state.byAgent[found.agentId] = upsert(
+                  state.byAgent[found.agentId],
+                  next,
+                );
+              }
+              break;
+            }
+            // Schedule-level status transitions. These revoke a stale
+            // ``schedule.autopaused`` (resumed/cancelled) or surface a
+            // reconciler/once-schedule finish (completed) that the run
+            // deltas above don't carry — otherwise the schedule reads
+            // 'active' (or 'paused') until a manual refresh.
+            case 'schedule.resumed':
+            case 'schedule.cancelled':
+            case 'schedule.completed': {
+              const status: ScheduleStatus =
+                envelope.type === 'schedule.resumed'
+                  ? 'active'
+                  : envelope.type === 'schedule.cancelled'
+                    ? 'cancelled'
+                    : 'completed';
+              const found = findAgentForSchedule(state, scheduleId);
+              if (found) {
+                const next: Schedule = { ...found.schedule, status };
                 state.byAgent[found.agentId] = upsert(
                   state.byAgent[found.agentId],
                   next,

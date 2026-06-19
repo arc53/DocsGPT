@@ -1,7 +1,6 @@
+import { ExternalLink, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import newChatIcon from '../assets/openNewChat.svg';
-import ShareIcon from '../assets/share.svg';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { useState } from 'react';
 import { selectConversationId } from '../preferences/preferenceSlice';
@@ -12,6 +11,7 @@ import {
   updateConversationId,
 } from '../conversation/conversationSlice';
 import { Button } from './ui/button';
+import ProfileButton from './ProfileButton';
 
 interface ActionButtonsProps {
   className?: string;
@@ -57,15 +57,9 @@ export default function ActionButtons({
             size="icon"
             title={t('actionButtons.openNewChat')}
             onClick={newChat}
-            className="rounded-full lg:hidden"
+            className="text-muted-foreground hover:text-foreground rounded-full lg:hidden"
           >
-            <img
-              className="filter dark:invert"
-              alt="NewChat"
-              width={21}
-              height={21}
-              src={newChatIcon}
-            />
+            <Plus className="size-5" strokeWidth={1.75} aria-label="NewChat" />
           </Button>
         )}
 
@@ -77,14 +71,12 @@ export default function ActionButtons({
               size="icon"
               title={t('actionButtons.share')}
               onClick={() => setShareModalState(true)}
-              className="rounded-full"
+              className="text-muted-foreground hover:text-foreground rounded-full"
             >
-              <img
-                className="filter dark:invert"
-                alt="share"
-                width={16}
-                height={16}
-                src={ShareIcon}
+              <ExternalLink
+                className="size-5"
+                strokeWidth={1.75}
+                aria-label="share"
               />
             </Button>
             {isShareModalOpen && (
@@ -95,7 +87,7 @@ export default function ActionButtons({
             )}
           </>
         )}
-        <div>{/* <UserButton  /> */}</div>
+        <ProfileButton />
       </div>
     </div>
   );

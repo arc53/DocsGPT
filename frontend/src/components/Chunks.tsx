@@ -1,3 +1,4 @@
+import { Search as SearchIcon } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -8,7 +9,6 @@ import FileIcon from '../assets/file.svg';
 import FolderIcon from '../assets/folder.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
-import SearchIcon from '../assets/search.svg';
 import {
   useDarkTheme,
   useDebouncedValue,
@@ -493,7 +493,11 @@ const Chunks: React.FC<ChunksProps> = ({
       <div className="relative" ref={searchDropdownRef}>
         <div className="relative flex items-center">
           <div className="pointer-events-none absolute left-3">
-            <img src={SearchIcon} alt="Search" className="h-4 w-4" />
+            <SearchIcon
+              className="text-muted-foreground size-4"
+              strokeWidth={1.75}
+              aria-label="Search"
+            />
           </div>
           <Input
             type="text"

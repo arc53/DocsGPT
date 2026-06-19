@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Optional, Set
 from jinja2 import (
     ChainableUndefined,
     nodes,
-    select_autoescape,
     TemplateSyntaxError,
 )
 from jinja2.exceptions import SecurityError, UndefinedError
@@ -23,11 +22,14 @@ class TemplateEngine:
     """Jinja2-based template engine for dynamic prompt rendering"""
 
     def __init__(self):
+        # Rendered output is an LLM prompt, not HTML — autoescaping would
+        # corrupt injected values (e.g. document content: "<" -> "&lt;").
+        # The sandbox still blocks unsafe attribute/method access.
         self._env = SandboxedEnvironment(
             undefined=ChainableUndefined,
             trim_blocks=True,
             lstrip_blocks=True,
-            autoescape=select_autoescape(default_for_string=True, default=True),
+            autoescape=False,
         )
 
     def render(self, template_content: str, context: Dict[str, Any]) -> str:
@@ -137,7 +139,16 @@ class TemplateEngine:
             tool_entry = usages.setdefault(tool_name, set())
             tool_entry.add(action_name)
 
-        for node in ast.find_all(nodes.Getattr):
+        # Only record maximal chains: ``tools.memory.view`` must not also
+        # record the intermediate ``tools.memory`` node, whose missing
+        # action (None) means "run all actions" downstream.
+        getattr_nodes = list(ast.find_all(nodes.Getattr))
+        inner_getattrs = {
+            id(n.node) for n in getattr_nodes if isinstance(n.node, nodes.Getattr)
+        }
+        for node in getattr_nodes:
+            if id(node) in inner_getattrs:
+                continue
             path = []
             current = node
             while isinstance(current, nodes.Getattr):
@@ -147,7 +158,13 @@ class TemplateEngine:
                 path.reverse()
                 record(path)
 
-        for node in ast.find_all(nodes.Getitem):
+        getitem_nodes = list(ast.find_all(nodes.Getitem))
+        inner_getitems = {
+            id(n.node) for n in getitem_nodes if isinstance(n.node, nodes.Getitem)
+        }
+        for node in getitem_nodes:
+            if id(node) in inner_getitems:
+                continue
             path = []
             current = node
             while isinstance(current, nodes.Getitem):

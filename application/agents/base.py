@@ -33,6 +33,10 @@ class BaseAgent(ABC):
         decoded_token: Optional[Dict] = None,
         attachments: Optional[List[Dict]] = None,
         json_schema: Optional[Dict] = None,
+        json_schema_strict: bool = True,
+        json_object: bool = False,
+        llm_params: Optional[Dict] = None,
+        multimodal_content: Optional[List] = None,
         limited_token_mode: Optional[bool] = False,
         token_limit: Optional[int] = settings.DEFAULT_AGENT_LIMITS["token_limit"],
         limited_request_mode: Optional[bool] = False,
@@ -108,6 +112,17 @@ class BaseAgent(ABC):
                 self.json_schema = normalize_json_schema_payload(json_schema)
             except JsonSchemaValidationError as exc:
                 logger.warning("Ignoring invalid JSON schema payload: %s", exc)
+        # Per-request structured-output controls (OpenAI-compatible):
+        # ``json_schema_strict`` mirrors response_format.json_schema.strict;
+        # ``json_object`` mirrors response_format {"type":"json_object"}.
+        self.json_schema_strict = json_schema_strict
+        self.json_object = json_object
+        # OpenAI sampling params forwarded from the request (temperature,
+        # max_tokens, top_p, ...). Empty when the caller sent none.
+        self.llm_params = llm_params or {}
+        # Full OpenAI content array (text + image_url parts) for the current
+        # user turn, when the request was multimodal; None otherwise.
+        self.multimodal_content = multimodal_content
         self.limited_token_mode = limited_token_mode
         self.token_limit = token_limit
         self.limited_request_mode = limited_request_mode
@@ -123,6 +138,26 @@ class BaseAgent(ABC):
         self, query: str, log_context: LogContext = None
     ) -> Generator[Dict, None, None]:
         yield from self._gen_inner(query, log_context)
+        yield from self._emit_responses_metadata()
+
+    def _emit_responses_metadata(self) -> Generator[Dict, None, None]:
+        """Surface the latest Responses API id so the route can persist it in
+        message metadata for previous_response_id chaining across turns."""
+        if not settings.OPENAI_RESPONSES_STORE:
+            return
+        response_id = getattr(self.llm, "_last_response_id", None)
+        if response_id:
+            yield {"metadata": {"response_id": response_id}}
+
+    def _previous_response_id(self) -> Optional[str]:
+        """Most recent stored Responses API id from chat history, if any."""
+        for turn in reversed(self.chat_history or []):
+            if not isinstance(turn, dict):
+                continue
+            meta = turn.get("metadata")
+            if isinstance(meta, dict) and meta.get("response_id"):
+                return meta["response_id"]
+        return None
 
     @abstractmethod
     def _gen_inner(
@@ -280,6 +315,7 @@ class BaseAgent(ABC):
 
         yield {"sources": self.retrieved_docs}
         yield {"tool_calls": self._get_truncated_tool_calls()}
+        yield from self._emit_responses_metadata()
 
     # ---- Tool delegation (thin wrappers around ToolExecutor) ----
 
@@ -480,7 +516,15 @@ class BaseAgent(ABC):
                         "tool_call_id": call_id,
                         "content": result_str,
                     })
-        messages.append({"role": "user", "content": query})
+        # When the request was multimodal, send the full content array (text +
+        # image_url parts) so images reach the model; the text-only `query` above
+        # is used only for token budgeting / retrieval.
+        user_content = (
+            self.multimodal_content
+            if getattr(self, "multimodal_content", None)
+            else query
+        )
+        messages.append({"role": "user", "content": user_content})
         return messages
 
     def _truncate_history_to_fit(
@@ -551,13 +595,33 @@ class BaseAgent(ABC):
             and self.llm._supports_structured_output()
         ):
             structured_format = self.llm.prepare_structured_output_format(
-                self.json_schema
+                self.json_schema, strict=getattr(self, "json_schema_strict", True)
             )
             if structured_format:
                 if self.llm_name == "openai":
                     gen_kwargs["response_format"] = structured_format
                 elif self.llm_name == "google":
                     gen_kwargs["response_schema"] = structured_format
+        elif (
+            getattr(self, "json_object", False)
+            and self.llm_name == "openai"
+            and hasattr(self.llm, "_supports_structured_output")
+            and self.llm._supports_structured_output()
+        ):
+            # OpenAI json_object mode: guarantee valid JSON, no schema enforcement.
+            gen_kwargs["response_format"] = {"type": "json_object"}
+        if (
+            settings.OPENAI_RESPONSES_STORE
+            and hasattr(self.llm, "_uses_responses_api")
+            and self.llm._uses_responses_api()
+        ):
+            previous_response_id = self._previous_response_id()
+            if previous_response_id:
+                gen_kwargs["previous_response_id"] = previous_response_id
+
+        # Forward OpenAI sampling params (temperature, max_tokens, top_p, ...).
+        if self.llm_params:
+            gen_kwargs.update(self.llm_params)
         resp = self.llm.gen_stream(**gen_kwargs)
 
         if log_context:

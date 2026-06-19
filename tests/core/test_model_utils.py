@@ -156,16 +156,6 @@ class TestGetApiKeyForProvider:
 
             assert get_api_key_for_provider("unknown_provider") == "sk-fallback"
 
-    @pytest.mark.unit
-    def test_azure_openai_key(self):
-        with patch("application.core.settings.settings") as mock_settings:
-            mock_settings.API_KEY = "sk-azure"
-
-            from application.core.model_utils import get_api_key_for_provider
-
-            assert get_api_key_for_provider("azure_openai") == "sk-azure"
-
-
 # ── get_all_available_models ─────────────────────────────────────────────────
 
 

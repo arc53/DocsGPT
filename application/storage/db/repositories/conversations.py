@@ -45,7 +45,7 @@ class MessageUpdateOutcome(str, Enum):
 def _message_row_to_dict(row) -> dict:
     """Like ``row_to_dict`` but renames the DB column ``message_metadata``
     back to the public API key ``metadata`` so callers keep the Mongo-era
-    shape. See migration 0016 for the column rename rationale."""
+    shape. See migration 0001_initial for the column rename rationale."""
     out = row_to_dict(row)
     if "message_metadata" in out:
         out["metadata"] = out.pop("message_metadata")
@@ -149,6 +149,7 @@ class ConversationsRepository:
         api_key: str | None = None,
         is_shared_usage: bool = False,
         shared_token: str | None = None,
+        visibility: str = "listed",
         legacy_mongo_id: str | None = None,
     ) -> dict:
         """Create a new conversation.
@@ -162,6 +163,7 @@ class ConversationsRepository:
         values: dict = {
             "user_id": user_id,
             "name": name,
+            "visibility": visibility,
         }
         # ``agent_id`` may arrive as a Mongo ObjectId during the dual-write
         # window; resolve to a UUID (or drop silently if not yet backfilled).
@@ -247,15 +249,16 @@ class ConversationsRepository:
         return row_to_dict(row) if row is not None else None
 
     def list_for_user(self, user_id: str, limit: int = 30) -> list[dict]:
-        """List conversations for a user, most recent first.
+        """List a user's sidebar conversations, most recent first.
 
-        Mirrors the Mongo query: either no api_key or agent_id exists.
+        Only ``visibility = 'listed'`` rows surface; agent/API/OpenAI-compat
+        traffic persists as ``'hidden'`` and is excluded.
         """
         result = self._conn.execute(
             text(
                 "SELECT * FROM conversations "
                 "WHERE user_id = :user_id "
-                "AND (api_key IS NULL OR agent_id IS NOT NULL) "
+                "AND visibility = 'listed' "
                 "ORDER BY date DESC LIMIT :limit"
             ),
             {"user_id": user_id, "limit": limit},
@@ -302,7 +305,7 @@ class ConversationsRepository:
                 "  LIMIT 1 "
                 ") mt ON TRUE "
                 "WHERE c.user_id = :user_id "
-                "AND (c.api_key IS NULL OR c.agent_id IS NOT NULL) "
+                "AND c.visibility = 'listed' "
                 "ORDER BY c.date DESC LIMIT :limit"
             ),
             {

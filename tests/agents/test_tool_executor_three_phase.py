@@ -251,6 +251,105 @@ class TestRepository:
         assert row["status"] == "failed"
         assert row["error"] == "kaboom"
 
+    def test_mark_failed_leaves_executed_row_untouched(self, pg_conn):
+        """A late error for a reused ``call_id`` ("call_0"-style) must
+        not flip an already-executed row (see ``mark_failed``)."""
+        from application.storage.db.repositories.tool_call_attempts import (
+            ToolCallAttemptsRepository,
+        )
+
+        repo = ToolCallAttemptsRepository(pg_conn)
+        repo.record_proposed("c-dup", "tool", "act", {})
+        # No message_id ⇒ lands straight in 'confirmed' (still non-proposed).
+        assert repo.mark_executed("c-dup", {"out": "ok"}) is True
+        # Late error path hits the same id — the guard rejects the update.
+        assert repo.mark_failed("c-dup", "boom") is False
+        row = _select_attempt(pg_conn, "c-dup")
+        assert row["status"] == "confirmed"
+        assert row["error"] is None
+
+    def test_mark_executed_guarded_to_proposed(self, pg_conn):
+        """A reused ``call_id`` must not flip an already-terminal row back
+        to executed (the status guard mirrors ``mark_failed``)."""
+        from application.storage.db.repositories.tool_call_attempts import (
+            ToolCallAttemptsRepository,
+        )
+
+        repo = ToolCallAttemptsRepository(pg_conn)
+        repo.record_proposed("c-me", "tool", "act", {})
+        assert repo.mark_failed("c-me", "boom") is True
+        # Late executed emission for the same id: no proposed row remains.
+        assert repo.mark_executed("c-me", {"out": "ok"}) is False
+        row = _select_attempt(pg_conn, "c-me")
+        assert row["status"] == "failed"
+        assert row["result"] is None
+
+    def test_mark_executed_scoped_to_owner(self, pg_conn):
+        """A colliding ``call_id`` from another tenant can't flip — or
+        read its result into — this user's proposed row."""
+        from application.storage.db.repositories.tool_call_attempts import (
+            ToolCallAttemptsRepository,
+        )
+
+        repo = ToolCallAttemptsRepository(pg_conn)
+        repo.record_proposed("call_0", "tool", "act", {}, user_id="victim")
+        # Attacker's request reuses the id and tries to land its result.
+        assert (
+            repo.mark_executed("call_0", {"out": "leak"}, user_id="attacker")
+            is False
+        )
+        row = _select_attempt(pg_conn, "call_0")
+        assert row["status"] == "proposed"
+        assert row["result"] is None
+        assert row["user_id"] == "victim"
+
+    def test_mark_failed_scoped_to_owner(self, pg_conn):
+        from application.storage.db.repositories.tool_call_attempts import (
+            ToolCallAttemptsRepository,
+        )
+
+        repo = ToolCallAttemptsRepository(pg_conn)
+        repo.record_proposed("call_0", "tool", "act", {}, user_id="victim")
+        assert repo.mark_failed("call_0", "boom", user_id="attacker") is False
+        row = _select_attempt(pg_conn, "call_0")
+        assert row["status"] == "proposed"
+
+    def test_upsert_executed_stamps_attribution(self, pg_conn):
+        """The DB-outage fallback row must carry user/agent so it stays
+        visible to per-user / per-agent analytics (was born unattributed)."""
+        import uuid as _uuid
+
+        from application.storage.db.repositories.tool_call_attempts import (
+            ToolCallAttemptsRepository,
+        )
+
+        agent_id = str(_uuid.uuid4())
+        repo = ToolCallAttemptsRepository(pg_conn)
+        repo.upsert_executed(
+            "c-up2", "tool", "act", {}, {"out": "ok"},
+            user_id="u-up", agent_id=agent_id,
+        )
+        row = _select_attempt(pg_conn, "c-up2")
+        assert row["user_id"] == "u-up"
+        assert str(row["agent_id"]) == agent_id
+
+    def test_upsert_executed_wont_clobber_other_tenant(self, pg_conn):
+        """A colliding fallback upsert must not upgrade another tenant's
+        proposed row or overwrite its result."""
+        from application.storage.db.repositories.tool_call_attempts import (
+            ToolCallAttemptsRepository,
+        )
+
+        repo = ToolCallAttemptsRepository(pg_conn)
+        repo.record_proposed("call_0", "tool", "act", {}, user_id="victim")
+        repo.upsert_executed(
+            "call_0", "tool", "act", {}, {"out": "leak"}, user_id="attacker"
+        )
+        row = _select_attempt(pg_conn, "call_0")
+        assert row["status"] == "proposed"
+        assert row["result"] is None
+        assert row["user_id"] == "victim"
+
 
 @pytest.mark.unit
 class TestDefaultToolJournaling:
@@ -270,7 +369,7 @@ class TestDefaultToolJournaling:
             "application.agents.tool_executor.ToolActionParser",
             lambda _cls, **kw: Mock(
                 parse_args=Mock(
-                    return_value=(memory_row["id"], "view", {"path": "/"})
+                    return_value=(memory_row["id"], "memory_view", {"path": "/"})
                 )
             ),
         )
