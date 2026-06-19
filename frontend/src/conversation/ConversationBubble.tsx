@@ -391,18 +391,22 @@ const ConversationBubble = forwardRef<
                               alt="Document"
                               className="h-4.25 w-4.25 object-fill"
                             />
-                            <p
-                              className="mt-0.5 truncate text-xs"
-                              title={
-                                source.link && source.link !== 'local'
-                                  ? source.link
-                                  : source.title
-                              }
-                            >
-                              {source.link && source.link !== 'local'
-                                ? source.link
-                                : source.title}
-                            </p>
+                          <div className="flex flex-col">
+  <p
+    className="mt-0.5 truncate text-xs"
+    title={
+      source.link && source.link !== 'local'
+        ? source.link
+        : source.title
+    }
+  >
+    {source.link && source.link !== 'local'
+      ? source.link
+      : source.title}
+  </p>
+
+
+</div>
                           </div>
                         </div>
                         {activeTooltip === index && (
