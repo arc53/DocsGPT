@@ -32,6 +32,16 @@ layer(base);
   ::file-selector-button {
     border-color: var(--color-gray-200, currentcolor);
   }
+
+  /* iOS Safari preserves gray-200 borders in dark mode; use the
+     theme border color instead so borders are dark on dark backgrounds. */
+  .dark *,
+  .dark ::after,
+  .dark ::before,
+  .dark ::backdrop,
+  .dark ::file-selector-button {
+    border-color: var(--border);
+  }
 }
 
 @utility no-scrollbar {
