@@ -33,7 +33,7 @@ class TestIngestTask:
 
         mock_worker.assert_called_once_with(
             ANY, "dir", ["pdf"], "job1", "/path", "file.pdf", "user1",
-            file_name_map=None, idempotency_key=None, source_id=None,
+            file_name_map=None, config=None, idempotency_key=None, source_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -50,7 +50,8 @@ class TestIngestTask:
 
         mock_worker.assert_called_once_with(
             ANY, "dir", ["pdf"], "job1", "/path", "file.pdf", "user1",
-            file_name_map=name_map, idempotency_key=None, source_id=None,
+            file_name_map=name_map, config=None, idempotency_key=None,
+            source_id=None,
         )
 
 
@@ -66,7 +67,7 @@ class TestIngestRemoteTask:
 
         mock_worker.assert_called_once_with(
             ANY, {"url": "http://x"}, "job1", "user1", "web",
-            idempotency_key=None, source_id=None,
+            config=None, idempotency_key=None, source_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -168,6 +169,7 @@ class TestIngestConnectorTask:
             operation_mode="upload",
             doc_id=None,
             sync_frequency="never",
+            config=None,
             idempotency_key=None,
             source_id=None,
         )
@@ -207,6 +209,7 @@ class TestIngestConnectorTask:
             operation_mode="sync",
             doc_id="doc1",
             sync_frequency="daily",
+            config=None,
             idempotency_key=None,
             source_id=None,
         )
@@ -600,7 +603,7 @@ class TestIngestIdempotency:
         worker_calls = []
 
         def _fake_worker(self, directory, formats, job_name, file_path,
-                         filename, user, file_name_map=None,
+                         filename, user, file_name_map=None, config=None,
                          idempotency_key=None, source_id=None):
             worker_calls.append(filename)
             return {"status": "ok", "directory": directory}

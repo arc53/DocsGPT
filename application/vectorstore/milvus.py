@@ -23,6 +23,9 @@ class MilvusStore(BaseVectorStore):
         self._source_id = source_id
 
     def search(self, question, k=2, *args, **kwargs):
+        # Drop the per-source score_threshold (unsupported here) so it is safely
+        # ignored instead of being forwarded into the langchain call.
+        kwargs.pop("score_threshold", None)
         expr = f"source_id == '{self._source_id}'"
         return self._docsearch.similarity_search(query=question, k=k, expr=expr, *args, **kwargs)
 

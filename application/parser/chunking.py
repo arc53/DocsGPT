@@ -1,12 +1,21 @@
 import re
 from typing import List, Tuple
 import logging
+from application.parser.chunking_creator import ChunkerCreator
 from application.parser.schema.base import Document
 from application.utils import get_encoding
 
 logger = logging.getLogger(__name__)
 
+
 class Chunker:
+    """Classic token-window chunker (registered as ``classic_chunk``).
+
+    Strategy dispatch lives in ``ChunkerCreator``; this class is one
+    registered implementation. The ``chunking_strategy`` arg is retained for
+    backward-compatible construction and is not used for dispatch here.
+    """
+
     def __init__(
         self,
         chunking_strategy: str = "classic_chunk",
@@ -14,8 +23,6 @@ class Chunker:
         min_tokens: int = 150,
         duplicate_headers: bool = False,
     ):
-        if chunking_strategy not in ["classic_chunk"]:
-            raise ValueError(f"Unsupported chunking strategy: {chunking_strategy}")
         self.chunking_strategy = chunking_strategy
         self.max_tokens = max_tokens
         self.min_tokens = min_tokens
@@ -33,7 +40,7 @@ class Chunker:
         return header, body
 
 
-    
+
     def split_document(self, doc: Document) -> List[Document]:
         split_docs = []
         header, body = self.separate_header_and_body(doc.text)
@@ -73,7 +80,7 @@ class Chunker:
                 processed_docs.append(doc)
                 i += 1
             elif token_count < self.min_tokens:
-  
+
                 doc.extra_info = doc.extra_info or {}
                 doc.extra_info["token_count"] = token_count
                 processed_docs.append(doc)
@@ -88,7 +95,7 @@ class Chunker:
         self,
         documents: List[Document]
     ) -> List[Document]:
-        if self.chunking_strategy == "classic_chunk":
-            return self.classic_chunk(documents)
-        else:
-            raise ValueError("Unsupported chunking strategy")
+        return self.classic_chunk(documents)
+
+
+ChunkerCreator.register("classic_chunk", Chunker)

@@ -19,6 +19,7 @@ from application.storage.db.repositories.ingest_chunk_progress import (
 )
 from application.storage.db.repositories.sources import SourcesRepository
 from application.storage.db.session import db_readonly, db_session
+from application.storage.db.source_config import SourceConfig
 from application.storage.storage_creator import StorageCreator
 from application.utils import check_required_fields
 from application.vectorstore.vector_creator import VectorCreator
@@ -95,6 +96,9 @@ class CombinedJson(Resource):
                     "provider": provider,
                     "is_nested": bool(index.get("directory_structure")),
                     "type": index.get("type", "file"),
+                    # Lenient read (D7): always emit a fully-defaulted config so
+                    # the frontend edit modal can pre-fill from a legacy {} row.
+                    "config": SourceConfig.parse(index.get("config")).model_dump(),
                     "ownership": ownership,
                     "team_access": team_access,
                 }
@@ -175,6 +179,12 @@ class PaginatedSources(Resource):
                         "provider": provider,
                         "isNested": bool(doc.get("directory_structure")),
                         "type": doc.get("type", "file"),
+                        # Lenient read (D7): always emit a fully-defaulted
+                        # config so the edit modal can pre-fill, even for a
+                        # legacy {} row.
+                        "config": SourceConfig.parse(
+                            doc.get("config")
+                        ).model_dump(),
                         # Derived in SourcesRepository.list_for_user.
                         "ingestStatus": doc.get("ingest_status"),
                         "ownership": "user" if owned else "team",
@@ -533,3 +543,86 @@ class DirectoryStructure(Resource):
                 jsonify({"success": False, "error": "Failed to retrieve directory structure"}),
                 500,
             )
+
+
+@sources_ns.route("/sources/<string:source_id>/config")
+class SourceConfigResource(Resource):
+    source_config_model = api.model(
+        "SourceConfigModel",
+        {
+            "kind": fields.String(description="Behavior selector (e.g. classic)"),
+            "chunking": fields.Raw(description="Ingest-time chunking config"),
+            "retrieval": fields.Raw(description="Query-time retrieval config"),
+        },
+    )
+
+    @api.expect(source_config_model)
+    @api.doc(
+        description="Edit a source's behavior config. Retrieval-time fields "
+        "take effect live; chunking changes require an explicit re-ingest "
+        "(surfaced as requires_reingest)."
+    )
+    def patch(self, source_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return make_response(
+                jsonify({"success": False, "message": "Invalid config body"}), 400
+            )
+        # Strict validation (D7 strict-on-write): reject invalid config → 400.
+        try:
+            new_config = SourceConfig.model_validate(body)
+        except Exception as err:
+            return make_response(
+                jsonify({"success": False, "message": f"Invalid config: {err}"}), 400
+            )
+
+        try:
+            with db_session() as conn:
+                repo = SourcesRepository(conn)
+                # Resolve the owner to write AS: ``user`` when they own the
+                # source, the real owner when ``user`` holds a team ``editor``
+                # grant. A viewer / no-access resolves to None → 403.
+                owner = effective_write_owner(conn, "source", source_id, user)
+                if not owner:
+                    return make_response(
+                        jsonify(
+                            {"success": False, "message": "Source not accessible"}
+                        ),
+                        403,
+                    )
+                doc = repo.get_any(source_id, owner)
+                if doc is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Source not found"}),
+                        404,
+                    )
+                # Ingest-time fields (config.chunking) only take effect after a
+                # re-ingest (D8); compare against the current config to decide.
+                current_config = SourceConfig.parse(doc.get("config"))
+                requires_reingest = (
+                    new_config.chunking.model_dump()
+                    != current_config.chunking.model_dump()
+                )
+                repo.update(
+                    str(doc["id"]), owner, {"config": new_config.model_dump()}
+                )
+        except Exception as err:
+            current_app.logger.error(
+                f"Error updating source config for {source_id}: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+
+        return make_response(
+            jsonify(
+                {
+                    "success": True,
+                    "config": new_config.model_dump(),
+                    "requires_reingest": requires_reingest,
+                }
+            ),
+            200,
+        )

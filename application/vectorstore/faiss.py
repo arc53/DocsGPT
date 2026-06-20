@@ -84,6 +84,9 @@ class FaissStore(BaseVectorStore):
         self.assert_embedding_dimensions(self.embeddings)
 
     def search(self, *args, **kwargs):
+        # FAISS has no relevance-threshold knob; drop it so the per-source
+        # score_threshold is safely ignored rather than crashing the forward.
+        kwargs.pop("score_threshold", None)
         return self.docsearch.similarity_search(*args, **kwargs)
 
     def add_texts(self, *args, **kwargs):

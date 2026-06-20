@@ -32,6 +32,8 @@ from application.storage.db.repositories.team_scope import TeamScopeRepository
 from application.storage.db.repositories.user_tools import UserToolsRepository
 from application.storage.db.repositories.users import UsersRepository
 from application.storage.db.session import db_readonly, db_session
+from application.storage.db.source_config import SourceConfig
+from application.retriever.dispatcher import build_dispatcher
 from application.retriever.retriever_creator import RetrieverCreator
 from application.utils import (
     calculate_doc_token_budget,
@@ -163,8 +165,25 @@ class StreamProcessor:
 
         agent_type = self.agent_config.get("agent_type", "classic")
 
-        # Agentic/research agents skip pre-fetch — the LLM searches on-demand via tools
+        # Agentic/research agents (D11): partition sources by exposure. With no
+        # source opting into ``agentic_tool`` the agent behaves exactly as today
+        # (no pre-fetch; the LLM searches all sources on demand). When at least
+        # one source is ``agentic_tool``, pre-fetch the ``prefetch`` subset into
+        # the prompt and expose only the ``agentic_tool`` subset via the search
+        # tool — one agent mixing both modes.
         if agent_type in ("agentic", "research"):
+            _, agentic_sources = self._exposure_partition()
+            if agentic_sources:
+                docs_together, docs_list = self.pre_fetch_docs(
+                    question, exposure="prefetch"
+                )
+                tools_data = self.pre_fetch_tools()
+                return self.create_agent(
+                    docs_together=docs_together,
+                    docs=docs_list,
+                    tools_data=tools_data,
+                    agentic_sources=agentic_sources,
+                )
             tools_data = self.pre_fetch_tools()
             return self.create_agent(tools_data=tools_data)
 
@@ -531,6 +550,10 @@ class StreamProcessor:
                                 src_chunks if src_chunks is not None
                                 else data.get("chunks", "2")
                             ),
+                            # Per-source behaviour contract (lenient read).
+                            "retrieval": SourceConfig.parse(
+                                source_doc.get("config")
+                            ).retrieval,
                         }
                     )
                     seen.add(sid)
@@ -558,6 +581,9 @@ class StreamProcessor:
                             src_chunks if src_chunks is not None
                             else data.get("chunks", "2")
                         ),
+                        "retrieval": SourceConfig.parse(
+                            source_doc.get("config")
+                        ).retrieval,
                     }
                 )
                 seen.add(sid)
@@ -590,10 +616,26 @@ class StreamProcessor:
                 ]
             elif agent_data.get("source") and agent_data["source"] != "default":
                 self.source = {"active_docs": agent_data["source"]}
+                # Carry the per-source retrieval contract (lenient read) so this
+                # legacy single-source path matches the unioned-sources path and
+                # the dispatcher still sees per-source overrides. A
+                # missing/invalid id falls back to default config, never crashes.
+                owner = agent_data.get("user_id")
+                source_doc = None
+                try:
+                    with db_readonly() as conn:
+                        source_doc = SourcesRepository(conn).get(
+                            str(agent_data["source"]), owner
+                        )
+                except Exception:
+                    source_doc = None
                 self.all_sources = [
                     {
                         "id": agent_data["source"],
                         "retriever": agent_data.get("retriever", "classic"),
+                        "retrieval": SourceConfig.parse(
+                            (source_doc or {}).get("config")
+                        ).retrieval,
                     }
                 ]
             else:
@@ -787,10 +829,68 @@ class StreamProcessor:
         if not api_key and "isNoneDoc" in self.data and self.data["isNoneDoc"]:
             self.retriever_config["chunks"] = 0
 
-    def create_retriever(self):
-        return RetrieverCreator.create_retriever(
-            self.retriever_config["retriever_name"],
-            source=self.source,
+    def _build_per_source_list(self, exposure: Optional[str] = None) -> list:
+        """Canonical per-source list with each source's resolved retrieval cfg.
+
+        Each entry is ``{"id": str, "retrieval": RetrievalConfig}``. Empty when
+        no per-source detail is known (single-source / no-config requests), in
+        which case the Dispatcher reduces to the legacy single classic group.
+
+        Args:
+            exposure: When set (``prefetch`` / ``agentic_tool``), include only
+                sources whose resolved ``retrieval.exposure`` matches; a missing
+                config defaults to ``prefetch``. When None, include all sources.
+        """
+        per_source = []
+        for entry in self.all_sources or []:
+            sid = entry.get("id")
+            if not sid or sid == "default":
+                continue
+            retrieval = entry.get("retrieval")
+            if exposure is not None and self._exposure_of(retrieval) != exposure:
+                continue
+            per_source.append({"id": str(sid), "retrieval": retrieval})
+        return per_source
+
+    @staticmethod
+    def _exposure_of(retrieval) -> str:
+        """Resolve a source's exposure, defaulting to ``prefetch`` (D11)."""
+        value = getattr(retrieval, "exposure", None)
+        if value is None and isinstance(retrieval, dict):
+            value = retrieval.get("exposure")
+        return value or "prefetch"
+
+    def _source_for_docs(self, doc_ids: list) -> Dict[str, Any]:
+        """Build a ClassicRAG-style source dict scoped to ``doc_ids``."""
+        if not doc_ids:
+            return {}
+        return {"active_docs": doc_ids}
+
+    def _exposure_partition(self) -> tuple[list, list]:
+        """Split the per-source list into (prefetch, agentic_tool) subsets.
+
+        Honored only by the agentic/research path (D11). When no source carries
+        a config, every source defaults to ``prefetch`` so behavior is unchanged.
+        """
+        prefetch = self._build_per_source_list(exposure="prefetch")
+        agentic = self._build_per_source_list(exposure="agentic_tool")
+        return prefetch, agentic
+
+    def create_retriever(self, exposure: Optional[str] = None):
+        """Build the (dispatching) retriever for pre-fetch.
+
+        When ``exposure`` is given, only the matching subset of sources is
+        retrieved and the dispatcher's source list is scoped to it; the global
+        ``self.source`` (used as the fallback group) is also narrowed so a
+        mixed agentic agent pre-fetches just the ``prefetch`` sources.
+        """
+        per_source = self._build_per_source_list(exposure=exposure)
+        if exposure is not None:
+            source = self._source_for_docs([e["id"] for e in per_source])
+        else:
+            source = self.source
+        retriever_kwargs = dict(
+            source=source,
             chat_history=self.history,
             prompt=get_prompt(self.agent_config["prompt_id"], self.prompts_collection),
             chunks=self.retriever_config["chunks"],
@@ -802,16 +902,41 @@ class StreamProcessor:
             decoded_token=self.decoded_token,
         )
 
-    def pre_fetch_docs(self, question: str) -> tuple[Optional[str], Optional[list]]:
-        """Pre-fetch documents for template rendering before agent creation"""
+        def _legacy_classic():
+            return RetrieverCreator.create_retriever(
+                self.retriever_config["retriever_name"], **retriever_kwargs
+            )
+
+        # Dispatcher routes each source to its configured retriever and merges
+        # under one shared budget; the kill-switch falls back to the single
+        # legacy retriever (PER_SOURCE_RETRIEVAL_ENABLED=False).
+        return build_dispatcher(
+            _legacy_classic,
+            sources=per_source,
+            **retriever_kwargs,
+        )
+
+    def pre_fetch_docs(
+        self, question: str, exposure: Optional[str] = None
+    ) -> tuple[Optional[str], Optional[list]]:
+        """Pre-fetch documents for template rendering before agent creation.
+
+        ``exposure`` scopes pre-fetch to the matching source subset (D11); when
+        None all active docs are retrieved (classic agents, unchanged).
+        """
         if self.data.get("isNoneDoc", False) and not self.agent_id:
             logger.info("Pre-fetch skipped: isNoneDoc=True")
             return None, None
         if not self._has_active_docs():
             logger.info("Pre-fetch skipped: no active docs configured")
             return None, None
+        if exposure is not None and not self._build_per_source_list(
+            exposure=exposure
+        ):
+            logger.info("Pre-fetch skipped: no %s sources", exposure)
+            return None, None
         try:
-            retriever = self.create_retriever()
+            retriever = self.create_retriever(exposure=exposure)
             logger.info(
                 f"Pre-fetching docs with chunks={retriever.chunks}, doc_token_limit={retriever.doc_token_limit}"
             )
@@ -1247,8 +1372,14 @@ class StreamProcessor:
         docs_together: Optional[str] = None,
         docs: Optional[list] = None,
         tools_data: Optional[Dict[str, Any]] = None,
+        agentic_sources: Optional[list] = None,
     ):
-        """Create and return the configured agent with rendered prompt"""
+        """Create and return the configured agent with rendered prompt.
+
+        ``agentic_sources`` (D11) scopes the agentic search tool to the
+        ``agentic_tool`` source subset; when None the tool exposes all of the
+        agent's sources (today's behavior).
+        """
         agent_type = self.agent_config["agent_type"]
 
         # _get_prompt_content handles the agentic preset swap and caching;
@@ -1368,8 +1499,23 @@ class StreamProcessor:
 
         # Type-specific kwargs
         if agent_type in ("agentic", "research"):
+            # D11: when an ``agentic_tool`` subset is supplied, scope the search
+            # tool to it; otherwise the tool exposes every source (today's
+            # behavior). ``tool_sources`` drives both the source dict and the
+            # per-source dispatch list the InternalSearchTool uses.
+            tool_sources = (
+                agentic_sources
+                if agentic_sources is not None
+                else self._build_per_source_list()
+            )
+            if agentic_sources is not None:
+                agentic_source = self._source_for_docs(
+                    [e["id"] for e in tool_sources]
+                )
+            else:
+                agentic_source = self.source
             agent_kwargs["retriever_config"] = {
-                "source": self.source,
+                "source": agentic_source,
                 "retriever_name": self.retriever_config.get(
                     "retriever_name", "classic"
                 ),
@@ -1377,6 +1523,9 @@ class StreamProcessor:
                 "doc_token_limit": self.retriever_config.get(
                     "doc_token_limit", 50000
                 ),
+                # Per-source list so on-demand agentic search dispatches each
+                # source to its configured retriever, matching pre-fetch.
+                "sources": tool_sources,
                 "model_id": self.model_id,
                 "model_user_id": self.model_user_id,
                 # Agent owner — internal_search resolves the agent's sources as

@@ -103,6 +103,7 @@
       },
       "actions": "Actions",
       "view": "View",
+      "editConfig": "Edit retrieval config",
       "shareWithTeam": "Share with team",
       "deleteWarning": "Are you sure you want to delete \"{{name}}\"?",
       "confirmDelete": "Are you sure you want to delete this file? This action cannot be undone.",
@@ -130,7 +131,68 @@
       "uploadingFilesTitle": "Uploading files...",
       "deletingTitle": "Deleting...",
       "deleteDirectoryWarning": "Are you sure you want to delete the directory \"{{name}}\" and all its contents? This action cannot be undone.",
-      "searchAlt": "Search"
+      "searchAlt": "Search",
+      "retrievalOptions": {
+        "title": "Retrieval options",
+        "retrieval": {
+          "title": "Retrieval",
+          "note": "These changes take effect immediately, no re-ingest needed.",
+          "chunks": "Chunks to retrieve (top-k)",
+          "scoreThreshold": "Score threshold",
+          "scoreThresholdPlaceholder": "None",
+          "scoreThresholdHint": "Best-effort: only pgvector and MongoDB honor this; other vector stores ignore it.",
+          "rephraseQuery": "Rephrase query before search",
+          "retriever": "Retriever",
+          "retrievers": {
+            "classic": "Classic"
+          },
+          "exposure": "Search exposure",
+          "exposures": {
+            "prefetch": "Pre-fetch into context",
+            "agentic_tool": "Agentic search tool"
+          },
+          "exposureHint": "Only affects agentic/research agents. Classic agents always pre-fetch."
+        },
+        "prescreen": {
+          "enable": "Enable LLM prescreen",
+          "warning": "Fetches a larger candidate set and uses an LLM to filter it. This adds query-time latency and cost.",
+          "candidateK": "Candidates to fetch",
+          "maxKeep": "Max chunks to keep",
+          "batchSize": "Batch size",
+          "model": "Model (optional)",
+          "modelPlaceholder": "Defaults to the request model"
+        },
+        "chunking": {
+          "title": "Chunking",
+          "note": "Ingest-time settings. Changing these requires re-ingesting the source.",
+          "strategy": "Chunking strategy",
+          "strategies": {
+            "classic_chunk": "Classic",
+            "recursive": "Recursive",
+            "markdown": "Markdown",
+            "parent_child": "Parent / child"
+          },
+          "maxTokens": "Max tokens per chunk",
+          "minTokens": "Min tokens per chunk",
+          "duplicateHeaders": "Duplicate headers across chunks"
+        }
+      },
+      "configModal": {
+        "title": "Retrieval config",
+        "subtitle": "Configure how \"{{name}}\" is chunked and retrieved.",
+        "subtitleGeneric": "Configure how this source is chunked and retrieved.",
+        "save": "Save",
+        "saving": "Saving…",
+        "readOnly": "You have view-only access to this shared source and cannot change its config.",
+        "chunkingChangeHint": "You changed a chunking setting. Saving will require re-ingesting this source for it to take effect.",
+        "prescreenInvalidHint": "Check the prescreen values: candidates to fetch must be at least the number of chunks, and chunks to keep must not exceed candidates to fetch.",
+        "reingestRequired": "Your changes were saved. The chunking settings you changed only take effect after a re-ingest. Re-ingest now?",
+        "reingestLater": "Later",
+        "errors": {
+          "forbidden": "You don't have permission to edit this source's config.",
+          "saveFailed": "Failed to save config. Please try again."
+        }
+      }
     },
     "apiKeys": {
       "label": "Chatbots",

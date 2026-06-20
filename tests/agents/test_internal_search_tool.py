@@ -254,14 +254,39 @@ class TestBuildHelpers:
 class TestInternalSearchToolGetRetriever:
     """Cover line 32: _get_retriever creates retriever lazily."""
 
-    def test_get_retriever_creates_retriever(self):
+    def test_get_retriever_creates_dispatcher(self):
+        # _get_retriever now builds the per-source Dispatcher (B1c) lazily and
+        # caches it; the Dispatcher creates per-group retrievers at search time.
+        from application.retriever.dispatcher import Dispatcher
+
+        tool = InternalSearchTool({
+            "source": {"active_docs": ["a"]},
+            "retriever_name": "classic",
+            "chunks": 2,
+            "sources": [],
+        })
+        assert tool._retriever is None
+
+        with patch(
+            "application.retriever.classic_rag.LLMCreator.create_llm",
+            return_value=Mock(),
+        ):
+            result = tool._get_retriever()
+
+        assert isinstance(result, Dispatcher)
+        assert tool._retriever is result
+
+    def test_get_retriever_kill_switch_falls_back_to_legacy(self, monkeypatch):
+        # PER_SOURCE_RETRIEVAL_ENABLED=False → legacy single RetrieverCreator.
+        monkeypatch.setattr(
+            "application.retriever.dispatcher.settings.PER_SOURCE_RETRIEVAL_ENABLED",
+            False,
+        )
         tool = InternalSearchTool({
             "source": {},
             "retriever_name": "classic",
             "chunks": 2,
         })
-        assert tool._retriever is None
-
         mock_retriever = Mock()
         with patch(
             "application.agents.tools.internal_search.RetrieverCreator"

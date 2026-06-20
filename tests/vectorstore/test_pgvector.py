@@ -111,6 +111,25 @@ class TestPGVectorStoreSearch:
         assert len(results) == 1
         assert results[0].metadata == {}
 
+    def test_score_threshold_filters_by_distance(self):
+        # similarity = 1 - distance; threshold 0.85 → keep distance <= 0.15.
+        store, _, mock_cursor, _ = _make_store()
+        mock_cursor.fetchall.return_value = [
+            ("close", {}, 0.10),   # sim 0.90 → kept
+            ("far", {}, 0.40),     # sim 0.60 → dropped
+        ]
+        results = store.search("query", k=5, score_threshold=0.85)
+        assert [r.page_content for r in results] == ["close"]
+
+    def test_no_score_threshold_keeps_all(self):
+        store, _, mock_cursor, _ = _make_store()
+        mock_cursor.fetchall.return_value = [
+            ("a", {}, 0.10),
+            ("b", {}, 0.90),
+        ]
+        results = store.search("query", k=5)
+        assert len(results) == 2
+
 
 @pytest.mark.unit
 class TestPGVectorStoreAddTexts:

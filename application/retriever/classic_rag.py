@@ -23,6 +23,7 @@ class ClassicRAG(BaseRetriever):
         api_key=settings.API_KEY,
         decoded_token=None,
         model_user_id=None,
+        defer_rephrase=False,
     ):
         self.original_question = source.get("question", "")
         self.chat_history = chat_history if chat_history is not None else []
@@ -71,9 +72,26 @@ class ClassicRAG(BaseRetriever):
                 self.vectorstores = [source["active_docs"]]
         else:
             self.vectorstores = []
-        self.question = self._rephrase_query()
+        # Per-source retrieval overrides ({doc_id: RetrievalConfig}); set by the
+        # Dispatcher. Empty → global behaviour, byte-identical to today.
+        self.per_source_retrieval = {}
+        # Rephrased query is computed lazily when deferred so a source with
+        # rephrase_query=False can skip the LLM side-call entirely. The default
+        # path (defer_rephrase=False) rephrases eagerly, exactly as before.
+        self._rephrased_question = None
+        if defer_rephrase:
+            self.question = self.original_question
+        else:
+            self.question = self._rephrase_query()
+            self._rephrased_question = self.question
         self.decoded_token = decoded_token
         self._validate_vectorstore_config()
+
+    def _get_rephrased_question(self) -> str:
+        """Return the rephrased query, computing it once and caching it."""
+        if self._rephrased_question is None:
+            self._rephrased_question = self._rephrase_query()
+        return self._rephrased_question
 
     def _validate_vectorstore_config(self):
         """Validate vectorstore IDs and remove any empty/invalid entries"""
@@ -139,12 +157,45 @@ class ClassicRAG(BaseRetriever):
         for vectorstore_id in self.vectorstores:
             if vectorstore_id:
                 try:
+                    # Per-source overrides (set by the Dispatcher). Absent →
+                    # global behaviour, byte-identical to before.
+                    src_cfg = self.per_source_retrieval.get(vectorstore_id)
+                    if src_cfg is not None:
+                        src_k = max(1, int(src_cfg.chunks))
+                        # Prescreen fetches a larger candidate set up front; the
+                        # Dispatcher's prescreen stage trims back to max_keep
+                        # afterwards. Raise the fetch size to candidate_k here.
+                        ps_cfg = (
+                            src_cfg.prescreen_config()
+                            if hasattr(src_cfg, "prescreen_config")
+                            else None
+                        )
+                        if ps_cfg is not None:
+                            src_k = max(src_k, int(ps_cfg.candidate_k))
+                        score_threshold = src_cfg.score_threshold
+                        question = (
+                            self._get_rephrased_question()
+                            if src_cfg.rephrase_query
+                            else self.original_question
+                        )
+                    else:
+                        src_k = chunks_per_source
+                        score_threshold = None
+                        # No per-source override → the effective rephrase_query
+                        # defaults to True, so use the (lazily-cached) rephrased
+                        # question. In the non-deferred path the cache is already
+                        # populated, so this matches today's behaviour exactly.
+                        question = self._get_rephrased_question()
+
                     docsearch = VectorCreator.create_vectorstore(
                         settings.VECTOR_STORE, vectorstore_id, settings.EMBEDDINGS_KEY
                     )
-                    docs_temp = docsearch.search(
-                        self.question, k=max(chunks_per_source * 2, 20)
-                    )
+                    # ``score_threshold`` is honoured by pgvector/mongodb and
+                    # safely ignored by stores whose ``search`` swallows kwargs.
+                    search_kwargs = {"k": max(src_k * 2, 20)}
+                    if score_threshold is not None:
+                        search_kwargs["score_threshold"] = score_threshold
+                    docs_temp = docsearch.search(question, **search_kwargs)
 
                     for doc in docs_temp:
                         if cumulative_tokens >= token_budget:
@@ -212,5 +263,9 @@ class ClassicRAG(BaseRetriever):
         """Search for documents using optional query override"""
         if query:
             self.original_question = query
+            # Invalidate the cached rephrase so a per-source path that opts in
+            # rephrases against the new query, not a stale one.
+            self._rephrased_question = None
             self.question = self._rephrase_query()
+            self._rephrased_question = self.question
         return self._get_data()

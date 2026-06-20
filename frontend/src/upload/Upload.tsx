@@ -41,6 +41,12 @@ import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
 import { FilePicker } from '../components/FilePicker';
 import GoogleDrivePicker from '../components/GoogleDrivePicker';
 import { FILE_UPLOAD_ACCEPT } from '../constants/fileUpload';
+import RetrievalOptions, {
+  DEFAULT_RETRIEVAL_OPTIONS,
+  isPrescreenConfigValid,
+  optionsToConfig,
+  type RetrievalOptionsValue,
+} from '../settings/components/RetrievalOptions';
 
 import ChevronRight from '../assets/chevron-right.svg';
 
@@ -65,6 +71,8 @@ function Upload({
   const [files, setfiles] = useState<File[]>(receivedFile);
   const [activeTab, setActiveTab] = useState<boolean>(true);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+  const [retrievalOptions, setRetrievalOptions] =
+    useState<RetrievalOptionsValue>(DEFAULT_RETRIEVAL_OPTIONS);
 
   // File picker state
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
@@ -333,6 +341,7 @@ function Upload({
     setSelectedFiles([]);
     setSelectedFolders([]);
     setShowAdvancedOptions(false);
+    setRetrievalOptions(DEFAULT_RETRIEVAL_OPTIONS);
     setNameTouched(false);
   }, []);
 
@@ -492,6 +501,10 @@ function Upload({
 
     formData.append('name', ingestor.name);
     formData.append('user', 'local');
+    formData.append(
+      'config',
+      JSON.stringify(optionsToConfig(retrievalOptions)),
+    );
 
     const apiHost = import.meta.env.VITE_API_HOST;
     const xhr = new XMLHttpRequest();
@@ -573,6 +586,10 @@ function Upload({
     formData.append('name', ingestor.name);
     formData.append('user', 'local');
     formData.append('source', ingestor.type as string);
+    formData.append(
+      'config',
+      JSON.stringify(optionsToConfig(retrievalOptions)),
+    );
 
     const ingestorSchema = getIngestorSchema(ingestor.type as IngestorType);
     if (!ingestorSchema) {
@@ -753,6 +770,9 @@ function Upload({
     if (!ingestor.name?.trim()) {
       return true;
     }
+
+    // Block submit on an incoherent prescreen config; the backend rejects it.
+    if (!isPrescreenConfigValid(retrievalOptions)) return true;
 
     if (!ingestor.type) return true;
     const ingestorSchemaForValidation = getIngestorSchema(
@@ -948,6 +968,10 @@ function Upload({
                   className="w-full"
                 />
                 {renderFormFields()}
+                <RetrievalOptions
+                  value={retrievalOptions}
+                  onChange={setRetrievalOptions}
+                />
               </div>
             )}
 

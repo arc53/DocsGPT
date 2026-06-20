@@ -95,7 +95,17 @@ class Settings(BaseSettings):
     # default (100) drives worker RSS to ~3 GB on a mid-size PDF.
     DOCLING_PIPELINE_QUEUE_MAX_SIZE: int = 2
     VECTOR_STORE: str = "faiss"  #  "faiss" or "elasticsearch" or "qdrant" or "milvus" or "lancedb" or "pgvector"
-    RETRIEVERS_ENABLED: list = ["classic_rag"]
+    # Allow-list of retriever keys an agent may use. Values must match the
+    # ``RetrieverCreator.retrievers`` registry keys (``classic`` / ``default``),
+    # NOT the legacy ``classic_rag`` label which never matched the registry.
+    RETRIEVERS_ENABLED: list = ["classic", "default"]
+    # Kill-switch for per-source retrieval dispatch. When False the retrieval
+    # path collapses to today's single-retriever behavior (consumed by the
+    # Dispatcher in a later change; defined here so the flag exists up front).
+    PER_SOURCE_RETRIEVAL_ENABLED: bool = True
+    # Flagship GraphRAG flag. Reserved and unused for now; gates graph-aware
+    # ingestion/retrieval when that feature lands.
+    GRAPHRAG_ENABLED: bool = False
     AGENT_NAME: str = "classic"
     FALLBACK_LLM_PROVIDER: Optional[str] = None  # provider for fallback llm
     FALLBACK_LLM_NAME: Optional[str] = None  # model name for fallback llm

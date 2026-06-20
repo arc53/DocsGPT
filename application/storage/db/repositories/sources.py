@@ -10,13 +10,14 @@ from sqlalchemy import case, Connection, func, or_, select, text
 
 from application.storage.db.base_repository import looks_like_uuid, row_to_dict
 from application.storage.db.models import ingest_chunk_progress_table, sources_table
+from application.storage.db.source_config import SourceConfig
 
 
 _SCALAR_COLUMNS = {
     "name", "type", "retriever", "sync_frequency", "tokens", "file_path",
     "language", "model", "date",
 }
-_JSONB_COLUMNS = {"metadata", "remote_data", "directory_structure", "file_name_map"}
+_JSONB_COLUMNS = {"metadata", "remote_data", "directory_structure", "file_name_map", "config"}
 _ALLOWED_COLUMNS = _SCALAR_COLUMNS | _JSONB_COLUMNS
 
 # Whitelist for sort columns exposed via ``list_for_user``. Anything not in
@@ -93,6 +94,20 @@ def _coerce_jsonb(value: Any) -> Any:
     return value
 
 
+def _normalize_config(config: Any) -> dict:
+    """Strict-validate the write-path ``config`` and return a plain dict.
+
+    ``None`` becomes ``{}`` (classic defaults). A dict is validated through
+    ``SourceConfig`` (raises on bad input, D7 strict-on-write) and dumped
+    back to a normalized dict for JSONB storage.
+    """
+    if config is None:
+        return {}
+    if not isinstance(config, dict):
+        raise ValueError("config must be a dict")
+    return SourceConfig.model_validate(config).model_dump()
+
+
 def _ingest_status_case():
     """Derive a user-facing ingest status from the joined progress row.
 
@@ -120,6 +135,7 @@ class SourcesRepository:
         user_id: str,
         type: Optional[str] = None,
         metadata: Optional[dict] = None,
+        config: Optional[dict] = None,
         retriever: Optional[str] = None,
         sync_frequency: Optional[str] = None,
         tokens: Optional[str] = None,
@@ -136,7 +152,7 @@ class SourcesRepository:
             text(
                 """
                 INSERT INTO sources (
-                    id, user_id, name, type, metadata,
+                    id, user_id, name, type, metadata, config,
                     retriever, sync_frequency, tokens, file_path,
                     remote_data, directory_structure, file_name_map,
                     language, model, date, legacy_mongo_id
@@ -144,6 +160,7 @@ class SourcesRepository:
                 VALUES (
                     COALESCE(CAST(:source_id AS uuid), gen_random_uuid()),
                     :user_id, :name, :type, CAST(:metadata AS jsonb),
+                    CAST(:config AS jsonb),
                     :retriever, :sync_frequency, :tokens, :file_path,
                     CAST(:remote_data AS jsonb),
                     CAST(:directory_structure AS jsonb),
@@ -161,6 +178,7 @@ class SourcesRepository:
                 "name": name,
                 "type": type,
                 "metadata": json.dumps(metadata or {}),
+                "config": json.dumps(_normalize_config(config)),
                 "retriever": retriever,
                 "sync_frequency": sync_frequency,
                 "tokens": tokens,
