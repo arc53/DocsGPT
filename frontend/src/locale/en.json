@@ -133,7 +133,7 @@
       "deleteDirectoryWarning": "Are you sure you want to delete the directory \"{{name}}\" and all its contents? This action cannot be undone.",
       "searchAlt": "Search",
       "retrievalOptions": {
-        "title": "Retrieval options",
+        "title": "Advanced settings",
         "retrieval": {
           "title": "Retrieval",
           "note": "These changes take effect immediately, no re-ingest needed.",

@@ -524,7 +524,7 @@ export default function RetrievalOptions({
         type="button"
         variant="link"
         onClick={() => setOpen((o) => !o)}
-        className="h-auto w-fit justify-start px-0 py-2 text-sm font-normal hover:no-underline"
+        className="text-foreground hover:text-foreground h-auto w-fit justify-start px-0 py-2 text-sm font-normal hover:no-underline"
       >
         <img
           src={ChevronRight}
