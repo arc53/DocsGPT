@@ -103,7 +103,7 @@
       },
       "actions": "Actions",
       "view": "View",
-      "editConfig": "Edit retrieval config",
+      "editConfig": "Source settings",
       "shareWithTeam": "Share with team",
       "deleteWarning": "Are you sure you want to delete \"{{name}}\"?",
       "confirmDelete": "Are you sure you want to delete this file? This action cannot be undone.",
@@ -178,7 +178,7 @@
         }
       },
       "configModal": {
-        "title": "Retrieval config",
+        "title": "Source settings",
         "subtitle": "Configure how \"{{name}}\" is chunked and retrieved.",
         "subtitleGeneric": "Configure how this source is chunked and retrieved.",
         "save": "Save",
