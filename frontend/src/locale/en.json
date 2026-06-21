@@ -137,6 +137,7 @@
         "retrieval": {
           "title": "Retrieval",
           "note": "These changes take effect immediately, no re-ingest needed.",
+          "tag": "live · no re-ingest",
           "chunks": "Chunks to retrieve (top-k)",
           "scoreThreshold": "Score threshold",
           "scoreThresholdPlaceholder": "None",
@@ -165,6 +166,7 @@
         "chunking": {
           "title": "Chunking",
           "note": "Ingest-time settings. Changing these requires re-ingesting the source.",
+          "tag": "re-ingest to apply",
           "strategy": "Chunking strategy",
           "strategies": {
             "classic_chunk": "Classic",

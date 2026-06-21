@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { cn } from '@/lib/utils';
 
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -82,6 +84,64 @@ const CHUNKING_STRATEGIES: ChunkingStrategy[] = [
   'markdown',
   'parent_child',
 ];
+
+/**
+ * Group eyebrow: an uppercase, tracked title with a normal-weight muted ` · tag`
+ * suffix. Reads as more prominent than the individual field labels below it.
+ */
+function GroupHeader({ title, tag }: { title: string; tag: string }) {
+  return (
+    <h4 className="text-foreground text-xs font-semibold tracking-wider uppercase">
+      {title}
+      <span className="text-muted-foreground font-normal normal-case">
+        {' · '}
+        {tag}
+      </span>
+    </h4>
+  );
+}
+
+/**
+ * One settings row: a left block (medium-weight label plus optional muted
+ * description) and a right block holding the control. `alignStart` top-aligns
+ * the row for controls paired with a multi-line description; otherwise both
+ * sides are vertically centered.
+ */
+function SettingRow({
+  label,
+  htmlFor,
+  description,
+  alignStart = false,
+  children,
+}: {
+  label: string;
+  htmlFor?: string;
+  description?: ReactNode;
+  alignStart?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex flex-row justify-between gap-4 py-3 first:pt-0 last:pb-0',
+        alignStart ? 'items-start' : 'items-center',
+      )}
+    >
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <Label
+          htmlFor={htmlFor}
+          className="text-foreground text-sm font-medium"
+        >
+          {label}
+        </Label>
+        {description ? (
+          <p className="text-muted-foreground text-xs">{description}</p>
+        ) : null}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
 
 /**
  * Hydrate the form value from a stored (possibly partial/absent) SourceConfig,
@@ -238,277 +298,258 @@ export default function RetrievalOptions({
   const body = (
     <div className="flex flex-col gap-6">
       {/* Retrieval group (live) */}
-      <div className="flex flex-col gap-4">
-        <div>
-          <h4 className="text-foreground text-sm font-semibold">
-            {tr('retrieval.title')}
-          </h4>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            {tr('retrieval.note')}
-          </p>
-        </div>
+      <div className="flex flex-col gap-3">
+        <GroupHeader title={tr('retrieval.title')} tag={tr('retrieval.tag')} />
 
-        <Input
-          type="number"
-          min={1}
-          label={tr('retrieval.chunks')}
-          value={String(value.retrieval.chunks)}
-          disabled={disabled}
-          labelBgClassName="bg-card"
-          onChange={(e) =>
-            setRetrieval({ chunks: Math.max(1, Number(e.target.value) || 1) })
-          }
-        />
+        <div className="divide-border/50 divide-y">
+          <SettingRow label={tr('retrieval.chunks')} htmlFor="retrieval-chunks">
+            <Input
+              id="retrieval-chunks"
+              type="number"
+              min={1}
+              className="w-24 text-right"
+              value={String(value.retrieval.chunks)}
+              disabled={disabled}
+              onChange={(e) =>
+                setRetrieval({
+                  chunks: Math.max(1, Number(e.target.value) || 1),
+                })
+              }
+            />
+          </SettingRow>
 
-        <div className="flex flex-col gap-1.5">
-          <Input
-            type="number"
-            step="0.01"
+          <SettingRow
             label={tr('retrieval.scoreThreshold')}
-            value={
-              value.retrieval.score_threshold === null
-                ? ''
-                : String(value.retrieval.score_threshold)
-            }
-            disabled={disabled}
-            labelBgClassName="bg-card"
-            placeholder={tr('retrieval.scoreThresholdPlaceholder')}
-            onChange={(e) => {
-              const raw = e.target.value;
-              setRetrieval({
-                score_threshold: raw === '' ? null : Number(raw),
-              });
-            }}
-          />
-          <p className="text-muted-foreground text-xs">
-            {tr('retrieval.scoreThresholdHint')}
-          </p>
-        </div>
-
-        <div className="flex flex-row items-center justify-between gap-3">
-          <Label htmlFor="retrieval-rephrase" className="text-foreground">
-            {tr('retrieval.rephraseQuery')}
-          </Label>
-          <Switch
-            id="retrieval-rephrase"
-            checked={value.retrieval.rephrase_query}
-            disabled={disabled}
-            onCheckedChange={(checked) =>
-              setRetrieval({ rephrase_query: checked })
-            }
-          />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="retrieval-retriever" className="text-foreground">
-            {tr('retrieval.retriever')}
-          </Label>
-          <Select value="classic" disabled>
-            <SelectTrigger
-              id="retrieval-retriever"
-              className="w-full rounded-md"
-              size="lg"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="classic">
-                {tr('retrieval.retrievers.classic')}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="retrieval-exposure" className="text-foreground">
-            {tr('retrieval.exposure')}
-          </Label>
-          <Select
-            value={value.retrieval.exposure}
-            disabled={disabled}
-            onValueChange={(v) =>
-              setRetrieval({ exposure: v as RetrievalExposure })
-            }
+            htmlFor="retrieval-score-threshold"
+            description={tr('retrieval.scoreThresholdHint')}
+            alignStart
           >
-            <SelectTrigger
-              id="retrieval-exposure"
-              className="w-full rounded-md"
-              size="lg"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="prefetch">
-                {tr('retrieval.exposures.prefetch')}
-              </SelectItem>
-              <SelectItem value="agentic_tool">
-                {tr('retrieval.exposures.agentic_tool')}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <p className="text-muted-foreground text-xs">
-            {tr('retrieval.exposureHint')}
-          </p>
-        </div>
+            <Input
+              id="retrieval-score-threshold"
+              type="number"
+              step="0.01"
+              className="w-24 text-right"
+              value={
+                value.retrieval.score_threshold === null
+                  ? ''
+                  : String(value.retrieval.score_threshold)
+              }
+              disabled={disabled}
+              placeholder={tr('retrieval.scoreThresholdPlaceholder')}
+              onChange={(e) => {
+                const raw = e.target.value;
+                setRetrieval({
+                  score_threshold: raw === '' ? null : Number(raw),
+                });
+              }}
+            />
+          </SettingRow>
 
-        {/* Prescreen sub-group */}
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-row items-center justify-between gap-3">
-            <Label htmlFor="retrieval-prescreen" className="text-foreground">
-              {tr('prescreen.enable')}
-            </Label>
+          <SettingRow
+            label={tr('retrieval.rephraseQuery')}
+            htmlFor="retrieval-rephrase"
+          >
+            <Switch
+              id="retrieval-rephrase"
+              checked={value.retrieval.rephrase_query}
+              disabled={disabled}
+              onCheckedChange={(checked) =>
+                setRetrieval({ rephrase_query: checked })
+              }
+            />
+          </SettingRow>
+
+          <SettingRow
+            label={tr('retrieval.exposure')}
+            htmlFor="retrieval-exposure"
+            description={tr('retrieval.exposureHint')}
+            alignStart
+          >
+            <Select
+              value={value.retrieval.exposure}
+              disabled={disabled}
+              onValueChange={(v) =>
+                setRetrieval({ exposure: v as RetrievalExposure })
+              }
+            >
+              <SelectTrigger
+                id="retrieval-exposure"
+                className="w-52 rounded-md"
+                size="lg"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="prefetch">
+                  {tr('retrieval.exposures.prefetch')}
+                </SelectItem>
+                <SelectItem value="agentic_tool">
+                  {tr('retrieval.exposures.agentic_tool')}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+
+          <SettingRow
+            label={tr('prescreen.enable')}
+            htmlFor="retrieval-prescreen"
+            description={tr('prescreen.warning')}
+            alignStart
+          >
             <Switch
               id="retrieval-prescreen"
               checked={value.retrieval.prescreen.enabled}
               disabled={disabled}
               onCheckedChange={(checked) => setPrescreen({ enabled: checked })}
             />
-          </div>
-          <p className="text-muted-foreground text-xs">
-            {tr('prescreen.warning')}
-          </p>
-          {value.retrieval.prescreen.enabled && (
-            <div className="border-border flex flex-col gap-4 rounded-lg border p-4">
-              <Input
-                type="number"
-                min={value.retrieval.chunks}
-                label={tr('prescreen.candidateK')}
-                value={String(value.retrieval.prescreen.candidate_k)}
-                disabled={disabled}
-                labelBgClassName="bg-card"
-                onChange={(e) =>
-                  setPrescreen({
-                    candidate_k: Math.max(
-                      value.retrieval.chunks,
-                      Number(e.target.value) || value.retrieval.chunks,
-                    ),
-                  })
-                }
-              />
-              <Input
-                type="number"
-                min={1}
-                label={tr('prescreen.maxKeep')}
-                value={String(value.retrieval.prescreen.max_keep)}
-                disabled={disabled}
-                labelBgClassName="bg-card"
-                onChange={(e) =>
-                  setPrescreen({
-                    max_keep: Math.min(
-                      value.retrieval.prescreen.candidate_k,
-                      Math.max(1, Number(e.target.value) || 1),
-                    ),
-                  })
-                }
-              />
-              <Input
-                type="number"
-                min={1}
-                label={tr('prescreen.batchSize')}
-                value={String(value.retrieval.prescreen.batch_size)}
-                disabled={disabled}
-                labelBgClassName="bg-card"
-                onChange={(e) =>
-                  setPrescreen({
-                    batch_size: Math.max(1, Number(e.target.value) || 1),
-                  })
-                }
-              />
-              <Input
-                type="text"
-                label={tr('prescreen.model')}
-                value={value.retrieval.prescreen.model ?? ''}
-                disabled={disabled}
-                labelBgClassName="bg-card"
-                placeholder={tr('prescreen.modelPlaceholder')}
-                onChange={(e) =>
-                  setPrescreen({ model: e.target.value || null })
-                }
-              />
-            </div>
-          )}
+          </SettingRow>
         </div>
+
+        {/* Prescreen expanded inputs (kept as floating-label cards) */}
+        {value.retrieval.prescreen.enabled && (
+          <div className="border-border ml-4 flex flex-col gap-4 rounded-lg border p-4">
+            <Input
+              type="number"
+              min={value.retrieval.chunks}
+              label={tr('prescreen.candidateK')}
+              value={String(value.retrieval.prescreen.candidate_k)}
+              disabled={disabled}
+              labelBgClassName="bg-card"
+              onChange={(e) =>
+                setPrescreen({
+                  candidate_k: Math.max(
+                    value.retrieval.chunks,
+                    Number(e.target.value) || value.retrieval.chunks,
+                  ),
+                })
+              }
+            />
+            <Input
+              type="number"
+              min={1}
+              label={tr('prescreen.maxKeep')}
+              value={String(value.retrieval.prescreen.max_keep)}
+              disabled={disabled}
+              labelBgClassName="bg-card"
+              onChange={(e) =>
+                setPrescreen({
+                  max_keep: Math.min(
+                    value.retrieval.prescreen.candidate_k,
+                    Math.max(1, Number(e.target.value) || 1),
+                  ),
+                })
+              }
+            />
+            <Input
+              type="number"
+              min={1}
+              label={tr('prescreen.batchSize')}
+              value={String(value.retrieval.prescreen.batch_size)}
+              disabled={disabled}
+              labelBgClassName="bg-card"
+              onChange={(e) =>
+                setPrescreen({
+                  batch_size: Math.max(1, Number(e.target.value) || 1),
+                })
+              }
+            />
+            <Input
+              type="text"
+              label={tr('prescreen.model')}
+              value={value.retrieval.prescreen.model ?? ''}
+              disabled={disabled}
+              labelBgClassName="bg-card"
+              placeholder={tr('prescreen.modelPlaceholder')}
+              onChange={(e) => setPrescreen({ model: e.target.value || null })}
+            />
+          </div>
+        )}
       </div>
 
-      <hr className="border-border/60" />
-
       {/* Chunking group (re-ingest required) */}
-      <div className="flex flex-col gap-4">
-        <div>
-          <h4 className="text-foreground text-sm font-semibold">
-            {tr('chunking.title')}
-          </h4>
-          <p className="text-muted-foreground mt-0.5 text-xs">
-            {tr('chunking.note')}
-          </p>
-        </div>
+      <div className="flex flex-col gap-3">
+        <GroupHeader title={tr('chunking.title')} tag={tr('chunking.tag')} />
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="chunking-strategy" className="text-foreground">
-            {tr('chunking.strategy')}
-          </Label>
-          <Select
-            value={value.chunking.strategy}
-            disabled={disabled}
-            onValueChange={(v) =>
-              setChunking({ strategy: v as ChunkingStrategy })
-            }
+        <div className="divide-border/50 divide-y">
+          <SettingRow
+            label={tr('chunking.strategy')}
+            htmlFor="chunking-strategy"
           >
-            <SelectTrigger
-              id="chunking-strategy"
-              className="w-full rounded-md"
-              size="lg"
+            <Select
+              value={value.chunking.strategy}
+              disabled={disabled}
+              onValueChange={(v) =>
+                setChunking({ strategy: v as ChunkingStrategy })
+              }
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {strategyOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+              <SelectTrigger
+                id="chunking-strategy"
+                className="w-52 rounded-md"
+                size="lg"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {strategyOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingRow>
 
-        <Input
-          type="number"
-          min={1}
-          label={tr('chunking.maxTokens')}
-          value={String(value.chunking.max_tokens)}
-          disabled={disabled}
-          labelBgClassName="bg-card"
-          onChange={(e) =>
-            setChunking({
-              max_tokens: Math.max(1, Number(e.target.value) || 1),
-            })
-          }
-        />
-        <Input
-          type="number"
-          min={0}
-          label={tr('chunking.minTokens')}
-          value={String(value.chunking.min_tokens)}
-          disabled={disabled}
-          labelBgClassName="bg-card"
-          onChange={(e) =>
-            setChunking({
-              min_tokens: Math.max(0, Number(e.target.value) || 0),
-            })
-          }
-        />
-        <div className="flex flex-row items-center justify-between gap-3">
-          <Label htmlFor="chunking-dup-headers" className="text-foreground">
-            {tr('chunking.duplicateHeaders')}
-          </Label>
-          <Switch
-            id="chunking-dup-headers"
-            checked={value.chunking.duplicate_headers}
-            disabled={disabled}
-            onCheckedChange={(checked) =>
-              setChunking({ duplicate_headers: checked })
-            }
-          />
+          <SettingRow
+            label={tr('chunking.maxTokens')}
+            htmlFor="chunking-max-tokens"
+          >
+            <Input
+              id="chunking-max-tokens"
+              type="number"
+              min={1}
+              className="w-24 text-right"
+              value={String(value.chunking.max_tokens)}
+              disabled={disabled}
+              onChange={(e) =>
+                setChunking({
+                  max_tokens: Math.max(1, Number(e.target.value) || 1),
+                })
+              }
+            />
+          </SettingRow>
+
+          <SettingRow
+            label={tr('chunking.minTokens')}
+            htmlFor="chunking-min-tokens"
+          >
+            <Input
+              id="chunking-min-tokens"
+              type="number"
+              min={0}
+              className="w-24 text-right"
+              value={String(value.chunking.min_tokens)}
+              disabled={disabled}
+              onChange={(e) =>
+                setChunking({
+                  min_tokens: Math.max(0, Number(e.target.value) || 0),
+                })
+              }
+            />
+          </SettingRow>
+
+          <SettingRow
+            label={tr('chunking.duplicateHeaders')}
+            htmlFor="chunking-dup-headers"
+          >
+            <Switch
+              id="chunking-dup-headers"
+              checked={value.chunking.duplicate_headers}
+              disabled={disabled}
+              onCheckedChange={(checked) =>
+                setChunking({ duplicate_headers: checked })
+              }
+            />
+          </SettingRow>
         </div>
       </div>
     </div>
