@@ -57,9 +57,9 @@ describe('optionsToConfig (write path)', () => {
   });
 
   it('nests prescreen to null when disabled', () => {
-    expect(optionsToConfig(DEFAULT_RETRIEVAL_OPTIONS).retrieval.prescreen).toBe(
-      null,
-    );
+    expect(
+      optionsToConfig(DEFAULT_RETRIEVAL_OPTIONS).retrieval?.prescreen,
+    ).toBe(null);
   });
 
   it('serializes prescreen object when enabled and trims/normalizes model', () => {
@@ -71,13 +71,13 @@ describe('optionsToConfig (write path)', () => {
       batch_size: 7,
       max_keep: 6,
     };
-    const ps = optionsToConfig(v).retrieval.prescreen;
+    const ps = optionsToConfig(v).retrieval?.prescreen;
     expect(ps).not.toBe(null);
     expect(ps?.model).toBe(null);
     expect(ps?.candidate_k).toBe(30);
 
     v.retrieval.prescreen.model = '  gpt-x  ';
-    expect(optionsToConfig(v).retrieval.prescreen?.model).toBe('gpt-x');
+    expect(optionsToConfig(v).retrieval?.prescreen?.model).toBe('gpt-x');
   });
 });
 

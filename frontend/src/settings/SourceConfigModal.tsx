@@ -126,7 +126,8 @@ export default function SourceConfigModal({
       title={t('settings.sources.configModal.title')}
       size="lg"
       mobileVariant="sheet"
-      className="max-w-[600px] md:w-[80vw] lg:w-[60vw]"
+      className="max-h-[90vh] max-w-[600px] md:w-[80vw] lg:w-[60vw]"
+      contentClassName="max-h-[80vh]"
       isPerformingTask={saving}
     >
       <div className="flex h-full flex-col">
