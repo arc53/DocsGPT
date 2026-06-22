@@ -239,6 +239,41 @@ class TestDirectoryStructure:
         stored = SourcesRepository(pg_conn).get(sid, "rebuild-user")
         assert "a.md" in (stored["directory_structure"] or {})
 
+    def test_rebuild_sets_source_tokens_to_sum(self, pg_conn):
+        repo = _repo(pg_conn)
+        owner = "rebuild-tokens-user"
+        sid = str(
+            SourcesRepository(pg_conn).create(
+                "rebuild-tokens-src", user_id=owner, type="wiki"
+            )["id"]
+        )
+        page_a = repo.upsert(sid, "/a.md", "alpha beta gamma")
+        page_b = repo.upsert(sid, "/dir/b.md", "delta epsilon")
+        expected = page_a["token_count"] + page_b["token_count"]
+
+        rebuild_wiki_directory_structure(pg_conn, sid, owner)
+
+        stored = SourcesRepository(pg_conn).get(sid, owner)
+        assert int(stored["tokens"]) == expected
+
+    def test_rebuild_after_delete_lowers_source_tokens(self, pg_conn):
+        repo = _repo(pg_conn)
+        owner = "rebuild-delete-user"
+        sid = str(
+            SourcesRepository(pg_conn).create(
+                "rebuild-delete-src", user_id=owner, type="wiki"
+            )["id"]
+        )
+        page_a = repo.upsert(sid, "/a.md", "alpha beta gamma")
+        repo.upsert(sid, "/b.md", "delta epsilon")
+        rebuild_wiki_directory_structure(pg_conn, sid, owner)
+
+        repo.delete_by_path(sid, "/b.md")
+        rebuild_wiki_directory_structure(pg_conn, sid, owner)
+
+        stored = SourcesRepository(pg_conn).get(sid, owner)
+        assert int(stored["tokens"]) == page_a["token_count"]
+
 
 class TestSetEmbedStatus:
     def test_set_embed_status(self, pg_conn):

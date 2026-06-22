@@ -249,7 +249,8 @@ def rebuild_wiki_directory_structure(
 
     pages = WikiPagesRepository(conn).list_for_source(source_id)
     tree = build_wiki_directory_structure(pages)
+    total_tokens = sum(int(page.get("token_count") or 0) for page in pages)
     SourcesRepository(conn).update(
-        source_id, owner_id, {"directory_structure": tree}
+        source_id, owner_id, {"directory_structure": tree, "tokens": total_tokens}
     )
     return tree

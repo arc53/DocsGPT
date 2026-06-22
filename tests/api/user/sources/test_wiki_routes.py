@@ -94,6 +94,7 @@ class TestCreateWikiSource:
         row = SourcesRepository(pg_conn).get_any(source_id, user)
         assert row["type"] == "wiki"
         assert row["config"]["kind"] == "wiki"
+        assert int(row["tokens"]) == 0
         # No seed content → no re-embed, and never any ingest/reingest task.
         mock_reembed.assert_not_called()
         mock_ingest.assert_not_called()
@@ -105,6 +106,7 @@ class TestCreateWikiSource:
             WikiPage,
             WIKI_INDEX_PATH,
         )
+        from application.storage.db.repositories.sources import SourcesRepository
 
         user = "u-wiki-seed"
         with _patch_db(pg_conn), patch(
@@ -124,6 +126,8 @@ class TestCreateWikiSource:
 
         assert response.status_code == 200
         source_id = response.json["source_id"]
+        row = SourcesRepository(pg_conn).get_any(source_id, user)
+        assert int(row["tokens"]) > 0
         # Re-embed fires once, only for the seed page; no ingest/reingest ever.
         mock_reembed.assert_called_once()
         assert mock_reembed.call_args.args[0] == source_id

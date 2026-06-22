@@ -763,6 +763,7 @@ class CreateWikiSource(Resource):
                     type="wiki",
                     config={"kind": "wiki"},
                     directory_structure={},
+                    tokens=0,
                 )
                 if initial_content:
                     WikiPagesRepository(conn).upsert(
