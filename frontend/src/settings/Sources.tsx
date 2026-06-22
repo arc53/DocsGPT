@@ -436,6 +436,10 @@ export default function Sources({
         <WikiViewer
           docId={documentToView.id || ''}
           sourceName={documentToView.name}
+          canEdit={
+            documentToView.ownership !== 'team' ||
+            documentToView.team_access === 'editor'
+          }
           onBackToDocuments={() => setDocumentToView(undefined)}
         />
       ) : documentToView.isNested ? (

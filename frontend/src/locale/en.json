@@ -106,7 +106,23 @@
       "wiki": {
         "view": "View wiki",
         "empty": "This wiki has no pages yet.",
-        "selectPage": "Select a page to view its contents."
+        "selectPage": "Select a page to view its contents.",
+        "edit": "Edit",
+        "save": "Save",
+        "cancel": "Cancel",
+        "saving": "Saving…",
+        "saveFailed": "Could not save the page. Please try again.",
+        "forbidden": "You do not have permission to edit this page.",
+        "conflict": "This page changed since you opened it and has been reloaded. Your edits are below — reapply and save again.",
+        "editPlaceholder": "Write the page in Markdown…",
+        "stamp": {
+          "editedBy": "Edited by {{who}}",
+          "agent": "agent",
+          "human": "human",
+          "you": "you",
+          "unknown": "unknown",
+          "version": "v{{version}}"
+        }
       },
       "editConfig": "Source settings",
       "shareWithTeam": "Share with team",

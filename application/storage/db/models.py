@@ -431,6 +431,7 @@ wiki_pages_table = Table(
     Column("content_hash", Text),
     Column("embed_status", Text, nullable=False, server_default="pending"),
     Column("updated_by", Text),
+    Column("updated_via", Text),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     UniqueConstraint("source_id", "path", name="wiki_pages_source_path_uidx"),

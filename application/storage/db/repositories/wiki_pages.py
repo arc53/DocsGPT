@@ -37,6 +37,7 @@ class WikiPagesRepository:
         content: str,
         title: Optional[str] = None,
         updated_by: Optional[str] = None,
+        updated_via: Optional[str] = None,
         expected_version: Optional[int] = None,
     ) -> dict:
         """Create or overwrite a page.
@@ -67,6 +68,7 @@ class WikiPagesRepository:
                         token_count = :token_count,
                         content_hash = :content_hash,
                         updated_by = :updated_by,
+                        updated_via = :updated_via,
                         version = version + 1,
                         embed_status = 'pending',
                         updated_at = now()
@@ -84,6 +86,7 @@ class WikiPagesRepository:
                     "token_count": num_tokens_from_string(content),
                     "content_hash": content_hash,
                     "updated_by": updated_by,
+                    "updated_via": updated_via,
                     "expected_version": expected_version,
                 },
             )
@@ -100,10 +103,10 @@ class WikiPagesRepository:
                 """
                 INSERT INTO wiki_pages
                     (source_id, path, title, content, token_count,
-                     content_hash, updated_by, embed_status)
+                     content_hash, updated_by, updated_via, embed_status)
                 VALUES
                     (CAST(:source_id AS uuid), :path, :title, :content, :token_count,
-                     :content_hash, :updated_by, 'pending')
+                     :content_hash, :updated_by, :updated_via, 'pending')
                 ON CONFLICT (source_id, path)
                 DO UPDATE SET
                     title = EXCLUDED.title,
@@ -111,6 +114,7 @@ class WikiPagesRepository:
                     token_count = EXCLUDED.token_count,
                     content_hash = EXCLUDED.content_hash,
                     updated_by = EXCLUDED.updated_by,
+                    updated_via = EXCLUDED.updated_via,
                     version = wiki_pages.version + 1,
                     embed_status = 'pending',
                     updated_at = now()
@@ -125,6 +129,7 @@ class WikiPagesRepository:
                 "token_count": num_tokens_from_string(content),
                 "content_hash": content_hash,
                 "updated_by": updated_by,
+                "updated_via": updated_via,
             },
         )
         return row_to_dict(result.fetchone())

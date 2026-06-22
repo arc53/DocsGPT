@@ -162,7 +162,9 @@ class TestWikiPages:
             "wiki-list", user_id=user, type="wiki", config={"kind": "wiki"}
         )
         sid = str(src["id"])
-        WikiPagesRepository(pg_conn).upsert(sid, "/index.md", "root", updated_by=user)
+        WikiPagesRepository(pg_conn).upsert(
+            sid, "/index.md", "root", updated_by=user, updated_via="agent"
+        )
         WikiPagesRepository(pg_conn).upsert(sid, "/docs/a.md", "a", updated_by=user)
 
         with _patch_db(pg_conn), app.test_request_context(
@@ -174,6 +176,8 @@ class TestWikiPages:
         assert response.status_code == 200
         paths = {p["path"] for p in response.json["pages"]}
         assert paths == {"/index.md", "/docs/a.md"}
+        via = {p["path"]: p["updated_via"] for p in response.json["pages"]}
+        assert via["/index.md"] == "agent"
 
     def test_non_owner_without_grant_404(self, app, pg_conn):
         from application.api.user.sources.routes import WikiPages
@@ -269,6 +273,33 @@ class TestWikiPage:
             request.decoded_token = {"sub": user}
             response = WikiPage().get(sid)
         assert response.status_code == 404
+
+    def test_returns_provenance_and_version(self, app, pg_conn):
+        from application.api.user.sources.routes import WikiPage
+        from application.storage.db.repositories.sources import SourcesRepository
+        from application.storage.db.repositories.wiki_pages import WikiPagesRepository
+
+        user = "u-wiki-page-provenance"
+        src = SourcesRepository(pg_conn).create(
+            "wiki", user_id=user, type="wiki", config={"kind": "wiki"}
+        )
+        sid = str(src["id"])
+        WikiPagesRepository(pg_conn).upsert(
+            sid, "/index.md", "x", updated_by=user, updated_via="agent"
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/wiki/page?path=/index.md"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = WikiPage().get(sid)
+        assert response.status_code == 200
+        page = response.json["page"]
+        assert page["updated_via"] == "agent"
+        assert page["updated_by"] == user
+        assert page["version"] == 1
+        assert page["updated_at"] is not None
 
     def test_non_owner_without_grant_404(self, app, pg_conn):
         from application.api.user.sources.routes import WikiPage
@@ -455,8 +486,10 @@ class TestWikiPageEdit:
         assert response.status_code == 200
         assert response.json["page"]["path"] == "/notes.md"
         assert response.json["page"]["version"] is not None
+        assert response.json["page"]["updated_via"] == "human"
         page = WikiPagesRepository(pg_conn).get_by_path(sid, "/notes.md")
         assert page["content"] == "body"
+        assert page["updated_via"] == "human"
         mock_reembed.assert_called_once()
         assert mock_reembed.call_args.args[1] == "/notes.md"
         assert mock_reembed.call_args.kwargs["user"] == user

@@ -115,6 +115,12 @@ const userService = {
     token: string | null,
   ): Promise<Response> =>
     throttledApiClient.get(endpoints.USER.WIKI_PAGE(sourceId, path), token),
+  updateWikiPage: (
+    sourceId: string,
+    data: { path: string; content: string; expected_version?: number },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.put(endpoints.USER.WIKI_PAGE(sourceId, data.path), data, token),
   getAvailableTools: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.GET_AVAILABLE_TOOLS, token),
   getUserTools: (token: string | null): Promise<any> =>

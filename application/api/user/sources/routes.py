@@ -697,6 +697,7 @@ def _wiki_page_node(page):
         "version": page.get("version"),
         "embed_status": page.get("embed_status"),
         "updated_by": page.get("updated_by"),
+        "updated_via": page.get("updated_via"),
         "updated_at": (
             page["updated_at"].isoformat()
             if page.get("updated_at") is not None
@@ -769,6 +770,7 @@ class CreateWikiSource(Resource):
                         WIKI_INDEX_PATH,
                         initial_content,
                         updated_by=user,
+                        updated_via="human",
                     )
                     rebuild_wiki_directory_structure(conn, source_id, user)
         except Exception as err:
@@ -922,6 +924,7 @@ class WikiPage(Resource):
                         path,
                         content,
                         updated_by=user,
+                        updated_via="human",
                         expected_version=expected_version,
                     )
                 except WikiPageConflict:

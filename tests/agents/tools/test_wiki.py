@@ -39,6 +39,7 @@ class _FakeWikiRepo:
         content,
         title=None,
         updated_by=None,
+        updated_via=None,
         expected_version=None,
     ):
         key = (source_id, path)
@@ -55,6 +56,7 @@ class _FakeWikiRepo:
                     "title": title,
                     "content_hash": content_hash,
                     "updated_by": updated_by,
+                    "updated_via": updated_via,
                     "version": existing["version"] + 1,
                 }
             )
@@ -66,6 +68,7 @@ class _FakeWikiRepo:
                     "title": title,
                     "content_hash": content_hash,
                     "updated_by": updated_by,
+                    "updated_via": updated_via,
                     "version": existing["version"] + 1,
                 }
             )
@@ -78,6 +81,7 @@ class _FakeWikiRepo:
             "title": title,
             "content_hash": content_hash,
             "updated_by": updated_by,
+            "updated_via": updated_via,
             "version": 1,
             "token_count": len(content),
         }
@@ -209,6 +213,20 @@ class TestCreateView:
         assert "</wiki_page>" in view
         reembed_mock.assert_called_once()
         rebuild_mock.assert_called_once()
+
+    def test_create_stamps_updated_via_agent(self, wiki_tool):
+        wiki_tool.execute_action("wiki_create", path="/guide.md", content="Hello")
+        stored = _FakeWikiRepo().get_by_path("src-1", "/guide.md")
+        assert stored["updated_via"] == "agent"
+
+    def test_str_replace_stamps_updated_via_agent(self, wiki_tool):
+        wiki_tool.execute_action("wiki_create", path="/g.md", content="alpha beta")
+        wiki_tool.execute_action(
+            "wiki_str_replace", path="/g.md", old_str="alpha", new_str="omega"
+        )
+        stored = _FakeWikiRepo().get_by_path("src-1", "/g.md")
+        assert stored["updated_via"] == "agent"
+        assert stored["content"] == "omega beta"
 
     def test_create_at_directory_rejected(self, wiki_tool):
         assert "directory" in wiki_tool.execute_action(

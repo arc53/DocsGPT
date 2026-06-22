@@ -53,6 +53,26 @@ class TestUpsert:
         page = repo.upsert(sid, "/a.md", "x", updated_by="agent-1")
         assert page["updated_by"] == "agent-1"
 
+    def test_records_updated_via(self, pg_conn):
+        repo = _repo(pg_conn)
+        sid = _make_source(pg_conn)
+        page = repo.upsert(sid, "/a.md", "x", updated_via="human")
+        assert page["updated_via"] == "human"
+
+    def test_updated_via_overwritten_on_change(self, pg_conn):
+        repo = _repo(pg_conn)
+        sid = _make_source(pg_conn)
+        repo.upsert(sid, "/a.md", "v1", updated_via="agent")
+        page = repo.upsert(sid, "/a.md", "v2", updated_via="human")
+        assert page["updated_via"] == "human"
+
+    def test_updated_via_unchanged_on_identical_content(self, pg_conn):
+        repo = _repo(pg_conn)
+        sid = _make_source(pg_conn)
+        repo.upsert(sid, "/a.md", "same", updated_via="agent")
+        again = repo.upsert(sid, "/a.md", "same", updated_via="human")
+        assert again["updated_via"] == "agent"
+
 
 class TestContentHashShortCircuit:
     def test_identical_content_does_not_bump_version(self, pg_conn):

@@ -2158,7 +2158,12 @@ def convert_source_to_wiki_worker(self, source_id, user):
                     rel_path
                 )
                 repo.upsert(
-                    source_id, page_path, content, title=title, updated_by=user
+                    source_id,
+                    page_path,
+                    content,
+                    title=title,
+                    updated_by=user,
+                    updated_via="agent",
                 )
                 created_pages.append((page_path, _content_hash(content)))
 

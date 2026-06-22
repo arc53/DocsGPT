@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 WIKI_TOOL_ID = "wiki"
 
+WIKI_UPDATED_VIA_AGENT = "agent"
+
 MAX_WIKI_PAGE_BYTES = 1_000_000
 
 
@@ -313,6 +315,7 @@ class WikiTool(Tool):
                     validated_path,
                     content,
                     updated_by=self.updated_by,
+                    updated_via=WIKI_UPDATED_VIA_AGENT,
                     expected_version=(
                         existing.get("version") if existing else None
                     ),
@@ -357,6 +360,7 @@ class WikiTool(Tool):
                     updated,
                     title=page.get("title"),
                     updated_by=self.updated_by,
+                    updated_via=WIKI_UPDATED_VIA_AGENT,
                     expected_version=page.get("version"),
                 )
             except WikiPageConflict:
@@ -395,6 +399,7 @@ class WikiTool(Tool):
                     updated,
                     title=page.get("title"),
                     updated_by=self.updated_by,
+                    updated_via=WIKI_UPDATED_VIA_AGENT,
                     expected_version=page.get("version"),
                 )
             except WikiPageConflict:
