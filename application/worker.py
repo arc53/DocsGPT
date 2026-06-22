@@ -39,6 +39,7 @@ from application.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
 )
 from application.storage.db.repositories.sources import SourcesRepository
+from application.storage.db.repositories.wiki_pages import WikiPagesRepository
 from application.storage.db.session import db_readonly, db_session
 from application.storage.db.source_config import SourceConfig
 from application.storage.storage_creator import StorageCreator
@@ -1978,3 +1979,82 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
         logging.error("MCP OAuth init failed: %s", error_msg, exc_info=True)
         publish_oauth("mcp.oauth.failed", {"error": error_msg[:1024]})
         return {"success": False, "error": error_msg}
+
+
+def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
+    """Re-embed one wiki page after an edit, or purge its chunks on delete.
+
+    Targeted delete of the page's existing chunks runs first, so a deleted
+    page becomes a pure purge and an edited page is re-embedded cleanly. The
+    chunk metadata shape matches the reingest path (``source``/``title``/
+    ``filename``) so retrieval and future targeted deletes line up.
+
+    Args:
+        self: Celery task instance.
+        source_id: Source the page belongs to.
+        path: Page path; doubles as the chunk ``source`` metadata key.
+        content_hash: The edit's content hash (idempotency anchor).
+        user: Owner identifier used to load the source row.
+
+    Returns:
+        A status dict: ``{"status", "added", "deleted"}`` on re-embed, or
+        ``{"status": "deleted", "deleted": n}`` when the page is gone.
+    """
+    from application.vectorstore.vector_creator import VectorCreator
+
+    source_id = str(source_id)
+
+    with db_readonly() as conn:
+        source = SourcesRepository(conn).get_any(source_id, user)
+    if not source:
+        raise ValueError(f"Source {source_id} not found or access denied")
+    source_id = str(source["id"])
+    cfg = SourceConfig.parse(source.get("config"))
+
+    store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id)
+    deleted = store.delete_chunks_by_source_path(path)
+
+    with db_readonly() as conn:
+        page = WikiPagesRepository(conn).get_by_path(source_id, path)
+
+    if page is None:
+        return {"status": "deleted", "deleted": deleted}
+
+    try:
+        title = page.get("title") or path
+        chunker = ChunkerCreator.create_chunker(
+            cfg.chunking.strategy,
+            chunking_strategy=cfg.chunking.strategy,
+            max_tokens=cfg.chunking.max_tokens,
+            min_tokens=cfg.chunking.min_tokens,
+            duplicate_headers=cfg.chunking.duplicate_headers,
+        )
+        chunks = chunker.chunk(
+            documents=[
+                Document(
+                    text=page["content"],
+                    extra_info={
+                        "source": path,
+                        "title": title,
+                        "filename": path,
+                    },
+                )
+            ]
+        )
+
+        added = 0
+        for chunk in chunks:
+            store.add_chunk(
+                chunk.text,
+                metadata={"source": path, "title": title, "filename": path},
+            )
+            added += 1
+
+        with db_session() as conn:
+            WikiPagesRepository(conn).set_embed_status(source_id, path, "embedded")
+    except Exception:
+        with db_session() as conn:
+            WikiPagesRepository(conn).set_embed_status(source_id, path, "failed")
+        raise
+
+    return {"status": "embedded", "added": added, "deleted": deleted}
