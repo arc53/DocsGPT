@@ -1,9 +1,10 @@
 """Tests for ``application.worker.convert_source_to_wiki_worker``.
 
-The worker re-parses a source's stored originals into wiki pages and enqueues
-a per-page re-embed. Storage, ``SimpleDirectoryReader``, and the re-embed task
-are mocked so no real downloads or embeddings run; the ``sources`` /
-``wiki_pages`` rows are real so the assertions read them back.
+The worker reassembles wiki pages from a source's existing vector-store
+chunks (grouped by ``metadata.source``) and enqueues a per-page re-embed.
+``VectorCreator.create_vectorstore`` and the re-embed task are mocked so no
+real store access or embeddings run; the ``sources`` / ``wiki_pages`` rows
+are real so the assertions read them back.
 """
 
 from __future__ import annotations
@@ -12,16 +13,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from application.parser.schema.base import Document
 from application.storage.db.repositories.sources import SourcesRepository
 from application.storage.db.repositories.wiki_pages import WikiPagesRepository
 
 
-def _seed_source(pg_conn, config=None, file_path="inputs/alice/doc-set"):
+def _seed_source(pg_conn, config=None, file_path=""):
     src = SourcesRepository(pg_conn).create(
         "doc-set",
         user_id="alice",
-        type="local",
+        type="crawler",
         retriever="classic",
         file_path=file_path,
         config=config or {},
@@ -30,54 +30,48 @@ def _seed_source(pg_conn, config=None, file_path="inputs/alice/doc-set"):
     return str(src["id"])
 
 
-def _patch_storage(monkeypatch, stored_files):
-    """Storage whose directory holds ``stored_files`` (rel paths)."""
-    from application import worker
-
-    base = "inputs/alice/doc-set"
-    storage = MagicMock(name="storage")
-    storage.is_directory.side_effect = lambda p: p == base
-    storage.list_files.return_value = [f"{base}/{f}" for f in stored_files]
-    storage.get_file.return_value = MagicMock(read=lambda: b"x")
-    monkeypatch.setattr(worker.StorageCreator, "get_storage", lambda: storage)
-    return storage
+def _chunk(text, source=None, doc_id="d", **extra_meta):
+    metadata = dict(extra_meta)
+    if source is not None:
+        metadata["source"] = source
+    return {"doc_id": doc_id, "text": text, "metadata": metadata}
 
 
-def _patch_reader(monkeypatch, docs):
-    from application import worker
+def _patch_store(monkeypatch, chunks):
+    store = MagicMock(name="vectorstore")
+    store.get_chunks.return_value = chunks
+    monkeypatch.setattr(
+        "application.vectorstore.vector_creator.VectorCreator.create_vectorstore",
+        lambda *a, **kw: store,
+    )
+    return store
 
-    reader = MagicMock(name="reader")
-    reader.load_data.return_value = docs
-    monkeypatch.setattr(worker, "SimpleDirectoryReader", lambda *a, **kw: reader)
-    return reader
+
+def _patch_reembed(monkeypatch):
+    delay = MagicMock(name="reembed_delay")
+    monkeypatch.setattr("application.api.user.tasks.reembed_wiki_page.delay", delay)
+    return delay
 
 
 @pytest.mark.unit
 class TestConvertSourceToWikiWorker:
-    def test_one_page_per_text_file(
+    def test_two_pages_reassembled_from_chunks(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
         from application import worker
 
         source_id = _seed_source(pg_conn)
-        _patch_storage(monkeypatch, ["guide.md", "notes/intro.md", "logo.png"])
-        _patch_reader(
+        _patch_store(
             monkeypatch,
             [
-                Document(text="guide body", extra_info={"source": "guide.md"}),
-                Document(
-                    text="intro body", extra_info={"source": "notes/intro.md"}
-                ),
+                _chunk("guide part one.", source="guide.md", doc_id="g1"),
+                _chunk("guide part two.", source="guide.md", doc_id="g2"),
+                _chunk("intro body.", source="notes/intro.md", doc_id="i1"),
             ],
         )
-        delay = MagicMock(name="reembed_delay")
-        monkeypatch.setattr(
-            "application.api.user.tasks.reembed_wiki_page.delay", delay
-        )
+        delay = _patch_reembed(monkeypatch)
 
-        result = worker.convert_source_to_wiki_worker(
-            task_self, source_id, "alice"
-        )
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
 
         assert result["status"] == "converted"
         assert result["pages_created"] == 2
@@ -85,83 +79,82 @@ class TestConvertSourceToWikiWorker:
         pages = WikiPagesRepository(pg_conn).list_for_source(source_id)
         by_path = {p["path"]: p for p in pages}
         assert set(by_path) == {"/guide.md", "/notes/intro.md"}
-        assert by_path["/guide.md"]["content"] == "guide body"
+        assert by_path["/guide.md"]["content"] == "guide part one.\n\nguide part two."
         assert by_path["/guide.md"]["title"] == "guide.md"
+        assert by_path["/notes/intro.md"]["content"] == "intro body."
         assert by_path["/notes/intro.md"]["title"] == "intro.md"
 
-    def test_binaries_skipped_and_reported(
-        self, pg_conn, patch_worker_db, task_self, monkeypatch
-    ):
-        from application import worker
-
-        source_id = _seed_source(pg_conn)
-        _patch_storage(monkeypatch, ["guide.md", "logo.png", "scan.pdf"])
-        _patch_reader(
-            monkeypatch,
-            [Document(text="guide body", extra_info={"source": "guide.md"})],
-        )
-        monkeypatch.setattr(
-            "application.api.user.tasks.reembed_wiki_page.delay", MagicMock()
-        )
-
-        result = worker.convert_source_to_wiki_worker(
-            task_self, source_id, "alice"
-        )
-
-        assert result["pages_created"] == 1
-        skipped_files = {s["file"] for s in result["skipped"]}
-        assert skipped_files == {"logo.png", "scan.pdf"}
-        for entry in result["skipped"]:
-            assert entry["reason"]
-
-    def test_reembed_enqueued_per_page_with_per_page_key(
-        self, pg_conn, patch_worker_db, task_self, monkeypatch
-    ):
-        from application import worker
-
-        source_id = _seed_source(pg_conn)
-        _patch_storage(monkeypatch, ["a.md", "b.md"])
-        _patch_reader(
-            monkeypatch,
-            [
-                Document(text="aaa", extra_info={"source": "a.md"}),
-                Document(text="bbb", extra_info={"source": "b.md"}),
-            ],
-        )
-        delay = MagicMock(name="reembed_delay")
-        monkeypatch.setattr(
-            "application.api.user.tasks.reembed_wiki_page.delay", delay
-        )
-
-        worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
-
         assert delay.call_count == 2
-        keys = {c.kwargs["idempotency_key"] for c in delay.call_args_list}
         paths = {c.args[1] for c in delay.call_args_list}
-        assert paths == {"/a.md", "/b.md"}
+        assert paths == {"/guide.md", "/notes/intro.md"}
         for call in delay.call_args_list:
             assert call.args[0] == source_id
             assert call.kwargs["user"] == "alice"
             assert call.kwargs["idempotency_key"].startswith(
                 f"reembed-wiki:{source_id}:"
             )
-        assert len(keys) == 2
 
-    def test_sets_kind_wiki_and_agentic_exposure(
+    def test_original_chunks_deleted_after_convert(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        from application import worker
+
+        source_id = _seed_source(pg_conn)
+        store = _patch_store(
+            monkeypatch,
+            [
+                _chunk("guide part one.", source="guide.md", doc_id="g1"),
+                _chunk("guide part two.", source="guide.md", doc_id="g2"),
+                _chunk("intro body.", source="notes/intro.md", doc_id="i1"),
+            ],
+        )
+        delay = _patch_reembed(monkeypatch)
+
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
+
+        assert result["status"] == "converted"
+        deleted = {c.args[0] for c in store.delete_chunk.call_args_list}
+        assert deleted == {"g1", "g2", "i1"}
+        assert delay.call_count == 2
+
+    def test_chunk_without_doc_id_not_deleted(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        from application import worker
+
+        source_id = _seed_source(pg_conn)
+        chunk = {"text": "body", "metadata": {"source": "a.md"}}
+        store = _patch_store(monkeypatch, [chunk])
+        _patch_reembed(monkeypatch)
+
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
+
+        assert result["status"] == "converted"
+        store.delete_chunk.assert_not_called()
+
+    def test_no_pages_path_deletes_nothing(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        from application import worker
+
+        source_id = _seed_source(pg_conn)
+        store = _patch_store(monkeypatch, [])
+        _patch_reembed(monkeypatch)
+
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
+
+        assert result["status"] == "no_pages"
+        store.delete_chunk.assert_not_called()
+
+    def test_kind_flipped_and_exposure_defaulted(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
         from application import worker
         from application.storage.db.source_config import SourceConfig
 
         source_id = _seed_source(pg_conn)
-        _patch_storage(monkeypatch, ["a.md"])
-        _patch_reader(
-            monkeypatch,
-            [Document(text="aaa", extra_info={"source": "a.md"})],
-        )
-        monkeypatch.setattr(
-            "application.api.user.tasks.reembed_wiki_page.delay", MagicMock()
-        )
+        _patch_store(monkeypatch, [_chunk("body", source="a.md")])
+        _patch_reembed(monkeypatch)
 
         worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
 
@@ -179,14 +172,8 @@ class TestConvertSourceToWikiWorker:
         source_id = _seed_source(
             pg_conn, config={"retrieval": {"exposure": "agentic_tool"}}
         )
-        _patch_storage(monkeypatch, ["a.md"])
-        _patch_reader(
-            monkeypatch,
-            [Document(text="aaa", extra_info={"source": "a.md"})],
-        )
-        monkeypatch.setattr(
-            "application.api.user.tasks.reembed_wiki_page.delay", MagicMock()
-        )
+        _patch_store(monkeypatch, [_chunk("body", source="a.md")])
+        _patch_reembed(monkeypatch)
 
         worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
 
@@ -195,7 +182,71 @@ class TestConvertSourceToWikiWorker:
         assert cfg.kind == "wiki"
         assert cfg.retrieval.exposure == "agentic_tool"
 
-    def test_no_pages_leaves_kind_and_structure(
+    def test_chunk_order_hint_respected(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        from application import worker
+
+        source_id = _seed_source(pg_conn)
+        _patch_store(
+            monkeypatch,
+            [
+                _chunk("second", source="a.md", doc_id="a2", chunk_index=1),
+                _chunk("first", source="a.md", doc_id="a1", chunk_index=0),
+            ],
+        )
+        _patch_reembed(monkeypatch)
+
+        worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
+
+        pages = WikiPagesRepository(pg_conn).list_for_source(source_id)
+        by_path = {p["path"]: p for p in pages}
+        assert by_path["/a.md"]["content"] == "first\n\nsecond"
+
+    def test_short_overlap_not_trimmed(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        from application import worker
+
+        source_id = _seed_source(pg_conn)
+        _patch_store(
+            monkeypatch,
+            [
+                _chunk("The end.", source="a.md", doc_id="a1"),
+                _chunk("The end. More", source="a.md", doc_id="a2"),
+            ],
+        )
+        _patch_reembed(monkeypatch)
+
+        worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
+
+        pages = WikiPagesRepository(pg_conn).list_for_source(source_id)
+        by_path = {p["path"]: p for p in pages}
+        assert by_path["/a.md"]["content"] == "The end.\n\nThe end. More"
+
+    def test_long_overlap_trimmed_between_chunks(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        from application import worker
+
+        overlap = "x" * 40
+        source_id = _seed_source(pg_conn)
+        _patch_store(
+            monkeypatch,
+            [
+                _chunk("head " + overlap, source="a.md", doc_id="a1"),
+                _chunk(overlap + " tail", source="a.md", doc_id="a2"),
+            ],
+        )
+        _patch_reembed(monkeypatch)
+
+        worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
+
+        pages = WikiPagesRepository(pg_conn).list_for_source(source_id)
+        by_path = {p["path"]: p for p in pages}
+        assert by_path["/a.md"]["content"] == "head " + overlap + "\n\n tail"
+
+    def test_no_chunks_leaves_kind_and_structure(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
         from application import worker
@@ -203,24 +254,15 @@ class TestConvertSourceToWikiWorker:
 
         original_structure = {"a.md": {"type": "text/markdown", "size_bytes": 1}}
         source_id = _seed_source(pg_conn)
-        _patch_storage(monkeypatch, ["logo.png", "scan.pdf"])
-        _patch_reader(monkeypatch, [])
+        _patch_store(monkeypatch, [])
         rebuild = MagicMock(name="rebuild")
-        monkeypatch.setattr(
-            worker, "rebuild_wiki_directory_structure", rebuild
-        )
-        delay = MagicMock(name="reembed_delay")
-        monkeypatch.setattr(
-            "application.api.user.tasks.reembed_wiki_page.delay", delay
-        )
+        monkeypatch.setattr(worker, "rebuild_wiki_directory_structure", rebuild)
+        delay = _patch_reembed(monkeypatch)
 
-        result = worker.convert_source_to_wiki_worker(
-            task_self, source_id, "alice"
-        )
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
 
         assert result["status"] == "no_pages"
         assert result["pages_created"] == 0
-        assert result["skipped"]
         rebuild.assert_not_called()
         delay.assert_not_called()
 
@@ -228,27 +270,44 @@ class TestConvertSourceToWikiWorker:
         assert SourceConfig.parse(refreshed.get("config")).kind != "wiki"
         assert refreshed.get("directory_structure") == original_structure
 
-    def test_traversal_filename_skipped(
+    def test_missing_path_chunk_skipped(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
         from application import worker
 
         source_id = _seed_source(pg_conn)
-        _patch_storage(monkeypatch, ["ok.md", "../evil.md"])
-        _patch_reader(
+        _patch_store(
             monkeypatch,
             [
-                Document(text="good", extra_info={"source": "ok.md"}),
-                Document(text="bad", extra_info={"source": "../evil.md"}),
+                _chunk("good", source="ok.md"),
+                _chunk("orphan", source=None),
             ],
         )
-        monkeypatch.setattr(
-            "application.api.user.tasks.reembed_wiki_page.delay", MagicMock()
-        )
+        _patch_reembed(monkeypatch)
 
-        result = worker.convert_source_to_wiki_worker(
-            task_self, source_id, "alice"
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
+
+        assert result["pages_created"] == 1
+        pages = WikiPagesRepository(pg_conn).list_for_source(source_id)
+        assert {p["path"] for p in pages} == {"/ok.md"}
+        assert any(s["reason"] == "missing path" for s in result["skipped"])
+
+    def test_invalid_path_chunk_skipped(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        from application import worker
+
+        source_id = _seed_source(pg_conn)
+        _patch_store(
+            monkeypatch,
+            [
+                _chunk("good", source="ok.md"),
+                _chunk("bad", source="../evil.md"),
+            ],
         )
+        _patch_reembed(monkeypatch)
+
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
 
         assert result["pages_created"] == 1
         pages = WikiPagesRepository(pg_conn).list_for_source(source_id)
@@ -256,30 +315,91 @@ class TestConvertSourceToWikiWorker:
         skipped = {(s["file"], s["reason"]) for s in result["skipped"]}
         assert ("../evil.md", "invalid path") in skipped
 
-    def test_parse_failure_reason_distinct_from_binary(
+    def test_path_falls_back_to_filename_then_title(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
         from application import worker
 
         source_id = _seed_source(pg_conn)
-        # broken.md has a supported extension but produced no doc (parse/read
-        # failure); blob.bin is an unsupported/binary file.
-        _patch_storage(monkeypatch, ["guide.md", "broken.md", "blob.bin"])
-        _patch_reader(
+        _patch_store(
             monkeypatch,
-            [Document(text="guide body", extra_info={"source": "guide.md"})],
+            [
+                _chunk("from filename", source=None, filename="byname.md"),
+                _chunk("from title", source=None, title="bytitle.md"),
+            ],
         )
-        monkeypatch.setattr(
-            "application.api.user.tasks.reembed_wiki_page.delay", MagicMock()
-        )
+        _patch_reembed(monkeypatch)
 
-        result = worker.convert_source_to_wiki_worker(
-            task_self, source_id, "alice"
-        )
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
 
-        reasons = {s["file"]: s["reason"] for s in result["skipped"]}
-        assert reasons["broken.md"] == "could not read/parse"
-        assert reasons["blob.bin"] == "no extractable text"
+        assert result["pages_created"] == 2
+        pages = WikiPagesRepository(pg_conn).list_for_source(source_id)
+        assert {p["path"] for p in pages} == {"/byname.md", "/bytitle.md"}
+
+    def test_crawler_chunk_uses_file_path_not_url(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        from application import worker
+
+        source_id = _seed_source(pg_conn)
+        _patch_store(
+            monkeypatch,
+            [
+                _chunk(
+                    "setup body",
+                    source="https://docs.x.com/guides/setup",
+                    file_path="guides/setup.md",
+                ),
+            ],
+        )
+        _patch_reembed(monkeypatch)
+
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
+
+        assert result["status"] == "converted"
+        assert result["skipped"] == []
+        pages = WikiPagesRepository(pg_conn).list_for_source(source_id)
+        assert {p["path"] for p in pages} == {"/guides/setup.md"}
+
+    def test_connector_chunks_kept_separate_by_file_name(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        from application import worker
+
+        source_id = _seed_source(pg_conn)
+        _patch_store(
+            monkeypatch,
+            [
+                _chunk("page a", source="confluence", file_name="Page A", doc_id="a"),
+                _chunk("page b", source="confluence", file_name="Page B", doc_id="b"),
+            ],
+        )
+        _patch_reembed(monkeypatch)
+
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
+
+        assert result["pages_created"] == 2
+        pages = WikiPagesRepository(pg_conn).list_for_source(source_id)
+        assert {p["path"] for p in pages} == {"/Page A", "/Page B"}
+
+    def test_url_only_chunk_normalized_not_skipped(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        from application import worker
+
+        source_id = _seed_source(pg_conn)
+        _patch_store(
+            monkeypatch,
+            [_chunk("body", source="https://x.com/a/b")],
+        )
+        _patch_reembed(monkeypatch)
+
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
+
+        assert result["status"] == "converted"
+        assert result["skipped"] == []
+        pages = WikiPagesRepository(pg_conn).list_for_source(source_id)
+        assert {p["path"] for p in pages} == {"/a/b"}
 
     def test_already_wiki_returns_early(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
@@ -287,19 +407,11 @@ class TestConvertSourceToWikiWorker:
         from application import worker
 
         source_id = _seed_source(pg_conn, config={"kind": "wiki"})
-        reader = MagicMock(name="reader")
-        monkeypatch.setattr(
-            worker, "SimpleDirectoryReader", lambda *a, **kw: reader
-        )
-        delay = MagicMock(name="reembed_delay")
-        monkeypatch.setattr(
-            "application.api.user.tasks.reembed_wiki_page.delay", delay
-        )
+        store = _patch_store(monkeypatch, [_chunk("body", source="a.md")])
+        delay = _patch_reembed(monkeypatch)
 
-        result = worker.convert_source_to_wiki_worker(
-            task_self, source_id, "alice"
-        )
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
 
         assert result["status"] == "already_wiki"
-        reader.load_data.assert_not_called()
+        store.get_chunks.assert_not_called()
         delay.assert_not_called()

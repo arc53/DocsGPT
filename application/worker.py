@@ -12,7 +12,7 @@ import zipfile
 
 import uuid
 from collections import Counter
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import requests
 
@@ -2012,7 +2012,9 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
     source_id = str(source["id"])
     cfg = SourceConfig.parse(source.get("config"))
 
-    store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id)
+    store = VectorCreator.create_vectorstore(
+        settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
+    )
     deleted = store.delete_chunks_by_source_path(path)
 
     with db_readonly() as conn:
@@ -2073,16 +2075,98 @@ def _wiki_page_path_from_rel(rel_path):
     return validate_tool_path(raw)
 
 
-def convert_source_to_wiki_worker(self, source_id, user):
-    """Convert an ingested source into a wiki by materializing files as pages.
+def _chunk_text(chunk) -> str:
+    if isinstance(chunk, dict):
+        return chunk.get("text") or chunk.get("page_content") or ""
+    return getattr(chunk, "text", None) or getattr(chunk, "page_content", "") or ""
 
-    Re-parses the source's stored originals (the same storage file-load +
-    ``SimpleDirectoryReader`` machinery reingest uses), creating one wiki page
-    per file with extractable text. Non-text/binary/unsupported files are
-    skipped and reported. Embedding is enqueued per page (async); the source's
-    ``config.kind`` flips to ``wiki`` only after at least one page is
-    materialized — a source with no extractable pages keeps its original kind
-    and directory structure.
+
+def _chunk_metadata(chunk) -> dict:
+    if isinstance(chunk, dict):
+        meta = chunk.get("metadata")
+    else:
+        meta = getattr(chunk, "metadata", None)
+    return meta if isinstance(meta, dict) else {}
+
+
+def _chunk_doc_id(chunk):
+    if isinstance(chunk, dict):
+        return chunk.get("doc_id")
+    return getattr(chunk, "doc_id", None)
+
+
+def _url_to_virtual_path(value: str) -> str:
+    parts = urlsplit(value)
+    path = parts.path.strip("/")
+    if path:
+        return path
+    if parts.netloc:
+        return parts.netloc
+    return value.replace("://", "/")
+
+
+def _chunk_page_path(metadata) -> str:
+    for key in ("file_path", "file_name", "filename", "title", "source"):
+        value = metadata.get(key)
+        if value:
+            value = str(value)
+            if "://" in value:
+                value = _url_to_virtual_path(value)
+            return value
+    return ""
+
+
+def _chunk_order_hint(metadata):
+    for key in ("chunk", "chunk_index", "index", "start", "start_index", "offset"):
+        value = metadata.get(key)
+        if isinstance(value, (int, float)):
+            return value
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                continue
+    return None
+
+
+MIN_CHUNK_OVERLAP_TRIM = 32
+
+
+def _join_chunk_texts(texts: list[str]) -> str:
+    """Concatenate chunk texts, trimming an exact overlapping boundary.
+
+    Only an exact suffix/prefix overlap of at least ``MIN_CHUNK_OVERLAP_TRIM``
+    characters between consecutive chunks is removed (the common
+    ``chunk_overlap`` case); shorter, possibly legitimate repeats are kept.
+    """
+    parts: list[str] = []
+    for text in texts:
+        if parts:
+            prev = parts[-1]
+            limit = min(len(prev), len(text))
+            overlap = 0
+            for size in range(limit, MIN_CHUNK_OVERLAP_TRIM - 1, -1):
+                if prev.endswith(text[:size]):
+                    overlap = size
+                    break
+            if overlap:
+                text = text[overlap:]
+        if text:
+            parts.append(text)
+    return "\n\n".join(parts)
+
+
+def convert_source_to_wiki_worker(self, source_id, user):
+    """Convert an ingested source into a wiki by reassembling pages from chunks.
+
+    Groups the source's existing vector-store chunks by their page path
+    (``metadata.source``), concatenating each group into one wiki page. This
+    works uniformly for every source type, including crawler/remote/connector
+    sources that hold no stored originals. Chunks with a missing or invalid
+    path are skipped and reported. Embedding is enqueued per page (async); the
+    source's ``config.kind`` flips to ``wiki`` only after at least one page is
+    materialized — a source with no usable chunks keeps its original kind and
+    directory structure.
 
     Args:
         self: Celery task instance.
@@ -2091,10 +2175,11 @@ def convert_source_to_wiki_worker(self, source_id, user):
 
     Returns:
         A summary dict ``{"status": "converted", "pages_created", "skipped"}``,
-        ``{"status": "no_pages", ...}`` when nothing was extractable, or
+        ``{"status": "no_pages", ...}`` when nothing was reassembled, or
         ``{"status": "already_wiki"}`` when the source is already a wiki.
     """
     from application.api.user.tasks import reembed_wiki_page
+    from application.vectorstore.vector_creator import VectorCreator
 
     source_id = str(source_id)
 
@@ -2108,77 +2193,61 @@ def convert_source_to_wiki_worker(self, source_id, user):
     if cfg.kind == "wiki":
         return {"status": "already_wiki", "pages_created": 0, "skipped": []}
 
-    storage = StorageCreator.get_storage()
-    source_file_path = source.get("file_path", "")
     file_name_map = _normalize_file_name_map(source.get("file_name_map"))
 
     created_pages: list[tuple[str, str]] = []
     skipped: list[dict] = []
 
-    stored_files: set[str] = set()
-    if storage.is_directory(source_file_path):
-        for stored in storage.list_files(source_file_path):
-            if storage.is_directory(stored):
-                continue
-            stored_files.add(os.path.relpath(stored, source_file_path))
+    store = VectorCreator.create_vectorstore(
+        settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
+    )
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        _download_source_files_to_dir(storage, source_file_path, temp_dir)
+    grouped: dict[str, list[tuple[object, str]]] = {}
+    original_doc_ids: list[object] = []
+    for chunk in store.get_chunks() or []:
+        metadata = _chunk_metadata(chunk)
+        rel_path = _chunk_page_path(metadata)
+        text = _chunk_text(chunk)
+        if not text.strip():
+            continue
+        if not rel_path:
+            skipped.append({"file": "", "reason": "missing path"})
+            continue
+        if _wiki_page_path_from_rel(rel_path) is None:
+            skipped.append({"file": rel_path, "reason": "invalid path"})
+            continue
+        doc_id = _chunk_doc_id(chunk)
+        if doc_id is not None:
+            original_doc_ids.append(doc_id)
+        grouped.setdefault(rel_path, []).append((_chunk_order_hint(metadata), text))
 
-        reader = SimpleDirectoryReader(
-            input_dir=temp_dir,
-            recursive=True,
-            required_exts=list(SUPPORTED_SOURCE_EXTENSIONS),
-            exclude_hidden=True,
-            errors="ignore",
-            file_metadata=metadata_from_filename,
-        )
-        raw_docs = reader.load_data()
-
-        texts_by_rel: dict[str, list[str]] = {}
-        for doc in raw_docs:
-            extra_info = getattr(doc, "extra_info", None) or {}
-            rel_path = extra_info.get("source")
-            if not rel_path:
-                continue
-            text = getattr(doc, "text", None) or ""
-            if not text.strip():
-                continue
-            texts_by_rel.setdefault(rel_path, []).append(text)
-
-        with db_session() as conn:
-            repo = WikiPagesRepository(conn)
-            for rel_path in sorted(texts_by_rel):
-                page_path = _wiki_page_path_from_rel(rel_path)
-                if page_path is None:
-                    skipped.append({"file": rel_path, "reason": "invalid path"})
-                    continue
-                content = "\n\n".join(texts_by_rel[rel_path])
-                title = _get_display_name(file_name_map, rel_path) or os.path.basename(
-                    rel_path
+    with db_session() as conn:
+        repo = WikiPagesRepository(conn)
+        for rel_path in sorted(grouped):
+            page_path = _wiki_page_path_from_rel(rel_path)
+            entries = grouped[rel_path]
+            if any(hint is not None for hint, _ in entries):
+                entries = sorted(
+                    enumerate(entries),
+                    key=lambda item: (
+                        item[1][0] if item[1][0] is not None else float("inf"),
+                        item[0],
+                    ),
                 )
-                repo.upsert(
-                    source_id,
-                    page_path,
-                    content,
-                    title=title,
-                    updated_by=user,
-                    updated_via="agent",
-                )
-                created_pages.append((page_path, _content_hash(content)))
-
-        for rel_path in sorted(stored_files - set(texts_by_rel)):
-            ext = os.path.splitext(rel_path)[1].lower()
-            reason = (
-                "could not read/parse"
-                if ext in SUPPORTED_SOURCE_EXTENSIONS
-                else "no extractable text"
+                entries = [entry for _, entry in entries]
+            content = _join_chunk_texts([text for _, text in entries])
+            title = _get_display_name(file_name_map, rel_path) or os.path.basename(
+                rel_path
             )
-            skipped.append({"file": rel_path, "reason": reason})
-
-        if created_pages:
-            with db_session() as conn:
-                rebuild_wiki_directory_structure(conn, source_id, user)
+            repo.upsert(
+                source_id,
+                page_path,
+                content,
+                title=title,
+                updated_by=user,
+                updated_via="agent",
+            )
+            created_pages.append((page_path, _content_hash(content)))
 
     if not created_pages:
         return {
@@ -2186,6 +2255,15 @@ def convert_source_to_wiki_worker(self, source_id, user):
             "pages_created": 0,
             "skipped": skipped,
         }
+
+    with db_session() as conn:
+        rebuild_wiki_directory_structure(conn, source_id, user)
+
+    for doc_id in original_doc_ids:
+        try:
+            store.delete_chunk(doc_id)
+        except Exception as exc:
+            logging.error(f"Failed deleting original chunk {doc_id}: {exc}")
 
     for page_path, content_hash in created_pages:
         reembed_wiki_page.delay(
