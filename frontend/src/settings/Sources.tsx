@@ -561,7 +561,17 @@ export default function Sources({
                 return (
                   <div key={docId} className="relative">
                     <div
-                      className={`bg-muted dark:bg-accent flex h-[130px] w-full flex-col rounded-2xl p-5 transition-all duration-200 ${
+                      role="button"
+                      tabIndex={0}
+                      aria-label={document.name}
+                      onClick={() => setDocumentToView(document)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setDocumentToView(document);
+                        }
+                      }}
+                      className={`bg-muted dark:bg-accent focus-visible:ring-ring/50 flex h-[130px] w-full cursor-pointer flex-col rounded-2xl p-5 transition-all duration-200 outline-none focus-visible:ring-[3px] ${
                         actionMenuDocId === docId ||
                         syncMenuState.docId === docId
                           ? 'scale-[1.05]'
@@ -601,6 +611,7 @@ export default function Sources({
                                 <DropdownMenuContent
                                   align="end"
                                   className="min-w-[120px]"
+                                  onClick={(e) => e.stopPropagation()}
                                 >
                                   {syncOptions.map((opt) => (
                                     <DropdownMenuItem
@@ -641,6 +652,7 @@ export default function Sources({
                               <DropdownMenuContent
                                 align="end"
                                 className="min-w-[144px]"
+                                onClick={(e) => e.stopPropagation()}
                               >
                                 {getActionOptions(index, document).map(
                                   (option, idx) => (
