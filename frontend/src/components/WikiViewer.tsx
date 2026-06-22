@@ -1,3 +1,4 @@
+import { BookOpen } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -219,6 +220,24 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
         <span className="text-primary font-semibold wrap-break-word">
           {sourceName}
         </span>
+      </div>
+
+      <div className="bg-muted/60 text-muted-foreground dark:bg-accent/40 mb-4 flex items-start gap-2 rounded-xl px-4 py-3 text-xs">
+        <BookOpen
+          size={16}
+          strokeWidth={1.75}
+          className="mt-0.5 shrink-0"
+          aria-hidden="true"
+        />
+        <p>
+          <span className="text-foreground font-medium">
+            {t('settings.sources.wiki.livingTitle')}
+          </span>{' '}
+          {t('settings.sources.wiki.livingExplainer')}
+          {canEdit && (
+            <> {t('settings.sources.wiki.livingExplainerEditable')}</>
+          )}
+        </p>
       </div>
 
       <div className="flex flex-col gap-4 md:flex-row">

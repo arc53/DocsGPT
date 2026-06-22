@@ -7,10 +7,10 @@ import {
 } from './ingestor';
 
 describe('wiki ingestor schema', () => {
-  it('registers a "wiki" ingestor with the Create Wiki label', () => {
+  it('registers a "wiki" ingestor with the New wiki label', () => {
     const schema = getIngestorSchema('wiki');
     expect(schema).toBeDefined();
-    expect(schema?.label).toBe('Create Wiki');
+    expect(schema?.label).toBe('New wiki');
   });
 
   it('exposes an optional initial_content textarea field', () => {

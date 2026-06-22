@@ -115,6 +115,9 @@
         "forbidden": "You do not have permission to edit this page.",
         "conflict": "This page changed since you opened it and has been reloaded. Your edits are below — reapply and save again.",
         "editPlaceholder": "Write the page in Markdown…",
+        "livingTitle": "Living wiki.",
+        "livingExplainer": "An agent-editable source: pages are read and rewritten as agents work, and it is exposed to agents through the agentic search tool by default.",
+        "livingExplainerEditable": "Any agent using this source can edit it.",
         "stamp": {
           "editedBy": "Edited by {{who}}",
           "agent": "agent",
@@ -122,6 +125,28 @@
           "you": "you",
           "unknown": "unknown",
           "version": "v{{version}}"
+        },
+        "convert": {
+          "action": "Convert to wiki",
+          "title": "Convert to a living wiki",
+          "intro": "Convert \"{{name}}\" into a living wiki of editable pages that agents can read and rewrite.",
+          "introGeneric": "Convert this source into a living wiki of editable pages that agents can read and rewrite.",
+          "costReparse": "Files are re-parsed into editable pages. Formatting is simplified, especially for PDFs.",
+          "costSkipped": "Non-text files (images, binaries) are skipped.",
+          "costIrreversible": "This is not reversible — the wiki pages become the source of truth.",
+          "confirm": "Convert to wiki",
+          "inProgress": "Converting files into wiki pages…",
+          "summaryPages_one": "{{count}} page created",
+          "summaryPages_other": "{{count}} pages created",
+          "summarySkipped_one": "{{count}} file skipped",
+          "summarySkipped_other": "{{count}} files skipped",
+          "skippedHeading": "Skipped files",
+          "done": "Done",
+          "errors": {
+            "generic": "Conversion failed. Please try again.",
+            "forbidden": "You don't have permission to convert this source.",
+            "conflict": "This source is still ingesting. Wait for it to finish before converting."
+          }
         }
       },
       "editConfig": "Source settings",
@@ -731,8 +756,8 @@
           "heading": "Upload from Confluence"
         },
         "wiki": {
-          "label": "Create Wiki",
-          "heading": "Create an LLM-editable wiki"
+          "label": "New wiki",
+          "heading": "Create a living wiki"
         }
       },
       "connectors": {
@@ -979,7 +1004,16 @@
       "remove": "Remove attachment"
     },
     "retry": "Retry",
-    "reasoning": "Reasoning"
+    "reasoning": "Reasoning",
+    "wikiWrite": {
+      "edited": "Edited wiki",
+      "create": "Created wiki page",
+      "str_replace": "Edited wiki page",
+      "insert": "Edited wiki page",
+      "delete": "Deleted wiki page",
+      "rename": "Renamed wiki page",
+      "failed": "failed"
+    }
   },
   "agents": {
     "title": "Agents",

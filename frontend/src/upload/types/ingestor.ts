@@ -240,9 +240,9 @@ export const IngestorFormSchemas: IngestorSchema[] = [
   },
   {
     key: 'wiki',
-    label: 'Create Wiki',
+    label: 'New wiki',
     icon: BookIcon,
-    heading: 'Create an LLM-editable wiki',
+    heading: 'Create a living wiki',
     fields: [
       {
         name: 'initial_content',

@@ -1,4 +1,9 @@
-import { Search as SearchIcon, SlidersHorizontal, Users } from 'lucide-react';
+import {
+  BookOpen,
+  Search as SearchIcon,
+  SlidersHorizontal,
+  Users,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -46,6 +51,7 @@ import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
+import ConvertToWikiModal from './ConvertToWikiModal';
 import SourceConfigModal from './SourceConfigModal';
 
 type SourceMenuOption = {
@@ -110,6 +116,9 @@ export default function Sources({
     null,
   );
   const [configModalState, setConfigModalState] =
+    useState<ActiveState>('INACTIVE');
+  const [documentToConvert, setDocumentToConvert] = useState<Doc | null>(null);
+  const [convertModalState, setConvertModalState] =
     useState<ActiveState>('INACTIVE');
   const [syncMenuState, setSyncMenuState] = useState<{
     isOpen: boolean;
@@ -329,6 +338,9 @@ export default function Sources({
     document: Doc,
   ): SourceMenuOption[] => {
     const isWiki = document.type === 'wiki';
+    // 'team' viewers cannot write; convert is owner/editor only.
+    const canEdit =
+      document.ownership !== 'team' || document.team_access === 'editor';
     const actions: SourceMenuOption[] = [
       {
         icon: EyeView,
@@ -391,6 +403,26 @@ export default function Sources({
         onClick: () => {
           setDocumentToConfigure(document);
           setConfigModalState('ACTIVE');
+        },
+        iconWidth: 16,
+        iconHeight: 16,
+        variant: 'default',
+      });
+    }
+
+    if (
+      document.id &&
+      !isWiki &&
+      canEdit &&
+      document.ingestStatus !== 'processing' &&
+      document.ingestStatus !== 'failed'
+    ) {
+      actions.push({
+        icon: BookOpen,
+        label: t('settings.sources.wiki.convert.action'),
+        onClick: () => {
+          setDocumentToConvert(document);
+          setConvertModalState('ACTIVE');
         },
         iconWidth: 16,
         iconHeight: 16,
@@ -763,6 +795,18 @@ export default function Sources({
         }}
         document={documentToConfigure}
         onReingest={handleReingest}
+      />
+
+      <ConvertToWikiModal
+        modalState={convertModalState}
+        setModalState={(state) => {
+          setConvertModalState(state);
+          if (state === 'INACTIVE') {
+            setDocumentToConvert(null);
+          }
+        }}
+        document={documentToConvert}
+        onConverted={() => refreshDocs(undefined, currentPage, rowsPerPage)}
       />
     </div>
   );

@@ -107,6 +107,10 @@ const userService = {
     token: string | null,
   ): Promise<Response> =>
     apiClient.post(endpoints.USER.CREATE_WIKI, data, token),
+  convertToWiki: (sourceId: string, token: string | null): Promise<Response> =>
+    apiClient.post(endpoints.USER.CONVERT_TO_WIKI(sourceId), {}, token),
+  getTaskStatus: (taskId: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.TASK_STATUS(taskId), token),
   getWikiPages: (sourceId: string, token: string | null): Promise<Response> =>
     throttledApiClient.get(endpoints.USER.WIKI_PAGES(sourceId), token),
   getWikiPage: (
