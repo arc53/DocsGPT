@@ -10,7 +10,12 @@ from pydantic import ValidationError
 
 from application.agents.tools.path_utils import validate_tool_path
 from application.api import api
-from application.api.user.tasks import reembed_wiki_page, reingest_source_task, sync_source
+from application.api.user.tasks import (
+    convert_source_to_wiki,
+    reembed_wiki_page,
+    reingest_source_task,
+    sync_source,
+)
 from application.api.user.team_sharing import (
     can_access,
     effective_write_owner,
@@ -23,6 +28,7 @@ from application.storage.db.repositories.ingest_chunk_progress import (
 )
 from application.storage.db.repositories.sources import SourcesRepository
 from application.storage.db.repositories.wiki_pages import (
+    WikiPageConflict,
     WikiPagesRepository,
     _content_hash,
     rebuild_wiki_directory_structure,
@@ -624,6 +630,26 @@ class SourceConfigResource(Resource):
                 # Ingest-time fields (config.chunking) only take effect after a
                 # re-ingest (D8); compare against the current config to decide.
                 current_config = SourceConfig.parse(doc.get("config"))
+                # kind changes route exclusively through /wiki/convert. An
+                # explicit kind in the body that differs from the persisted
+                # kind is rejected (either direction); otherwise the current
+                # kind is preserved so a partial edit omitting it (the model
+                # defaults to "classic") never demotes a wiki.
+                if "kind" in body and body["kind"] != current_config.kind:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": (
+                                    "Change wiki mode via "
+                                    "POST /api/sources/<id>/wiki/convert, "
+                                    "not the config endpoint."
+                                ),
+                            }
+                        ),
+                        400,
+                    )
+                new_config.kind = current_config.kind
                 requires_reingest = (
                     new_config.chunking.model_dump()
                     != current_config.chunking.model_dump()
@@ -670,6 +696,7 @@ def _wiki_page_node(page):
         "token_count": page.get("token_count") or 0,
         "version": page.get("version"),
         "embed_status": page.get("embed_status"),
+        "updated_by": page.get("updated_by"),
         "updated_at": (
             page["updated_at"].isoformat()
             if page.get("updated_at") is not None
@@ -677,6 +704,18 @@ def _wiki_page_node(page):
             else page.get("updated_at")
         ),
     }
+
+
+_wiki_page_edit_model = sources_ns.model(
+    "WikiPageEditModel",
+    {
+        "path": fields.String(required=True, description="Page path"),
+        "content": fields.String(required=True, description="Markdown content"),
+        "expected_version": fields.Integer(
+            description="Optimistic-lock version from the last read"
+        ),
+    },
+)
 
 
 @sources_ns.route("/sources/wiki")
@@ -838,3 +877,208 @@ class WikiPage(Resource):
         node = _wiki_page_node(page)
         node["content"] = page.get("content") or ""
         return make_response(jsonify({"success": True, "page": node}), 200)
+
+    @api.expect(_wiki_page_edit_model)
+    @api.doc(
+        description="Create or overwrite a wiki page (human edit). Write access "
+        "required; a stale expected_version returns 409."
+    )
+    def put(self, source_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json(silent=True) or {}
+        missing_fields = check_required_fields(data, ["path", "content"])
+        if missing_fields:
+            return missing_fields
+        path = validate_tool_path(data["path"])
+        if not path or path == "/" or path.endswith("/"):
+            return make_response(
+                jsonify({"success": False, "message": "Invalid page path"}), 400
+            )
+        content = data["content"]
+        expected_version = data.get("expected_version")
+        try:
+            with db_session() as conn:
+                owner = effective_write_owner(conn, "source", source_id, user)
+                if not owner:
+                    return make_response(
+                        jsonify(
+                            {"success": False, "message": "Source not accessible"}
+                        ),
+                        403,
+                    )
+                doc = SourcesRepository(conn).get_any(source_id, owner)
+                if doc is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Source not found"}),
+                        404,
+                    )
+                resolved_source_id = str(doc["id"])
+                try:
+                    page = WikiPagesRepository(conn).upsert(
+                        resolved_source_id,
+                        path,
+                        content,
+                        updated_by=user,
+                        expected_version=expected_version,
+                    )
+                except WikiPageConflict:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": (
+                                    "Page changed since you loaded it. "
+                                    "Reload and reapply your edit."
+                                ),
+                            }
+                        ),
+                        409,
+                    )
+                rebuild_wiki_directory_structure(conn, resolved_source_id, owner)
+        except Exception as err:
+            current_app.logger.error(
+                f"Error editing wiki page for {source_id}: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        try:
+            reembed_wiki_page.delay(
+                resolved_source_id,
+                path,
+                _content_hash(content),
+                user=owner,
+                idempotency_key=(
+                    f"reembed-wiki:{resolved_source_id}:{path}:"
+                    f"{_content_hash(content)}"
+                ),
+            )
+        except Exception as err:
+            current_app.logger.error(
+                f"Error enqueuing wiki re-embed for {source_id}: {err}",
+                exc_info=True,
+            )
+        return make_response(
+            jsonify({"success": True, "page": _wiki_page_node(page)}), 200
+        )
+
+
+def _source_is_blank(doc):
+    """True when a source has no ingested files to convert into pages."""
+    structure = doc.get("directory_structure") or {}
+    if isinstance(structure, str):
+        try:
+            structure = json.loads(structure)
+        except Exception:
+            structure = {}
+    return not bool(structure)
+
+
+def _enable_wiki_inline(conn, doc, owner):
+    """Flip a blank source to wiki mode + agentic exposure with no task."""
+    cfg = SourceConfig.parse(doc.get("config"))
+    SourcesRepository(conn).update(
+        str(doc["id"]), owner, {"config": cfg.wiki_enabled()}
+    )
+
+
+@sources_ns.route("/sources/<string:source_id>/wiki/convert")
+class ConvertSourceToWiki(Resource):
+    @api.doc(
+        description="Convert an ingested source into a wiki. A blank source is "
+        "enabled inline; a source with files runs a conversion task (poll its "
+        "status for the per-file summary). Write access required (owner/editor)."
+    )
+    def post(self, source_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        try:
+            with db_session() as conn:
+                owner = effective_write_owner(conn, "source", source_id, user)
+                if not owner:
+                    return make_response(
+                        jsonify(
+                            {"success": False, "message": "Source not accessible"}
+                        ),
+                        403,
+                    )
+                doc = SourcesRepository(conn).get_any(source_id, owner)
+                if doc is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Source not found"}),
+                        404,
+                    )
+                resolved_source_id = str(doc["id"])
+                # A mid-ingest source has an incomplete directory structure, so
+                # it could be mis-detected as blank and wrongly enabled inline.
+                # Reject while an embed is still in flight (mirrors the
+                # "processing" ingest status the sources list derives).
+                progress = IngestChunkProgressRepository(conn).get_progress(
+                    resolved_source_id
+                )
+                if (
+                    progress
+                    and progress.get("status") != "stalled"
+                    and (progress.get("embedded_chunks") or 0)
+                    < (progress.get("total_chunks") or 0)
+                ):
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": (
+                                    "Source is still ingesting; wait for it to "
+                                    "finish before converting to a wiki."
+                                ),
+                            }
+                        ),
+                        409,
+                    )
+                cfg = SourceConfig.parse(doc.get("config"))
+                if cfg.kind == "wiki":
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": True,
+                                "converted": False,
+                                "enabled": True,
+                            }
+                        ),
+                        200,
+                    )
+                if _source_is_blank(doc):
+                    _enable_wiki_inline(conn, doc, owner)
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": True,
+                                "converted": False,
+                                "enabled": True,
+                            }
+                        ),
+                        200,
+                    )
+        except Exception as err:
+            current_app.logger.error(
+                f"Error preparing wiki conversion for {source_id}: {err}",
+                exc_info=True,
+            )
+            return make_response(jsonify({"success": False}), 400)
+        try:
+            task = convert_source_to_wiki.delay(
+                source_id=resolved_source_id,
+                user=owner,
+                idempotency_key=f"convert-wiki:{resolved_source_id}",
+            )
+        except Exception as err:
+            current_app.logger.error(
+                f"Error starting wiki conversion for {source_id}: {err}",
+                exc_info=True,
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(
+            jsonify({"success": True, "task_id": task.id}), 200
+        )

@@ -290,3 +290,276 @@ class TestWikiPage:
             request.decoded_token = {"sub": stranger}
             response = WikiPage().get(sid)
         assert response.status_code == 404
+
+
+class TestConvertSourceToWiki:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.sources.routes import ConvertSourceToWiki
+
+        with app.test_request_context(
+            "/api/sources/x/wiki/convert", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = ConvertSourceToWiki().post("x")
+        assert response.status_code == 401
+
+    def test_blank_source_enabled_inline_no_task(self, app, pg_conn):
+        from application.api.user.sources.routes import ConvertSourceToWiki
+        from application.storage.db.repositories.sources import SourcesRepository
+        from application.storage.db.source_config import SourceConfig
+
+        user = "u-convert-blank"
+        src = SourcesRepository(pg_conn).create(
+            "blank", user_id=user, type="file", directory_structure={}
+        )
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.convert_source_to_wiki.delay"
+        ) as mock_convert, app.test_request_context(
+            f"/api/sources/{sid}/wiki/convert", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ConvertSourceToWiki().post(sid)
+
+        assert response.status_code == 200
+        assert response.json["converted"] is False
+        assert response.json["enabled"] is True
+        mock_convert.assert_not_called()
+        got = SourcesRepository(pg_conn).get_any(sid, user)
+        cfg = SourceConfig.parse(got.get("config"))
+        assert cfg.kind == "wiki"
+        assert cfg.retrieval.exposure == "agentic_tool"
+
+    def test_fileful_source_enqueues_task(self, app, pg_conn):
+        from application.api.user.sources.routes import ConvertSourceToWiki
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-convert-files"
+        src = SourcesRepository(pg_conn).create(
+            "files", user_id=user, type="file",
+            directory_structure={"a.md": {"type": "text/markdown"}},
+        )
+        sid = str(src["id"])
+
+        fake_task = type("T", (), {"id": "task-xyz"})()
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.convert_source_to_wiki.delay",
+            return_value=fake_task,
+        ) as mock_convert, app.test_request_context(
+            f"/api/sources/{sid}/wiki/convert", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ConvertSourceToWiki().post(sid)
+
+        assert response.status_code == 200
+        assert response.json["task_id"] == "task-xyz"
+        mock_convert.assert_called_once()
+        assert mock_convert.call_args.kwargs["source_id"] == sid
+        assert mock_convert.call_args.kwargs["user"] == user
+        assert mock_convert.call_args.kwargs["idempotency_key"] == (
+            f"convert-wiki:{sid}"
+        )
+
+    def test_in_progress_ingest_rejected_409(self, app, pg_conn):
+        from application.api.user.sources.routes import ConvertSourceToWiki
+        from application.storage.db.repositories.ingest_chunk_progress import (
+            IngestChunkProgressRepository,
+        )
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-convert-ingesting"
+        src = SourcesRepository(pg_conn).create(
+            "ingesting", user_id=user, type="file",
+            directory_structure={"a.md": {"type": "text/markdown"}},
+        )
+        sid = str(src["id"])
+        # An active embed in flight (embedded 0 of 5) → "processing".
+        IngestChunkProgressRepository(pg_conn).init_progress(sid, 5)
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.convert_source_to_wiki.delay"
+        ) as mock_convert, app.test_request_context(
+            f"/api/sources/{sid}/wiki/convert", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = ConvertSourceToWiki().post(sid)
+
+        assert response.status_code == 409
+        mock_convert.assert_not_called()
+
+    def test_viewer_rejected_403(self, app, pg_conn):
+        from application.api.user.sources.routes import ConvertSourceToWiki
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        owner = "alice-convert"
+        viewer = "bob-convert-viewer"
+        src = SourcesRepository(pg_conn).create(
+            "files", user_id=owner, type="file",
+            directory_structure={"a.md": {"type": "text/markdown"}},
+        )
+        sid = str(src["id"])
+        _grant_team_access(pg_conn, owner, viewer, sid, "viewer")
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.convert_source_to_wiki.delay"
+        ) as mock_convert, app.test_request_context(
+            f"/api/sources/{sid}/wiki/convert", method="POST"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": viewer}
+            response = ConvertSourceToWiki().post(sid)
+
+        assert response.status_code == 403
+        mock_convert.assert_not_called()
+
+
+class TestWikiPageEdit:
+    def test_returns_401_unauthenticated(self, app):
+        from application.api.user.sources.routes import WikiPage
+
+        with app.test_request_context(
+            "/api/sources/x/wiki/page", method="PUT", json={}
+        ):
+            from flask import request
+            request.decoded_token = None
+            response = WikiPage().put("x")
+        assert response.status_code == 401
+
+    def test_owner_writes_and_enqueues_reembed(self, app, pg_conn):
+        from application.api.user.sources.routes import WikiPage
+        from application.storage.db.repositories.sources import SourcesRepository
+        from application.storage.db.repositories.wiki_pages import WikiPagesRepository
+
+        user = "u-edit-owner"
+        src = SourcesRepository(pg_conn).create(
+            "wiki", user_id=user, type="wiki", config={"kind": "wiki"}
+        )
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.reembed_wiki_page.delay"
+        ) as mock_reembed, app.test_request_context(
+            f"/api/sources/{sid}/wiki/page",
+            method="PUT",
+            json={"path": "/notes.md", "content": "body"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = WikiPage().put(sid)
+
+        assert response.status_code == 200
+        assert response.json["page"]["path"] == "/notes.md"
+        assert response.json["page"]["version"] is not None
+        page = WikiPagesRepository(pg_conn).get_by_path(sid, "/notes.md")
+        assert page["content"] == "body"
+        mock_reembed.assert_called_once()
+        assert mock_reembed.call_args.args[1] == "/notes.md"
+        assert mock_reembed.call_args.kwargs["user"] == user
+
+    def test_team_editor_reembeds_as_owner(self, app, pg_conn):
+        from application.api.user.sources.routes import WikiPage
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        owner = "alice-edit"
+        editor = "bob-edit-editor"
+        src = SourcesRepository(pg_conn).create(
+            "wiki", user_id=owner, type="wiki", config={"kind": "wiki"}
+        )
+        sid = str(src["id"])
+        _grant_team_access(pg_conn, owner, editor, sid, "editor")
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.reembed_wiki_page.delay"
+        ) as mock_reembed, app.test_request_context(
+            f"/api/sources/{sid}/wiki/page",
+            method="PUT",
+            json={"path": "/e.md", "content": "edited"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": editor}
+            response = WikiPage().put(sid)
+
+        assert response.status_code == 200
+        # Re-embed runs AS the owner so the owner-scoped worker load resolves.
+        assert mock_reembed.call_args.kwargs["user"] == owner
+
+    def test_stale_version_returns_409(self, app, pg_conn):
+        from application.api.user.sources.routes import WikiPage
+        from application.storage.db.repositories.sources import SourcesRepository
+        from application.storage.db.repositories.wiki_pages import WikiPagesRepository
+
+        user = "u-edit-conflict"
+        src = SourcesRepository(pg_conn).create(
+            "wiki", user_id=user, type="wiki", config={"kind": "wiki"}
+        )
+        sid = str(src["id"])
+        WikiPagesRepository(pg_conn).upsert(sid, "/c.md", "v1", updated_by=user)
+        # Bump to version 2 so a stale expected_version=1 loses the race.
+        WikiPagesRepository(pg_conn).upsert(sid, "/c.md", "v2", updated_by=user)
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.reembed_wiki_page.delay"
+        ) as mock_reembed, app.test_request_context(
+            f"/api/sources/{sid}/wiki/page",
+            method="PUT",
+            json={"path": "/c.md", "content": "v3", "expected_version": 1},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = WikiPage().put(sid)
+
+        assert response.status_code == 409
+        mock_reembed.assert_not_called()
+
+    def test_traversal_path_returns_400(self, app, pg_conn):
+        from application.api.user.sources.routes import WikiPage
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-edit-traversal"
+        src = SourcesRepository(pg_conn).create(
+            "wiki", user_id=user, type="wiki", config={"kind": "wiki"}
+        )
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.reembed_wiki_page.delay"
+        ), app.test_request_context(
+            f"/api/sources/{sid}/wiki/page",
+            method="PUT",
+            json={"path": "/../secret.md", "content": "x"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = WikiPage().put(sid)
+        assert response.status_code == 400
+
+    def test_viewer_rejected_403(self, app, pg_conn):
+        from application.api.user.sources.routes import WikiPage
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        owner = "alice-edit-viewer"
+        viewer = "bob-edit-viewer"
+        src = SourcesRepository(pg_conn).create(
+            "wiki", user_id=owner, type="wiki", config={"kind": "wiki"}
+        )
+        sid = str(src["id"])
+        _grant_team_access(pg_conn, owner, viewer, sid, "viewer")
+
+        with _patch_db(pg_conn), patch(
+            "application.api.user.sources.routes.reembed_wiki_page.delay"
+        ) as mock_reembed, app.test_request_context(
+            f"/api/sources/{sid}/wiki/page",
+            method="PUT",
+            json={"path": "/v.md", "content": "x"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": viewer}
+            response = WikiPage().put(sid)
+
+        assert response.status_code == 403
+        mock_reembed.assert_not_called()

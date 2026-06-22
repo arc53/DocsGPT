@@ -117,6 +117,19 @@ class SourceConfig(BaseModel):
     chunking: ChunkingConfig = ChunkingConfig()
     retrieval: RetrievalConfig = RetrievalConfig()
 
+    def wiki_enabled(self) -> dict:
+        """Return a config dict flipped to wiki mode + browse-as-you-go exposure.
+
+        Sets ``kind="wiki"`` and defaults ``retrieval.exposure`` to
+        ``agentic_tool`` (a wiki is navigated, not bulk-prefetched), preserving
+        any non-default exposure the source already carries.
+        """
+        new_config = self.model_dump()
+        new_config["kind"] = "wiki"
+        if self.retrieval.exposure == "prefetch":
+            new_config["retrieval"]["exposure"] = "agentic_tool"
+        return new_config
+
     @classmethod
     def parse(cls, raw: Optional[dict]) -> "SourceConfig":
         """Lenient read: return all-defaults for ``{}``/``None``.

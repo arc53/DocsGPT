@@ -1029,3 +1029,108 @@ class TestSourceConfigResource:
         # owner-scoped read sees it.
         got = SourcesRepository(pg_conn).get_any(sid, owner)
         assert got["config"]["retrieval"]["chunks"] == 9
+
+    def test_kind_flip_to_wiki_rejected(self, app, pg_conn):
+        # Flipping kind to wiki must route through /wiki/convert, not config.
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-cfg-wiki-flip"
+        src = _seed_source(pg_conn, user, name="cfg-wiki", type="file")
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"kind": "wiki"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(sid)
+
+        assert response.status_code == 400
+        # The kind must NOT have silently flipped.
+        from application.storage.db.source_config import SourceConfig
+
+        got = SourcesRepository(pg_conn).get_any(sid, user)
+        assert SourceConfig.parse(got.get("config")).kind != "wiki"
+
+    def test_other_edits_work_on_wiki_source(self, app, pg_conn):
+        # A wiki source can still edit retrieval (kind stays wiki, no reject).
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-cfg-wiki-edit"
+        src = _seed_source(
+            pg_conn, user, name="wiki-cfg", type="wiki",
+            config={"kind": "wiki"},
+        )
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"kind": "wiki", "retrieval": {"chunks": 4}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(sid)
+
+        assert response.status_code == 200
+        got = SourcesRepository(pg_conn).get_any(sid, user)
+        assert got["config"]["retrieval"]["chunks"] == 4
+
+    def test_partial_edit_preserves_wiki_kind(self, app, pg_conn):
+        # A partial edit that OMITS kind must not demote a wiki to classic
+        # (SourceConfig.kind defaults to "classic" on a full-replace write).
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+        from application.storage.db.source_config import SourceConfig
+
+        user = "u-cfg-wiki-partial"
+        src = _seed_source(
+            pg_conn, user, name="wiki-partial", type="wiki",
+            config={"kind": "wiki"},
+        )
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"retrieval": {"chunks": 6}},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(sid)
+
+        assert response.status_code == 200
+        assert response.json["config"]["kind"] == "wiki"
+        got = SourcesRepository(pg_conn).get_any(sid, user)
+        assert SourceConfig.parse(got.get("config")).kind == "wiki"
+        assert got["config"]["retrieval"]["chunks"] == 6
+
+    def test_explicit_kind_demotion_from_wiki_rejected(self, app, pg_conn):
+        # Demoting wiki -> classic via config is rejected; use /wiki/convert.
+        from application.api.user.sources.routes import SourceConfigResource
+        from application.storage.db.repositories.sources import SourcesRepository
+        from application.storage.db.source_config import SourceConfig
+
+        user = "u-cfg-wiki-demote"
+        src = _seed_source(
+            pg_conn, user, name="wiki-demote", type="wiki",
+            config={"kind": "wiki"},
+        )
+        sid = str(src["id"])
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/sources/{sid}/config",
+            method="PATCH",
+            json={"kind": "classic"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceConfigResource().patch(sid)
+
+        assert response.status_code == 400
+        got = SourcesRepository(pg_conn).get_any(sid, user)
+        assert SourceConfig.parse(got.get("config")).kind == "wiki"

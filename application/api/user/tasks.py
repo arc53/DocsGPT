@@ -128,6 +128,15 @@ def reembed_wiki_page(
     return resp
 
 
+@celery.task(**DURABLE_TASK)
+@with_idempotency(task_name="convert_source_to_wiki")
+def convert_source_to_wiki(self, source_id, user, idempotency_key=None):
+    from application.worker import convert_source_to_wiki_worker
+
+    resp = convert_source_to_wiki_worker(self, source_id, user)
+    return resp
+
+
 # Beat-driven dispatch tasks default to ``acks_late=False``: a SIGKILL
 # of a beat tick is harmless to redeliver only if the dispatch itself is
 # idempotent. We keep these early-ACK so the broker doesn't replay a

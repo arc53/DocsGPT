@@ -39,7 +39,11 @@ from application.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
 )
 from application.storage.db.repositories.sources import SourcesRepository
-from application.storage.db.repositories.wiki_pages import WikiPagesRepository
+from application.storage.db.repositories.wiki_pages import (
+    WikiPagesRepository,
+    _content_hash,
+    rebuild_wiki_directory_structure,
+)
 from application.storage.db.session import db_readonly, db_session
 from application.storage.db.source_config import SourceConfig
 from application.storage.storage_creator import StorageCreator
@@ -172,6 +176,25 @@ def _apply_display_names_to_structure(structure, file_name_map, prefix=""):
             next_prefix = f"{prefix}/{name}" if prefix else name
             _apply_display_names_to_structure(node, file_name_map, next_prefix)
     return structure
+
+
+def _download_source_files_to_dir(storage, source_file_path, temp_dir):
+    """Mirror a source's stored files into ``temp_dir``, preserving structure."""
+    if not storage.is_directory(source_file_path):
+        return
+    for storage_file_path in storage.list_files(source_file_path):
+        if storage.is_directory(storage_file_path):
+            continue
+        rel_path = os.path.relpath(storage_file_path, source_file_path)
+        local_file_path = os.path.join(temp_dir, rel_path)
+        os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+        try:
+            file_data = storage.get_file(storage_file_path)
+            with open(local_file_path, "wb") as f:
+                f.write(file_data.read())
+        except Exception as e:
+            logging.error(f"Error downloading file {storage_file_path}: {e}")
+            continue
 
 
 # Define a function to generate a random string of a given length.
@@ -734,29 +757,7 @@ def reingest_source_worker(self, source_id, user):
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Download all files from storage to temp directory, preserving directory structure
-            if storage.is_directory(source_file_path):
-                files_list = storage.list_files(source_file_path)
-
-                for storage_file_path in files_list:
-                    if storage.is_directory(storage_file_path):
-                        continue
-
-                    rel_path = os.path.relpath(storage_file_path, source_file_path)
-                    local_file_path = os.path.join(temp_dir, rel_path)
-
-                    os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
-
-                    # Download file
-                    try:
-                        file_data = storage.get_file(storage_file_path)
-                        with open(local_file_path, "wb") as f:
-                            f.write(file_data.read())
-                    except Exception as e:
-                        logging.error(
-                            f"Error downloading file {storage_file_path}: {e}"
-                        )
-                        continue
+            _download_source_files_to_dir(storage, source_file_path, temp_dir)
 
             reader = SimpleDirectoryReader(
                 input_dir=temp_dir,
@@ -2058,3 +2059,145 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
         raise
 
     return {"status": "embedded", "added": added, "deleted": deleted}
+
+
+def _wiki_page_path_from_rel(rel_path):
+    """Build a validated leading-slash wiki page path, or None if invalid.
+
+    Runs the derived path through ``validate_tool_path`` so a stored filename
+    carrying traversal (``..``) never lands as a ``wiki_pages.path``.
+    """
+    from application.agents.tools.path_utils import validate_tool_path
+
+    raw = "/" + rel_path.replace(os.sep, "/").lstrip("/")
+    return validate_tool_path(raw)
+
+
+def convert_source_to_wiki_worker(self, source_id, user):
+    """Convert an ingested source into a wiki by materializing files as pages.
+
+    Re-parses the source's stored originals (the same storage file-load +
+    ``SimpleDirectoryReader`` machinery reingest uses), creating one wiki page
+    per file with extractable text. Non-text/binary/unsupported files are
+    skipped and reported. Embedding is enqueued per page (async); the source's
+    ``config.kind`` flips to ``wiki`` only after at least one page is
+    materialized — a source with no extractable pages keeps its original kind
+    and directory structure.
+
+    Args:
+        self: Celery task instance.
+        source_id: ID of the source to convert.
+        user: Owner identifier used to load the source row and author pages.
+
+    Returns:
+        A summary dict ``{"status": "converted", "pages_created", "skipped"}``,
+        ``{"status": "no_pages", ...}`` when nothing was extractable, or
+        ``{"status": "already_wiki"}`` when the source is already a wiki.
+    """
+    from application.api.user.tasks import reembed_wiki_page
+
+    source_id = str(source_id)
+
+    with db_readonly() as conn:
+        source = SourcesRepository(conn).get_any(source_id, user)
+    if not source:
+        raise ValueError(f"Source {source_id} not found or access denied")
+    source_id = str(source["id"])
+
+    cfg = SourceConfig.parse(source.get("config"))
+    if cfg.kind == "wiki":
+        return {"status": "already_wiki", "pages_created": 0, "skipped": []}
+
+    storage = StorageCreator.get_storage()
+    source_file_path = source.get("file_path", "")
+    file_name_map = _normalize_file_name_map(source.get("file_name_map"))
+
+    created_pages: list[tuple[str, str]] = []
+    skipped: list[dict] = []
+
+    stored_files: set[str] = set()
+    if storage.is_directory(source_file_path):
+        for stored in storage.list_files(source_file_path):
+            if storage.is_directory(stored):
+                continue
+            stored_files.add(os.path.relpath(stored, source_file_path))
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        _download_source_files_to_dir(storage, source_file_path, temp_dir)
+
+        reader = SimpleDirectoryReader(
+            input_dir=temp_dir,
+            recursive=True,
+            required_exts=list(SUPPORTED_SOURCE_EXTENSIONS),
+            exclude_hidden=True,
+            errors="ignore",
+            file_metadata=metadata_from_filename,
+        )
+        raw_docs = reader.load_data()
+
+        texts_by_rel: dict[str, list[str]] = {}
+        for doc in raw_docs:
+            extra_info = getattr(doc, "extra_info", None) or {}
+            rel_path = extra_info.get("source")
+            if not rel_path:
+                continue
+            text = getattr(doc, "text", None) or ""
+            if not text.strip():
+                continue
+            texts_by_rel.setdefault(rel_path, []).append(text)
+
+        with db_session() as conn:
+            repo = WikiPagesRepository(conn)
+            for rel_path in sorted(texts_by_rel):
+                page_path = _wiki_page_path_from_rel(rel_path)
+                if page_path is None:
+                    skipped.append({"file": rel_path, "reason": "invalid path"})
+                    continue
+                content = "\n\n".join(texts_by_rel[rel_path])
+                title = _get_display_name(file_name_map, rel_path) or os.path.basename(
+                    rel_path
+                )
+                repo.upsert(
+                    source_id, page_path, content, title=title, updated_by=user
+                )
+                created_pages.append((page_path, _content_hash(content)))
+
+        for rel_path in sorted(stored_files - set(texts_by_rel)):
+            ext = os.path.splitext(rel_path)[1].lower()
+            reason = (
+                "could not read/parse"
+                if ext in SUPPORTED_SOURCE_EXTENSIONS
+                else "no extractable text"
+            )
+            skipped.append({"file": rel_path, "reason": reason})
+
+        if created_pages:
+            with db_session() as conn:
+                rebuild_wiki_directory_structure(conn, source_id, user)
+
+    if not created_pages:
+        return {
+            "status": "no_pages",
+            "pages_created": 0,
+            "skipped": skipped,
+        }
+
+    for page_path, content_hash in created_pages:
+        reembed_wiki_page.delay(
+            source_id,
+            page_path,
+            content_hash,
+            user=user,
+            idempotency_key=f"reembed-wiki:{source_id}:{page_path}:{content_hash}",
+        )
+
+    with db_session() as conn:
+        SourcesRepository(conn).update(
+            source_id, user, {"config": cfg.wiki_enabled()}
+        )
+
+    return {
+        "status": "converted",
+        "pages_created": len(created_pages),
+        "skipped": skipped,
+    }
