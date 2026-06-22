@@ -5,6 +5,7 @@ import math
 
 from flask import current_app, jsonify, make_response, redirect, request
 from flask_restx import fields, Namespace, Resource
+from pydantic import ValidationError
 
 from application.api import api
 from application.api.user.tasks import reingest_source_task, sync_source
@@ -573,11 +574,20 @@ class SourceConfigResource(Resource):
                 jsonify({"success": False, "message": "Invalid config body"}), 400
             )
         # Strict validation (D7 strict-on-write): reject invalid config → 400.
+        # Return a static message (no exception text) so validation internals
+        # aren't exposed to the caller; the client validates the same rules
+        # before submitting.
         try:
             new_config = SourceConfig.model_validate(body)
-        except Exception as err:
+        except ValidationError:
             return make_response(
-                jsonify({"success": False, "message": f"Invalid config: {err}"}), 400
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Invalid config: one or more fields failed validation.",
+                    }
+                ),
+                400,
             )
 
         try:

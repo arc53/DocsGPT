@@ -287,7 +287,14 @@ class Dispatcher(BaseRetriever):
             try:
                 group_docs = retriever.search(query) if query else retriever.search()
             except Exception as exc:
-                logger.error("Group '%s' search failed: %s", group["retriever"], exc)
+                # Log the exception type only — a raw exception message can
+                # carry the vector-store DSN (with credentials) on connection
+                # errors.
+                logger.error(
+                    "Group '%s' search failed: %s",
+                    group["retriever"],
+                    type(exc).__name__,
+                )
                 continue
             context = {"query": query, "retriever": group["retriever"]}
             group_docs = self._run_stages(
