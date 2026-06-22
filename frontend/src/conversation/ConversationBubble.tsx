@@ -49,6 +49,11 @@ import classes from './ConversationBubble.module.css';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
 import ResearchProgress from './ResearchProgress';
 import { ToolCallsType } from './types';
+import {
+  isWikiWriteCall,
+  wikiWriteActionKey,
+  wikiWritePath,
+} from './wikiToolCall';
 
 const DisableSourceFE = import.meta.env.VITE_DISABLE_SOURCE_FE || false;
 
@@ -1064,7 +1069,47 @@ function ToolCallApprovalBar({
   );
 }
 
-function ToolCalls({
+export function WikiWriteToolCallCard({
+  toolCall,
+}: {
+  toolCall: ToolCallsType;
+}) {
+  const { t } = useTranslation();
+  const path = wikiWritePath(toolCall);
+  const actionKey = wikiWriteActionKey(toolCall.action_name);
+  const isError = toolCall.status === 'error';
+
+  return (
+    <div
+      className={`flex items-center gap-2.5 rounded-2xl border px-4 py-2.5 text-sm ${
+        isError
+          ? 'border-destructive/40 bg-destructive/5'
+          : 'border-primary/30 bg-primary/5 dark:bg-primary/10'
+      }`}
+    >
+      <span aria-hidden="true" className="text-base leading-none">
+        ✏️
+      </span>
+      <span className="text-foreground font-medium">
+        {t(`conversation.wikiWrite.${actionKey}`, {
+          defaultValue: t('conversation.wikiWrite.edited'),
+        })}
+      </span>
+      {path && (
+        <code className="dark:bg-card min-w-0 truncate rounded-md bg-black/10 px-1.5 py-0.5 font-mono text-xs">
+          {path}
+        </code>
+      )}
+      {isError && (
+        <span className="text-destructive text-xs">
+          {t('conversation.wikiWrite.failed')}
+        </span>
+      )}
+    </div>
+  );
+}
+
+export function ToolCalls({
   toolCalls,
   onToolAction,
   agentId,
@@ -1082,8 +1127,11 @@ function ToolCalls({
   const awaitingCalls = toolCalls.filter(
     (tc) => tc.status === 'awaiting_approval',
   );
+  const wikiWriteCalls = toolCalls.filter(
+    (tc) => tc.status !== 'awaiting_approval' && isWikiWriteCall(tc),
+  );
   const resolvedCalls = toolCalls.filter(
-    (tc) => tc.status !== 'awaiting_approval',
+    (tc) => tc.status !== 'awaiting_approval' && !isWikiWriteCall(tc),
   );
 
   return (
@@ -1096,6 +1144,18 @@ function ToolCalls({
               key={`approval-${tc.call_id}`}
               toolCall={tc}
               onToolAction={onToolAction}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Wiki write cards — always visible (D24: visibility is the control) */}
+      {wikiWriteCalls.length > 0 && (
+        <div className="fade-in mt-4 mr-5 ml-3 grid w-[90vw] grid-cols-1 gap-2 md:w-[70vw] lg:w-full">
+          {wikiWriteCalls.map((toolCall, index) => (
+            <WikiWriteToolCallCard
+              key={`wiki-write-${toolCall.call_id ?? index}`}
+              toolCall={toolCall}
             />
           ))}
         </div>

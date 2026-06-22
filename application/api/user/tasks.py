@@ -7,6 +7,7 @@ from application.worker import (
     attachment_worker,
     ingest_worker,
     mcp_oauth,
+    reembed_wiki_page_worker,
     remote_worker,
     sync,
     sync_worker,
@@ -115,6 +116,24 @@ def reingest_source_task(self, source_id, user, idempotency_key=None):
     from application.worker import reingest_source_worker
 
     resp = reingest_source_worker(self, source_id, user)
+    return resp
+
+
+@celery.task(**DURABLE_TASK)
+@with_idempotency(task_name="reembed_wiki_page")
+def reembed_wiki_page(
+    self, source_id, path, content_hash, user, idempotency_key=None,
+):
+    resp = reembed_wiki_page_worker(self, source_id, path, content_hash, user)
+    return resp
+
+
+@celery.task(**DURABLE_TASK)
+@with_idempotency(task_name="convert_source_to_wiki")
+def convert_source_to_wiki(self, source_id, user, idempotency_key=None):
+    from application.worker import convert_source_to_wiki_worker
+
+    resp = convert_source_to_wiki_worker(self, source_id, user)
     return resp
 
 

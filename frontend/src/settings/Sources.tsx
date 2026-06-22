@@ -1,4 +1,9 @@
-import { Search as SearchIcon, SlidersHorizontal, Users } from 'lucide-react';
+import {
+  BookOpen,
+  Search as SearchIcon,
+  SlidersHorizontal,
+  Users,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -45,6 +50,8 @@ import { formatDate } from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import Chunks from '../components/Chunks';
+import WikiViewer from '../components/WikiViewer';
+import ConvertToWikiModal from './ConvertToWikiModal';
 import SourceConfigModal from './SourceConfigModal';
 
 type SourceMenuOption = {
@@ -109,6 +116,9 @@ export default function Sources({
     null,
   );
   const [configModalState, setConfigModalState] =
+    useState<ActiveState>('INACTIVE');
+  const [documentToConvert, setDocumentToConvert] = useState<Doc | null>(null);
+  const [convertModalState, setConvertModalState] =
     useState<ActiveState>('INACTIVE');
   const [syncMenuState, setSyncMenuState] = useState<{
     isOpen: boolean;
@@ -327,10 +337,16 @@ export default function Sources({
     index: number,
     document: Doc,
   ): SourceMenuOption[] => {
+    const isWiki = document.config?.kind === 'wiki' || document.type === 'wiki';
+    // 'team' viewers cannot write; convert is owner/editor only.
+    const canEdit =
+      document.ownership !== 'team' || document.team_access === 'editor';
     const actions: SourceMenuOption[] = [
       {
         icon: EyeView,
-        label: t('settings.sources.view'),
+        label: isWiki
+          ? t('settings.sources.wiki.view')
+          : t('settings.sources.view'),
         onClick: () => {
           setDocumentToView(document);
         },
@@ -380,13 +396,33 @@ export default function Sources({
       });
     }
 
-    if (document.id) {
+    if (document.id && !isWiki) {
       actions.push({
         icon: SlidersHorizontal,
         label: t('settings.sources.editConfig'),
         onClick: () => {
           setDocumentToConfigure(document);
           setConfigModalState('ACTIVE');
+        },
+        iconWidth: 16,
+        iconHeight: 16,
+        variant: 'default',
+      });
+    }
+
+    if (
+      document.id &&
+      !isWiki &&
+      canEdit &&
+      document.ingestStatus !== 'processing' &&
+      document.ingestStatus !== 'failed'
+    ) {
+      actions.push({
+        icon: BookOpen,
+        label: t('settings.sources.wiki.convert.action'),
+        onClick: () => {
+          setDocumentToConvert(document);
+          setConvertModalState('ACTIVE');
         },
         iconWidth: 16,
         iconHeight: 16,
@@ -428,7 +464,18 @@ export default function Sources({
 
   return documentToView ? (
     <div className="mt-8 flex flex-col">
-      {documentToView.isNested ? (
+      {documentToView.config?.kind === 'wiki' ||
+      documentToView.type === 'wiki' ? (
+        <WikiViewer
+          docId={documentToView.id || ''}
+          sourceName={documentToView.name}
+          canEdit={
+            documentToView.ownership !== 'team' ||
+            documentToView.team_access === 'editor'
+          }
+          onBackToDocuments={() => setDocumentToView(undefined)}
+        />
+      ) : documentToView.isNested ? (
         documentToView.type === 'connector:file' ? (
           <ConnectorTree
             docId={documentToView.id || ''}
@@ -515,7 +562,17 @@ export default function Sources({
                 return (
                   <div key={docId} className="relative">
                     <div
-                      className={`bg-muted dark:bg-accent flex h-[130px] w-full flex-col rounded-2xl p-5 transition-all duration-200 ${
+                      role="button"
+                      tabIndex={0}
+                      aria-label={document.name}
+                      onClick={() => setDocumentToView(document)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setDocumentToView(document);
+                        }
+                      }}
+                      className={`bg-muted dark:bg-accent focus-visible:ring-ring/50 flex h-[130px] w-full cursor-pointer flex-col rounded-2xl p-5 transition-all duration-200 outline-none focus-visible:ring-[3px] ${
                         actionMenuDocId === docId ||
                         syncMenuState.docId === docId
                           ? 'scale-[1.05]'
@@ -555,6 +612,7 @@ export default function Sources({
                                 <DropdownMenuContent
                                   align="end"
                                   className="min-w-[120px]"
+                                  onClick={(e) => e.stopPropagation()}
                                 >
                                   {syncOptions.map((opt) => (
                                     <DropdownMenuItem
@@ -595,6 +653,7 @@ export default function Sources({
                               <DropdownMenuContent
                                 align="end"
                                 className="min-w-[144px]"
+                                onClick={(e) => e.stopPropagation()}
                               >
                                 {getActionOptions(index, document).map(
                                   (option, idx) => (
@@ -749,6 +808,18 @@ export default function Sources({
         }}
         document={documentToConfigure}
         onReingest={handleReingest}
+      />
+
+      <ConvertToWikiModal
+        modalState={convertModalState}
+        setModalState={(state) => {
+          setConvertModalState(state);
+          if (state === 'INACTIVE') {
+            setDocumentToConvert(null);
+          }
+        }}
+        document={documentToConvert}
+        onConverted={() => refreshDocs(undefined, currentPage, rowsPerPage)}
       />
     </div>
   );

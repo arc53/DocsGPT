@@ -86,6 +86,20 @@ class TestReingestSourceTask:
         assert result == {"status": "ok"}
 
 
+class TestConvertSourceToWikiTask:
+    @pytest.mark.unit
+    @patch("application.worker.convert_source_to_wiki_worker")
+    def test_calls_convert_worker(self, mock_worker):
+        from application.api.user.tasks import convert_source_to_wiki
+
+        mock_worker.return_value = {"status": "converted"}
+
+        result = convert_source_to_wiki("source123", "user1")
+
+        mock_worker.assert_called_once_with(ANY, "source123", "user1")
+        assert result == {"status": "converted"}
+
+
 class TestScheduleSyncsTask:
     @pytest.mark.unit
     @patch("application.api.user.tasks.sync_worker")
@@ -286,6 +300,8 @@ class TestDurableTaskRetryPolicy:
             "store_attachment",
             "process_agent_webhook",
             "ingest_connector_task",
+            "reembed_wiki_page",
+            "convert_source_to_wiki",
         ],
     )
     def test_task_has_retry_config(self, task_name):

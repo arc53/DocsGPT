@@ -102,6 +102,29 @@ const userService = {
     token: string | null,
   ): Promise<Response> =>
     apiClient.patch(endpoints.USER.SOURCE_CONFIG(sourceId), config, token),
+  createWiki: (
+    data: { name: string; initial_content?: string },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.CREATE_WIKI, data, token),
+  convertToWiki: (sourceId: string, token: string | null): Promise<Response> =>
+    apiClient.post(endpoints.USER.CONVERT_TO_WIKI(sourceId), {}, token),
+  getTaskStatus: (taskId: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.TASK_STATUS(taskId), token),
+  getWikiPages: (sourceId: string, token: string | null): Promise<Response> =>
+    throttledApiClient.get(endpoints.USER.WIKI_PAGES(sourceId), token),
+  getWikiPage: (
+    sourceId: string,
+    path: string,
+    token: string | null,
+  ): Promise<Response> =>
+    throttledApiClient.get(endpoints.USER.WIKI_PAGE(sourceId, path), token),
+  updateWikiPage: (
+    sourceId: string,
+    data: { path: string; content: string; expected_version?: number },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.put(endpoints.USER.WIKI_PAGE(sourceId, data.path), data, token),
   getAvailableTools: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.GET_AVAILABLE_TOOLS, token),
   getUserTools: (token: string | null): Promise<any> =>

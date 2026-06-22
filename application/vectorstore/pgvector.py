@@ -372,6 +372,34 @@ class PGVectorStore(BaseVectorStore):
         finally:
             cursor.close()
 
+    def delete_chunks_by_source_path(self, path: str) -> int:
+        """Delete this source's chunks whose ``metadata.source`` equals ``path``.
+
+        One targeted statement instead of the base loop+scan. The path is bound
+        as a query parameter (never interpolated); only the internal table name
+        is f-string interpolated. Returns the number of rows deleted.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            delete_query = (
+                f"DELETE FROM {self._table_name} "
+                f"WHERE source_id = %s AND {self._metadata_column}->>'source' = %s;"
+            )
+            cursor.execute(delete_query, (self._source_id, path))
+            deleted_count = cursor.rowcount
+            conn.commit()
+
+            return deleted_count
+
+        except Exception as e:
+            conn.rollback()
+            logging.error(f"Error deleting chunks by source path: {e}")
+            raise
+        finally:
+            cursor.close()
+
     def __del__(self):
         """Close database connection when object is destroyed"""
         if hasattr(self, '_connection') and self._connection and not self._connection.closed:
