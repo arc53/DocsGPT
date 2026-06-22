@@ -49,6 +49,36 @@ class PreScreenConfig(BaseModel):
         return self
 
 
+class GraphConfig(BaseModel):
+    """Ingest-time GraphRAG extraction knobs (D28; pgvector-only per D29).
+
+    ``extraction_model`` None reuses the instance default model
+    (``LLM_PROVIDER``/``LLM_NAME``); ``max_chunks`` None falls back to the
+    ``GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION`` setting. ``gleanings`` is off by
+    default (cost control).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    extraction_model: Optional[str] = None  # None → instance default model
+    max_chunks: Optional[int] = None  # None → GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION
+    gleanings: int = 0  # extra extraction passes per chunk
+
+    @field_validator("max_chunks")
+    @classmethod
+    def _positive_max_chunks(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and value < 1:
+            raise ValueError("must be >= 1")
+        return value
+
+    @field_validator("gleanings")
+    @classmethod
+    def _non_negative_gleanings(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("must be >= 0")
+        return value
+
+
 class ChunkingConfig(BaseModel):
     """Ingest-time chunking knobs (bake-time; change requires re-ingest)."""
 
@@ -116,6 +146,7 @@ class SourceConfig(BaseModel):
     kind: str = "classic"  # behavior selector: classic | wiki | graphrag | ...
     chunking: ChunkingConfig = ChunkingConfig()
     retrieval: RetrievalConfig = RetrievalConfig()
+    graph: GraphConfig = GraphConfig()
 
     def wiki_enabled(self) -> dict:
         """Return a config dict flipped to wiki mode + browse-as-you-go exposure.

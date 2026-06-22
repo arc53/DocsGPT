@@ -106,6 +106,11 @@ class Settings(BaseSettings):
     # Flagship GraphRAG flag. Reserved and unused for now; gates graph-aware
     # ingestion/retrieval when that feature lands.
     GRAPHRAG_ENABLED: bool = False
+    # Model for ingest-time graph extraction; None reuses the instance default
+    # model (LLM_PROVIDER/LLM_NAME). Operator-overridable (e.g. a cheaper model).
+    GRAPHRAG_EXTRACTION_MODEL: Optional[str] = None
+    # Hard cap on chunks extracted per source (cost control).
+    GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION: int = 2000
     AGENT_NAME: str = "classic"
     FALLBACK_LLM_PROVIDER: Optional[str] = None  # provider for fallback llm
     FALLBACK_LLM_NAME: Optional[str] = None  # model name for fallback llm

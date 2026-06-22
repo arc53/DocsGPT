@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from application.storage.db.source_config import (
     ChunkingConfig,
+    GraphConfig,
     PreScreenConfig,
     RetrievalConfig,
     SourceConfig,
@@ -21,6 +22,7 @@ class TestParseLenient:
         assert cfg.kind == "classic"
         assert cfg.chunking == ChunkingConfig()
         assert cfg.retrieval == RetrievalConfig()
+        assert cfg.graph == GraphConfig()
 
     def test_parse_none_is_all_defaults(self):
         cfg = SourceConfig.parse(None)
@@ -148,3 +150,54 @@ class TestPreScreenConfig:
         # A garbage stored prescreen blob never crashes the read path.
         rc = RetrievalConfig.model_construct(prescreen={"candidate_k": "x"})
         assert rc.prescreen_config() is None
+
+
+@pytest.mark.unit
+class TestGraphConfig:
+    def test_defaults(self):
+        g = GraphConfig()
+        assert g.extraction_model is None
+        assert g.max_chunks is None
+        assert g.gleanings == 0
+
+    def test_parse_graph_block_round_trips(self):
+        raw = {
+            "kind": "graphrag",
+            "graph": {
+                "extraction_model": "gpt-4o-mini",
+                "max_chunks": 500,
+                "gleanings": 1,
+            },
+        }
+        cfg = SourceConfig.parse(raw)
+        assert cfg.kind == "graphrag"
+        assert cfg.graph.extraction_model == "gpt-4o-mini"
+        assert cfg.graph.max_chunks == 500
+        assert cfg.graph.gleanings == 1
+        dumped = cfg.model_dump()
+        assert SourceConfig.model_validate(dumped) == cfg
+        assert dumped["graph"] == {
+            "extraction_model": "gpt-4o-mini",
+            "max_chunks": 500,
+            "gleanings": 1,
+        }
+
+    def test_forbid_unknown_graph_key(self):
+        with pytest.raises(ValidationError):
+            SourceConfig.model_validate({"graph": {"unknown": 1}})
+        with pytest.raises(ValidationError):
+            GraphConfig(unknown=1)
+
+    def test_negative_values_rejected(self):
+        with pytest.raises(ValidationError):
+            GraphConfig(gleanings=-1)
+        with pytest.raises(ValidationError):
+            GraphConfig(max_chunks=0)
+
+    def test_parse_lenient_on_garbage_graph(self):
+        # A non-dict / invalid graph blob falls back to all-defaults on read.
+        assert SourceConfig.parse({"graph": "nope"}) == SourceConfig()
+        assert SourceConfig.parse({"graph": {"gleanings": "lots"}}) == SourceConfig()
+        # Missing graph block still yields the default GraphConfig.
+        cfg = SourceConfig.parse({"kind": "graphrag"})
+        assert cfg.graph == GraphConfig()
