@@ -55,6 +55,7 @@ const endpoints = {
     MANAGE_SYNC: '/api/manage_sync',
     SYNC_SOURCE: '/api/sync_source',
     REINGEST_SOURCE: '/api/sources/reingest',
+    SOURCE_CONFIG: (id: string) => `/api/sources/${id}/config`,
     GET_AVAILABLE_TOOLS: '/api/available_tools',
     GET_USER_TOOLS: '/api/get_tools',
     CREATE_TOOL: '/api/create_tool',

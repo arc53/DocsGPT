@@ -111,6 +111,80 @@ class TestPGVectorStoreSearch:
         assert len(results) == 1
         assert results[0].metadata == {}
 
+    def test_score_threshold_filters_by_distance(self):
+        # similarity = 1 - distance; threshold 0.85 → keep distance <= 0.15.
+        store, _, mock_cursor, _ = _make_store()
+        mock_cursor.fetchall.return_value = [
+            ("close", {}, 0.10),   # sim 0.90 → kept
+            ("far", {}, 0.40),     # sim 0.60 → dropped
+        ]
+        results = store.search("query", k=5, score_threshold=0.85)
+        assert [r.page_content for r in results] == ["close"]
+
+    def test_no_score_threshold_keeps_all(self):
+        store, _, mock_cursor, _ = _make_store()
+        mock_cursor.fetchall.return_value = [
+            ("a", {}, 0.10),
+            ("b", {}, 0.90),
+        ]
+        results = store.search("query", k=5)
+        assert len(results) == 2
+
+
+@pytest.mark.unit
+class TestPGVectorStoreKeywordSearch:
+    def test_keyword_search_returns_documents(self):
+        store, _, mock_cursor, mock_emb = _make_store(source_id="src1")
+        mock_cursor.fetchall.return_value = [
+            ("hello world", {"source": "a.txt"}, 0.9),
+            ("foo bar", {"source": "b.txt"}, 0.3),
+        ]
+
+        results = store.keyword_search("hello", k=5)
+
+        # Keyword search must not embed the query.
+        mock_emb.embed_query.assert_not_called()
+        assert len(results) == 2
+        assert results[0].page_content == "hello world"
+        assert results[0].metadata == {"source": "a.txt"}
+
+    def test_keyword_search_is_parameterized(self):
+        store, _, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.fetchall.return_value = []
+
+        store.keyword_search("DROP TABLE documents; --", k=7)
+
+        sql, params = mock_cursor.execute.call_args[0]
+        # The raw question must never be interpolated into the SQL text.
+        assert "DROP TABLE documents" not in sql
+        assert "websearch_to_tsquery('english', %s)" in sql
+        # Question is bound twice (rank + WHERE), then source_id and k.
+        assert params == ("DROP TABLE documents; --", "src1", "DROP TABLE documents; --", 7)
+
+    def test_keyword_search_handles_null_metadata(self):
+        store, _, mock_cursor, _ = _make_store()
+        mock_cursor.fetchall.return_value = [("text", None, 0.5)]
+
+        results = store.keyword_search("query")
+        assert len(results) == 1
+        assert results[0].metadata == {}
+
+    def test_keyword_search_returns_empty_on_error(self):
+        store, _, mock_cursor, _ = _make_store()
+        mock_cursor.execute.side_effect = Exception("fts failed")
+
+        assert store.keyword_search("query") == []
+
+    def test_ensure_table_exists_creates_fts_index(self):
+        store, mock_conn, mock_cursor, _ = _make_store()
+        store._ensure_table_exists()
+
+        executed = " ".join(
+            str(call.args[0]) for call in mock_cursor.execute.call_args_list
+        )
+        assert "documents_text_fts_idx" in executed
+        assert "gin(to_tsvector('english'" in executed
+
 
 @pytest.mark.unit
 class TestPGVectorStoreAddTexts:

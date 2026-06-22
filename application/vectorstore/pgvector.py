@@ -102,11 +102,18 @@ class PGVectorStore(BaseVectorStore):
             
             # Create index for source_id filtering
             source_index_query = f"""
-            CREATE INDEX IF NOT EXISTS {self._table_name}_source_id_idx 
+            CREATE INDEX IF NOT EXISTS {self._table_name}_source_id_idx
             ON {self._table_name} (source_id);
             """
             cursor.execute(source_index_query)
-            
+
+            # Functional GIN index backing keyword_search full-text queries.
+            fts_index_query = f"""
+            CREATE INDEX IF NOT EXISTS {self._table_name}_text_fts_idx
+            ON {self._table_name} USING gin(to_tsvector('english', {self._text_column}));
+            """
+            cursor.execute(fts_index_query)
+
             conn.commit()
         except Exception as e:
             conn.rollback()
@@ -115,37 +122,99 @@ class PGVectorStore(BaseVectorStore):
         finally:
             cursor.close()
 
-    def search(self, question: str, k: int = 2, *args, **kwargs) -> List[Document]:
-        """Search for similar documents using vector similarity"""
+    def search(
+        self,
+        question: str,
+        k: int = 2,
+        *args,
+        score_threshold: float = None,
+        **kwargs,
+    ) -> List[Document]:
+        """Search for similar documents using vector similarity.
+
+        Args:
+            question: The query string.
+            k: Maximum number of results.
+            score_threshold: Optional cosine-similarity floor in ``[0, 1]``.
+                Cosine distance = ``1 - similarity``; rows with similarity below
+                the threshold (distance above ``1 - threshold``) are dropped.
+        """
         query_vector = self._embedding.embed_query(question)
-        
+
         conn = self._get_connection()
         cursor = conn.cursor()
-        
+
         try:
             # Use cosine distance for similarity search with proper vector formatting
             search_query = f"""
-            SELECT {self._text_column}, {self._metadata_column}, 
+            SELECT {self._text_column}, {self._metadata_column},
                    ({self._vector_column} <=> %s::vector) as distance
             FROM {self._table_name}
             WHERE source_id = %s
             ORDER BY {self._vector_column} <=> %s::vector
             LIMIT %s;
             """
-            
+
             cursor.execute(search_query, (query_vector, self._source_id, query_vector, k))
             results = cursor.fetchall()
-            
-            
+
+            max_distance = None
+            if score_threshold is not None:
+                max_distance = 1.0 - float(score_threshold)
+
             documents = []
             for text, metadata, distance in results:
+                if max_distance is not None and distance is not None and distance > max_distance:
+                    continue
                 metadata = metadata or {}
                 documents.append(Document(page_content=text, metadata=metadata))
-            
+
             return documents
             
         except Exception as e:
             logging.error(f"Error searching documents: {e}", exc_info=True)
+            return []
+        finally:
+            cursor.close()
+
+    def keyword_search(self, question: str, k: int = 10) -> List[Document]:
+        """Full-text keyword search using Postgres ``websearch_to_tsquery``.
+
+        Returns the same ``Document`` shape as :meth:`search`. The question is
+        bound as a query parameter (never interpolated) to prevent injection.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            keyword_query = f"""
+            SELECT {self._text_column}, {self._metadata_column},
+                   ts_rank(
+                       to_tsvector('english', {self._text_column}),
+                       websearch_to_tsquery('english', %s)
+                   ) AS rank
+            FROM {self._table_name}
+            WHERE source_id = %s
+              AND to_tsvector('english', {self._text_column})
+                  @@ websearch_to_tsquery('english', %s)
+            ORDER BY rank DESC
+            LIMIT %s;
+            """
+
+            cursor.execute(
+                keyword_query, (question, self._source_id, question, k)
+            )
+            results = cursor.fetchall()
+
+            documents = []
+            for text, metadata, _rank in results:
+                metadata = metadata or {}
+                documents.append(Document(page_content=text, metadata=metadata))
+
+            return documents
+
+        except Exception as e:
+            logging.error(f"Error in keyword search: {e}", exc_info=True)
             return []
         finally:
             cursor.close()

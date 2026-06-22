@@ -96,6 +96,12 @@ const userService = {
     apiClient.post(endpoints.USER.SYNC_SOURCE, data, token),
   reingestSource: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.REINGEST_SOURCE, data, token),
+  updateSourceConfig: (
+    sourceId: string,
+    config: any,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.patch(endpoints.USER.SOURCE_CONFIG(sourceId), config, token),
   getAvailableTools: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.GET_AVAILABLE_TOOLS, token),
   getUserTools: (token: string | null): Promise<any> =>

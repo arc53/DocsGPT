@@ -1,4 +1,4 @@
-import { Search as SearchIcon, Users } from 'lucide-react';
+import { Search as SearchIcon, SlidersHorizontal, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -45,6 +45,7 @@ import { formatDate } from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import Chunks from '../components/Chunks';
+import SourceConfigModal from './SourceConfigModal';
 
 type SourceMenuOption = {
   icon: string | LucideIcon;
@@ -104,6 +105,11 @@ export default function Sources({
   ];
   const [documentToView, setDocumentToView] = useState<Doc>();
   const [documentToShare, setDocumentToShare] = useState<Doc | null>(null);
+  const [documentToConfigure, setDocumentToConfigure] = useState<Doc | null>(
+    null,
+  );
+  const [configModalState, setConfigModalState] =
+    useState<ActiveState>('INACTIVE');
   const [syncMenuState, setSyncMenuState] = useState<{
     isOpen: boolean;
     docId: string | null;
@@ -370,6 +376,20 @@ export default function Sources({
         },
         iconWidth: 14,
         iconHeight: 14,
+        variant: 'default',
+      });
+    }
+
+    if (document.id) {
+      actions.push({
+        icon: SlidersHorizontal,
+        label: t('settings.sources.editConfig'),
+        onClick: () => {
+          setDocumentToConfigure(document);
+          setConfigModalState('ACTIVE');
+        },
+        iconWidth: 16,
+        iconHeight: 16,
         variant: 'default',
       });
     }
@@ -718,6 +738,18 @@ export default function Sources({
           onClose={() => setDocumentToShare(null)}
         />
       )}
+
+      <SourceConfigModal
+        modalState={configModalState}
+        setModalState={(state) => {
+          setConfigModalState(state);
+          if (state === 'INACTIVE') {
+            setDocumentToConfigure(null);
+          }
+        }}
+        document={documentToConfigure}
+        onReingest={handleReingest}
+      />
     </div>
   );
 }

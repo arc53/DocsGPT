@@ -66,6 +66,9 @@ class QdrantStore(BaseVectorStore):
             logging.warning(f"Could not check for collection: {e}")
 
     def search(self, *args, **kwargs):
+        # Drop the per-source score_threshold (unsupported here) so it is safely
+        # ignored instead of being forwarded into the langchain call.
+        kwargs.pop("score_threshold", None)
         return self._docsearch.similarity_search(filter=self._filter, *args, **kwargs)
 
     def add_texts(self, *args, **kwargs):

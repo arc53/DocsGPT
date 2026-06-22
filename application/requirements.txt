@@ -69,6 +69,7 @@ pandas==3.0.2
 openpyxl==3.1.5
 pathable==0.5.0
 pdf2image>=1.17.0
+pgvector>=0.2,<1
 pillow
 portalocker>=2.7.0,<4.0.0
 prompt-toolkit==3.0.52
