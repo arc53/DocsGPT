@@ -24,6 +24,7 @@ class ClassicRAG(BaseRetriever):
         decoded_token=None,
         model_user_id=None,
         defer_rephrase=False,
+        request_id=None,
     ):
         self.original_question = source.get("question", "")
         self.chat_history = chat_history if chat_history is not None else []
@@ -62,8 +63,10 @@ class ClassicRAG(BaseRetriever):
             model_user_id=self.model_user_id,
         )
         # Query-rephrase LLM is a side channel — tag it so its rows
-        # land as ``source='rag_condense'`` in cost-attribution.
+        # land as ``source='rag_condense'`` in cost-attribution, and stamp
+        # the originating request so the rows correlate to it.
         self.llm._token_usage_source = "rag_condense"
+        self.llm._request_id = request_id
 
         if "active_docs" in source and source["active_docs"] is not None:
             if isinstance(source["active_docs"], list):

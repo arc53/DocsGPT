@@ -137,7 +137,7 @@
         "retrieval": {
           "title": "Retrieval",
           "note": "These changes take effect immediately, no re-ingest needed.",
-          "tag": "live · no re-ingest",
+          "tag": "no re-ingest",
           "chunks": "Chunks to retrieve (top-k)",
           "scoreThreshold": "Score threshold",
           "scoreThresholdPlaceholder": "None",
@@ -150,9 +150,9 @@
           "exposure": "Search exposure",
           "exposures": {
             "prefetch": "Pre-fetch into context",
-            "agentic_tool": "Agentic search tool"
+            "agentic_tool": "On-demand search tool"
           },
-          "exposureHint": "Only affects agentic/research agents. Classic agents always pre-fetch."
+          "exposureHint": "Pre-fetch this source into the prompt, or let the agent search it on demand as a tool."
         },
         "prescreen": {
           "enable": "Enable LLM prescreen",

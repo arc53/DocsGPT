@@ -98,19 +98,51 @@ class TestBuildAgentExposure:
         _, kwargs = sp.create_agent.call_args
         assert [e["id"] for e in kwargs["agentic_sources"]] == ["b"]
 
-    def test_classic_agent_ignores_exposure(self):
-        # Classic agents pre-fetch all and never partition by exposure.
+    def _classic_processor(self):
         sp = _processor()
         sp.agent_config = {"agent_type": "classic"}
-        sp.all_sources = [
-            {"id": "a", "retrieval": RetrievalConfig(exposure="agentic_tool")},
-        ]
         sp.initialize = MagicMock()
-        sp.pre_fetch_docs = MagicMock(return_value=("t", ["d"]))
+        sp.pre_fetch_docs = MagicMock(return_value=("docs_together", ["doc"]))
         sp.pre_fetch_tools = MagicMock(return_value=None)
         sp.create_agent = MagicMock(return_value="AGENT")
-        sp.build_agent("q")
-        # Classic pre-fetch is called with no exposure scoping (all sources).
+        return sp
+
+    def test_classic_default_prefetches_all_no_partition(self):
+        # Default classic (all prefetch / no config): byte-identical to today —
+        # unscoped pre-fetch and no agentic_sources, so no search tool is added.
+        sp = self._classic_processor()
+        sp.all_sources = [
+            {"id": "a", "retrieval": RetrievalConfig()},
+            {"id": "b", "retrieval": None},
+        ]
+        result = sp.build_agent("q")
+        assert result == "AGENT"
         sp.pre_fetch_docs.assert_called_once_with("q")
         _, kwargs = sp.create_agent.call_args
         assert "agentic_sources" not in kwargs
+
+    def test_classic_no_per_source_detail_is_today(self):
+        # Single-source / no-config requests carry no per-source detail; classic
+        # must fall back to the unscoped pre-fetch (no exposure scoping).
+        sp = self._classic_processor()
+        sp.all_sources = []
+        sp.source = {"active_docs": ["a"]}
+        sp.build_agent("q")
+        sp.pre_fetch_docs.assert_called_once_with("q")
+        _, kwargs = sp.create_agent.call_args
+        assert "agentic_sources" not in kwargs
+
+    def test_classic_mixed_prefetches_and_scopes_tool(self):
+        # Classic with an agentic_tool source now pre-fetches only the prefetch
+        # subset and exposes the agentic_tool subset via the search tool.
+        sp = self._classic_processor()
+        sp.all_sources = [
+            {"id": "a", "retrieval": RetrievalConfig(exposure="prefetch")},
+            {"id": "b", "retrieval": RetrievalConfig(exposure="agentic_tool")},
+        ]
+        sp.build_agent("q")
+        sp.pre_fetch_docs.assert_called_once()
+        _, pf_kwargs = sp.pre_fetch_docs.call_args
+        assert pf_kwargs.get("exposure") == "prefetch"
+        _, kwargs = sp.create_agent.call_args
+        assert [e["id"] for e in kwargs["agentic_sources"]] == ["b"]

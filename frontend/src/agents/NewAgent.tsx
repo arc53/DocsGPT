@@ -159,10 +159,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       trackChanges: false,
     },
   };
-  const chunks = ['0', '2', '4', '6', '8', '10'];
   const agentTypes = [
     { label: t('agents.form.agentTypes.classic'), value: 'classic' },
-    { label: 'Agentic', value: 'agentic' },
     { label: 'Research', value: 'research' },
   ];
 
@@ -983,30 +981,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     </Button>
                   }
                 />
-              </div>
-              <div className="mt-3">
-                <Select
-                  value={agent.chunks || undefined}
-                  onValueChange={(value) =>
-                    setAgent({ ...agent, chunks: value })
-                  }
-                >
-                  <SelectTrigger
-                    className="w-full rounded-3xl px-5 py-3 text-sm"
-                    size="lg"
-                  >
-                    <SelectValue
-                      placeholder={t('agents.form.placeholders.chunksPerQuery')}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {chunks.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
             </div>
           </div>

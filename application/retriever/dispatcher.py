@@ -60,6 +60,7 @@ class Dispatcher(BaseRetriever):
         api_key=settings.API_KEY,
         decoded_token=None,
         model_user_id=None,
+        request_id=None,
         sources: Optional[List[Dict[str, Any]]] = None,
         stages: Optional[List[Stage]] = None,
     ):
@@ -89,6 +90,7 @@ class Dispatcher(BaseRetriever):
             api_key=api_key,
             decoded_token=decoded_token,
             model_user_id=model_user_id,
+            request_id=request_id,
         )
         self.source = source or {}
         self.original_question = self.source.get("question", "")
@@ -243,6 +245,7 @@ class Dispatcher(BaseRetriever):
             decoded_token=self._ctor_kwargs.get("decoded_token"),
             agent_id=self._ctor_kwargs.get("agent_id"),
             model_user_id=self._ctor_kwargs.get("model_user_id"),
+            request_id=self._ctor_kwargs.get("request_id"),
         )
         return list(self.stages) + prescreen
 

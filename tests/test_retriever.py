@@ -126,6 +126,13 @@ class TestClassicRAGInit:
         assert rag.chunks == 2
         assert rag.vectorstores == []
 
+    def test_request_id_and_source_stamped_on_rephrase_llm(
+        self, _patch_llm_creator
+    ):
+        _make_rag(request_id="req-123")
+        assert _patch_llm_creator._request_id == "req-123"
+        assert _patch_llm_creator._token_usage_source == "rag_condense"
+
     def test_active_docs_as_list(self, _patch_llm_creator):
         rag = _make_rag(source={"question": "q", "active_docs": ["a", "b"]})
         assert rag.vectorstores == ["a", "b"]

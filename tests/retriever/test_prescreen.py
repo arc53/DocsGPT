@@ -148,6 +148,30 @@ class TestModelResolution:
             stage([{"text": "x"}], {"query": "q"})
         assert captured["model_id"] == "cheap"
 
+    def test_request_id_and_source_stamped_on_llm(self):
+        config = PreScreenConfig(candidate_k=1, batch_size=1, max_keep=1, model=None)
+        created = {}
+
+        def fake_create_llm(*args, **kwargs):
+            llm = Mock(gen=Mock(return_value='{"keep": [0]}'), model_id="m")
+            created["llm"] = llm
+            return llm
+
+        with patch(
+            "application.retriever.stages.prescreen.LLMCreator.create_llm",
+            side_effect=fake_create_llm,
+        ):
+            stage = PreScreenStage(
+                config,
+                llm_name="openai",
+                api_key="k",
+                model_id="m",
+                request_id="req-123",
+            )
+            stage([{"text": "x"}], {"query": "q"})
+        assert created["llm"]._request_id == "req-123"
+        assert created["llm"]._token_usage_source == "rag_prescreen"
+
 
 @pytest.mark.unit
 class TestStageBuilders:

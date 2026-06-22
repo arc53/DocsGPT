@@ -81,7 +81,7 @@ import type { Model } from '../../models/types';
 const PRIMARY_ACTION_SPINNER_DELAY_MS = 180;
 
 interface AgentNodeConfig {
-  agent_type: 'classic' | 'agentic' | 'research';
+  agent_type: 'classic' | 'research';
   llm_name?: string;
   model_id?: string;
   system_prompt: string;
@@ -1839,9 +1839,6 @@ function WorkflowBuilderInner() {
                                     <SelectContent>
                                       <SelectItem value="classic">
                                         Classic
-                                      </SelectItem>
-                                      <SelectItem value="agentic">
-                                        Agentic
                                       </SelectItem>
                                       <SelectItem value="research">
                                         Research

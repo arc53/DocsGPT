@@ -55,6 +55,7 @@ class PreScreenStage:
         decoded_token: Optional[Dict[str, Any]] = None,
         agent_id: Optional[str] = None,
         model_user_id: Optional[str] = None,
+        request_id: Optional[str] = None,
     ):
         """Build the stage.
 
@@ -76,6 +77,7 @@ class PreScreenStage:
         self.decoded_token = decoded_token
         self.agent_id = agent_id
         self.model_user_id = model_user_id
+        self.request_id = request_id
 
     def _resolve_model(self) -> Optional[str]:
         """Use the configured model, else fall back to the request model."""
@@ -92,8 +94,10 @@ class PreScreenStage:
             agent_id=self.agent_id,
             model_user_id=self.model_user_id,
         )
-        # Tag rows so the screening calls land as a distinct cost source.
+        # Tag rows so the screening calls land as a distinct cost source, and
+        # stamp the originating request so the rows correlate to it.
         llm._token_usage_source = "rag_prescreen"
+        llm._request_id = self.request_id
         return llm
 
     @staticmethod
@@ -183,6 +187,7 @@ def build_prescreen_stages(
     decoded_token: Optional[Dict[str, Any]] = None,
     agent_id: Optional[str] = None,
     model_user_id: Optional[str] = None,
+    request_id: Optional[str] = None,
 ) -> List[Stage]:
     """Build prescreen stages from a group's per-source retrieval configs.
 
@@ -216,6 +221,7 @@ def build_prescreen_stages(
                 decoded_token=decoded_token,
                 agent_id=agent_id,
                 model_user_id=model_user_id,
+                request_id=request_id,
             )
         )
     return stages

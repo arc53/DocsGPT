@@ -45,6 +45,7 @@ class InternalSearchTool(Tool):
                 llm_name=self.config.get("llm_name", settings.LLM_PROVIDER),
                 api_key=self.config.get("api_key", settings.API_KEY),
                 decoded_token=self.config.get("decoded_token"),
+                request_id=self.config.get("request_id"),
             )
 
             def _legacy_classic():

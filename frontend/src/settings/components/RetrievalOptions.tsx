@@ -130,7 +130,7 @@ function SettingRow({
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <Label
           htmlFor={htmlFor}
-          className="text-foreground text-sm font-medium"
+          className="text-foreground pointer-events-none w-fit text-sm font-medium"
         >
           {label}
         </Label>
@@ -321,12 +321,12 @@ export default function RetrievalOptions({
           <SettingRow
             label={tr('retrieval.scoreThreshold')}
             htmlFor="retrieval-score-threshold"
-            description={tr('retrieval.scoreThresholdHint')}
-            alignStart
           >
             <Input
               id="retrieval-score-threshold"
               type="number"
+              min={0}
+              max={1}
               step="0.01"
               className="w-24 text-right"
               value={
@@ -339,7 +339,10 @@ export default function RetrievalOptions({
               onChange={(e) => {
                 const raw = e.target.value;
                 setRetrieval({
-                  score_threshold: raw === '' ? null : Number(raw),
+                  score_threshold:
+                    raw === ''
+                      ? null
+                      : Math.min(1, Math.max(0, Number(raw) || 0)),
                 });
               }}
             />
@@ -452,15 +455,6 @@ export default function RetrievalOptions({
                   batch_size: Math.max(1, Number(e.target.value) || 1),
                 })
               }
-            />
-            <Input
-              type="text"
-              label={tr('prescreen.model')}
-              value={value.retrieval.prescreen.model ?? ''}
-              disabled={disabled}
-              labelBgClassName="bg-card"
-              placeholder={tr('prescreen.modelPlaceholder')}
-              onChange={(e) => setPrescreen({ model: e.target.value || null })}
             />
           </div>
         )}

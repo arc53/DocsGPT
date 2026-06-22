@@ -187,6 +187,26 @@ class StreamProcessor:
             tools_data = self.pre_fetch_tools()
             return self.create_agent(tools_data=tools_data)
 
+        # Classic agents (D11): partition sources by exposure. Pre-fetch the
+        # ``prefetch`` subset into the prompt and expose the ``agentic_tool``
+        # subset via the internal_search tool. ``agentic_sources`` is empty when
+        # no source opts into ``agentic_tool`` (the default) or when no
+        # per-source detail is known (single-source / no-config requests). In
+        # that case fall back to the unscoped pre-fetch and add no search tool —
+        # behavior is byte-identical to today's classic.
+        _, agentic_sources = self._exposure_partition()
+        if agentic_sources:
+            docs_together, docs_list = self.pre_fetch_docs(
+                question, exposure="prefetch"
+            )
+            tools_data = self.pre_fetch_tools()
+            return self.create_agent(
+                docs_together=docs_together,
+                docs=docs_list,
+                tools_data=tools_data,
+                agentic_sources=agentic_sources,
+            )
+
         docs_together, docs_list = self.pre_fetch_docs(question)
         tools_data = self.pre_fetch_tools()
         return self.create_agent(
@@ -900,6 +920,7 @@ class StreamProcessor:
             user_api_key=self.agent_config["user_api_key"],
             agent_id=self.agent_id,
             decoded_token=self.decoded_token,
+            request_id=self.data.get("request_id"),
         )
 
         def _legacy_classic():
@@ -1330,7 +1351,10 @@ class StreamProcessor:
             "tool_executor": tool_executor,
         }
 
-        if agent_key in ("agentic", "research") and retriever_config:
+        # Restore the search-tool config on resume. Classic agents carry one
+        # only when they had ``agentic_tool`` sources; a default classic agent
+        # serializes an empty config (falsy), so its behavior is unchanged.
+        if retriever_config and agent_key in ("classic", "agentic", "research"):
             agent_kwargs["retriever_config"] = retriever_config
 
         agent = AgentCreator.create_agent(agent_key, **agent_kwargs)
@@ -1498,11 +1522,15 @@ class StreamProcessor:
         }
 
         # Type-specific kwargs
-        if agent_type in ("agentic", "research"):
-            # D11: when an ``agentic_tool`` subset is supplied, scope the search
-            # tool to it; otherwise the tool exposes every source (today's
-            # behavior). ``tool_sources`` drives both the source dict and the
-            # per-source dispatch list the InternalSearchTool uses.
+        # D11: agentic/research always carry a retriever_config; classic carries
+        # one only when an ``agentic_tool`` subset is supplied. A default classic
+        # agent (``agentic_sources is None``) gets NO retriever_config, so
+        # ClassicAgent adds no internal_search tool and stays today's behavior.
+        if agent_type in ("agentic", "research") or agentic_sources:
+            # When an ``agentic_tool`` subset is supplied, scope the search tool
+            # to it; otherwise (agentic/research only) the tool exposes every
+            # source (today's behavior). ``tool_sources`` drives both the source
+            # dict and the per-source dispatch list the InternalSearchTool uses.
             tool_sources = (
                 agentic_sources
                 if agentic_sources is not None
@@ -1537,6 +1565,7 @@ class StreamProcessor:
                 "llm_name": provider or settings.LLM_PROVIDER,
                 "api_key": system_api_key,
                 "decoded_token": self.decoded_token,
+                "request_id": self.data.get("request_id"),
             }
 
         elif agent_type == "workflow":
