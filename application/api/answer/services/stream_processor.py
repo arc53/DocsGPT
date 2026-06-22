@@ -912,13 +912,14 @@ class StreamProcessor:
         return value or "prefetch"
 
     def _build_wiki_config(self) -> Optional[Dict[str, Any]]:
-        """Resolve the WikiTool config for the first writable wiki source (D18).
+        """Resolve the WikiTool config for the first writable wiki source.
 
         A source qualifies when ``SourceConfig.parse(config).kind == "wiki"`` and
         the principal can write it (``effective_write_owner`` returns an owner —
         owner or team editor; viewers get None and no tool). v1 supports one
-        writable wiki source; extras are logged and skipped. Returns None when no
-        writable wiki source is present.
+        writable wiki source; the first match wins and the scan stops there so
+        this runs at most one owner+source lookup per chat on the hot path.
+        Returns None when no writable wiki source is present.
         """
         from application.api.user.team_sharing import effective_write_owner
 
@@ -943,19 +944,13 @@ class StreamProcessor:
                         continue
                     if SourceConfig.parse(source_doc.get("config")).kind != "wiki":
                         continue
-                    if wiki_config is not None:
-                        logger.info(
-                            "Multiple writable wiki sources for this agent; "
-                            "using the first and skipping source %s",
-                            str(source_doc["id"]),
-                        )
-                        continue
                     wiki_config = {
                         "source_id": str(source_doc["id"]),
                         "source_owner_id": owner,
                         "decoded_token": self.decoded_token,
                         "user": caller,
                     }
+                    break
         except Exception:
             logger.exception("Failed to resolve wiki tool config")
             return None
@@ -1602,7 +1597,7 @@ class StreamProcessor:
             "tool_executor": tool_executor,
         }
 
-        # Wiki tool injection + authz (D18): only for agent types that build a
+        # Wiki tool injection + authz: only for agent types that build a
         # tools_dict (classic/agentic/research), and only when a writable wiki
         # source is present for the principal (viewers get nothing).
         if agent_type in ("classic", "agentic", "research"):

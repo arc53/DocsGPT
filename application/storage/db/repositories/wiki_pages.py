@@ -26,6 +26,17 @@ def _content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
+def _escape_like(value: str) -> str:
+    """Escape ``LIKE`` wildcards so a path prefix matches literally.
+
+    Without this a path containing ``_`` or ``%`` (e.g. ``/api_v1/``) would be
+    a wildcard pattern, so a prefix list/delete could over-match sibling paths.
+    Backslash is escaped first so the wildcard escapes are not double-escaped;
+    callers must pair the result with ``LIKE ... ESCAPE '\\'``.
+    """
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 class WikiPagesRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
@@ -149,10 +160,11 @@ class WikiPagesRepository:
         result = self._conn.execute(
             text(
                 "SELECT * FROM wiki_pages "
-                "WHERE source_id = CAST(:source_id AS uuid) AND path LIKE :prefix "
+                "WHERE source_id = CAST(:source_id AS uuid) "
+                "AND path LIKE :prefix ESCAPE '\\' "
                 "ORDER BY path"
             ),
-            {"source_id": source_id, "prefix": prefix + "%"},
+            {"source_id": source_id, "prefix": _escape_like(prefix) + "%"},
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
@@ -180,9 +192,10 @@ class WikiPagesRepository:
         result = self._conn.execute(
             text(
                 "DELETE FROM wiki_pages "
-                "WHERE source_id = CAST(:source_id AS uuid) AND path LIKE :prefix"
+                "WHERE source_id = CAST(:source_id AS uuid) "
+                "AND path LIKE :prefix ESCAPE '\\'"
             ),
-            {"source_id": source_id, "prefix": prefix + "%"},
+            {"source_id": source_id, "prefix": _escape_like(prefix) + "%"},
         )
         return result.rowcount
 

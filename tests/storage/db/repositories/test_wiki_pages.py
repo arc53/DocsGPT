@@ -117,6 +117,16 @@ class TestListByPrefix:
         results = repo.list_by_prefix(sid, "/docs/")
         assert {r["path"] for r in results} == {"/docs/a.md", "/docs/b.md"}
 
+    def test_prefix_underscore_is_literal_not_wildcard(self, pg_conn):
+        # ``_`` is a LIKE single-char wildcard; without escaping, listing
+        # ``/api_v1/`` would also match the sibling ``/apiXv1/``.
+        repo = _repo(pg_conn)
+        sid = _make_source(pg_conn)
+        repo.upsert(sid, "/api_v1/a.md", "a")
+        repo.upsert(sid, "/apiXv1/b.md", "b")
+        results = repo.list_by_prefix(sid, "/api_v1/")
+        assert {r["path"] for r in results} == {"/api_v1/a.md"}
+
     def test_list_for_source_returns_all(self, pg_conn):
         repo = _repo(pg_conn)
         sid = _make_source(pg_conn)
@@ -183,6 +193,16 @@ class TestDelete:
         repo.upsert(sid, "/other/c.md", "c")
         assert repo.delete_by_prefix(sid, "/dir/") == 2
         assert repo.get_by_path(sid, "/other/c.md") is not None
+
+    def test_delete_by_prefix_underscore_is_literal_not_wildcard(self, pg_conn):
+        # Deleting ``/api_v1/`` must not also drop the sibling ``/apiXv1/``
+        # via the unescaped ``_`` LIKE wildcard.
+        repo = _repo(pg_conn)
+        sid = _make_source(pg_conn)
+        repo.upsert(sid, "/api_v1/a.md", "a")
+        repo.upsert(sid, "/apiXv1/b.md", "b")
+        assert repo.delete_by_prefix(sid, "/api_v1/") == 1
+        assert repo.get_by_path(sid, "/apiXv1/b.md") is not None
 
 
 class TestExpectedVersion:

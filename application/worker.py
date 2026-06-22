@@ -2205,6 +2205,12 @@ def convert_source_to_wiki_worker(self, source_id, user):
     grouped: dict[str, list[tuple[object, str]]] = {}
     original_doc_ids: list[object] = []
     for chunk in store.get_chunks() or []:
+        # Track every original chunk so a skipped one (empty/no-path/invalid)
+        # is purged on convert too, not left orphaned in the vector store after
+        # the source flips to wiki. Only deleted once pages are created below.
+        doc_id = _chunk_doc_id(chunk)
+        if doc_id is not None:
+            original_doc_ids.append(doc_id)
         metadata = _chunk_metadata(chunk)
         rel_path = _chunk_page_path(metadata)
         text = _chunk_text(chunk)
@@ -2216,9 +2222,6 @@ def convert_source_to_wiki_worker(self, source_id, user):
         if _wiki_page_path_from_rel(rel_path) is None:
             skipped.append({"file": rel_path, "reason": "invalid path"})
             continue
-        doc_id = _chunk_doc_id(chunk)
-        if doc_id is not None:
-            original_doc_ids.append(doc_id)
         grouped.setdefault(rel_path, []).append((_chunk_order_hint(metadata), text))
 
     with db_session() as conn:

@@ -132,6 +132,29 @@ class TestConvertSourceToWikiWorker:
         assert result["status"] == "converted"
         store.delete_chunk.assert_not_called()
 
+    def test_skipped_chunk_with_doc_id_still_deleted(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        # A chunk skipped for an invalid path must still have its original
+        # vector chunk purged, not left orphaned after the source flips to wiki.
+        from application import worker
+
+        source_id = _seed_source(pg_conn)
+        store = _patch_store(
+            monkeypatch,
+            [
+                _chunk("good", source="ok.md", doc_id="ok"),
+                _chunk("bad", source="../evil.md", doc_id="evil"),
+            ],
+        )
+        _patch_reembed(monkeypatch)
+
+        result = worker.convert_source_to_wiki_worker(task_self, source_id, "alice")
+
+        assert result["pages_created"] == 1
+        deleted = {c.args[0] for c in store.delete_chunk.call_args_list}
+        assert deleted == {"ok", "evil"}
+
     def test_no_pages_path_deletes_nothing(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):

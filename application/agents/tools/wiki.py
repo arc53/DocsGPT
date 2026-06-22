@@ -201,7 +201,7 @@ class WikiTool(Tool):
     def _reembed(self, path: str, content_hash: str) -> None:
         """Enqueue an async re-embed for ``path``, authored as the source owner.
 
-        The Unit-2 worker loads the source via ``get_any(source_id, user)``
+        The re-embed worker loads the source via ``get_any(source_id, user)``
         (owner-scoped), so the owner — not the caller — must be passed as
         ``user`` or a team editor's edit would fail to re-embed. A per-page
         idempotency key guards each edit independently and dedups broker
