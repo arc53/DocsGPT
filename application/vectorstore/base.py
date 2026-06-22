@@ -136,6 +136,14 @@ class BaseVectorStore(ABC):
         """Search for similar documents/chunks in the vectorstore"""
         pass
 
+    def keyword_search(self, question, k=10):
+        """Keyword/full-text search.
+
+        Default returns no results so hybrid retrieval degrades to vector-only
+        on stores without keyword support. Override in stores that support it.
+        """
+        return []
+
     @abstractmethod
     def add_texts(self, texts, metadatas=None, *args, **kwargs):
         """Add texts with their embeddings to the vectorstore"""

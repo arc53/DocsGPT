@@ -4,11 +4,12 @@ Each strategy honours ``max_tokens`` / ``min_tokens`` and reuses the classic
 ``Chunker``'s tiktoken encoding for token counting, so token budgets stay
 consistent across strategies. Selecting a strategy is ingest-time only;
 changing it requires a re-ingest (D8). Registered keys: ``recursive``,
-``markdown``, ``parent_child``. ``semantic`` is intentionally deferred.
+``markdown``, ``parent_child``, ``semantic``.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import List
 
@@ -16,6 +17,8 @@ from application.parser.chunking import Chunker
 from application.parser.chunking_creator import ChunkerCreator
 from application.parser.schema.base import Document
 from application.utils import get_encoding
+
+logger = logging.getLogger(__name__)
 
 
 class _BaseStrategyChunker:
@@ -64,6 +67,25 @@ class _BaseStrategyChunker:
             },
         )
 
+    def _merge_to_min(self, pieces: List[str], joiner: str) -> List[str]:
+        """Accumulate pieces up to ``max_tokens``, flushing past ``min_tokens``."""
+        merged: List[str] = []
+        buffer = ""
+        for piece in pieces:
+            candidate = f"{buffer}{joiner}{piece}" if buffer else piece
+            if self._token_count(candidate) <= self.max_tokens:
+                buffer = candidate
+            else:
+                if buffer:
+                    merged.append(buffer)
+                buffer = piece
+            if buffer and self._token_count(buffer) >= self.min_tokens:
+                merged.append(buffer)
+                buffer = ""
+        if buffer:
+            merged.append(buffer)
+        return merged
+
 
 class RecursiveChunker(_BaseStrategyChunker):
     """Split on a separator hierarchy, capping at ``max_tokens``.
@@ -95,22 +117,7 @@ class RecursiveChunker(_BaseStrategyChunker):
 
     def _merge(self, fragments: List[str]) -> List[str]:
         """Merge small fragments up to ``max_tokens`` to clear ``min_tokens``."""
-        merged: List[str] = []
-        buffer = ""
-        for frag in fragments:
-            candidate = buffer + frag if buffer else frag
-            if self._token_count(candidate) <= self.max_tokens:
-                buffer = candidate
-            else:
-                if buffer:
-                    merged.append(buffer)
-                buffer = frag
-            if buffer and self._token_count(buffer) >= self.min_tokens:
-                merged.append(buffer)
-                buffer = ""
-        if buffer:
-            merged.append(buffer)
-        return merged
+        return self._merge_to_min(fragments, "")
 
     def chunk(self, documents: List[Document]) -> List[Document]:
         processed: List[Document] = []
@@ -210,9 +217,108 @@ class ParentChildChunker(_BaseStrategyChunker):
         return processed
 
 
+class SemanticChunker(_BaseStrategyChunker):
+    """Group adjacent sentences by embedding similarity into coherent chunks.
+
+    Sentences are embedded in one batched call and split where the cosine
+    distance between consecutive sentences crosses a high percentile, so
+    chunk boundaries fall at topic shifts. Chunks are then token-capped at
+    ``max_tokens`` and merged up to clear ``min_tokens``. Any failure (too
+    few sentences, embedding error, degenerate distances) falls back to
+    ``RecursiveChunker`` so ingest never crashes.
+    """
+
+    _SENTENCE = re.compile(r"(?<=[.!?])\s+")
+    _PERCENTILE = 95.0
+
+    def _split_sentences(self, text: str) -> List[str]:
+        return [s for s in (p.strip() for p in self._SENTENCE.split(text)) if s]
+
+    def _fallback(self, documents: List[Document]) -> List[Document]:
+        recursive = RecursiveChunker(
+            chunking_strategy=self.chunking_strategy,
+            max_tokens=self.max_tokens,
+            min_tokens=self.min_tokens,
+            duplicate_headers=self.duplicate_headers,
+        )
+        return recursive.chunk(documents)
+
+    def _breakpoints(self, embeddings) -> set:
+        """Indices after which a new chunk starts, from high-distance gaps."""
+        import numpy as np
+
+        matrix = np.asarray(embeddings, dtype=np.float64)
+        if matrix.ndim != 2 or matrix.shape[0] < 2:
+            return set()
+        norms = np.linalg.norm(matrix, axis=1)
+        norms[norms == 0] = 1.0
+        unit = matrix / norms[:, None]
+        sims = np.sum(unit[:-1] * unit[1:], axis=1)
+        distances = 1.0 - sims
+        if not np.all(np.isfinite(distances)):
+            raise ValueError("non-finite semantic distances")
+        if float(distances.max()) <= float(distances.min()):
+            return set()
+        threshold = np.percentile(distances, self._PERCENTILE)
+        return {int(i) for i in np.where(distances >= threshold)[0]}
+
+    def _group(self, sentences: List[str], breakpoints: set) -> List[str]:
+        groups: List[str] = []
+        current: List[str] = []
+        for idx, sentence in enumerate(sentences):
+            current.append(sentence)
+            if idx in breakpoints:
+                groups.append(" ".join(current))
+                current = []
+        if current:
+            groups.append(" ".join(current))
+        return groups
+
+    def _enforce_tokens(self, groups: List[str]) -> List[str]:
+        """Hard-split groups over ``max_tokens`` then merge to clear min."""
+        capped: List[str] = []
+        for group in groups:
+            if self._token_count(group) <= self.max_tokens:
+                capped.append(group)
+            else:
+                capped.extend(p for p in self._split_by_tokens(group) if p.strip())
+        return self._merge_to_min(capped, " ")
+
+    def _chunk_text(self, text: str) -> List[str]:
+        sentences = self._split_sentences(text)
+        if len(sentences) < 2:
+            raise ValueError("too few sentences for semantic chunking")
+        from application.vectorstore.base import EmbeddingsSingleton
+        from application.core.settings import settings
+
+        embeddings = EmbeddingsSingleton.get_instance(
+            settings.EMBEDDINGS_NAME
+        ).embed_documents(sentences)
+        breakpoints = self._breakpoints(embeddings)
+        groups = self._group(sentences, breakpoints)
+        return [g for g in self._enforce_tokens(groups) if g.strip()]
+
+    def chunk(self, documents: List[Document]) -> List[Document]:
+        processed: List[Document] = []
+        for doc in documents:
+            try:
+                texts = self._chunk_text(doc.text)
+            except Exception as exc:
+                logger.warning(
+                    "Semantic chunking failed (%s); falling back to recursive.",
+                    exc,
+                )
+                processed.extend(self._fallback([doc]))
+                continue
+            for idx, text in enumerate(texts):
+                processed.append(self._emit(doc, idx, text))
+        return processed
+
+
 ChunkerCreator.register("recursive", RecursiveChunker)
 ChunkerCreator.register("markdown", MarkdownChunker)
 ChunkerCreator.register("parent_child", ParentChildChunker)
+ChunkerCreator.register("semantic", SemanticChunker)
 
 # Reuse the classic Chunker reference so this module can be the single import
 # that pulls every strategy into the registry.
@@ -220,5 +326,6 @@ __all__ = [
     "RecursiveChunker",
     "MarkdownChunker",
     "ParentChildChunker",
+    "SemanticChunker",
     "Chunker",
 ]
