@@ -450,6 +450,10 @@ def add_internal_search_tool(tools_dict: Dict, retriever_config: Dict) -> None:
 
     has_dir = sources_have_directory_structure(source)
     internal_entry = build_internal_tool_entry(has_directory_structure=has_dir)
+    # The executor resolves a tool row by ``id``; the internal tool is synthetic
+    # (no DB row), so stamp its sentinel id or _get_or_load_tool drops it with
+    # ``tool_missing_row_id``.
+    internal_entry["id"] = INTERNAL_TOOL_ID
     internal_entry["config"] = build_internal_tool_config(
         **retriever_config,
         has_directory_structure=has_dir,
@@ -471,6 +475,7 @@ def build_internal_tool_config(
     llm_name: str = None,
     api_key: str = None,
     decoded_token: Optional[Dict] = None,
+    request_id: Optional[str] = None,
     has_directory_structure: bool = False,
 ) -> Dict:
     """Build the config dict for InternalSearchTool."""
@@ -492,5 +497,6 @@ def build_internal_tool_config(
         "llm_name": llm_name or settings.LLM_PROVIDER,
         "api_key": api_key or settings.API_KEY,
         "decoded_token": decoded_token,
+        "request_id": request_id,
         "has_directory_structure": has_directory_structure,
     }

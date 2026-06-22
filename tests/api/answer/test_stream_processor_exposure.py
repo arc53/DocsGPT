@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -146,3 +146,32 @@ class TestBuildAgentExposure:
         assert pf_kwargs.get("exposure") == "prefetch"
         _, kwargs = sp.create_agent.call_args
         assert [e["id"] for e in kwargs["agentic_sources"]] == ["b"]
+
+
+@pytest.mark.unit
+class TestNonAgentSourceConfig:
+    """The non-agent chat path must also load per-source config so exposure
+    (and other per-source overrides) are honored, not just the agent path."""
+
+    def test_active_docs_loads_per_source_retrieval_config(self):
+        sp = StreamProcessor.__new__(StreamProcessor)
+        sp._agent_data = None
+        sp.data = {"active_docs": "s1"}
+        sp.initial_user_id = "user1"
+        sp.source = {}
+        sp.all_sources = []
+        fake_source = {
+            "config": {"retrieval": {"exposure": "agentic_tool", "chunks": 7}}
+        }
+        with patch(
+            "application.api.answer.services.stream_processor.db_readonly"
+        ), patch(
+            "application.api.answer.services.stream_processor.SourcesRepository"
+        ) as repo:
+            repo.return_value.get.return_value = fake_source
+            sp._configure_source()
+        assert sp.source == {"active_docs": "s1"}
+        assert len(sp.all_sources) == 1
+        assert sp.all_sources[0]["id"] == "s1"
+        assert sp.all_sources[0]["retrieval"].exposure == "agentic_tool"
+        assert sp.all_sources[0]["retrieval"].chunks == 7

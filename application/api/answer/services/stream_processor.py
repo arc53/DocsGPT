@@ -666,11 +666,42 @@ class StreamProcessor:
             active_docs = self.data["active_docs"]
             if active_docs and active_docs != "default":
                 self.source = {"active_docs": active_docs}
+                self.all_sources = self._load_request_sources(active_docs)
             else:
                 self.source = {}
+                self.all_sources = []
             return
         self.source = {}
         self.all_sources = []
+
+    def _load_request_sources(self, active_docs) -> list:
+        """Per-source list (with each source's retrieval config) for a non-agent
+        request, so per-source overrides (exposure, chunks, ...) are honored on
+        the default chat just like the agent path. Lenient read: a missing or
+        inaccessible source falls back to default config and never raises.
+        """
+        owner = self.initial_user_id
+        ids = active_docs if isinstance(active_docs, list) else [active_docs]
+        sources = []
+        for sid in ids:
+            if not sid or sid == "default":
+                continue
+            source_doc = None
+            if owner:
+                try:
+                    with db_readonly() as conn:
+                        source_doc = SourcesRepository(conn).get(str(sid), owner)
+                except Exception:
+                    source_doc = None
+            sources.append(
+                {
+                    "id": sid,
+                    "retrieval": SourceConfig.parse(
+                        (source_doc or {}).get("config")
+                    ).retrieval,
+                }
+            )
+        return sources
 
     def _has_active_docs(self) -> bool:
         """Return True if a real document source is configured for retrieval."""

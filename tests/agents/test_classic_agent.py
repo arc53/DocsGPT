@@ -290,6 +290,44 @@ class TestClassicAgentSearchExposure:
         agent._collect_internal_sources()
         assert [d["title"] for d in agent.retrieved_docs] == ["Doc"]
 
+    def test_collect_internal_sources_merges_with_prefetched(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        # Mixed exposure: a pre-fetched source's docs must survive alongside the
+        # tool-retrieved docs (not be overwritten), so both are cited.
+        retriever_config = {"source": {"active_docs": ["b"]}}
+        agent = ClassicAgent(retriever_config=retriever_config, **agent_base_params)
+        agent.retrieved_docs = [
+            {"text": "Prefetched", "title": "Prefetched Doc", "source": "a"}
+        ]
+        mock_tool = Mock()
+        mock_tool.retrieved_docs = [
+            {"text": "Found", "title": "Tool Doc", "source": "b"}
+        ]
+        cache_key = f"internal_search:{INTERNAL_TOOL_ID}:{agent.user or ''}"
+        agent.tool_executor._loaded_tools[cache_key] = mock_tool
+
+        agent._collect_internal_sources()
+        assert [d["title"] for d in agent.retrieved_docs] == [
+            "Prefetched Doc",
+            "Tool Doc",
+        ]
+
+    def test_collect_internal_sources_dedupes(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        retriever_config = {"source": {"active_docs": ["b"]}}
+        agent = ClassicAgent(retriever_config=retriever_config, **agent_base_params)
+        dup = {"text": "X", "title": "Dup", "source": "b"}
+        agent.retrieved_docs = [dup]
+        mock_tool = Mock()
+        mock_tool.retrieved_docs = [dict(dup)]
+        cache_key = f"internal_search:{INTERNAL_TOOL_ID}:{agent.user or ''}"
+        agent.tool_executor._loaded_tools[cache_key] = mock_tool
+
+        agent._collect_internal_sources()
+        assert [d["title"] for d in agent.retrieved_docs] == ["Dup"]
+
 
 @pytest.mark.integration
 class TestClassicAgentIntegration:
