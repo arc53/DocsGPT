@@ -337,7 +337,7 @@ export default function Sources({
     index: number,
     document: Doc,
   ): SourceMenuOption[] => {
-    const isWiki = document.type === 'wiki';
+    const isWiki = document.config?.kind === 'wiki' || document.type === 'wiki';
     // 'team' viewers cannot write; convert is owner/editor only.
     const canEdit =
       document.ownership !== 'team' || document.team_access === 'editor';
@@ -464,7 +464,8 @@ export default function Sources({
 
   return documentToView ? (
     <div className="mt-8 flex flex-col">
-      {documentToView.type === 'wiki' ? (
+      {documentToView.config?.kind === 'wiki' ||
+      documentToView.type === 'wiki' ? (
         <WikiViewer
           docId={documentToView.id || ''}
           sourceName={documentToView.name}
