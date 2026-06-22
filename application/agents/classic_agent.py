@@ -6,6 +6,7 @@ from application.agents.tools.internal_search import (
     INTERNAL_TOOL_ID,
     add_internal_search_tool,
 )
+from application.agents.tools.wiki import add_wiki_tool
 from application.logging import LogContext
 
 logger = logging.getLogger(__name__)
@@ -24,11 +25,13 @@ class ClassicAgent(BaseAgent):
     def __init__(
         self,
         retriever_config: Optional[Dict] = None,
+        wiki_config: Optional[Dict] = None,
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.retriever_config = retriever_config or {}
+        self.wiki_config = wiki_config or {}
 
     def _gen_inner(
         self, query: str, log_context: LogContext
@@ -38,6 +41,8 @@ class ClassicAgent(BaseAgent):
         tools_dict = self.tool_executor.get_tools()
         if self.retriever_config:
             add_internal_search_tool(tools_dict, self.retriever_config)
+        if self.wiki_config:
+            add_wiki_tool(tools_dict, self.wiki_config)
         self._prepare_tools(tools_dict)
 
         messages = self._build_messages(self.prompt, query)

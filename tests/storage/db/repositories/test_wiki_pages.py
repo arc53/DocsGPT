@@ -6,8 +6,15 @@ source row first.
 
 from __future__ import annotations
 
+import pytest
+
 from application.storage.db.repositories.sources import SourcesRepository
-from application.storage.db.repositories.wiki_pages import WikiPagesRepository
+from application.storage.db.repositories.wiki_pages import (
+    WikiPageConflict,
+    WikiPagesRepository,
+    build_wiki_directory_structure,
+    rebuild_wiki_directory_structure,
+)
 
 
 def _repo(conn) -> WikiPagesRepository:
@@ -156,6 +163,61 @@ class TestDelete:
         repo.upsert(sid, "/other/c.md", "c")
         assert repo.delete_by_prefix(sid, "/dir/") == 2
         assert repo.get_by_path(sid, "/other/c.md") is not None
+
+
+class TestExpectedVersion:
+    def test_matching_version_updates(self, pg_conn):
+        repo = _repo(pg_conn)
+        sid = _make_source(pg_conn)
+        v1 = repo.upsert(sid, "/a.md", "v1")
+        v2 = repo.upsert(sid, "/a.md", "v2", expected_version=v1["version"])
+        assert v2["version"] == 2
+        assert v2["content"] == "v2"
+
+    def test_stale_version_raises_conflict(self, pg_conn):
+        repo = _repo(pg_conn)
+        sid = _make_source(pg_conn)
+        v1 = repo.upsert(sid, "/a.md", "v1")
+        # A concurrent writer bumps the version out from under us.
+        repo.upsert(sid, "/a.md", "v2")
+        with pytest.raises(WikiPageConflict):
+            repo.upsert(sid, "/a.md", "v3", expected_version=v1["version"])
+        # The conflicting write left the concurrent value intact.
+        assert repo.get_by_path(sid, "/a.md")["content"] == "v2"
+
+    def test_expected_version_ignored_on_new_page(self, pg_conn):
+        repo = _repo(pg_conn)
+        sid = _make_source(pg_conn)
+        page = repo.upsert(sid, "/new.md", "content", expected_version=99)
+        assert page["version"] == 1
+
+
+class TestDirectoryStructure:
+    def test_build_tree_shape(self):
+        pages = [
+            {"path": "/docs/setup.md", "content": "hello", "token_count": 3},
+            {"path": "/readme.md", "content": "x", "token_count": 1},
+        ]
+        tree = build_wiki_directory_structure(pages)
+        assert "readme.md" in tree
+        assert tree["docs"]["setup.md"]["type"] == "text/markdown"
+        assert tree["docs"]["setup.md"]["token_count"] == 3
+        assert tree["readme.md"]["size_bytes"] == 1
+
+    def test_rebuild_writes_to_source(self, pg_conn):
+        repo = _repo(pg_conn)
+        sid = str(
+            SourcesRepository(pg_conn).create(
+                "rebuild-src", user_id="rebuild-user", type="wiki"
+            )["id"]
+        )
+        repo.upsert(sid, "/a.md", "a")
+        repo.upsert(sid, "/dir/b.md", "b")
+        tree = rebuild_wiki_directory_structure(pg_conn, sid, "rebuild-user")
+        assert "a.md" in tree
+        assert "b.md" in tree["dir"]
+        stored = SourcesRepository(pg_conn).get(sid, "rebuild-user")
+        assert "a.md" in (stored["directory_structure"] or {})
 
 
 class TestSetEmbedStatus:

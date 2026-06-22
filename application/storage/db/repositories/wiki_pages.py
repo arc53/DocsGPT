@@ -18,6 +18,10 @@ from application.storage.db.base_repository import row_to_dict
 from application.utils import num_tokens_from_string
 
 
+class WikiPageConflict(Exception):
+    """Raised when a version-checked upsert loses an optimistic-lock race."""
+
+
 def _content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
@@ -33,6 +37,7 @@ class WikiPagesRepository:
         content: str,
         title: Optional[str] = None,
         updated_by: Optional[str] = None,
+        expected_version: Optional[int] = None,
     ) -> dict:
         """Create or overwrite a page.
 
@@ -40,12 +45,55 @@ class WikiPagesRepository:
         page already has the same ``content_hash``. Otherwise inserts, or on
         conflict updates content/title/hash/updated_by, bumps ``version``, and
         resets ``embed_status`` to ``pending``.
+
+        When ``expected_version`` is given, the update on an existing row is
+        conditional on its ``version`` still matching; a concurrent write that
+        changed the version causes zero rows to update and raises
+        :class:`WikiPageConflict` so the caller can re-read and retry.
         """
         content_hash = _content_hash(content)
 
         existing = self.get_by_path(source_id, path)
         if existing is not None and existing.get("content_hash") == content_hash:
             return existing
+
+        if expected_version is not None and existing is not None:
+            result = self._conn.execute(
+                text(
+                    """
+                    UPDATE wiki_pages SET
+                        title = :title,
+                        content = :content,
+                        token_count = :token_count,
+                        content_hash = :content_hash,
+                        updated_by = :updated_by,
+                        version = version + 1,
+                        embed_status = 'pending',
+                        updated_at = now()
+                    WHERE source_id = CAST(:source_id AS uuid)
+                        AND path = :path
+                        AND version = :expected_version
+                    RETURNING *
+                    """
+                ),
+                {
+                    "source_id": source_id,
+                    "path": path,
+                    "title": title,
+                    "content": content,
+                    "token_count": num_tokens_from_string(content),
+                    "content_hash": content_hash,
+                    "updated_by": updated_by,
+                    "expected_version": expected_version,
+                },
+            )
+            row = result.fetchone()
+            if row is None:
+                raise WikiPageConflict(
+                    f"Page {path} changed underneath the edit (expected version "
+                    f"{expected_version})."
+                )
+            return row_to_dict(row)
 
         result = self._conn.execute(
             text(
@@ -155,3 +203,48 @@ class WikiPagesRepository:
             {"source_id": source_id, "path": path, "status": status},
         )
         return result.rowcount > 0
+
+
+def build_wiki_directory_structure(pages: list[dict]) -> dict:
+    """Build the nested ``directory_structure`` tree from wiki page rows.
+
+    Mirrors the ingest pipeline's tree shape so ``internal_search.list_files``
+    and the UI file tree work unchanged: leaf files carry ``type``,
+    ``size_bytes`` and ``token_count`` metadata.
+    """
+    tree: dict = {}
+    for page in pages:
+        path = (page.get("path") or "").lstrip("/")
+        if not path:
+            continue
+        parts = path.split("/")
+        current = tree
+        for i, part in enumerate(parts):
+            if i == len(parts) - 1:
+                content = page.get("content") or ""
+                current[part] = {
+                    "type": "text/markdown",
+                    "size_bytes": len(content.encode("utf-8")),
+                    "token_count": page.get("token_count") or 0,
+                }
+            else:
+                current = current.setdefault(part, {})
+    return tree
+
+
+def rebuild_wiki_directory_structure(
+    conn: Connection, source_id: str, owner_id: str
+) -> dict:
+    """Recompute ``sources.directory_structure`` from the source's wiki pages.
+
+    Returns the rebuilt tree. The write is owner-scoped so it matches the
+    ``sources`` repo's ``WHERE id AND user_id`` update contract.
+    """
+    from application.storage.db.repositories.sources import SourcesRepository
+
+    pages = WikiPagesRepository(conn).list_for_source(source_id)
+    tree = build_wiki_directory_structure(pages)
+    SourcesRepository(conn).update(
+        source_id, owner_id, {"directory_structure": tree}
+    )
+    return tree

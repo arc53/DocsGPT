@@ -911,6 +911,56 @@ class StreamProcessor:
             value = retrieval.get("exposure")
         return value or "prefetch"
 
+    def _build_wiki_config(self) -> Optional[Dict[str, Any]]:
+        """Resolve the WikiTool config for the first writable wiki source (D18).
+
+        A source qualifies when ``SourceConfig.parse(config).kind == "wiki"`` and
+        the principal can write it (``effective_write_owner`` returns an owner —
+        owner or team editor; viewers get None and no tool). v1 supports one
+        writable wiki source; extras are logged and skipped. Returns None when no
+        writable wiki source is present.
+        """
+        from application.api.user.team_sharing import effective_write_owner
+
+        caller = self.decoded_token.get("sub") if self.decoded_token else None
+        if not caller:
+            return None
+
+        wiki_config: Optional[Dict[str, Any]] = None
+        try:
+            with db_readonly() as conn:
+                repo = SourcesRepository(conn)
+                for entry in self.all_sources or []:
+                    sid = entry.get("id")
+                    if not sid or sid == "default":
+                        continue
+                    sid = str(sid)
+                    owner = effective_write_owner(conn, "source", sid, caller)
+                    if not owner:
+                        continue
+                    source_doc = repo.get_any(sid, owner)
+                    if not source_doc:
+                        continue
+                    if SourceConfig.parse(source_doc.get("config")).kind != "wiki":
+                        continue
+                    if wiki_config is not None:
+                        logger.info(
+                            "Multiple writable wiki sources for this agent; "
+                            "using the first and skipping source %s",
+                            str(source_doc["id"]),
+                        )
+                        continue
+                    wiki_config = {
+                        "source_id": str(source_doc["id"]),
+                        "source_owner_id": owner,
+                        "decoded_token": self.decoded_token,
+                        "user": caller,
+                    }
+        except Exception:
+            logger.exception("Failed to resolve wiki tool config")
+            return None
+        return wiki_config
+
     def _source_for_docs(self, doc_ids: list) -> Dict[str, Any]:
         """Build a ClassicRAG-style source dict scoped to ``doc_ids``."""
         if not doc_ids:
@@ -1551,6 +1601,14 @@ class StreamProcessor:
             "llm_handler": llm_handler,
             "tool_executor": tool_executor,
         }
+
+        # Wiki tool injection + authz (D18): only for agent types that build a
+        # tools_dict (classic/agentic/research), and only when a writable wiki
+        # source is present for the principal (viewers get nothing).
+        if agent_type in ("classic", "agentic", "research"):
+            wiki_config = self._build_wiki_config()
+            if wiki_config:
+                agent_kwargs["wiki_config"] = wiki_config
 
         # Type-specific kwargs
         # D11: agentic/research always carry a retriever_config; classic carries
