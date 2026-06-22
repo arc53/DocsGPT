@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import type { RootState } from '../store';
+import userService from '../api/services/userService';
 import { getSessionToken } from '../utils/providerUtils';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -207,6 +208,34 @@ function Upload({
                   checked,
                 );
               }}
+            />
+          </div>
+        );
+      case 'textarea':
+        return (
+          <div key={field.name} className="flex flex-col gap-2">
+            <Label
+              htmlFor={`field-${field.name}`}
+              className="text-foreground text-sm"
+            >
+              {field.label}
+            </Label>
+            <textarea
+              id={`field-${field.name}`}
+              name={field.name}
+              value={String(
+                ingestor.config[field.name as keyof typeof ingestor.config] ??
+                  '',
+              )}
+              onChange={(e) =>
+                handleIngestorChange(
+                  field.name as keyof IngestorConfig['config'],
+                  e.target.value,
+                )
+              }
+              required={isRequired}
+              rows={8}
+              className="border-border bg-card text-foreground focus:border-primary w-full resize-y rounded-2xl border p-3 text-sm outline-none"
             />
           </div>
         );
@@ -712,6 +741,42 @@ function Upload({
     xhr.send(formData);
   };
 
+  const createWiki = (clientTaskId: string) => {
+    dispatch(
+      updateUploadTask({
+        id: clientTaskId,
+        updates: { status: 'training', progress: 0 },
+      }),
+    );
+    userService
+      .createWiki(
+        {
+          name: ingestor.name,
+          initial_content: String(ingestor.config.initial_content ?? ''),
+        },
+        token,
+      )
+      .then((response) => response.json())
+      .then((data) => {
+        if (!data?.success) {
+          handleTaskFailure(clientTaskId, data?.message);
+          return;
+        }
+        dispatch(
+          updateUploadTask({
+            id: clientTaskId,
+            updates: {
+              sourceId: data.source_id,
+              status: 'completed',
+              progress: 100,
+            },
+          }),
+        );
+        onSuccessfulUpload?.();
+      })
+      .catch(() => handleTaskFailure(clientTaskId));
+  };
+
   const handleClose = useCallback(() => {
     resetUploaderState();
     setModalState('INACTIVE');
@@ -745,7 +810,9 @@ function Upload({
       }),
     );
 
-    if (hasLocalFilePicker) {
+    if (ingestor.type === 'wiki') {
+      createWiki(clientTaskId);
+    } else if (hasLocalFilePicker) {
       uploadFile(clientTaskId);
     } else {
       uploadRemote(clientTaskId);
@@ -968,10 +1035,12 @@ function Upload({
                   className="w-full"
                 />
                 {renderFormFields()}
-                <RetrievalOptions
-                  value={retrievalOptions}
-                  onChange={setRetrievalOptions}
-                />
+                {ingestor.type !== 'wiki' && (
+                  <RetrievalOptions
+                    value={retrievalOptions}
+                    onChange={setRetrievalOptions}
+                  />
+                )}
               </div>
             )}
 
@@ -1004,7 +1073,9 @@ function Upload({
                   : ''
               }`}
             >
-              {t('modals.uploadDoc.train')}
+              {ingestor.type === 'wiki'
+                ? t('modals.uploadDoc.create')
+                : t('modals.uploadDoc.train')}
             </Button>
           )}
         </div>

@@ -56,6 +56,10 @@ const endpoints = {
     SYNC_SOURCE: '/api/sync_source',
     REINGEST_SOURCE: '/api/sources/reingest',
     SOURCE_CONFIG: (id: string) => `/api/sources/${id}/config`,
+    CREATE_WIKI: '/api/sources/wiki',
+    WIKI_PAGES: (id: string) => `/api/sources/${id}/wiki/pages`,
+    WIKI_PAGE: (id: string, path: string) =>
+      `/api/sources/${id}/wiki/page?path=${encodeURIComponent(path)}`,
     GET_AVAILABLE_TOOLS: '/api/available_tools',
     GET_USER_TOOLS: '/api/get_tools',
     CREATE_TOOL: '/api/create_tool',

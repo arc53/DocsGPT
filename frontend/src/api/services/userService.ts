@@ -102,6 +102,19 @@ const userService = {
     token: string | null,
   ): Promise<Response> =>
     apiClient.patch(endpoints.USER.SOURCE_CONFIG(sourceId), config, token),
+  createWiki: (
+    data: { name: string; initial_content?: string },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.CREATE_WIKI, data, token),
+  getWikiPages: (sourceId: string, token: string | null): Promise<Response> =>
+    throttledApiClient.get(endpoints.USER.WIKI_PAGES(sourceId), token),
+  getWikiPage: (
+    sourceId: string,
+    path: string,
+    token: string | null,
+  ): Promise<Response> =>
+    throttledApiClient.get(endpoints.USER.WIKI_PAGE(sourceId, path), token),
   getAvailableTools: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.GET_AVAILABLE_TOOLS, token),
   getUserTools: (token: string | null): Promise<any> =>

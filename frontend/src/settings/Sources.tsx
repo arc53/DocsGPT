@@ -45,6 +45,7 @@ import { formatDate } from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import Chunks from '../components/Chunks';
+import WikiViewer from '../components/WikiViewer';
 import SourceConfigModal from './SourceConfigModal';
 
 type SourceMenuOption = {
@@ -327,10 +328,13 @@ export default function Sources({
     index: number,
     document: Doc,
   ): SourceMenuOption[] => {
+    const isWiki = document.type === 'wiki';
     const actions: SourceMenuOption[] = [
       {
         icon: EyeView,
-        label: t('settings.sources.view'),
+        label: isWiki
+          ? t('settings.sources.wiki.view')
+          : t('settings.sources.view'),
         onClick: () => {
           setDocumentToView(document);
         },
@@ -380,7 +384,7 @@ export default function Sources({
       });
     }
 
-    if (document.id) {
+    if (document.id && !isWiki) {
       actions.push({
         icon: SlidersHorizontal,
         label: t('settings.sources.editConfig'),
@@ -428,7 +432,13 @@ export default function Sources({
 
   return documentToView ? (
     <div className="mt-8 flex flex-col">
-      {documentToView.isNested ? (
+      {documentToView.type === 'wiki' ? (
+        <WikiViewer
+          docId={documentToView.id || ''}
+          sourceName={documentToView.name}
+          onBackToDocuments={() => setDocumentToView(undefined)}
+        />
+      ) : documentToView.isNested ? (
         documentToView.type === 'connector:file' ? (
           <ConnectorTree
             docId={documentToView.id || ''}

@@ -103,6 +103,11 @@
       },
       "actions": "Actions",
       "view": "View",
+      "wiki": {
+        "view": "View wiki",
+        "empty": "This wiki has no pages yet.",
+        "selectPage": "Select a page to view its contents."
+      },
       "editConfig": "Source settings",
       "shareWithTeam": "Share with team",
       "deleteWarning": "Are you sure you want to delete \"{{name}}\"?",
@@ -638,6 +643,7 @@
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
       "train": "Train",
+      "create": "Create",
       "link": "Link",
       "urlLink": "URL Link",
       "repoUrl": "Repository URL",
@@ -707,6 +713,10 @@
         "confluence": {
           "label": "Confluence",
           "heading": "Upload from Confluence"
+        },
+        "wiki": {
+          "label": "Create Wiki",
+          "heading": "Create an LLM-editable wiki"
         }
       },
       "connectors": {

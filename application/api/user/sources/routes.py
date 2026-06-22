@@ -2,14 +2,17 @@
 
 import json
 import math
+import uuid
 
 from flask import current_app, jsonify, make_response, redirect, request
 from flask_restx import fields, Namespace, Resource
 from pydantic import ValidationError
 
+from application.agents.tools.path_utils import validate_tool_path
 from application.api import api
-from application.api.user.tasks import reingest_source_task, sync_source
+from application.api.user.tasks import reembed_wiki_page, reingest_source_task, sync_source
 from application.api.user.team_sharing import (
+    can_access,
     effective_write_owner,
     visible_with_access,
 )
@@ -19,11 +22,19 @@ from application.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
 )
 from application.storage.db.repositories.sources import SourcesRepository
+from application.storage.db.repositories.wiki_pages import (
+    WikiPagesRepository,
+    _content_hash,
+    rebuild_wiki_directory_structure,
+)
 from application.storage.db.session import db_readonly, db_session
 from application.storage.db.source_config import SourceConfig
 from application.storage.storage_creator import StorageCreator
 from application.utils import check_required_fields
 from application.vectorstore.vector_creator import VectorCreator
+
+
+WIKI_INDEX_PATH = "/index.md"
 
 
 sources_ns = Namespace(
@@ -636,3 +647,194 @@ class SourceConfigResource(Resource):
             ),
             200,
         )
+
+
+def _resolve_readable_source(conn, source_id, user):
+    """Return a source dict the caller may READ, or None.
+
+    Read access = owner or any team grant (viewer/editor). Resolves the row
+    without ownership scoping only after the grant check passes.
+    """
+    doc = SourcesRepository(conn).get_any(source_id, user)
+    if doc is not None:
+        return doc
+    if not can_access(conn, "source", source_id, user):
+        return None
+    return SourcesRepository(conn).get_by_id(source_id)
+
+
+def _wiki_page_node(page):
+    return {
+        "path": page.get("path"),
+        "title": page.get("title"),
+        "token_count": page.get("token_count") or 0,
+        "version": page.get("version"),
+        "embed_status": page.get("embed_status"),
+        "updated_at": (
+            page["updated_at"].isoformat()
+            if page.get("updated_at") is not None
+            and hasattr(page["updated_at"], "isoformat")
+            else page.get("updated_at")
+        ),
+    }
+
+
+@sources_ns.route("/sources/wiki")
+class CreateWikiSource(Resource):
+    create_wiki_model = api.model(
+        "CreateWikiModel",
+        {
+            "name": fields.String(required=True, description="Wiki source name"),
+            "initial_content": fields.String(
+                description="Optional markdown seed for /index.md"
+            ),
+        },
+    )
+
+    @api.expect(create_wiki_model)
+    @api.doc(
+        description="Create an LLM-editable wiki source. No ingestion task is "
+        "enqueued; pages are authored via the WikiTool. An optional "
+        "initial_content seeds /index.md and triggers its per-page re-embed."
+    )
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json(silent=True) or {}
+        missing_fields = check_required_fields(data, ["name"])
+        if missing_fields:
+            return missing_fields
+        name = str(data["name"]).strip()
+        if not name:
+            return make_response(
+                jsonify({"success": False, "message": "Name is required"}), 400
+            )
+        initial_content = data.get("initial_content")
+        source_id = str(uuid.uuid4())
+        try:
+            with db_session() as conn:
+                repo = SourcesRepository(conn)
+                repo.create(
+                    name,
+                    source_id=source_id,
+                    user_id=user,
+                    type="wiki",
+                    config={"kind": "wiki"},
+                    directory_structure={},
+                )
+                if initial_content:
+                    WikiPagesRepository(conn).upsert(
+                        source_id,
+                        WIKI_INDEX_PATH,
+                        initial_content,
+                        updated_by=user,
+                    )
+                    rebuild_wiki_directory_structure(conn, source_id, user)
+        except Exception as err:
+            current_app.logger.error(
+                f"Error creating wiki source: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        if initial_content:
+            try:
+                reembed_wiki_page.delay(
+                    source_id,
+                    WIKI_INDEX_PATH,
+                    _content_hash(initial_content),
+                    user=user,
+                    idempotency_key=(
+                        f"reembed-wiki:{source_id}:{WIKI_INDEX_PATH}:"
+                        f"{_content_hash(initial_content)}"
+                    ),
+                )
+            except Exception as err:
+                current_app.logger.error(
+                    f"Error enqueuing wiki seed re-embed for {source_id}: {err}",
+                    exc_info=True,
+                )
+        return make_response(
+            jsonify({"success": True, "source_id": source_id}), 200
+        )
+
+
+@sources_ns.route("/sources/<string:source_id>/wiki/pages")
+class WikiPages(Resource):
+    @api.doc(
+        description="List a wiki source's pages (read access: owner or shared)."
+    )
+    def get(self, source_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        try:
+            with db_readonly() as conn:
+                doc = _resolve_readable_source(conn, source_id, user)
+                if doc is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Source not found"}),
+                        404,
+                    )
+                pages = WikiPagesRepository(conn).list_for_source(str(doc["id"]))
+                directory_structure = doc.get("directory_structure") or {}
+        except Exception as err:
+            current_app.logger.error(
+                f"Error listing wiki pages for {source_id}: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(
+            jsonify(
+                {
+                    "success": True,
+                    "pages": [_wiki_page_node(p) for p in pages],
+                    "directory_structure": directory_structure,
+                }
+            ),
+            200,
+        )
+
+
+@sources_ns.route("/sources/<string:source_id>/wiki/page")
+class WikiPage(Resource):
+    @api.doc(
+        description="Fetch a single wiki page's content fresh from storage.",
+        params={"path": "Page path (e.g. /index.md)"},
+    )
+    def get(self, source_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        raw_path = request.args.get("path")
+        if not raw_path:
+            return make_response(
+                jsonify({"success": False, "message": "path is required"}), 400
+            )
+        path = validate_tool_path(raw_path)
+        if not path or path == "/" or path.endswith("/"):
+            return make_response(
+                jsonify({"success": False, "message": "Invalid page path"}), 400
+            )
+        try:
+            with db_readonly() as conn:
+                doc = _resolve_readable_source(conn, source_id, user)
+                if doc is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Source not found"}),
+                        404,
+                    )
+                page = WikiPagesRepository(conn).get_by_path(str(doc["id"]), path)
+        except Exception as err:
+            current_app.logger.error(
+                f"Error fetching wiki page for {source_id}: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        if page is None:
+            return make_response(
+                jsonify({"success": False, "message": "Page not found"}), 404
+            )
+        node = _wiki_page_node(page)
+        node["content"] = page.get("content") or ""
+        return make_response(jsonify({"success": True, "page": node}), 200)
