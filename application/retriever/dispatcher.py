@@ -32,6 +32,11 @@ logger = logging.getLogger(__name__)
 # for the all-classic case.
 _CLASSIC_KEYS = frozenset({"classic", "default"})
 
+# Retriever keys that subclass ClassicRAG and accept ``defer_rephrase``, so the
+# eager ctor rephrase can be skipped and computed lazily per-source. Unknown
+# keys are excluded: a future non-ClassicRAG retriever may not accept the kwarg.
+_DEFERRABLE_KEYS = _CLASSIC_KEYS | {"hybrid"}
+
 # Fields that, when left at their defaults, mean the source did not opt into any
 # per-source retrieval override — so it can flow through the global ClassicRAG
 # path unchanged (byte-identical parity).
@@ -220,7 +225,7 @@ class Dispatcher(BaseRetriever):
         kwargs["chunks"] = max(self.chunks, candidate_k or 0)
         # With per-source configs the rephrase decision is per-source, so defer
         # the eager rephrase to let a rephrase_query=False source skip the call.
-        if group["retrievals"] and retriever_key in _CLASSIC_KEYS:
+        if group["retrievals"] and retriever_key in _DEFERRABLE_KEYS:
             kwargs["defer_rephrase"] = True
         retriever = RetrieverCreator.create_retriever(retriever_key, **kwargs)
         # Hand the per-source retrieval configs to the classic retriever so it

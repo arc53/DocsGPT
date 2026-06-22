@@ -1,10 +1,12 @@
 from application.retriever.classic_rag import ClassicRAG
+from application.retriever.hybrid_rag import HybridRetriever
 
 
 class RetrieverCreator:
     retrievers = {
         "classic": ClassicRAG,
         "default": ClassicRAG,
+        "hybrid": HybridRetriever,
     }
 
     @classmethod

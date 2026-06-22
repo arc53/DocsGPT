@@ -11,7 +11,8 @@ export type ChunkingStrategy =
   | 'classic_chunk'
   | 'recursive'
   | 'markdown'
-  | 'parent_child';
+  | 'parent_child'
+  | 'semantic';
 
 export type RetrievalExposure = 'prefetch' | 'agentic_tool';
 

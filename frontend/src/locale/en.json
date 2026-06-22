@@ -145,8 +145,10 @@
           "rephraseQuery": "Rephrase query before search",
           "retriever": "Retriever",
           "retrievers": {
-            "classic": "Classic"
+            "classic": "Classic",
+            "hybrid": "Hybrid"
           },
+          "retrieverHint": "Hybrid (keyword + vector) search is supported on pgvector; other vector stores fall back to vector-only.",
           "exposure": "Search exposure",
           "exposures": {
             "prefetch": "Pre-fetch into context",
@@ -172,7 +174,8 @@
             "classic_chunk": "Classic",
             "recursive": "Recursive",
             "markdown": "Markdown",
-            "parent_child": "Parent / child"
+            "parent_child": "Parent / child",
+            "semantic": "Semantic"
           },
           "maxTokens": "Max tokens per chunk",
           "minTokens": "Min tokens per chunk",

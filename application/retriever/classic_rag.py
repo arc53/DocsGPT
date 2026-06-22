@@ -144,6 +144,21 @@ class ClassicRAG(BaseRetriever):
             logging.error(f"Error rephrasing query: {e}", exc_info=True)
             return self.original_question
 
+    def _fetch_candidates(self, docsearch, question, src_k, score_threshold):
+        """Fetch candidate hits for one vector store (vector search).
+
+        Subclasses override this to change candidate sourcing (e.g. RRF fusion)
+        while inheriting the surrounding per-source resolution and budgeting.
+        """
+        # ``score_threshold`` is honoured by pgvector/mongodb and safely ignored
+        # by stores whose ``search`` swallows kwargs. The candidate count is
+        # clamped to a ceiling to bound memory/latency.
+        k = min(max(src_k * 2, 20), 500)
+        search_kwargs = {"k": k}
+        if score_threshold is not None:
+            search_kwargs["score_threshold"] = score_threshold
+        return docsearch.search(question, **search_kwargs)
+
     def _get_data(self):
         if self.chunks == 0 or not self.vectorstores:
             logging.info(
@@ -193,12 +208,9 @@ class ClassicRAG(BaseRetriever):
                     docsearch = VectorCreator.create_vectorstore(
                         settings.VECTOR_STORE, vectorstore_id, settings.EMBEDDINGS_KEY
                     )
-                    # ``score_threshold`` is honoured by pgvector/mongodb and
-                    # safely ignored by stores whose ``search`` swallows kwargs.
-                    search_kwargs = {"k": max(src_k * 2, 20)}
-                    if score_threshold is not None:
-                        search_kwargs["score_threshold"] = score_threshold
-                    docs_temp = docsearch.search(question, **search_kwargs)
+                    docs_temp = self._fetch_candidates(
+                        docsearch, question, src_k, score_threshold
+                    )
 
                     for doc in docs_temp:
                         if cumulative_tokens >= token_budget:

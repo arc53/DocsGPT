@@ -102,11 +102,18 @@ class PGVectorStore(BaseVectorStore):
             
             # Create index for source_id filtering
             source_index_query = f"""
-            CREATE INDEX IF NOT EXISTS {self._table_name}_source_id_idx 
+            CREATE INDEX IF NOT EXISTS {self._table_name}_source_id_idx
             ON {self._table_name} (source_id);
             """
             cursor.execute(source_index_query)
-            
+
+            # Functional GIN index backing keyword_search full-text queries.
+            fts_index_query = f"""
+            CREATE INDEX IF NOT EXISTS {self._table_name}_text_fts_idx
+            ON {self._table_name} USING gin(to_tsvector('english', {self._text_column}));
+            """
+            cursor.execute(fts_index_query)
+
             conn.commit()
         except Exception as e:
             conn.rollback()
@@ -166,6 +173,48 @@ class PGVectorStore(BaseVectorStore):
             
         except Exception as e:
             logging.error(f"Error searching documents: {e}", exc_info=True)
+            return []
+        finally:
+            cursor.close()
+
+    def keyword_search(self, question: str, k: int = 10) -> List[Document]:
+        """Full-text keyword search using Postgres ``websearch_to_tsquery``.
+
+        Returns the same ``Document`` shape as :meth:`search`. The question is
+        bound as a query parameter (never interpolated) to prevent injection.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            keyword_query = f"""
+            SELECT {self._text_column}, {self._metadata_column},
+                   ts_rank(
+                       to_tsvector('english', {self._text_column}),
+                       websearch_to_tsquery('english', %s)
+                   ) AS rank
+            FROM {self._table_name}
+            WHERE source_id = %s
+              AND to_tsvector('english', {self._text_column})
+                  @@ websearch_to_tsquery('english', %s)
+            ORDER BY rank DESC
+            LIMIT %s;
+            """
+
+            cursor.execute(
+                keyword_query, (question, self._source_id, question, k)
+            )
+            results = cursor.fetchall()
+
+            documents = []
+            for text, metadata, _rank in results:
+                metadata = metadata or {}
+                documents.append(Document(page_content=text, metadata=metadata))
+
+            return documents
+
+        except Exception as e:
+            logging.error(f"Error in keyword search: {e}", exc_info=True)
             return []
         finally:
             cursor.close()

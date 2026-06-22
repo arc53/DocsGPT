@@ -73,6 +73,15 @@ class RetrievalConfig(BaseModel):
     reranker: Optional[dict] = None  # reserved: future cross-encoder/LLM reorder
     prescreen: Optional[dict] = None  # None = off; else PreScreenConfig dict (D12)
 
+    @field_validator("chunks")
+    @classmethod
+    def _bounded_chunks(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("must be >= 1")
+        if value > 500:
+            raise ValueError("must be <= 500")
+        return value
+
     @model_validator(mode="after")
     def _validate_prescreen(self) -> "RetrievalConfig":
         """Validate ``prescreen`` through ``PreScreenConfig`` when present.

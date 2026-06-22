@@ -83,7 +83,10 @@ const CHUNKING_STRATEGIES: ChunkingStrategy[] = [
   'recursive',
   'markdown',
   'parent_child',
+  'semantic',
 ];
+
+const RETRIEVERS = ['classic', 'hybrid'];
 
 /**
  * Group eyebrow: an uppercase, tracked title with a normal-weight muted ` · tag`
@@ -302,6 +305,34 @@ export default function RetrievalOptions({
         <GroupHeader title={tr('retrieval.title')} tag={tr('retrieval.tag')} />
 
         <div className="divide-border/50 divide-y">
+          <SettingRow
+            label={tr('retrieval.retriever')}
+            htmlFor="retrieval-retriever"
+            description={tr('retrieval.retrieverHint')}
+            alignStart
+          >
+            <Select
+              value={value.retrieval.retriever}
+              disabled={disabled}
+              onValueChange={(v) => setRetrieval({ retriever: v })}
+            >
+              <SelectTrigger
+                id="retrieval-retriever"
+                className="w-52 rounded-md"
+                size="lg"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RETRIEVERS.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {tr(`retrieval.retrievers.${r}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingRow>
+
           <SettingRow label={tr('retrieval.chunks')} htmlFor="retrieval-chunks">
             <Input
               id="retrieval-chunks"

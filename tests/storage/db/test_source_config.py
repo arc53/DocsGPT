@@ -68,6 +68,18 @@ class TestStrictWrite:
         with pytest.raises(ValidationError):
             SourceConfig.model_validate({"unexpected": True})
 
+    def test_chunks_upper_bound_rejected(self):
+        with pytest.raises(ValidationError):
+            RetrievalConfig(chunks=501)
+
+    def test_chunks_lower_bound_rejected(self):
+        with pytest.raises(ValidationError):
+            RetrievalConfig(chunks=0)
+
+    def test_chunks_accepts_small_and_ceiling_values(self):
+        assert RetrievalConfig(chunks=2).chunks == 2
+        assert RetrievalConfig(chunks=500).chunks == 500
+
     def test_model_validate_accepts_full_valid_config(self):
         cfg = SourceConfig.model_validate(
             {
