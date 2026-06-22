@@ -115,33 +115,53 @@ class PGVectorStore(BaseVectorStore):
         finally:
             cursor.close()
 
-    def search(self, question: str, k: int = 2, *args, **kwargs) -> List[Document]:
-        """Search for similar documents using vector similarity"""
+    def search(
+        self,
+        question: str,
+        k: int = 2,
+        *args,
+        score_threshold: float = None,
+        **kwargs,
+    ) -> List[Document]:
+        """Search for similar documents using vector similarity.
+
+        Args:
+            question: The query string.
+            k: Maximum number of results.
+            score_threshold: Optional cosine-similarity floor in ``[0, 1]``.
+                Cosine distance = ``1 - similarity``; rows with similarity below
+                the threshold (distance above ``1 - threshold``) are dropped.
+        """
         query_vector = self._embedding.embed_query(question)
-        
+
         conn = self._get_connection()
         cursor = conn.cursor()
-        
+
         try:
             # Use cosine distance for similarity search with proper vector formatting
             search_query = f"""
-            SELECT {self._text_column}, {self._metadata_column}, 
+            SELECT {self._text_column}, {self._metadata_column},
                    ({self._vector_column} <=> %s::vector) as distance
             FROM {self._table_name}
             WHERE source_id = %s
             ORDER BY {self._vector_column} <=> %s::vector
             LIMIT %s;
             """
-            
+
             cursor.execute(search_query, (query_vector, self._source_id, query_vector, k))
             results = cursor.fetchall()
-            
-            
+
+            max_distance = None
+            if score_threshold is not None:
+                max_distance = 1.0 - float(score_threshold)
+
             documents = []
             for text, metadata, distance in results:
+                if max_distance is not None and distance is not None and distance > max_distance:
+                    continue
                 metadata = metadata or {}
                 documents.append(Document(page_content=text, metadata=metadata))
-            
+
             return documents
             
         except Exception as e:

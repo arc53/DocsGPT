@@ -19,6 +19,7 @@ from application.parser.connectors.connector_creator import ConnectorCreator
 from application.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
 from application.storage.db.repositories.idempotency import IdempotencyRepository
 from application.storage.db.repositories.sources import SourcesRepository
+from application.storage.db.source_config import SourceConfig
 from application.storage.db.session import db_readonly, db_session
 from application.storage.storage_creator import StorageCreator
 from application.stt.upload_limits import (
@@ -64,6 +65,33 @@ def _scoped_idempotency_key(idempotency_key, scope):
     if not idempotency_key or not scope:
         return None
     return f"{scope}:{idempotency_key}"
+
+
+def _parse_source_config(raw):
+    """Strict-validate an optional ``config`` JSON blob from the request.
+
+    Returns ``(config_dict_or_None, error_response)``. Absent/empty → ``None``
+    (worker uses classic defaults). Invalid JSON or a config that fails
+    ``SourceConfig`` validation → a 400 (strict-on-write, D7).
+
+    Dedup note: ``config`` does NOT participate in the idempotency key, so a
+    same-key retry with a different config is ignored — config is immutable for
+    the dedup window (the first request's config wins). Changing chunking later
+    requires an explicit re-ingest (D8).
+    """
+    if not raw:
+        return None, None
+    try:
+        parsed = json.loads(raw) if isinstance(raw, str) else raw
+        if not isinstance(parsed, dict):
+            raise ValueError("config must be a JSON object")
+        # Validate strictly; normalize to a plain dict for the Celery payload.
+        return SourceConfig.model_validate(parsed).model_dump(), None
+    except Exception:
+        return None, make_response(
+            jsonify({"success": False, "message": "Invalid source config"}),
+            400,
+        )
 
 
 def _claim_task_or_get_cached(key, task_name):
@@ -153,6 +181,11 @@ class UploadFile(Resource):
         idempotency_key, key_error = _read_idempotency_key()
         if key_error is not None:
             return key_error
+        source_config, config_error = _parse_source_config(
+            request.form.get("config")
+        )
+        if config_error is not None:
+            return config_error
         # User-scoped to avoid cross-user collisions; also feeds
         # ``_derive_source_id`` so uuid5 stays user-disjoint.
         scoped_key = _scoped_idempotency_key(idempotency_key, user)
@@ -270,6 +303,7 @@ class UploadFile(Resource):
                     "file_path": base_path,
                     "filename": dir_name,
                     "file_name_map": file_name_map,
+                    "config": source_config,
                     # Scoped so the worker dedup row matches the HTTP claim.
                     "idempotency_key": scoped_key or idempotency_key,
                     "source_id": str(source_uuid),
@@ -340,6 +374,11 @@ class UploadRemote(Resource):
         idempotency_key, key_error = _read_idempotency_key()
         if key_error is not None:
             return key_error
+        source_config, config_error = _parse_source_config(
+            request.form.get("config")
+        )
+        if config_error is not None:
+            return config_error
         scoped_key = _scoped_idempotency_key(idempotency_key, user)
         data = request.form
         required_fields = ["user", "source", "name", "data"]
@@ -425,6 +464,7 @@ class UploadRemote(Resource):
                         "folder_ids": folder_ids,
                         "recursive": config.get("recursive", False),
                         "retriever": config.get("retriever", "classic"),
+                        "config": source_config,
                         "idempotency_key": scoped_key or idempotency_key,
                         "source_id": str(source_uuid),
                     },
@@ -450,6 +490,7 @@ class UploadRemote(Resource):
                     "job_name": data["name"],
                     "user": user,
                     "loader": data["source"],
+                    "config": source_config,
                     "idempotency_key": scoped_key or idempotency_key,
                     "source_id": str(source_uuid),
                 },

@@ -72,6 +72,7 @@ def ingest(
     file_path,
     filename,
     file_name_map=None,
+    config=None,
     idempotency_key=None,
     source_id=None,
 ):
@@ -84,6 +85,7 @@ def ingest(
         filename,
         user,
         file_name_map=file_name_map,
+        config=config,
         idempotency_key=idempotency_key,
         source_id=source_id,
     )
@@ -94,10 +96,11 @@ def ingest(
 @with_idempotency(task_name="ingest_remote", on_poison=_emit_ingest_poison_event)
 def ingest_remote(
     self, source_data, job_name, user, loader,
-    idempotency_key=None, source_id=None,
+    config=None, idempotency_key=None, source_id=None,
 ):
     resp = remote_worker(
         self, source_data, job_name, user, loader,
+        config=config,
         idempotency_key=idempotency_key,
         source_id=source_id,
     )
@@ -208,6 +211,7 @@ def ingest_connector_task(
     operation_mode="upload",
     doc_id=None,
     sync_frequency="never",
+    config=None,
     idempotency_key=None,
     source_id=None,
 ):
@@ -226,6 +230,7 @@ def ingest_connector_task(
         operation_mode=operation_mode,
         doc_id=doc_id,
         sync_frequency=sync_frequency,
+        config=config,
         idempotency_key=idempotency_key,
         source_id=source_id,
     )

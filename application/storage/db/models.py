@@ -32,6 +32,7 @@ from sqlalchemy import (
     Table,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, JSONB, UUID
 
@@ -296,6 +297,9 @@ sources_table = Table(
     Column("model", Text),
     Column("type", Text),
     Column("metadata", JSONB, nullable=False, server_default="{}"),
+    # Per-source behavior contract (SourceConfig). Separate from ``metadata``
+    # (display/provenance). Empty ``{}`` parses to classic defaults.
+    Column("config", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     Column("retriever", Text),
     Column("sync_frequency", Text),
     Column("tokens", Text),

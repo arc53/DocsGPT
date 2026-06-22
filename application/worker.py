@@ -18,7 +18,7 @@ import requests
 
 from application.core.settings import settings
 from application.events.publisher import publish_user_event
-from application.parser.chunking import Chunker
+from application.parser.chunking_creator import ChunkerCreator
 from application.parser.connectors.connector_creator import ConnectorCreator
 from application.parser.embedding_pipeline import (
     assert_index_complete,
@@ -40,6 +40,7 @@ from application.storage.db.repositories.ingest_chunk_progress import (
 )
 from application.storage.db.repositories.sources import SourcesRepository
 from application.storage.db.session import db_readonly, db_session
+from application.storage.db.source_config import SourceConfig
 from application.storage.storage_creator import StorageCreator
 from application.utils import count_tokens_docs, num_tokens_from_string, safe_filename
 
@@ -400,6 +401,7 @@ def ingest_worker(
     user,
     retriever="classic",
     file_name_map=None,
+    config=None,
     idempotency_key=None,
     source_id=None,
 ):
@@ -416,6 +418,8 @@ def ingest_worker(
         user (str): Identifier for the user initiating the ingestion (original, unsanitized).
         retriever (str): Type of retriever to use for processing the documents.
         file_name_map (dict|str|None): Optional mapping of safe relative paths to original filenames.
+        config (dict|None): Per-source ``SourceConfig`` dict. ``None``/``{}`` →
+            classic defaults (byte-identical to prior behavior).
         idempotency_key (str|None): When provided, the ``source_id`` is derived
             deterministically from the key so a retried task reuses the same
             source row instead of duplicating it.
@@ -556,11 +560,13 @@ def ingest_worker(
                     directory_structure, file_name_map
                 )
 
-            chunker = Chunker(
-                chunking_strategy="classic_chunk",
-                max_tokens=MAX_TOKENS,
-                min_tokens=MIN_TOKENS,
-                duplicate_headers=False,
+            cfg = SourceConfig.parse(config)
+            chunker = ChunkerCreator.create_chunker(
+                cfg.chunking.strategy,
+                chunking_strategy=cfg.chunking.strategy,
+                max_tokens=cfg.chunking.max_tokens,
+                min_tokens=cfg.chunking.min_tokens,
+                duplicate_headers=cfg.chunking.duplicate_headers,
             )
             raw_docs = chunker.chunk(documents=raw_docs)
 
@@ -604,6 +610,8 @@ def ingest_worker(
             }
             if file_name_map:
                 file_data["file_name_map"] = json.dumps(file_name_map)
+            if config:
+                file_data["config"] = json.dumps(config)
 
             upload_index(vector_store_path, file_data)
             publish_user_event(
@@ -690,6 +698,9 @@ def reingest_source_worker(self, source_id, user):
             raise ValueError(f"Source {source_id} not found or access denied")
         source_id = str(source["id"])
         source_name = source.get("name") or ""
+        # Re-chunk with the source's persisted config (classic defaults
+        # when absent/empty), keeping reingest consistent with ingest.
+        cfg = SourceConfig.parse(source.get("config"))
 
         # Publish ``queued`` *after* canonicalising ``source_id`` so the
         # event references the same id as the source row. Trade-off
@@ -897,11 +908,12 @@ def reingest_source_worker(self, source_id, user):
                                 file_metadata=metadata_from_filename,
                             )
                             raw_docs_new = reader_new.load_data()
-                            chunker_new = Chunker(
-                                chunking_strategy="classic_chunk",
-                                max_tokens=MAX_TOKENS,
-                                min_tokens=MIN_TOKENS,
-                                duplicate_headers=False,
+                            chunker_new = ChunkerCreator.create_chunker(
+                                cfg.chunking.strategy,
+                                chunking_strategy=cfg.chunking.strategy,
+                                max_tokens=cfg.chunking.max_tokens,
+                                min_tokens=cfg.chunking.min_tokens,
+                                duplicate_headers=cfg.chunking.duplicate_headers,
                             )
                             chunked_new = chunker_new.chunk(documents=raw_docs_new)
 
@@ -1063,6 +1075,7 @@ def remote_worker(
     sync_frequency="never",
     operation_mode="upload",
     doc_id=None,
+    config=None,
     idempotency_key=None,
     source_id=None,
 ):
@@ -1113,11 +1126,13 @@ def remote_worker(
         remote_loader = RemoteCreator.create_loader(loader)
         raw_docs = remote_loader.load_data(source_data)
 
-        chunker = Chunker(
-            chunking_strategy="classic_chunk",
-            max_tokens=MAX_TOKENS,
-            min_tokens=MIN_TOKENS,
-            duplicate_headers=False,
+        cfg = SourceConfig.parse(config)
+        chunker = ChunkerCreator.create_chunker(
+            cfg.chunking.strategy,
+            chunking_strategy=cfg.chunking.strategy,
+            max_tokens=cfg.chunking.max_tokens,
+            min_tokens=cfg.chunking.min_tokens,
+            duplicate_headers=cfg.chunking.duplicate_headers,
         )
         docs = chunker.chunk(documents=raw_docs)
         docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
@@ -1228,6 +1243,8 @@ def remote_worker(
             "sync_frequency": sync_frequency,
             "directory_structure": json.dumps(directory_structure),
         }
+        if config:
+            file_data["config"] = json.dumps(config)
 
         if operation_mode == "sync":
             last_sync_now = datetime.datetime.now(datetime.timezone.utc)
@@ -1586,6 +1603,7 @@ def ingest_connector(
     operation_mode: str = "upload",
     doc_id=None,
     sync_frequency: str = "never",
+    config=None,
     idempotency_key=None,
     source_id=None,
 ) -> Dict[str, Any]:
@@ -1604,6 +1622,8 @@ def ingest_connector(
         operation_mode: "upload" for initial ingestion, "sync" for incremental sync
         doc_id: Document ID for sync operations (required when operation_mode="sync")
         sync_frequency: How often to sync ("never", "daily", "weekly", "monthly")
+        config: Per-source ``SourceConfig`` dict. ``None``/``{}`` → classic
+            defaults (byte-identical to prior behavior).
         idempotency_key: When provided, the ``source_id`` is derived
             deterministically so a retried upload reuses the same source row.
         source_id: When supplied, the worker uses it verbatim so SSE envelopes
@@ -1733,11 +1753,13 @@ def ingest_connector(
             directory_structure = getattr(reader, "directory_structure", {})
 
             # Step 4: Process documents (chunking, embedding, etc.)
-            chunker = Chunker(
-                chunking_strategy="classic_chunk",
-                max_tokens=MAX_TOKENS,
-                min_tokens=MIN_TOKENS,
-                duplicate_headers=False,
+            cfg = SourceConfig.parse(config)
+            chunker = ChunkerCreator.create_chunker(
+                cfg.chunking.strategy,
+                chunking_strategy=cfg.chunking.strategy,
+                max_tokens=cfg.chunking.max_tokens,
+                min_tokens=cfg.chunking.min_tokens,
+                duplicate_headers=cfg.chunking.duplicate_headers,
             )
             raw_docs = chunker.chunk(documents=raw_docs)
 
@@ -1795,6 +1817,8 @@ def ingest_connector(
                 "directory_structure": json.dumps(directory_structure),
                 "sync_frequency": sync_frequency,
             }
+            if config:
+                file_data["config"] = json.dumps(config)
 
             file_data["last_sync"] = datetime.datetime.now(datetime.timezone.utc)
 

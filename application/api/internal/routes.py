@@ -68,6 +68,16 @@ def upload_index_files():
     file_path = request.form.get("file_path")
     directory_structure = request.form.get("directory_structure")
     file_name_map = request.form.get("file_name_map")
+    config = request.form.get("config")
+
+    if config:
+        try:
+            config = json.loads(config)
+        except Exception:
+            logger.error("Error parsing config")
+            config = None
+    else:
+        config = None
 
     if directory_structure:
         try:
@@ -125,6 +135,11 @@ def upload_index_files():
     }
     if file_name_map is not None:
         update_fields["file_name_map"] = file_name_map
+    # Only persist ``config`` when supplied so a re-ingest that omits it
+    # doesn't clobber an existing source's config back to ``{}``. Config is
+    # treated as immutable for the ingest dedup window (see upload.py).
+    if config is not None:
+        update_fields["config"] = config
 
     with db_session() as conn:
         repo = SourcesRepository(conn)
@@ -141,6 +156,7 @@ def upload_index_files():
                 source_id=source_id if looks_like_uuid(source_id) else None,
                 user_id=user,
                 type=type,
+                config=config,
                 tokens=tokens,
                 retriever=retriever,
                 remote_data=remote_data,
