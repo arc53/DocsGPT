@@ -169,6 +169,21 @@ class BaseVectorStore(ABC):
         """Delete a specific chunk from the vectorstore"""
         pass
 
+    def delete_chunks_by_source_path(self, path) -> int:
+        """Delete every chunk whose ``metadata.source`` equals ``path``.
+
+        Default implementation iterates ``get_chunks()`` and deletes the
+        matches via ``delete_chunk()`` — works for any store. Override with a
+        single targeted statement where the store supports it. Returns the
+        number of chunks deleted.
+        """
+        deleted = 0
+        for chunk in self.get_chunks() or []:
+            if (chunk.get("metadata") or {}).get("source") == path:
+                if self.delete_chunk(chunk.get("doc_id")):
+                    deleted += 1
+        return deleted
+
     def is_azure_configured(self):
         return (
             settings.OPENAI_API_BASE

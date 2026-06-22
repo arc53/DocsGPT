@@ -332,6 +332,41 @@ class TestPGVectorStoreDeleteChunk:
 
 
 @pytest.mark.unit
+class TestPGVectorStoreDeleteChunksBySourcePath:
+    def test_targeted_delete_is_parameterized(self):
+        store, mock_conn, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.rowcount = 3
+
+        deleted = store.delete_chunks_by_source_path("/docs/page.md")
+
+        assert deleted == 3
+        sql, params = mock_cursor.execute.call_args[0]
+        # Single targeted DELETE; the path is a bound param, never interpolated.
+        assert "/docs/page.md" not in sql
+        assert "DELETE FROM" in sql
+        assert "metadata->>'source' = %s" in sql
+        assert "source_id = %s" in sql
+        assert params == ("src1", "/docs/page.md")
+        mock_conn.commit.assert_called_once()
+
+    def test_returns_zero_when_no_match(self):
+        store, mock_conn, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.rowcount = 0
+
+        assert store.delete_chunks_by_source_path("/missing.md") == 0
+        mock_conn.commit.assert_called_once()
+
+    def test_rolls_back_and_raises_on_error(self):
+        store, mock_conn, mock_cursor, _ = _make_store()
+        mock_cursor.execute.side_effect = Exception("delete failed")
+
+        with pytest.raises(Exception, match="delete failed"):
+            store.delete_chunks_by_source_path("/x.md")
+
+        mock_conn.rollback.assert_called_once()
+
+
+@pytest.mark.unit
 class TestPGVectorStoreConnection:
     def test_get_connection_creates_new_when_closed(self):
         store, mock_conn, _, _ = _make_store()

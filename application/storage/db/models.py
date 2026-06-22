@@ -415,6 +415,34 @@ memories_table = Table(
     UniqueConstraint("user_id", "tool_id", "path", name="memories_user_tool_path_uidx"),
 )
 
+# Authoritative storage for an LLM-editable wiki source (config.kind="wiki").
+# Source-scoped (team-shareable) unlike per-user ``memories``; the vector store
+# is a derived index re-embedded per page (``embed_status`` tracks freshness).
+wiki_pages_table = Table(
+    "wiki_pages",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("source_id", UUID(as_uuid=True), ForeignKey("sources.id", ondelete="CASCADE"), nullable=False),
+    Column("path", Text, nullable=False),
+    Column("title", Text),
+    Column("content", Text, nullable=False),
+    Column("token_count", Integer),
+    Column("version", Integer, nullable=False, server_default="1"),
+    Column("content_hash", Text),
+    Column("embed_status", Text, nullable=False, server_default="pending"),
+    Column("updated_by", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint("source_id", "path", name="wiki_pages_source_path_uidx"),
+)
+
+Index(
+    "wiki_pages_source_path_prefix_idx",
+    wiki_pages_table.c.source_id,
+    wiki_pages_table.c.path,
+    postgresql_ops={"path": "text_pattern_ops"},
+)
+
 todos_table = Table(
     "todos",
     metadata,
