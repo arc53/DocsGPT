@@ -7,7 +7,7 @@ import DriveIcon from '../../assets/drive.svg';
 import S3Icon from '../../assets/s3.svg';
 import SharePoint from '../../assets/sharepoint.svg';
 import ConfluenceIcon from '../../assets/confluence.svg';
-import BookIcon from '../../assets/book.svg';
+import BookIcon from '../../assets/book-mono.svg';
 
 export type IngestorType =
   | 'confluence'
