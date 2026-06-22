@@ -17,7 +17,7 @@ import Users from './Users';
 const TABS = [
   { key: 'overview', label: 'Overview', path: '/admin' },
   { key: 'users', label: 'Users', path: '/admin/users' },
-  { key: 'admins', label: 'Admins', path: '/admin/admins' },
+  { key: 'admins', label: 'Admins', path: '/admin/roles' },
   { key: 'usage', label: 'Usage', path: '/admin/usage' },
   { key: 'audit', label: 'Audit', path: '/admin/audit' },
 ];
@@ -61,7 +61,7 @@ export default function Admin() {
         <Routes>
           <Route index element={<Overview />} />
           <Route path="users" element={<Users />} />
-          <Route path="admins" element={<Admins />} />
+          <Route path="roles" element={<Admins />} />
           <Route path="usage" element={<Usage />} />
           <Route path="audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />

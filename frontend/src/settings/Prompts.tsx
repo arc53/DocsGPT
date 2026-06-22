@@ -309,19 +309,20 @@ export default function Prompts({
                       />
                     </>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setOpen(!open)}
-                    className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20 focus-visible:ring-ring/50 my-auto mr-2.5 ml-1 shrink-0 rounded-full p-1.5 transition-colors outline-none focus-visible:ring-[3px]"
-                    aria-label="Toggle prompt list"
-                  >
-                    <ChevronDown
-                      className={cn(
-                        'h-4 w-4 transition-transform',
-                        open && 'rotate-180',
-                      )}
-                    />
-                  </button>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20 focus-visible:ring-ring/50 my-auto mr-2.5 ml-1 shrink-0 rounded-full p-1.5 transition-colors outline-none focus-visible:ring-[3px]"
+                      aria-label="Toggle prompt list"
+                    >
+                      <ChevronDown
+                        className={cn(
+                          'h-4 w-4 transition-transform',
+                          open && 'rotate-180',
+                        )}
+                      />
+                    </button>
+                  </PopoverTrigger>
                 </div>
               </PopoverAnchor>
               <PopoverContent
