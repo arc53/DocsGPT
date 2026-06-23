@@ -94,7 +94,37 @@ class EmbeddingsSingleton:
     _instances = {}
 
     @staticmethod
+    def _remote_instance(embeddings_name, embeddings_key=None):
+        """Return a cached ``RemoteEmbeddings`` for the configured remote API.
+
+        Centralizes the ``EMBEDDINGS_BASE_URL`` dispatch so every caller —
+        including code that calls :meth:`get_instance` directly (GraphRAG,
+        semantic chunking) rather than via
+        :meth:`BaseVectorStore._get_embeddings` — routes to the remote
+        embeddings server instead of attempting a local model download.
+
+        Args:
+            embeddings_name: Model name forwarded to the remote API.
+            embeddings_key: Optional API key; falls back to
+                ``settings.EMBEDDINGS_KEY`` when not provided.
+
+        Returns:
+            RemoteEmbeddings: Shared instance keyed by base URL and model name.
+        """
+        api_key = embeddings_key if embeddings_key is not None else settings.EMBEDDINGS_KEY
+        cache_key = f"remote_{settings.EMBEDDINGS_BASE_URL}_{embeddings_name}"
+        if cache_key not in EmbeddingsSingleton._instances:
+            EmbeddingsSingleton._instances[cache_key] = RemoteEmbeddings(
+                api_url=settings.EMBEDDINGS_BASE_URL,
+                model_name=embeddings_name,
+                api_key=api_key,
+            )
+        return EmbeddingsSingleton._instances[cache_key]
+
+    @staticmethod
     def get_instance(embeddings_name, *args, **kwargs):
+        if settings.EMBEDDINGS_BASE_URL:
+            return EmbeddingsSingleton._remote_instance(embeddings_name)
         if embeddings_name not in EmbeddingsSingleton._instances:
             EmbeddingsSingleton._instances[embeddings_name] = (
                 EmbeddingsSingleton._create_instance(embeddings_name, *args, **kwargs)
@@ -197,14 +227,7 @@ class BaseVectorStore(ABC):
             logging.info(
                 f"Using remote embeddings API at: {settings.EMBEDDINGS_BASE_URL}"
             )
-            cache_key = f"remote_{settings.EMBEDDINGS_BASE_URL}_{embeddings_name}"
-            if cache_key not in EmbeddingsSingleton._instances:
-                EmbeddingsSingleton._instances[cache_key] = RemoteEmbeddings(
-                    api_url=settings.EMBEDDINGS_BASE_URL,
-                    model_name=embeddings_name,
-                    api_key=embeddings_key,
-                )
-            return EmbeddingsSingleton._instances[cache_key]
+            return EmbeddingsSingleton._remote_instance(embeddings_name, embeddings_key)
 
         if embeddings_name == "openai_text-embedding-ada-002":
             if self.is_azure_configured():
