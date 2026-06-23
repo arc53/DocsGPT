@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  Network,
   Search as SearchIcon,
   SlidersHorizontal,
   Users,
@@ -52,6 +53,7 @@ import ConnectorTree from '../components/ConnectorTree';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
 import ConvertToWikiModal from './ConvertToWikiModal';
+import EnableGraphRAGModal from './EnableGraphRAGModal';
 import SourceConfigModal from './SourceConfigModal';
 
 type SourceMenuOption = {
@@ -120,6 +122,15 @@ export default function Sources({
   const [documentToConvert, setDocumentToConvert] = useState<Doc | null>(null);
   const [convertModalState, setConvertModalState] =
     useState<ActiveState>('INACTIVE');
+  const [documentToGraphRAG, setDocumentToGraphRAG] = useState<Doc | null>(
+    null,
+  );
+  const [graphRAGModalState, setGraphRAGModalState] =
+    useState<ActiveState>('INACTIVE');
+  const [graphRAGAvailable, setGraphRAGAvailable] = useState<boolean>(false);
+  const [buildingGraphIds, setBuildingGraphIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [syncMenuState, setSyncMenuState] = useState<{
     isOpen: boolean;
     docId: string | null;
@@ -338,6 +349,7 @@ export default function Sources({
     document: Doc,
   ): SourceMenuOption[] => {
     const isWiki = document.config?.kind === 'wiki' || document.type === 'wiki';
+    const isGraphRAG = document.config?.kind === 'graphrag';
     // 'team' viewers cannot write; convert is owner/editor only.
     const canEdit =
       document.ownership !== 'team' || document.team_access === 'editor';
@@ -430,6 +442,28 @@ export default function Sources({
       });
     }
 
+    if (
+      document.id &&
+      !isWiki &&
+      !isGraphRAG &&
+      canEdit &&
+      graphRAGAvailable &&
+      document.ingestStatus !== 'processing' &&
+      document.ingestStatus !== 'failed'
+    ) {
+      actions.push({
+        icon: Network,
+        label: t('settings.sources.graphrag.enable.action'),
+        onClick: () => {
+          setDocumentToGraphRAG(document);
+          setGraphRAGModalState('ACTIVE');
+        },
+        iconWidth: 16,
+        iconHeight: 16,
+        variant: 'default',
+      });
+    }
+
     // Sharing is an owner-only action: hide it for sources shared into the
     // user's workspace by a team.
     if (document.ownership !== 'team' && document.id) {
@@ -461,6 +495,20 @@ export default function Sources({
   useEffect(() => {
     refreshDocs(undefined, 1, rowsPerPage);
   }, [debouncedSearchTerm]);
+
+  useEffect(() => {
+    let cancelled = false;
+    userService
+      .getConfig()
+      .then((response) => response.json())
+      .then((config) => {
+        if (!cancelled) setGraphRAGAvailable(!!config?.graphrag_available);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return documentToView ? (
     <div className="mt-8 flex flex-col">
@@ -712,6 +760,18 @@ export default function Sources({
                             {t('settings.sources.ingestProcessing')}
                           </span>
                         )}
+                        {document.config?.kind === 'graphrag' && (
+                          <span className="bg-muted-foreground/10 text-muted-foreground flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium">
+                            <Network
+                              size={11}
+                              strokeWidth={2}
+                              aria-hidden="true"
+                            />
+                            {document.id && buildingGraphIds.has(document.id)
+                              ? t('settings.sources.graphrag.building')
+                              : t('settings.sources.graphrag.badge')}
+                          </span>
+                        )}
                         <div className="flex items-center gap-2">
                           <img
                             src={CalendarIcon}
@@ -820,6 +880,32 @@ export default function Sources({
         }}
         document={documentToConvert}
         onConverted={() => refreshDocs(undefined, currentPage, rowsPerPage)}
+      />
+
+      <EnableGraphRAGModal
+        modalState={graphRAGModalState}
+        setModalState={(state) => {
+          setGraphRAGModalState(state);
+          if (state === 'INACTIVE') {
+            const closedId = documentToGraphRAG?.id;
+            if (closedId) {
+              setBuildingGraphIds((prev) => {
+                const next = new Set(prev);
+                next.delete(closedId);
+                return next;
+              });
+            }
+            setDocumentToGraphRAG(null);
+          }
+        }}
+        document={documentToGraphRAG}
+        onEnabled={() => {
+          const enabledId = documentToGraphRAG?.id;
+          if (enabledId) {
+            setBuildingGraphIds((prev) => new Set(prev).add(enabledId));
+          }
+          refreshDocs(undefined, currentPage, rowsPerPage);
+        }}
       />
     </div>
   );

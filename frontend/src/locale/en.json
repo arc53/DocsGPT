@@ -149,6 +149,33 @@
           }
         }
       },
+      "graphrag": {
+        "badge": "GraphRAG",
+        "building": "Building graph…",
+        "enable": {
+          "action": "Enable GraphRAG",
+          "title": "Enable GraphRAG",
+          "intro": "Build a knowledge graph over \"{{name}}\" so agents can reason across linked entities and relationships.",
+          "introGeneric": "Build a knowledge graph over this source so agents can reason across linked entities and relationships.",
+          "costExtraction": "Entities and relationships are extracted by running an LLM over this source's chunks.",
+          "costCost": "This makes one LLM call per chunk, so it consumes tokens and may take a while on large sources.",
+          "costPgvector": "GraphRAG is available only with the pgvector store.",
+          "confirm": "Enable GraphRAG",
+          "inProgress": "Building graph…",
+          "summaryNodes_one": "{{count}} entity",
+          "summaryNodes_other": "{{count}} entities",
+          "summaryEdges_one": "{{count}} relationship",
+          "summaryEdges_other": "{{count}} relationships",
+          "summaryChunks_one": "{{count}} chunk processed",
+          "summaryChunks_other": "{{count}} chunks processed",
+          "done": "Done",
+          "errors": {
+            "generic": "Enabling GraphRAG failed. Please try again.",
+            "forbidden": "You don't have permission to enable GraphRAG on this source.",
+            "conflict": "This source is still ingesting. Wait for it to finish before enabling GraphRAG."
+          }
+        }
+      },
       "editConfig": "Source settings",
       "shareWithTeam": "Share with team",
       "deleteWarning": "Are you sure you want to delete \"{{name}}\"?",

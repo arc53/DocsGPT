@@ -126,9 +126,12 @@ def health():
 
 @app.route("/api/config")
 def get_config():
+    from application.graphrag import graphrag_available
+
     response = {
         "auth_type": settings.AUTH_TYPE,
         "requires_auth": settings.AUTH_TYPE in ["simple_jwt", "session_jwt", "oidc"],
+        "graphrag_available": graphrag_available(),
     }
     if settings.AUTH_TYPE == "oidc":
         response["oidc"] = {

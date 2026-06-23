@@ -58,6 +58,7 @@ const endpoints = {
     SOURCE_CONFIG: (id: string) => `/api/sources/${id}/config`,
     CREATE_WIKI: '/api/sources/wiki',
     CONVERT_TO_WIKI: (id: string) => `/api/sources/${id}/wiki/convert`,
+    ENABLE_GRAPHRAG: (id: string) => `/api/sources/${id}/graphrag/enable`,
     TASK_STATUS: (taskId: string) => `/api/task_status?task_id=${taskId}`,
     WIKI_PAGES: (id: string) => `/api/sources/${id}/wiki/pages`,
     WIKI_PAGE: (id: string, path: string) =>
