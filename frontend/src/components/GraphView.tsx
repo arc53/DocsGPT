@@ -193,7 +193,7 @@ const GraphView: React.FC<GraphViewProps> = ({
               edges: data.links.length,
             })}
           </p>
-          <div className="flex flex-col gap-4 lg:flex-row">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
             <div
               ref={containerRef}
               className="border-border bg-card relative min-h-[480px] flex-1 overflow-hidden rounded-xl border"
@@ -268,7 +268,7 @@ const GraphView: React.FC<GraphViewProps> = ({
               )}
             </div>
 
-            <aside className="border-border bg-card flex w-full shrink-0 flex-col rounded-xl border p-4 lg:w-80">
+            <aside className="border-border bg-card flex max-h-[480px] w-full shrink-0 flex-col overflow-y-auto rounded-xl border p-4 lg:w-80">
               {loadingNode ? (
                 <SkeletonLoader count={3} />
               ) : selectedNode ? (
