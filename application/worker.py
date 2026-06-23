@@ -57,6 +57,56 @@ MAX_TOKENS = 1250
 RECURSION_DEPTH = 2
 INGEST_HEARTBEAT_INTERVAL_SECONDS = 30
 
+
+def graph_extraction_key(source_id, updated_at) -> str:
+    """Build the extract_graph idempotency key for a source's current state.
+
+    The key embeds ``updated_at`` (the trigger-maintained column) so it
+    changes whenever re-extraction is warranted — a re-ingest or re-enable
+    bumps ``updated_at`` and yields a fresh key, bypassing the 24h completed
+    cache so the worker re-runs. Two enqueues for the same state share a key
+    and dedupe. ``updated_at`` is stringified deterministically.
+    """
+    return f"extract-graph:{source_id}:{updated_at}"
+
+
+def _source_updated_at(source) -> str:
+    """Return the source's ``updated_at`` (falling back to ``date``) as a string."""
+    if not source:
+        return ""
+    stamp = source.get("updated_at") or source.get("date")
+    return str(stamp) if stamp is not None else ""
+
+
+def _maybe_enqueue_graph_extraction(cfg, source_id, user):
+    """Enqueue graph extraction after embed for a graphrag source (D28).
+
+    The graph lights up asynchronously once chunks are embedded, so ClassicRAG
+    works immediately. A no-op for non-graphrag sources or when GraphRAG is
+    unavailable. The enqueue is isolated so a broker hiccup can never fail an
+    otherwise-successful ingest.
+    """
+    if cfg.kind != "graphrag":
+        return
+    from application.graphrag import graphrag_available
+
+    if not graphrag_available():
+        return
+
+    source_id = str(source_id)
+    try:
+        from application.api.user.tasks import extract_graph
+
+        with db_readonly() as conn:
+            source = SourcesRepository(conn).get_any(source_id, user)
+        key = graph_extraction_key(source_id, _source_updated_at(source))
+        extract_graph.delay(source_id, user, idempotency_key=key)
+    except Exception as e:
+        logging.warning(
+            f"Failed to enqueue graph extraction for {source_id}: {e}",
+            exc_info=True,
+        )
+
 # Re-exported here for backward-compatible imports
 # (``from application.worker import _derive_source_id`` /
 # ``DOCSGPT_INGEST_NAMESPACE``) from tests and any other in-tree callers.
@@ -654,6 +704,7 @@ def ingest_worker(
                 },
                 scope={"kind": "source", "id": source_id_for_events},
             )
+            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
     except Exception as e:
         logging.error(f"Error in ingest_worker: {e}", exc_info=True)
         publish_user_event(
@@ -1033,6 +1084,7 @@ def reingest_source_worker(self, source_id, user):
                     completed_payload,
                     scope={"kind": "source", "id": source_id},
                 )
+                _maybe_enqueue_graph_extraction(cfg, source_id, user)
 
                 return {
                     "source_id": source_id,
@@ -1277,6 +1329,7 @@ def remote_worker(
             },
             scope={"kind": "source", "id": source_id_for_events},
         )
+        _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
         publish_user_event(
@@ -1862,6 +1915,7 @@ def ingest_connector(
                 },
                 scope={"kind": "source", "id": source_id_for_events},
             )
+            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
 
             return {
                 "user": user,
@@ -2287,3 +2341,50 @@ def convert_source_to_wiki_worker(self, source_id, user):
         "pages_created": len(created_pages),
         "skipped": skipped,
     }
+
+
+def extract_graph_worker(self, source_id, user):
+    """Build a graphrag source's knowledge graph from its embedded chunks (D28).
+
+    Loads the source, fetches its chunks from the vector store, and runs the
+    per-chunk LLM extraction pipeline. The chunks carry ``doc_id`` + ``text``,
+    matching the retrievable ids the extraction pipeline links against. No-ops
+    cleanly when GraphRAG is unavailable or the source has no chunks yet.
+
+    Args:
+        self: Celery task instance.
+        source_id: Source whose graph is being built.
+        user: Owner identifier used to load the source and attribute token usage.
+
+    Returns:
+        ``{"status": "unavailable"}`` when GraphRAG is off, otherwise the
+        extraction summary ``{nodes, edges, chunks_processed, ...}``.
+    """
+    from application.graphrag import graphrag_available
+    from application.graphrag.extraction import extract_graph_for_source
+    from application.vectorstore.vector_creator import VectorCreator
+
+    source_id = str(source_id)
+
+    if not graphrag_available():
+        return {"status": "unavailable"}
+
+    with db_readonly() as conn:
+        source = SourcesRepository(conn).get_any(source_id, user)
+    if not source:
+        raise ValueError(f"Source {source_id} not found or access denied")
+    source_id = str(source["id"])
+    cfg = SourceConfig.parse(source.get("config"))
+
+    store = VectorCreator.create_vectorstore(
+        settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
+    )
+    chunks = store.get_chunks() or []
+
+    return extract_graph_for_source(
+        source_id,
+        user,
+        chunks,
+        config=cfg,
+        request_id=getattr(self.request, "id", None),
+    )

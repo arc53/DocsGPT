@@ -201,3 +201,19 @@ class TestGraphConfig:
         # Missing graph block still yields the default GraphConfig.
         cfg = SourceConfig.parse({"kind": "graphrag"})
         assert cfg.graph == GraphConfig()
+
+    def test_graph_enabled_sets_kind_and_retriever(self):
+        out = SourceConfig().graph_enabled()
+        assert out["kind"] == "graphrag"
+        assert out["retrieval"]["retriever"] == "graphrag"
+        # Round-trips through strict validation.
+        assert SourceConfig.model_validate(out).kind == "graphrag"
+
+    def test_graph_enabled_preserves_other_fields(self):
+        cfg = SourceConfig.parse(
+            {"retrieval": {"chunks": 7, "exposure": "agentic_tool"}}
+        )
+        out = cfg.graph_enabled()
+        assert out["retrieval"]["chunks"] == 7
+        assert out["retrieval"]["exposure"] == "agentic_tool"
+        assert out["retrieval"]["retriever"] == "graphrag"

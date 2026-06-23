@@ -12,6 +12,7 @@ from application.agents.tools.path_utils import validate_tool_path
 from application.api import api
 from application.api.user.tasks import (
     convert_source_to_wiki,
+    extract_graph,
     reembed_wiki_page,
     reingest_source_task,
     sync_source,
@@ -22,6 +23,7 @@ from application.api.user.team_sharing import (
     visible_with_access,
 )
 from application.core.settings import settings
+from application.graphrag import graphrag_available
 from application.parser.remote.remote_creator import normalize_remote_data
 from application.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
@@ -1080,6 +1082,87 @@ class ConvertSourceToWiki(Resource):
         except Exception as err:
             current_app.logger.error(
                 f"Error starting wiki conversion for {source_id}: {err}",
+                exc_info=True,
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(
+            jsonify({"success": True, "task_id": task.id}), 200
+        )
+
+
+@sources_ns.route("/sources/<string:source_id>/graphrag/enable")
+class EnableSourceGraphRAG(Resource):
+    @api.doc(
+        description="Enable GraphRAG on a source: flips its config to graphrag "
+        "mode and enqueues graph extraction over its embedded chunks. Requires "
+        "VECTOR_STORE=pgvector and GRAPHRAG_ENABLED. Write access required "
+        "(owner/editor). The config kind cannot be set to graphrag via the "
+        "config PATCH endpoint."
+    )
+    def post(self, source_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        if not graphrag_available():
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": (
+                            "GraphRAG requires VECTOR_STORE=pgvector and "
+                            "GRAPHRAG_ENABLED."
+                        ),
+                    }
+                ),
+                400,
+            )
+        user = decoded_token.get("sub")
+        try:
+            with db_session() as conn:
+                owner = effective_write_owner(conn, "source", source_id, user)
+                if not owner:
+                    return make_response(
+                        jsonify(
+                            {"success": False, "message": "Source not accessible"}
+                        ),
+                        403,
+                    )
+                doc = SourcesRepository(conn).get_any(source_id, owner)
+                if doc is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Source not found"}),
+                        404,
+                    )
+                resolved_source_id = str(doc["id"])
+                cfg = SourceConfig.parse(doc.get("config"))
+                repo = SourcesRepository(conn)
+                repo.update(
+                    resolved_source_id, owner, {"config": cfg.graph_enabled()}
+                )
+                # Re-read after the config write — it bumps ``updated_at``,
+                # which keys the extraction so each enable re-runs.
+                updated = repo.get_any(resolved_source_id, owner)
+        except Exception as err:
+            current_app.logger.error(
+                f"Error enabling GraphRAG for {source_id}: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        try:
+            from application.worker import (
+                _source_updated_at,
+                graph_extraction_key,
+            )
+
+            task = extract_graph.delay(
+                resolved_source_id,
+                owner,
+                idempotency_key=graph_extraction_key(
+                    resolved_source_id, _source_updated_at(updated)
+                ),
+            )
+        except Exception as err:
+            current_app.logger.error(
+                f"Error starting GraphRAG extraction for {source_id}: {err}",
                 exc_info=True,
             )
             return make_response(jsonify({"success": False}), 400)

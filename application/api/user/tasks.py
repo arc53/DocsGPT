@@ -137,6 +137,15 @@ def convert_source_to_wiki(self, source_id, user, idempotency_key=None):
     return resp
 
 
+@celery.task(**DURABLE_TASK)
+@with_idempotency(task_name="extract_graph")
+def extract_graph(self, source_id, user, idempotency_key=None):
+    from application.worker import extract_graph_worker
+
+    resp = extract_graph_worker(self, source_id, user)
+    return resp
+
+
 # Beat-driven dispatch tasks default to ``acks_late=False``: a SIGKILL
 # of a beat tick is harmless to redeliver only if the dispatch itself is
 # idempotent. We keep these early-ACK so the broker doesn't replay a

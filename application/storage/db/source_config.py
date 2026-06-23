@@ -161,6 +161,18 @@ class SourceConfig(BaseModel):
             new_config["retrieval"]["exposure"] = "agentic_tool"
         return new_config
 
+    def graph_enabled(self) -> dict:
+        """Return a config dict flipped to GraphRAG mode (D28).
+
+        Sets ``kind="graphrag"`` so ingest paths run graph extraction and
+        ``retrieval.retriever="graphrag"`` so the Dispatcher routes queries to
+        the graph retriever. All other fields are preserved.
+        """
+        new_config = self.model_dump()
+        new_config["kind"] = "graphrag"
+        new_config["retrieval"]["retriever"] = "graphrag"
+        return new_config
+
     @classmethod
     def parse(cls, raw: Optional[dict]) -> "SourceConfig":
         """Lenient read: return all-defaults for ``{}``/``None``.
