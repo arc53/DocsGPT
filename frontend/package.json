@@ -81,7 +81,7 @@
     "eslint-plugin-unused-imports": "^4.1.4",
     "happy-dom": "^17.6.3",
     "husky": "^9.1.7",
-    "lint-staged": "^16.4.0",
+    "lint-staged": "^17.0.7",
     "postcss": "^8.5.12",
     "prettier": "^3.5.3",
     "prettier-plugin-tailwindcss": "^0.7.2",
