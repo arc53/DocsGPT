@@ -115,3 +115,58 @@ class TestExtractGraphWorker:
         extract.assert_called_once()
         assert extract.call_args.args[2] == []
         assert result["chunks_processed"] == 0
+
+    def test_publishes_completed_event(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        from application import worker
+
+        source_id = _seed_source(pg_conn)
+        _patch_store(monkeypatch, [{"doc_id": "c1", "text": "alpha"}])
+        monkeypatch.setattr(
+            "application.graphrag.graphrag_available", lambda: True
+        )
+        monkeypatch.setattr(
+            "application.graphrag.extraction.extract_graph_for_source",
+            MagicMock(return_value={"nodes": 1, "edges": 0, "chunks_processed": 1}),
+        )
+        events = []
+        monkeypatch.setattr(
+            worker, "publish_user_event",
+            lambda user, etype, payload, **kw: events.append((etype, payload)),
+        )
+
+        worker.extract_graph_worker(task_self, source_id, "alice")
+
+        types = [e[0] for e in events]
+        assert "graph.extract.progress" in types
+        assert types[-1] == "graph.extract.completed"
+        assert events[-1][1]["nodes"] == 1
+
+    def test_publishes_failed_event_on_error(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch
+    ):
+        from application import worker
+
+        source_id = _seed_source(pg_conn)
+        _patch_store(monkeypatch, [{"doc_id": "c1", "text": "alpha"}])
+        monkeypatch.setattr(
+            "application.graphrag.graphrag_available", lambda: True
+        )
+
+        def _boom(*a, **kw):
+            raise RuntimeError("extraction blew up")
+
+        monkeypatch.setattr(
+            "application.graphrag.extraction.extract_graph_for_source", _boom
+        )
+        events = []
+        monkeypatch.setattr(
+            worker, "publish_user_event",
+            lambda user, etype, payload, **kw: events.append((etype, payload)),
+        )
+
+        with pytest.raises(RuntimeError):
+            worker.extract_graph_worker(task_self, source_id, "alice")
+
+        assert "graph.extract.failed" in [e[0] for e in events]

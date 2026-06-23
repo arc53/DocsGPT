@@ -1,12 +1,6 @@
 import { forceCollide, type SimulationNodeDatum } from 'd3-force';
 import { Network, X } from 'lucide-react';
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
@@ -23,9 +17,8 @@ import {
   GraphOverview,
   collideRadius,
   maxDegree,
-  nodeLabelEl,
+  nodeAtPoint,
   nodeRadius,
-  pointerAreaRadius,
   toForceGraphData,
 } from './graphViewUtils';
 
@@ -36,6 +29,7 @@ interface GraphViewProps {
 }
 
 const GRAPH_LIMIT = 100;
+const HIT_SLOP = 4;
 
 const GraphView: React.FC<GraphViewProps> = ({
   docId,
@@ -56,14 +50,6 @@ const GraphView: React.FC<GraphViewProps> = ({
   const hoveredNodeIdRef = useRef<string | null>(null);
   const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
   const [size, setSize] = useState({ width: 0, height: 480 });
-  // Bumped after zoom/pan settles to re-supply nodePointerAreaPaint, which makes
-  // force-graph repaint the hit-test (pick) canvas immediately. The engine
-  // otherwise throttles that repaint by 800ms, leaving the pick discs at their
-  // pre-zoom positions — so just after a zoom the cursor reads stale/empty
-  // pixels and hover/click silently fail. The miss scales with the screen
-  // distance a node moved (largest for the biggest, highest-degree hubs) and is
-  // doubled on Retina, where each pick reads a single device pixel.
-  const [pickRefresh, setPickRefresh] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,23 +111,45 @@ const GraphView: React.FC<GraphViewProps> = ({
       .finally(() => setLoadingNode(false));
   };
 
-  // Paints the hit-test (pick) disc for a node. Its identity is keyed on
-  // `pickRefresh` so re-supplying it after a zoom/pan settles forces force-graph
-  // to repaint the pick canvas immediately rather than after its 800ms throttle.
-  const nodePointerAreaPaint = useCallback(
-    (node: object, color: string, ctx: CanvasRenderingContext2D) => {
-      const graphNode = node as GraphNode & { x?: number; y?: number };
-      if (graphNode.x == null || graphNode.y == null) return;
-      const r = pointerAreaRadius(nodeRadius(graphNode.degree, maxNodeDegree));
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(graphNode.x, graphNode.y, r, 0, 2 * Math.PI);
-      ctx.fill();
-    },
-    // pickRefresh is an intentional dependency: bumping it re-supplies this
-    // callback, which makes force-graph flush the pick canvas after a zoom/pan.
-    [maxNodeDegree, pickRefresh],
-  );
+  // Geometric hit test, immune to canvas read-back farbling (e.g. Brave): map
+  // the pointer into graph coordinates and pick the nearest node directly.
+  const pickNodeAt = (clientX: number, clientY: number): GraphNode | null => {
+    const fg = fgRef.current;
+    if (!fg || !containerRef.current) return null;
+    const rect = containerRef.current.getBoundingClientRect();
+    const g = fg.screen2GraphCoords(clientX - rect.left, clientY - rect.top);
+    return nodeAtPoint(data.nodes, g.x, g.y, maxNodeDegree, HIT_SLOP);
+  };
+
+  const repaint = () => {
+    const fg = fgRef.current;
+    if (fg) fg.zoom(fg.zoom());
+  };
+
+  const handlePointerMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    const node = pickNodeAt(event.clientX, event.clientY);
+    if (containerRef.current) {
+      containerRef.current.style.cursor = node ? 'pointer' : 'default';
+    }
+    const nextId = node?.id ?? null;
+    if (nextId !== hoveredNodeIdRef.current) {
+      hoveredNodeIdRef.current = nextId;
+      repaint();
+    }
+  };
+
+  const handlePointerLeave = () => {
+    if (containerRef.current) containerRef.current.style.cursor = 'default';
+    if (hoveredNodeIdRef.current !== null) {
+      hoveredNodeIdRef.current = null;
+      repaint();
+    }
+  };
+
+  const handleContainerClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const node = pickNodeAt(event.clientX, event.clientY);
+    if (node) handleNodeClick(node);
+  };
 
   const isEmpty = !loading && data.nodes.length === 0;
 
@@ -196,6 +204,9 @@ const GraphView: React.FC<GraphViewProps> = ({
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
             <div
               ref={containerRef}
+              onMouseMove={handlePointerMove}
+              onMouseLeave={handlePointerLeave}
+              onClick={handleContainerClick}
               className="border-border bg-card relative min-h-[480px] flex-1 overflow-hidden rounded-xl border"
             >
               {size.width > 0 && (
@@ -205,36 +216,13 @@ const GraphView: React.FC<GraphViewProps> = ({
                   width={size.width}
                   height={size.height}
                   nodeRelSize={1}
+                  enablePointerInteraction={false}
+                  enableNodeDrag={false}
                   nodeVal={(node) =>
                     nodeRadius((node as GraphNode).degree, maxNodeDegree)
                   }
-                  nodeLabel={(node) =>
-                    nodeLabelEl(
-                      (node as GraphNode).name,
-                    ) as unknown as React.ReactHTMLElement<HTMLElement>
-                  }
                   linkColor={() => 'rgba(150,150,150,0.35)'}
-                  linkPointerAreaPaint={() => {}}
                   cooldownTicks={80}
-                  onEngineStop={() => {
-                    const fg = fgRef.current;
-                    if (!fg) return;
-                    fg.zoom(fg.zoom());
-                    setPickRefresh((n) => n + 1);
-                  }}
-                  onZoomEnd={() => setPickRefresh((n) => n + 1)}
-                  onNodeClick={(node) => handleNodeClick(node as GraphNode)}
-                  onNodeHover={(node) => {
-                    hoveredNodeIdRef.current = node
-                      ? (node as GraphNode).id
-                      : null;
-                    if (containerRef.current) {
-                      containerRef.current.style.cursor = node
-                        ? 'pointer'
-                        : 'default';
-                    }
-                  }}
-                  nodePointerAreaPaint={nodePointerAreaPaint}
                   nodeCanvasObject={(node, ctx, globalScale) => {
                     const graphNode = node as GraphNode & {
                       x?: number;

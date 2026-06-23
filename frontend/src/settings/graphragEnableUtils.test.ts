@@ -165,9 +165,15 @@ describe('pollTaskOnce', () => {
     });
   });
 
-  it('returns pending on a non-ok response', async () => {
+  it('returns error (transient) on a non-ok response', async () => {
     const getTaskStatus = vi.fn().mockResolvedValue(jsonResponse(503, {}));
     const result = await pollTaskOnce({ getTaskStatus }, 't-1', 'tok');
-    expect(result).toEqual({ status: 'pending' });
+    expect(result).toEqual({ status: 'error' });
+  });
+
+  it('returns error (transient) on a network throw', async () => {
+    const getTaskStatus = vi.fn().mockRejectedValue(new Error('offline'));
+    const result = await pollTaskOnce({ getTaskStatus }, 't-1', 'tok');
+    expect(result).toEqual({ status: 'error' });
   });
 });

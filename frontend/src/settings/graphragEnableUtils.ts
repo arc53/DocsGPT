@@ -47,6 +47,9 @@ export type GraphRAGStart =
 
 export type GraphRAGPoll =
   | { status: 'pending' }
+  // Transient (network throw / non-2xx). Distinct from 'pending' so a caller
+  // can bound consecutive errors instead of polling a dead backend forever.
+  | { status: 'error' }
   | { status: 'done'; summary: GraphRAGSummary }
   | { status: 'failed'; message?: string };
 
@@ -113,9 +116,9 @@ export async function pollTaskOnce(
   try {
     response = await service.getTaskStatus(taskId, token);
   } catch {
-    return { status: 'pending' };
+    return { status: 'error' };
   }
-  if (!response.ok) return { status: 'pending' };
+  if (!response.ok) return { status: 'error' };
   const data = await response.json().catch(() => ({}));
   return interpretTaskStatus(data?.status, data?.result);
 }

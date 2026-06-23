@@ -44,9 +44,7 @@ export function toForceGraphData(overview: GraphOverview): ForceGraphData {
 
 const MIN_NODE_RADIUS = 3;
 const MAX_NODE_RADIUS = 12;
-const MIN_POINTER_RADIUS = 7;
-const POINTER_RADIUS_PAD = 2;
-const COLLIDE_PAD = 2;
+const COLLIDE_PAD = 4;
 
 export function nodeRadius(degree: number, maxDegree: number): number {
   if (maxDegree <= 0) return MIN_NODE_RADIUS;
@@ -54,30 +52,44 @@ export function nodeRadius(degree: number, maxDegree: number): number {
   return MIN_NODE_RADIUS + scale * (MAX_NODE_RADIUS - MIN_NODE_RADIUS);
 }
 
-/**
- * Hit-test disc radius for a node in the color-picking canvas.
- *
- * Kept deliberately close to the visual radius: the engine resolves
- * hover/click by reading a single pixel at the node centre, so a pick disc
- * larger than the inter-node spacing lets a neighbour's disc cover this
- * node's centre and steal its picks. Pair with {@link collideRadius}, which
- * spaces centres farther apart than the largest pick disc so a centre is
- * never covered by another node.
- */
-export function pointerAreaRadius(visualRadius: number): number {
-  return Math.max(visualRadius, MIN_POINTER_RADIUS) + POINTER_RADIUS_PAD;
-}
-
-/**
- * Collision radius keeping node centres farther apart than any pick disc,
- * so every centre pixel stays clean for the engine's exact-colour lookup.
- */
+/** Collision radius spacing node centres apart for a readable layout. */
 export function collideRadius(visualRadius: number): number {
-  return pointerAreaRadius(visualRadius) + COLLIDE_PAD;
+  return visualRadius + COLLIDE_PAD;
 }
 
 export function maxDegree(nodes: GraphNode[]): number {
   return nodes.reduce((acc, node) => Math.max(acc, node.degree || 0), 0);
+}
+
+type PositionedNode = GraphNode & { x?: number; y?: number };
+
+/**
+ * Geometric hit test in graph coordinates: returns the node whose centre is
+ * nearest to (gx, gy) and within its visual radius plus `slop`, or null.
+ * Resolves overlaps to the closest centre and skips nodes without a position.
+ */
+export function nodeAtPoint(
+  nodes: GraphNode[],
+  gx: number,
+  gy: number,
+  maxDegree: number,
+  slop: number,
+): GraphNode | null {
+  let best: GraphNode | null = null;
+  let bestDistSq = Infinity;
+  for (const node of nodes) {
+    const positioned = node as PositionedNode;
+    if (positioned.x == null || positioned.y == null) continue;
+    const hitRadius = nodeRadius(node.degree, maxDegree) + slop;
+    const dx = positioned.x - gx;
+    const dy = positioned.y - gy;
+    const distSq = dx * dx + dy * dy;
+    if (distSq <= hitRadius * hitRadius && distSq < bestDistSq) {
+      best = node;
+      bestDistSq = distSq;
+    }
+  }
+  return best;
 }
 
 export function nodeLabelEl(name: string): HTMLDivElement {

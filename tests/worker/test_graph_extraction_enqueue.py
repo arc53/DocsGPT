@@ -1,4 +1,4 @@
-"""Ingest paths enqueue graph extraction after embed for graphrag sources (D28).
+"""Ingest paths enqueue graph extraction after embed for graphrag sources.
 
 Exercises ``remote_worker`` as the representative ingest path: the remote
 loader, embedding pipeline, and ``upload_index`` are mocked, so the only thing
@@ -43,6 +43,10 @@ def _mock_remote_pipeline(monkeypatch):
     )
     monkeypatch.setattr(
         worker, "upload_index", lambda full_path, file_data: None
+    )
+    # Reset constructs a real GraphStore (pgvector); not under test here.
+    monkeypatch.setattr(
+        worker, "_reset_graph_for_source", lambda *a, **kw: None
     )
 
 
@@ -160,6 +164,39 @@ class TestRemoteWorkerEnqueuesGraphExtraction:
 
         assert _run() == _run()
 
+    def test_resets_graph_before_enqueue(
+        self, task_self, pg_conn, patch_worker_db, monkeypatch,
+        _mock_remote_pipeline,
+    ):
+        """A re-ingest clears the prior graph before re-enqueuing extraction."""
+        from application import worker
+
+        monkeypatch.setattr(
+            "application.graphrag.graphrag_available", lambda: True
+        )
+        reset = MagicMock(name="reset_graph")
+        monkeypatch.setattr(worker, "_reset_graph_for_source", reset)
+        delay = _patch_delay(monkeypatch)
+
+        config = {"kind": "graphrag", "retrieval": {"retriever": "graphrag"}}
+        sid = _seed_source(pg_conn, "bob", config)
+
+        worker.remote_worker(
+            task_self,
+            {"urls": ["http://example.com"]},
+            "graph-remote",
+            "bob",
+            "crawler",
+            directory="temp",
+            retriever="classic",
+            operation_mode="upload",
+            config=config,
+            source_id=sid,
+        )
+
+        reset.assert_called_once_with(sid)
+        delay.assert_called_once()
+
     def test_classic_source_does_not_enqueue(
         self, task_self, pg_conn, patch_worker_db, monkeypatch,
         _mock_remote_pipeline,
@@ -230,6 +267,9 @@ class TestEnqueueIsolatesBrokerFailures:
         monkeypatch.setattr(
             "application.graphrag.graphrag_available", lambda: True
         )
+        monkeypatch.setattr(
+            worker, "_reset_graph_for_source", lambda *a, **kw: None
+        )
 
         def _boom(*a, **kw):
             raise RuntimeError("broker down")
@@ -254,6 +294,9 @@ class TestEnqueueIsolatesBrokerFailures:
 
         monkeypatch.setattr(
             "application.graphrag.graphrag_available", lambda: True
+        )
+        monkeypatch.setattr(
+            worker, "_reset_graph_for_source", lambda *a, **kw: None
         )
         delay = _patch_delay(monkeypatch)
 
