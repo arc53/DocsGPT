@@ -235,6 +235,50 @@ class TestGraphStoreLive:
         finally:
             store.delete_by_source(source_id)
 
+    def test_get_graph_overview_bounded_by_degree(self, store, source_id):
+        try:
+            hub = store.upsert_node(source_id, "Hub", "hub")
+            leaves = [
+                store.upsert_node(source_id, f"L{i}", f"l{i}") for i in range(4)
+            ]
+            for leaf in leaves:
+                store.add_edge(source_id, hub, leaf, "rel")
+            store.set_node_degrees(source_id)
+
+            overview = store.get_graph_overview(source_id, limit=3)
+            node_ids = [n["id"] for n in overview["nodes"]]
+            assert len(node_ids) == 3
+            # The hub has the highest degree, so it must lead the bounded set.
+            assert node_ids[0] == hub
+            # Edges only connect nodes that survived the limit.
+            for edge in overview["edges"]:
+                assert edge["source"] in node_ids
+                assert edge["target"] in node_ids
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_get_graph_overview_empty_source(self, store, source_id):
+        overview = store.get_graph_overview(source_id)
+        assert overview == {"nodes": [], "edges": []}
+
+    def test_get_node_detail_with_linked_chunks(self, store, source_id):
+        try:
+            node = store.upsert_node(
+                source_id, "Ada", "ada", "person", "A mathematician."
+            )
+            store.link_node_chunk(source_id, node, "chunk-1")
+
+            detail = store.get_node_detail(source_id, node)
+            assert detail is not None
+            assert detail["name"] == "Ada"
+            assert detail["description"] == "A mathematician."
+            chunk_ids = [c["chunk_id"] for c in detail["chunks"]]
+            assert "chunk-1" in chunk_ids
+
+            assert store.get_node_detail(source_id, str(uuid.uuid4())) is None
+        finally:
+            store.delete_by_source(source_id)
+
     def test_checkpoint_pending_and_mark(self, store, source_id):
         try:
             all_chunks = ["c1", "c2", "c3"]
@@ -316,6 +360,25 @@ class TestGraphStoreParameterization:
         assert sid not in sql
         assert str(embedding) not in sql
         assert params == (embedding, sid, embedding, 5)
+
+    def test_graph_overview_binds_source_and_clamps_limit(self):
+        from application.graphrag.store import GRAPH_OVERVIEW_MAX_LIMIT
+
+        store, cursor = self._store_with_mock_conn()
+        cursor.fetchall.return_value = []
+        sid = str(uuid.uuid4())
+
+        store.get_graph_overview(sid, limit=10_000)
+
+        sql, params = (
+            cursor.execute.call_args.args[0],
+            cursor.execute.call_args.args[1],
+        )
+        assert "source_id = %s" in sql
+        assert sid not in sql
+        # An empty node fetch short-circuits; only the node query ran, and the
+        # limit is clamped to the hard cap before binding.
+        assert params == (sid, GRAPH_OVERVIEW_MAX_LIMIT)
 
     def test_upsert_node_binds_all_values(self):
         store, cursor = self._store_with_mock_conn()

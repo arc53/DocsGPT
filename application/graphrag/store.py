@@ -24,6 +24,9 @@ DEFAULT_NAME_EMBEDDING_DIM = 768
 MAX_SUBGRAPH_NODES = 500
 MAX_SUBGRAPH_EDGES = 2000
 
+GRAPH_OVERVIEW_DEFAULT_LIMIT = 100
+GRAPH_OVERVIEW_MAX_LIMIT = 250
+
 PGVECTOR_SOURCE_COLUMN = "source_id"
 
 
@@ -376,6 +379,7 @@ class GraphStore:
             return None
         finally:
             cursor.close()
+            conn.rollback()
 
     def count_nodes(self, source_id: str) -> int:
         """Number of nodes for a source. Zero drives the ClassicRAG fallback (G5)."""
@@ -392,6 +396,7 @@ class GraphStore:
             return 0
         finally:
             cursor.close()
+            conn.rollback()
 
     def search_nodes_by_embedding(
         self, source_id: str, query_embedding: List[float], k: int = 10
@@ -426,6 +431,7 @@ class GraphStore:
             return []
         finally:
             cursor.close()
+            conn.rollback()
 
     def get_subgraph(
         self, source_id: str, node_ids: List[str], hops: int = 1
@@ -519,6 +525,71 @@ class GraphStore:
             return {"nodes": [], "edges": []}
         finally:
             cursor.close()
+            conn.rollback()
+
+    def get_graph_overview(
+        self, source_id: str, limit: int = GRAPH_OVERVIEW_DEFAULT_LIMIT
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Top-``limit`` nodes by degree and the edges among them.
+
+        Bounds the visualization: the top nodes by degree are selected, then only
+        edges whose endpoints are both in that set are returned (edge ids
+        reference node ids). ``limit`` is clamped to ``GRAPH_OVERVIEW_MAX_LIMIT``.
+        """
+        limit = max(1, min(int(limit), GRAPH_OVERVIEW_MAX_LIMIT))
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT id, name, type, description, degree
+                FROM graph_nodes
+                WHERE source_id = %s
+                ORDER BY degree DESC, id
+                LIMIT %s;
+                """,
+                (source_id, limit),
+            )
+            nodes = [
+                {
+                    "id": str(row[0]),
+                    "name": row[1],
+                    "type": row[2],
+                    "description": row[3],
+                    "degree": row[4],
+                }
+                for row in cursor.fetchall()
+            ]
+            if not nodes:
+                return {"nodes": [], "edges": []}
+
+            node_ids = [n["id"] for n in nodes]
+            cursor.execute(
+                """
+                SELECT src_node_id, dst_node_id, type, weight
+                FROM graph_edges
+                WHERE source_id = %s
+                  AND src_node_id = ANY(%s) AND dst_node_id = ANY(%s)
+                LIMIT %s;
+                """,
+                (source_id, node_ids, node_ids, MAX_SUBGRAPH_EDGES),
+            )
+            edges = [
+                {
+                    "source": str(row[0]),
+                    "target": str(row[1]),
+                    "type": row[2],
+                    "weight": row[3],
+                }
+                for row in cursor.fetchall()
+            ]
+            return {"nodes": nodes, "edges": edges}
+        except Exception as e:
+            logging.error(f"Error getting graph overview: {e}")
+            return {"nodes": [], "edges": []}
+        finally:
+            cursor.close()
+            conn.rollback()
 
     def get_chunk_ids_for_nodes(
         self, source_id: str, node_ids: List[str]
@@ -545,6 +616,7 @@ class GraphStore:
             return {}
         finally:
             cursor.close()
+            conn.rollback()
 
     def get_chunk_texts(
         self,
@@ -581,6 +653,63 @@ class GraphStore:
             return {}
         finally:
             cursor.close()
+            conn.rollback()
+
+    def get_node_detail(
+        self, source_id: str, node_id: str, max_chunks: int = 20
+    ) -> Optional[Dict[str, Any]]:
+        """A node's full record plus a bounded list of its linked chunks.
+
+        Returns ``None`` when the node does not belong to the source. Chunk texts
+        are read from the co-located pgvector table; at most ``max_chunks`` are
+        returned so a hub node never streams an unbounded payload.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """
+                    SELECT id, name, type, description, degree, doc_freq
+                    FROM graph_nodes
+                    WHERE source_id = %s AND id = %s;
+                    """,
+                    (source_id, node_id),
+                )
+                row = cursor.fetchone()
+            finally:
+                cursor.close()
+            if row is None:
+                return None
+            node = {
+                "id": str(row[0]),
+                "name": row[1],
+                "type": row[2],
+                "description": row[3],
+                "degree": row[4],
+                "doc_freq": row[5],
+            }
+
+            chunk_ids = self.get_chunk_ids_for_nodes(source_id, [node_id]).get(
+                str(node_id), []
+            )[: max(0, int(max_chunks))]
+            texts = (
+                self.get_chunk_texts(source_id, chunk_ids) if chunk_ids else {}
+            )
+            node["chunks"] = [
+                {
+                    "chunk_id": cid,
+                    "text": texts.get(cid, {}).get("text", ""),
+                    "metadata": texts.get(cid, {}).get("metadata", {}),
+                }
+                for cid in chunk_ids
+            ]
+            return node
+        except Exception as e:
+            logging.error(f"Error getting node detail: {e}")
+            return None
+        finally:
+            conn.rollback()
 
     def set_node_degrees(self, source_id: str):
         """Recompute every node's degree from its incident edges for a source.
@@ -660,6 +789,7 @@ class GraphStore:
             return [str(c) for c in all_chunk_ids]
         finally:
             cursor.close()
+            conn.rollback()
 
     def get_progress(self, source_id: str) -> Dict[str, str]:
         conn = self._get_connection()
@@ -676,6 +806,7 @@ class GraphStore:
             return {}
         finally:
             cursor.close()
+            conn.rollback()
 
     def delete_by_source(self, source_id: str):
         """Remove every graph row for a source (no FK cascade across clusters)."""

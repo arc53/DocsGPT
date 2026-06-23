@@ -52,6 +52,7 @@ import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
+import GraphView from '../components/GraphView';
 import ConvertToWikiModal from './ConvertToWikiModal';
 import EnableGraphRAGModal from './EnableGraphRAGModal';
 import SourceConfigModal from './SourceConfigModal';
@@ -355,10 +356,12 @@ export default function Sources({
       document.ownership !== 'team' || document.team_access === 'editor';
     const actions: SourceMenuOption[] = [
       {
-        icon: EyeView,
+        icon: isGraphRAG ? Network : EyeView,
         label: isWiki
           ? t('settings.sources.wiki.view')
-          : t('settings.sources.view'),
+          : isGraphRAG
+            ? t('settings.sources.graphrag.view.action')
+            : t('settings.sources.view'),
         onClick: () => {
           setDocumentToView(document);
         },
@@ -521,6 +524,12 @@ export default function Sources({
             documentToView.ownership !== 'team' ||
             documentToView.team_access === 'editor'
           }
+          onBackToDocuments={() => setDocumentToView(undefined)}
+        />
+      ) : documentToView.config?.kind === 'graphrag' ? (
+        <GraphView
+          docId={documentToView.id || ''}
+          sourceName={documentToView.name}
           onBackToDocuments={() => setDocumentToView(undefined)}
         />
       ) : documentToView.isNested ? (

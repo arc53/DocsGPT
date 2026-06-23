@@ -1169,3 +1169,115 @@ class EnableSourceGraphRAG(Resource):
         return make_response(
             jsonify({"success": True, "task_id": task.id}), 200
         )
+
+
+def _graph_overview_payload(source_id, limit):
+    """Return a bounded ``{nodes, edges}`` overview for a graphrag source.
+
+    An empty graph (extraction pending/capped/failed) yields empty lists rather
+    than an error, mirroring the ClassicRAG degradation guarantee.
+    """
+    from application.graphrag.store import GraphStore
+
+    store = GraphStore()
+    if store.count_nodes(source_id) == 0:
+        return {"nodes": [], "edges": []}
+    return store.get_graph_overview(source_id, limit)
+
+
+@sources_ns.route("/sources/<string:source_id>/graph")
+class SourceGraph(Resource):
+    @api.doc(
+        description="Bounded knowledge-graph overview for a graphrag source: "
+        "top nodes by degree and the edges among them (read access: owner or "
+        "shared). Returns empty lists when no graph has been built yet."
+    )
+    def get(self, source_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        try:
+            limit = int(request.args.get("limit", 0)) or None
+        except (TypeError, ValueError):
+            limit = None
+        try:
+            with db_readonly() as conn:
+                doc = _resolve_readable_source(conn, source_id, user)
+                if doc is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Source not found"}),
+                        404,
+                    )
+                resolved_source_id = str(doc["id"])
+        except Exception as err:
+            current_app.logger.error(
+                f"Error resolving source {source_id} for graph: {err}",
+                exc_info=True,
+            )
+            return make_response(jsonify({"success": False}), 400)
+        try:
+            from application.graphrag.store import GRAPH_OVERVIEW_DEFAULT_LIMIT
+
+            overview = _graph_overview_payload(
+                resolved_source_id, limit or GRAPH_OVERVIEW_DEFAULT_LIMIT
+            )
+        except Exception as err:
+            current_app.logger.error(
+                f"Error building graph overview for {source_id}: {err}",
+                exc_info=True,
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(
+            jsonify(
+                {
+                    "success": True,
+                    "nodes": overview["nodes"],
+                    "edges": overview["edges"],
+                }
+            ),
+            200,
+        )
+
+
+@sources_ns.route("/sources/<string:source_id>/graph/node/<string:node_id>")
+class SourceGraphNode(Resource):
+    @api.doc(
+        description="A graph node's description and its linked chunks (read "
+        "access: owner or shared)."
+    )
+    def get(self, source_id, node_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        try:
+            with db_readonly() as conn:
+                doc = _resolve_readable_source(conn, source_id, user)
+                if doc is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Source not found"}),
+                        404,
+                    )
+                resolved_source_id = str(doc["id"])
+        except Exception as err:
+            current_app.logger.error(
+                f"Error resolving source {source_id} for graph node: {err}",
+                exc_info=True,
+            )
+            return make_response(jsonify({"success": False}), 400)
+        try:
+            from application.graphrag.store import GraphStore
+
+            node = GraphStore().get_node_detail(resolved_source_id, node_id)
+        except Exception as err:
+            current_app.logger.error(
+                f"Error fetching graph node {node_id} for {source_id}: {err}",
+                exc_info=True,
+            )
+            return make_response(jsonify({"success": False}), 400)
+        if node is None:
+            return make_response(
+                jsonify({"success": False, "message": "Node not found"}), 404
+            )
+        return make_response(jsonify({"success": True, "node": node}), 200)
