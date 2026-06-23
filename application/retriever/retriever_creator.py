@@ -1,4 +1,5 @@
 from application.retriever.classic_rag import ClassicRAG
+from application.retriever.graph_rag import GraphRAGRetriever
 from application.retriever.hybrid_rag import HybridRetriever
 
 
@@ -7,6 +8,7 @@ class RetrieverCreator:
         "classic": ClassicRAG,
         "default": ClassicRAG,
         "hybrid": HybridRetriever,
+        "graphrag": GraphRAGRetriever,
     }
 
     @classmethod

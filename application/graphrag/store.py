@@ -24,6 +24,41 @@ DEFAULT_NAME_EMBEDDING_DIM = 768
 MAX_SUBGRAPH_NODES = 500
 MAX_SUBGRAPH_EDGES = 2000
 
+PGVECTOR_SOURCE_COLUMN = "source_id"
+
+
+def _safe_identifier(name: str) -> str:
+    """Return ``name`` if it is a bare SQL identifier, else raise.
+
+    Guards the interpolated table/column names against injection; pgvector uses
+    plain identifiers, so anything outside ``[A-Za-z_][A-Za-z0-9_]*`` is rejected.
+    """
+    if not isinstance(name, str) or not name.isidentifier():
+        raise ValueError(f"Unsafe SQL identifier: {name!r}")
+    return name
+
+
+def _pgvector_identifiers() -> tuple[str, str, str, str]:
+    """Resolve ``(table, text_col, metadata_col, source_col)`` from ``PGVectorStore``.
+
+    Reads the table and column defaults from ``PGVectorStore.__init__`` so the
+    graph store queries the same names a customized deployment configured.
+    """
+    import inspect
+
+    from application.vectorstore.pgvector import PGVectorStore
+
+    params = inspect.signature(PGVectorStore.__init__).parameters
+    table = params["table_name"].default
+    text_col = params["text_column"].default
+    metadata_col = params["metadata_column"].default
+    return (
+        _safe_identifier(table),
+        _safe_identifier(text_col),
+        _safe_identifier(metadata_col),
+        _safe_identifier(PGVECTOR_SOURCE_COLUMN),
+    )
+
 
 class GraphStore:
     """Stores and queries a per-source knowledge graph in the pgvector DB."""
@@ -507,6 +542,42 @@ class GraphStore:
             return result
         except Exception as e:
             logging.error(f"Error getting chunk ids for nodes: {e}")
+            return {}
+        finally:
+            cursor.close()
+
+    def get_chunk_texts(
+        self,
+        source_id: str,
+        chunk_ids: List[str],
+    ) -> Dict[str, Dict[str, Any]]:
+        """Map chunk ids to ``{"text": ..., "metadata": {...}}`` from the pgvector table.
+
+        Reads the co-located documents table, deriving its name and the text,
+        metadata and source-id column names from the same defaults
+        ``PGVectorStore`` uses so a customized deployment still resolves. Chunk
+        ids are pgvector document ids (SERIAL) cast to text to match the
+        JSONB-sourced string ids without per-id round trips.
+        """
+        if not chunk_ids:
+            return {}
+        table, text_col, metadata_col, source_col = _pgvector_identifiers()
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                f"""
+                SELECT id, {text_col}, {metadata_col} FROM {table}
+                WHERE {source_col} = %s AND id::text = ANY(%s);
+                """,
+                (source_id, [str(c) for c in chunk_ids]),
+            )
+            return {
+                str(row[0]): {"text": row[1], "metadata": row[2] or {}}
+                for row in cursor.fetchall()
+            }
+        except Exception as e:
+            logging.error(f"Error getting chunk texts: {e}")
             return {}
         finally:
             cursor.close()
