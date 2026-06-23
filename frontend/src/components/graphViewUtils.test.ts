@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  GraphNode,
   GraphOverview,
   collideRadius,
   maxDegree,
+  nodeAtPoint,
   nodeLabelEl,
   nodeRadius,
-  pointerAreaRadius,
   toForceGraphData,
 } from './graphViewUtils';
 
@@ -83,32 +84,48 @@ describe('nodeRadius', () => {
   });
 });
 
-describe('pointerAreaRadius', () => {
-  it('enforces a forgiving minimum hit target for small nodes', () => {
-    const smallest = nodeRadius(0, 0);
-    expect(pointerAreaRadius(smallest)).toBe(9);
-  });
-
-  it('always pads beyond the visual radius for larger nodes', () => {
-    const largest = nodeRadius(10, 10);
-    expect(pointerAreaRadius(largest)).toBeGreaterThan(largest);
-    expect(pointerAreaRadius(largest)).toBeCloseTo(14);
+describe('collideRadius', () => {
+  it('pads beyond the visual radius so centres stay apart', () => {
+    const visual = nodeRadius(3, 57);
+    expect(collideRadius(visual)).toBeGreaterThan(visual);
   });
 });
 
-describe('collideRadius', () => {
-  it('keeps centres farther apart than any node could be picked', () => {
-    // The picking guarantee: with forceCollide(collideRadius), two centres
-    // are >= 2*collideRadius apart, which must exceed the largest pick disc
-    // so a centre is never covered by a neighbour's pick disc.
-    const smallVisual = nodeRadius(0, 0);
-    const largeVisual = nodeRadius(10, 10);
-    const minCentreSpacing = 2 * collideRadius(smallVisual);
-    expect(minCentreSpacing).toBeGreaterThan(pointerAreaRadius(largeVisual));
+describe('nodeAtPoint', () => {
+  const node = (
+    id: string,
+    x: number | null,
+    y: number | null,
+    degree = 1,
+  ): GraphNode => ({ id, name: id, degree, x, y }) as GraphNode;
+
+  it('returns the node when the point is inside its hit radius', () => {
+    const nodes = [node('a', 0, 0)];
+    const hit = nodeAtPoint(nodes, 2, 0, 1, 4);
+    expect(hit?.id).toBe('a');
   });
 
-  it('always exceeds the pick disc for the same node', () => {
-    const visual = nodeRadius(3, 57);
-    expect(collideRadius(visual)).toBeGreaterThan(pointerAreaRadius(visual));
+  it('returns null when the point is outside the hit radius', () => {
+    const nodes = [node('a', 0, 0)];
+    expect(nodeAtPoint(nodes, 100, 100, 1, 4)).toBeNull();
+  });
+
+  it('resolves overlaps to the node with the nearest centre', () => {
+    const nodes = [node('far', 5, 0), node('near', 1, 0)];
+    const hit = nodeAtPoint(nodes, 1.2, 0, 1, 6);
+    expect(hit?.id).toBe('near');
+  });
+
+  it('skips nodes with null coordinates', () => {
+    const nodes = [node('ghost', null, null), node('real', 0, 0)];
+    const hit = nodeAtPoint(nodes, 0, 0, 1, 4);
+    expect(hit?.id).toBe('real');
+  });
+
+  it('respects the slop allowance', () => {
+    const nodes = [node('a', 0, 0)]; // radius 3 at degree/max 1/1 => 12
+    const r = nodeRadius(1, 1);
+    expect(nodeAtPoint(nodes, r + 1, 0, 1, 2)?.id).toBe('a');
+    expect(nodeAtPoint(nodes, r + 3, 0, 1, 2)).toBeNull();
   });
 });
