@@ -94,7 +94,7 @@ class AdminStatsRepository:
         where = ""
         count_params: dict = {}
         if user_id_filter is not None:
-            where = "WHERE lower(u.user_id) = lower(:uid)"
+            where = "WHERE u.user_id ILIKE '%' || :uid || '%'"
             count_params["uid"] = user_id_filter
         total = self._conn.execute(
             text(f"SELECT count(*) FROM users u {where}"), count_params

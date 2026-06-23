@@ -14,7 +14,6 @@ import {
 import { Button } from '../components/ui/button';
 import {
   Popover,
-  PopoverAnchor,
   PopoverContent,
   PopoverTrigger,
 } from '../components/ui/popover';
@@ -276,55 +275,62 @@ export default function Prompts({
           </p>
           <div className="flex flex-row flex-wrap items-end justify-start gap-6">
             <Popover open={open} onOpenChange={setOpen}>
-              <PopoverAnchor asChild>
-                <div className={pillClassName}>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className="focus-visible:ring-ring/50 flex min-w-0 flex-1 items-center rounded-l-3xl py-3 pl-5 text-left outline-none focus-visible:ring-[3px]"
-                    >
-                      <span
-                        className={cn(
-                          'truncate',
-                          !selectedPrompt?.name && 'text-muted-foreground',
-                        )}
-                      >
-                        {selectedPrompt?.name || 'Select a prompt'}
-                      </span>
-                    </button>
-                  </PopoverTrigger>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Toggle prompt list"
+                  className={cn(
+                    pillClassName,
+                    'focus-visible:ring-ring/50 outline-none focus-visible:ring-[3px]',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'flex min-w-0 flex-1 items-center py-3 pl-5 text-left',
+                      !selectedPrompt?.name && 'text-muted-foreground',
+                    )}
+                  >
+                    <span className="truncate">
+                      {selectedPrompt?.name || 'Select a prompt'}
+                    </span>
+                  </span>
                   {selectedPrompt?.id && selectedPrompt.type !== 'public' && (
                     <>
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(selectedPrompt)}
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditModal(selectedPrompt);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            openEditModal(selectedPrompt);
+                          }
+                        }}
                         className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20 focus-visible:ring-ring/50 mx-1 my-auto shrink-0 rounded-full p-1.5 transition-colors outline-none focus-visible:ring-[3px]"
                         aria-label="Edit prompt"
                       >
                         <Pencil className="h-4 w-4" />
-                      </button>
-                      <div
+                      </span>
+                      <span
                         className="bg-border my-2.5 w-px shrink-0"
                         aria-hidden="true"
                       />
                     </>
                   )}
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20 focus-visible:ring-ring/50 my-auto mr-2.5 ml-1 shrink-0 rounded-full p-1.5 transition-colors outline-none focus-visible:ring-[3px]"
-                      aria-label="Toggle prompt list"
-                    >
-                      <ChevronDown
-                        className={cn(
-                          'h-4 w-4 transition-transform',
-                          open && 'rotate-180',
-                        )}
-                      />
-                    </button>
-                  </PopoverTrigger>
-                </div>
-              </PopoverAnchor>
+                  <span className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20 my-auto mr-2.5 ml-1 shrink-0 rounded-full p-1.5 transition-colors">
+                    <ChevronDown
+                      className={cn(
+                        'h-4 w-4 transition-transform',
+                        open && 'rotate-180',
+                      )}
+                    />
+                  </span>
+                </button>
+              </PopoverTrigger>
               <PopoverContent
                 align="start"
                 className={cn(
