@@ -639,12 +639,12 @@ export default function Sources({
                       <div className="w-full flex-1">
                         <div className="flex w-full items-center justify-between gap-2">
                           <h3
-                            className="dark:text-foreground text-foreground line-clamp-3 text-sm leading-[18px] font-semibold wrap-break-word"
+                            className="dark:text-foreground text-foreground line-clamp-3 min-w-0 flex-1 text-sm leading-[18px] font-semibold wrap-anywhere"
                             title={document.name}
                           >
                             {document.name}
                           </h3>
-                          <div className="relative flex items-center justify-end">
+                          <div className="relative flex shrink-0 items-center justify-end">
                             {document.syncFrequency && (
                               <DropdownMenu
                                 open={
