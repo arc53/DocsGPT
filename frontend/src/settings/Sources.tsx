@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  Network,
   Search as SearchIcon,
   SlidersHorizontal,
   Users,
@@ -10,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import modelService from '../api/services/modelService';
 
 import EyeView from '../assets/eye-view.svg';
 import NoFilesIcon from '../assets/no-files.svg';
@@ -32,6 +34,7 @@ import { Input } from '../components/ui/input';
 import { useDarkTheme, useDebouncedValue, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
+import type { Model } from '../models/types';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import {
@@ -51,7 +54,9 @@ import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
+import GraphView from '../components/GraphView';
 import ConvertToWikiModal from './ConvertToWikiModal';
+import EnableGraphRAGModal from './EnableGraphRAGModal';
 import SourceConfigModal from './SourceConfigModal';
 
 type SourceMenuOption = {
@@ -120,6 +125,17 @@ export default function Sources({
   const [documentToConvert, setDocumentToConvert] = useState<Doc | null>(null);
   const [convertModalState, setConvertModalState] =
     useState<ActiveState>('INACTIVE');
+  const [documentToGraphRAG, setDocumentToGraphRAG] = useState<Doc | null>(
+    null,
+  );
+  const [graphRAGModalState, setGraphRAGModalState] =
+    useState<ActiveState>('INACTIVE');
+  const [graphRAGAvailable, setGraphRAGAvailable] = useState<boolean>(false);
+  const [hybridAvailable, setHybridAvailable] = useState<boolean>(false);
+  const [availableModels, setAvailableModels] = useState<Model[]>([]);
+  const [buildingGraphIds, setBuildingGraphIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [syncMenuState, setSyncMenuState] = useState<{
     isOpen: boolean;
     docId: string | null;
@@ -338,15 +354,18 @@ export default function Sources({
     document: Doc,
   ): SourceMenuOption[] => {
     const isWiki = document.config?.kind === 'wiki' || document.type === 'wiki';
+    const isGraphRAG = document.config?.kind === 'graphrag';
     // 'team' viewers cannot write; convert is owner/editor only.
     const canEdit =
       document.ownership !== 'team' || document.team_access === 'editor';
     const actions: SourceMenuOption[] = [
       {
-        icon: EyeView,
+        icon: isGraphRAG ? Network : EyeView,
         label: isWiki
           ? t('settings.sources.wiki.view')
-          : t('settings.sources.view'),
+          : isGraphRAG
+            ? t('settings.sources.graphrag.view.action')
+            : t('settings.sources.view'),
         onClick: () => {
           setDocumentToView(document);
         },
@@ -462,6 +481,41 @@ export default function Sources({
     refreshDocs(undefined, 1, rowsPerPage);
   }, [debouncedSearchTerm]);
 
+  useEffect(() => {
+    let cancelled = false;
+    userService
+      .getConfig()
+      .then((response) => response.json())
+      .then((config) => {
+        if (!cancelled) {
+          setGraphRAGAvailable(!!config?.graphrag_available);
+          setHybridAvailable(!!config?.hybrid_available);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Models back the graphrag extraction-model picker in the source settings
+  // modal; only fetched when the instance supports graphrag.
+  useEffect(() => {
+    if (!graphRAGAvailable) return;
+    let cancelled = false;
+    modelService
+      .getModels(token)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && data)
+          setAvailableModels(modelService.transformModels(data.models || []));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [graphRAGAvailable, token]);
+
   return documentToView ? (
     <div className="mt-8 flex flex-col">
       {documentToView.config?.kind === 'wiki' ||
@@ -473,6 +527,12 @@ export default function Sources({
             documentToView.ownership !== 'team' ||
             documentToView.team_access === 'editor'
           }
+          onBackToDocuments={() => setDocumentToView(undefined)}
+        />
+      ) : documentToView.config?.kind === 'graphrag' ? (
+        <GraphView
+          docId={documentToView.id || ''}
+          sourceName={documentToView.name}
           onBackToDocuments={() => setDocumentToView(undefined)}
         />
       ) : documentToView.isNested ? (
@@ -572,7 +632,7 @@ export default function Sources({
                           setDocumentToView(document);
                         }
                       }}
-                      className={`bg-muted dark:bg-accent focus-visible:ring-ring/50 flex h-[130px] w-full cursor-pointer flex-col rounded-2xl p-5 transition-all duration-200 outline-none focus-visible:ring-[3px] ${
+                      className={`bg-muted dark:bg-accent focus-visible:ring-ring/50 flex min-h-[130px] w-full cursor-pointer flex-col rounded-2xl p-5 transition-all duration-200 outline-none focus-visible:ring-[3px] ${
                         actionMenuDocId === docId ||
                         syncMenuState.docId === docId
                           ? 'scale-[1.05]'
@@ -582,12 +642,12 @@ export default function Sources({
                       <div className="w-full flex-1">
                         <div className="flex w-full items-center justify-between gap-2">
                           <h3
-                            className="dark:text-foreground text-foreground line-clamp-3 text-sm leading-[18px] font-semibold wrap-break-word"
+                            className="dark:text-foreground text-foreground line-clamp-2 min-w-0 flex-1 text-sm leading-[18px] font-semibold wrap-anywhere"
                             title={document.name}
                           >
                             {document.name}
                           </h3>
-                          <div className="relative flex items-center justify-end">
+                          <div className="relative flex shrink-0 items-center justify-end">
                             {document.syncFrequency && (
                               <DropdownMenu
                                 open={
@@ -712,6 +772,18 @@ export default function Sources({
                             {t('settings.sources.ingestProcessing')}
                           </span>
                         )}
+                        {document.config?.kind === 'graphrag' && (
+                          <span className="bg-muted-foreground/10 text-muted-foreground flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium">
+                            <Network
+                              size={11}
+                              strokeWidth={2}
+                              aria-hidden="true"
+                            />
+                            {document.id && buildingGraphIds.has(document.id)
+                              ? t('settings.sources.graphrag.building')
+                              : t('settings.sources.graphrag.badge')}
+                          </span>
+                        )}
                         <div className="flex items-center gap-2">
                           <img
                             src={CalendarIcon}
@@ -808,6 +880,13 @@ export default function Sources({
         }}
         document={documentToConfigure}
         onReingest={handleReingest}
+        hybridAvailable={hybridAvailable}
+        graphRAGAvailable={graphRAGAvailable}
+        availableModels={availableModels}
+        onEnableGraphRAG={(doc) => {
+          setDocumentToGraphRAG(doc);
+          setGraphRAGModalState('ACTIVE');
+        }}
       />
 
       <ConvertToWikiModal
@@ -820,6 +899,32 @@ export default function Sources({
         }}
         document={documentToConvert}
         onConverted={() => refreshDocs(undefined, currentPage, rowsPerPage)}
+      />
+
+      <EnableGraphRAGModal
+        modalState={graphRAGModalState}
+        setModalState={(state) => {
+          setGraphRAGModalState(state);
+          if (state === 'INACTIVE') {
+            const closedId = documentToGraphRAG?.id;
+            if (closedId) {
+              setBuildingGraphIds((prev) => {
+                const next = new Set(prev);
+                next.delete(closedId);
+                return next;
+              });
+            }
+            setDocumentToGraphRAG(null);
+          }
+        }}
+        document={documentToGraphRAG}
+        onEnabled={() => {
+          const enabledId = documentToGraphRAG?.id;
+          if (enabledId) {
+            setBuildingGraphIds((prev) => new Set(prev).add(enabledId));
+          }
+          refreshDocs(undefined, currentPage, rowsPerPage);
+        }}
       />
     </div>
   );

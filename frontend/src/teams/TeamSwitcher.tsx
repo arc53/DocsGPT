@@ -172,8 +172,7 @@ export default function TeamSwitcher({
         <DropdownMenuSeparator />
 
         {/* Personal account entry */}
-        {
-          currentTeam &&
+        {currentTeam && (
           <DropdownMenuItem onSelect={() => selectTeam(null)}>
             <Building2 className="size-4" strokeWidth={1.75} />
             <span className="min-w-0 flex-1 truncate">
@@ -181,7 +180,7 @@ export default function TeamSwitcher({
             </span>
             {!currentTeam && <Check className="size-4 shrink-0" />}
           </DropdownMenuItem>
-        }
+        )}
 
         {/* Other teams to switch to */}
         {otherTeams.map((team) => (

@@ -109,6 +109,23 @@ const userService = {
     apiClient.post(endpoints.USER.CREATE_WIKI, data, token),
   convertToWiki: (sourceId: string, token: string | null): Promise<Response> =>
     apiClient.post(endpoints.USER.CONVERT_TO_WIKI(sourceId), {}, token),
+  enableGraphRAG: (sourceId: string, token: string | null): Promise<Response> =>
+    apiClient.post(endpoints.USER.ENABLE_GRAPHRAG(sourceId), {}, token),
+  getSourceGraph: (
+    sourceId: string,
+    token: string | null,
+    limit?: number,
+  ): Promise<Response> =>
+    throttledApiClient.get(endpoints.USER.SOURCE_GRAPH(sourceId, limit), token),
+  getSourceGraphNode: (
+    sourceId: string,
+    nodeId: string,
+    token: string | null,
+  ): Promise<Response> =>
+    throttledApiClient.get(
+      endpoints.USER.SOURCE_GRAPH_NODE(sourceId, nodeId),
+      token,
+    ),
   getTaskStatus: (taskId: string, token: string | null): Promise<Response> =>
     apiClient.get(endpoints.USER.TASK_STATUS(taskId), token),
   getWikiPages: (sourceId: string, token: string | null): Promise<Response> =>

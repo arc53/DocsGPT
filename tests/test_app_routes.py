@@ -54,6 +54,48 @@ class TestConfigRoute:
         assert "oidc" not in data
 
     @pytest.mark.unit
+    def test_exposes_graphrag_available(self, client):
+        with patch("application.app.settings") as mock_settings, patch(
+            "application.graphrag.graphrag_available", return_value=True
+        ):
+            mock_settings.AUTH_TYPE = None
+            response = client.get("/api/config")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["graphrag_available"] is True
+
+    @pytest.mark.unit
+    def test_graphrag_unavailable_when_flag_off(self, client):
+        with patch("application.app.settings") as mock_settings, patch(
+            "application.graphrag.graphrag_available", return_value=False
+        ):
+            mock_settings.AUTH_TYPE = None
+            response = client.get("/api/config")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["graphrag_available"] is False
+
+    @pytest.mark.unit
+    def test_hybrid_available_when_pgvector(self, client):
+        with patch("application.app.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = None
+            mock_settings.VECTOR_STORE = "pgvector"
+            response = client.get("/api/config")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["hybrid_available"] is True
+
+    @pytest.mark.unit
+    def test_hybrid_unavailable_when_not_pgvector(self, client):
+        with patch("application.app.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = None
+            mock_settings.VECTOR_STORE = "faiss"
+            response = client.get("/api/config")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data["hybrid_available"] is False
+
+    @pytest.mark.unit
     def test_oidc_config_exposes_login_paths(self, client):
         with patch("application.app.settings") as mock_settings:
             mock_settings.AUTH_TYPE = "oidc"

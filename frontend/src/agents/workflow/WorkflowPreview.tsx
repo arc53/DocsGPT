@@ -526,7 +526,7 @@ export default function WorkflowPreview({
               Workflow
             </h3>
           </div>
-          <div className="scrollbar-thin flex-1 overflow-y-auto p-3">
+          <div className="flex-1 scrollbar-thin overflow-y-auto p-3">
             <WorkflowMiniMap
               nodes={workflowData.nodes}
               activeNodeId={activeNodeId}
@@ -541,7 +541,7 @@ export default function WorkflowPreview({
         <div className="relative flex min-w-0 flex-1 flex-col">
           <div
             ref={chatContainerRef}
-            className="scrollbar-thin absolute inset-0 bottom-[100px] overflow-y-auto px-4 pt-4"
+            className="absolute inset-0 bottom-[100px] scrollbar-thin overflow-y-auto px-4 pt-4"
           >
             {queries.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center">

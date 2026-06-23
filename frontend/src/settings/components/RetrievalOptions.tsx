@@ -19,6 +19,7 @@ import type {
   RetrievalExposure,
   SourceConfig,
 } from '../../models/misc';
+import type { Model } from '../../models/types';
 
 import ChevronRight from '../../assets/chevron-right.svg';
 
@@ -35,7 +36,10 @@ export const DEFAULT_PRESCREEN = {
 
 // Fully-populated form shape so every control is controlled. Prescreen is
 // flattened into the form (with an `enabled` flag) and re-nested on serialize.
+// `kind` is carried so serialization preserves a source's behavior selector
+// (classic/wiki/graphrag) instead of silently downgrading it.
 export type RetrievalOptionsValue = {
+  kind: string;
   chunking: {
     strategy: ChunkingStrategy;
     max_tokens: number;
@@ -56,9 +60,15 @@ export type RetrievalOptionsValue = {
       max_keep: number;
     };
   };
+  graph: {
+    extraction_model: string | null;
+    max_chunks: number | null;
+    gleanings: number;
+  };
 };
 
 export const DEFAULT_RETRIEVAL_OPTIONS: RetrievalOptionsValue = {
+  kind: 'classic',
   chunking: {
     strategy: 'classic_chunk',
     max_tokens: 1250,
@@ -76,6 +86,11 @@ export const DEFAULT_RETRIEVAL_OPTIONS: RetrievalOptionsValue = {
       ...DEFAULT_PRESCREEN,
     },
   },
+  graph: {
+    extraction_model: null,
+    max_chunks: null,
+    gleanings: 0,
+  },
 };
 
 const CHUNKING_STRATEGIES: ChunkingStrategy[] = [
@@ -86,7 +101,41 @@ const CHUNKING_STRATEGIES: ChunkingStrategy[] = [
   'semantic',
 ];
 
-const RETRIEVERS = ['classic', 'hybrid'];
+const CLASSIC_RETRIEVER = 'classic';
+const HYBRID_RETRIEVER = 'hybrid';
+const GRAPHRAG_RETRIEVER = 'graphrag';
+// Sentinel select value for "use the instance default model" (Select can't take
+// an empty/null item value); maps to extraction_model = null on change.
+const GRAPH_DEFAULT_MODEL = '__default__';
+
+/**
+ * Score threshold is a cosine-similarity cutoff; the hybrid (RRF) and graphrag
+ * (PPR) retrievers don't produce comparable scores, so the control is hidden
+ * for them.
+ */
+export function scoreThresholdHidden(retriever: string): boolean {
+  return retriever === HYBRID_RETRIEVER || retriever === GRAPHRAG_RETRIEVER;
+}
+
+/**
+ * Retriever options to offer. Classic is always available; hybrid and graphrag
+ * are gated on instance support, but the currently-selected retriever is always
+ * included so an existing source never renders an out-of-range select.
+ */
+export function availableRetrievers(
+  current: string,
+  hybridAvailable: boolean,
+  graphRAGAvailable: boolean,
+): string[] {
+  const options = [CLASSIC_RETRIEVER];
+  if (hybridAvailable || current === HYBRID_RETRIEVER) {
+    options.push(HYBRID_RETRIEVER);
+  }
+  if (graphRAGAvailable || current === GRAPHRAG_RETRIEVER) {
+    options.push(GRAPHRAG_RETRIEVER);
+  }
+  return options;
+}
 
 /**
  * Group eyebrow: an uppercase, tracked title with a normal-weight muted ` · tag`
@@ -155,8 +204,10 @@ export function configToOptions(config?: SourceConfig): RetrievalOptionsValue {
   const chunking = config?.chunking ?? {};
   const retrieval = config?.retrieval ?? {};
   const prescreen = retrieval.prescreen ?? null;
+  const graph = config?.graph ?? {};
   const d = DEFAULT_RETRIEVAL_OPTIONS;
   return {
+    kind: config?.kind ?? d.kind,
     chunking: {
       strategy: chunking.strategy ?? d.chunking.strategy,
       max_tokens: chunking.max_tokens ?? d.chunking.max_tokens,
@@ -178,19 +229,28 @@ export function configToOptions(config?: SourceConfig): RetrievalOptionsValue {
         max_keep: prescreen?.max_keep ?? DEFAULT_PRESCREEN.max_keep,
       },
     },
+    graph: {
+      extraction_model: graph.extraction_model ?? d.graph.extraction_model,
+      max_chunks: graph.max_chunks ?? d.graph.max_chunks,
+      gleanings: graph.gleanings ?? d.graph.gleanings,
+    },
   };
 }
 
 /**
  * Serialize the form value into a full SourceConfig object the backend accepts.
  * The backend uses `extra="forbid"` and re-validates the whole object, so we
- * always send the complete (kind + chunking + retrieval) shape. Prescreen is
- * re-nested to `null` when disabled.
+ * always send the complete (kind + chunking + retrieval + graph) shape.
+ * Prescreen is re-nested to `null` when disabled. `kind` is preserved from the
+ * value and forced to `graphrag` when the graphrag retriever is chosen (so the
+ * create-flow ingest auto-extracts), never silently downgrading wiki/graphrag.
  */
 export function optionsToConfig(value: RetrievalOptionsValue): SourceConfig {
   const ps = value.retrieval.prescreen;
+  const kind =
+    value.retrieval.retriever === GRAPHRAG_RETRIEVER ? 'graphrag' : value.kind;
   return {
-    kind: 'classic',
+    kind,
     chunking: {
       strategy: value.chunking.strategy,
       max_tokens: value.chunking.max_tokens,
@@ -211,6 +271,13 @@ export function optionsToConfig(value: RetrievalOptionsValue): SourceConfig {
             max_keep: ps.max_keep,
           }
         : null,
+    },
+    graph: {
+      extraction_model: value.graph.extraction_model?.trim()
+        ? value.graph.extraction_model.trim()
+        : null,
+      max_chunks: value.graph.max_chunks,
+      gleanings: value.graph.gleanings,
     },
   };
 }
@@ -248,6 +315,14 @@ type RetrievalOptionsProps = {
   // its own collapsible toggle (create-flow use). Defaults to collapsible.
   alwaysOpen?: boolean;
   disabled?: boolean;
+  // Adds the hybrid retriever option when the instance supports it (pgvector,
+  // from /api/config).
+  hybridAvailable?: boolean;
+  // Adds the graphrag retriever option + extraction config when the instance
+  // supports it (pgvector + GRAPHRAG_ENABLED, from /api/config).
+  graphRAGAvailable?: boolean;
+  // Models for the graph extraction-model picker, same shape as the agent form.
+  availableModels?: Model[];
 };
 
 /**
@@ -260,6 +335,9 @@ export default function RetrievalOptions({
   onChange,
   alwaysOpen = false,
   disabled = false,
+  hybridAvailable = false,
+  graphRAGAvailable = false,
+  availableModels = [],
 }: RetrievalOptionsProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -272,6 +350,17 @@ export default function RetrievalOptions({
         label: t(`settings.sources.retrievalOptions.chunking.strategies.${s}`),
       })),
     [t],
+  );
+
+  const isGraphRAG = value.retrieval.retriever === GRAPHRAG_RETRIEVER;
+  const retrievers = useMemo(
+    () =>
+      availableRetrievers(
+        value.retrieval.retriever,
+        hybridAvailable,
+        graphRAGAvailable,
+      ),
+    [value.retrieval.retriever, hybridAvailable, graphRAGAvailable],
   );
 
   const setRetrieval = (patch: Partial<RetrievalOptionsValue['retrieval']>) => {
@@ -295,6 +384,22 @@ export default function RetrievalOptions({
       prescreen: { ...value.retrieval.prescreen, ...patch },
     });
   };
+
+  const setGraph = (patch: Partial<RetrievalOptionsValue['graph']>) => {
+    onChange({
+      ...value,
+      graph: { ...value.graph, ...patch },
+    });
+  };
+
+  const modelOptions = useMemo(() => {
+    const builtin: Model[] = [];
+    const user: Model[] = [];
+    availableModels.forEach((m) =>
+      (m.source === 'user' ? user : builtin).push(m),
+    );
+    return { builtin, user };
+  }, [availableModels]);
 
   const tr = (key: string) => t(`settings.sources.retrievalOptions.${key}`);
 
@@ -324,7 +429,7 @@ export default function RetrievalOptions({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {RETRIEVERS.map((r) => (
+                {retrievers.map((r) => (
                   <SelectItem key={r} value={r}>
                     {tr(`retrieval.retrievers.${r}`)}
                   </SelectItem>
@@ -349,35 +454,37 @@ export default function RetrievalOptions({
             />
           </SettingRow>
 
-          <SettingRow
-            label={tr('retrieval.scoreThreshold')}
-            htmlFor="retrieval-score-threshold"
-          >
-            <Input
-              id="retrieval-score-threshold"
-              type="number"
-              min={0}
-              max={1}
-              step="0.01"
-              className="w-24 text-right"
-              value={
-                value.retrieval.score_threshold === null
-                  ? ''
-                  : String(value.retrieval.score_threshold)
-              }
-              disabled={disabled}
-              placeholder={tr('retrieval.scoreThresholdPlaceholder')}
-              onChange={(e) => {
-                const raw = e.target.value;
-                setRetrieval({
-                  score_threshold:
-                    raw === ''
-                      ? null
-                      : Math.min(1, Math.max(0, Number(raw) || 0)),
-                });
-              }}
-            />
-          </SettingRow>
+          {!scoreThresholdHidden(value.retrieval.retriever) && (
+            <SettingRow
+              label={tr('retrieval.scoreThreshold')}
+              htmlFor="retrieval-score-threshold"
+            >
+              <Input
+                id="retrieval-score-threshold"
+                type="number"
+                min={0}
+                max={1}
+                step="0.01"
+                className="w-24 text-right"
+                value={
+                  value.retrieval.score_threshold === null
+                    ? ''
+                    : String(value.retrieval.score_threshold)
+                }
+                disabled={disabled}
+                placeholder={tr('retrieval.scoreThresholdPlaceholder')}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setRetrieval({
+                    score_threshold:
+                      raw === ''
+                        ? null
+                        : Math.min(1, Math.max(0, Number(raw) || 0)),
+                  });
+                }}
+              />
+            </SettingRow>
+          )}
 
           <SettingRow
             label={tr('retrieval.rephraseQuery')}
@@ -490,6 +597,83 @@ export default function RetrievalOptions({
           </div>
         )}
       </div>
+
+      {/* Graph extraction group (graphrag only; re-ingest required to apply) */}
+      {isGraphRAG && (
+        <div className="flex flex-col gap-3">
+          <GroupHeader title={tr('graph.title')} tag={tr('graph.tag')} />
+
+          <div className="divide-border/50 divide-y">
+            <SettingRow
+              label={tr('graph.extractionModel')}
+              htmlFor="graph-extraction-model"
+              description={tr('graph.extractionModelHint')}
+              alignStart
+            >
+              <Select
+                value={value.graph.extraction_model ?? GRAPH_DEFAULT_MODEL}
+                disabled={disabled}
+                onValueChange={(v) =>
+                  setGraph({
+                    extraction_model: v === GRAPH_DEFAULT_MODEL ? null : v,
+                  })
+                }
+              >
+                <SelectTrigger
+                  id="graph-extraction-model"
+                  className="w-52 rounded-md"
+                  size="lg"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={GRAPH_DEFAULT_MODEL}>
+                    {tr('graph.defaultModel')}
+                  </SelectItem>
+                  {modelOptions.builtin.map((m) => (
+                    <SelectItem key={`builtin-${m.id}`} value={m.id}>
+                      {m.display_name}
+                    </SelectItem>
+                  ))}
+                  {modelOptions.user.map((m) => (
+                    <SelectItem key={`user-${m.id}`} value={m.id}>
+                      {m.display_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SettingRow>
+
+            <SettingRow
+              label={tr('graph.maxChunks')}
+              htmlFor="graph-max-chunks"
+              description={tr('graph.maxChunksHint')}
+              alignStart
+            >
+              <Input
+                id="graph-max-chunks"
+                type="number"
+                min={1}
+                className="w-24 text-right"
+                value={
+                  value.graph.max_chunks === null
+                    ? ''
+                    : String(value.graph.max_chunks)
+                }
+                disabled={disabled}
+                placeholder={tr('graph.maxChunksPlaceholder')}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setGraph({
+                    max_chunks:
+                      raw === '' ? null : Math.max(1, Number(raw) || 1),
+                  });
+                }}
+              />
+            </SettingRow>
+          </div>
+        </div>
+      )}
 
       {/* Chunking group (re-ingest required) */}
       <div className="flex flex-col gap-3">

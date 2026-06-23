@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
@@ -6,6 +6,8 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import type { RootState } from '../store';
 import userService from '../api/services/userService';
+import modelService from '../api/services/modelService';
+import type { Model } from '../models/types';
 import { getSessionToken } from '../utils/providerUtils';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -74,10 +76,48 @@ function Upload({
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [retrievalOptions, setRetrievalOptions] =
     useState<RetrievalOptionsValue>(DEFAULT_RETRIEVAL_OPTIONS);
+  const [graphRAGAvailable, setGraphRAGAvailable] = useState(false);
+  const [hybridAvailable, setHybridAvailable] = useState(false);
+  const [availableModels, setAvailableModels] = useState<Model[]>([]);
 
   // File picker state
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    userService
+      .getConfig()
+      .then((response) => response.json())
+      .then((config) => {
+        if (!cancelled) {
+          setGraphRAGAvailable(!!config?.graphrag_available);
+          setHybridAvailable(!!config?.hybrid_available);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Models back the graphrag extraction-model picker; only fetched when the
+  // instance supports graphrag.
+  useEffect(() => {
+    if (!graphRAGAvailable) return;
+    let cancelled = false;
+    modelService
+      .getModels(token)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && data)
+          setAvailableModels(modelService.transformModels(data.models || []));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [graphRAGAvailable, token]);
 
   const renderFormFields = () => {
     if (!ingestor.type) return null;
@@ -1039,6 +1079,9 @@ function Upload({
                   <RetrievalOptions
                     value={retrievalOptions}
                     onChange={setRetrievalOptions}
+                    hybridAvailable={hybridAvailable}
+                    graphRAGAvailable={graphRAGAvailable}
+                    availableModels={availableModels}
                   />
                 )}
               </div>

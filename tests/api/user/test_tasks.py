@@ -100,6 +100,43 @@ class TestConvertSourceToWikiTask:
         assert result == {"status": "converted"}
 
 
+class TestExtractGraphTask:
+    @pytest.mark.unit
+    @patch("application.worker.extract_graph_worker")
+    def test_calls_extract_graph_worker(self, mock_worker):
+        from application.api.user.tasks import extract_graph
+
+        mock_worker.return_value = {"nodes": 2, "edges": 1}
+
+        result = extract_graph("source123", "user1")
+
+        mock_worker.assert_called_once_with(ANY, "source123", "user1")
+        assert result == {"nodes": 2, "edges": 1}
+
+    @pytest.mark.unit
+    def test_repeat_with_same_key_short_circuits(self, pg_conn):
+        from application.api.user import tasks
+
+        calls: list[str] = []
+
+        def _fake_worker(self, source_id, user):
+            calls.append(source_id)
+            return {"nodes": 1, "edges": 0}
+
+        with _patch_decorator_db(pg_conn), patch(
+            "application.worker.extract_graph_worker", _fake_worker
+        ):
+            first = tasks.extract_graph(
+                "src-g", "user1", idempotency_key="extract-graph:src-g",
+            )
+            second = tasks.extract_graph(
+                "src-g", "user1", idempotency_key="extract-graph:src-g",
+            )
+
+        assert first == second
+        assert len(calls) == 1
+
+
 class TestScheduleSyncsTask:
     @pytest.mark.unit
     @patch("application.api.user.tasks.sync_worker")
@@ -302,6 +339,7 @@ class TestDurableTaskRetryPolicy:
             "ingest_connector_task",
             "reembed_wiki_page",
             "convert_source_to_wiki",
+            "extract_graph",
         ],
     )
     def test_task_has_retry_config(self, task_name):

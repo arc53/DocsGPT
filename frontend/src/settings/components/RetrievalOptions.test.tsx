@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { SourceConfig } from '../../models/misc';
 import {
+  availableRetrievers,
   configToOptions,
   optionsToConfig,
   isPrescreenConfigValid,
   chunkingChanged,
+  scoreThresholdHidden,
   DEFAULT_RETRIEVAL_OPTIONS,
   RetrievalOptionsValue,
 } from './RetrievalOptions';
@@ -49,11 +51,45 @@ describe('configToOptions (lenient read)', () => {
 });
 
 describe('optionsToConfig (write path)', () => {
-  it('always emits kind=classic and a full shape', () => {
+  it('emits the carried kind and a full shape', () => {
     const cfg = optionsToConfig(DEFAULT_RETRIEVAL_OPTIONS);
     expect(cfg.kind).toBe('classic');
     expect(cfg.chunking).toBeDefined();
     expect(cfg.retrieval).toBeDefined();
+    expect(cfg.graph).toBeDefined();
+  });
+
+  it('preserves a non-classic kind (never downgrades a wiki source)', () => {
+    const v = clone(DEFAULT_RETRIEVAL_OPTIONS);
+    v.kind = 'wiki';
+    expect(optionsToConfig(v).kind).toBe('wiki');
+  });
+
+  it('forces kind=graphrag when the graphrag retriever is chosen', () => {
+    const v = clone(DEFAULT_RETRIEVAL_OPTIONS);
+    v.kind = 'classic';
+    v.retrieval.retriever = 'graphrag';
+    expect(optionsToConfig(v).kind).toBe('graphrag');
+  });
+
+  it('round-trips the graph config including model and max_chunks', () => {
+    const v = clone(DEFAULT_RETRIEVAL_OPTIONS);
+    v.kind = 'graphrag';
+    v.retrieval.retriever = 'graphrag';
+    v.graph = { extraction_model: 'gpt-x', max_chunks: 50, gleanings: 1 };
+    const cfg = optionsToConfig(v);
+    expect(cfg.graph).toEqual({
+      extraction_model: 'gpt-x',
+      max_chunks: 50,
+      gleanings: 1,
+    });
+    expect(configToOptions(cfg)).toEqual(v);
+  });
+
+  it('normalizes a whitespace extraction model to null', () => {
+    const v = clone(DEFAULT_RETRIEVAL_OPTIONS);
+    v.graph.extraction_model = '  ';
+    expect(optionsToConfig(v).graph?.extraction_model).toBe(null);
   });
 
   it('nests prescreen to null when disabled', () => {
@@ -90,6 +126,7 @@ describe('round-trip configToOptions(optionsToConfig(x)) == x', () => {
 
   it('round-trips a fully-customized canonical value', () => {
     const v: RetrievalOptionsValue = {
+      kind: 'classic',
       chunking: {
         strategy: 'parent_child',
         max_tokens: 800,
@@ -109,6 +146,11 @@ describe('round-trip configToOptions(optionsToConfig(x)) == x', () => {
           batch_size: 5,
           max_keep: 10,
         },
+      },
+      graph: {
+        extraction_model: null,
+        max_chunks: null,
+        gleanings: 0,
       },
     };
     expect(configToOptions(optionsToConfig(v))).toEqual(v);
@@ -162,5 +204,50 @@ describe('chunkingChanged', () => {
     after.retrieval.chunks = 9;
     after.retrieval.rephrase_query = false;
     expect(chunkingChanged(DEFAULT_RETRIEVAL_OPTIONS, after)).toBe(false);
+  });
+});
+
+describe('availableRetrievers', () => {
+  it('always offers classic', () => {
+    expect(availableRetrievers('classic', false, false)).toEqual(['classic']);
+  });
+
+  it('hides hybrid when unavailable and not already selected', () => {
+    expect(availableRetrievers('classic', false, false)).not.toContain(
+      'hybrid',
+    );
+  });
+
+  it('shows hybrid when available', () => {
+    expect(availableRetrievers('classic', true, false)).toContain('hybrid');
+  });
+
+  it('shows hybrid when already selected even if unavailable', () => {
+    expect(availableRetrievers('hybrid', false, false)).toContain('hybrid');
+  });
+
+  it('hides graphrag when unavailable and not already selected', () => {
+    expect(availableRetrievers('classic', false, false)).not.toContain(
+      'graphrag',
+    );
+  });
+
+  it('shows graphrag when available', () => {
+    expect(availableRetrievers('classic', false, true)).toContain('graphrag');
+  });
+
+  it('shows graphrag when already selected even if unavailable', () => {
+    expect(availableRetrievers('graphrag', false, false)).toContain('graphrag');
+  });
+});
+
+describe('scoreThresholdHidden', () => {
+  it('shows the threshold for the classic retriever', () => {
+    expect(scoreThresholdHidden('classic')).toBe(false);
+  });
+
+  it('hides the threshold for hybrid and graphrag', () => {
+    expect(scoreThresholdHidden('hybrid')).toBe(true);
+    expect(scoreThresholdHidden('graphrag')).toBe(true);
   });
 });
