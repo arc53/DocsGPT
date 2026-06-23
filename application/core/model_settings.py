@@ -25,6 +25,7 @@ class ModelProvider(str, Enum):
     PREMAI = "premai"
     SAGEMAKER = "sagemaker"
     NOVITA = "novita"
+    ATLASCLOUD = "atlascloud"
 
 
 @dataclass

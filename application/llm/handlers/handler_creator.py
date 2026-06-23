@@ -8,6 +8,7 @@ class LLMHandlerCreator:
         "openai": OpenAILLMHandler,
         "google": GoogleLLMHandler,
         "novita": OpenAILLMHandler,  # Novita uses OpenAI-compatible API
+        "atlascloud": OpenAILLMHandler,  # Atlas Cloud uses OpenAI-compatible API
         "default": OpenAILLMHandler,
     }
 
