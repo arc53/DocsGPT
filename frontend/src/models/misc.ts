@@ -42,10 +42,18 @@ export type SourceRetrievalConfig = {
   prescreen?: SourcePrescreenConfig | null; // null = off
 };
 
+// Ingest-time GraphRAG extraction knobs (only used when kind === 'graphrag').
+export type SourceGraphConfig = {
+  extraction_model?: string | null; // null → instance default model
+  max_chunks?: number | null; // null → GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION
+  gleanings?: number; // extra extraction passes per chunk, default 0
+};
+
 export type SourceConfig = {
   kind?: string; // default 'classic'
   chunking?: SourceChunkingConfig;
   retrieval?: SourceRetrievalConfig;
+  graph?: SourceGraphConfig;
 };
 
 export type Doc = {

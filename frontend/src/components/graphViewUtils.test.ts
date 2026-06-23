@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   GraphOverview,
+  collideRadius,
   maxDegree,
   nodeLabelEl,
   nodeRadius,
+  pointerAreaRadius,
   toForceGraphData,
 } from './graphViewUtils';
 
@@ -78,5 +80,35 @@ describe('nodeRadius', () => {
     const high = nodeRadius(9, 10);
     expect(high).toBeGreaterThan(low);
     expect(nodeRadius(10, 10)).toBeCloseTo(12);
+  });
+});
+
+describe('pointerAreaRadius', () => {
+  it('enforces a forgiving minimum hit target for small nodes', () => {
+    const smallest = nodeRadius(0, 0);
+    expect(pointerAreaRadius(smallest)).toBe(9);
+  });
+
+  it('always pads beyond the visual radius for larger nodes', () => {
+    const largest = nodeRadius(10, 10);
+    expect(pointerAreaRadius(largest)).toBeGreaterThan(largest);
+    expect(pointerAreaRadius(largest)).toBeCloseTo(14);
+  });
+});
+
+describe('collideRadius', () => {
+  it('keeps centres farther apart than any node could be picked', () => {
+    // The picking guarantee: with forceCollide(collideRadius), two centres
+    // are >= 2*collideRadius apart, which must exceed the largest pick disc
+    // so a centre is never covered by a neighbour's pick disc.
+    const smallVisual = nodeRadius(0, 0);
+    const largeVisual = nodeRadius(10, 10);
+    const minCentreSpacing = 2 * collideRadius(smallVisual);
+    expect(minCentreSpacing).toBeGreaterThan(pointerAreaRadius(largeVisual));
+  });
+
+  it('always exceeds the pick disc for the same node', () => {
+    const visual = nodeRadius(3, 57);
+    expect(collideRadius(visual)).toBeGreaterThan(pointerAreaRadius(visual));
   });
 });

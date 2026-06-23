@@ -7,6 +7,7 @@ import Spinner from '../components/Spinner';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import { ActiveState, Doc } from '../models/misc';
+import type { Model } from '../models/types';
 import { selectToken } from '../preferences/preferenceSlice';
 
 import RetrievalOptions, {
@@ -24,6 +25,13 @@ interface SourceConfigModalProps {
   // Fired after a save that flips requires_reingest, when the user confirms
   // the re-ingest. Reuses the existing Sources.tsx reingest action.
   onReingest: (document: Doc) => void;
+  hybridAvailable?: boolean;
+  graphRAGAvailable?: boolean;
+  availableModels?: Model[];
+  // Switching the retriever to graphrag on a non-graphrag source can't go
+  // through the config PATCH (the backend blocks kind→graphrag); the parent
+  // routes it through EnableGraphRAGModal instead.
+  onEnableGraphRAG: (document: Doc) => void;
 }
 
 export default function SourceConfigModal({
@@ -31,6 +39,10 @@ export default function SourceConfigModal({
   setModalState,
   document,
   onReingest,
+  hybridAvailable = false,
+  graphRAGAvailable = false,
+  availableModels = [],
+  onEnableGraphRAG,
 }: SourceConfigModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -66,8 +78,19 @@ export default function SourceConfigModal({
     setModalState('INACTIVE');
   };
 
+  // A non-graphrag source flipped to the graphrag retriever can't be saved via
+  // PATCH (backend blocks kind→graphrag); it enables graph extraction instead.
+  const becomesGraphRAG =
+    options.retrieval.retriever === 'graphrag' &&
+    initial.retrieval.retriever !== 'graphrag';
+
   const handleSave = async () => {
     if (!document?.id || isReadOnly) return;
+    if (becomesGraphRAG) {
+      closeModal();
+      onEnableGraphRAG(document);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -163,6 +186,9 @@ export default function SourceConfigModal({
                 onChange={setOptions}
                 alwaysOpen
                 disabled={isReadOnly}
+                hybridAvailable={hybridAvailable}
+                graphRAGAvailable={graphRAGAvailable}
+                availableModels={availableModels}
               />
               {willRequireReingest && !isReadOnly && (
                 <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">

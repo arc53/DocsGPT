@@ -11,6 +11,7 @@ import { selectToken } from '../preferences/preferenceSlice';
 
 import {
   GraphRAGSummary,
+  estimateGraphTokens,
   pollTaskOnce,
   startGraphRAG,
 } from './graphragEnableUtils';
@@ -34,6 +35,11 @@ export default function EnableGraphRAGModal({
 }: EnableGraphRAGModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
+
+  const estimate = estimateGraphTokens(
+    Number(document?.tokens) || 0,
+    document?.config?.chunking?.max_tokens,
+  );
 
   const [phase, setPhase] = useState<Phase>('confirm');
   const [error, setError] = useState<string | null>(null);
@@ -161,8 +167,13 @@ export default function EnableGraphRAGModal({
             <ul className="text-muted-foreground list-disc space-y-1.5 pl-5 text-sm">
               <li>{t('settings.sources.graphrag.enable.costExtraction')}</li>
               <li>{t('settings.sources.graphrag.enable.costCost')}</li>
-              <li>{t('settings.sources.graphrag.enable.costPgvector')}</li>
             </ul>
+            <div className="bg-muted text-muted-foreground rounded-xl p-3 text-sm">
+              {t('settings.sources.graphrag.enable.estimate', {
+                lo: estimate.lo.toLocaleString(),
+                hi: estimate.hi.toLocaleString(),
+              })}
+            </div>
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <Button
                 type="button"

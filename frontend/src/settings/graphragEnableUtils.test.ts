@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  estimateGraphTokens,
   interpretTaskStatus,
   pollTaskOnce,
   startGraphRAG,
@@ -12,6 +13,35 @@ const jsonResponse = (status: number, body: unknown): Response =>
     status,
     json: () => Promise.resolve(body),
   }) as unknown as Response;
+
+describe('estimateGraphTokens', () => {
+  it('computes chunk count from source tokens and chunk max', () => {
+    const e = estimateGraphTokens(10000, 1250);
+    expect(e.chunks).toBe(8);
+    expect(e.lo).toBe(2500 * 8);
+    expect(e.hi).toBe(4000 * 8);
+  });
+
+  it('rounds the chunk count up (ceil)', () => {
+    expect(estimateGraphTokens(1300, 1250).chunks).toBe(2);
+  });
+
+  it('defaults the chunk max to 1250', () => {
+    expect(estimateGraphTokens(2500).chunks).toBe(2);
+  });
+
+  it('falls back to at least one chunk for tiny/zero sources', () => {
+    const e = estimateGraphTokens(0, 1250);
+    expect(e.chunks).toBe(1);
+    expect(e.lo).toBe(2500);
+    expect(e.hi).toBe(4000);
+  });
+
+  it('guards against a non-positive chunk max', () => {
+    expect(estimateGraphTokens(2500, 0).chunks).toBe(2);
+    expect(estimateGraphTokens(2500, -10).chunks).toBe(2);
+  });
+});
 
 describe('startGraphRAG', () => {
   it('returns the task id when extraction is enqueued', async () => {

@@ -159,7 +159,7 @@
           "introGeneric": "Build a knowledge graph over this source so agents can reason across linked entities and relationships.",
           "costExtraction": "Entities and relationships are extracted by running an LLM over this source's chunks.",
           "costCost": "This makes one LLM call per chunk, so it consumes tokens and may take a while on large sources.",
-          "costPgvector": "GraphRAG is available only with the pgvector store.",
+          "estimate": "~1 LLM call per chunk · ~{{lo}}–{{hi}} total tokens (about half input, half output); output varies with how entity-dense the document is.",
           "confirm": "Enable GraphRAG",
           "inProgress": "Building graph…",
           "summaryNodes_one": "{{count}} entity",
@@ -179,6 +179,7 @@
           "action": "View graph",
           "title": "Knowledge graph",
           "explainer": "Nodes are entities and edges are their relationships. Click a node to see its description and the chunks it was extracted from.",
+          "stats": "{{nodes}} entities · {{edges}} relationships",
           "empty": "No graph yet — extraction may still be running.",
           "selectNode": "Select a node to see its details.",
           "linkedChunks": "Linked chunks",
@@ -224,14 +225,15 @@
           "chunks": "Chunks to retrieve (top-k)",
           "scoreThreshold": "Score threshold",
           "scoreThresholdPlaceholder": "None",
-          "scoreThresholdHint": "Best-effort: only pgvector and MongoDB honor this; other vector stores ignore it.",
+          "scoreThresholdHint": "Only return chunks above this relevance score (0–1); higher is stricter.",
           "rephraseQuery": "Rephrase query before search",
           "retriever": "Retriever",
           "retrievers": {
             "classic": "Classic",
-            "hybrid": "Hybrid"
+            "hybrid": "Hybrid",
+            "graphrag": "GraphRAG"
           },
-          "retrieverHint": "Hybrid (keyword + vector) search is supported on pgvector; other vector stores fall back to vector-only.",
+          "retrieverHint": "Hybrid combines keyword + vector search. GraphRAG builds a knowledge graph over this source for multi-hop questions.",
           "exposure": "Search exposure",
           "exposures": {
             "prefetch": "Pre-fetch into context",
@@ -247,6 +249,16 @@
           "batchSize": "Batch size",
           "model": "Model (optional)",
           "modelPlaceholder": "Defaults to the request model"
+        },
+        "graph": {
+          "title": "Graph extraction",
+          "tag": "re-ingest to apply",
+          "extractionModel": "Extraction model",
+          "extractionModelHint": "LLM used to extract entities and relationships from each chunk.",
+          "defaultModel": "Use default model",
+          "maxChunks": "Max chunks to extract",
+          "maxChunksHint": "Cap how many chunks are sent for extraction. Leave empty to use the instance default.",
+          "maxChunksPlaceholder": "Default"
         },
         "chunking": {
           "title": "Chunking",

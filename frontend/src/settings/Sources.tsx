@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import modelService from '../api/services/modelService';
 
 import EyeView from '../assets/eye-view.svg';
 import NoFilesIcon from '../assets/no-files.svg';
@@ -33,6 +34,7 @@ import { Input } from '../components/ui/input';
 import { useDarkTheme, useDebouncedValue, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
+import type { Model } from '../models/types';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import {
@@ -129,6 +131,8 @@ export default function Sources({
   const [graphRAGModalState, setGraphRAGModalState] =
     useState<ActiveState>('INACTIVE');
   const [graphRAGAvailable, setGraphRAGAvailable] = useState<boolean>(false);
+  const [hybridAvailable, setHybridAvailable] = useState<boolean>(false);
+  const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [buildingGraphIds, setBuildingGraphIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -445,28 +449,6 @@ export default function Sources({
       });
     }
 
-    if (
-      document.id &&
-      !isWiki &&
-      !isGraphRAG &&
-      canEdit &&
-      graphRAGAvailable &&
-      document.ingestStatus !== 'processing' &&
-      document.ingestStatus !== 'failed'
-    ) {
-      actions.push({
-        icon: Network,
-        label: t('settings.sources.graphrag.enable.action'),
-        onClick: () => {
-          setDocumentToGraphRAG(document);
-          setGraphRAGModalState('ACTIVE');
-        },
-        iconWidth: 16,
-        iconHeight: 16,
-        variant: 'default',
-      });
-    }
-
     // Sharing is an owner-only action: hide it for sources shared into the
     // user's workspace by a team.
     if (document.ownership !== 'team' && document.id) {
@@ -505,13 +487,34 @@ export default function Sources({
       .getConfig()
       .then((response) => response.json())
       .then((config) => {
-        if (!cancelled) setGraphRAGAvailable(!!config?.graphrag_available);
+        if (!cancelled) {
+          setGraphRAGAvailable(!!config?.graphrag_available);
+          setHybridAvailable(!!config?.hybrid_available);
+        }
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, []);
+
+  // Models back the graphrag extraction-model picker in the source settings
+  // modal; only fetched when the instance supports graphrag.
+  useEffect(() => {
+    if (!graphRAGAvailable) return;
+    let cancelled = false;
+    modelService
+      .getModels(token)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && data)
+          setAvailableModels(modelService.transformModels(data.models || []));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [graphRAGAvailable, token]);
 
   return documentToView ? (
     <div className="mt-8 flex flex-col">
@@ -629,7 +632,7 @@ export default function Sources({
                           setDocumentToView(document);
                         }
                       }}
-                      className={`bg-muted dark:bg-accent focus-visible:ring-ring/50 flex h-[130px] w-full cursor-pointer flex-col rounded-2xl p-5 transition-all duration-200 outline-none focus-visible:ring-[3px] ${
+                      className={`bg-muted dark:bg-accent focus-visible:ring-ring/50 flex min-h-[130px] w-full cursor-pointer flex-col rounded-2xl p-5 transition-all duration-200 outline-none focus-visible:ring-[3px] ${
                         actionMenuDocId === docId ||
                         syncMenuState.docId === docId
                           ? 'scale-[1.05]'
@@ -639,7 +642,7 @@ export default function Sources({
                       <div className="w-full flex-1">
                         <div className="flex w-full items-center justify-between gap-2">
                           <h3
-                            className="dark:text-foreground text-foreground line-clamp-3 min-w-0 flex-1 text-sm leading-[18px] font-semibold wrap-anywhere"
+                            className="dark:text-foreground text-foreground line-clamp-2 min-w-0 flex-1 text-sm leading-[18px] font-semibold wrap-anywhere"
                             title={document.name}
                           >
                             {document.name}
@@ -877,6 +880,13 @@ export default function Sources({
         }}
         document={documentToConfigure}
         onReingest={handleReingest}
+        hybridAvailable={hybridAvailable}
+        graphRAGAvailable={graphRAGAvailable}
+        availableModels={availableModels}
+        onEnableGraphRAG={(doc) => {
+          setDocumentToGraphRAG(doc);
+          setGraphRAGModalState('ACTIVE');
+        }}
       />
 
       <ConvertToWikiModal

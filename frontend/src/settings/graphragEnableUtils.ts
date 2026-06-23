@@ -1,3 +1,35 @@
+export interface GraphTokenEstimate {
+  chunks: number;
+  lo: number;
+  hi: number;
+}
+
+const DEFAULT_CHUNK_MAX_TOKENS = 1250;
+const TOKENS_PER_CHUNK_LO = 2500;
+const TOKENS_PER_CHUNK_HI = 4000;
+
+/**
+ * Estimate the token cost of GraphRAG extraction before it runs. Extraction
+ * makes ~1 LLM call per chunk; measured calls land at ~2.5k–4k tokens each
+ * (roughly half input, half output), so the range scales with the chunk count.
+ */
+export function estimateGraphTokens(
+  sourceTokens: number,
+  chunkMaxTokens: number = DEFAULT_CHUNK_MAX_TOKENS,
+): GraphTokenEstimate {
+  const tokens = Number.isFinite(sourceTokens) ? Math.max(0, sourceTokens) : 0;
+  const perChunk =
+    Number.isFinite(chunkMaxTokens) && chunkMaxTokens > 0
+      ? chunkMaxTokens
+      : DEFAULT_CHUNK_MAX_TOKENS;
+  const chunks = Math.max(1, Math.ceil(tokens / perChunk));
+  return {
+    chunks,
+    lo: TOKENS_PER_CHUNK_LO * chunks,
+    hi: TOKENS_PER_CHUNK_HI * chunks,
+  };
+}
+
 export interface GraphRAGSummary {
   nodes: number;
   edges: number;

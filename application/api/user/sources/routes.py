@@ -1104,14 +1104,18 @@ class EnableSourceGraphRAG(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         if not graphrag_available():
+            current_app.logger.warning(
+                "GraphRAG enable rejected for %s: unavailable "
+                "(VECTOR_STORE=%s, GRAPHRAG_ENABLED=%s)",
+                source_id,
+                settings.VECTOR_STORE,
+                settings.GRAPHRAG_ENABLED,
+            )
             return make_response(
                 jsonify(
                     {
                         "success": False,
-                        "message": (
-                            "GraphRAG requires VECTOR_STORE=pgvector and "
-                            "GRAPHRAG_ENABLED."
-                        ),
+                        "message": "GraphRAG isn't available on this workspace.",
                     }
                 ),
                 400,
