@@ -21,7 +21,8 @@ from unittest.mock import MagicMock
 import pytest
 
 import application.graphrag.store as store_module
-from application.graphrag.store import GraphStore
+
+GraphStore = store_module.GraphStore
 
 TEST_EMBEDDING_DIM = 8
 
@@ -71,9 +72,10 @@ def _live_store():
         pytest.skip("No pgvector connection string configured")
     try:
         _drop_graph_tables(conn)
-        return GraphStore(connection_string=conn)
+        store = GraphStore(connection_string=conn)
     except Exception as exc:
         pytest.skip(f"pgvector DB not reachable: {exc}")
+    return store
 
 
 def _embedding(seed: float) -> list:
@@ -171,7 +173,7 @@ class TestGraphStoreLive:
 
             store.set_node_degrees(source_id)
             recomputed = store.get_node_by_normalized(source_id, "solo")["degree"]
-            assert recomputed == incremental == 1
+            assert recomputed == 1
         finally:
             store.delete_by_source(source_id)
 

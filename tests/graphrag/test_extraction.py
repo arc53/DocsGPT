@@ -14,9 +14,10 @@ import uuid
 import pytest
 
 import application.graphrag.extraction as extraction_module
-from application.graphrag.extraction import extract_graph_for_source
 from application.graphrag.store import GraphStore
 from application.storage.db.source_config import SourceConfig
+
+extract_graph_for_source = extraction_module.extract_graph_for_source
 
 TEST_EMBEDDING_DIM = 8
 
@@ -60,9 +61,10 @@ def _live_store(monkeypatch):
         pytest.skip("No pgvector connection string configured")
     try:
         _drop_graph_tables(conn)
-        return GraphStore(connection_string=conn)
+        store = GraphStore(connection_string=conn)
     except Exception as exc:
         pytest.skip(f"pgvector DB not reachable: {exc}")
+    return store
 
 
 class _StubLLM:
