@@ -78,7 +78,7 @@ const GraphView: React.FC<GraphViewProps> = ({
     observer.observe(element);
     setSize({ width: element.clientWidth, height: 480 });
     return () => observer.disconnect();
-  }, []);
+  }, [loading, data.nodes.length]);
 
   const maxNodeDegree = useMemo(() => maxDegree(data.nodes), [data.nodes]);
 
