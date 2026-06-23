@@ -143,7 +143,7 @@ export default function TeamSwitcher({
           </button>
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-[248px]">
+      <DropdownMenuContent align="start" className="w-62">
         <DropdownMenuLabel className="flex items-center gap-2">
           <span className="bg-muted dark:bg-accent flex size-7 shrink-0 items-center justify-center rounded-md">
             {currentTeam ? (
