@@ -1,4 +1,4 @@
-"""Ingest-time GraphRAG extraction pipeline (D28; pgvector-only per D29).
+"""Ingest-time GraphRAG extraction pipeline (pgvector-only).
 
 Turns a source's chunks into the per-source knowledge graph held by
 ``GraphStore``: each chunk is sent through a schema-constrained LLM extraction
@@ -6,7 +6,7 @@ Turns a source's chunks into the per-source knowledge graph held by
 are added between resolved endpoints, and chunk links are recorded so retrieval
 can join ``graph_node_chunks`` back to the retrievable chunk ids.
 
-Cost controls (D28): gleanings off (exactly one ``.gen()`` per chunk), a hard
+Cost controls: gleanings off (exactly one ``.gen()`` per chunk), a hard
 chunk cap, a resumable ``graph_ingest_progress`` checkpoint (an idempotent retry
 never re-bills), and concat-merge of entity descriptions (no LLM summary pass).
 
@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
@@ -151,6 +151,7 @@ def extract_graph_for_source(
     *,
     config: SourceConfig,
     request_id: Optional[str] = None,
+    progress_cb: Optional[Callable[[Dict[str, int]], None]] = None,
 ) -> Dict[str, int]:
     """Build the per-source graph from its chunks via per-chunk LLM extraction.
 
@@ -160,6 +161,9 @@ def extract_graph_for_source(
     reported under ``skipped_over_cap``. A malformed response or an LLM error on
     a single chunk marks it ``failed`` and continues — the pipeline never crashes.
 
+    Each chunk is written in a single transaction with one batched embedding
+    call (entity + relationship-endpoint names together).
+
     Args:
         source_id: The source whose graph is being built.
         user: Owner id for token-usage attribution (``None`` skips attribution).
@@ -167,6 +171,8 @@ def extract_graph_for_source(
             retrievable id (``doc_id``/``chunk_id``/``id``) and text.
         config: The source's parsed ``SourceConfig`` (graph knobs).
         request_id: Originating request id stamped on the extraction LLM.
+        progress_cb: Optional callback invoked after each processed chunk with
+            ``{current, total, nodes, edges}`` for progress reporting.
 
     Returns:
         A summary ``{nodes, edges, chunks_processed, skipped_over_cap,
@@ -199,70 +205,47 @@ def extract_graph_for_source(
     edges = 0
     chunks_processed = 0
     failed_chunks = 0
+    total = len(to_process)
+
+    def _report():
+        if progress_cb is None:
+            return
+        try:
+            progress_cb(
+                {
+                    "current": chunks_processed + failed_chunks,
+                    "total": total,
+                    "nodes": nodes,
+                    "edges": edges,
+                }
+            )
+        except Exception as exc:
+            logger.debug("graph progress callback failed: %s", exc)
 
     for chunk, chunk_id in to_process:
         text = _chunk_text(chunk)
         if not text:
             store.mark_chunk(source_id, chunk_id, "done")
             chunks_processed += 1
+            _report()
             continue
 
         extracted = _extract_chunk(llm, text)
         if extracted is None:
             store.mark_chunk(source_id, chunk_id, "failed")
             failed_chunks += 1
+            _report()
             continue
 
         try:
-            entities = [
-                e for e in extracted["entities"]
-                if isinstance(e, dict) and str(e.get("name", "")).strip()
-            ]
-            names = [str(e["name"]).strip() for e in entities]
-            name_embeddings = (
-                embedding.embed_documents(names) if names else []
+            entities = _build_entities(extracted["entities"])
+            relationships = _build_relationships(extracted["relationships"])
+            name_embeddings = _embed_names(embedding, entities, relationships)
+            chunk_nodes, chunk_edges = store.apply_chunk(
+                source_id, chunk_id, entities, relationships, name_embeddings
             )
-
-            node_ids: Dict[str, str] = {}
-            for entity, name_embedding in zip(entities, name_embeddings):
-                name = str(entity["name"]).strip()
-                normalized_name = name.lower()
-                node_id = store.upsert_node(
-                    source_id=source_id,
-                    name=name,
-                    normalized_name=normalized_name,
-                    type=str(entity.get("type") or "") or None,
-                    description=str(entity.get("description") or "") or None,
-                    name_embedding=name_embedding,
-                )
-                node_ids[normalized_name] = node_id
-                nodes += 1
-
-            for node_id in node_ids.values():
-                store.link_node_chunk(source_id, node_id, chunk_id)
-
-            for rel in extracted["relationships"]:
-                if not isinstance(rel, dict):
-                    continue
-                src_id = _resolve_endpoint(
-                    store, source_id, rel.get("source"), node_ids, embedding
-                )
-                dst_id = _resolve_endpoint(
-                    store, source_id, rel.get("target"), node_ids, embedding
-                )
-                if src_id is None or dst_id is None:
-                    continue
-                store.add_edge(
-                    source_id=source_id,
-                    src_node_id=src_id,
-                    dst_node_id=dst_id,
-                    type=str(rel.get("type") or "") or None,
-                    description=str(rel.get("description") or "") or None,
-                    weight=_coerce_weight(rel.get("weight", 1.0)),
-                    source_chunk_ids=[chunk_id],
-                )
-                edges += 1
-
+            nodes += chunk_nodes
+            edges += chunk_edges
             store.mark_chunk(source_id, chunk_id, "done")
             chunks_processed += 1
         except Exception as exc:
@@ -273,6 +256,7 @@ def extract_graph_for_source(
             )
             store.mark_chunk(source_id, chunk_id, "failed")
             failed_chunks += 1
+        _report()
 
     try:
         store.set_node_degrees(source_id)
@@ -288,28 +272,67 @@ def extract_graph_for_source(
     }
 
 
-def _resolve_endpoint(
-    store,
-    source_id: str,
-    name: Any,
-    node_ids: Dict[str, str],
+def _build_entities(raw_entities: Any) -> List[Dict[str, Any]]:
+    """Normalize the LLM's entity dicts (drop nameless ones)."""
+    entities = []
+    for e in raw_entities:
+        if not isinstance(e, dict):
+            continue
+        name = str(e.get("name", "")).strip()
+        if not name:
+            continue
+        entities.append(
+            {
+                "name": name,
+                "normalized_name": name.lower(),
+                "type": str(e.get("type") or "") or None,
+                "description": str(e.get("description") or "") or None,
+            }
+        )
+    return entities
+
+
+def _build_relationships(raw_relationships: Any) -> List[Dict[str, Any]]:
+    """Normalize the LLM's relationship dicts (endpoints kept as raw names)."""
+    relationships = []
+    for rel in raw_relationships:
+        if not isinstance(rel, dict):
+            continue
+        relationships.append(
+            {
+                "source": rel.get("source"),
+                "target": rel.get("target"),
+                "type": str(rel.get("type") or "") or None,
+                "description": str(rel.get("description") or "") or None,
+                "weight": _coerce_weight(rel.get("weight", 1.0)),
+            }
+        )
+    return relationships
+
+
+def _embed_names(
     embedding,
-) -> Optional[str]:
-    """Resolve a relationship endpoint to a node id, upserting if unseen this chunk."""
-    if name is None:
-        return None
-    clean = str(name).strip()
-    if not clean:
-        return None
-    normalized_name = clean.lower()
-    if normalized_name in node_ids:
-        return node_ids[normalized_name]
-    name_embedding = embedding.embed_documents([clean])[0]
-    node_id = store.upsert_node(
-        source_id=source_id,
-        name=clean,
-        normalized_name=normalized_name,
-        name_embedding=name_embedding,
-    )
-    node_ids[normalized_name] = node_id
-    return node_id
+    entities: List[Dict[str, Any]],
+    relationships: List[Dict[str, Any]],
+) -> Dict[str, List[float]]:
+    """Embed every distinct name in a chunk (entities + endpoints) in one call.
+
+    Returns a ``normalized_name -> embedding`` map. One batched ``embed_documents``
+    per chunk instead of a call per relationship endpoint.
+    """
+    name_by_norm: Dict[str, str] = {}
+    for entity in entities:
+        name_by_norm.setdefault(entity["normalized_name"], entity["name"])
+    for rel in relationships:
+        for endpoint in (rel.get("source"), rel.get("target")):
+            if endpoint is None:
+                continue
+            clean = str(endpoint).strip()
+            if clean:
+                name_by_norm.setdefault(clean.lower(), clean)
+
+    if not name_by_norm:
+        return {}
+    norms = list(name_by_norm.keys())
+    vectors = embedding.embed_documents([name_by_norm[n] for n in norms])
+    return {norm: vector for norm, vector in zip(norms, vectors)}

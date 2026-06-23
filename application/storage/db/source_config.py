@@ -50,7 +50,7 @@ class PreScreenConfig(BaseModel):
 
 
 class GraphConfig(BaseModel):
-    """Ingest-time GraphRAG extraction knobs (D28; pgvector-only per D29).
+    """Ingest-time GraphRAG extraction knobs (pgvector-only).
 
     ``extraction_model`` None reuses the instance default model
     (``LLM_PROVIDER``/``LLM_NAME``); ``max_chunks`` None falls back to the
@@ -162,7 +162,7 @@ class SourceConfig(BaseModel):
         return new_config
 
     def graph_enabled(self) -> dict:
-        """Return a config dict flipped to GraphRAG mode (D28).
+        """Return a config dict flipped to GraphRAG mode.
 
         Sets ``kind="graphrag"`` so ingest paths run graph extraction and
         ``retrieval.retriever="graphrag"`` so the Dispatcher routes queries to

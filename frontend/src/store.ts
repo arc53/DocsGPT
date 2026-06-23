@@ -15,6 +15,7 @@ import {
   prefListenerMiddleware,
   prefSlice,
 } from './preferences/preferenceSlice';
+import graphBuildReducer from './settings/graphBuildSlice';
 import teamsReducer from './teams/teamsSlice';
 import uploadReducer from './upload/uploadSlice';
 
@@ -78,6 +79,7 @@ const store = configureStore({
     notifications: notificationsReducer,
     schedules: schedulesReducer,
     teams: teamsReducer,
+    graphBuild: graphBuildReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(

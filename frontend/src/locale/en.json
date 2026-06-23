@@ -152,6 +152,7 @@
       "graphrag": {
         "badge": "GraphRAG",
         "building": "Building graph…",
+        "buildingPct": "Building graph… {{pct}}%",
         "enable": {
           "action": "Enable GraphRAG",
           "title": "Enable GraphRAG",
@@ -162,6 +163,7 @@
           "estimate": "~1 LLM call per chunk · ~{{lo}}–{{hi}} total tokens (about half input, half output); output varies with how entity-dense the document is.",
           "confirm": "Enable GraphRAG",
           "inProgress": "Building graph…",
+          "inProgressPct": "Building graph… {{pct}}%",
           "summaryNodes_one": "{{count}} entity",
           "summaryNodes_other": "{{count}} entities",
           "summaryEdges_one": "{{count}} relationship",

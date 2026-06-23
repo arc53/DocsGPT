@@ -137,8 +137,31 @@ def convert_source_to_wiki(self, source_id, user, idempotency_key=None):
     return resp
 
 
+def _emit_graph_poison_event(task_name, bound):
+    """Publish a terminal ``graph.extract.failed`` when the poison-guard trips.
+
+    The guard returns before the worker runs, so the worker's own failed event
+    never fires — without this the build UI spins forever.
+    """
+    user = bound.get("user")
+    source_id = bound.get("source_id")
+    if not user or not source_id:
+        return
+    from application.events.publisher import publish_user_event
+
+    publish_user_event(
+        user,
+        "graph.extract.failed",
+        {
+            "source_id": str(source_id),
+            "error": "Graph extraction stopped after repeated failures.",
+        },
+        scope={"kind": "source", "id": str(source_id)},
+    )
+
+
 @celery.task(**DURABLE_TASK)
-@with_idempotency(task_name="extract_graph")
+@with_idempotency(task_name="extract_graph", on_poison=_emit_graph_poison_event)
 def extract_graph(self, source_id, user, idempotency_key=None):
     from application.worker import extract_graph_worker
 

@@ -161,6 +161,51 @@ class TestGraphStoreLive:
         finally:
             store.delete_by_source(source_id)
 
+    def test_apply_chunk_writes_nodes_links_and_edges(self, store, source_id):
+        """One transactional write: entities linked to the chunk, edges added,
+        and a bare relationship endpoint upserted but not chunk-linked."""
+        try:
+            entities = [
+                {"name": "Ada", "normalized_name": "ada", "type": "person",
+                 "description": "mathematician"},
+                {"name": "Engine", "normalized_name": "engine", "type": "machine",
+                 "description": None},
+            ]
+            relationships = [
+                {"source": "Ada", "target": "Engine", "type": "designed",
+                 "description": "Ada designed the Engine", "weight": 2.0},
+                # 'Babbage' is only an endpoint — upserted edge-only.
+                {"source": "Babbage", "target": "Engine", "type": "built",
+                 "description": None, "weight": 1.0},
+            ]
+            name_embeddings = {
+                "ada": [0.1] * store._embedding_dim(),
+                "engine": [0.2] * store._embedding_dim(),
+                "babbage": [0.3] * store._embedding_dim(),
+            }
+
+            nodes, edges = store.apply_chunk(
+                source_id, "c1", entities, relationships, name_embeddings
+            )
+            assert nodes == 2  # only entities are counted
+            assert edges == 2
+
+            ada = store.get_node_by_normalized(source_id, "ada")
+            engine = store.get_node_by_normalized(source_id, "engine")
+            babbage = store.get_node_by_normalized(source_id, "babbage")
+            assert ada is not None and engine is not None
+            assert babbage is not None  # endpoint upserted
+
+            mapping = store.get_chunk_ids_for_nodes(
+                source_id, [ada["id"], engine["id"], babbage["id"]]
+            )
+            assert mapping[ada["id"]] == ["c1"]
+            assert mapping[engine["id"]] == ["c1"]
+            # Bare endpoint is not linked to the chunk.
+            assert babbage["id"] not in mapping
+        finally:
+            store.delete_by_source(source_id)
+
     def test_self_loop_degree_agrees_across_paths(self, store, source_id):
         """``add_edge``'s incremental +1 and ``set_node_degrees`` recompute must
         agree on a self-loop (count it once)."""

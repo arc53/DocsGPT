@@ -145,6 +145,34 @@ class TestGraphRAGHappyPath:
     @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
     @patch("application.retriever.graph_rag.GraphStore")
     @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
+    def test_seed_distance_over_one_is_clamped(
+        self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
+    ):
+        # One seed at cosine distance > 1 (negative similarity) => raw weight
+        # 1 - 1.5 < 0. Paired with a positive seed the personalization sums to
+        # ~0, which makes networkx pagerank raise ZeroDivisionError. Clamping
+        # each weight to >= 0 keeps the personalization a valid distribution.
+        nodes = [{"id": "n1", "doc_freq": 1}, {"id": "n2", "doc_freq": 1}]
+        edges = [{"src_node_id": "n1", "dst_node_id": "n2", "weight": 1.0}]
+        node_chunks = {"n1": ["c1"], "n2": ["c2"]}
+        chunk_texts = {"c1": "a", "c2": "b"}
+        seed_rows = [
+            {"id": "n1", "distance": 0.5},
+            {"id": "n2", "distance": 1.5},
+        ]
+        store = _store_with_graph(nodes, edges, node_chunks, chunk_texts, seed_rows)
+        mock_store_cls.return_value = store
+
+        rag = _make_retriever(chunks=2)
+        # Call the PPR path directly: _get_data would swallow a raise and fall
+        # back to ClassicRAG, hiding the regression.
+        docs = rag._graph_docs_for_source(store, "src1")
+
+        assert len(docs) >= 1
+
+    @patch("application.retriever.graph_rag.num_tokens_from_string", return_value=10)
+    @patch("application.retriever.graph_rag.GraphStore")
+    @patch("application.retriever.graph_rag.graphrag_available", return_value=True)
     def test_topk_respected(
         self, _avail, mock_store_cls, _tok, _patch_llm_creator, _patch_embed
     ):

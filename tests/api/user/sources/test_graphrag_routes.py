@@ -111,6 +111,8 @@ class TestEnableSourceGraphRAG:
             "application.api.user.sources.routes.graphrag_available",
             return_value=True,
         ), patch(
+            "application.worker._reset_graph_for_source",
+        ) as mock_reset, patch(
             "application.api.user.sources.routes.extract_graph.delay",
             return_value=fake_task,
         ) as mock_extract, app.test_request_context(
@@ -129,6 +131,8 @@ class TestEnableSourceGraphRAG:
         assert cfg.kind == "graphrag"
         assert cfg.retrieval.retriever == "graphrag"
 
+        # Each enable wipes any prior graph so it rebuilds from scratch.
+        mock_reset.assert_called_once_with(sid)
         mock_extract.assert_called_once()
         assert mock_extract.call_args.args[0] == sid
         assert mock_extract.call_args.args[1] == user

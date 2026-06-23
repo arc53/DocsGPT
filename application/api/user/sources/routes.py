@@ -1153,10 +1153,14 @@ class EnableSourceGraphRAG(Resource):
             return make_response(jsonify({"success": False}), 400)
         try:
             from application.worker import (
+                _reset_graph_for_source,
                 _source_updated_at,
                 graph_extraction_key,
             )
 
+            # Drop any prior graph so each enable rebuilds from scratch rather
+            # than no-opping against an already-``done`` checkpoint.
+            _reset_graph_for_source(resolved_source_id)
             task = extract_graph.delay(
                 resolved_source_id,
                 owner,

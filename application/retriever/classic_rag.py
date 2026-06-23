@@ -1,9 +1,9 @@
 import logging
-import os
 
 from application.core.settings import settings
 from application.llm.llm_creator import LLMCreator
 from application.retriever.base import BaseRetriever
+from application.retriever.labels import labels_from_metadata
 from application.utils import num_tokens_from_string
 from application.vectorstore.vector_creator import VectorCreator
 
@@ -223,38 +223,15 @@ class ClassicRAG(BaseRetriever):
                             page_content = doc.get("text", doc.get("page_content", ""))
                             metadata = doc.get("metadata", {})
 
-                        title = metadata.get(
-                            "title", metadata.get("post_title", page_content)
+                        labels = labels_from_metadata(
+                            metadata, page_content, vectorstore_id
                         )
-                        if not isinstance(title, str):
-                            title = str(title)
-                        title = title.split("/")[-1]
 
-                        filename = (
-                            metadata.get("filename")
-                            or metadata.get("file_name")
-                            or metadata.get("source")
-                        )
-                        if isinstance(filename, str):
-                            filename = os.path.basename(filename) or filename
-                        else:
-                            filename = title
-                        if not filename:
-                            filename = title
-                        source_path = metadata.get("source") or vectorstore_id
-
-                        doc_text_with_header = f"{filename}\n{page_content}"
+                        doc_text_with_header = f"{labels['filename']}\n{page_content}"
                         doc_tokens = num_tokens_from_string(doc_text_with_header)
 
                         if cumulative_tokens + doc_tokens < token_budget:
-                            all_docs.append(
-                                {
-                                    "title": title,
-                                    "text": page_content,
-                                    "source": source_path,
-                                    "filename": filename,
-                                }
-                            )
+                            all_docs.append({"text": page_content, **labels})
                             cumulative_tokens += doc_tokens
 
                     if cumulative_tokens >= token_budget:

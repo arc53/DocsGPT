@@ -1,6 +1,6 @@
 """Per-source knowledge-graph store co-located with the pgvector ``documents`` table.
 
-GraphRAG is pgvector-only (D29): the graph tables live in the same DB as the
+GraphRAG is pgvector-only: the graph tables live in the same DB as the
 pgvector store and are created on-demand (``CREATE TABLE IF NOT EXISTS`` +
 ``CREATE EXTENSION IF NOT EXISTS vector``), mirroring
 ``PGVectorStore._ensure_table_exists`` rather than going through app-DB Alembic.
@@ -214,6 +214,63 @@ class GraphStore:
         finally:
             cursor.close()
 
+    def _upsert_node(
+        self,
+        cursor,
+        source_id: str,
+        name: str,
+        normalized_name: str,
+        type: Optional[str] = None,
+        description: Optional[str] = None,
+        name_embedding: Optional[List[float]] = None,
+    ) -> str:
+        """Upsert a node on an open cursor (no commit). Returns the node id.
+
+        On conflict the description is concatenated (de-duped), ``doc_freq`` is
+        incremented, the type is refreshed if previously empty, and the
+        embedding is refreshed when provided.
+        """
+        node_id = str(uuid.uuid4())
+        cursor.execute(
+            """
+            INSERT INTO graph_nodes
+                (id, source_id, name, normalized_name, type, description,
+                 doc_freq, name_embedding)
+            VALUES (%s, %s, %s, %s, %s, %s, 1, %s)
+            ON CONFLICT (source_id, normalized_name) DO UPDATE SET
+                description = CASE
+                    WHEN EXCLUDED.description IS NULL
+                         OR EXCLUDED.description = '' THEN graph_nodes.description
+                    WHEN graph_nodes.description IS NULL
+                         OR graph_nodes.description = '' THEN EXCLUDED.description
+                    WHEN position(EXCLUDED.description IN graph_nodes.description) > 0
+                        THEN graph_nodes.description
+                    ELSE graph_nodes.description || ' ' || EXCLUDED.description
+                END,
+                type = CASE
+                    WHEN graph_nodes.type IS NULL
+                         OR graph_nodes.type = '' THEN EXCLUDED.type
+                    ELSE graph_nodes.type
+                END,
+                name = COALESCE(graph_nodes.name, EXCLUDED.name),
+                doc_freq = graph_nodes.doc_freq + 1,
+                name_embedding = COALESCE(
+                    EXCLUDED.name_embedding, graph_nodes.name_embedding
+                )
+            RETURNING id;
+            """,
+            (
+                node_id,
+                source_id,
+                name,
+                normalized_name,
+                type,
+                description,
+                name_embedding,
+            ),
+        )
+        return str(cursor.fetchone()[0])
+
     def upsert_node(
         self,
         source_id: str,
@@ -229,57 +286,58 @@ class GraphStore:
         incremented, the type is refreshed if previously empty, and the
         embedding is refreshed when provided. Returns the node id either way.
         """
-        node_id = str(uuid.uuid4())
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute(
-                """
-                INSERT INTO graph_nodes
-                    (id, source_id, name, normalized_name, type, description,
-                     doc_freq, name_embedding)
-                VALUES (%s, %s, %s, %s, %s, %s, 1, %s)
-                ON CONFLICT (source_id, normalized_name) DO UPDATE SET
-                    description = CASE
-                        WHEN EXCLUDED.description IS NULL
-                             OR EXCLUDED.description = '' THEN graph_nodes.description
-                        WHEN graph_nodes.description IS NULL
-                             OR graph_nodes.description = '' THEN EXCLUDED.description
-                        WHEN position(EXCLUDED.description IN graph_nodes.description) > 0
-                            THEN graph_nodes.description
-                        ELSE graph_nodes.description || ' ' || EXCLUDED.description
-                    END,
-                    type = CASE
-                        WHEN graph_nodes.type IS NULL
-                             OR graph_nodes.type = '' THEN EXCLUDED.type
-                        ELSE graph_nodes.type
-                    END,
-                    name = COALESCE(graph_nodes.name, EXCLUDED.name),
-                    doc_freq = graph_nodes.doc_freq + 1,
-                    name_embedding = COALESCE(
-                        EXCLUDED.name_embedding, graph_nodes.name_embedding
-                    )
-                RETURNING id;
-                """,
-                (
-                    node_id,
-                    source_id,
-                    name,
-                    normalized_name,
-                    type,
-                    description,
-                    name_embedding,
-                ),
+            returned_id = self._upsert_node(
+                cursor, source_id, name, normalized_name, type, description,
+                name_embedding,
             )
-            returned_id = cursor.fetchone()[0]
             conn.commit()
-            return str(returned_id)
+            return returned_id
         except Exception as e:
             conn.rollback()
             logging.error(f"Error upserting node: {e}")
             raise
         finally:
             cursor.close()
+
+    def _add_edge(
+        self,
+        cursor,
+        source_id: str,
+        src_node_id: str,
+        dst_node_id: str,
+        type: Optional[str] = None,
+        description: Optional[str] = None,
+        weight: float = 1.0,
+        source_chunk_ids: Optional[List[str]] = None,
+    ) -> str:
+        """Insert an edge on an open cursor (no commit, no degree bump).
+
+        Callers that batch many edges run ``set_node_degrees`` once afterwards
+        instead of bumping degree per edge.
+        """
+        edge_id = str(uuid.uuid4())
+        cursor.execute(
+            """
+            INSERT INTO graph_edges
+                (id, source_id, src_node_id, dst_node_id, type, description,
+                 weight, source_chunk_ids)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+            """,
+            (
+                edge_id,
+                source_id,
+                src_node_id,
+                dst_node_id,
+                type,
+                description,
+                weight,
+                Jsonb(source_chunk_ids or []),
+            ),
+        )
+        return edge_id
 
     def add_edge(
         self,
@@ -292,27 +350,12 @@ class GraphStore:
         source_chunk_ids: Optional[List[str]] = None,
     ) -> str:
         """Insert an edge and bump the degree of both endpoints. Returns its id."""
-        edge_id = str(uuid.uuid4())
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute(
-                """
-                INSERT INTO graph_edges
-                    (id, source_id, src_node_id, dst_node_id, type, description,
-                     weight, source_chunk_ids)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
-                """,
-                (
-                    edge_id,
-                    source_id,
-                    src_node_id,
-                    dst_node_id,
-                    type,
-                    description,
-                    weight,
-                    Jsonb(source_chunk_ids or []),
-                ),
+            edge_id = self._add_edge(
+                cursor, source_id, src_node_id, dst_node_id, type, description,
+                weight, source_chunk_ids,
             )
             cursor.execute(
                 "UPDATE graph_nodes SET degree = degree + 1 "
@@ -328,18 +371,22 @@ class GraphStore:
         finally:
             cursor.close()
 
+    def _link_node_chunk(self, cursor, source_id: str, node_id: str, chunk_id: str):
+        """Link a node to a chunk on an open cursor (no commit)."""
+        cursor.execute(
+            """
+            INSERT INTO graph_node_chunks (source_id, node_id, chunk_id)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (source_id, node_id, chunk_id) DO NOTHING;
+            """,
+            (source_id, node_id, str(chunk_id)),
+        )
+
     def link_node_chunk(self, source_id: str, node_id: str, chunk_id: str):
         conn = self._get_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute(
-                """
-                INSERT INTO graph_node_chunks (source_id, node_id, chunk_id)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (source_id, node_id, chunk_id) DO NOTHING;
-                """,
-                (source_id, node_id, str(chunk_id)),
-            )
+            self._link_node_chunk(cursor, source_id, node_id, chunk_id)
             conn.commit()
         except Exception as e:
             conn.rollback()
@@ -347,6 +394,100 @@ class GraphStore:
             raise
         finally:
             cursor.close()
+
+    def apply_chunk(
+        self,
+        source_id: str,
+        chunk_id: str,
+        entities: List[Dict[str, Any]],
+        relationships: List[Dict[str, Any]],
+        name_embeddings: Dict[str, List[float]],
+    ) -> tuple[int, int]:
+        """Write one chunk's extracted entities and relationships in one transaction.
+
+        ``entities`` are ``{name, normalized_name, type, description}`` dicts;
+        each is upserted and linked to ``chunk_id``. ``relationships`` are
+        ``{source, target, type, description, weight}`` dicts keyed by entity
+        name; an endpoint not among the chunk's entities is upserted edge-only
+        (not linked to the chunk), mirroring the per-call path.
+        ``name_embeddings`` maps ``normalized_name`` to its embedding. Degrees
+        are not bumped here — the caller runs ``set_node_degrees`` once at the
+        end. Returns ``(nodes_upserted, edges_added)``.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        node_ids: Dict[str, str] = {}
+        edges_added = 0
+        try:
+            for entity in entities:
+                normalized_name = entity["normalized_name"]
+                node_id = self._upsert_node(
+                    cursor,
+                    source_id,
+                    entity["name"],
+                    normalized_name,
+                    entity.get("type"),
+                    entity.get("description"),
+                    name_embeddings.get(normalized_name),
+                )
+                node_ids[normalized_name] = node_id
+                self._link_node_chunk(cursor, source_id, node_id, chunk_id)
+
+            for rel in relationships:
+                src_id = self._resolve_endpoint(
+                    cursor, source_id, rel.get("source"), node_ids, name_embeddings
+                )
+                dst_id = self._resolve_endpoint(
+                    cursor, source_id, rel.get("target"), node_ids, name_embeddings
+                )
+                if src_id is None or dst_id is None:
+                    continue
+                self._add_edge(
+                    cursor,
+                    source_id,
+                    src_id,
+                    dst_id,
+                    type=rel.get("type"),
+                    description=rel.get("description"),
+                    weight=float(rel.get("weight") or 1.0),
+                    source_chunk_ids=[chunk_id],
+                )
+                edges_added += 1
+
+            conn.commit()
+            return len(entities), edges_added
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+
+    def _resolve_endpoint(
+        self,
+        cursor,
+        source_id: str,
+        name: Any,
+        node_ids: Dict[str, str],
+        name_embeddings: Dict[str, List[float]],
+    ) -> Optional[str]:
+        """Resolve a relationship endpoint to a node id, upserting if unseen this chunk."""
+        if name is None:
+            return None
+        clean = str(name).strip()
+        if not clean:
+            return None
+        normalized_name = clean.lower()
+        if normalized_name in node_ids:
+            return node_ids[normalized_name]
+        node_id = self._upsert_node(
+            cursor,
+            source_id,
+            clean,
+            normalized_name,
+            name_embedding=name_embeddings.get(normalized_name),
+        )
+        node_ids[normalized_name] = node_id
+        return node_id
 
     def get_node_by_normalized(
         self, source_id: str, normalized_name: str
@@ -382,7 +523,7 @@ class GraphStore:
             conn.rollback()
 
     def count_nodes(self, source_id: str) -> int:
-        """Number of nodes for a source. Zero drives the ClassicRAG fallback (G5)."""
+        """Number of nodes for a source. Zero drives the ClassicRAG fallback."""
         conn = self._get_connection()
         cursor = conn.cursor()
         try:

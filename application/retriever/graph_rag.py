@@ -1,20 +1,19 @@
-"""GraphRAG local retriever — Personalized PageRank over a per-source graph (D27/D31).
+"""GraphRAG local retriever — Personalized PageRank over a per-source graph.
 
-Local mode only (v1): rephrased query -> entity-name NN seeds -> bounded 1-2-hop
-fetch -> networkx Personalized PageRank (IDF-down-weighted hubs) -> chunks ranked
-by landed PPR mass -> shared token budget. No LLM call at query time beyond the
-(optional, reused) rephrase.
+Rephrased query -> entity-name NN seeds -> bounded 1-2-hop fetch -> networkx
+Personalized PageRank (IDF-down-weighted hubs) -> chunks ranked by landed PPR
+mass -> shared token budget. No LLM call at query time beyond the (optional,
+reused) rephrase.
 
 Composes :class:`ClassicRAG` rather than subclassing: PPR doesn't fit the
 ``_fetch_candidates`` hook, but the composed instance supplies the rephrase, the
-token-budget loop, and the per-source fallback when a source has no graph (D31).
+token-budget loop, and the per-source fallback when a source has no graph.
 """
 
 from __future__ import annotations
 
 import logging
 import math
-import os
 from typing import Any, Dict, List
 
 import networkx as nx
@@ -24,6 +23,7 @@ from application.graphrag import graphrag_available
 from application.graphrag.store import GraphStore
 from application.retriever.base import BaseRetriever
 from application.retriever.classic_rag import ClassicRAG
+from application.retriever.labels import labels_from_metadata
 from application.utils import num_tokens_from_string
 from application.vectorstore.base import EmbeddingsSingleton
 
@@ -34,31 +34,6 @@ SUBGRAPH_HOPS = 1
 def _idf(doc_freq: Any) -> float:
     """Node-specificity weight: rarer entities (low ``doc_freq``) score higher."""
     return 1.0 / math.log(1.0 + max(int(doc_freq or 0), 0) + 1.0)
-
-
-def _labels_from_metadata(
-    metadata: Dict[str, Any], text: str, source_id: str
-) -> Dict[str, str]:
-    """Derive ``title``/``source``/``filename`` from chunk metadata as ClassicRAG does."""
-    metadata = metadata or {}
-    title = metadata.get("title", metadata.get("post_title", text))
-    if not isinstance(title, str):
-        title = str(title)
-    title = title.split("/")[-1]
-
-    filename = (
-        metadata.get("filename")
-        or metadata.get("file_name")
-        or metadata.get("source")
-    )
-    if isinstance(filename, str):
-        filename = os.path.basename(filename) or filename
-    else:
-        filename = title
-    if not filename:
-        filename = title
-    source_path = metadata.get("source") or source_id
-    return {"title": title, "source": source_path, "filename": filename}
 
 
 class GraphRAGRetriever(BaseRetriever):
@@ -165,7 +140,14 @@ class GraphRAGRetriever(BaseRetriever):
             return []
 
         seed_ids = [row["id"] for row in seed_rows]
-        seeds = {row["id"]: 1.0 - float(row.get("distance") or 0.0) for row in seed_rows}
+        # Clamp to >= 0: cosine distance can exceed 1 (negative similarity) for
+        # some embedding backends, and networkx pagerank produces garbage on
+        # negative personalization (and ZeroDivisionError when the weights sum
+        # to ~0). All-zero collapses to uniform PPR via the None guard below.
+        seeds = {
+            row["id"]: max(0.0, 1.0 - float(row.get("distance") or 0.0))
+            for row in seed_rows
+        }
 
         subgraph = store.get_subgraph(source_id, seed_ids, hops=SUBGRAPH_HOPS)
         node_scores = self._ppr_scores(subgraph, seeds)
@@ -185,7 +167,7 @@ class GraphRAGRetriever(BaseRetriever):
             text = chunk.get("text") if chunk else None
             if not text:
                 continue
-            labels = _labels_from_metadata(chunk.get("metadata"), text, source_id)
+            labels = labels_from_metadata(chunk.get("metadata"), text, source_id)
             doc_tokens = num_tokens_from_string(f"{labels['filename']}\n{text}")
             if cumulative_tokens + doc_tokens >= token_budget:
                 break
@@ -194,7 +176,7 @@ class GraphRAGRetriever(BaseRetriever):
         return docs
 
     def _classic_for_source(self, source_id) -> List[Dict[str, Any]]:
-        """Reuse the composed ClassicRAG to retrieve one source's chunks (D31)."""
+        """Reuse the composed ClassicRAG to retrieve one source's chunks."""
         original = self._classic.vectorstores
         original_overrides = self._classic.per_source_retrieval
         try:

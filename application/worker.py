@@ -78,13 +78,41 @@ def _source_updated_at(source) -> str:
     return str(stamp) if stamp is not None else ""
 
 
+def _reset_graph_for_source(source_id) -> None:
+    """Drop a source's existing graph so a re-enable/re-ingest rebuilds from scratch.
+
+    Clears nodes, edges, node→chunk links and the ingest checkpoint. Run at the
+    enqueue site (not inside the worker) so a broker redelivery of an interrupted
+    build still resumes from its checkpoint rather than restarting from zero.
+    """
+    from application.graphrag.store import GraphStore
+
+    GraphStore().delete_by_source(str(source_id))
+
+
+def _publish_graph_event(user, source_id, event_type, payload) -> None:
+    """Publish a graph-extraction SSE event, scoped to the source. Never raises."""
+    if not user:
+        return
+    try:
+        publish_user_event(
+            user,
+            event_type,
+            payload,
+            scope={"kind": "source", "id": str(source_id)},
+        )
+    except Exception as e:
+        logging.debug(f"Failed to publish graph event {event_type}: {e}")
+
+
 def _maybe_enqueue_graph_extraction(cfg, source_id, user):
-    """Enqueue graph extraction after embed for a graphrag source (D28).
+    """Reset and re-enqueue graph extraction after embed for a graphrag source.
 
     The graph lights up asynchronously once chunks are embedded, so ClassicRAG
     works immediately. A no-op for non-graphrag sources or when GraphRAG is
-    unavailable. The enqueue is isolated so a broker hiccup can never fail an
-    otherwise-successful ingest.
+    unavailable. The prior graph is cleared first so a re-ingest rebuilds rather
+    than accumulating stale nodes. The work is isolated so a broker hiccup can
+    never fail an otherwise-successful ingest.
     """
     if cfg.kind != "graphrag":
         return
@@ -99,6 +127,7 @@ def _maybe_enqueue_graph_extraction(cfg, source_id, user):
 
         with db_readonly() as conn:
             source = SourcesRepository(conn).get_any(source_id, user)
+        _reset_graph_for_source(source_id)
         key = graph_extraction_key(source_id, _source_updated_at(source))
         extract_graph.delay(source_id, user, idempotency_key=key)
     except Exception as e:
@@ -2344,12 +2373,15 @@ def convert_source_to_wiki_worker(self, source_id, user):
 
 
 def extract_graph_worker(self, source_id, user):
-    """Build a graphrag source's knowledge graph from its embedded chunks (D28).
+    """Build a graphrag source's knowledge graph from its embedded chunks.
 
     Loads the source, fetches its chunks from the vector store, and runs the
     per-chunk LLM extraction pipeline. The chunks carry ``doc_id`` + ``text``,
     matching the retrievable ids the extraction pipeline links against. No-ops
     cleanly when GraphRAG is unavailable or the source has no chunks yet.
+
+    Streams ``graph.extract.progress`` SSE events as chunks are processed and a
+    terminal ``graph.extract.completed``/``graph.extract.failed`` on exit.
 
     Args:
         self: Celery task instance.
@@ -2381,10 +2413,62 @@ def extract_graph_worker(self, source_id, user):
     )
     chunks = store.get_chunks() or []
 
-    return extract_graph_for_source(
-        source_id,
+    total = len(chunks)
+    # Throttle: at most ~20 progress events regardless of chunk count.
+    step = max(1, total // 20)
+
+    def _progress(info):
+        current = int(info.get("current", 0))
+        if current and current % step != 0 and current != info.get("total"):
+            return
+        _publish_graph_event(
+            user,
+            source_id,
+            "graph.extract.progress",
+            {
+                "source_id": source_id,
+                "current": current,
+                "total": int(info.get("total", total)),
+                "nodes": int(info.get("nodes", 0)),
+                "edges": int(info.get("edges", 0)),
+            },
+        )
+
+    _publish_graph_event(
         user,
-        chunks,
-        config=cfg,
-        request_id=getattr(self.request, "id", None),
+        source_id,
+        "graph.extract.progress",
+        {
+            "source_id": source_id,
+            "current": 0,
+            "total": total,
+            "nodes": 0,
+            "edges": 0,
+        },
     )
+
+    try:
+        summary = extract_graph_for_source(
+            source_id,
+            user,
+            chunks,
+            config=cfg,
+            request_id=getattr(self.request, "id", None),
+            progress_cb=_progress,
+        )
+    except Exception as e:
+        _publish_graph_event(
+            user,
+            source_id,
+            "graph.extract.failed",
+            {"source_id": source_id, "error": str(e)[:1024]},
+        )
+        raise
+
+    _publish_graph_event(
+        user,
+        source_id,
+        "graph.extract.completed",
+        {"source_id": source_id, **summary},
+    )
+    return summary

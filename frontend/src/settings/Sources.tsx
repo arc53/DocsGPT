@@ -57,6 +57,7 @@ import WikiViewer from '../components/WikiViewer';
 import GraphView from '../components/GraphView';
 import ConvertToWikiModal from './ConvertToWikiModal';
 import EnableGraphRAGModal from './EnableGraphRAGModal';
+import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
 import SourceConfigModal from './SourceConfigModal';
 
 type SourceMenuOption = {
@@ -133,9 +134,9 @@ export default function Sources({
   const [graphRAGAvailable, setGraphRAGAvailable] = useState<boolean>(false);
   const [hybridAvailable, setHybridAvailable] = useState<boolean>(false);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
-  const [buildingGraphIds, setBuildingGraphIds] = useState<Set<string>>(
-    () => new Set(),
-  );
+  // Graph-build progress is SSE-driven (graphBuildSlice), so the "building"
+  // badge survives closing the modal and reflects the real backend state.
+  const graphBuilds = useSelector(selectGraphBuilds);
   const [syncMenuState, setSyncMenuState] = useState<{
     isOpen: boolean;
     docId: string | null;
@@ -481,6 +482,19 @@ export default function Sources({
     refreshDocs(undefined, 1, rowsPerPage);
   }, [debouncedSearchTerm]);
 
+  // When a graph build reaches a terminal state via SSE, refresh the list so
+  // the badge reflects the final state, then drop the entry. The modal (a
+  // child) captures its summary in its own effect first, so clearing here
+  // doesn't race its summary view.
+  useEffect(() => {
+    const terminal = Object.entries(graphBuilds).filter(
+      ([, b]) => b.status === 'completed' || b.status === 'failed',
+    );
+    if (terminal.length === 0) return;
+    terminal.forEach(([sourceId]) => dispatch(clearGraphBuild(sourceId)));
+    refreshDocs(undefined, currentPage, rowsPerPage);
+  }, [graphBuilds, dispatch, refreshDocs, currentPage, rowsPerPage]);
+
   useEffect(() => {
     let cancelled = false;
     userService
@@ -772,18 +786,39 @@ export default function Sources({
                             {t('settings.sources.ingestProcessing')}
                           </span>
                         )}
-                        {document.config?.kind === 'graphrag' && (
-                          <span className="bg-muted-foreground/10 text-muted-foreground flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium">
-                            <Network
-                              size={11}
-                              strokeWidth={2}
-                              aria-hidden="true"
-                            />
-                            {document.id && buildingGraphIds.has(document.id)
-                              ? t('settings.sources.graphrag.building')
-                              : t('settings.sources.graphrag.badge')}
-                          </span>
-                        )}
+                        {document.config?.kind === 'graphrag' &&
+                          (() => {
+                            const build = document.id
+                              ? graphBuilds[document.id]
+                              : undefined;
+                            const isBuilding = build?.status === 'building';
+                            const pct =
+                              isBuilding && build.total > 0
+                                ? Math.min(
+                                    100,
+                                    Math.round(
+                                      (build.current / build.total) * 100,
+                                    ),
+                                  )
+                                : null;
+                            return (
+                              <span className="bg-muted-foreground/10 text-muted-foreground flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium">
+                                <Network
+                                  size={11}
+                                  strokeWidth={2}
+                                  aria-hidden="true"
+                                />
+                                {isBuilding
+                                  ? pct !== null
+                                    ? t(
+                                        'settings.sources.graphrag.buildingPct',
+                                        { pct },
+                                      )
+                                    : t('settings.sources.graphrag.building')
+                                  : t('settings.sources.graphrag.badge')}
+                              </span>
+                            );
+                          })()}
                         <div className="flex items-center gap-2">
                           <img
                             src={CalendarIcon}
@@ -906,23 +941,13 @@ export default function Sources({
         setModalState={(state) => {
           setGraphRAGModalState(state);
           if (state === 'INACTIVE') {
-            const closedId = documentToGraphRAG?.id;
-            if (closedId) {
-              setBuildingGraphIds((prev) => {
-                const next = new Set(prev);
-                next.delete(closedId);
-                return next;
-              });
-            }
             setDocumentToGraphRAG(null);
           }
         }}
         document={documentToGraphRAG}
         onEnabled={() => {
-          const enabledId = documentToGraphRAG?.id;
-          if (enabledId) {
-            setBuildingGraphIds((prev) => new Set(prev).add(enabledId));
-          }
+          // The "building" badge is now driven by SSE progress events; just
+          // refresh so the source flips to graphrag kind in the list.
           refreshDocs(undefined, currentPage, rowsPerPage);
         }}
       />
