@@ -2,6 +2,7 @@ import {
   Bot,
   CheckCircle2,
   Circle,
+  Code2,
   Database,
   Flag,
   GitBranch,
@@ -56,6 +57,7 @@ const NODE_ICONS: Record<string, React.ReactNode> = {
   note: <StickyNote className="h-3 w-3" />,
   state: <Database className="h-3 w-3" />,
   condition: <GitBranch className="h-3 w-3" />,
+  code: <Code2 className="h-3 w-3" />,
 };
 
 const NODE_COLORS: Record<string, string> = {
@@ -65,6 +67,7 @@ const NODE_COLORS: Record<string, string> = {
   note: 'text-yellow-600 dark:text-yellow-400',
   state: 'text-blue-600 dark:text-blue-400',
   condition: 'text-orange-600 dark:text-orange-400',
+  code: 'text-indigo-600 dark:text-indigo-400',
 };
 
 function ExecutionDetails({

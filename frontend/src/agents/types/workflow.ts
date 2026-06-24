@@ -4,7 +4,17 @@ export type NodeType =
   | 'agent'
   | 'note'
   | 'state'
-  | 'condition';
+  | 'condition'
+  | 'code';
+
+export interface CodeNodeConfig {
+  code: string;
+  language: string;
+  inputs: string[];
+  output_variable?: string;
+  timeout?: number;
+  json_schema?: Record<string, unknown>;
+}
 
 export interface ConditionCase {
   name?: string;
