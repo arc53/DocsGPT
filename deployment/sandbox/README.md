@@ -43,6 +43,25 @@ The `docsgpt-sandbox` service is defined in `deployment/docker-compose.yaml` on
 an internal-only network. The backend and worker reach it at
 `http://docsgpt-sandbox:8888`.
 
+## Document extraction variant (Docling)
+
+The `document_extractor` tool runs Docling (MIT) inside the runner to convert
+documents (pdf/docx/pptx/...) to schema-validated JSON. Docling pulls `torch` and
+ML models, which makes the image multi-GB, so it is **off by default**: it is not
+in the base image, not in `application/requirements.txt`, and not required in the
+dev `.venv`. Build the extract variant only where extraction is needed:
+
+```bash
+docker build -t docsgpt-sandbox-extract \
+  --build-arg INSTALL_DOCLING=true deployment/sandbox
+docker run --rm -p 8888:8888 docsgpt-sandbox-extract
+```
+
+Point the app at this runner via `SANDBOX_GATEWAY_URL` exactly as the base image.
+Docling uses its own permissive PDF backend; **PyMuPDF (AGPL) is intentionally not
+installed.** If the base (non-extract) image is used, `extract_document` returns a
+clean "docling is not available in the sandbox runner" error rather than crashing.
+
 ## Hardening (separate slice — not in this image)
 
 Egress/SSRF blocks (drop RFC1918, link-local, `169.254.169.254`), the gVisor
