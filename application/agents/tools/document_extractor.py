@@ -24,7 +24,7 @@ from application.core.json_schema_utils import (
     normalize_json_schema_payload,
 )
 from application.core.settings import settings
-from application.sandbox.artifacts_capture import persist_new_artifact
+from application.sandbox.artifacts_capture import QuotaExceeded, persist_new_artifact
 from application.sandbox.sandbox_creator import SandboxCreator
 from application.storage.db.repositories.artifacts import ArtifactsRepository
 from application.storage.db.session import db_readonly
@@ -212,9 +212,10 @@ class DocumentExtractorTool(Tool):
             }
 
         token = uuid.uuid4().hex
-        input_path = f"extract/{token}/inputs/{loaded['filename']}"
-        params_path = f"extract/{token}/params.json"
-        result_path = f"extract/{token}/result.json"
+        token_dir = f"extract/{token}"
+        input_path = f"{token_dir}/inputs/{loaded['filename']}"
+        params_path = f"{token_dir}/params.json"
+        result_path = f"{token_dir}/result.json"
         params = {
             "input_path": input_path,
             "markdown_max_bytes": _MARKDOWN_MAX_BYTES,
@@ -248,6 +249,9 @@ class DocumentExtractorTool(Tool):
             logger.exception("document_extractor: extraction failed")
             return {"status": "error", "error": f"extraction failed: {type(exc).__name__}: {exc}"}
         finally:
+            # Drop this extraction's scratch dir (staged input + params + result)
+            # before close so a warm/reused session doesn't accumulate on disk.
+            manager.remove_path(session_id, token_dir)
             try:
                 manager.close(session_id)
             except Exception:
@@ -283,7 +287,13 @@ class DocumentExtractorTool(Tool):
         compact = self._compact_payload(extracted)
         payload: Dict[str, Any] = {"status": "ok", "structured": compact}
         if should_persist:
-            ref = self._persist(extracted, loaded["title"])
+            try:
+                ref = self._persist(extracted, loaded["title"])
+            except QuotaExceeded as exc:
+                # Extraction itself succeeded; surface the quota error alongside
+                # the in-context structured result rather than failing the call.
+                payload["artifact_error"] = str(exc)
+                ref = None
             if ref is not None:
                 self._last_artifact_id = ref["artifact_id"]
                 payload["artifact"] = ref

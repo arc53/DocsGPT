@@ -19,7 +19,11 @@ from typing import Any, Dict, List, Optional
 
 from application.agents.tools.base import Tool
 from application.core.settings import settings
-from application.sandbox.artifacts_capture import append_artifact_version, persist_new_artifact
+from application.sandbox.artifacts_capture import (
+    QuotaExceeded,
+    append_artifact_version,
+    persist_new_artifact,
+)
 from application.sandbox.sandbox_creator import SandboxCreator
 from application.storage.db.repositories.artifacts import ArtifactsRepository
 from application.storage.db.session import db_readonly
@@ -360,18 +364,21 @@ class ArtifactGeneratorTool(Tool):
 
         info = _KIND_INFO[kind]
         filename = self._filename(title, info["ext"])
-        ref = persist_new_artifact(
-            user_id=self.user_id,
-            kind=info["kind"],
-            data=rendered["data"],
-            filename=filename,
-            mime_type=info["mime"],
-            title=title,
-            conversation_id=self.conversation_id,
-            workflow_run_id=self.workflow_run_id,
-            spec=spec,
-            produced_by=self._produced_by("create_artifact", kind),
-        )
+        try:
+            ref = persist_new_artifact(
+                user_id=self.user_id,
+                kind=info["kind"],
+                data=rendered["data"],
+                filename=filename,
+                mime_type=info["mime"],
+                title=title,
+                conversation_id=self.conversation_id,
+                workflow_run_id=self.workflow_run_id,
+                spec=spec,
+                produced_by=self._produced_by("create_artifact", kind),
+            )
+        except QuotaExceeded as exc:
+            return {"status": "error", "error": str(exc)}
         if ref is None:
             return {"status": "error", "error": "failed to persist artifact."}
         self._last_artifact_id = ref["artifact_id"]
@@ -409,15 +416,18 @@ class ArtifactGeneratorTool(Tool):
             return {"status": "error", "error": rendered["error"]}
         info = _KIND_INFO[kind]
         filename = self._filename(None, info["ext"])
-        ref = append_artifact_version(
-            user_id=self.user_id,
-            artifact_id=artifact_id,
-            data=rendered["data"],
-            filename=filename,
-            mime_type=info["mime"],
-            spec=spec,
-            produced_by=self._produced_by(action, kind),
-        )
+        try:
+            ref = append_artifact_version(
+                user_id=self.user_id,
+                artifact_id=artifact_id,
+                data=rendered["data"],
+                filename=filename,
+                mime_type=info["mime"],
+                spec=spec,
+                produced_by=self._produced_by(action, kind),
+            )
+        except QuotaExceeded as exc:
+            return {"status": "error", "error": str(exc)}
         if ref is None:
             return {"status": "error", "error": "failed to persist artifact version."}
         self._last_artifact_id = ref["artifact_id"]
@@ -482,8 +492,9 @@ class ArtifactGeneratorTool(Tool):
             return {"error": "artifact_generator requires a conversation_id or workflow_run_id."}
 
         token = uuid.uuid4().hex
-        spec_path = f"artifacts/{token}/spec.json"
-        out_path = f"artifacts/{token}/out.{_KIND_INFO[kind]['ext']}"
+        token_dir = f"artifacts/{token}"
+        spec_path = f"{token_dir}/spec.json"
+        out_path = f"{token_dir}/out.{_KIND_INFO[kind]['ext']}"
         program = _RENDERERS[kind].format(spec_path=spec_path, out_path=out_path)
         timeout = float(getattr(settings, "SANDBOX_EXEC_TIMEOUT", 60))
 
@@ -510,6 +521,9 @@ class ArtifactGeneratorTool(Tool):
             logger.exception("artifact_generator: render failed")
             return {"error": f"render failed: {type(exc).__name__}: {exc}"}
         finally:
+            # Drop this render's scratch dir before tearing the session down so a
+            # warm/reused session doesn't accumulate per-render files on disk.
+            manager.remove_path(session_id, token_dir)
             try:
                 manager.close(session_id)
             except Exception:

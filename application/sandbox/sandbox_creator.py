@@ -64,6 +64,7 @@ class SandboxCreator:
             cls._instance = SandboxManager(
                 backend=backend,
                 max_ttl=float(settings.SANDBOX_MAX_TTL),
+                max_sessions=int(settings.SANDBOX_MAX_SESSIONS),
             )
         return cls._instance
 

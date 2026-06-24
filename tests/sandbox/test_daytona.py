@@ -47,6 +47,7 @@ class _FakeFS:
         self.create_folder = mock.Mock()
         self.upload_file = mock.Mock()
         self.download_file = mock.Mock(return_value=b"payload")
+        self.delete_file = mock.Mock()
         self.get_file_info = mock.Mock(return_value=_FakeFileInfo("a.txt", size=7))
         # Path-aware tree: maps an absolute dir to the entries it contains. The
         # real Daytona fs.list_files is single-level and returns basenames, so the
@@ -81,6 +82,16 @@ class _FakeDaytonaClient:
         self.delete = mock.Mock(side_effect=self._delete)
         self.list = mock.Mock(side_effect=self._list)
         self.start = mock.Mock(side_effect=self._start)
+        self.get = mock.Mock(side_effect=self._get)
+
+    def _get(self, sandbox_id_or_name):
+        for _, sandbox in self.created:
+            if sandbox.id == sandbox_id_or_name:
+                return sandbox
+        for sandbox in self.existing:
+            if sandbox.id == sandbox_id_or_name:
+                return sandbox
+        raise KeyError(sandbox_id_or_name)
 
     def _create(self, params=None, timeout=60):
         labels = getattr(params, "labels", None) or {}
@@ -216,6 +227,78 @@ def test_close_swallows_delete_errors(sandbox):
     sandbox._client.delete.side_effect = RuntimeError("cloud down")
     sandbox.close("conv-1")  # must not raise
     assert not sandbox._handles
+
+
+def test_remove_path_deletes_directory_recursively(sandbox):
+    """A token DIRECTORY is removed with a recursive delete (daytona delete_file recursive=True)."""
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    sandbox.remove_path("conv-1", "artifacts/tok")
+    remote, kwargs = created.fs.delete_file.call_args.args, created.fs.delete_file.call_args.kwargs
+    assert remote[0].endswith("/artifacts/tok")
+    assert kwargs.get("recursive") is True
+
+
+def test_remove_path_refuses_workspace_root(sandbox):
+    """remove_path must never delete the workspace root itself."""
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    sandbox.remove_path("conv-1", ".")
+    created.fs.delete_file.assert_not_called()
+
+
+def test_remove_path_falls_back_to_rm_when_no_recursive_kwarg(sandbox):
+    """When delete_file lacks the recursive kwarg, fall back to a contained rm -rf."""
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+
+    def _no_recursive(path, recursive=None):
+        if recursive:
+            raise TypeError("delete_file() got an unexpected keyword argument 'recursive'")
+        raise RuntimeError("cannot delete a directory")
+
+    created.fs.delete_file.side_effect = _no_recursive
+    created.process.exec = mock.Mock()
+    sandbox.remove_path("conv-1", "artifacts/tok")
+    cmd = created.process.exec.call_args.args[0]
+    assert cmd.startswith("rm -rf ") and cmd.endswith("/artifacts/tok'")
+
+
+def test_remove_path_never_raises(sandbox):
+    """Any backend error during cleanup is swallowed (cleanup must not fail an op)."""
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    created.fs.delete_file.side_effect = RuntimeError("cloud down")
+    created.process.exec = mock.Mock(side_effect=RuntimeError("also down"))
+    sandbox.remove_path("conv-1", "artifacts/tok")  # must not raise
+
+
+def test_close_handle_deletes_captured_sandbox(sandbox):
+    """close_handle tears down the captured sandbox and drops the registry entry."""
+    sandbox.open("conv-1")
+    _, created = sandbox._client.created[0]
+    sandbox.close_handle("conv-1", created.id)
+    sandbox._client.delete.assert_called_once_with(created)
+    assert not sandbox._handles
+
+
+def test_close_handle_leaves_reopened_sandbox_intact(sandbox):
+    """A concurrent re-open replaced the handle: close_handle deletes the OLD one by id only."""
+    sandbox.open("conv-1")
+    _, old = sandbox._client.created[0]
+    # Simulate a concurrent re-open: a new sandbox is registered for the same session.
+    new = _FakeSandbox(sandbox_id="sbx-new", labels={"docsgpt_session_id": "conv-1"})
+    from application.sandbox.daytona import _Handle, _WORKSPACE_ROOT
+
+    sandbox._handles["conv-1"] = _Handle(new, new.id, _WORKSPACE_ROOT)
+    sandbox._client.created.append((None, new))  # so client.get(new.id) could resolve
+
+    sandbox.close_handle("conv-1", old.id)  # close the OLD captured id
+
+    # The OLD sandbox was deleted (fetched by id); the NEW handle stays registered.
+    assert old in sandbox._client.deleted
+    assert new not in sandbox._client.deleted
+    assert sandbox._handles["conv-1"].sandbox_id == "sbx-new"
 
 
 def test_invalid_session_id_rejected(sandbox):

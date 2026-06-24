@@ -163,6 +163,27 @@ class ArtifactsRepository:
         )
         return [_artifact_to_dict(r) for r in result.fetchall()]
 
+    def count_for_user(self, user_id: str) -> int:
+        """Return how many artifacts ``user_id`` currently owns (quota accounting)."""
+        row = self._conn.execute(
+            text("SELECT count(*) FROM artifacts WHERE user_id = :user_id"),
+            {"user_id": user_id},
+        ).fetchone()
+        return int(row[0]) if row is not None else 0
+
+    def total_bytes_for_user(self, user_id: str) -> int:
+        """Return the summed byte size of every version a user owns (quota accounting)."""
+        row = self._conn.execute(
+            text(
+                "SELECT COALESCE(SUM(v.size), 0) "
+                "FROM artifact_versions v "
+                "JOIN artifacts a ON a.id = v.artifact_id "
+                "WHERE a.user_id = :user_id"
+            ),
+            {"user_id": user_id},
+        ).fetchone()
+        return int(row[0]) if row is not None else 0
+
     def get_version(self, artifact_id: str, version: int) -> Optional[dict]:
         """Fetch a single version row by artifact id and version number."""
         result = self._conn.execute(

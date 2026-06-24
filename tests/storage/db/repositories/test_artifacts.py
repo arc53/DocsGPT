@@ -224,6 +224,104 @@ class TestListArtifacts:
             repo.list_artifacts()
 
 
+class TestQuotaAccounting:
+    def test_count_for_user_counts_only_that_user(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = _conversation_id()
+        repo.create_artifact("alice", "document", conversation_id=conv)
+        repo.create_artifact("alice", "document", conversation_id=conv)
+        repo.create_artifact("bob", "document", conversation_id=conv)
+        assert repo.count_for_user("alice") == 2
+        assert repo.count_for_user("bob") == 1
+        assert repo.count_for_user("nobody") == 0
+
+    def test_total_bytes_sums_all_versions(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = _conversation_id()
+        a = repo.create_artifact("alice", "document", conversation_id=conv, size=100)
+        repo.append_version(a["id"], size=250)  # +250 -> 350 for the same artifact
+        repo.create_artifact("alice", "document", conversation_id=conv, size=50)
+        repo.create_artifact("bob", "document", conversation_id=conv, size=999)
+        assert repo.total_bytes_for_user("alice") == 400
+        assert repo.total_bytes_for_user("bob") == 999
+
+    def test_total_bytes_zero_for_unknown_user(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.total_bytes_for_user("nobody") == 0
+
+    def test_total_bytes_treats_null_size_as_zero(self, pg_conn):
+        repo = _repo(pg_conn)
+        repo.create_artifact("alice", "document", conversation_id=_conversation_id())
+        assert repo.total_bytes_for_user("alice") == 0
+
+
+class TestQuotaEnforcement:
+    """Exercises the shared enforcement helper against a real repo + connection."""
+
+    def _seed(self, pg_conn, *, count: int, size: int) -> None:
+        repo = _repo(pg_conn)
+        for _ in range(count):
+            repo.create_artifact("alice", "document", conversation_id=_conversation_id(), size=size)
+
+    def test_under_quota_passes(self, pg_conn, monkeypatch):
+        from application.sandbox import artifacts_capture as ac
+
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_COUNT_PER_USER", 10, raising=False)
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_TOTAL_BYTES_PER_USER", 10_000, raising=False)
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_BYTES", 10_000, raising=False)
+        self._seed(pg_conn, count=2, size=100)
+        # 2 existing + 1 new = 3 <= 10; 200 + 100 = 300 <= 10000. Must not raise.
+        ac._enforce_user_quota(_repo(pg_conn), "alice", 100, new_artifact=True)
+
+    def test_over_count_quota_raises(self, pg_conn, monkeypatch):
+        from application.sandbox import artifacts_capture as ac
+
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_COUNT_PER_USER", 2, raising=False)
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_TOTAL_BYTES_PER_USER", 10_000_000, raising=False)
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_BYTES", 10_000_000, raising=False)
+        self._seed(pg_conn, count=2, size=10)
+        with pytest.raises(ac.QuotaExceeded):
+            ac._enforce_user_quota(_repo(pg_conn), "alice", 10, new_artifact=True)
+
+    def test_count_quota_ignored_when_appending_version(self, pg_conn, monkeypatch):
+        from application.sandbox import artifacts_capture as ac
+
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_COUNT_PER_USER", 2, raising=False)
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_TOTAL_BYTES_PER_USER", 10_000_000, raising=False)
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_BYTES", 10_000_000, raising=False)
+        self._seed(pg_conn, count=2, size=10)
+        # Appending a version to an existing identity must not trip the count cap.
+        ac._enforce_user_quota(_repo(pg_conn), "alice", 10, new_artifact=False)
+
+    def test_over_total_bytes_quota_raises(self, pg_conn, monkeypatch):
+        from application.sandbox import artifacts_capture as ac
+
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_COUNT_PER_USER", 10_000, raising=False)
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_TOTAL_BYTES_PER_USER", 500, raising=False)
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_BYTES", 10_000, raising=False)
+        self._seed(pg_conn, count=1, size=450)
+        with pytest.raises(ac.QuotaExceeded):
+            ac._enforce_user_quota(_repo(pg_conn), "alice", 100, new_artifact=True)  # 450 + 100 > 500
+
+    def test_single_artifact_too_large_raises(self, pg_conn, monkeypatch):
+        from application.sandbox import artifacts_capture as ac
+
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_COUNT_PER_USER", 10_000, raising=False)
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_TOTAL_BYTES_PER_USER", 10_000_000, raising=False)
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_BYTES", 1000, raising=False)
+        with pytest.raises(ac.QuotaExceeded):
+            ac._enforce_user_quota(_repo(pg_conn), "alice", 1001, new_artifact=True)
+
+    def test_zero_settings_disable_enforcement(self, pg_conn, monkeypatch):
+        from application.sandbox import artifacts_capture as ac
+
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_COUNT_PER_USER", 0, raising=False)
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_TOTAL_BYTES_PER_USER", 0, raising=False)
+        monkeypatch.setattr(ac.settings, "ARTIFACT_MAX_BYTES", 0, raising=False)
+        self._seed(pg_conn, count=5, size=10_000)
+        ac._enforce_user_quota(_repo(pg_conn), "alice", 10_000_000, new_artifact=True)  # disabled -> no raise
+
+
 class TestCascadeDelete:
     def test_deleting_artifact_removes_versions(self, pg_conn):
         repo = _repo(pg_conn)

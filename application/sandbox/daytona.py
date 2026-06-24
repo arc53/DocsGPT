@@ -243,10 +243,80 @@ class DaytonaSandbox(CodeSandbox):
             handle = self._handles.pop(session_id, None)
         if handle is None:
             return
+        self._delete_sandbox(handle)
+
+    def close_handle(self, session_id: str, sandbox_id: str) -> None:
+        """Delete the SPECIFIC sandbox captured at eviction time, never a re-opened one.
+
+        Used when the manager evicts a session and a concurrent ``open`` of the same id
+        may have already created a fresh sandbox: this tears down only the sandbox whose
+        id was captured, leaving any newer registered handle untouched. Falls back to the
+        registry only when nothing matches the captured id.
+        """
+        with self._lock:
+            current = self._handles.get(session_id)
+            if current is not None and current.sandbox_id == sandbox_id:
+                # Captured handle is still the registered one: pop and delete it.
+                self._handles.pop(session_id, None)
+                victim = current
+            else:
+                # A concurrent re-open replaced the handle (or it is already gone); do
+                # NOT touch the registry. Delete the captured sandbox by id directly so
+                # the freshly created one survives.
+                victim = None
+        if victim is not None:
+            self._delete_sandbox(victim)
+        else:
+            self._delete_sandbox_by_id(sandbox_id)
+
+    def _delete_sandbox(self, handle: "_Handle") -> None:
+        """Best-effort delete of the sandbox behind ``handle`` (never raises)."""
         try:
             self._client.delete(handle.sandbox)
         except Exception as exc:  # noqa: BLE001 - teardown is best-effort, never raise
             logger.warning("Failed to delete Daytona sandbox %s: %s", handle.sandbox_id, exc)
+
+    def _delete_sandbox_by_id(self, sandbox_id: str) -> None:
+        """Best-effort delete a sandbox by its id when no live handle is held (never raises).
+
+        ``client.delete`` needs a ``Sandbox`` object, so fetch it by id first; this is the
+        evict-then-concurrent-reopen path where only the captured id is still known.
+        """
+        try:
+            sandbox = self._client.get(sandbox_id)
+            self._client.delete(sandbox)
+        except Exception as exc:  # noqa: BLE001 - teardown is best-effort, never raise
+            logger.warning("Failed to delete Daytona sandbox by id %s: %s", sandbox_id, exc)
+
+    def remove_path(self, session_id: str, path: str) -> None:
+        """Best-effort delete a workspace-relative path (per-render scratch dir); never raises.
+
+        The tools pass a token DIRECTORY (e.g. ``artifacts/{token}``), so the delete is
+        recursive — ``fs.delete_file`` with ``recursive=True`` removes a folder and its
+        contents (daytona==0.190.1).
+        """
+        try:
+            handle = self._get_handle(session_id)
+            remote = self._remote_path(handle.workspace, path)
+            if remote == posixpath.normpath(handle.workspace):
+                return  # refuse to delete the workspace root itself
+            self._delete_remote(handle, remote)
+        except Exception as exc:  # noqa: BLE001 - cleanup is best-effort, never raise
+            logger.debug("remove_path best-effort delete returned for %r: %s", path, exc)
+
+    def _delete_remote(self, handle: "_Handle", remote: str) -> None:
+        """Recursively delete ``remote`` inside the sandbox, with a contained-command fallback."""
+        try:
+            handle.sandbox.fs.delete_file(remote, recursive=True)
+            return
+        except TypeError:
+            # Older SDK without the recursive kwarg: fall back to a contained rm -rf.
+            pass
+        try:
+            handle.sandbox.fs.delete_file(remote)
+        except Exception:  # noqa: BLE001 - directory delete may need a recursive remove
+            quoted = "'" + remote.replace("'", "'\\''") + "'"
+            handle.sandbox.process.exec(f"rm -rf {quoted}", timeout=int(self._default_timeout))
 
     def _prime(self, handle: _Handle) -> None:
         """Create the per-session workspace directory inside the sandbox."""

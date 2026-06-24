@@ -16,12 +16,17 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import text
 
+from application.core.settings import settings
 from application.storage.db.repositories.artifacts import ArtifactsRepository
 from application.storage.db.session import db_session
 from application.storage.storage_creator import StorageCreator
 from application.utils import safe_filename
 
 logger = logging.getLogger(__name__)
+
+
+class QuotaExceeded(Exception):
+    """Raised when persisting an artifact would breach a per-user size/count quota."""
 
 # Cap the per-run capture work so a workspace full of pre-existing files can't turn
 # one exec into an unbounded read+persist sweep.
@@ -115,14 +120,20 @@ def capture_artifacts(
         signature = (len(data), hashlib.sha256(data).hexdigest())
         if pre_signatures.get(rel_path) == signature:
             continue
-        ref = persist_artifact(
-            rel_path,
-            data,
-            user_id=user_id,
-            conversation_id=conversation_id,
-            workflow_run_id=workflow_run_id,
-            produced_by=produced_by,
-        )
+        try:
+            ref = persist_artifact(
+                rel_path,
+                data,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                workflow_run_id=workflow_run_id,
+                produced_by=produced_by,
+            )
+        except QuotaExceeded:
+            # Out of quota: stop capturing the remaining files rather than retry
+            # each one. Files already captured this run are returned as-is.
+            logger.warning("artifacts_capture: per-user quota reached; remaining files not captured")
+            break
         if ref is not None:
             captured.append(ref)
     return captured
@@ -184,6 +195,31 @@ def _cleanup_orphan(storage: Any, saved_key: Optional[str]) -> None:
         logger.exception("artifacts_capture: orphaned-key cleanup failed for %s", saved_key)
 
 
+def _check_single_artifact_size(size: int) -> None:
+    """Reject a single artifact version whose byte size exceeds ``ARTIFACT_MAX_BYTES``."""
+    max_bytes = int(getattr(settings, "ARTIFACT_MAX_BYTES", 0) or 0)
+    if max_bytes > 0 and size > max_bytes:
+        raise QuotaExceeded(f"artifact is too large: {size} bytes exceeds the {max_bytes}-byte per-file cap")
+
+
+def _enforce_user_quota(repo: ArtifactsRepository, user_id: str, added_bytes: int, *, new_artifact: bool) -> None:
+    """Reject the write when ``user_id`` is at/over their count or total-bytes quota.
+
+    Best-effort SOFT cap (not hard under concurrency): the count/total-bytes reads run
+    on the same connection as the pending insert, but under READ COMMITTED two concurrent
+    persists can each read a pre-insert total and both pass, briefly overshooting the cap.
+    A NEW artifact also consumes one count slot; appending a version only adds bytes to an
+    existing identity.
+    """
+    _check_single_artifact_size(added_bytes)
+    max_count = int(getattr(settings, "ARTIFACT_MAX_COUNT_PER_USER", 0) or 0)
+    if new_artifact and max_count > 0 and repo.count_for_user(user_id) >= max_count:
+        raise QuotaExceeded(f"artifact count quota reached ({max_count}); delete artifacts to free space")
+    max_total = int(getattr(settings, "ARTIFACT_MAX_TOTAL_BYTES_PER_USER", 0) or 0)
+    if max_total > 0 and repo.total_bytes_for_user(user_id) + added_bytes > max_total:
+        raise QuotaExceeded(f"artifact storage quota reached ({max_total} bytes); delete artifacts to free space")
+
+
 def persist_new_artifact(
     *,
     user_id: str,
@@ -212,6 +248,7 @@ def persist_new_artifact(
     try:
         with db_session() as conn:
             repo = ArtifactsRepository(conn)
+            _enforce_user_quota(repo, user_id, size, new_artifact=True)
             artifact = repo.create_artifact(
                 user_id,
                 kind,
@@ -232,6 +269,10 @@ def persist_new_artifact(
             _set_version_storage_path(conn, artifact_id, 1, storage_path)
             storage.save_file(io.BytesIO(data), storage_path)
             saved_key = storage_path
+    except QuotaExceeded:
+        # Quota check runs before any storage write, so nothing to clean up;
+        # surface a clean error the caller can render.
+        raise
     except Exception:
         logger.exception("artifacts_capture: failed to persist new artifact")
         _cleanup_orphan(storage, saved_key)
@@ -265,6 +306,7 @@ def append_artifact_version(
     try:
         with db_session() as conn:
             repo = ArtifactsRepository(conn)
+            _enforce_user_quota(repo, user_id, size, new_artifact=False)
             version = repo.append_version(
                 artifact_id,
                 mime_type=mime_type,
@@ -281,6 +323,8 @@ def append_artifact_version(
             _set_version_storage_path(conn, artifact_id, version_number, storage_path)
             storage.save_file(io.BytesIO(data), storage_path)
             saved_key = storage_path
+    except QuotaExceeded:
+        raise
     except Exception:
         logger.exception("artifacts_capture: failed to append artifact version")
         _cleanup_orphan(storage, saved_key)

@@ -333,6 +333,11 @@ class Settings(BaseSettings):
     SANDBOX_GATEWAY_AUTH_TOKEN: Optional[str] = None  # gateway auth token, if set
     SANDBOX_KERNEL_NAME: str = "python3"  # kernelspec name to launch per session
     SANDBOX_MAX_TTL: int = 1200  # hard cap (s) on agent-selectable keep-alive TTL
+    # Per-process/worker cap on concurrent live sandbox sessions. Backend-agnostic
+    # (complements DAYTONA_MAX_SANDBOXES); when reached, an LRU-idle session is
+    # evicted to make room. This bound is local to each app/worker process.
+    # 0 (or any non-positive value) disables the cap (unlimited sessions).
+    SANDBOX_MAX_SESSIONS: int = 32
     SANDBOX_EXEC_TIMEOUT: int = 60  # default wall-clock cap (s) per exec call
     SANDBOX_HTTP_TIMEOUT: int = 10  # fixed cap (s) for REST control calls (create/delete/alive/interrupt)
     SANDBOX_MAX_OUTPUT_BYTES: int = 8 * 1024 * 1024  # cap on buffered stdout+stderr per exec
@@ -354,6 +359,11 @@ class Settings(BaseSettings):
     DAYTONA_AUTO_STOP_INTERVAL: int = 15  # minutes idle before Daytona auto-stops a sandbox (0 disables)
     DAYTONA_AUTO_DELETE_INTERVAL: int = 60  # minutes after stop before Daytona auto-deletes (-1 disables)
     DAYTONA_MAX_SANDBOXES: int = 50  # cap on concurrent live Daytona sandboxes (cost-DoS guard)
+    # Per-user artifact quotas (generous defaults; enforced at persistence time).
+    # For all three, 0 (or any non-positive value) disables that quota (unlimited).
+    ARTIFACT_MAX_BYTES: int = 50 * 1024 * 1024  # cap on a single stored artifact version's bytes
+    ARTIFACT_MAX_COUNT_PER_USER: int = 5000  # cap on artifacts a user may own
+    ARTIFACT_MAX_TOTAL_BYTES_PER_USER: int = 5 * 1024 * 1024 * 1024  # cap on a user's total stored bytes
 
     @field_validator("POSTGRES_URI", mode="before")
     @classmethod

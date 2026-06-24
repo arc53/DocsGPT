@@ -53,10 +53,14 @@ class _FakeManager:
         self.exec_programs: List[str] = []
         self.opened: List[Any] = []
         self.closed: List[str] = []
+        self.removed: List[str] = []
 
     def open(self, session_id, ttl=None):
         self.opened.append((session_id, ttl))
         return session_id
+
+    def remove_path(self, session_id, path):
+        self.removed.append(path)
 
     def put_file(self, session_id, dest_path, data):
         self.put_files[dest_path] = data
@@ -203,6 +207,24 @@ def test_extract_stages_input_and_shapes_compact_payload(monkeypatch):
     assert manager.closed == ["conv-1"]
 
 
+def test_extract_removes_its_scratch_token_dir(monkeypatch):
+    _stub_repo(monkeypatch, found=True, conv="conv-1", run=None)
+    _patch_storage(monkeypatch)
+    _patch_no_persist(monkeypatch)
+    manager = _manager_with_extract(_CANNED_EXTRACT)
+    _patch_manager(monkeypatch, manager)
+
+    _tool().execute_action("extract_document", input="art-1", persist=False)
+
+    # The per-render token dir (extract/<token>) is removed before/at teardown so
+    # a reused session doesn't accumulate staged inputs + results on disk.
+    assert manager.removed, "extractor should remove its scratch token dir"
+    removed_dir = manager.removed[0]
+    assert removed_dir.startswith("extract/")
+    # The dir prefix must cover the files that were staged under it.
+    assert all(p.startswith(removed_dir + "/") for p in manager.put_files)
+
+
 def test_extract_persists_data_artifact_by_reference(monkeypatch):
     _stub_repo(monkeypatch, found=True, conv="conv-1", run=None)
     _patch_storage(monkeypatch)
@@ -227,6 +249,26 @@ def test_extract_persists_data_artifact_by_reference(monkeypatch):
     assert captured["kind"] == "data"
     assert captured["mime_type"] == "application/json"
     assert json.loads(captured["data"].decode("utf-8")) == _CANNED_EXTRACT
+
+
+def test_quota_exceeded_on_persist_surfaces_cleanly(monkeypatch):
+    from application.sandbox.artifacts_capture import QuotaExceeded
+
+    _stub_repo(monkeypatch, found=True, conv="conv-1", run=None)
+    _patch_storage(monkeypatch)
+    manager = _manager_with_extract(_CANNED_EXTRACT)
+    _patch_manager(monkeypatch, manager)
+
+    def _quota_blocked(**kwargs):
+        raise QuotaExceeded("artifact storage quota reached")
+
+    monkeypatch.setattr(de, "persist_new_artifact", _quota_blocked)
+
+    out = _tool().execute_action("extract_document", input="art-1")
+    # Extraction still succeeds; the quota failure surfaces as a non-fatal note.
+    assert out["status"] == "ok"
+    assert "artifact" not in out
+    assert "quota" in out["artifact_error"].lower()
 
 
 # ---------------------------------------------------------------------------

@@ -155,14 +155,32 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
             kernel = self._kernels.pop(session_id, None)
         if kernel is None:
             return
+        self._delete_kernel(kernel.kernel_id)
+
+    def close_handle(self, session_id: str, kernel_id: str) -> None:
+        """Delete the SPECIFIC kernel captured at eviction time, never a re-opened one.
+
+        When the manager evicts a session, a concurrent ``open`` of the same id may have
+        already started a fresh kernel; this deletes only the kernel whose id was captured
+        and pops the registry entry only when it still points at that same kernel, so the
+        new kernel survives.
+        """
+        with self._lock:
+            current = self._kernels.get(session_id)
+            if current is not None and current.kernel_id == kernel_id:
+                self._kernels.pop(session_id, None)
+        self._delete_kernel(kernel_id)
+
+    def _delete_kernel(self, kernel_id: str) -> None:
+        """Best-effort DELETE of a gateway kernel by id (teardown never raises)."""
         try:
             requests.delete(
-                f"{self._base_url}/api/kernels/{kernel.kernel_id}",
+                f"{self._base_url}/api/kernels/{kernel_id}",
                 headers=self._headers(),
                 timeout=self._http_timeout,
             )
         except requests.RequestException as exc:  # teardown is best-effort
-            logger.warning("Failed to delete kernel %s: %s", kernel.kernel_id, exc)
+            logger.warning("Failed to delete kernel %s: %s", kernel_id, exc)
 
     def _kernel_alive(self, kernel_id: str) -> bool:
         try:
