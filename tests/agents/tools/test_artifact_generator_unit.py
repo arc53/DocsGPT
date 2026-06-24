@@ -158,3 +158,84 @@ def test_pdf_renderer_escapes_markup_and_does_not_execute():
     spec = {"title": payload, "blocks": [{"type": "paragraph", "text": payload}]}
     out_path = _render_in_process("pdf", spec)
     assert os.path.getsize(out_path) > 0
+
+
+# ---------------------------------------------------------------------------
+# html kind: schema, renderer injection safety, output escaping
+# ---------------------------------------------------------------------------
+
+
+def test_validate_accepts_html_spec():
+    spec = {
+        "title": "Report",
+        "blocks": [
+            {"type": "heading", "text": "Intro", "level": 2},
+            {"type": "paragraph", "text": "Body."},
+            {"type": "list", "ordered": True, "items": ["a", "b"]},
+            {"type": "table", "headers": ["h"], "rows": [["c"]]},
+            {"type": "code", "text": "print(1)"},
+        ],
+    }
+    assert _tool()._validate("html", spec) is None
+
+
+def test_validate_rejects_html_unknown_block_key():
+    err = _tool()._validate("html", {"blocks": [{"type": "paragraph", "text": "x", "bogus": 1}]})
+    assert err["status"] == "error"
+
+
+def test_validate_rejects_html_bad_heading_level():
+    err = _tool()._validate("html", {"blocks": [{"type": "heading", "text": "x", "level": 9}]})
+    assert err["status"] == "error"
+
+
+def test_html_renderer_does_not_execute_spec_code(capfd, tmp_path):
+    # The renderer json.loads the spec as data; a value that is Python source
+    # must never run. If the program string-interpolated the spec it would.
+    sentinel = tmp_path / "pwned.txt"
+    payload = (
+        f"'''__import__('os').system('echo PWNED > {sentinel}')'''; "
+        "print('SHOULD_NOT_PRINT')"
+    )
+    spec = {"title": payload, "blocks": [{"type": "paragraph", "text": payload}]}
+    out_path = _render_in_process("html", spec)
+
+    captured = capfd.readouterr()
+    assert "SHOULD_NOT_PRINT" not in captured.out
+    assert "PWNED" not in captured.out
+    assert not sentinel.exists()
+    assert os.path.getsize(out_path) > 0
+
+
+def test_html_renderer_escapes_spec_markup():
+    # Spec text carrying live markup must appear HTML-ESCAPED in the output, so
+    # no raw <script>/<img onerror> tag from spec content reaches the document.
+    script = "<script>alert(1)</script>"
+    img = '<img src=x onerror="alert(2)">'
+    spec = {
+        "title": script,
+        "blocks": [
+            {"type": "paragraph", "text": img},
+            {"type": "heading", "text": "<b>h</b>", "level": 1},
+            {"type": "list", "items": ["<i>x</i>"]},
+            {"type": "table", "headers": ["<u>th</u>"], "rows": [["<em>td</em>"]]},
+            {"type": "code", "text": "</code><script>x</script>"},
+        ],
+    }
+    with open(_render_in_process("html", spec), encoding="utf-8") as handle:
+        html_doc = handle.read()
+
+    # No live tag from spec content survives.
+    assert "<script>alert(1)</script>" not in html_doc
+    assert "<img src=x onerror=" not in html_doc
+    assert "<b>h</b>" not in html_doc
+    assert "<i>x</i>" not in html_doc
+    assert "<u>th</u>" not in html_doc
+    assert "<em>td</em>" not in html_doc
+    # The escaped forms are present instead.
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html_doc
+    assert "&lt;img src=x onerror=" in html_doc
+    # The fixed structural HTML the renderer emits is intact.
+    assert "<!doctype html>" in html_doc
+    assert "<p>" in html_doc and "</p>" in html_doc
+    assert "<table>" in html_doc and "<pre><code>" in html_doc

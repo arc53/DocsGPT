@@ -211,6 +211,65 @@ def test_create_spreadsheet_xlsx(wired_tool):
     assert ws.cell(row=2, column=2).value == 2
 
 
+def test_create_edit_html_versions(wired_tool):
+    tool, conversation_id, pg_engine, storage = wired_tool
+
+    # create -> v1: an html report rendered to report.html (kind html, text/html).
+    spec = {
+        "title": "Findings <hi>",
+        "blocks": [
+            {"type": "heading", "text": "Overview", "level": 2},
+            {"type": "paragraph", "text": "Body <script>alert(1)</script>."},
+            {"type": "list", "ordered": False, "items": ["one", "two"]},
+            {"type": "table", "headers": ["k", "v"], "rows": [["a", "1"]]},
+        ],
+    }
+    created = tool.execute_action("create_artifact", kind="html", title="Report", spec=spec)
+    assert created["status"] == "ok", created
+    assert created["version"] == 1
+    assert created["mime_type"] == "text/html"
+    assert created["filename"] == "report.html"
+    assert created["ref"] == "A1"
+    artifact_id = created["artifact_id"]
+
+    with pg_engine.connect() as conn:
+        repo = ArtifactsRepository(conn)
+        artifact = repo.get_artifact_in_parent(artifact_id, conversation_id=conversation_id)
+        v1 = repo.get_version(artifact_id, 1)
+    assert artifact["kind"] == "html"
+    assert artifact["current_version"] == 1
+    assert v1["spec"] == spec
+    assert v1["produced_by"]["spec_kind"] == "html"
+
+    # The stored bytes are a valid HTML doc with escaped title/blocks (no live tag).
+    html_doc = storage.get_file(v1["storage_path"]).read().decode("utf-8")
+    assert html_doc.startswith("<!doctype html>")
+    assert "Findings &lt;hi&gt;" in html_doc
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html_doc
+    assert "<script>alert(1)</script>" not in html_doc
+    assert "<li>one</li>" in html_doc and "<td>a</td>" in html_doc
+
+    # edit (merge-patch) -> v2: replace the title, keep v1 intact.
+    edited = tool.execute_action("edit_artifact", id="A1", spec_patch={"title": "Updated"})
+    assert edited["status"] == "ok", edited
+    assert edited["version"] == 2
+    assert edited["artifact_id"] == artifact_id
+    assert edited["ref"] == "A1"
+
+    with pg_engine.connect() as conn:
+        repo = ArtifactsRepository(conn)
+        artifact = repo.get_artifact_in_parent(artifact_id, conversation_id=conversation_id)
+        v1_again = repo.get_version(artifact_id, 1)
+        v2 = repo.get_version(artifact_id, 2)
+    assert artifact["current_version"] == 2
+    # Append-only: v1 unchanged; v2 carries the merged spec re-rendered.
+    assert v1_again["spec"] == spec
+    assert v2["spec"]["title"] == "Updated"
+    assert len(v2["spec"]["blocks"]) == 4
+    v2_doc = storage.get_file(v2["storage_path"]).read().decode("utf-8")
+    assert "<h1>Updated</h1>" in v2_doc
+
+
 def test_invalid_spec_creates_no_artifact(wired_tool):
     tool, conversation_id, pg_engine, _storage = wired_tool
 

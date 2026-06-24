@@ -1,7 +1,7 @@
 """Artifact Generator tool: render editable documents from a JSON spec and version them append-only.
 
 The ``artifact_versions.spec`` JSONB is the source of truth; the rendered
-``.pptx``/``.docx``/``.xlsx``/``.pdf`` is derived. ``create_artifact`` stores
+``.pptx``/``.docx``/``.xlsx``/``.pdf``/``.html`` is derived. ``create_artifact`` stores
 v1, ``edit_artifact`` applies an RFC 7386 merge-patch to the current spec and
 appends a version, ``rewrite_artifact`` replaces the spec wholesale and appends
 a version. Rendering runs a FIXED program in the sandbox that reads the spec as
@@ -57,6 +57,11 @@ _KIND_INFO: Dict[str, Dict[str, str]] = {
         "kind": "document",
         "ext": "pdf",
         "mime": "application/pdf",
+    },
+    "html": {
+        "kind": "html",
+        "ext": "html",
+        "mime": "text/html",
     },
 }
 
@@ -139,6 +144,72 @@ _SCHEMAS: Dict[str, Dict[str, Any]] = {
                         "text": {"type": "string"},
                     },
                     "required": ["type", "text"],
+                },
+            },
+        },
+        "required": ["blocks"],
+    },
+    "html": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "title": {"type": "string"},
+            "blocks": {
+                "type": "array",
+                "items": {
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "type": {"const": "heading"},
+                                "text": {"type": "string"},
+                                "level": {"type": "integer", "minimum": 1, "maximum": 3},
+                            },
+                            "required": ["type", "text"],
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "type": {"const": "paragraph"},
+                                "text": {"type": "string"},
+                            },
+                            "required": ["type", "text"],
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "type": {"const": "list"},
+                                "ordered": {"type": "boolean"},
+                                "items": {"type": "array", "items": {"type": "string"}},
+                            },
+                            "required": ["type", "items"],
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "type": {"const": "table"},
+                                "headers": {"type": "array", "items": {"type": "string"}},
+                                "rows": {
+                                    "type": "array",
+                                    "items": {"type": "array", "items": {"type": "string"}},
+                                },
+                            },
+                            "required": ["type", "rows"],
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "type": {"const": "code"},
+                                "text": {"type": "string"},
+                            },
+                            "required": ["type", "text"],
+                        },
+                    ],
                 },
             },
         },
@@ -227,6 +298,66 @@ _RENDERERS: Dict[str, str] = {
         "    story.append(Spacer(1, 6))\n"
         "SimpleDocTemplate({out_path!r}, pagesize=letter).build(story)\n"
     ),
+    "html": (
+        "import json\n"
+        "import html\n"
+        "spec = json.load(open({spec_path!r}))\n"
+        "def esc(value):\n"
+        "    return html.escape('' if value is None else str(value))\n"
+        "parts = []\n"
+        "title = spec.get('title')\n"
+        "if title:\n"
+        "    parts.append('<h1>' + esc(title) + '</h1>')\n"
+        "for block in spec.get('blocks', []):\n"
+        "    kind = block.get('type')\n"
+        "    if kind == 'heading':\n"
+        "        level = block.get('level') or 2\n"
+        "        try:\n"
+        "            level = int(level)\n"
+        "        except (TypeError, ValueError):\n"
+        "            level = 2\n"
+        "        level = min(max(level, 1), 3) + 1\n"
+        "        parts.append('<h%d>%s</h%d>' % (level, esc(block.get('text', '')), level))\n"
+        "    elif kind == 'paragraph':\n"
+        "        parts.append('<p>' + esc(block.get('text', '')) + '</p>')\n"
+        "    elif kind == 'list':\n"
+        "        tag = 'ol' if block.get('ordered') else 'ul'\n"
+        "        items = ''.join('<li>' + esc(i) + '</li>' for i in (block.get('items') or []))\n"
+        "        parts.append('<%s>%s</%s>' % (tag, items, tag))\n"
+        "    elif kind == 'table':\n"
+        "        rows_html = []\n"
+        "        headers = block.get('headers')\n"
+        "        if headers:\n"
+        "            cells = ''.join('<th>' + esc(h) + '</th>' for h in headers)\n"
+        "            rows_html.append('<thead><tr>' + cells + '</tr></thead>')\n"
+        "        body = []\n"
+        "        for row in (block.get('rows') or []):\n"
+        "            cells = ''.join('<td>' + esc(c) + '</td>' for c in row)\n"
+        "            body.append('<tr>' + cells + '</tr>')\n"
+        "        rows_html.append('<tbody>' + ''.join(body) + '</tbody>')\n"
+        "        parts.append('<table>' + ''.join(rows_html) + '</table>')\n"
+        "    elif kind == 'code':\n"
+        "        parts.append('<pre><code>' + esc(block.get('text', '')) + '</code></pre>')\n"
+        # CSS braces are doubled so the outer ``_RENDERERS[kind].format(...)`` leaves them literal.
+        "css = (\n"
+        "    'body{{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;'\n"
+        "    'line-height:1.6;color:#1a1a1a;max-width:800px;margin:0 auto;padding:24px}}'\n"
+        "    'h1,h2,h3,h4{{line-height:1.25;margin:1.2em 0 0.5em}}'\n"
+        "    'table{{border-collapse:collapse;width:100%;margin:1em 0}}'\n"
+        "    'th,td{{border:1px solid #d0d0d0;padding:6px 10px;text-align:left}}'\n"
+        "    'th{{background:#f5f5f5}}'\n"
+        "    'pre{{background:#f5f5f5;padding:12px;border-radius:6px;overflow:auto}}'\n"
+        "    'code{{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}}'\n"
+        ")\n"
+        "doc = (\n"
+        "    '<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">'\n"
+        "    '<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">'\n"
+        "    '<title>' + esc(title or 'Report') + '</title>'\n"
+        "    '<style>' + css + '</style></head><body>'\n"
+        "    + ''.join(parts) + '</body></html>'\n"
+        ")\n"
+        "open({out_path!r}, 'w', encoding='utf-8').write(doc)\n"
+    ),
 }
 
 
@@ -247,7 +378,7 @@ def merge_patch(target: Any, patch: Any) -> Any:
 
 class ArtifactGeneratorTool(Tool):
     """Artifact Generator
-    Render editable documents (presentation/document/spreadsheet/pdf) from a JSON spec and version them.
+    Render editable documents (presentation/document/spreadsheet/pdf/html) from a JSON spec and version them.
     """
 
     def __init__(self, tool_config: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None) -> None:
@@ -277,7 +408,13 @@ class ArtifactGeneratorTool(Tool):
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "kind": {"type": "string", "enum": kinds, "description": "Document kind to render."},
+                        "kind": {
+                            "type": "string",
+                            "enum": kinds,
+                            "description": (
+                                "Document kind to render; `html` is an inline-rendered, versionable HTML report."
+                            ),
+                        },
                         "title": {"type": "string", "description": "Optional artifact title."},
                         "spec": {"type": "object", "description": "Document spec matching the kind's schema."},
                     },
@@ -373,7 +510,7 @@ class ArtifactGeneratorTool(Tool):
             return {"status": "error", "error": rendered["error"]}
 
         info = _KIND_INFO[kind]
-        filename = self._filename(title, info["ext"])
+        filename = self._filename(title, kind)
         try:
             ref = persist_new_artifact(
                 user_id=self.user_id,
@@ -422,7 +559,7 @@ class ArtifactGeneratorTool(Tool):
         if rendered.get("error"):
             return {"status": "error", "error": rendered["error"]}
         info = _KIND_INFO[kind]
-        filename = self._filename(None, info["ext"])
+        filename = self._filename(None, kind)
         try:
             ref = append_artifact_version(
                 user_id=self.user_id,
@@ -565,10 +702,12 @@ class ArtifactGeneratorTool(Tool):
         }
 
     @staticmethod
-    def _filename(title: Optional[str], ext: str) -> str:
+    def _filename(title: Optional[str], kind: str) -> str:
         """Derive a download filename from a title (or a generic stem) plus the kind extension."""
+        if kind == "html":
+            return "report.html"
         stem = (title or "artifact").strip() or "artifact"
-        return f"{stem}.{ext}"
+        return f"{stem}.{_KIND_INFO[kind]['ext']}"
 
     def _resolve_session_id(self) -> Optional[str]:
         """Derive the sandbox session id from the bound conversation/run; sanitize to the gateway charset."""
