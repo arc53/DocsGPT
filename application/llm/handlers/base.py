@@ -1049,6 +1049,34 @@ class LLMHandler(ABC):
                     id=call.id, name=call.name, arguments=call.arguments
                 )
                 error_response = f"Error executing tool: {str(e)}"
+                # Mirror the success path: a role:"tool" message must follow
+                # an assistant message carrying its tool_calls, or the next
+                # provider completion 400s ("'tool' must be a response to a
+                # preceding message with 'tool_calls'").
+                args_str = (
+                    json.dumps(call.arguments)
+                    if isinstance(call.arguments, dict)
+                    else call.arguments
+                )
+                tool_call_obj = {
+                    "id": call.id,
+                    "type": "function",
+                    "function": {
+                        "name": call.name,
+                        "arguments": args_str,
+                    },
+                }
+                if call.thought_signature:
+                    tool_call_obj["thought_signature"] = call.thought_signature
+                assistant_msg: Dict[str, Any] = {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [tool_call_obj],
+                }
+                if reasoning_content:
+                    assistant_msg["reasoning_content"] = reasoning_content
+                updated_messages.append(assistant_msg)
+
                 error_message = self.create_tool_message(error_call, error_response)
                 updated_messages.append(error_message)
 

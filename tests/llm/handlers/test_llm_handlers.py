@@ -727,6 +727,82 @@ class TestHandleToolCalls:
         ]
         assert len(error_events) == 1
 
+    def test_tool_error_keeps_messages_well_formed(self):
+        """A raising tool must still leave the assistant tool_calls message
+        before its role:"tool" error so the next completion isn't rejected."""
+        handler = ConcreteHandler()
+        agent = Mock()
+        agent._check_context_limit = Mock(return_value=False)
+        agent.context_limit_reached = False
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = Mock(return_value=None)
+        agent.tool_executor._name_to_tool = {}
+        agent._execute_tool_action = Mock(side_effect=RuntimeError("boom"))
+
+        call = ToolCall(id="c1", name="action_1", arguments="{}")
+        gen = handler.handle_tool_calls(agent, [call], {"1": {"name": "t"}}, [])
+        try:
+            while True:
+                next(gen)
+        except StopIteration as e:
+            messages, _pending = e.value
+
+        assert len(messages) == 2
+        assistant_msg, tool_msg = messages
+        assert assistant_msg["role"] == "assistant"
+        assert assistant_msg["tool_calls"][0]["id"] == "c1"
+        assert tool_msg["role"] == "tool"
+        assert tool_msg["tool_call_id"] == "c1"
+        assert "boom" in tool_msg["content"]
+        # OpenAI ordering rule: the tool message must immediately follow an
+        # assistant message whose tool_calls include its tool_call_id.
+        assistant_ids = {tc["id"] for tc in assistant_msg["tool_calls"]}
+        assert tool_msg["tool_call_id"] in assistant_ids
+
+    def test_partial_batch_failure_answers_every_tool_call(self):
+        """One tool raises, others succeed: every assistant tool_call must
+        get a matching role:"tool" reply (OpenAI rejects unanswered ids)."""
+        handler = ConcreteHandler()
+        agent = Mock()
+        agent._check_context_limit = Mock(return_value=False)
+        agent.context_limit_reached = False
+        agent.llm.__class__.__name__ = "MockLLM"
+        agent.tool_executor.check_pause = Mock(return_value=None)
+        agent.tool_executor._name_to_tool = {}
+
+        def fake_execute(tools_dict, call):
+            yield {"type": "tool_call", "data": {"status": "pending"}}
+            if call.id == "c2":
+                raise RuntimeError("boom")
+            return ("ok", call.id)
+
+        agent._execute_tool_action = Mock(side_effect=fake_execute)
+
+        calls = [
+            ToolCall(id="c1", name="a_1", arguments="{}"),
+            ToolCall(id="c2", name="b_1", arguments="{}"),
+            ToolCall(id="c3", name="c_1", arguments="{}"),
+        ]
+        gen = handler.handle_tool_calls(agent, calls, {"1": {"name": "t"}}, [])
+        try:
+            while True:
+                next(gen)
+        except StopIteration as e:
+            messages, _pending = e.value
+
+        # Each tool message must immediately follow an assistant message that
+        # advertises its tool_call_id.
+        answered_ids = set()
+        for idx, msg in enumerate(messages):
+            if msg.get("role") == "tool":
+                assert idx > 0
+                prev = messages[idx - 1]
+                assert prev["role"] == "assistant"
+                advertised = {tc["id"] for tc in prev["tool_calls"]}
+                assert msg["tool_call_id"] in advertised
+                answered_ids.add(msg["tool_call_id"])
+        assert answered_ids == {"c1", "c2", "c3"}
+
     def test_thought_signature_preserved(self):
         handler = ConcreteHandler()
         agent = self._make_agent()
