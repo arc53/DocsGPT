@@ -42,6 +42,20 @@ RUN if [ "$INSTALL_DOCLING" = "true" ]; then \
         pip install --no-cache-dir docling==2.8.3; \
     fi
 
+# Env-scrubbing kernel launcher + custom kernelspec. The launcher re-execs
+# ipykernel under a minimal allowlisted env (env -i) so NO secret in the
+# gateway's environment (*_API_KEY, *_TOKEN, POSTGRES_URI, the gateway auth
+# token, ...) ever reaches kernel code. The kernelspec ships under a DISTINCT
+# name ("docsgpt-python"), so the app selects it with SANDBOX_KERNEL_NAME and it
+# is never shadowed by the stock ipykernel "python3" spec regardless of the
+# python prefix. The stock "python3" spec is left untouched (no overwrite, no
+# kernelspec-name precedence to rely on). SECURITY: never give this image
+# `env_file: ../.env` -- the scrubber blocks exfil from the kernel, but the
+# runner image itself should stay free of app secrets it has no use for.
+COPY kernel-launch.sh /opt/docsgpt/kernel-launch.sh
+RUN chmod 0555 /opt/docsgpt/kernel-launch.sh
+COPY kernels/docsgpt-python/kernel.json /usr/local/share/jupyter/kernels/docsgpt-python/kernel.json
+
 USER sandbox
 WORKDIR /home/sandbox
 

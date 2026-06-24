@@ -227,10 +227,16 @@ class JupyterKernelGatewaySandbox(CodeSandbox):
                 return
 
     def _prime(self, kernel: _Kernel) -> None:
-        """Create the per-session workspace dir and chdir the kernel into it."""
+        """Create the per-session workspace (mode 0700) and chdir the kernel into it."""
+        # 0700 on the root and the per-session dir is defense-in-depth only: every
+        # kernel runs under one shared uid here, so this is not a cross-session
+        # boundary (that needs distinct uids / per-session VMs -- the Daytona backend).
         setup = (
             "import os as _os\n"
-            f"_os.makedirs({kernel.workspace!r}, exist_ok=True)\n"
+            f"_os.makedirs({_WORKSPACE_ROOT!r}, mode=0o700, exist_ok=True)\n"
+            f"_os.chmod({_WORKSPACE_ROOT!r}, 0o700)\n"
+            f"_os.makedirs({kernel.workspace!r}, mode=0o700, exist_ok=True)\n"
+            f"_os.chmod({kernel.workspace!r}, 0o700)\n"
             f"_os.chdir({kernel.workspace!r})\n"
         )
         result = self._run(kernel, setup, self._default_timeout)

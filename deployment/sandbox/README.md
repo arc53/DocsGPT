@@ -5,6 +5,58 @@ backend/worker is the **client** and connects over HTTP + WebSocket via
 `SANDBOX_GATEWAY_URL`. Each session is an **in-process kernel** (child process),
 never a child container; the Docker socket is **not** mounted.
 
+## Isolation model
+
+Read this before pointing untrusted or multi-tenant workloads at the runner.
+
+A single Jupyter runner is **one trust domain**. Every session is an in-process
+kernel under **one shared uid (10001)** in **one container**; sessions are
+isolated by **working directory only** — each session's code runs with its cwd
+set to its own `/tmp/docsgpt-sandbox/<session_id>` directory. That is a
+convenience boundary, not a security boundary between sessions.
+
+What this slice does close:
+
+- **Env-secret exfil is closed.** The custom kernelspec
+  (`kernels/docsgpt-python/kernel.json` → `/opt/docsgpt/kernel-launch.sh`)
+  re-execs ipykernel under a minimal allowlisted env (`env -i` keeping only
+  `PATH`, `HOME`, `LANG`, `JUPYTER_RUNTIME_DIR`, `JUPYTER_DATA_DIR`). The image
+  installs this spec under the **distinct name `docsgpt-python`** and the app
+  selects it via `SANDBOX_KERNEL_NAME=docsgpt-python`; because the name is
+  distinct, it is **never shadowed** by the stock ipykernel `python3` spec
+  (kernelspec name resolution prefers `sys.prefix/share` over
+  `/usr/local/share`, so reusing `python3` would silently fall back to the
+  unscrubbed stock spec on a different python prefix). The stock `python3` spec
+  is left untouched. So even though the gateway process inherits the operator's
+  full environment, **no `*_API_KEY` / `*_TOKEN` / `POSTGRES_URI` / gateway auth
+  token reaches kernel code** via `os.environ`, regardless of how the gateway is
+  launched. Loopback ZMQ reachability is preserved because `{connection_file}`
+  is forwarded untouched.
+- **Per-session workspace perms.** The workspace root and each session dir are
+  created `0700` (defense-in-depth). Under one shared uid this does **not** stop
+  a sibling session from reading another's files — it only narrows exposure to
+  other uids on the box.
+
+Residual gaps (treat all sessions in one runner as mutually trusting):
+
+- **Sibling-workspace reads.** All kernels run as the same uid, so one session's
+  code can read another session's files (and `/tmp`) despite `0700`. Distinct
+  uids / per-session VMs are required to close this.
+- **In-memory / cross-kernel.** Kernels are child processes of one gateway under
+  one uid; OS-level process isolation is the only boundary, and it is not a
+  sandbox boundary against a determined escape. No gVisor in the base posture.
+- **Egress.** Outbound is broad by design (so code can `pip install` / call
+  public APIs). Private/link-local/metadata ranges are blocked **only** by the
+  network layer — the k8s NetworkPolicy or a host/cloud firewall (see *Network
+  egress / SSRF* below), never by the runner itself.
+
+For real per-tenant isolation (cross-tenant or untrusted code), use the
+**Daytona backend** (`SANDBOX_BACKEND=daytona`), which gives each session its
+own VM. To harden the self-hosted Jupyter runner as a whole (host protection +
+egress), layer the **gVisor `runsc` runtime**, the **NetworkPolicy**, and a
+**host firewall** as documented below — those protect the host and constrain
+egress; they do **not** create a boundary between sessions inside one runner.
+
 ## Run standalone for dev
 
 Build and run the runner on its own, then point the app at it:
@@ -28,6 +80,16 @@ limit so large `get_file` base64 payloads aren't silently truncated. (On older
 gateways the trait may live elsewhere; the client's `get_file` integrity check
 catches any truncation regardless.)
 
+A bare-venv gateway uses the **stock** `python3` kernelspec, which inherits the
+gateway's full env (no secret scrubbing). The default `SANDBOX_KERNEL_NAME` is
+`python3`, so plain venv dev gets no scrubbing — acceptable for single-trust
+dev. The Docker image instead ships the env-scrubbing spec under the distinct
+name `docsgpt-python` (see *Isolation model*) and the runner stack sets
+`SANDBOX_KERNEL_NAME=docsgpt-python`. To get the scrubbing behavior in a venv,
+copy `kernels/docsgpt-python/kernel.json` (pointing `argv` at a local copy of
+`kernel-launch.sh`) into a Jupyter data dir on the kernelspec search path and
+set `SANDBOX_KERNEL_NAME=docsgpt-python` before launching.
+
 ## Exposing the port requires auth
 
 The image does **not** set `--KernelGatewayApp.allow_origin=*`. If you publish
@@ -41,7 +103,11 @@ required there.
 
 The `docsgpt-sandbox` service is defined in `deployment/docker-compose.yaml` on
 an internal-only network. The backend and worker reach it at
-`http://docsgpt-sandbox:8888`.
+`http://docsgpt-sandbox:8888` and select the scrubbing kernel by setting
+`SANDBOX_KERNEL_NAME=docsgpt-python` (the runner only ships the kernelspec; the
+app chooses it). The same applies to k8s: `SANDBOX_KERNEL_NAME=docsgpt-python`
+is set on the `docsgpt-api` and `docsgpt-worker` deployments in
+`deployment/k8s/deployments/docsgpt-deploy.yaml`.
 
 ## Document extraction variant (Docling)
 

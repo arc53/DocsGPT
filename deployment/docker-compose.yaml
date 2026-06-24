@@ -26,6 +26,10 @@ services:
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
       # Code-execution runner reached over HTTP + WebSocket (no docker socket).
       - SANDBOX_GATEWAY_URL=http://docsgpt-sandbox:8888
+      # Select the runner's env-scrubbing kernelspec (distinct name; never
+      # shadowed by the stock "python3" spec). Must match the kernel the
+      # docsgpt-sandbox image installs.
+      - SANDBOX_KERNEL_NAME=docsgpt-python
     ports:
       - "7091:7091"
     volumes:
@@ -52,6 +56,8 @@ services:
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
       - SANDBOX_GATEWAY_URL=http://docsgpt-sandbox:8888
+      # Env-scrubbing kernelspec selected by name (see backend service).
+      - SANDBOX_KERNEL_NAME=docsgpt-python
     volumes:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
@@ -68,6 +74,14 @@ services:
   # runner is reachable only from backend/worker, not from the host/internet.
   # Egress/SSRF blocks, the gVisor `runsc` runtime, and seccomp profile come in
   # the hardening slice.
+  #
+  # SINGLE TRUST DOMAIN: all sessions share this one container/uid and are
+  # isolated by working directory only (per-session cwd) — not by a kernel/OS
+  # boundary. The custom kernelspec scrubs secrets from the kernel env, but
+  # sibling workspaces are readable under the shared uid and kernels share one
+  # address space. Do NOT add `env_file: ../.env` here (the runner needs no app
+  # secrets). For cross-tenant / untrusted multi-tenant workloads use a
+  # per-session VM via SANDBOX_BACKEND=daytona instead.
   docsgpt-sandbox:
     build: ./sandbox
     mem_limit: ${SANDBOX_MEMORY:-1g}

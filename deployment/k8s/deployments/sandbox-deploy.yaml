@@ -5,6 +5,18 @@
 #
 # On Linux prod, schedule this onto a gVisor `runsc` RuntimeClass for kernel
 # isolation (uncomment `runtimeClassName` once the node has it installed).
+#
+# SINGLE TRUST DOMAIN: all sessions in this pod share one container/uid and are
+# isolated by working directory only (per-session cwd) — not by a kernel/OS
+# boundary. This image ships an env-scrubbing kernelspec under the distinct name
+# "docsgpt-python"; the app (docsgpt-api / docsgpt-worker) MUST select it via
+# SANDBOX_KERNEL_NAME=docsgpt-python (already set in docsgpt-deploy.yaml) so the
+# scrubber runs. The stock "python3" spec stays untouched, so it can never
+# shadow the scrubbing kernel. Sibling workspaces are still readable under the
+# shared uid and kernels share one address space. Do NOT inject app secrets
+# (DB/LLM creds) into this pod's env; the runner needs none. For cross-tenant /
+# untrusted multi-tenant workloads use a per-session VM via
+# SANDBOX_BACKEND=daytona instead.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
