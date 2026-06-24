@@ -29,7 +29,8 @@ class ToolManager:
         for member_name, obj in inspect.getmembers(module, inspect.isclass):
             if issubclass(obj, Tool) and obj is not Tool:
                 if (
-                    tool_name in {"mcp_tool", "notes", "memory", "todo_list", "scheduler", "remote_device"}
+                    tool_name
+                    in {"mcp_tool", "notes", "memory", "todo_list", "scheduler", "remote_device", "code_executor"}
                     and user_id
                 ):
                     return obj(tool_config, user_id)
@@ -40,7 +41,8 @@ class ToolManager:
         if tool_name not in self.tools:
             raise ValueError(f"Tool '{tool_name}' not loaded")
         if (
-            tool_name in {"mcp_tool", "memory", "todo_list", "notes", "scheduler", "remote_device"}
+            tool_name
+            in {"mcp_tool", "memory", "todo_list", "notes", "scheduler", "remote_device", "code_executor"}
             and user_id
         ):
             tool_config = self.config.get(tool_name, {})
