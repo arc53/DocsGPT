@@ -283,6 +283,11 @@ class WorkflowEngine:
             }
 
         node_agent = WorkflowNodeAgentFactory.create(**factory_kwargs)
+        # Run-scope the node agent's tools so artifact_generator / code_executor
+        # address artifacts by this workflow run: a short ref (A1) created by one
+        # node resolves for edit_artifact in a later node within the same run.
+        if getattr(node_agent, "tool_executor", None) is not None:
+            node_agent.tool_executor.workflow_run_id = self.workflow_run_id
 
         full_response_parts: List[str] = []
         structured_response_parts: List[str] = []

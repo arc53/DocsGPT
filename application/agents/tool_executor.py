@@ -197,6 +197,10 @@ class ToolExecutor:
         self.tool_calls: List[Dict] = []
         self._loaded_tools: Dict[str, object] = {}
         self.conversation_id: Optional[str] = None
+        # Set by the workflow engine for agent nodes so run-scoped tools
+        # (artifact_generator / code_executor) address artifacts by the
+        # workflow run rather than a conversation.
+        self.workflow_run_id: Optional[str] = None
         self.message_id: Optional[str] = None
         self.client_tools: Optional[List[Dict]] = None
         self._name_to_tool: Dict[str, Tuple[str, str]] = {}
@@ -945,6 +949,10 @@ class ToolExecutor:
             tool_config["tool_id"] = str(row_id)
             if self.conversation_id:
                 tool_config["conversation_id"] = self.conversation_id
+            # Workflow agent nodes run-scope their artifact tools so a short
+            # ref (A1) and edit_artifact resolve against the workflow run.
+            if self.workflow_run_id:
+                tool_config["workflow_run_id"] = self.workflow_run_id
             if tool_data["name"] == "scheduler":
                 # Agent-bound: stamp schedules.agent_id. Agentless: the tool
                 # falls back to ``origin_conversation_id`` as the schedule's
