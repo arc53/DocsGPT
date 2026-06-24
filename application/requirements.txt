@@ -111,3 +111,4 @@ yarl==1.23.0
 markdownify==1.2.2
 tldextract==5.3.1
 websockets==16.0
+websocket-client==1.9.0

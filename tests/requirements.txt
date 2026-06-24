@@ -5,3 +5,9 @@ coverage>=7.4.0
 pytest-postgresql>=6.0.0
 psycopg[binary]>=3.1
 cryptography>=46.0.0
+# Runner engine for the sandbox integration test: tests launch a local
+# `jupyter kernelgateway` process (no Docker). Not an app runtime dependency.
+# ipykernel provides the python3 kernel the gateway launches per session.
+jupyter-kernel-gateway>=2.5.0
+ipykernel>=6.0.0
+websocket-client>=1.6.0

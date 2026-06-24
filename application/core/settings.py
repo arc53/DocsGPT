@@ -324,6 +324,25 @@ class Settings(BaseSettings):
     SCHEDULE_ONCE_MAX_HORIZON: int = 31_536_000
     SCHEDULE_RUN_OUTPUT_RETENTION_DAYS: int = 90
 
+    # Code-execution sandbox (see artifacts-code-execution-spec.md §4 C2).
+    # The app is a CLIENT of an always-on runner; defaults are safe so app
+    # import never fails when the sandbox is unconfigured.
+    SANDBOX_BACKEND: str = "jupyter"  # "jupyter" (self-host) — "daytona" reserved
+    # URL of the Jupyter Kernel Gateway runner (the docsgpt-sandbox service).
+    SANDBOX_GATEWAY_URL: str = "http://localhost:8888"
+    SANDBOX_GATEWAY_AUTH_TOKEN: Optional[str] = None  # gateway auth token, if set
+    SANDBOX_KERNEL_NAME: str = "python3"  # kernelspec name to launch per session
+    SANDBOX_MAX_TTL: int = 1200  # hard cap (s) on agent-selectable keep-alive TTL
+    SANDBOX_EXEC_TIMEOUT: int = 60  # default wall-clock cap (s) per exec call
+    SANDBOX_HTTP_TIMEOUT: int = 10  # fixed cap (s) for REST control calls (create/delete/alive/interrupt)
+    SANDBOX_MAX_OUTPUT_BYTES: int = 8 * 1024 * 1024  # cap on buffered stdout+stderr per exec
+    SANDBOX_MAX_FILE_BYTES: int = 10 * 1024 * 1024  # cap on get_file size routed through stdout
+    # Runner container resource caps — consumed by the docsgpt-sandbox compose
+    # service (deployment/sandbox), not by the app client. cgroup CPU/mem caps
+    # are part of the untrusted-code security boundary.
+    SANDBOX_MEMORY: str = "1g"  # docker mem_limit for the runner container
+    SANDBOX_CPUS: str = "1.0"  # docker cpu quota for the runner container
+
     @field_validator("POSTGRES_URI", mode="before")
     @classmethod
     def _normalize_postgres_uri_validator(cls, v):
