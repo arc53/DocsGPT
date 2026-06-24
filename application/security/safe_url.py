@@ -143,7 +143,7 @@ def _resolve(host: str) -> Iterable[ipaddress.IPv4Address | ipaddress.IPv6Addres
         except ValueError:
             # An entry we can't parse is itself suspicious; treat as unsafe.
             raise UnsafeUserUrlError(
-                f"hostname {host!r} resolved to unparseable address {ip_str!r}"
+                f"hostname {host!r} resolved to unparsable address {ip_str!r}"
             ) from None
     return addresses
 
