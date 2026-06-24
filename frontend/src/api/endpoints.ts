@@ -110,6 +110,14 @@ const endpoints = {
     AGENT_FOLDER: (id: string) => `/api/agents/folders/${id}`,
     MOVE_AGENT_TO_FOLDER: '/api/agents/folders/move_agent',
     GET_ARTIFACT: (artifactId: string) => `/api/artifact/${artifactId}`,
+    GET_DOCUMENT_ARTIFACT: (artifactId: string) =>
+      `/api/artifacts/${artifactId}`,
+    DOWNLOAD_ARTIFACT: (artifactId: string, version?: number) =>
+      version != null
+        ? `/api/artifacts/${artifactId}/download?version=${version}`
+        : `/api/artifacts/${artifactId}/download`,
+    RESTORE_ARTIFACT: (artifactId: string) =>
+      `/api/artifacts/${artifactId}/restore`,
     WORKFLOWS: '/api/workflows',
     WORKFLOW: (id: string) => `/api/workflows/${id}`,
     CUSTOM_MODELS: '/api/user/models',
