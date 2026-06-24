@@ -25,6 +25,7 @@ class WorkflowRunsRepository:
         user_id: str,
         status: str,
         *,
+        run_id: str | None = None,
         inputs: dict | None = None,
         result: dict | None = None,
         steps: list | None = None,
@@ -37,6 +38,10 @@ class WorkflowRunsRepository:
             "user_id": user_id,
             "status": status,
         }
+        # An explicit id lets the engine bind run-scoped artifacts to this row
+        # before the run is persisted, so artifact authz can resolve the parent.
+        if run_id is not None:
+            values["id"] = run_id
         if inputs is not None:
             values["inputs"] = inputs
         if result is not None:

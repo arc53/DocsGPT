@@ -216,6 +216,8 @@ class TestSaveWorkflowRun:
             WorkflowRunsRepository,
         )
 
+        import uuid as _uuid
+
         user = "u-saverun"
         wf = WorkflowsRepository(pg_conn).create(user, "wf")
         agent = _make_agent(
@@ -225,12 +227,17 @@ class TestSaveWorkflowRun:
         agent._engine.execution_log = []
         agent._engine.state = {"output": "hello"}
         agent._engine.get_execution_summary.return_value = []
+        # The run row is persisted under the engine's run id (the parent for any
+        # run-scoped artifacts); a MagicMock id can't be adapted by the driver.
+        run_id = str(_uuid.uuid4())
+        agent._engine.workflow_run_id = run_id
 
         with _patch_db(pg_conn):
             agent._save_workflow_run("my query")
 
         runs = WorkflowRunsRepository(pg_conn).list_for_workflow(str(wf["id"]))
         assert len(runs) >= 1
+        assert str(runs[0]["id"]) == run_id
 
     def test_exception_is_swallowed(self):
         agent = _make_agent(workflow_id="x", workflow_owner="u")

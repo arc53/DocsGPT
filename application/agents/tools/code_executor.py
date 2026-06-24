@@ -2,25 +2,31 @@
 
 from __future__ import annotations
 
-import hashlib
-import io
 import logging
-import mimetypes
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import text
-
 from application.agents.tools.base import Tool
 from application.core.settings import settings
+from application.sandbox.artifacts_capture import (
+    MAX_CAPTURED_FILES,
+    capture_artifacts,
+    infer_mime as _infer_mime,
+    kind_for_mime as _kind_for_mime,
+    snapshot_signatures,
+)
 from application.sandbox.base import ExecResult
 from application.sandbox.sandbox_creator import SandboxCreator
 from application.storage.db.repositories.artifacts import ArtifactsRepository
-from application.storage.db.session import db_readonly, db_session
+from application.storage.db.session import db_readonly
 from application.storage.storage_creator import StorageCreator
 from application.utils import safe_filename
 
 logger = logging.getLogger(__name__)
+
+# Re-exported for back-compat: callers (and tests) import these mime helpers
+# from this module; they now live in the shared capture helper.
+__all__ = ["CodeExecutorTool", "_infer_mime", "_kind_for_mime", "_tail", "_OUTPUT_TAIL_BYTES"]
 
 # Maximum bytes of stdout/stderr returned to the LLM. The raw stream is never
 # forwarded; only this tail keeps binary/runaway output out of the context.
@@ -30,22 +36,6 @@ _OUTPUT_TAIL_BYTES = 4000
 # [A-Za-z0-9_-]+, so any disallowed character is stripped before binding.
 _SESSION_ID_RE = re.compile(r"[^A-Za-z0-9_-]+")
 
-_DEFAULT_KIND = "file"
-
-# Coarse mime -> artifact kind mapping for the UI rail; defaults to "file".
-_KIND_BY_MIME_PREFIX: Dict[str, str] = {
-    "image/": "image",
-    "text/html": "html",
-    "text/csv": "data",
-    "application/json": "data",
-    "application/vnd.openxmlformats-officedocument.presentationml": "presentation",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml": "spreadsheet",
-    "application/vnd.ms-excel": "spreadsheet",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml": "document",
-    "application/msword": "document",
-    "application/pdf": "document",
-}
-
 
 def _tail(stream: Optional[str]) -> str:
     """Return the trailing slice of ``stream`` bounded by ``_OUTPUT_TAIL_BYTES``."""
@@ -54,20 +44,6 @@ def _tail(stream: Optional[str]) -> str:
     if len(stream) <= _OUTPUT_TAIL_BYTES:
         return stream
     return stream[-_OUTPUT_TAIL_BYTES:]
-
-
-def _infer_mime(filename: str) -> str:
-    """Infer a mime type from a filename, falling back to a generic binary type."""
-    mime, _ = mimetypes.guess_type(filename)
-    return mime or "application/octet-stream"
-
-
-def _kind_for_mime(mime: str) -> str:
-    """Map a mime type to a coarse artifact ``kind`` for the artifact rail."""
-    for prefix, kind in _KIND_BY_MIME_PREFIX.items():
-        if mime.startswith(prefix):
-            return kind
-    return _DEFAULT_KIND
 
 
 class CodeExecutorTool(Tool):
@@ -198,7 +174,7 @@ class CodeExecutorTool(Tool):
         if not isinstance(code, str) or not code.strip():
             return {"status": "error", "error": "code is required."}
 
-        capture_artifacts = kwargs.get("capture_artifacts", True)
+        should_capture = kwargs.get("capture_artifacts", True)
         ttl = self._coerce_int(kwargs.get("ttl"))
         timeout = self._resolve_timeout(kwargs.get("timeout"))
         inputs = kwargs.get("inputs") or []
@@ -216,7 +192,7 @@ class CodeExecutorTool(Tool):
                 return {"status": "error", "error": materialized["error"]}
 
             pre_signatures: Dict[str, Tuple[int, Optional[str]]] = {}
-            if capture_artifacts:
+            if should_capture:
                 pre_signatures = self._snapshot_signatures(manager, session_id)
 
             try:
@@ -228,7 +204,7 @@ class CodeExecutorTool(Tool):
             # Capture even on error/timeout so partial outputs aren't lost; a
             # capture failure must never mask the run's real status.
             artifacts: List[Dict[str, Any]] = []
-            if capture_artifacts:
+            if should_capture:
                 try:
                     artifacts = self._capture_artifacts(manager, session_id, pre_signatures)
                 except Exception:
@@ -290,132 +266,32 @@ class CodeExecutorTool(Tool):
 
     # Cap the per-run capture work so a workspace full of pre-existing files
     # can't turn one exec into an unbounded read+persist sweep.
-    _MAX_CAPTURED_FILES = 64
+    _MAX_CAPTURED_FILES = MAX_CAPTURED_FILES
 
     def _snapshot_signatures(self, manager: Any, session_id: str) -> Dict[str, Tuple[int, Optional[str]]]:
         """Map each non-input workspace file to a (size, sha256) signature for change detection."""
-        signatures: Dict[str, Tuple[int, Optional[str]]] = {}
-        try:
-            files = manager.list_files(session_id)
-        except Exception:
-            logger.exception("code_executor: pre-exec listing failed")
-            return signatures
-        for rel_path in files:
-            if rel_path.startswith("inputs/"):
-                continue
-            try:
-                data = manager.get_file(session_id, rel_path)
-            except Exception:
-                logger.exception("code_executor: pre-exec signature read failed")
-                continue
-            signatures[rel_path] = (len(data), hashlib.sha256(data).hexdigest())
-        return signatures
+        return snapshot_signatures(manager, session_id)
 
     def _capture_artifacts(
         self, manager: Any, session_id: str, pre_signatures: Dict[str, Tuple[int, Optional[str]]]
     ) -> List[Dict[str, Any]]:
         """Persist each non-input workspace file that is new or whose content changed."""
-        try:
-            post_files = set(manager.list_files(session_id))
-        except Exception:
-            logger.exception("code_executor: post-exec listing failed")
-            return []
-
-        candidates = sorted(f for f in post_files if not f.startswith("inputs/"))
-        storage = StorageCreator.get_storage()
-        captured: List[Dict[str, Any]] = []
-        for rel_path in candidates:
-            if len(captured) >= self._MAX_CAPTURED_FILES:
-                logger.warning("code_executor: capture cap reached; remaining files skipped")
-                break
-            try:
-                data = manager.get_file(session_id, rel_path)
-            except Exception:
-                logger.exception("code_executor: get_file failed during capture")
-                continue
-            # A pre-existing file is only captured when its content changed; an
-            # unchanged file is skipped so re-runs don't re-persist stale inputs.
-            signature = (len(data), hashlib.sha256(data).hexdigest())
-            if pre_signatures.get(rel_path) == signature:
-                continue
-            ref = self._persist_artifact(storage, rel_path, data, session_id)
-            if ref is not None:
-                captured.append(ref)
+        captured = capture_artifacts(
+            manager,
+            session_id,
+            pre_signatures,
+            user_id=self.user_id,
+            conversation_id=self.conversation_id,
+            workflow_run_id=self.workflow_run_id,
+            produced_by={
+                "tool": "code_executor",
+                "action": "run_code",
+                "session_id": session_id,
+            },
+        )
         if captured:
             self._last_artifact_id = captured[0]["artifact_id"]
         return captured
-
-    def _persist_artifact(
-        self, storage: Any, rel_path: str, data: bytes, session_id: str
-    ) -> Optional[Dict[str, Any]]:
-        """Store ``data`` and create an artifact row; size/sha256 are computed server-side.
-
-        The storage write is the last statement before commit, so a failed
-        write rolls the row back (bytes are never orphaned). The only remaining
-        window is a commit that fails after a successful write; that key is
-        deleted best-effort, but a crash between save and commit can still leak.
-        """
-        # The sandbox filename is display-only; the storage key is derived from
-        # server-controlled values so a hostile name can't redirect the write.
-        display_name = rel_path.rsplit("/", 1)[-1]
-        filename = safe_filename(display_name)
-        size = len(data)
-        sha256 = hashlib.sha256(data).hexdigest()
-        mime_type = _infer_mime(filename)
-        kind = _kind_for_mime(mime_type)
-        saved_key: Optional[str] = None
-        try:
-            with db_session() as conn:
-                repo = ArtifactsRepository(conn)
-                artifact = repo.create_artifact(
-                    self.user_id,
-                    kind,
-                    conversation_id=self.conversation_id,
-                    workflow_run_id=self.workflow_run_id,
-                    title=display_name,
-                    mime_type=mime_type,
-                    filename=filename,
-                    storage_path=None,
-                    size=size,
-                    sha256=sha256,
-                    produced_by={
-                        "tool": "code_executor",
-                        "action": "run_code",
-                        "session_id": session_id,
-                    },
-                )
-                artifact_id = str(artifact["id"])
-                # ``inputs/{user}/artifacts/...`` is the project storage-namespace
-                # convention (matches attachments + spec §4); the ``inputs/`` prefix
-                # is the user's namespace root, not an "input file" marker.
-                storage_path = f"inputs/{self.user_id}/artifacts/{artifact_id}/v1/{filename}"
-                # Set the server-derived key on version 1, then write the bytes as
-                # the LAST statement so a save failure rolls the whole row back.
-                conn.execute(
-                    text(
-                        "UPDATE artifact_versions SET storage_path = :p "
-                        "WHERE artifact_id = CAST(:aid AS uuid) AND version = 1"
-                    ),
-                    {"p": storage_path, "aid": artifact_id},
-                )
-                storage.save_file(io.BytesIO(data), storage_path)
-                saved_key = storage_path
-        except Exception:
-            logger.exception("code_executor: failed to persist artifact")
-            # The bytes landed but the commit failed: drop the now-orphaned key.
-            if saved_key is not None:
-                try:
-                    storage.delete_file(saved_key)
-                except Exception:
-                    logger.exception("code_executor: orphaned-key cleanup failed for %s", saved_key)
-            return None
-        return {
-            "artifact_id": artifact_id,
-            "version": 1,
-            "filename": filename,
-            "mime_type": mime_type,
-            "size": size,
-        }
 
     def _shape_payload(
         self, result: ExecResult, artifacts: List[Dict[str, Any]], inputs_loaded: List[str]

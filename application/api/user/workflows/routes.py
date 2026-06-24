@@ -357,6 +357,19 @@ def validate_workflow_structure(
         if schema_error:
             errors.append(f"Agent node '{agent_title}' JSON schema {schema_error}")
 
+    code_nodes = [n for n in nodes if n.get("type") == "code"]
+    for code_node in code_nodes:
+        code_title = code_node.get("title", code_node.get("id", "unknown"))
+        raw_config = code_node.get("data", {}) or {}
+        if not isinstance(raw_config, dict):
+            errors.append(f"Code node '{code_title}' has invalid configuration")
+            continue
+        if not str(raw_config.get("code", "")).strip():
+            errors.append(f"Code node '{code_title}' must have code to execute")
+        _, schema_error = validate_json_schema_payload(raw_config.get("json_schema"))
+        if schema_error:
+            errors.append(f"Code node '{code_title}' JSON schema {schema_error}")
+
     for node in nodes:
         if not node.get("id"):
             errors.append("All nodes must have an id")

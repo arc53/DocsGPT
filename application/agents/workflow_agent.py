@@ -214,6 +214,9 @@ class WorkflowAgent(BaseAgent):
                     str(workflow_row["id"]),
                     owner_id,
                     run.status.value,
+                    # Persist under the engine's run id so any run-scoped
+                    # artifacts produced by code nodes resolve their parent.
+                    run_id=self._engine.workflow_run_id,
                     inputs=run.inputs,
                     result=run.outputs,
                     steps=[step.model_dump(mode="json") for step in run.steps],

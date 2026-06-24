@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 
 from application.templates.namespaces import (
+    ArtifactsNamespace,
     NamespaceBuilder,
     NamespaceManager,
     PassthroughNamespace,
@@ -186,6 +187,141 @@ class TestToolsNamespace:
         data = {"good": "ok", "bad": object()}
         result = ns.build(tools_data=data)
         assert result == {"good": "ok"}
+
+
+# ── ArtifactsNamespace ─────────────────────────────────────────────────────────
+
+
+def _ref(**overrides):
+    base = {
+        "artifact_id": "a-1",
+        "version": 2,
+        "mime_type": "application/pdf",
+        "filename": "report.pdf",
+        "size": 1234,
+    }
+    base.update(overrides)
+    return base
+
+
+@pytest.mark.unit
+class TestArtifactsNamespace:
+    def test_namespace_name(self):
+        assert ArtifactsNamespace().namespace_name == "artifacts"
+
+    def test_named_ref_exposes_id_mime_filename(self):
+        ns = ArtifactsNamespace()
+        ctx = ns.build(artifacts_data={"report": _ref()})
+        assert ctx["report"]["id"] == "a-1"
+        assert ctx["report"]["artifact_id"] == "a-1"
+        assert ctx["report"]["mime_type"] == "application/pdf"
+        assert ctx["report"]["filename"] == "report.pdf"
+        assert ctx["report"]["version"] == 2
+        assert ctx["report"]["size"] == 1234
+
+    def test_non_artifact_values_dropped(self):
+        ns = ArtifactsNamespace()
+        ctx = ns.build(
+            artifacts_data={
+                "good": _ref(),
+                "plain": "just a string",
+                "missing_id": {"mime_type": "text/plain"},
+                "none": None,
+            }
+        )
+        assert "good" in ctx
+        assert "plain" not in ctx
+        assert "missing_id" not in ctx
+        assert "none" not in ctx
+
+    def test_bytes_never_exposed(self):
+        ns = ArtifactsNamespace()
+        ctx = ns.build(
+            artifacts_data={"report": _ref(content=b"\x00\x01binary", raw=bytearray(b"x"))}
+        )
+        view = ctx["report"]
+        assert "content" not in view
+        assert "raw" not in view
+        for value in view.values():
+            assert not isinstance(value, (bytes, bytearray))
+
+    def test_no_data_only_exposes_lookup(self):
+        ns = ArtifactsNamespace()
+        ctx = ns.build()
+        assert callable(ctx["artifact"])
+        assert [k for k in ctx if k != "artifact"] == []
+
+    def test_artifact_lookup_without_parent_returns_empty(self):
+        ns = ArtifactsNamespace()
+        artifact = ns.build()["artifact"]
+        assert artifact("a-1") == {}
+
+    def test_artifact_lookup_resolves_parent_scoped_metadata(self):
+        ns = ArtifactsNamespace()
+
+        class _Repo:
+            def __init__(self, conn):
+                self.conn = conn
+
+            def get_artifact_in_parent(self, artifact_id, *, conversation_id=None, workflow_run_id=None):
+                assert workflow_run_id == "run-9"
+                assert conversation_id is None
+                return {"id": artifact_id, "current_version": 3, "kind": "document", "title": "Deck"}
+
+            def get_version(self, artifact_id, version):
+                assert version == 3
+                return {"mime_type": "application/pdf", "filename": "deck.pdf", "size": 42, "spec": {"x": 1}}
+
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _fake_readonly():
+            yield object()
+
+        with patch(
+            "application.storage.db.repositories.artifacts.ArtifactsRepository", _Repo
+        ), patch("application.storage.db.session.db_readonly", _fake_readonly):
+            artifact = ns.build(artifact_parent={"workflow_run_id": "run-9"})["artifact"]
+            meta = artifact("art-7")
+
+        assert meta["id"] == "art-7"
+        assert meta["version"] == 3
+        assert meta["mime_type"] == "application/pdf"
+        assert meta["filename"] == "deck.pdf"
+        assert meta["size"] == 42
+        # The version's spec (a nested dict, potentially large) is never exposed.
+        assert "spec" not in meta
+
+    def test_artifact_lookup_cross_tenant_returns_empty(self):
+        ns = ArtifactsNamespace()
+
+        class _Repo:
+            def __init__(self, conn):
+                pass
+
+            def get_artifact_in_parent(self, *a, **k):
+                return None
+
+            def get_version(self, *a, **k):
+                raise AssertionError("must not fetch a version for a foreign artifact")
+
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _fake_readonly():
+            yield object()
+
+        with patch(
+            "application.storage.db.repositories.artifacts.ArtifactsRepository", _Repo
+        ), patch("application.storage.db.session.db_readonly", _fake_readonly):
+            artifact = ns.build(artifact_parent={"workflow_run_id": "run-9"})["artifact"]
+            assert artifact("foreign") == {}
+
+    def test_manager_includes_artifacts_namespace(self):
+        mgr = NamespaceManager()
+        ctx = mgr.build_context(artifacts_data={"report": _ref()})
+        assert ctx["artifacts"]["report"]["id"] == "a-1"
+        assert callable(ctx["artifacts"]["artifact"])
 
 
 # ── NamespaceBuilder ABC ──────────────────────────────────────────────────────

@@ -38,6 +38,7 @@ class TestNodeType:
         assert NodeType.NOTE == "note"
         assert NodeType.STATE == "state"
         assert NodeType.CONDITION == "condition"
+        assert NodeType.CODE == "code"
 
     @pytest.mark.unit
     def test_all_members(self):
@@ -48,6 +49,7 @@ class TestNodeType:
             NodeType.NOTE,
             NodeType.STATE,
             NodeType.CONDITION,
+            NodeType.CODE,
         }
 
 

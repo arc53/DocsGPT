@@ -12,6 +12,7 @@ class NodeType(str, Enum):
     NOTE = "note"
     STATE = "state"
     CONDITION = "condition"
+    CODE = "code"
 
 
 class AgentType(str, Enum):
@@ -47,6 +48,17 @@ class AgentNodeConfig(BaseModel):
     chunks: str = "2"
     retriever: str = ""
     model_id: Optional[str] = None
+    json_schema: Optional[Dict[str, Any]] = None
+
+
+class CodeNodeConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    code: str = ""
+    language: str = "python"
+    inputs: List[str] = Field(default_factory=list)
+    libraries: List[str] = Field(default_factory=list)
+    output_variable: Optional[str] = None
+    timeout: Optional[int] = None
     json_schema: Optional[Dict[str, Any]] = None
 
 

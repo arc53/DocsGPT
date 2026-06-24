@@ -1,5 +1,7 @@
 import json
 import logging
+import re
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional, TYPE_CHECKING
 
@@ -8,6 +10,7 @@ from application.agents.workflows.node_agent import WorkflowNodeAgentFactory
 from application.agents.workflows.schemas import (
     AgentNodeConfig,
     AgentType,
+    CodeNodeConfig,
     ConditionNodeConfig,
     ExecutionStatus,
     NodeExecutionLog,
@@ -34,15 +37,29 @@ logger = logging.getLogger(__name__)
 
 StateValue = Any
 WorkflowState = Dict[str, StateValue]
-TEMPLATE_RESERVED_NAMESPACES = {"agent", "system", "source", "tools", "passthrough"}
+TEMPLATE_RESERVED_NAMESPACES = {"agent", "artifacts", "system", "source", "tools", "passthrough"}
+
+# Run ids become a sandbox-session / kernel-workspace path component; the gateway
+# only accepts [A-Za-z0-9_-]+, so any disallowed character is stripped before binding.
+_SESSION_ID_RE = re.compile(r"[^A-Za-z0-9_-]+")
 
 
 class WorkflowEngine:
     MAX_EXECUTION_STEPS = 50
 
-    def __init__(self, graph: WorkflowGraph, agent: "BaseAgent"):
+    def __init__(
+        self,
+        graph: WorkflowGraph,
+        agent: "BaseAgent",
+        workflow_run_id: Optional[str] = None,
+    ):
+        """Bind the engine to a graph + agent; mint a run id for run-scoped sandbox/artifacts."""
         self.graph = graph
         self.agent = agent
+        # The run id scopes the code-node sandbox session and every produced
+        # artifact's parent; mint one when the caller has not supplied a
+        # pre-created ``workflow_runs`` id so the engine is self-contained.
+        self.workflow_run_id: str = workflow_run_id or str(uuid.uuid4())
         self.state: WorkflowState = {}
         self.execution_log: List[Dict[str, Any]] = []
         self._condition_result: Optional[str] = None
@@ -170,6 +187,7 @@ class WorkflowEngine:
             NodeType.START: self._execute_start_node,
             NodeType.NOTE: self._execute_note_node,
             NodeType.AGENT: self._execute_agent_node,
+            NodeType.CODE: self._execute_code_node,
             NodeType.STATE: self._execute_state_node,
             NodeType.CONDITION: self._execute_condition_node,
             NodeType.END: self._execute_end_node,
@@ -314,6 +332,166 @@ class WorkflowEngine:
         if node_config.output_variable:
             self.state[node_config.output_variable] = output_value
 
+    def _execute_code_node(
+        self, node: WorkflowNode
+    ) -> Generator[Dict[str, str], None, None]:
+        """Run code in the run-scoped sandbox, persist produced files, and write an artifact reference."""
+        from application.sandbox.artifacts_capture import capture_artifacts, snapshot_signatures
+        from application.sandbox.sandbox_creator import SandboxCreator
+
+        config = CodeNodeConfig(**node.config.get("config", node.config))
+        code = config.code or ""
+        if not code.strip():
+            raise ValueError(f'Code node "{node.title}" has no code to execute.')
+
+        user_id = self._resolve_user_id()
+        if not user_id:
+            raise ValueError(f'Code node "{node.title}" requires an authenticated user.')
+
+        node_json_schema = self._normalize_node_json_schema(config.json_schema, node.title)
+        session_id = self._session_id()
+        timeout = self._resolve_code_timeout(config.timeout)
+
+        manager = SandboxCreator.get_manager()
+        manager.open(session_id)
+        try:
+            loaded = self._materialize_code_inputs(manager, session_id, config.inputs, user_id)
+            pre_signatures = snapshot_signatures(manager, session_id)
+            result = manager.exec(session_id, code, timeout=timeout)
+            artifacts = capture_artifacts(
+                manager,
+                session_id,
+                pre_signatures,
+                user_id=user_id,
+                workflow_run_id=self.workflow_run_id,
+                produced_by={"node_id": node.id, "node_type": NodeType.CODE.value},
+            )
+        finally:
+            try:
+                manager.close(session_id)
+            except Exception:
+                logger.exception("Code node failed to close sandbox session")
+
+        if not result.ok:
+            error = (
+                f"{result.error_name}: {result.error_value}"
+                if result.error_name
+                else (result.error_value or "execution error")
+            )
+            raise ValueError(f'Code node "{node.title}" failed: {error}')
+
+        # The primary produced file becomes the node's pass-by-reference output;
+        # it is JSON primitives only ({artifact_id, version, mime_type, filename})
+        # so it survives the workflow_runs state-snapshot serialization. Bytes
+        # never enter state. A structured decision (optional json_schema) is
+        # parsed from stdout and validated through the existing jsonschema path.
+        output_value: Any = self._build_code_output(node, result, artifacts, loaded, node_json_schema)
+
+        default_output_key = f"node_{node.id}_output"
+        self.state[default_output_key] = output_value
+        if config.output_variable:
+            self.state[config.output_variable] = output_value
+        yield from ()
+
+    def _build_code_output(
+        self,
+        node: WorkflowNode,
+        result: Any,
+        artifacts: List[Dict[str, Any]],
+        inputs_loaded: List[str],
+        node_json_schema: Optional[Dict[str, Any]],
+    ) -> Any:
+        """Shape a code node's pass-by-reference output (artifact ref and/or validated decision)."""
+        if node_json_schema is not None:
+            parsed_success, decision = self._parse_structured_output(result.stdout or "")
+            if not parsed_success:
+                raise ValueError(
+                    f'Code node "{node.title}" must print JSON matching its schema, '
+                    "but stdout was not valid JSON"
+                )
+            self._validate_structured_output(node_json_schema, decision)
+            if artifacts:
+                # Carry the produced artifact reference alongside the decision so
+                # downstream nodes can branch on both.
+                if isinstance(decision, dict) and "artifacts" not in decision:
+                    decision = {**decision, "artifacts": artifacts}
+            return decision
+        if artifacts:
+            return artifacts[0]
+        return {"artifacts": [], "status": "ok"}
+
+    def _materialize_code_inputs(
+        self, manager: Any, session_id: str, inputs: List[str], user_id: str
+    ) -> List[str]:
+        """Stage referenced input artifacts (run-scoped, never cross-tenant) into the workspace."""
+        from application.storage.db.base_repository import looks_like_uuid
+        from application.storage.db.repositories.artifacts import ArtifactsRepository
+        from application.storage.db.session import db_readonly
+        from application.storage.storage_creator import StorageCreator
+        from application.utils import safe_filename
+
+        loaded: List[str] = []
+        artifact_ids = self._resolve_input_artifact_ids(inputs)
+        if not artifact_ids:
+            return loaded
+        storage = StorageCreator.get_storage()
+        for artifact_id in artifact_ids:
+            if not looks_like_uuid(artifact_id):
+                raise ValueError(f"input artifact {artifact_id} not found in this run.")
+            with db_readonly() as conn:
+                repo = ArtifactsRepository(conn)
+                artifact = repo.get_artifact_in_parent(
+                    artifact_id, workflow_run_id=self.workflow_run_id
+                )
+                if artifact is None:
+                    raise ValueError(f"input artifact {artifact_id} not found in this run.")
+                version = repo.get_version(artifact_id, artifact["current_version"])
+            if not version or not version.get("storage_path"):
+                raise ValueError(f"input artifact {artifact_id} has no stored content.")
+            filename = safe_filename(version.get("filename") or artifact_id)
+            data = storage.get_file(version["storage_path"]).read()
+            manager.put_file(session_id, f"inputs/{filename}", data)
+            loaded.append(f"inputs/{filename}")
+        return loaded
+
+    def _resolve_input_artifact_ids(self, inputs: List[str]) -> List[str]:
+        """Resolve node ``inputs`` (state-var names holding refs, or raw ids) to artifact ids."""
+        resolved: List[str] = []
+        for raw in inputs or []:
+            ref = self.state.get(raw) if isinstance(raw, str) else None
+            if isinstance(ref, dict) and ref.get("artifact_id"):
+                resolved.append(str(ref["artifact_id"]))
+            elif isinstance(raw, str) and raw.strip():
+                resolved.append(raw.strip())
+        return resolved
+
+    def _session_id(self) -> str:
+        """Sanitize the run id into the sandbox-gateway charset for the session key."""
+        return _SESSION_ID_RE.sub("-", str(self.workflow_run_id)) or str(uuid.uuid4())
+
+    def _resolve_user_id(self) -> Optional[str]:
+        """Resolve the run's owner for artifact ownership/quota accounting."""
+        user_id = getattr(self.agent, "user", None)
+        if user_id:
+            return user_id
+        token = getattr(self.agent, "decoded_token", None)
+        if isinstance(token, dict):
+            return token.get("sub")
+        return None
+
+    def _resolve_code_timeout(self, requested: Optional[int]) -> float:
+        """Return the stricter of the node's requested timeout and the sandbox cap."""
+        from application.core.settings import settings
+
+        cap = float(getattr(settings, "SANDBOX_EXEC_TIMEOUT", 60))
+        if requested is None:
+            return cap
+        try:
+            parsed = int(requested)
+        except (TypeError, ValueError):
+            return cap
+        return float(min(parsed, cap)) if parsed > 0 else cap
+
     def _execute_state_node(
         self, node: WorkflowNode
     ) -> Generator[Dict[str, str], None, None]:
@@ -425,6 +603,8 @@ class WorkflowEngine:
             docs=docs,
             docs_together=docs_together,
             tools_data=tools_data,
+            artifacts_data=self._collect_artifact_refs(),
+            artifact_parent={"workflow_run_id": self.workflow_run_id},
         )
 
         agent_context: Dict[str, Any] = {}
@@ -447,6 +627,16 @@ class WorkflowEngine:
                 context[key] = value
 
         return context
+
+    def _collect_artifact_refs(self) -> Dict[str, Any]:
+        """Collect state variables that hold artifact references, keyed by their state name."""
+        refs: Dict[str, Any] = {}
+        for key, value in self.state.items():
+            if not isinstance(key, str):
+                continue
+            if isinstance(value, dict) and value.get("artifact_id"):
+                refs[key] = value
+        return refs
 
     def _get_source_template_data(self) -> tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
         docs = getattr(self.agent, "retrieved_docs", None)
