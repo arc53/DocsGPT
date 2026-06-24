@@ -1217,7 +1217,7 @@ def remote_worker(
             min_tokens=cfg.chunking.min_tokens,
             duplicate_headers=cfg.chunking.duplicate_headers,
         )
-        docs = chunker.chunk(documents=raw_docs)
+        raw_docs = chunker.chunk(documents=raw_docs)
         docs = [Document.to_langchain_format(raw_doc) for raw_doc in raw_docs]
         tokens = count_tokens_docs(docs)
         logging.info("Total tokens calculated: %d", tokens)

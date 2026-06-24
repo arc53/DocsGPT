@@ -6,6 +6,7 @@ import requests
 from langchain_openai import OpenAIEmbeddings
 
 from application.core.settings import settings
+from application.utils import get_encoding
 
 
 class RemoteEmbeddings:
@@ -23,8 +24,51 @@ class RemoteEmbeddings:
             self.headers["Authorization"] = f"Bearer {api_key}"
         self.dimension = 768
 
+    def _truncate_inputs(self, inputs):
+        """Clip each input to ``EMBEDDINGS_MAX_INPUT_TOKENS`` tokens.
+
+        The remote server (e.g. llama.cpp) hard-rejects any single input
+        larger than its physical batch size with a 500. When the setting is
+        configured, each input is truncated to that many tokens before the
+        request and the overflow is dropped (lossy by design). Token counts
+        use the shared tiktoken encoding, which differs from the server's
+        tokenizer, so set the limit with headroom under the server's true
+        limit to absorb tokenizer skew.
+
+        Args:
+            inputs: A single string or a list of strings to embed.
+
+        Returns:
+            The inputs with each string clipped to the token limit, or the
+            inputs unchanged when the limit is unset or non-positive.
+        """
+        limit = settings.EMBEDDINGS_MAX_INPUT_TOKENS
+        if not limit or limit <= 0:
+            return inputs
+
+        encoding = get_encoding()
+
+        def clip(text):
+            if not isinstance(text, str):
+                return text
+            tokens = encoding.encode(text)
+            if len(tokens) <= limit:
+                return text
+            logging.warning(
+                "Truncating remote embeddings input from %d to %d tokens (%d dropped)",
+                len(tokens),
+                limit,
+                len(tokens) - limit,
+            )
+            return encoding.decode(tokens[:limit])
+
+        if isinstance(inputs, list):
+            return [clip(text) for text in inputs]
+        return clip(inputs)
+
     def _embed(self, inputs):
         """Send embedding request to remote API in OpenAI-compatible format."""
+        inputs = self._truncate_inputs(inputs)
         payload = {"input": inputs}
         if self.model_name:
             payload["model"] = self.model_name

@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     EMBEDDINGS_NAME: str = "huggingface_sentence-transformers/all-mpnet-base-v2"
     EMBEDDINGS_BASE_URL: Optional[str] = None  # Remote embeddings API URL (OpenAI-compatible)
     EMBEDDINGS_KEY: Optional[str] = None  # api key for embeddings (if using openai, just copy API_KEY)
+    EMBEDDINGS_MAX_INPUT_TOKENS: Optional[int] = None  # truncate each remote embed input to N tokens (overflow lost)
     # Optional directory of operator-supplied model YAMLs, loaded after the
     # built-in catalog under application/core/models/. Later wins on
     # duplicate model id. See application/core/models/README.md.
