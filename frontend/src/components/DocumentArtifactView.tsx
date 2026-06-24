@@ -1,14 +1,16 @@
 import mermaid from 'mermaid';
 import { Download, FileText, History, RotateCcw } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
+import MarkdownPreview from './MarkdownPreview';
 import Spinner from './Spinner';
 import {
   buildPreviewDocument,
+  bytesPreviewModeForMime,
   displayFilename,
   findCurrentVersion,
   formatBytes,
@@ -16,9 +18,11 @@ import {
   sortVersionsDesc,
   triggerResponseDownload,
   type ArtifactVersion,
+  type BytesPreviewMode,
   type DocumentArtifact,
 } from './artifactViewUtils';
 import { Button } from './ui/button';
+import { useArtifactBytes } from './useArtifactBytes';
 import {
   Select,
   SelectContent,
@@ -154,6 +158,74 @@ function DownloadCard({
   );
 }
 
+/**
+ * Render a version's downloadable BYTES inline by fetching them through the
+ * authed download path. html/svg are embedded ONLY inside the scriptless
+ * `sandbox=""` + CSP iframe (never the app DOM); images are shown via an inert
+ * blob-URL `<img>`; text/markdown render as escaped React content. On fetch
+ * error (or oversized text) it falls back to the supplied download card.
+ */
+function BytesPreview({
+  artifactId,
+  version,
+  mode,
+  token,
+  fallback,
+}: {
+  artifactId: string;
+  version: number;
+  mode: Exclude<BytesPreviewMode, 'card'>;
+  token: string | null;
+  fallback: ReactNode;
+}) {
+  const state = useArtifactBytes(artifactId, version, mode, token);
+
+  if (state.status === 'loading') {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (state.status === 'error') {
+    return <>{fallback}</>;
+  }
+  if (state.status === 'image') {
+    return (
+      <div className="flex h-full items-center justify-center overflow-auto p-4">
+        <img
+          src={state.url}
+          alt="Artifact preview"
+          className="max-h-full max-w-full object-contain"
+        />
+      </div>
+    );
+  }
+  // state.status === 'text'
+  if (mode === 'iframe-html' || mode === 'iframe-svg') {
+    return (
+      <iframe
+        // No allow-same-origin / no scripts: bytes are isolated from the app origin.
+        sandbox=""
+        title="Artifact preview"
+        className="h-full w-full rounded-md border border-gray-200 bg-white dark:border-gray-700"
+        srcDoc={buildPreviewDocument(
+          mode === 'iframe-svg' ? 'svg' : 'html',
+          state.text,
+        )}
+      />
+    );
+  }
+  if (mode === 'text-markdown') {
+    return <MarkdownPreview content={state.text} />;
+  }
+  return (
+    <pre className="h-full overflow-auto p-4 text-xs whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+      {state.text}
+    </pre>
+  );
+}
+
 export default function DocumentArtifactView({
   artifact,
   onRefresh,
@@ -238,47 +310,65 @@ export default function DocumentArtifactView({
     }
   };
 
+  const downloadCard = (
+    <DownloadCard
+      filename={filename}
+      size={selectedRow?.size ?? null}
+      onDownload={handleDownload}
+      downloading={downloading}
+    />
+  );
+
   const renderPreview = () => {
+    // Preferred path: the version's `spec` already carries renderable
+    // html/svg/mermaid markup — render it in the sandboxed frame, no fetch.
     if (mode === 'frame') {
       const source = asPreviewString(
         isCurrent ? artifact.spec : selectedRow?.preview_text,
       );
-      if (!source) {
+      if (source) {
+        return <FramePreview artifactKind={artifact.kind} source={source} />;
+      }
+      // No usable spec content: fall through to the bytes path below.
+    }
+
+    // Inline text already on hand (code/data kinds expose it as preview_text /
+    // spec) — render it without a fetch.
+    if (mode === 'text') {
+      const text = isCurrent
+        ? asPreviewString(artifact.spec) || (selectedRow?.preview_text ?? '')
+        : (selectedRow?.preview_text ?? '');
+      if (text) {
         return (
-          <p className="p-4 text-sm text-gray-500 dark:text-gray-400">
-            No preview for this version.
-          </p>
+          <pre className="h-full overflow-auto p-4 text-xs whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+            {text}
+          </pre>
         );
       }
-      return <FramePreview artifactKind={artifact.kind} source={source} />;
+      // No inline text: try fetching the bytes below.
     }
-    if (mode === 'image') {
-      return (
-        <DownloadCard
-          filename={filename}
-          size={selectedRow?.size ?? null}
-          onDownload={handleDownload}
-          downloading={downloading}
-        />
-      );
+
+    // Bytes path: no usable spec/inline content, so decide the preview by the
+    // version's mime (kind fallback) and fetch the stored bytes for an inline
+    // render. Anything not previewable (office docs, pdf, octet-stream) and any
+    // fetch failure fall back to the download card.
+    const bytesMode: BytesPreviewMode = bytesPreviewModeForMime(
+      selectedRow?.mime_type,
+      artifact.kind,
+    );
+    if (bytesMode === 'card' || !selectedRow) {
+      return downloadCard;
     }
-    if (mode === 'card') {
-      return (
-        <DownloadCard
-          filename={filename}
-          size={selectedRow?.size ?? null}
-          onDownload={handleDownload}
-          downloading={downloading}
-        />
-      );
-    }
-    const text = isCurrent
-      ? asPreviewString(artifact.spec) || (selectedRow?.preview_text ?? '')
-      : (selectedRow?.preview_text ?? '');
     return (
-      <pre className="h-full overflow-auto p-4 text-xs whitespace-pre-wrap text-gray-700 dark:text-gray-300">
-        {text || 'No preview for this version.'}
-      </pre>
+      <BytesPreview
+        // Refetch on artifact/version/mode change via the key + hook deps.
+        key={`${artifact.id}:${selectedVersion}:${bytesMode}`}
+        artifactId={artifact.id}
+        version={selectedVersion}
+        mode={bytesMode}
+        token={token}
+        fallback={downloadCard}
+      />
     );
   };
 

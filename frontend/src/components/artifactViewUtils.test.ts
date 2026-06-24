@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildPreviewDocument,
+  bytesPreviewModeForMime,
   displayFilename,
   filenameFromContentDisposition,
   findCurrentVersion,
   formatBytes,
   isDocumentArtifact,
+  MAX_INLINE_TEXT_BYTES,
   PREVIEW_CSP,
   PREVIEW_CSP_MERMAID,
   previewModeForKind,
@@ -73,6 +75,68 @@ describe('previewModeForKind', () => {
     expect(previewModeForKind('file', 'application/pdf')).toBe('card');
     expect(previewModeForKind('file', 'image/png')).toBe('image');
     expect(previewModeForKind('image', 'image/jpeg')).toBe('image');
+  });
+});
+
+describe('bytesPreviewModeForMime', () => {
+  it('routes html/svg markup to the sandboxed iframe', () => {
+    expect(bytesPreviewModeForMime('text/html')).toBe('iframe-html');
+    expect(bytesPreviewModeForMime('image/svg+xml')).toBe('iframe-svg');
+  });
+
+  it('routes raster images to the inline image renderer', () => {
+    expect(bytesPreviewModeForMime('image/png')).toBe('image');
+    expect(bytesPreviewModeForMime('image/jpeg')).toBe('image');
+    expect(bytesPreviewModeForMime('image/gif')).toBe('image');
+    expect(bytesPreviewModeForMime('image/webp')).toBe('image');
+  });
+
+  it('routes markdown to the markdown renderer and other text to plain', () => {
+    expect(bytesPreviewModeForMime('text/markdown')).toBe('text-markdown');
+    expect(bytesPreviewModeForMime('text/x-markdown')).toBe('text-markdown');
+    expect(bytesPreviewModeForMime('text/plain')).toBe('text-plain');
+    expect(bytesPreviewModeForMime('text/csv')).toBe('text-plain');
+    expect(bytesPreviewModeForMime('application/json')).toBe('text-plain');
+    expect(bytesPreviewModeForMime('text/whatever')).toBe('text-plain');
+  });
+
+  it('ignores charset parameters and casing on the mime', () => {
+    expect(bytesPreviewModeForMime('TEXT/HTML; charset=utf-8')).toBe(
+      'iframe-html',
+    );
+    expect(bytesPreviewModeForMime('text/plain;charset=UTF-8')).toBe(
+      'text-plain',
+    );
+  });
+
+  it('routes office docs / pdf / unknown to the download card', () => {
+    expect(
+      bytesPreviewModeForMime(
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ),
+    ).toBe('card');
+    expect(bytesPreviewModeForMime('application/pdf')).toBe('card');
+    expect(bytesPreviewModeForMime('application/zip')).toBe('card');
+  });
+
+  it('falls back to kind when the mime is missing or octet-stream', () => {
+    expect(bytesPreviewModeForMime(null, 'html')).toBe('iframe-html');
+    expect(bytesPreviewModeForMime(undefined, 'svg')).toBe('iframe-svg');
+    expect(bytesPreviewModeForMime('application/octet-stream', 'image')).toBe(
+      'image',
+    );
+    expect(bytesPreviewModeForMime('', 'code')).toBe('text-plain');
+    expect(bytesPreviewModeForMime('', 'data')).toBe('text-plain');
+  });
+
+  it('cards an unknown kind with no usable mime', () => {
+    expect(bytesPreviewModeForMime(null, 'presentation')).toBe('card');
+    expect(bytesPreviewModeForMime(null, null)).toBe('card');
+  });
+
+  it('exposes a sane inline text bound', () => {
+    expect(MAX_INLINE_TEXT_BYTES).toBeGreaterThan(0);
+    expect(MAX_INLINE_TEXT_BYTES).toBeLessThanOrEqual(1024 * 1024);
   });
 });
 

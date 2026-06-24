@@ -41,6 +41,65 @@ export type DocumentArtifact = {
 export type PreviewMode = 'frame' | 'image' | 'card' | 'text';
 
 /**
+ * How fetched artifact BYTES should be rendered inline when the version has no
+ * usable `spec`. Finer-grained than {@link PreviewMode}: it distinguishes the
+ * markup family (html vs svg) and the text family (markdown vs plain) so the
+ * renderer can pick the sandboxed iframe, a blob-URL `<img>`, the markdown
+ * renderer, or an escaped `<pre>`. `card` means "not previewable inline".
+ */
+export type BytesPreviewMode =
+  | 'iframe-html'
+  | 'iframe-svg'
+  | 'image'
+  | 'text-markdown'
+  | 'text-plain'
+  | 'card';
+
+/** Upper bound on fetched text rendered inline; larger bytes fall back to the card. */
+export const MAX_INLINE_TEXT_BYTES = 512 * 1024;
+
+const TEXT_PLAIN_MIME = new Set([
+  'text/plain',
+  'text/csv',
+  'application/json',
+  'text/xml',
+  'application/xml',
+]);
+
+/**
+ * Decide how to render downloadable artifact bytes from the version's
+ * `mime_type` (falling back to `kind` when the mime is missing/coarse). Office
+ * documents, pdf, and anything unrecognized map to `card` (download only).
+ * Mermaid is intentionally NOT handled here — mermaid lives in `spec`, not as
+ * stored bytes, so it stays on the spec-based frame path.
+ */
+export function bytesPreviewModeForMime(
+  mimeType?: string | null,
+  kind?: string | null,
+): BytesPreviewMode {
+  const mime = (mimeType ?? '').toLowerCase().split(';')[0].trim();
+  const k = (kind ?? '').toLowerCase();
+
+  if (mime === 'image/svg+xml') return 'iframe-svg';
+  if (mime === 'text/html') return 'iframe-html';
+  if (mime === 'text/markdown' || mime === 'text/x-markdown')
+    return 'text-markdown';
+  if (mime.startsWith('image/')) return 'image';
+  if (TEXT_PLAIN_MIME.has(mime)) return 'text-plain';
+  if (mime.startsWith('text/')) return 'text-plain';
+
+  // Mime missing or coarse (e.g. application/octet-stream): fall back to kind.
+  if (!mime || mime === 'application/octet-stream') {
+    if (k === 'svg') return 'iframe-svg';
+    if (k === 'html') return 'iframe-html';
+    if (k === 'image') return 'image';
+    if (k === 'code' || k === 'data') return 'text-plain';
+  }
+
+  return 'card';
+}
+
+/**
  * Discriminates the legacy notes/todo response (`artifact_type`) from the
  * generalized document/file response (`kind`).
  */
