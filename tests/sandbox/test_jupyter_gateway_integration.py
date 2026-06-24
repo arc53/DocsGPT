@@ -221,13 +221,15 @@ def test_runaway_loop_times_out_and_session_stays_reusable(sandbox):
 
 
 def test_output_cap_truncates_runaway_output(gateway_url):
-    sb = JupyterKernelGatewaySandbox(gateway_url=gateway_url, default_timeout=30.0, max_output_bytes=50_000)
+    sb = JupyterKernelGatewaySandbox(gateway_url=gateway_url, default_timeout=60.0, max_output_bytes=50_000)
     session = "conv-bigout"
     sb.open(session)
     try:
-        res = sb.exec(session, "for _ in range(100000): print('A' * 1000)", timeout=20.0)
+        # Emit ~200 KiB (4x the 50 KB cap) as bounded, fast work under a generous timeout, so the
+        # output cap -- not the wall-clock deadline -- deterministically trips even under load.
+        res = sb.exec(session, "for _ in range(200): print('A' * 1000)", timeout=60.0)
         assert "truncated" in res.stderr
-        assert len(res.stdout) <= 60_000  # capped well under the unbounded ~100MB
+        assert len(res.stdout) <= 60_000  # capped well under the produced ~200 KiB
         again = sb.exec(session, "print('alive')", timeout=10.0)
         assert again.ok and "alive" in again.stdout
     finally:
