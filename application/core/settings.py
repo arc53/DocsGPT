@@ -364,6 +364,8 @@ class Settings(BaseSettings):
     ARTIFACT_MAX_BYTES: int = 50 * 1024 * 1024  # cap on a single stored artifact version's bytes
     ARTIFACT_MAX_COUNT_PER_USER: int = 5000  # cap on artifacts a user may own
     ARTIFACT_MAX_TOTAL_BYTES_PER_USER: int = 5 * 1024 * 1024 * 1024  # cap on a user's total stored bytes
+    # Cap on bytes served per MCP ``resources/read`` so a giant artifact never streams into LLM context.
+    ARTIFACT_RESOURCE_READ_MAX_BYTES: int = 1 * 1024 * 1024
 
     @field_validator("POSTGRES_URI", mode="before")
     @classmethod

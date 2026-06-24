@@ -62,8 +62,53 @@ Docling uses its own permissive PDF backend; **PyMuPDF (AGPL) is intentionally n
 installed.** If the base (non-extract) image is used, `extract_document` returns a
 clean "docling is not available in the sandbox runner" error rather than crashing.
 
-## Hardening (separate slice — not in this image)
+## Network egress / SSRF
 
-Egress/SSRF blocks (drop RFC1918, link-local, `169.254.169.254`), the gVisor
-`runsc` runtime, seccomp, read-only root FS, and cgroup CPU/mem/PID caps wired
-from `SANDBOX_MEMORY` / `SANDBOX_CPUS` land in the hardening slice.
+The runner allows **broad outbound egress** (so sandboxed code can `pip install`
+and call public APIs) but private, link-local, and cloud-metadata ranges **MUST
+be blocked at the network layer**. This is not optional: the sandbox executes
+arbitrary LLM-authored code, which opens its own sockets — app-level URL checks
+(the `mcp_tool.py` approach) cannot contain it. Without a network-layer block,
+sandbox code can reach `169.254.169.254` (cloud instance metadata / credentials)
+and internal services on the private network.
+
+The hardened container runs **without `NET_ADMIN`**, so it cannot self-apply
+`iptables`. Enforcement therefore lives in deployment config:
+
+- **Kubernetes** — apply
+  [`deployment/k8s/network-policies/sandbox-egress-policy.yaml`](../k8s/network-policies/sandbox-egress-policy.yaml).
+  It allows `0.0.0.0/0` egress with `except` carve-outs for RFC1918
+  (`10/8`, `172.16/12`, `192.168/16`), link-local (`169.254/16`, which contains
+  `169.254.169.254`), loopback, CGNAT, documentation/test ranges, and the IPv6
+  ULA/link-local equivalents — and restricts ingress to the API/worker pods on
+  TCP 8888. It requires a policy-enforcing CNI (Calico, Cilium, …); plain
+  flannel/kube-proxy will silently not enforce it. The matching sandbox pod is
+  [`deployment/k8s/deployments/sandbox-deploy.yaml`](../k8s/deployments/sandbox-deploy.yaml)
+  (label `app: docsgpt-sandbox`).
+
+  ```bash
+  kubectl apply -f deployment/k8s/deployments/sandbox-deploy.yaml
+  kubectl apply -f deployment/k8s/network-policies/sandbox-egress-policy.yaml
+  ```
+
+- **docker-compose** — compose cannot express L3 egress filtering natively. The
+  base stack puts the runner on an `internal: true` network (no host port), but
+  that does not by itself block the metadata IP or RFC1918 reachable via the
+  default bridge. Add a **host/cloud firewall rule** (drop the four private
+  ranges on the sandbox container's interface) **or** route egress through an
+  **egress-gateway proxy** sidecar. Both are documented in
+  [`deployment/optional/docker-compose.optional.sandbox-egress.yaml`](../optional/docker-compose.optional.sandbox-egress.yaml).
+  On untrusted/multi-tenant hosts prefer the host-firewall rule — a forward
+  proxy only constrains code that honors `HTTP(S)_PROXY`.
+
+## Other hardening (deployment-level)
+
+The gVisor `runsc` runtime (kernel isolation for untrusted code), seccomp
+profile, read-only root FS, non-root, and cgroup CPU/mem/PID caps (wired from
+`SANDBOX_MEMORY` / `SANDBOX_CPUS`) are deployment-level concerns. The compose
+service in `deployment/docker-compose.yaml` already sets `read_only`,
+`mem_limit`, `cpus`, and `pids_limit`; the k8s `sandbox-deploy.yaml` sets the
+equivalent `securityContext` + resource limits and has a commented
+`runtimeClassName: gvisor` to enable on nodes with the `runsc` RuntimeClass
+installed. These complement — they do not replace — the network egress policy
+above.

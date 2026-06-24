@@ -1,0 +1,232 @@
+"""Flask-free service exposing a principal's artifacts as MCP Resources.
+
+The MCP server (``application/mcp_server.py``) authenticates a request with
+``Authorization: Bearer <agent-api-key>``; that key resolves to the owning
+``user_id`` via ``AgentsRepository.find_by_key`` (the same api_key->owner path
+as the HTTP artifact routes). Resources are scoped strictly to that principal:
+``resources/list`` returns only the principal's owned artifacts, and
+``resources/read`` re-checks ownership before serving any bytes. An
+unresolvable principal yields an empty list / a denied read -- never another
+principal's artifact.
+
+Returns plain ``mcp.types`` objects so both the FastMCP middleware adapter and
+the unit tests can consume them without depending on FastMCP internals.
+"""
+
+from __future__ import annotations
+
+import base64
+import logging
+import re
+from dataclasses import dataclass
+from typing import List, Optional
+
+import mcp.types as mt
+from sqlalchemy.exc import DataError, DBAPIError
+
+from application.core.settings import settings
+from application.storage.db.base_repository import looks_like_uuid
+from application.storage.db.repositories.agents import AgentsRepository
+from application.storage.db.repositories.artifacts import ArtifactsRepository
+from application.storage.db.session import db_readonly
+from application.storage.storage_creator import StorageCreator
+
+logger = logging.getLogger(__name__)
+
+# artifact://{artifact_id}/v{version}
+_URI_RE = re.compile(r"^artifact://(?P<id>[^/]+)/v(?P<version>\d+)$")
+
+# Max resources advertised by ``resources/list`` so the model is not flooded
+# with thousands of rows even when a principal owns far more artifacts.
+_RESOURCE_LIST_LIMIT = 500
+
+# mime types served as inline ``text`` rather than base64 ``blob``.
+_TEXT_MIME_PREFIXES = ("text/",)
+_TEXT_MIME_EXACT = {
+    "application/json",
+    "application/xml",
+    "application/javascript",
+    "application/x-ndjson",
+    "image/svg+xml",
+}
+_TEXT_MIME_SUFFIXES = ("+json", "+xml")
+
+
+class ResourceDenied(Exception):
+    """The principal may not access the requested resource (unauth or foreign)."""
+
+
+class ResourceNotFound(Exception):
+    """The requested ``artifact://`` uri does not resolve to a stored version."""
+
+
+@dataclass(frozen=True)
+class ArtifactReadResult:
+    """Materialized artifact contents for a ``resources/read`` response."""
+
+    uri: str
+    mime_type: str
+    text: Optional[str] = None
+    blob_b64: Optional[str] = None
+
+
+def _read_cap() -> int:
+    """Return the per-read byte cap, or 0 (no cap) when the setting disables it."""
+    return int(getattr(settings, "ARTIFACT_RESOURCE_READ_MAX_BYTES", 0) or 0)
+
+
+def _cap_text(text: str) -> str:
+    """Truncate ``text`` to the read cap; unchanged when the cap is disabled."""
+    cap = _read_cap()
+    return text[:cap] if cap > 0 else text
+
+
+def _is_texty(mime_type: str) -> bool:
+    """Return True when ``mime_type`` should be served as inline UTF-8 text."""
+    mime = (mime_type or "").split(";", 1)[0].strip().lower()
+    if mime in _TEXT_MIME_EXACT:
+        return True
+    if any(mime.startswith(p) for p in _TEXT_MIME_PREFIXES):
+        return True
+    return any(mime.endswith(s) for s in _TEXT_MIME_SUFFIXES)
+
+
+def _resolve_principal(api_key: Optional[str]) -> Optional[str]:
+    """Resolve a Bearer api_key to its owning ``user_id``; None when unresolvable."""
+    if not api_key:
+        return None
+    try:
+        with db_readonly() as conn:
+            agent = AgentsRepository(conn).find_by_key(api_key)
+    except Exception:
+        logger.exception("artifact resource: principal resolution failed")
+        return None
+    return agent.get("user_id") if agent else None
+
+
+def _resource_uri(artifact_id: str, version: int) -> str:
+    """Build the stable ``artifact://{id}/v{version}`` resource uri."""
+    return f"artifact://{artifact_id}/v{version}"
+
+
+def list_artifact_resources(api_key: Optional[str]) -> List[mt.Resource]:
+    """List the calling principal's artifacts as MCP resources (empty if unresolved)."""
+    user_id = _resolve_principal(api_key)
+    if not user_id:
+        return []
+    try:
+        with db_readonly() as conn:
+            rows = ArtifactsRepository(conn).list_artifacts(user_id=user_id)
+    except Exception:
+        logger.exception("artifact resource: list failed")
+        return []
+
+    resources: List[mt.Resource] = []
+    for row in rows[:_RESOURCE_LIST_LIMIT]:
+        artifact_id = str(row.get("id"))
+        version = row.get("current_version") or 1
+        title = row.get("title") or f"artifact-{artifact_id}"
+        resources.append(
+            mt.Resource(
+                uri=_resource_uri(artifact_id, version),
+                name=title,
+                title=title,
+                description=f"DocsGPT {row.get('kind') or 'file'} artifact",
+                mimeType=_kind_mime_hint(row.get("kind")),
+            )
+        )
+    return resources
+
+
+def _kind_mime_hint(kind: Optional[str]) -> str:
+    """Concrete mime hint for a list row; ambiguous kinds fall back to octet-stream."""
+    # Only kinds with a single unambiguous mime get a concrete type; everything
+    # else stays octet-stream so a list row never mismatches the read's bytes.
+    return {
+        "html": "text/html",
+        "data": "application/json",
+    }.get((kind or "").lower(), "application/octet-stream")
+
+
+def read_artifact_resource(api_key: Optional[str], uri: str) -> ArtifactReadResult:
+    """Authorize and materialize an ``artifact://`` resource for the principal.
+
+    Raises:
+        ResourceDenied: principal unresolved, or the artifact is not theirs.
+        ResourceNotFound: uri malformed, or the version/file does not exist.
+    """
+    match = _URI_RE.match(uri or "")
+    if not match:
+        raise ResourceNotFound(f"unsupported resource uri: {uri!r}")
+    artifact_id = match.group("id")
+    version = int(match.group("version"))
+
+    # A non-UUID id would reach a ``CAST(:id AS uuid)`` and raise a DB DataError;
+    # gate it up front like the HTTP artifact routes do.
+    if not looks_like_uuid(artifact_id):
+        raise ResourceNotFound(f"artifact {artifact_id} not found")
+
+    user_id = _resolve_principal(api_key)
+    if not user_id:
+        raise ResourceDenied("unauthenticated")
+
+    try:
+        with db_readonly() as conn:
+            repo = ArtifactsRepository(conn)
+            artifact = repo.get_artifact(artifact_id)
+            if artifact is None:
+                raise ResourceNotFound(f"artifact {artifact_id} not found")
+            # Ownership is the authz point: never serve another principal's artifact
+            # over MCP, regardless of conversation/workflow parent sharing.
+            if str(artifact.get("user_id")) != str(user_id):
+                raise ResourceDenied("forbidden")
+            version_row = repo.get_version(artifact_id, version)
+    except (DataError, DBAPIError) as exc:
+        raise ResourceNotFound(f"artifact {artifact_id} not found") from exc
+
+    if version_row is None:
+        raise ResourceNotFound(f"version {version} of {artifact_id} not found")
+
+    mime_type = version_row.get("mime_type") or "application/octet-stream"
+    uri = _resource_uri(artifact_id, version)
+
+    # Prefer the stored preview/extracted text for texty kinds: it is already
+    # bounded and avoids a storage round-trip.
+    preview = version_row.get("preview_text")
+    if _is_texty(mime_type) and preview:
+        return ArtifactReadResult(uri=uri, mime_type=mime_type, text=_cap_text(preview))
+
+    storage_path = version_row.get("storage_path")
+    if not storage_path:
+        if _is_texty(mime_type) and preview is not None:
+            return ArtifactReadResult(uri=uri, mime_type=mime_type, text=_cap_text(preview))
+        raise ResourceNotFound(f"version {version} of {artifact_id} has no stored bytes")
+
+    try:
+        data = _read_capped_bytes(storage_path)
+    except FileNotFoundError as exc:
+        raise ResourceNotFound(f"version {version} of {artifact_id} has no stored bytes") from exc
+
+    if _is_texty(mime_type):
+        # ``errors="ignore"`` keeps valid text texty even when the cap splits a
+        # multibyte char at the boundary, instead of demoting it to a blob.
+        return ArtifactReadResult(uri=uri, mime_type=mime_type, text=data.decode("utf-8", errors="ignore"))
+    return ArtifactReadResult(
+        uri=uri, mime_type=mime_type, blob_b64=base64.b64encode(data).decode("ascii")
+    )
+
+
+def _read_capped_bytes(storage_path: str) -> bytes:
+    """Read at most ``_read_cap()`` bytes of a stored artifact version (0 == all)."""
+    cap = _read_cap()
+    storage = StorageCreator.get_storage()
+    file_obj = storage.get_file(storage_path)
+    try:
+        return file_obj.read(cap) if cap > 0 else file_obj.read()
+    finally:
+        close = getattr(file_obj, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                logger.debug("artifact resource: file close failed", exc_info=True)

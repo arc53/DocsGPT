@@ -1,0 +1,85 @@
+# Egress / SSRF NetworkPolicy for the docsgpt-sandbox runner.
+#
+# The sandbox executes arbitrary LLM-authored code, so app-level URL checks
+# cannot contain it -- the code opens its own sockets. The hardened container
+# runs without NET_ADMIN and cannot self-apply iptables, so egress is enforced
+# here at the network layer: broad public-internet egress is allowed, but all
+# private / link-local / metadata ranges are DENIED. Ingress is restricted to
+# the backend and worker pods only.
+#
+# Requires a NetworkPolicy-enforcing CNI (Calico, Cilium, etc.). The default
+# kube-proxy / flannel setups do NOT enforce these rules. Apply with:
+#   kubectl apply -f deployment/k8s/network-policies/sandbox-egress-policy.yaml
+#
+# Pods this selects must carry the label `app: docsgpt-sandbox`.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: docsgpt-sandbox-egress
+  labels:
+    app: docsgpt-sandbox
+spec:
+  podSelector:
+    matchLabels:
+      app: docsgpt-sandbox
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only the backend/worker may reach the sandbox gateway (TCP 8888).
+    - from:
+        - podSelector:
+            matchLabels:
+              app: docsgpt-api
+        - podSelector:
+            matchLabels:
+              app: docsgpt-worker
+      ports:
+        - protocol: TCP
+          port: 8888
+  egress:
+    # DNS to cluster resolvers (kube-dns). Restricted to UDP/TCP 53 so the
+    # broad-egress rule below does not need to whitelist the resolver IP.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Broad public-internet egress, with every private / link-local / ULA /
+    # carrier-grade-NAT / documentation range carved out via `except`. The
+    # cloud metadata IP 169.254.169.254 is inside the 169.254.0.0/16 hole, so
+    # it is unreachable. SSRF to internal services is therefore blocked while
+    # legitimate outbound calls (package installs, public APIs) still work.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8           # "this network" (RFC1122)
+              - 10.0.0.0/8          # RFC1918 private
+              - 172.16.0.0/12       # RFC1918 private
+              - 192.168.0.0/16      # RFC1918 private
+              - 169.254.0.0/16      # link-local incl. 169.254.169.254 metadata
+              - 100.64.0.0/10       # RFC6598 carrier-grade NAT
+              - 127.0.0.0/8         # loopback
+              - 192.0.0.0/24        # IETF protocol assignments
+              - 192.0.2.0/24        # TEST-NET-1 (documentation)
+              - 198.18.0.0/15       # benchmarking
+              - 198.51.100.0/24     # TEST-NET-2 (documentation)
+              - 203.0.113.0/24      # TEST-NET-3 (documentation)
+              - 224.0.0.0/4         # multicast
+              - 240.0.0.0/4         # reserved
+              - 255.255.255.255/32  # limited broadcast (RFC1122)
+    # IPv6 public egress with private / ULA / link-local ranges carved out.
+    # The IPv6 metadata endpoint (fd00:ec2::254) sits inside the fc00::/7 ULA
+    # hole and is unreachable. Drop this block on IPv4-only clusters.
+    - to:
+        - ipBlock:
+            cidr: "::/0"
+            except:
+              - "::1/128"           # loopback
+              - "fc00::/7"          # unique local (ULA) incl. fd00:ec2::254
+              - "fe80::/10"         # link-local
+              - "ff00::/8"          # multicast
+              - "2001:db8::/32"     # documentation
