@@ -11,3 +11,10 @@ cryptography>=46.0.0
 jupyter-kernel-gateway>=2.5.0
 ipykernel>=6.0.0
 websocket-client>=1.6.0
+# Document renderers the artifact_generator runs inside the sandbox kernel.
+# In production these are pre-baked into the sandbox image; locally the kernel
+# uses the app .venv, so the integration test needs them installed. python-pptx
+# and openpyxl already ship in application/requirements.txt; only the rest are
+# test-only here (kept out of application/requirements.txt — sandbox-image libs).
+python-docx>=1.1
+reportlab>=4.0,<5

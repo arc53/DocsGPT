@@ -30,7 +30,16 @@ class ToolManager:
             if issubclass(obj, Tool) and obj is not Tool:
                 if (
                     tool_name
-                    in {"mcp_tool", "notes", "memory", "todo_list", "scheduler", "remote_device", "code_executor"}
+                    in {
+                        "mcp_tool",
+                        "notes",
+                        "memory",
+                        "todo_list",
+                        "scheduler",
+                        "remote_device",
+                        "code_executor",
+                        "artifact_generator",
+                    }
                     and user_id
                 ):
                     return obj(tool_config, user_id)
@@ -42,7 +51,16 @@ class ToolManager:
             raise ValueError(f"Tool '{tool_name}' not loaded")
         if (
             tool_name
-            in {"mcp_tool", "memory", "todo_list", "notes", "scheduler", "remote_device", "code_executor"}
+            in {
+                "mcp_tool",
+                "memory",
+                "todo_list",
+                "notes",
+                "scheduler",
+                "remote_device",
+                "code_executor",
+                "artifact_generator",
+            }
             and user_id
         ):
             tool_config = self.config.get(tool_name, {})
