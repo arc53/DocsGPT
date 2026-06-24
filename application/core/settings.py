@@ -327,7 +327,7 @@ class Settings(BaseSettings):
     # Code-execution sandbox (see artifacts-code-execution-spec.md §4 C2).
     # The app is a CLIENT of an always-on runner; defaults are safe so app
     # import never fails when the sandbox is unconfigured.
-    SANDBOX_BACKEND: str = "jupyter"  # "jupyter" (self-host) — "daytona" reserved
+    SANDBOX_BACKEND: str = "jupyter"  # "jupyter" (self-host) | "daytona" (Daytona Cloud)
     # URL of the Jupyter Kernel Gateway runner (the docsgpt-sandbox service).
     SANDBOX_GATEWAY_URL: str = "http://localhost:8888"
     SANDBOX_GATEWAY_AUTH_TOKEN: Optional[str] = None  # gateway auth token, if set
@@ -342,6 +342,17 @@ class Settings(BaseSettings):
     # are part of the untrusted-code security boundary.
     SANDBOX_MEMORY: str = "1g"  # docker mem_limit for the runner container
     SANDBOX_CPUS: str = "1.0"  # docker cpu quota for the runner container
+    # Daytona Cloud managed backend (used only when SANDBOX_BACKEND="daytona").
+    # The app is a REST client of Daytona Cloud authenticated by DAYTONA_API_KEY;
+    # all knobs are optional so app import never fails when the backend is unused.
+    DAYTONA_API_KEY: Optional[str] = None  # Daytona Cloud API key (secret)
+    DAYTONA_API_URL: Optional[str] = None  # override Daytona API base URL, if self-targeting
+    DAYTONA_TARGET: Optional[str] = None  # Daytona region/target, e.g. "us"
+    DAYTONA_SNAPSHOT: Optional[str] = None  # snapshot/image id to create sandboxes from
+    DAYTONA_LANGUAGE: str = "python"  # default runtime language for created sandboxes
+    DAYTONA_AUTO_STOP_INTERVAL: int = 15  # minutes idle before Daytona auto-stops a sandbox (0 disables)
+    DAYTONA_AUTO_DELETE_INTERVAL: int = 60  # minutes after stop before Daytona auto-deletes (-1 disables)
+    DAYTONA_MAX_SANDBOXES: int = 50  # cap on concurrent live Daytona sandboxes (cost-DoS guard)
 
     @field_validator("POSTGRES_URI", mode="before")
     @classmethod

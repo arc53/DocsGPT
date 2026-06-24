@@ -21,12 +21,37 @@ def _make_jupyter() -> CodeSandbox:
     )
 
 
+def _make_daytona() -> CodeSandbox:
+    """Build the Daytona Cloud backend from ``DAYTONA_*``/``SANDBOX_*`` settings."""
+    from application.sandbox.daytona import DaytonaSandbox
+
+    # Auto-delete is the only backstop against orphaned (paid) sandboxes, so a
+    # never-expiring value (<= 0) is rejected and clamped to a safe default.
+    auto_delete_interval = int(settings.DAYTONA_AUTO_DELETE_INTERVAL)
+    if auto_delete_interval <= 0:
+        auto_delete_interval = 60
+
+    return DaytonaSandbox(
+        api_key=settings.DAYTONA_API_KEY,
+        api_url=settings.DAYTONA_API_URL,
+        target=settings.DAYTONA_TARGET,
+        snapshot=settings.DAYTONA_SNAPSHOT,
+        language=settings.DAYTONA_LANGUAGE,
+        default_timeout=float(settings.SANDBOX_EXEC_TIMEOUT),
+        create_timeout=float(settings.SANDBOX_HTTP_TIMEOUT) * 6,
+        auto_stop_interval=int(settings.DAYTONA_AUTO_STOP_INTERVAL),
+        auto_delete_interval=auto_delete_interval,
+        max_file_bytes=int(settings.SANDBOX_MAX_FILE_BYTES),
+        max_sandboxes=int(settings.DAYTONA_MAX_SANDBOXES),
+    )
+
+
 class SandboxCreator:
     """Resolves ``SANDBOX_BACKEND`` to a backend and caches a single manager."""
 
-    # Seam for a future "daytona" backend (Apache-2.0 SDK); not implemented here.
     backends: Dict[str, Callable[[], CodeSandbox]] = {
         "jupyter": _make_jupyter,
+        "daytona": _make_daytona,
     }
 
     _instance = None
