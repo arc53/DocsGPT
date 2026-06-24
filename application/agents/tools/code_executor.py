@@ -6,6 +6,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from application.agents.tools.artifact_ref import resolve_artifact_id
 from application.agents.tools.base import Tool
 from application.core.settings import settings
 from application.sandbox.artifacts_capture import (
@@ -96,7 +97,9 @@ class CodeExecutorTool(Tool):
                         "inputs": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Artifact ids (from this conversation/run) to materialize into the workspace.",
+                            "description": "Artifacts (from this conversation/run) to materialize into the "
+                            "workspace; each accepts the short ref like `A1` returned by a previous "
+                            "artifact action, or the full artifact id.",
                         },
                         "timeout": {
                             "type": "integer",
@@ -228,19 +231,33 @@ class CodeExecutorTool(Tool):
             return {"loaded": loaded}
         storage = StorageCreator.get_storage()
         for raw_id in inputs:
-            artifact_id = str(raw_id).strip()
-            if not artifact_id:
+            raw = str(raw_id).strip()
+            if not raw:
                 continue
+            artifact_id: Optional[str] = raw
             try:
                 with db_readonly() as conn:
                     repo = ArtifactsRepository(conn)
-                    artifact = repo.get_artifact_in_parent(
-                        artifact_id,
+                    # A short ref (A1/A2/...) resolves to an id within this parent
+                    # only; the resolved id still passes through the parent-scoped
+                    # gate so a ref can never reach another tenant.
+                    artifact_id = resolve_artifact_id(
+                        repo,
+                        raw,
                         conversation_id=self.conversation_id,
                         workflow_run_id=self.workflow_run_id,
                     )
+                    artifact = (
+                        repo.get_artifact_in_parent(
+                            artifact_id,
+                            conversation_id=self.conversation_id,
+                            workflow_run_id=self.workflow_run_id,
+                        )
+                        if artifact_id is not None
+                        else None
+                    )
                     if artifact is None:
-                        return {"error": f"input artifact {artifact_id} not found in this conversation/run."}
+                        return {"error": f"input artifact {raw} not found in this conversation/run."}
                     version = repo.get_version(artifact_id, artifact["current_version"])
             except Exception:
                 logger.exception("code_executor: failed to load input artifact")

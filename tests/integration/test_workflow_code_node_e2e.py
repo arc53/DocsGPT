@@ -153,11 +153,13 @@ def test_code_node_persists_artifact_reference_in_state(wired):
     list(engine._execute_code_node(node))
 
     ref = engine.state["report"]
-    # The state holds an artifact REFERENCE (JSON primitives), never bytes.
-    assert set(ref) == {"artifact_id", "version", "filename", "mime_type", "size"}
+    # The state holds an artifact REFERENCE (JSON primitives), never bytes. The
+    # short handle ``ref`` (A1) lets a later node address the artifact by position.
+    assert set(ref) == {"artifact_id", "version", "filename", "mime_type", "size", "ref"}
     assert ref["filename"] == "report.txt"
     assert ref["mime_type"] == "text/plain"
     assert ref["size"] == len(b"compliance ok")
+    assert ref["ref"] == "A1"
     assert all(not isinstance(v, (bytes, bytearray)) for v in ref.values())
     assert engine.state["node_code_1_output"] == ref
 

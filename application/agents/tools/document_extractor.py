@@ -18,6 +18,7 @@ import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
+from application.agents.tools.artifact_ref import resolve_artifact_id
 from application.agents.tools.base import Tool
 from application.core.json_schema_utils import (
     JsonSchemaValidationError,
@@ -141,7 +142,8 @@ class DocumentExtractorTool(Tool):
                     "properties": {
                         "input": {
                             "type": "string",
-                            "description": "Artifact id (from this conversation/run) of the document to extract.",
+                            "description": "Document (from this conversation/run) to extract; accepts the short "
+                            "ref like `A1` returned by a previous artifact action, or the full artifact id.",
                         },
                         "json_schema": {
                             "type": "object",
@@ -302,24 +304,38 @@ class DocumentExtractorTool(Tool):
     # ------------------------------------------------------------------
     # Input / payload helpers
     # ------------------------------------------------------------------
-    def _load_input(self, artifact_id: str) -> Dict[str, Any]:
-        """Fetch the parent-scoped input artifact's current-version bytes; never cross-tenant."""
+    def _load_input(self, raw_id: str) -> Dict[str, Any]:
+        """Resolve a short ref/uuid, then fetch the parent-scoped input bytes; never cross-tenant."""
+        artifact_id: Optional[str] = raw_id
         try:
             with db_readonly() as conn:
                 repo = ArtifactsRepository(conn)
-                artifact = repo.get_artifact_in_parent(
-                    artifact_id,
+                # A ref (A1/A2/...) resolves to an id within this parent only; the
+                # resolved id is re-checked through the parent-scoped gate so a ref
+                # can never reach another tenant.
+                artifact_id = resolve_artifact_id(
+                    repo,
+                    raw_id,
                     conversation_id=self.conversation_id,
                     workflow_run_id=self.workflow_run_id,
                 )
+                artifact = (
+                    repo.get_artifact_in_parent(
+                        artifact_id,
+                        conversation_id=self.conversation_id,
+                        workflow_run_id=self.workflow_run_id,
+                    )
+                    if artifact_id is not None
+                    else None
+                )
                 if artifact is None:
-                    return {"error": f"input artifact {artifact_id} not found in this conversation/run."}
+                    return {"error": f"input artifact {raw_id} not found in this conversation/run."}
                 version = repo.get_version(artifact_id, artifact["current_version"])
         except Exception:
             logger.exception("document_extractor: failed to load input artifact")
-            return {"error": f"failed to load input artifact {artifact_id}."}
+            return {"error": f"failed to load input artifact {raw_id}."}
         if not version or not version.get("storage_path"):
-            return {"error": f"input artifact {artifact_id} has no stored content."}
+            return {"error": f"input artifact {raw_id} has no stored content."}
         display_name = version.get("filename") or artifact.get("title") or artifact_id
         filename = safe_filename(display_name)
         try:
@@ -327,7 +343,7 @@ class DocumentExtractorTool(Tool):
             data = file_obj.read()
         except Exception:
             logger.exception("document_extractor: failed to read input artifact bytes")
-            return {"error": f"failed to read input artifact {artifact_id}."}
+            return {"error": f"failed to read input artifact {raw_id}."}
         return {"data": data, "filename": filename, "title": display_name}
 
     def _compact_payload(self, extracted: Dict[str, Any]) -> Dict[str, Any]:

@@ -16,6 +16,7 @@ import os
 import sys
 import tempfile
 import types
+import uuid
 
 import application.agents.tools.document_extractor as de
 from application.agents.tools.document_extractor import (
@@ -26,6 +27,10 @@ from application.agents.tools.document_extractor import (
     DocumentExtractorTool,
 )
 from application.sandbox.base import ExecResult
+
+# Production artifact ids are uuids; the resolver gates non-uuid/non-ref inputs to
+# "not found", so the stubbed happy-path input uses a real uuid.
+_ART_ID = str(uuid.uuid4())
 
 # A canned Docling-style extraction result the mocked program "writes" to result.json.
 _CANNED_EXTRACT = {
@@ -86,6 +91,16 @@ def _stub_repo(monkeypatch, *, found: bool, conv: Optional[str], run: Optional[s
     class _Repo:
         def __init__(self, conn):
             pass
+
+        def artifact_id_at_position(self, n, *, conversation_id=None, workflow_run_id=None):
+            # The lone artifact lives at position 1, scoped to the right parent only.
+            if not found or n != 1:
+                return None
+            if conv is not None and conversation_id != conv:
+                return None
+            if run is not None and workflow_run_id != run:
+                return None
+            return _ART_ID
 
         def get_artifact_in_parent(self, artifact_id, *, conversation_id=None, workflow_run_id=None):
             # Mirror the real scope gate: the artifact resolves only for the right parent.
@@ -188,7 +203,7 @@ def test_extract_stages_input_and_shapes_compact_payload(monkeypatch):
     manager = _manager_with_extract(_CANNED_EXTRACT)
     _patch_manager(monkeypatch, manager)
 
-    out = _tool().execute_action("extract_document", input="art-1", persist=False)
+    out = _tool().execute_action("extract_document", input=_ART_ID, persist=False)
 
     assert out["status"] == "ok"
     structured = out["structured"]
@@ -214,7 +229,7 @@ def test_extract_removes_its_scratch_token_dir(monkeypatch):
     manager = _manager_with_extract(_CANNED_EXTRACT)
     _patch_manager(monkeypatch, manager)
 
-    _tool().execute_action("extract_document", input="art-1", persist=False)
+    _tool().execute_action("extract_document", input=_ART_ID, persist=False)
 
     # The per-render token dir (extract/<token>) is removed before/at teardown so
     # a reused session doesn't accumulate staged inputs + results on disk.
@@ -241,7 +256,7 @@ def test_extract_persists_data_artifact_by_reference(monkeypatch):
     monkeypatch.setattr(de, "persist_new_artifact", _fake_persist)
 
     tool = _tool()
-    out = tool.execute_action("extract_document", input="art-1")  # persist defaults to true
+    out = tool.execute_action("extract_document", input=_ART_ID)  # persist defaults to true
     assert out["status"] == "ok"
     assert out["artifact"]["artifact_id"] == "new-art"
     assert tool.get_artifact_id("extract_document") == "new-art"
@@ -264,7 +279,7 @@ def test_quota_exceeded_on_persist_surfaces_cleanly(monkeypatch):
 
     monkeypatch.setattr(de, "persist_new_artifact", _quota_blocked)
 
-    out = _tool().execute_action("extract_document", input="art-1")
+    out = _tool().execute_action("extract_document", input=_ART_ID)
     # Extraction still succeeds; the quota failure surfaces as a non-fatal note.
     assert out["status"] == "ok"
     assert "artifact" not in out
@@ -283,10 +298,39 @@ def test_cross_tenant_input_is_denied(monkeypatch):
     manager = _manager_with_extract(_CANNED_EXTRACT)
     _patch_manager(monkeypatch, manager)
 
-    out = _tool().execute_action("extract_document", input="art-1", persist=False)
+    out = _tool().execute_action("extract_document", input=_ART_ID, persist=False)
     assert out["status"] == "error"
     assert "not found in this conversation/run" in out["error"]
     # Nothing was staged or executed for a denied input.
+    assert manager.exec_programs == []
+
+
+def test_extract_accepts_short_ref_input(monkeypatch):
+    # A short ref (A1) resolves to the parent-scoped artifact at position 1 and extracts.
+    _stub_repo(monkeypatch, found=True, conv="conv-1", run=None)
+    _patch_storage(monkeypatch)
+    _patch_no_persist(monkeypatch)
+    manager = _manager_with_extract(_CANNED_EXTRACT)
+    _patch_manager(monkeypatch, manager)
+
+    out = _tool().execute_action("extract_document", input="A1", persist=False)
+    assert out["status"] == "ok"
+    assert out["structured"]["markdown"].startswith("# Statement")
+    # The resolved input was staged and the program executed.
+    assert manager.exec_programs
+
+
+def test_extract_short_ref_out_of_range_is_clean_error(monkeypatch):
+    # A2 has no artifact behind it (stub only fills position 1) -> clean not-found.
+    _stub_repo(monkeypatch, found=True, conv="conv-1", run=None)
+    _patch_storage(monkeypatch)
+    _patch_no_persist(monkeypatch)
+    manager = _manager_with_extract(_CANNED_EXTRACT)
+    _patch_manager(monkeypatch, manager)
+
+    out = _tool().execute_action("extract_document", input="A2", persist=False)
+    assert out["status"] == "error"
+    assert "not found in this conversation/run" in out["error"]
     assert manager.exec_programs == []
 
 
@@ -320,7 +364,7 @@ def test_json_schema_validation_passes(monkeypatch):
     _patch_manager(monkeypatch, _manager_with_extract(_CANNED_EXTRACT))
 
     out = _tool().execute_action(
-        "extract_document", input="art-1", json_schema=_schema_requiring_texts(), persist=False
+        "extract_document", input=_ART_ID, json_schema=_schema_requiring_texts(), persist=False
     )
     assert out["status"] == "ok"
 
@@ -333,7 +377,7 @@ def test_json_schema_validation_fails_with_clean_error(monkeypatch):
     schema = {"type": "object", "required": ["amount"], "properties": {"amount": {"type": "number"}}}
     _patch_manager(monkeypatch, _manager_with_extract(_CANNED_EXTRACT))
 
-    out = _tool().execute_action("extract_document", input="art-1", json_schema=schema, persist=False)
+    out = _tool().execute_action("extract_document", input=_ART_ID, json_schema=schema, persist=False)
     assert out["status"] == "error"
     assert "did not match json_schema" in out["error"]
 
@@ -346,7 +390,7 @@ def test_malformed_json_schema_rejected_before_run(monkeypatch):
     _patch_manager(monkeypatch, manager)
 
     # No "type"/"schema" key -> normalize_json_schema_payload rejects it up front.
-    out = _tool().execute_action("extract_document", input="art-1", json_schema={"properties": {}}, persist=False)
+    out = _tool().execute_action("extract_document", input=_ART_ID, json_schema={"properties": {}}, persist=False)
     assert out["status"] == "error" and "invalid json_schema" in out["error"]
     assert manager.exec_programs == []
 
@@ -364,7 +408,7 @@ def test_docling_unavailable_surfaces_clean_error(monkeypatch):
     }
     _patch_manager(monkeypatch, _manager_with_extract(err_result))
 
-    out = _tool().execute_action("extract_document", input="art-1", persist=False)
+    out = _tool().execute_action("extract_document", input=_ART_ID, persist=False)
     assert out["status"] == "error"
     assert "docling is not available" in out["error"]
 
@@ -378,7 +422,7 @@ def test_exec_error_surfaces_clean_error(monkeypatch):
     )
     _patch_manager(monkeypatch, manager)
 
-    out = _tool().execute_action("extract_document", input="art-1", persist=False)
+    out = _tool().execute_action("extract_document", input=_ART_ID, persist=False)
     assert out["status"] == "error"
     assert "TimeoutError: exceeded 60s" in out["error"]
 
@@ -393,14 +437,14 @@ def test_extraction_program_is_fixed_and_params_are_data(monkeypatch):
     manager = _manager_with_extract(_CANNED_EXTRACT)
     _patch_manager(monkeypatch, manager)
 
-    _tool().execute_action("extract_document", input="art-1", persist=False)
+    _tool().execute_action("extract_document", input=_ART_ID, persist=False)
 
     program = manager.exec_programs[0]
     # The executed program is the fixed template with only server-controlled path
     # literals substituted — no input id, filename, or document content appears.
     assert "json.load(open(" in program
     assert "DocumentConverter" in program
-    assert "art-1" not in program
+    assert _ART_ID not in program
     assert "statement.pdf" not in program
     # Params reached the program as a JSON DATA file, not via interpolation.
     params_files = [p for p in manager.put_files if p.endswith("params.json")]
@@ -439,7 +483,7 @@ def test_malicious_param_value_is_not_executed(monkeypatch):
     manager = _manager_with_extract(_CANNED_EXTRACT)
     _patch_manager(monkeypatch, manager)
 
-    out = _tool().execute_action("extract_document", input="art-1", persist=False)
+    out = _tool().execute_action("extract_document", input=_ART_ID, persist=False)
     assert out["status"] == "ok"
 
     program = manager.exec_programs[0]
@@ -549,7 +593,7 @@ def test_compact_payload_bounds_table_rows_and_cell_bytes(monkeypatch):
     extract["tables"] = [huge_table]
     _patch_manager(monkeypatch, _manager_with_extract(extract))
 
-    out = _tool().execute_action("extract_document", input="art-1", persist=False)
+    out = _tool().execute_action("extract_document", input=_ART_ID, persist=False)
     assert out["status"] == "ok"
     table = out["structured"]["tables"][0]
     # Rows are capped and flagged with the original total.
@@ -572,7 +616,7 @@ def test_oversized_input_is_rejected_before_exec(monkeypatch):
     manager = _manager_with_extract(_CANNED_EXTRACT)
     _patch_manager(monkeypatch, manager)
 
-    out = _tool().execute_action("extract_document", input="art-1", persist=False)
+    out = _tool().execute_action("extract_document", input=_ART_ID, persist=False)
     assert out["status"] == "error"
     assert "too large" in out["error"]
     # Nothing was staged or executed for an oversized input.

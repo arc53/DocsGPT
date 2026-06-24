@@ -424,27 +424,31 @@ class WorkflowEngine:
         self, manager: Any, session_id: str, inputs: List[str], user_id: str
     ) -> List[str]:
         """Stage referenced input artifacts (run-scoped, never cross-tenant) into the workspace."""
-        from application.storage.db.base_repository import looks_like_uuid
+        from application.agents.tools.artifact_ref import resolve_artifact_id
         from application.storage.db.repositories.artifacts import ArtifactsRepository
         from application.storage.db.session import db_readonly
         from application.storage.storage_creator import StorageCreator
         from application.utils import safe_filename
 
         loaded: List[str] = []
-        artifact_ids = self._resolve_input_artifact_ids(inputs)
-        if not artifact_ids:
+        raw_ids = self._resolve_input_artifact_ids(inputs)
+        if not raw_ids:
             return loaded
         storage = StorageCreator.get_storage()
-        for artifact_id in artifact_ids:
-            if not looks_like_uuid(artifact_id):
-                raise ValueError(f"input artifact {artifact_id} not found in this run.")
+        for raw in raw_ids:
             with db_readonly() as conn:
                 repo = ArtifactsRepository(conn)
-                artifact = repo.get_artifact_in_parent(
-                    artifact_id, workflow_run_id=self.workflow_run_id
+                # A short ref (A1/A2/...) resolves to an id within this run only;
+                # the resolved id is re-checked through the run-scoped gate so a ref
+                # can never reach another tenant.
+                artifact_id = resolve_artifact_id(repo, raw, workflow_run_id=self.workflow_run_id)
+                artifact = (
+                    repo.get_artifact_in_parent(artifact_id, workflow_run_id=self.workflow_run_id)
+                    if artifact_id is not None
+                    else None
                 )
                 if artifact is None:
-                    raise ValueError(f"input artifact {artifact_id} not found in this run.")
+                    raise ValueError(f"input artifact {raw} not found in this run.")
                 version = repo.get_version(artifact_id, artifact["current_version"])
             if not version or not version.get("storage_path"):
                 raise ValueError(f"input artifact {artifact_id} has no stored content.")

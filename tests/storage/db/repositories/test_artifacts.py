@@ -322,6 +322,91 @@ class TestQuotaEnforcement:
         ac._enforce_user_quota(_repo(pg_conn), "alice", 10_000_000, new_artifact=True)  # disabled -> no raise
 
 
+class TestVirtualRefPositions:
+    """Parent-scoped 1-based positions that back the short ``A{n}`` refs."""
+
+    @staticmethod
+    def _stamp(pg_conn, artifact_id: str, seconds: int) -> None:
+        """Give an artifact a distinct created_at so ordering is deterministic in one txn.
+
+        In production each persist is its own transaction (distinct ``now()``); the
+        repo test seeds several rows in a single transaction where ``now()`` collides,
+        so explicit timestamps make the created_at ordering testable.
+        """
+        pg_conn.execute(
+            text(
+                "UPDATE artifacts SET created_at = TIMESTAMPTZ '2026-01-01 00:00:00+00' "
+                "+ (:s || ' seconds')::interval WHERE id = CAST(:id AS uuid)"
+            ),
+            {"s": seconds, "id": artifact_id},
+        )
+
+    def test_position_and_id_round_trip_in_order(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = _conversation_id()
+        a = repo.create_artifact("u", "document", conversation_id=conv)
+        b = repo.create_artifact("u", "document", conversation_id=conv)
+        c = repo.create_artifact("u", "document", conversation_id=conv)
+        for idx, art in enumerate((a, b, c)):
+            self._stamp(pg_conn, art["id"], idx)
+
+        assert repo.position_in_parent(a["id"], conversation_id=conv) == 1
+        assert repo.position_in_parent(b["id"], conversation_id=conv) == 2
+        assert repo.position_in_parent(c["id"], conversation_id=conv) == 3
+
+        assert repo.artifact_id_at_position(1, conversation_id=conv) == a["id"]
+        assert repo.artifact_id_at_position(2, conversation_id=conv) == b["id"]
+        assert repo.artifact_id_at_position(3, conversation_id=conv) == c["id"]
+
+    def test_position_is_parent_scoped(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv_a = _conversation_id()
+        conv_b = _conversation_id()
+        a1 = repo.create_artifact("u", "document", conversation_id=conv_a)
+        a2 = repo.create_artifact("u", "document", conversation_id=conv_a)
+        b1 = repo.create_artifact("u", "document", conversation_id=conv_b)
+        for idx, art in enumerate((a1, a2, b1)):
+            self._stamp(pg_conn, art["id"], idx)
+
+        # Each parent numbers from 1 independently.
+        assert repo.position_in_parent(a2["id"], conversation_id=conv_a) == 2
+        assert repo.position_in_parent(b1["id"], conversation_id=conv_b) == 1
+        # An artifact is invisible (position 0) under the wrong parent.
+        assert repo.position_in_parent(a2["id"], conversation_id=conv_b) == 0
+
+    def test_id_at_position_does_not_cross_parents(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv_a = _conversation_id()
+        conv_b = _conversation_id()
+        a1 = repo.create_artifact("u", "document", conversation_id=conv_a)
+        # conv_b has no artifacts, so its A1 resolves to nothing (no leak from conv_a).
+        assert repo.artifact_id_at_position(1, conversation_id=conv_a) == a1["id"]
+        assert repo.artifact_id_at_position(1, conversation_id=conv_b) is None
+
+    def test_out_of_range_and_invalid_position_return_none(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = _conversation_id()
+        repo.create_artifact("u", "document", conversation_id=conv)
+        assert repo.artifact_id_at_position(2, conversation_id=conv) is None
+        assert repo.artifact_id_at_position(0, conversation_id=conv) is None
+        assert repo.artifact_id_at_position(-1, conversation_id=conv) is None
+
+    def test_workflow_run_parent_supported(self, pg_conn):
+        repo = _repo(pg_conn)
+        run = _conversation_id()
+        a = repo.create_artifact("u", "document", workflow_run_id=run)
+        assert repo.position_in_parent(a["id"], workflow_run_id=run) == 1
+        assert repo.artifact_id_at_position(1, workflow_run_id=run) == a["id"]
+
+    def test_position_helpers_require_a_parent(self, pg_conn):
+        repo = _repo(pg_conn)
+        created = repo.create_artifact("u", "document", conversation_id=_conversation_id())
+        with pytest.raises(ValueError):
+            repo.position_in_parent(created["id"])
+        with pytest.raises(ValueError):
+            repo.artifact_id_at_position(1)
+
+
 class TestCascadeDelete:
     def test_deleting_artifact_removes_versions(self, pg_conn):
         repo = _repo(pg_conn)

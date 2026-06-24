@@ -163,6 +163,72 @@ class ArtifactsRepository:
         )
         return [_artifact_to_dict(r) for r in result.fetchall()]
 
+    def position_in_parent(
+        self,
+        artifact_id: str,
+        *,
+        conversation_id: Optional[str] = None,
+        workflow_run_id: Optional[str] = None,
+    ) -> int:
+        """Return the 1-based position of an artifact within its parent (by created_at, id tie-break); 0 if absent."""
+        if conversation_id is None and workflow_run_id is None:
+            raise ValueError("position_in_parent requires conversation_id or workflow_run_id")
+        outer, params = self._parent_clauses(conversation_id, workflow_run_id, alias="a")
+        inner, _ = self._parent_clauses(conversation_id, workflow_run_id, alias="t")
+        params["id"] = artifact_id
+        # The inner SELECT applies the same parent scope, so an artifact in a
+        # different parent yields no anchor row -> count() is 0 (not in this parent).
+        row = self._conn.execute(
+            text(
+                f"SELECT count(*) FROM artifacts a "
+                f"WHERE {' AND '.join(outer)} AND (a.created_at, a.id) <= ("
+                f"  SELECT t.created_at, t.id FROM artifacts t "
+                f"  WHERE {' AND '.join(inner)} AND t.id = CAST(:id AS uuid)"
+                f")"
+            ),
+            params,
+        ).fetchone()
+        return int(row[0]) if row is not None else 0
+
+    def artifact_id_at_position(
+        self,
+        n: int,
+        *,
+        conversation_id: Optional[str] = None,
+        workflow_run_id: Optional[str] = None,
+    ) -> Optional[str]:
+        """Return the id of the n-th artifact (1-based, created_at asc, id tie-break) in a parent, or None."""
+        if conversation_id is None and workflow_run_id is None:
+            raise ValueError("artifact_id_at_position requires conversation_id or workflow_run_id")
+        if not isinstance(n, int) or n < 1:
+            return None
+        clauses, params = self._parent_clauses(conversation_id, workflow_run_id)
+        params["offset"] = n - 1
+        row = self._conn.execute(
+            text(
+                f"SELECT id FROM artifacts WHERE {' AND '.join(clauses)} "
+                f"ORDER BY created_at ASC, id ASC OFFSET :offset LIMIT 1"
+            ),
+            params,
+        ).fetchone()
+        return str(row[0]) if row is not None else None
+
+    @staticmethod
+    def _parent_clauses(
+        conversation_id: Optional[str], workflow_run_id: Optional[str], alias: str = ""
+    ) -> tuple[list[str], dict[str, Any]]:
+        """Build the parent-scope WHERE clauses + params (optionally column-aliased) for the position helpers."""
+        prefix = f"{alias}." if alias else ""
+        clauses: list[str] = []
+        params: dict[str, Any] = {}
+        if conversation_id is not None:
+            clauses.append(f"{prefix}conversation_id = CAST(:conversation_id AS uuid)")
+            params["conversation_id"] = conversation_id
+        if workflow_run_id is not None:
+            clauses.append(f"{prefix}workflow_run_id = CAST(:workflow_run_id AS uuid)")
+            params["workflow_run_id"] = workflow_run_id
+        return clauses, params
+
     def count_for_user(self, user_id: str) -> int:
         """Return how many artifacts ``user_id`` currently owns (quota accounting)."""
         row = self._conn.execute(

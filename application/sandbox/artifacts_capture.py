@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import text
 
+from application.agents.tools.artifact_ref import make_ref
 from application.core.settings import settings
 from application.storage.db.repositories.artifacts import ArtifactsRepository
 from application.storage.db.session import db_session
@@ -220,6 +221,26 @@ def _enforce_user_quota(repo: ArtifactsRepository, user_id: str, added_bytes: in
         raise QuotaExceeded(f"artifact storage quota reached ({max_total} bytes); delete artifacts to free space")
 
 
+def _ref_for(
+    repo: ArtifactsRepository,
+    artifact_id: str,
+    *,
+    conversation_id: Optional[str],
+    workflow_run_id: Optional[str],
+) -> Optional[str]:
+    """Compute the short ref (``A{n}``) for an artifact from its position in its parent; None on failure."""
+    if conversation_id is None and workflow_run_id is None:
+        return None
+    try:
+        position = repo.position_in_parent(
+            artifact_id, conversation_id=conversation_id, workflow_run_id=workflow_run_id
+        )
+    except Exception:
+        logger.exception("artifacts_capture: failed to compute artifact ref")
+        return None
+    return make_ref(position) if position >= 1 else None
+
+
 def persist_new_artifact(
     *,
     user_id: str,
@@ -245,6 +266,7 @@ def persist_new_artifact(
     sha256 = hashlib.sha256(data).hexdigest()
     storage = StorageCreator.get_storage()
     saved_key: Optional[str] = None
+    ref: Optional[str] = None
     try:
         with db_session() as conn:
             repo = ArtifactsRepository(conn)
@@ -267,6 +289,9 @@ def persist_new_artifact(
             artifact_id = str(artifact["id"])
             storage_path = _storage_key(user_id, artifact_id, 1, safe_name)
             _set_version_storage_path(conn, artifact_id, 1, storage_path)
+            ref = _ref_for(
+                repo, artifact_id, conversation_id=conversation_id, workflow_run_id=workflow_run_id
+            )
             storage.save_file(io.BytesIO(data), storage_path)
             saved_key = storage_path
     except QuotaExceeded:
@@ -277,13 +302,16 @@ def persist_new_artifact(
         logger.exception("artifacts_capture: failed to persist new artifact")
         _cleanup_orphan(storage, saved_key)
         return None
-    return {
+    payload: Dict[str, Any] = {
         "artifact_id": artifact_id,
         "version": 1,
         "filename": safe_name,
         "mime_type": mime_type,
         "size": size,
     }
+    if ref is not None:
+        payload["ref"] = ref
+    return payload
 
 
 def append_artifact_version(
@@ -296,6 +324,8 @@ def append_artifact_version(
     spec: Any = None,
     preview_text: Optional[str] = None,
     produced_by: Any = None,
+    conversation_id: Optional[str] = None,
+    workflow_run_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Append a new version (new spec + new bytes) to an existing artifact; return its reference."""
     safe_name = safe_filename(filename)
@@ -303,6 +333,7 @@ def append_artifact_version(
     sha256 = hashlib.sha256(data).hexdigest()
     storage = StorageCreator.get_storage()
     saved_key: Optional[str] = None
+    ref: Optional[str] = None
     try:
         with db_session() as conn:
             repo = ArtifactsRepository(conn)
@@ -321,6 +352,9 @@ def append_artifact_version(
             version_number = int(version["version"])
             storage_path = _storage_key(user_id, artifact_id, version_number, safe_name)
             _set_version_storage_path(conn, artifact_id, version_number, storage_path)
+            ref = _ref_for(
+                repo, str(artifact_id), conversation_id=conversation_id, workflow_run_id=workflow_run_id
+            )
             storage.save_file(io.BytesIO(data), storage_path)
             saved_key = storage_path
     except QuotaExceeded:
@@ -329,10 +363,13 @@ def append_artifact_version(
         logger.exception("artifacts_capture: failed to append artifact version")
         _cleanup_orphan(storage, saved_key)
         return None
-    return {
+    payload: Dict[str, Any] = {
         "artifact_id": str(artifact_id),
         "version": version_number,
         "filename": safe_name,
         "mime_type": mime_type,
         "size": size,
     }
+    if ref is not None:
+        payload["ref"] = ref
+    return payload

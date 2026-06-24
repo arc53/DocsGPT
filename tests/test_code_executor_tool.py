@@ -7,6 +7,8 @@ run in the fast unit suite. The end-to-end persistence path is covered by
 
 from __future__ import annotations
 
+import uuid
+
 from application.agents.tools.code_executor import (
     CodeExecutorTool,
     _infer_mime,
@@ -266,3 +268,84 @@ def test_session_kept_alive_on_positive_ttl(monkeypatch):
         monkeypatch, manager, code="print(1)", ttl=30, capture_artifacts=False
     )
     assert manager.closed == []
+
+
+# ---------------------------------------------------------------------------
+# Input materialization: short-ref + uuid resolution (no live sandbox/DB)
+# ---------------------------------------------------------------------------
+_ART_ID = str(uuid.uuid4())
+
+
+class _InputManager:
+    """Records files staged into the workspace by _materialize_inputs."""
+
+    def __init__(self) -> None:
+        self.put_files: dict = {}
+
+    def put_file(self, session_id, dest_path, data):
+        self.put_files[dest_path] = data
+
+
+def _patch_input_repo(monkeypatch, *, found_position: bool, conv: str):
+    """Patch db_readonly + ArtifactsRepository so a ref/uuid resolves only within ``conv``."""
+    from application.agents.tools import code_executor as ce
+
+    class _Repo:
+        def __init__(self, conn):
+            pass
+
+        def artifact_id_at_position(self, n, *, conversation_id=None, workflow_run_id=None):
+            if not found_position or n != 1 or conversation_id != conv:
+                return None
+            return _ART_ID
+
+        def get_artifact_in_parent(self, artifact_id, *, conversation_id=None, workflow_run_id=None):
+            if conversation_id != conv:
+                return None
+            return {"id": artifact_id, "current_version": 1, "title": "seed.csv"}
+
+        def get_version(self, artifact_id, version):
+            return {"filename": "seed.csv", "storage_path": f"inputs/u/artifacts/{artifact_id}/v1/seed.csv"}
+
+    class _Conn:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *exc):
+            return False
+
+    class _Storage:
+        def get_file(self, path):
+            import io
+
+            return io.BytesIO(b"col\n1\n")
+
+    monkeypatch.setattr(ce, "db_readonly", lambda: _Conn())
+    monkeypatch.setattr(ce, "ArtifactsRepository", _Repo)
+    monkeypatch.setattr(ce.StorageCreator, "get_storage", staticmethod(lambda: _Storage()))
+
+
+def test_materialize_inputs_accepts_short_ref(monkeypatch):
+    _patch_input_repo(monkeypatch, found_position=True, conv="conv-1")
+    manager = _InputManager()
+    out = _tool()._materialize_inputs(manager, "conv-1", ["A1"])
+    assert "error" not in out
+    assert out["loaded"] == ["inputs/seed.csv"]
+    assert manager.put_files["inputs/seed.csv"] == b"col\n1\n"
+
+
+def test_materialize_inputs_accepts_uuid(monkeypatch):
+    _patch_input_repo(monkeypatch, found_position=False, conv="conv-1")
+    manager = _InputManager()
+    out = _tool()._materialize_inputs(manager, "conv-1", [_ART_ID])
+    assert "error" not in out
+    assert out["loaded"] == ["inputs/seed.csv"]
+
+
+def test_materialize_inputs_out_of_range_ref_is_clean_error(monkeypatch):
+    _patch_input_repo(monkeypatch, found_position=True, conv="conv-1")
+    manager = _InputManager()
+    out = _tool()._materialize_inputs(manager, "conv-1", ["A2"])
+    assert "A2" in out["error"]
+    assert "not found in this conversation/run" in out["error"]
+    assert manager.put_files == {}

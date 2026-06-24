@@ -17,6 +17,7 @@ import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
+from application.agents.tools.artifact_ref import resolve_artifact_id
 from application.agents.tools.base import Tool
 from application.core.settings import settings
 from application.sandbox.artifacts_capture import (
@@ -269,7 +270,8 @@ class ArtifactGeneratorTool(Tool):
                 "name": "create_artifact",
                 "description": (
                     "Render a new editable document from a JSON spec and store it as version 1. "
-                    "The spec is the source of truth; the rendered file is derived."
+                    "The spec is the source of truth; the rendered file is derived. The response "
+                    "carries a short ref (like `A1`) you can pass to edit_artifact/rewrite_artifact."
                 ),
                 "active": True,
                 "parameters": {
@@ -292,7 +294,11 @@ class ArtifactGeneratorTool(Tool):
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "id": {"type": "string", "description": "Artifact id to edit."},
+                        "id": {
+                            "type": "string",
+                            "description": "Artifact to edit; accepts the short ref like `A1` "
+                            "returned by a previous artifact action, or the full artifact id.",
+                        },
                         "spec_patch": {
                             "type": "object",
                             "description": "RFC 7386 merge-patch; null values delete keys.",
@@ -308,7 +314,11 @@ class ArtifactGeneratorTool(Tool):
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "id": {"type": "string", "description": "Artifact id to rewrite."},
+                        "id": {
+                            "type": "string",
+                            "description": "Artifact to rewrite; accepts the short ref like `A1` "
+                            "returned by a previous artifact action, or the full artifact id.",
+                        },
                         "spec": {"type": "object", "description": "Replacement spec matching the kind's schema."},
                     },
                     "required": ["id", "spec"],
@@ -386,25 +396,22 @@ class ArtifactGeneratorTool(Tool):
 
     def _edit(self, **kwargs: Any) -> Dict[str, Any]:
         """Merge-patch the current spec, re-render, and append a version."""
-        artifact_id = kwargs.get("id")
         spec_patch = kwargs.get("spec_patch")
         if not isinstance(spec_patch, dict):
             return {"status": "error", "error": "spec_patch must be a JSON object (merge-patch)."}
-        loaded = self._load_current(artifact_id)
+        loaded = self._load_current(kwargs.get("id"))
         if loaded.get("error"):
             return {"status": "error", "error": loaded["error"]}
-        kind = loaded["kind"]
         new_spec = merge_patch(loaded["spec"], spec_patch)
-        return self._reversion(artifact_id, kind, new_spec, "edit_artifact")
+        return self._reversion(loaded["artifact_id"], loaded["kind"], new_spec, "edit_artifact")
 
     def _rewrite(self, **kwargs: Any) -> Dict[str, Any]:
         """Replace the spec wholesale, re-render, and append a version."""
-        artifact_id = kwargs.get("id")
         spec = kwargs.get("spec")
-        loaded = self._load_current(artifact_id)
+        loaded = self._load_current(kwargs.get("id"))
         if loaded.get("error"):
             return {"status": "error", "error": loaded["error"]}
-        return self._reversion(artifact_id, loaded["kind"], spec, "rewrite_artifact")
+        return self._reversion(loaded["artifact_id"], loaded["kind"], spec, "rewrite_artifact")
 
     def _reversion(self, artifact_id: str, kind: str, spec: Any, action: str) -> Dict[str, Any]:
         """Validate the new spec, re-render, and append the next version of an existing artifact."""
@@ -425,6 +432,8 @@ class ArtifactGeneratorTool(Tool):
                 mime_type=info["mime"],
                 spec=spec,
                 produced_by=self._produced_by(action, kind),
+                conversation_id=self.conversation_id,
+                workflow_run_id=self.workflow_run_id,
             )
         except QuotaExceeded as exc:
             return {"status": "error", "error": str(exc)}
@@ -446,30 +455,41 @@ class ArtifactGeneratorTool(Tool):
             return {"status": "error", "error": f"invalid {kind} spec: {exc.message}"}
         return None
 
-    def _load_current(self, artifact_id: Any) -> Dict[str, Any]:
-        """Fetch the parent-scoped artifact and its current-version spec for edit/rewrite."""
-        if not isinstance(artifact_id, str) or not artifact_id.strip():
+    def _load_current(self, raw_id: Any) -> Dict[str, Any]:
+        """Resolve a short ref/uuid to its parent-scoped artifact and current-version spec for edit/rewrite."""
+        if not isinstance(raw_id, str) or not raw_id.strip():
             return {"error": "id is required."}
         try:
             with db_readonly() as conn:
                 repo = ArtifactsRepository(conn)
+                # A ref (A1/A2/...) resolves to an id within this parent only; the
+                # resolved id is then re-checked through the parent-scoped gate so a
+                # ref can never reach another tenant.
+                artifact_id = resolve_artifact_id(
+                    repo,
+                    raw_id.strip(),
+                    conversation_id=self.conversation_id,
+                    workflow_run_id=self.workflow_run_id,
+                )
+                if artifact_id is None:
+                    return {"error": f"artifact {raw_id} not found in this conversation/run."}
                 artifact = repo.get_artifact_in_parent(
                     artifact_id,
                     conversation_id=self.conversation_id,
                     workflow_run_id=self.workflow_run_id,
                 )
                 if artifact is None:
-                    return {"error": f"artifact {artifact_id} not found in this conversation/run."}
+                    return {"error": f"artifact {raw_id} not found in this conversation/run."}
                 version = repo.get_version(artifact_id, artifact["current_version"])
         except Exception:
             logger.exception("artifact_generator: failed to load artifact")
-            return {"error": f"failed to load artifact {artifact_id}."}
+            return {"error": f"failed to load artifact {raw_id}."}
         if not version or version.get("spec") is None:
-            return {"error": f"artifact {artifact_id} has no editable spec."}
+            return {"error": f"artifact {raw_id} has no editable spec."}
         kind = self._kind_for(artifact, version)
         if kind is None:
-            return {"error": f"artifact {artifact_id} is not a spec-rendered document."}
-        return {"kind": kind, "spec": version["spec"]}
+            return {"error": f"artifact {raw_id} is not a spec-rendered document."}
+        return {"artifact_id": artifact_id, "kind": kind, "spec": version["spec"]}
 
     @staticmethod
     def _kind_for(artifact: Dict[str, Any], version: Dict[str, Any]) -> Optional[str]:

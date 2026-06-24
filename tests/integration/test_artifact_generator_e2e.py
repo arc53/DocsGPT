@@ -240,6 +240,71 @@ def test_edit_cross_tenant_denied(wired_tool):
     assert artifact["current_version"] == 1
 
 
+def test_short_ref_numbering_and_edit_by_ref(wired_tool):
+    tool, conversation_id, pg_engine, storage = wired_tool
+    from pptx import Presentation
+
+    # Successive creates in one conversation get A1, A2 (1-based, by created order).
+    first = tool.execute_action(
+        "create_artifact", kind="presentation", title="One", spec={"slides": [{"title": "a"}]}
+    )
+    assert first["status"] == "ok", first
+    assert first["ref"] == "A1"
+    second = tool.execute_action(
+        "create_artifact", kind="document", spec={"sections": [{"heading": "h", "paragraphs": ["p"]}]}
+    )
+    assert second["status"] == "ok", second
+    assert second["ref"] == "A2"
+
+    # edit_artifact(id="A1") resolves the ref -> appends v2 to the FIRST artifact only.
+    edited = tool.execute_action("edit_artifact", id="A1", spec_patch={"slides": [{"title": "a"}, {"title": "b"}]})
+    assert edited["status"] == "ok", edited
+    assert edited["version"] == 2
+    assert edited["artifact_id"] == first["artifact_id"]
+    # The append keeps the artifact's position, so its ref is stable.
+    assert edited["ref"] == "A1"
+
+    with pg_engine.connect() as conn:
+        repo = ArtifactsRepository(conn)
+        artifact = repo.get_artifact_in_parent(first["artifact_id"], conversation_id=conversation_id)
+        v1 = repo.get_version(first["artifact_id"], 1)
+        v2 = repo.get_version(first["artifact_id"], 2)
+    assert artifact["current_version"] == 2
+    # Append-only: v1 preserved with one slide, v2 has two.
+    assert len(v1["spec"]["slides"]) == 1
+    assert len(v2["spec"]["slides"]) == 2
+    assert len(Presentation(storage.get_file(v2["storage_path"])).slides) == 2
+
+    # The uuid path still works alongside refs.
+    by_uuid = tool.execute_action("edit_artifact", id=first["artifact_id"], spec_patch={"title": "X"})
+    assert by_uuid["status"] == "ok"
+    assert by_uuid["version"] == 3
+
+
+def test_short_ref_is_conversation_scoped(wired_tool):
+    tool, conversation_id, pg_engine, storage = wired_tool
+
+    # Seed an artifact in a DIFFERENT conversation; its A1 must not resolve here.
+    other_conversation = str(uuid.uuid4())
+    _seed_presentation(pg_engine, storage, other_conversation)
+
+    # This conversation has no artifacts yet, so A1 resolves to nothing (no cross-parent leak).
+    out = tool.execute_action("edit_artifact", id="A1", spec_patch={"title": "x"})
+    assert out["status"] == "error"
+    assert "not found in this conversation/run" in out["error"]
+
+
+def test_short_ref_out_of_range_is_clean_error(wired_tool):
+    tool, conversation_id, pg_engine, storage = wired_tool
+
+    created = tool.execute_action("create_artifact", kind="presentation", spec={"slides": [{"title": "a"}]})
+    assert created["ref"] == "A1"
+    # A2 has no artifact behind it -> clean not-found, no crash.
+    out = tool.execute_action("edit_artifact", id="A2", spec_patch={"title": "x"})
+    assert out["status"] == "error"
+    assert "not found in this conversation/run" in out["error"]
+
+
 def _seed_presentation(pg_engine, storage, conversation_id) -> str:
     """Create a presentation artifact (row + version + bytes) in a given conversation; return its id."""
     spec = {"slides": [{"title": "seed"}]}
