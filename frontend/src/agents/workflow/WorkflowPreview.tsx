@@ -4,6 +4,7 @@ import {
   Circle,
   Code2,
   Database,
+  FileBox,
   Flag,
   GitBranch,
   Loader2,
@@ -25,6 +26,7 @@ import ConversationBubble from '../../conversation/ConversationBubble';
 import { Query } from '../../conversation/conversationModels';
 import { AppDispatch } from '../../store';
 import { WorkflowEdge, WorkflowNode } from '../types/workflow';
+import WorkflowRunArtifacts from './WorkflowRunArtifacts';
 import {
   addQuery,
   fetchWorkflowPreviewAnswer,
@@ -48,6 +50,9 @@ interface WorkflowData {
 
 interface WorkflowPreviewProps {
   workflowData: WorkflowData;
+  // Saved workflow id (when the draft has been persisted); enables run-artifact
+  // listing by persisting a ``workflow_runs`` row for the preview run.
+  workflowId?: string | null;
 }
 
 const NODE_ICONS: Record<string, React.ReactNode> = {
@@ -241,6 +246,54 @@ function ExecutionDetails({
   );
 }
 
+function RunArtifactsSection({
+  workflowRunId,
+  isOpen,
+  onToggle,
+}: {
+  workflowRunId: string;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+      <div className="my-2 flex flex-row items-center justify-center gap-3">
+        <div className="flex h-[26px] w-[30px] items-center justify-center">
+          <FileBox className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onToggle}
+          className="h-auto gap-2 px-0 py-0 hover:bg-transparent"
+        >
+          <p className="text-base font-semibold">Artifacts</p>
+          <img
+            src={ChevronDownIcon}
+            alt="ChevronDown"
+            className={cn(
+              'h-4 w-4 transform transition-transform duration-200 dark:invert',
+              isOpen ? 'rotate-180' : '',
+            )}
+          />
+        </Button>
+      </div>
+      <div
+        className={cn(
+          'ml-3 grid w-full transition-all duration-300 ease-in-out',
+          isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="max-h-[480px] overflow-y-auto pr-2">
+            {isOpen && <WorkflowRunArtifacts workflowRunId={workflowRunId} />}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function WorkflowMiniMap({
   nodes,
   activeNodeId,
@@ -376,6 +429,7 @@ function WorkflowMiniMap({
 
 export default function WorkflowPreview({
   workflowData,
+  workflowId,
 }: WorkflowPreviewProps) {
   const dispatch = useDispatch<AppDispatch>();
 
@@ -386,6 +440,9 @@ export default function WorkflowPreview({
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
   const [openDetailsIndex, setOpenDetailsIndex] = useState<number | null>(null);
+  const [openArtifactsIndex, setOpenArtifactsIndex] = useState<number | null>(
+    null,
+  );
 
   const fetchStream = useRef<{ abort: () => void } | null>(null);
   const stepRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -414,11 +471,12 @@ export default function WorkflowPreview({
           question,
           workflowData,
           indx: index,
+          workflowId,
         }),
       );
       fetchStream.current = promise;
     },
-    [dispatch, workflowData],
+    [dispatch, workflowData, workflowId],
   );
 
   const handleQuestion = useCallback(
@@ -594,6 +652,20 @@ export default function WorkflowPreview({
                             )
                           }
                           stepRefs={isLastQuery ? stepRefs : undefined}
+                        />
+                      )}
+
+                      {/* Run artifacts (only once a persisted run id is known
+                          and the run is no longer streaming) */}
+                      {query.workflowRunId && !isStreamingLastQuery && (
+                        <RunArtifactsSection
+                          workflowRunId={query.workflowRunId}
+                          isOpen={openArtifactsIndex === index}
+                          onToggle={() =>
+                            setOpenArtifactsIndex(
+                              openArtifactsIndex === index ? null : index,
+                            )
+                          }
                         />
                       )}
 

@@ -112,6 +112,8 @@ const endpoints = {
     GET_ARTIFACT: (artifactId: string) => `/api/artifact/${artifactId}`,
     GET_DOCUMENT_ARTIFACT: (artifactId: string) =>
       `/api/artifacts/${artifactId}`,
+    LIST_WORKFLOW_RUN_ARTIFACTS: (workflowRunId: string) =>
+      `/api/artifacts?workflow_run_id=${encodeURIComponent(workflowRunId)}`,
     DOWNLOAD_ARTIFACT: (artifactId: string, version?: number) =>
       version != null
         ? `/api/artifacts/${artifactId}/download?version=${version}`

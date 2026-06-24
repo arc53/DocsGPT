@@ -6,6 +6,7 @@ written once after workflow execution completes and never updated.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Connection, text
@@ -58,6 +59,33 @@ class WorkflowRunsRepository:
         stmt = pg_insert(workflow_runs_table).values(**values).returning(workflow_runs_table)
         res = self._conn.execute(stmt)
         return row_to_dict(res.fetchone())
+
+    def finalize(
+        self,
+        run_id: str,
+        user_id: str,
+        status: str,
+        *,
+        result: dict | None = None,
+        steps: list | None = None,
+        ended_at: Optional[datetime] = None,
+    ) -> bool:
+        """Update a pre-created run row with its terminal status/result; owner-scoped."""
+        values: dict = {"status": status}
+        if result is not None:
+            values["result"] = result
+        if steps is not None:
+            values["steps"] = steps
+        if ended_at is not None:
+            values["ended_at"] = ended_at
+        stmt = (
+            workflow_runs_table.update()
+            .where(workflow_runs_table.c.id == run_id)
+            .where(workflow_runs_table.c.user_id == user_id)
+            .values(**values)
+        )
+        res = self._conn.execute(stmt)
+        return res.rowcount > 0
 
     def get(self, run_id: str) -> Optional[dict]:
         res = self._conn.execute(

@@ -1,6 +1,6 @@
 """Tests for application/agents/workflow_agent.py graph loading and saving.
 
-Tests _parse_embedded_workflow, _load_from_database, and _save_workflow_run
+Tests _parse_embedded_workflow, _load_from_database, and _finalize_workflow_run
 against the ephemeral ``pg_conn`` fixture. Agent construction is bypassed via
 ``__new__`` so we avoid the BaseAgent's LLM/tool wiring.
 """
@@ -20,6 +20,7 @@ def _make_agent(*, workflow_id=None, workflow=None, workflow_owner=None,
     agent.workflow_owner = workflow_owner
     agent._workflow_data = workflow
     agent._engine = None
+    agent._run_persisted = False
     agent.decoded_token = decoded_token or {}
     return agent
 
@@ -184,7 +185,7 @@ class TestSaveWorkflowRun:
     def test_returns_when_no_engine(self):
         agent = _make_agent(workflow_id="x", workflow_owner="u")
         # _engine is None
-        agent._save_workflow_run("query")
+        agent._finalize_workflow_run(agent.workflow_owner, None, "query")
         # should not raise
 
     def test_returns_when_no_workflow_id(self):
@@ -193,7 +194,7 @@ class TestSaveWorkflowRun:
         agent._engine.execution_log = []
         agent._engine.state = {}
         agent._engine.get_execution_summary.return_value = []
-        agent._save_workflow_run("query")
+        agent._finalize_workflow_run(agent.workflow_owner, None, "query")
 
     def test_returns_when_workflow_missing_in_db(self, pg_conn):
         agent = _make_agent(
@@ -206,7 +207,7 @@ class TestSaveWorkflowRun:
         agent._engine.get_execution_summary.return_value = []
         with _patch_db(pg_conn):
             # Should just return None since workflow not found in DB
-            agent._save_workflow_run("q")
+            agent._finalize_workflow_run(agent.workflow_owner, None, "q")
 
     def test_creates_run_row(self, pg_conn):
         from application.storage.db.repositories.workflows import (
@@ -233,7 +234,7 @@ class TestSaveWorkflowRun:
         agent._engine.workflow_run_id = run_id
 
         with _patch_db(pg_conn):
-            agent._save_workflow_run("my query")
+            agent._finalize_workflow_run(agent.workflow_owner, None, "my query")
 
         runs = WorkflowRunsRepository(pg_conn).list_for_workflow(str(wf["id"]))
         assert len(runs) >= 1
@@ -255,7 +256,7 @@ class TestSaveWorkflowRun:
             "application.agents.workflow_agent.db_session", _broken
         ):
             # Should not raise
-            agent._save_workflow_run("q")
+            agent._finalize_workflow_run(agent.workflow_owner, None, "q")
 
 
 class TestDetermineRunStatus:

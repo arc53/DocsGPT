@@ -71,6 +71,11 @@ class WorkflowEngine:
     ) -> Generator[Dict[str, str], None, None]:
         self._initialize_state(initial_inputs, query)
 
+        # Surface the run id up front so the client can list this run's
+        # artifacts (GET /api/artifacts?workflow_run_id=) once it has been
+        # persisted; the same id parents every artifact produced by code nodes.
+        yield {"type": "workflow_run", "workflow_run_id": self.workflow_run_id}
+
         start_node = self.graph.get_start_node()
         if not start_node:
             yield {"type": "error", "error": "No start node found in workflow."}
@@ -348,6 +353,9 @@ class WorkflowEngine:
         code = config.code or ""
         if not code.strip():
             raise ValueError(f'Code node "{node.title}" has no code to execute.')
+        # Code nodes are NEVER Jinja-rendered: state is untrusted (document-derived)
+        # so interpolating it into the program would be code injection. Prior state is
+        # passed as DATA via ``state.json`` (read below), never templated into code.
 
         user_id = self._resolve_user_id()
         if not user_id:
@@ -361,6 +369,12 @@ class WorkflowEngine:
         manager.open(session_id)
         try:
             loaded = self._materialize_code_inputs(manager, session_id, config.inputs, user_id)
+            # Stage prior state as DATA the node code reads with
+            # ``json.load(open("state.json"))`` -- e.g. ``state["decision"]``. The
+            # file lands at the workspace root, which is the kernel cwd, so a
+            # relative open resolves it. State is never templated into the program.
+            state_json = json.dumps(self._json_safe_state(), default=str).encode("utf-8")
+            manager.put_file(session_id, "state.json", state_json)
             pre_signatures = snapshot_signatures(manager, session_id)
             result = manager.exec(session_id, code, timeout=timeout)
             artifacts = capture_artifacts(
@@ -478,6 +492,18 @@ class WorkflowEngine:
         """Sanitize the run id into the sandbox-gateway charset for the session key."""
         return _SESSION_ID_RE.sub("-", str(self.workflow_run_id)) or str(uuid.uuid4())
 
+    def _json_safe_state(self) -> Dict[str, Any]:
+        """Project ``self.state`` to a JSON-safe dict (the code node reads it from state.json)."""
+        projection: Dict[str, Any] = {}
+        for key, value in self.state.items():
+            if not isinstance(key, str):
+                continue
+            normalized_key = key.strip()
+            if not normalized_key:
+                continue
+            projection[normalized_key] = value
+        return projection
+
     def _resolve_user_id(self) -> Optional[str]:
         """Resolve the run's owner for artifact ownership/quota accounting."""
         user_id = getattr(self.agent, "user", None)
@@ -548,10 +574,36 @@ class WorkflowEngine:
         try:
             return True, json.loads(normalized_response)
         except json.JSONDecodeError:
-            logger.warning(
-                "Workflow agent returned structured output that was not valid JSON"
-            )
-            return False, None
+            pass
+
+        # Some models wrap structured output in a ```json ... ``` fence or add
+        # prose around it; recover the JSON object/array before giving up so a
+        # well-formed-but-fenced response still validates.
+        candidate = self._strip_json_fence(normalized_response)
+        if candidate is not None:
+            try:
+                return True, json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
+
+        logger.warning(
+            "Workflow agent returned structured output that was not valid JSON"
+        )
+        return False, None
+
+    @staticmethod
+    def _strip_json_fence(text: str) -> Optional[str]:
+        """Extract the JSON payload from a fenced/prose-wrapped response, or None."""
+        fence = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
+        if fence:
+            return fence.group(1).strip()
+        # Fall back to the outermost {...} or [...] span.
+        for open_ch, close_ch in (("{", "}"), ("[", "]")):
+            start = text.find(open_ch)
+            end = text.rfind(close_ch)
+            if start != -1 and end > start:
+                return text[start : end + 1]
+        return None
 
     def _normalize_node_json_schema(
         self, schema: Optional[Dict[str, Any]], node_title: str

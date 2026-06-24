@@ -2895,6 +2895,7 @@ function WorkflowBuilderInner() {
             className="bg-card w-full max-w-none p-0 sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px]"
           >
             <WorkflowPreview
+              workflowId={workflowId}
               workflowData={{
                 name: workflowName,
                 description: workflowDescription,

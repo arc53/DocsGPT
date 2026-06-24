@@ -5,6 +5,7 @@ patched persistence helper (no live gateway / DB / storage), plus the
 serialization round-trip and CEL branching on an artifact reference.
 """
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -61,19 +62,25 @@ class _Result:
 
 
 class _FakeManager:
-    """Records open/close and returns a fixed exec result; no real sandbox."""
+    """Records open/close/put_file/exec and returns a fixed result; no real sandbox."""
 
     def __init__(self, result):
         self._result = result
         self.opened = []
         self.closed = []
+        self.put_files = []
+        self.last_code = None
 
     def open(self, session_id, ttl=None):
         self.opened.append(session_id)
         return session_id
 
+    def put_file(self, session_id, dest_path, data):
+        self.put_files.append((dest_path, data))
+
     def exec(self, session_id, code, timeout=None):
         self.last_timeout = timeout
+        self.last_code = code
         return self._result
 
     def close(self, session_id):
@@ -139,6 +146,40 @@ def test_code_node_no_artifacts_still_writes_status(patch_sandbox):
     list(engine._execute_code_node(node))
 
     assert engine.state["out"] == {"artifacts": [], "status": "ok"}
+
+
+def test_code_node_reads_prior_state_from_state_json(patch_sandbox):
+    # Prior state is staged as DATA in state.json (workspace root = kernel cwd) so
+    # node code reads it with json.load(open("state.json")) -- e.g. state["decision"].
+    engine = _engine()
+    engine.state["decision"] = {"pass": True, "score": 7}
+    node = _code_node(
+        output_variable="out",
+        code="import json\nd = json.load(open('state.json'))\nprint(d['decision'])\n",
+    )
+
+    list(engine._execute_code_node(node))
+
+    manager = patch_sandbox["manager_holder"]["manager"]
+    staged = dict(manager.put_files)
+    assert "state.json" in staged
+    payload = json.loads(staged["state.json"].decode("utf-8"))
+    assert payload["decision"] == {"pass": True, "score": 7}
+
+
+def test_code_node_literal_braces_passed_verbatim_not_templated(patch_sandbox):
+    # Proves code nodes are NOT Jinja-rendered: a literal ``{{ ... }}`` in the code
+    # reaches exec() byte-for-byte (no injection path that interpolates state).
+    engine = _engine()
+    engine.state["decision"] = "INJECTED"
+    literal = "x = '{{ agent.decision }}'\nprint(x)\n"
+    node = _code_node(output_variable="out", code=literal)
+
+    list(engine._execute_code_node(node))
+
+    manager = patch_sandbox["manager_holder"]["manager"]
+    assert manager.last_code == literal
+    assert "INJECTED" not in manager.last_code
 
 
 def test_code_node_failure_raises(patch_sandbox):

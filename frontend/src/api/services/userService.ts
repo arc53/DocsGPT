@@ -327,6 +327,14 @@ const userService = {
     token: string | null,
   ): Promise<Response> =>
     apiClient.get(endpoints.USER.GET_DOCUMENT_ARTIFACT(artifactId), token),
+  listWorkflowRunArtifacts: (
+    workflowRunId: string,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.get(
+      endpoints.USER.LIST_WORKFLOW_RUN_ARTIFACTS(workflowRunId),
+      token,
+    ),
   downloadArtifact: (
     artifactId: string,
     token: string | null,
