@@ -1,6 +1,9 @@
 import base64
 import json
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
@@ -45,7 +48,7 @@ def encrypt_credentials(credentials: dict, user_id: str) -> str:
         result = salt + iv + encrypted_data
         return base64.b64encode(result).decode()
     except Exception as e:
-        print(f"Warning: Failed to encrypt credentials: {e}")
+        logger.warning(f"Failed to encrypt credentials: {e}")
         return ""
 
 
@@ -69,7 +72,7 @@ def decrypt_credentials(encrypted_data: str, user_id: str) -> dict:
 
         return json.loads(decrypted_data.decode())
     except Exception as e:
-        print(f"Warning: Failed to decrypt credentials: {e}")
+        logger.warning(f"Failed to decrypt credentials: {e}")
         return {}
 
 
