@@ -359,6 +359,9 @@ function WorkflowBuilderInner() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  // Node id for which the author explicitly entered "Choose…" documents mode,
+  // so the picker shows even before any document is selected (empty reads as None).
+  const [docChooseNodeId, setDocChooseNodeId] = useState<string | null>(null);
   const [workflowName, setWorkflowName] = useState('New Workflow');
   const [workflowDescription, setWorkflowDescription] = useState('');
   const [showWorkflowSettings, setShowWorkflowSettings] = useState(false);
@@ -2216,10 +2219,15 @@ function WorkflowBuilderInner() {
                                     selectedNode.data.config?.input_documents;
                                   const documentsMode =
                                     getDocumentsMode(inputDocuments);
-                                  const chosenDocuments =
-                                    documentsMode === 'choose'
-                                      ? (inputDocuments ?? [])
-                                      : [];
+                                  const showChoose =
+                                    documentsMode === 'choose' ||
+                                    docChooseNodeId === selectedNode.id;
+                                  const chosenDocuments = showChoose
+                                    ? documentsModeToInputDocuments(
+                                        'choose',
+                                        inputDocuments ?? [],
+                                      )
+                                    : [];
                                   const filePassing = normalizeFilePassing(
                                     selectedNode.data.config?.file_passing,
                                   );
@@ -2251,16 +2259,23 @@ function WorkflowBuilderInner() {
                                               type="button"
                                               variant="ghost"
                                               size="sm"
-                                              onClick={() =>
+                                              onClick={() => {
+                                                setDocChooseNodeId(
+                                                  mode === 'choose'
+                                                    ? selectedNode.id
+                                                    : null,
+                                                );
                                                 setInputDocuments(
                                                   documentsModeToInputDocuments(
                                                     mode,
                                                     chosenDocuments,
                                                   ),
-                                                )
-                                              }
+                                                );
+                                              }}
                                               className={`h-auto flex-1 rounded-lg px-2 py-1.5 text-xs font-medium ${
-                                                documentsMode === mode
+                                                (showChoose
+                                                  ? 'choose'
+                                                  : documentsMode) === mode
                                                   ? 'bg-primary text-white'
                                                   : 'text-gray-600 dark:text-gray-300'
                                               }`}
@@ -2269,7 +2284,7 @@ function WorkflowBuilderInner() {
                                             </Button>
                                           ))}
                                         </div>
-                                        {documentsMode === 'choose' && (
+                                        {showChoose && (
                                           <div className="mt-2">
                                             <MultiSelect
                                               options={withChosenDocumentOptions(
