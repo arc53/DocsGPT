@@ -82,3 +82,21 @@ export function toDocumentVariableOptions(
   }
   return options;
 }
+
+/** Append stored chosen names lacking an upstream option so they stay visible and removable. */
+export function withChosenDocumentOptions(
+  options: { value: string; label: string }[],
+  chosen: string[],
+): { value: string; label: string }[] {
+  const known = new Set(options.map((option) => option.value));
+  const merged = [...options];
+  for (const name of chosen) {
+    const value = name.trim();
+    if (!value || value === ALL_INPUT_DOCUMENTS_TOKEN || known.has(value)) {
+      continue;
+    }
+    known.add(value);
+    merged.push({ value, label: value });
+  }
+  return merged;
+}

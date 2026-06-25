@@ -9,6 +9,7 @@ import {
   normalizeFilePassing,
   stripAgentPrefix,
   toDocumentVariableOptions,
+  withChosenDocumentOptions,
 } from './documentConfig';
 
 describe('getDocumentsMode', () => {
@@ -122,5 +123,40 @@ describe('toDocumentVariableOptions', () => {
       make('agent.wire_doc'),
     ]);
     expect(options).toEqual([{ value: 'wire_doc', label: 'wire_doc' }]);
+  });
+});
+
+describe('withChosenDocumentOptions', () => {
+  const base = [{ value: 'wire_doc', label: 'wire_doc' }];
+
+  it('keeps known options unchanged when all chosen are present', () => {
+    expect(withChosenDocumentOptions(base, ['wire_doc'])).toEqual(base);
+  });
+
+  it('appends an orphaned chosen name (renamed/deleted upstream var) as removable', () => {
+    expect(
+      withChosenDocumentOptions(base, ['wire_doc', 'renamed_doc']),
+    ).toEqual([
+      { value: 'wire_doc', label: 'wire_doc' },
+      { value: 'renamed_doc', label: 'renamed_doc' },
+    ]);
+  });
+
+  it('surfaces a literal ref that has no upstream option', () => {
+    expect(withChosenDocumentOptions([], ['A1'])).toEqual([
+      { value: 'A1', label: 'A1' },
+    ]);
+  });
+
+  it('ignores blanks and the wildcard token', () => {
+    expect(
+      withChosenDocumentOptions(base, ['', ' ', ALL_INPUT_DOCUMENTS_TOKEN]),
+    ).toEqual(base);
+  });
+
+  it('does not duplicate an already-known chosen name', () => {
+    expect(withChosenDocumentOptions(base, ['wire_doc', 'wire_doc'])).toEqual(
+      base,
+    );
   });
 });

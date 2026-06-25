@@ -85,6 +85,7 @@ import {
   getDocumentsMode,
   normalizeFilePassing,
   toDocumentVariableOptions,
+  withChosenDocumentOptions,
 } from './documentConfig';
 import {
   AgentNode,
@@ -2271,9 +2272,10 @@ function WorkflowBuilderInner() {
                                         {documentsMode === 'choose' && (
                                           <div className="mt-2">
                                             <MultiSelect
-                                              options={
-                                                selectedAgentDocumentOptions
-                                              }
+                                              options={withChosenDocumentOptions(
+                                                selectedAgentDocumentOptions,
+                                                chosenDocuments,
+                                              )}
                                               selected={chosenDocuments}
                                               onChange={(nextDocuments) =>
                                                 setInputDocuments(
