@@ -202,6 +202,10 @@ class ToolExecutor:
         # workflow run rather than a conversation.
         self.workflow_run_id: Optional[str] = None
         self.message_id: Optional[str] = None
+        # The request's own (already user-scoped) chat attachments, stamped onto
+        # sandbox tools so a referenced attachment can be lazily bridged to a
+        # conversation-scoped artifact at tool-use time.
+        self.attachments: List[Dict] = []
         self.client_tools: Optional[List[Dict]] = None
         self._name_to_tool: Dict[str, Tuple[str, str]] = {}
         self._tool_to_name: Dict[Tuple[str, str], str] = {}
@@ -885,7 +889,15 @@ class ToolExecutor:
         """Load a tool, using cache when possible."""
         cache_key = f"{tool_data['name']}:{tool_id}:{self.user or ''}"
         if cache_key in self._loaded_tools:
-            return self._loaded_tools[cache_key]
+            cached = self._loaded_tools[cache_key]
+            # A tool cached on an earlier turn carries that turn's attachments;
+            # refresh them so a chat attachment added this turn is bridgeable.
+            cached_config = getattr(cached, "config", None)
+            if isinstance(cached_config, dict) and self.conversation_id:
+                # Refresh unconditionally so a turn with no attachments clears the
+                # prior turn's list (no stale carryover within the session).
+                cached_config["attachments"] = self.attachments or []
+            return cached
 
         tm = ToolManager(config={})
 
@@ -949,6 +961,11 @@ class ToolExecutor:
             tool_config["tool_id"] = str(row_id)
             if self.conversation_id:
                 tool_config["conversation_id"] = self.conversation_id
+                # Carry the request's own attachments so sandbox tools can
+                # lazily bridge a referenced chat attachment (conversation
+                # scope only; workflow nodes bridge attachments up front).
+                if self.attachments:
+                    tool_config["attachments"] = self.attachments
             # Workflow agent nodes run-scope their artifact tools so a short
             # ref (A1) and edit_artifact resolve against the workflow run.
             if self.workflow_run_id:

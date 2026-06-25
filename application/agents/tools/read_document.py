@@ -15,6 +15,11 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from application.agents.tools.artifact_ref import resolve_artifact_id
+from application.agents.tools.attachment_bridge import (
+    AttachmentBridgeError,
+    bridge_attachment,
+    match_attachment,
+)
 from application.agents.tools.base import Tool
 from application.core.json_schema_utils import (
     JsonSchemaValidationError,
@@ -66,8 +71,9 @@ class ReadDocumentTool(Tool):
                     "properties": {
                         "input": {
                             "type": "string",
-                            "description": "Document (from this conversation/run) to read; accepts the short "
-                            "ref like `A1` returned by a previous artifact action, or the full artifact id.",
+                            "description": "Document to read; accepts the short ref like `A1` returned by a "
+                            "previous artifact action, a full artifact id, or the name/id of a file the user "
+                            "attached to this conversation.",
                         },
                         "output": {
                             "type": "string",
@@ -232,8 +238,29 @@ class ReadDocumentTool(Tool):
             logger.exception("read_document: failed to resolve input artifact")
             return {"status": "error", "error": f"failed to resolve input artifact {raw_id}."}
         if artifact is None:
+            # Conversation scope only: a raw ref that is not an artifact may name a
+            # chat attachment; bridge it on demand. Workflows bridge up front.
+            bridged_id = self._bridge_chat_attachment(raw_id)
+            if isinstance(bridged_id, dict):
+                return bridged_id
+            if bridged_id is not None:
+                return bridged_id
             return {"status": "error", "error": f"input artifact {raw_id} not found in this conversation/run."}
         return str(artifact_id)
+
+    def _bridge_chat_attachment(self, raw_id: str) -> Any:
+        """Bridge a referenced chat attachment to a conversation artifact id; None on miss, error dict on failure."""
+        if not self.conversation_id or not self.user_id:
+            return None
+        attachment = match_attachment(self.config.get("attachments"), raw_id, self.user_id)
+        if attachment is None:
+            return None
+        try:
+            return bridge_attachment(
+                attachment, user_id=self.user_id, conversation_id=self.conversation_id
+            )
+        except AttachmentBridgeError as exc:
+            return {"status": "error", "error": f"failed to attach {raw_id}: {exc}"}
 
     def _parent(self) -> Dict[str, Any]:
         """Build the run-scoped parent dict passed to the worker for its independent re-resolve."""

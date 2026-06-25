@@ -136,6 +136,27 @@ class ArtifactsRepository:
         row = result.fetchone()
         return _artifact_to_dict(row) if row is not None else None
 
+    def find_bridged_attachment(
+        self,
+        attachment_id: str,
+        *,
+        conversation_id: str,
+    ) -> Optional[dict]:
+        """Return the conversation artifact already bridged from ``attachment_id``, or None (idempotency gate)."""
+        result = self._conn.execute(
+            text(
+                "SELECT a.* FROM artifacts a "
+                "JOIN artifact_versions v "
+                "  ON v.artifact_id = a.id AND v.version = a.current_version "
+                "WHERE a.conversation_id = CAST(:conversation_id AS uuid) "
+                "  AND v.produced_by ->> 'attachment_id' = :attachment_id "
+                "ORDER BY a.created_at ASC, a.id ASC LIMIT 1"
+            ),
+            {"conversation_id": conversation_id, "attachment_id": str(attachment_id)},
+        )
+        row = result.fetchone()
+        return _artifact_to_dict(row) if row is not None else None
+
     def list_artifacts(
         self,
         conversation_id: Optional[str] = None,

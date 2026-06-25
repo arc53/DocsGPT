@@ -7,6 +7,11 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from application.agents.tools.artifact_ref import resolve_artifact_id
+from application.agents.tools.attachment_bridge import (
+    AttachmentBridgeError,
+    bridge_attachment,
+    match_attachment,
+)
 from application.agents.tools.base import Tool
 from application.core.settings import settings
 from application.sandbox.artifacts_capture import (
@@ -97,9 +102,9 @@ class CodeExecutorTool(Tool):
                         "inputs": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Artifacts (from this conversation/run) to materialize into the "
-                            "workspace; each accepts the short ref like `A1` returned by a previous "
-                            "artifact action, or the full artifact id.",
+                            "description": "Files to materialize into the workspace; each accepts the short "
+                            "ref like `A1` returned by a previous artifact action, a full artifact id, or "
+                            "the name/id of a file the user attached to this conversation.",
                         },
                         "timeout": {
                             "type": "integer",
@@ -257,7 +262,20 @@ class CodeExecutorTool(Tool):
                         else None
                     )
                     if artifact is None:
-                        return {"error": f"input artifact {raw} not found in this conversation/run."}
+                        # Conversation scope only: a raw ref that is not an artifact
+                        # may name a chat attachment; bridge it on demand. Workflows
+                        # bridge attachments up front, so never double-bridge there.
+                        bridged_id = self._bridge_chat_attachment(raw)
+                        if isinstance(bridged_id, dict):
+                            return bridged_id  # error payload
+                        if bridged_id is None:
+                            return {"error": f"input artifact {raw} not found in this conversation/run."}
+                        artifact_id = bridged_id
+                        artifact = repo.get_artifact_in_parent(
+                            artifact_id, conversation_id=self.conversation_id
+                        )
+                        if artifact is None:
+                            return {"error": f"input artifact {raw} not found in this conversation/run."}
                     version = repo.get_version(artifact_id, artifact["current_version"])
             except Exception:
                 logger.exception("code_executor: failed to load input artifact")
@@ -280,6 +298,20 @@ class CodeExecutorTool(Tool):
                 return {"error": f"failed to stage input artifact {artifact_id} into the workspace."}
             loaded.append(f"inputs/{filename}")
         return {"loaded": loaded}
+
+    def _bridge_chat_attachment(self, raw: str) -> Any:
+        """Bridge a referenced chat attachment to a conversation artifact id; None on miss, error dict on failure."""
+        if not self.conversation_id or not self.user_id:
+            return None
+        attachment = match_attachment(self.config.get("attachments"), raw, self.user_id)
+        if attachment is None:
+            return None
+        try:
+            return bridge_attachment(
+                attachment, user_id=self.user_id, conversation_id=self.conversation_id
+            )
+        except AttachmentBridgeError as exc:
+            return {"error": f"failed to attach {raw}: {exc}"}
 
     # Cap the per-run capture work so a workspace full of pre-existing files
     # can't turn one exec into an unbounded read+persist sweep.
