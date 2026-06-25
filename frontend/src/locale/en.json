@@ -932,7 +932,8 @@
         "systemTime": "Current time (HH:MM:SS)",
         "systemTimestamp": "ISO 8601 timestamp",
         "systemRequestId": "Unique request identifier",
-        "systemUserId": "Current user ID"
+        "systemUserId": "Current user ID",
+        "artifactsLookup": "Artifact metadata by id"
       },
       "learnAboutPrompts": "Learn about Prompts →",
       "publicPromptEditDisabled": "Public prompts cannot be edited",

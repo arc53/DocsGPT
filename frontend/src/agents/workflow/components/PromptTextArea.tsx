@@ -62,6 +62,11 @@ const GLOBAL_CONTEXT_VARIABLES: WorkflowVariable[] = [
     templatePath: 'system.user_id',
     section: 'Global context',
   },
+  {
+    label: 'artifacts.artifact(id)',
+    templatePath: 'artifacts.artifact(id)',
+    section: 'Global context',
+  },
 ];
 
 function toAgentTemplatePath(variableName: string): string {
@@ -107,6 +112,11 @@ function extractUpstreamVariables(
     {
       label: 'agent.chat_history',
       templatePath: 'agent.chat_history',
+      section: 'Workflow input',
+    },
+    {
+      label: 'agent.input_documents',
+      templatePath: 'agent.input_documents',
       section: 'Workflow input',
     },
     ...GLOBAL_CONTEXT_VARIABLES,
