@@ -385,6 +385,7 @@ def test_concurrent_open_close_stays_consistent(backend):
                     mgr.open(sid)
                     mgr.exec(sid, "x")
                 except SandboxCapacityError:
+                    # capacity is expected under churn; skip this session
                     pass
                 mgr.reap_expired()
                 mgr.close(sid)

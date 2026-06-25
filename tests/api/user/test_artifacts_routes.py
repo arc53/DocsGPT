@@ -486,7 +486,7 @@ class TestMalformedArtifactId:
         self, _patch_db, flask_app, token_owner, resource_name,
         extra_args, method, json_body,
     ):
-        import application.api.user.artifacts.routes as routes_mod
+        from application.api.user.artifacts import routes as routes_mod
 
         resource_cls = getattr(routes_mod, resource_name)
         resp = _call(

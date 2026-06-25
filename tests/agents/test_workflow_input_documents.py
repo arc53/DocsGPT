@@ -177,7 +177,8 @@ def test_attachments_bridge_to_run_scoped_artifacts(pg_engine, tmp_path, monkeyp
     # The bytes round-trip from storage (never entered state).
     with pg_engine.connect() as conn:
         v = ArtifactsRepository(conn).get_version(refs[0]["artifact_id"], 1)
-    assert storage.get_file(v["storage_path"]).read() == a1
+    with storage.get_file(v["storage_path"]) as fh:
+        assert fh.read() == a1
 
 
 def test_attachments_capped_per_run(pg_engine, tmp_path, monkeypatch):

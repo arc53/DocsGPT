@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # Per-session workspace root inside the runner container. The kernel sets its
 # cwd here so relative paths from LLM code and file in/out share one directory.
-_WORKSPACE_ROOT = "/tmp/docsgpt-sandbox"
+_WORKSPACE_ROOT = "/tmp/docsgpt-sandbox"  # nosec B108 - controlled per-session sandbox workspace dir
 
 # Marker the get_file helper prints around the base64 payload so we can extract
 # it from interleaved stdout without a contents API (the gateway has none).
