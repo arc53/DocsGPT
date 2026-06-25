@@ -111,6 +111,33 @@ def test_input_required():
 
 
 @pytest.mark.unit
+def test_internal_flag_hides_from_catalog_only():
+    # internal=True hides read_document from the Add-Tool catalog; it must
+    # still instantiate (the synthetic-id execution path doesn't filter it).
+    assert ReadDocumentTool.internal is True
+    inst = ReadDocumentTool({"conversation_id": "c"}, user_id="u")
+    assert inst.user_id == "u"
+
+
+@pytest.mark.unit
+def test_workflow_node_loads_read_document_run_scoped(monkeypatch):
+    # A workflow node stamps workflow_run_id into the tool config; the tool
+    # binds to the run (not a conversation) so the run-scoped artifact gate
+    # applies. Mirrors ToolExecutor._get_or_load_tool stamping run + user.
+    _stub_repo(monkeypatch, found=True, conv=None, run="run-9")
+    captured = _patch_task(monkeypatch, payload={"status": "ok", "content": "x", "truncated": False})
+
+    tool = ReadDocumentTool(
+        tool_config={"workflow_run_id": "run-9", "tool_id": "t-1"}, user_id="u-1"
+    )
+    out = tool.execute_action("read_document", input=_ART_ID, persist=False)
+    assert out["status"] == "ok"
+    # The worker parent is the run, not a conversation.
+    assert captured["args"][1] == {"workflow_run_id": "run-9"}
+    assert captured["args"][2] == "u-1"
+
+
+@pytest.mark.unit
 def test_action_metadata_surfaces_new_params():
     meta = _tool().get_actions_metadata()[0]
     assert meta["name"] == "read_document"

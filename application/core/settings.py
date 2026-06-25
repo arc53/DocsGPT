@@ -251,8 +251,19 @@ class Settings(BaseSettings):
 
     # Config-free tools on by default in agentless chats. ``scheduler`` is
     # dual-registered (also in ``BUILTIN_AGENT_TOOLS``) so the same synthetic id
-    # resolves whether reached via defaults or the agent picker.
-    DEFAULT_CHAT_TOOLS: list = ["memory", "read_webpage", "scheduler"]
+    # resolves whether reached via defaults or the agent picker. ``code_executor``
+    # and ``artifact_generator`` persist artifacts (not a ``user_tools``-FK table);
+    # their synthetic-id load is user- and conversation-scoped like ``scheduler``.
+    # NOTE: default-on ``code_executor`` runs LLM-authored sandboxed code WITHOUT an
+    # approval prompt — the sandbox is the trust boundary, so multi-tenant deployments
+    # should add per-tenant isolation (Daytona / gVisor / egress policy).
+    DEFAULT_CHAT_TOOLS: list = [
+        "memory",
+        "read_webpage",
+        "scheduler",
+        "code_executor",
+        "artifact_generator",
+    ]
 
     # Conversation Compression Settings
     ENABLE_CONVERSATION_COMPRESSION: bool = True

@@ -120,6 +120,9 @@ interface UserTool {
   name: string;
   displayName: string;
   customName?: string;
+  // Workflow-only builtins (e.g. read_document) are kept here; the classic
+  // agent picker filters them out.
+  workflow_only?: boolean;
 }
 
 function validateJsonSchemaConfig(schema: unknown): string | null {

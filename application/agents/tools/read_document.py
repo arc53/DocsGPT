@@ -42,6 +42,11 @@ class ReadDocumentTool(Tool):
     Parse an input document artifact (pdf/docx/pptx/...) to text/markdown/structured JSON via the backend parser.
     """
 
+    # Hidden from the Add-Tool catalog; surfaced (workflow-only) via the
+    # BUILTIN_AGENT_TOOLS synthetic-id path. Does not gate tool_manager loading
+    # nor synthetic-id execution.
+    internal: bool = True
+
     def __init__(self, tool_config: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None) -> None:
         """Bind the tool to the invoker and its conversation/run scope."""
         self.config: Dict[str, Any] = tool_config or {}

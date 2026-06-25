@@ -11,6 +11,7 @@ from application.agents.default_tools import (
     is_builtin_agent_tool_id,
     is_default_tool_id,
     is_synthesized_tool_id,
+    WORKFLOW_ONLY_BUILTINS,
 )
 from application.agents.tools.spec_parser import parse_spec
 from application.agents.tools.tool_manager import ToolManager
@@ -274,12 +275,18 @@ class GetTools(Resource):
             # Builtins (e.g. scheduler) hidden from Add-Tool catalog, visible
             # to the agent picker. Skip ones already added via the default
             # path — both registries share ``_DEFAULT_TOOL_NAMESPACE``.
+            # ``workflow_only`` builtins (e.g. ``read_document``) carry that
+            # flag so the classic picker can hide them and the workflow node
+            # picker can keep them.
             for builtin_row in builtin_agent_tools_for_management():
                 builtin_copy = _row_to_api(builtin_row)
                 if str(builtin_copy["id"]) in seen_ids:
                     continue
                 builtin_copy["builtin"] = True
                 builtin_copy["default"] = False
+                builtin_copy["workflow_only"] = (
+                    builtin_copy.get("name") in WORKFLOW_ONLY_BUILTINS
+                )
                 user_tools.append(builtin_copy)
         except Exception as err:
             current_app.logger.error(f"Error getting user tools: {err}", exc_info=True)
