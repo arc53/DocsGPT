@@ -127,8 +127,6 @@ const ConversationBubble = forwardRef<
   const completedArtifactCalls = (toolCalls ?? []).filter(
     (toolCall) => toolCall.artifact_id && toolCall.status === 'completed',
   );
-  const primaryArtifactCall =
-    completedArtifactCalls[completedArtifactCalls.length - 1] ?? null;
   const artifactCount = completedArtifactCalls.length;
 
   const formatToolName = (toolName: string | undefined): string => {
@@ -447,43 +445,45 @@ const ConversationBubble = forwardRef<
             agentId={agentId}
           />
         )}
-        {!message && primaryArtifactCall?.artifact_id && onOpenArtifact && (
-          <div className="my-2 ml-2 flex justify-start">
-            <Button
-              type="button"
-              onClick={() =>
-                onOpenArtifact({
-                  id: primaryArtifactCall.artifact_id!,
-                  toolName: primaryArtifactCall.tool_name,
-                })
-              }
-              className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
-            >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
+        {!message && onOpenArtifact && completedArtifactCalls.length > 0 && (
+          <div className="my-2 ml-2 flex flex-wrap justify-start gap-2">
+            {completedArtifactCalls.map((artifactCall, artifactIndex) => (
+              <Button
+                key={artifactCall.call_id ?? artifactIndex}
+                type="button"
+                onClick={() =>
+                  onOpenArtifact({
+                    id: artifactCall.artifact_id!,
+                    toolName: artifactCall.tool_name,
+                  })
+                }
+                className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                />
-              </svg>
-              {primaryArtifactCall.tool_name
-                ? formatToolName(primaryArtifactCall.tool_name)
-                : artifactCount > 1
-                  ? `View artifacts (${artifactCount})`
-                  : 'View artifact'}
-            </Button>
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                  />
+                </svg>
+                {(artifactCall.tool_name
+                  ? formatToolName(artifactCall.tool_name)
+                  : 'Artifact') +
+                  (artifactCount > 1 ? ` (${artifactIndex + 1})` : '')}
+              </Button>
+            ))}
           </div>
         )}
         {thought && (
@@ -698,46 +698,49 @@ const ConversationBubble = forwardRef<
               </div>
             ) : (
               <>
-                {primaryArtifactCall?.artifact_id && onOpenArtifact && (
-                  <div className="relative mr-2 flex items-center justify-center">
-                    <Button
-                      type="button"
-                      onClick={() =>
-                        onOpenArtifact({
-                          id: primaryArtifactCall.artifact_id!,
-                          toolName: primaryArtifactCall.tool_name,
-                        })
-                      }
-                      className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
-                      aria-label="View artifacts"
+                {onOpenArtifact &&
+                  completedArtifactCalls.map((artifactCall, artifactIndex) => (
+                    <div
+                      key={artifactCall.call_id ?? artifactIndex}
+                      className="relative mr-2 flex items-center justify-center"
                     >
-                      <svg
-                        className="h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
+                      <Button
+                        type="button"
+                        onClick={() =>
+                          onOpenArtifact({
+                            id: artifactCall.artifact_id!,
+                            toolName: artifactCall.tool_name,
+                          })
+                        }
+                        className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+                        aria-label="View artifact"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                        />
-                      </svg>
-                      {primaryArtifactCall.tool_name
-                        ? formatToolName(primaryArtifactCall.tool_name)
-                        : artifactCount > 1
-                          ? `Artifacts (${artifactCount})`
-                          : 'Artifact'}
-                    </Button>
-                  </div>
-                )}
+                        <svg
+                          className="h-4 w-4"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                          />
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                          />
+                        </svg>
+                        {(artifactCall.tool_name
+                          ? formatToolName(artifactCall.tool_name)
+                          : 'Artifact') +
+                          (artifactCount > 1 ? ` (${artifactIndex + 1})` : '')}
+                      </Button>
+                    </div>
+                  ))}
                 {!isStreaming && (
                   <>
                     <div className="relative mr-2 block items-center justify-center">

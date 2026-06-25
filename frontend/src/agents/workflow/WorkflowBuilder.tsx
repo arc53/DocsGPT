@@ -725,13 +725,27 @@ function WorkflowBuilderInner() {
         handleDeleteNode();
       }
       if (e.key === 'Escape') {
+        // While the Preview Sheet is open, leave Escape to its own dismissal
+        // (popovers, the Sheet itself) so a reflexive Escape can't tear down
+        // the node-config panel and lose the run/attachments/typed prompt.
+        if (showPreview) return;
+        // Ignore Escape originating from text fields / editable popovers so it
+        // dismisses the field rather than the whole config panel.
+        const target = e.target as HTMLElement | null;
+        if (
+          target?.tagName === 'INPUT' ||
+          target?.tagName === 'TEXTAREA' ||
+          target?.isContentEditable
+        ) {
+          return;
+        }
         setShowNodeConfig(false);
         setSelectedNode(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNode, handleDeleteNode]);
+  }, [selectedNode, handleDeleteNode, showPreview]);
 
   const handlePanelBackdropClick = useCallback(() => {
     setShowNodeConfig(false);
@@ -2956,7 +2970,6 @@ function WorkflowBuilderInner() {
         <Sheet open={showPreview} onOpenChange={setShowPreview}>
           <SheetContent
             side="right"
-            showCloseButton={false}
             className="bg-card w-full max-w-none p-0 sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px]"
           >
             <WorkflowPreview

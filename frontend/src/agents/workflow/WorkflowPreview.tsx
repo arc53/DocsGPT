@@ -25,6 +25,7 @@ import MessageInput from '../../components/MessageInput';
 import ConversationBubble from '../../conversation/ConversationBubble';
 import { Query } from '../../conversation/conversationModels';
 import { AppDispatch } from '../../store';
+import { selectCompletedAttachments } from '../../upload/uploadSlice';
 import { WorkflowEdge, WorkflowNode } from '../types/workflow';
 import WorkflowRunArtifacts from './WorkflowRunArtifacts';
 import {
@@ -34,6 +35,7 @@ import {
   resendQuery,
   resetWorkflowPreview,
   selectActiveNodeId,
+  setPreviewOpen,
   selectWorkflowExecutionSteps,
   selectWorkflowPreviewQueries,
   selectWorkflowPreviewStatus,
@@ -437,6 +439,8 @@ export default function WorkflowPreview({
   const status = useSelector(selectWorkflowPreviewStatus);
   const executionSteps = useSelector(selectWorkflowExecutionSteps);
   const activeNodeId = useSelector(selectActiveNodeId);
+  const completedAttachments = useSelector(selectCompletedAttachments);
+  const hasCompletedAttachment = completedAttachments.length > 0;
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
   const [openDetailsIndex, setOpenDetailsIndex] = useState<number | null>(null);
@@ -490,7 +494,9 @@ export default function WorkflowPreview({
       index?: number;
     }) => {
       const trimmedQuestion = question.trim();
-      if (trimmedQuestion === '') return;
+      // Doc-driven nodes read ``input_documents`` rather than the query, so an
+      // attachment-only run is allowed to proceed with an empty question.
+      if (trimmedQuestion === '' && !hasCompletedAttachment) return;
 
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
@@ -503,7 +509,7 @@ export default function WorkflowPreview({
         handleFetchAnswer({ question: trimmedQuestion, index: undefined });
       }
     },
-    [dispatch, handleFetchAnswer],
+    [dispatch, handleFetchAnswer, hasCompletedAttachment],
   );
 
   const handleQuestionSubmission = (
@@ -517,8 +523,8 @@ export default function WorkflowPreview({
         index: indx,
         isRetry: false,
       });
-    } else if (question && status !== 'loading') {
-      const currentInput = question.trim();
+    } else if ((question || hasCompletedAttachment) && status !== 'loading') {
+      const currentInput = (question ?? '').trim();
       if (lastQueryReturnedErr && queries.length > 0) {
         const lastQueryIndex = queries.length - 1;
         handleQuestion({
@@ -538,10 +544,12 @@ export default function WorkflowPreview({
 
   useEffect(() => {
     dispatch(resetWorkflowPreview());
+    dispatch(setPreviewOpen(true));
     return () => {
       if (fetchStream.current) fetchStream.current.abort();
       handleWorkflowPreviewAbort();
       dispatch(resetWorkflowPreview());
+      dispatch(setPreviewOpen(false));
     };
   }, [dispatch]);
 
@@ -708,6 +716,7 @@ export default function WorkflowPreview({
               showSourceButton={false}
               showToolButton={false}
               autoFocus={true}
+              allowSendWithoutText={true}
             />
           </div>
         </div>

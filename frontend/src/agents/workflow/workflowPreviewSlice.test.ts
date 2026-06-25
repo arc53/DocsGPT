@@ -4,6 +4,8 @@ import { Attachment } from '../../upload/uploadSlice';
 import reducer, {
   addQuery,
   collectCompletedAttachmentIds,
+  resetWorkflowPreview,
+  setPreviewOpen,
   setWorkflowRunId,
 } from './workflowPreviewSlice';
 
@@ -56,5 +58,25 @@ describe('setWorkflowRunId', () => {
       setWorkflowRunId({ index: 5, workflowRunId: 'run-x' }),
     );
     expect(state.queries[0].workflowRunId).toBeUndefined();
+  });
+});
+
+describe('setPreviewOpen', () => {
+  it('defaults to closed and toggles the preview-open flag', () => {
+    let state = seedState();
+    expect(state.previewOpen).toBe(false);
+    state = reducer(state, setPreviewOpen(true));
+    expect(state.previewOpen).toBe(true);
+    state = reducer(state, setPreviewOpen(false));
+    expect(state.previewOpen).toBe(false);
+  });
+
+  it('survives a resetWorkflowPreview so the overlay flag stays set', () => {
+    let state = seedState();
+    state = reducer(state, setPreviewOpen(true));
+    state = reducer(state, addQuery({ prompt: 'q' }));
+    state = reducer(state, resetWorkflowPreview());
+    expect(state.queries).toEqual([]);
+    expect(state.previewOpen).toBe(true);
   });
 });

@@ -37,6 +37,9 @@ export interface WorkflowPreviewState {
   status: Status;
   executionSteps: WorkflowExecutionStep[];
   activeNodeId: string | null;
+  // True while the Preview drawer is mounted; lets global overlays (the
+  // upload toast) shift off the drawer's right-side input.
+  previewOpen: boolean;
 }
 
 const initialState: WorkflowPreviewState = {
@@ -44,6 +47,7 @@ const initialState: WorkflowPreviewState = {
   status: 'idle',
   executionSteps: [],
   activeNodeId: null,
+  previewOpen: false,
 };
 
 let abortController: AbortController | null = null;
@@ -438,6 +442,9 @@ export const workflowPreviewSlice = createSlice({
       state.executionSteps = [];
       state.activeNodeId = null;
     },
+    setPreviewOpen: (state, action: PayloadAction<boolean>) => {
+      state.previewOpen = action.payload;
+    },
   },
   extraReducers(builder) {
     builder
@@ -475,6 +482,9 @@ export const selectWorkflowExecutionSteps = (
 ) => state.workflowPreview.executionSteps;
 export const selectActiveNodeId = (state: RootStateWithWorkflowPreview) =>
   state.workflowPreview.activeNodeId;
+export const selectWorkflowPreviewOpen = (
+  state: RootStateWithWorkflowPreview,
+) => state.workflowPreview.previewOpen;
 
 export const {
   addQuery,
@@ -491,6 +501,7 @@ export const {
   raiseError,
   resetWorkflowPreview,
   clearExecutionSteps,
+  setPreviewOpen,
 } = workflowPreviewSlice.actions;
 
 export default workflowPreviewSlice.reducer;
