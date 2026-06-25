@@ -225,18 +225,13 @@ def test_native_on_unsupported_mime_raises(monkeypatch):
 
 
 @pytest.mark.unit
-def test_extract_non_text_uses_docling(monkeypatch):
-    """A non-text mime under extract routes through the Docling helper."""
+def test_extract_non_text_uses_parse_worker(monkeypatch):
+    """A non-text mime under extract routes through the parsing-worker path (no sandbox)."""
     aid, rec = _artifact(RUN_ID, "application/vnd.openxmlformats", filename="r.docx")
     _patch_repo(monkeypatch, {aid: rec})
     eng = _engine(monkeypatch)
     monkeypatch.setattr(
-        "application.storage.storage_creator.StorageCreator.get_storage",
-        staticmethod(lambda: _FakeStorage(b"\x00binary")),
-    )
-    monkeypatch.setattr(
-        "application.agents.tools.document_extractor.extract_markdown_from_bytes",
-        lambda data, filename, session_id, **kw: "EXTRACTED MD",
+        WorkflowEngine, "_parse_document_text", lambda self, artifact_id: "EXTRACTED MD"
     )
     cfg = _node_config(input_documents=[aid], file_passing="extract")
 
@@ -298,10 +293,9 @@ def test_native_file_cap_bounds_native_then_extracts(monkeypatch):
         "application.storage.storage_creator.StorageCreator.get_storage",
         staticmethod(lambda: _FakeStorage(b"img-bytes")),
     )
-    # extract of a non-text image falls back to Docling; stub it so it returns text.
+    # extract of a non-text image routes through the parsing worker; stub it so it returns text.
     monkeypatch.setattr(
-        "application.agents.tools.document_extractor.extract_markdown_from_bytes",
-        lambda data, filename, session_id, **kw: "fallback text",
+        WorkflowEngine, "_parse_document_text", lambda self, artifact_id: "fallback text"
     )
     cfg = _node_config(input_documents=ids, file_passing="auto")
 
@@ -354,7 +348,7 @@ def test_oversize_text_skipped_by_post_read_guard_when_size_missing(monkeypatch)
 @pytest.mark.unit
 def test_large_under_cap_text_is_windowed_not_inlined_whole(monkeypatch):
     """A large-but-under-cap text file is bounded to a head+tail window, not inlined whole."""
-    from application.agents.tools.document_extractor import _MARKDOWN_MAX_BYTES
+    from application.parser.document_reader import _TEXT_MAX_BYTES as _MARKDOWN_MAX_BYTES
 
     big_text = ("A" * (_MARKDOWN_MAX_BYTES * 3)).encode("utf-8")
     aid, rec = _artifact(RUN_ID, "text/plain", filename="notes.txt", size=len(big_text))
@@ -490,12 +484,7 @@ def test_execute_agent_node_native_decision_tracks_provider_types(monkeypatch):
     _patch_repo(monkeypatch, {aid: rec})
     _patch_capabilities(monkeypatch)
     monkeypatch.setattr(
-        "application.storage.storage_creator.StorageCreator.get_storage",
-        staticmethod(lambda: _FakeStorage(b"image-bytes")),
-    )
-    monkeypatch.setattr(
-        "application.agents.tools.document_extractor.extract_markdown_from_bytes",
-        lambda data, filename, session_id, **kw: "EXTRACTED",
+        WorkflowEngine, "_parse_document_text", lambda self, artifact_id: "EXTRACTED"
     )
     eng = _engine(monkeypatch)
 

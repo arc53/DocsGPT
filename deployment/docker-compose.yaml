@@ -45,7 +45,11 @@ services:
   worker:
     user: root
     build: ../application
-    command: celery -A application.app.celery worker -l INFO -B
+    # Consumes the default queue AND the dedicated `parsing` queue (read_document /
+    # parse_document). Without `parsing` here the read_document await never resolves.
+    # For heavy/OCR parsing run a separate worker with `-Q parsing` (see
+    # deployment/sandbox/README.md).
+    command: celery -A application.app.celery worker -l INFO -B -Q docsgpt,parsing
     env_file:
       - ../.env
     environment:

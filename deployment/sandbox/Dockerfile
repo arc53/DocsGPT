@@ -32,11 +32,13 @@ RUN pip install --no-cache-dir \
     pandas==2.2.3 \
     matplotlib==3.9.2
 
-# Docling (MIT) for the document_extractor tool — OFF by default because it pulls
-# torch + models and makes the image multi-GB. Build the "extract" variant with
-# `--build-arg INSTALL_DOCLING=true` (see README) when document extraction is
-# needed. Docling is MIT and uses its own PDF backend; PyMuPDF (AGPL) is NOT
-# installed here. The base image and the app's requirements stay docling-free.
+# Docling (MIT) — OFF by default because it pulls torch + models and makes the
+# image multi-GB. NOTE: document parsing now runs on the Celery `parsing` worker
+# (see read_document / parse_document_worker), NOT in this sandbox, so this
+# INSTALL_DOCLING build-arg path is effectively unused for the read_document flow;
+# it remains only for sandbox code that opts into Docling explicitly. The build
+# mechanics are kept for that case. Docling is MIT and uses its own PDF backend;
+# PyMuPDF (AGPL) is NOT installed here. The base image stays docling-free.
 ARG INSTALL_DOCLING=false
 RUN if [ "$INSTALL_DOCLING" = "true" ]; then \
         pip install --no-cache-dir docling==2.8.3; \

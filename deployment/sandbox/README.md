@@ -109,24 +109,35 @@ app chooses it). The same applies to k8s: `SANDBOX_KERNEL_NAME=docsgpt-python`
 is set on the `docsgpt-api` and `docsgpt-worker` deployments in
 `deployment/k8s/deployments/docsgpt-deploy.yaml`.
 
-## Document extraction variant (Docling)
+## Document reading (parsing worker — not the sandbox)
 
-The `document_extractor` tool runs Docling (MIT) inside the runner to convert
-documents (pdf/docx/pptx/...) to schema-validated JSON. Docling pulls `torch` and
-ML models, which makes the image multi-GB, so it is **off by default**: it is not
-in the base image, not in `application/requirements.txt`, and not required in the
-dev `.venv`. Build the extract variant only where extraction is needed:
+Document reading no longer runs in this sandbox. The `read_document` tool and the
+workflow native-file extract branch enqueue a `parse_document` Celery task that
+parses the document **in the backend** (Docling, already in
+`application/requirements.txt`) and awaits the result. The task is routed to a
+dedicated **`parsing` queue** (`settings.DOCUMENT_PARSE_QUEUE`, default
+`"parsing"`) so a parse enqueued from inside a Celery worker (headless/scheduled
+agent) is served by a separate worker and never self-deadlocks the awaiting one.
+
+Run a dedicated parsing worker that consumes the `parsing` queue:
 
 ```bash
-docker build -t docsgpt-sandbox-extract \
-  --build-arg INSTALL_DOCLING=true deployment/sandbox
-docker run --rm -p 8888:8888 docsgpt-sandbox-extract
+celery -A application.app.celery worker -Q parsing -l INFO
 ```
 
-Point the app at this runner via `SANDBOX_GATEWAY_URL` exactly as the base image.
-Docling uses its own permissive PDF backend; **PyMuPDF (AGPL) is intentionally not
-installed.** If the base (non-extract) image is used, `extract_document` returns a
-clean "docling is not available in the sandbox runner" error rather than crashing.
+It can be GPU-enabled with its own env (`DOCLING_OCR_ENABLED=true` plus GPU
+libraries) so OCR-heavy parsing runs on a separate, optionally larger pool.
+
+**Dev / single-worker setups:** without a dedicated parsing worker the default
+worker must also consume `parsing`, or the tool's await never resolves:
+
+```bash
+celery -A application.app.celery worker -Q docsgpt,parsing -l INFO
+```
+
+Tuning settings: `DOCUMENT_PARSE_TIMEOUT` (seconds the tool awaits before
+degrading to an error), `DOCUMENT_PARSE_MAX_BYTES` (per-document byte cap; 0
+reuses `SANDBOX_MAX_INPUT_BYTES`).
 
 ## Network egress / SSRF
 

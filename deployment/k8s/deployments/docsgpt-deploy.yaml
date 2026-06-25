@@ -93,7 +93,9 @@ spec:
       containers:
       - name: docsgpt-worker
         image: arc53/docsgpt
-        command: ["celery", "-A", "application.app.celery", "worker", "-l", "INFO", "-n", "worker.%h"]
+        # `parsing` queue carries read_document/parse_document; required for its await to resolve.
+        # For heavy/OCR parsing, run a separate deployment with `-Q parsing` (and GPU env).
+        command: ["celery", "-A", "application.app.celery", "worker", "-l", "INFO", "-n", "worker.%h", "-Q", "docsgpt,parsing"]
         resources:
           limits:
             memory: "4Gi"

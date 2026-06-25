@@ -566,7 +566,9 @@ class WorkflowEngine:
                 attachments.append({"id": artifact_id, "mime_type": mime_type, "path": storage_path})
                 native_count += 1
             else:
-                content = self._extract_attachment_text(storage_path, mime_type, filename, max_bytes)
+                content = self._extract_attachment_text(
+                    artifact_id, storage_path, mime_type, filename, max_bytes
+                )
                 if content is None:
                     logger.warning(
                         "Workflow node %s: could not extract text from %s; skipping",
@@ -598,37 +600,66 @@ class WorkflowEngine:
         return mime_type == "application/pdf" and supports_images
 
     def _extract_attachment_text(
-        self, storage_path: str, mime_type: str, filename: str, max_bytes: int
+        self, artifact_id: str, storage_path: str, mime_type: str, filename: str, max_bytes: int
     ) -> Optional[str]:
-        """Get an attachment's text: inline already-text formats, else extract via Docling; None on failure."""
-        from application.agents.tools.document_extractor import (
-            extract_markdown_from_bytes,
-            truncate_text_head_tail,
-        )
+        """Get an attachment's text: inline already-text formats, else parse via the parsing worker; None on failure."""
+        from application.parser.document_reader import truncate_text_head_tail
         from application.storage.storage_creator import StorageCreator
 
-        try:
-            data = StorageCreator.get_storage().get_file(storage_path).read()
-        except Exception:
-            logger.exception("Workflow node: failed to read document bytes for extraction")
-            return None
-        # Defensive size gate: a NULL/missing version size skips the pre-read cap,
-        # so re-check the actual bytes before inlining or sandbox-extracting.
-        if len(data) > max_bytes:
-            logger.warning(
-                "Workflow node: document at %s (%d bytes) exceeds the %d-byte cap; skipping",
-                storage_path, len(data), max_bytes,
-            )
-            return None
         if self._is_inline_text_mime(mime_type):
+            try:
+                data = StorageCreator.get_storage().get_file(storage_path).read()
+            except Exception:
+                logger.exception("Workflow node: failed to read document bytes for extraction")
+                return None
+            # Defensive size gate: a NULL/missing version size skips the pre-read cap,
+            # so re-check the actual bytes before inlining.
+            if len(data) > max_bytes:
+                logger.warning(
+                    "Workflow node: document at %s (%d bytes) exceeds the %d-byte cap; skipping",
+                    storage_path, len(data), max_bytes,
+                )
+                return None
             try:
                 text = data.decode("utf-8", errors="replace")
             except Exception:
                 return None
             # Bound the inlined text to a head+tail window so a large-but-under-cap
-            # text file can't blow the context (the Docling branch is already bounded).
+            # text file can't blow the context (the parse branch is already bounded).
             return truncate_text_head_tail(text)
-        return extract_markdown_from_bytes(data, filename, self._session_id())
+        # Non-text mimes parse via the dedicated parsing queue (works on any backend,
+        # no sandbox): the worker re-resolves the artifact run-scoped and reads its bytes.
+        return self._parse_document_text(artifact_id)
+
+    def _parse_document_text(self, artifact_id: str) -> Optional[str]:
+        """Enqueue ``parse_document`` for this run and await the bounded markdown; None on failure."""
+        from celery.exceptions import TimeoutError as CeleryTimeoutError
+
+        from application.api.user.tasks import parse_document
+        from application.core.settings import settings
+
+        user_id = self._resolve_user_id()
+        if not user_id:
+            return None
+        options = {"output": "markdown", "include_tables": False, "persist": False}
+        queue = getattr(settings, "DOCUMENT_PARSE_QUEUE", "parsing")
+        timeout = float(getattr(settings, "DOCUMENT_PARSE_TIMEOUT", 120))
+        try:
+            async_result = parse_document.apply_async(
+                args=[artifact_id, {"workflow_run_id": self.workflow_run_id}, user_id, options],
+                queue=queue,
+            )
+            result = async_result.get(timeout=timeout)
+        except (CeleryTimeoutError, TimeoutError):
+            logger.warning("Workflow node: document parse timed out for %s", artifact_id)
+            return None
+        except Exception:
+            logger.exception("Workflow node: document parse failed")
+            return None
+        if isinstance(result, dict) and result.get("status") == "ok":
+            content = result.get("content")
+            return content if isinstance(content, str) else None
+        return None
 
     @staticmethod
     def _is_inline_text_mime(mime_type: str) -> bool:

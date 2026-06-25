@@ -39,7 +39,7 @@ class ToolManager:
                         "remote_device",
                         "code_executor",
                         "artifact_generator",
-                        "document_extractor",
+                        "read_document",
                     }
                     and user_id
                 ):
@@ -61,7 +61,7 @@ class ToolManager:
                 "remote_device",
                 "code_executor",
                 "artifact_generator",
-                "document_extractor",
+                "read_document",
             }
             and user_id
         ):

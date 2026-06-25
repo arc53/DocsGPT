@@ -8,6 +8,7 @@ from application.worker import (
     attachment_worker,
     ingest_worker,
     mcp_oauth,
+    parse_document_worker,
     reembed_wiki_page_worker,
     remote_worker,
     sync,
@@ -244,6 +245,16 @@ def store_attachment(self, file_info, user, idempotency_key=None):
 def process_agent_webhook(self, agent_id, payload, idempotency_key=None):
     resp = agent_webhook_worker(self, agent_id, payload)
     return resp
+
+
+# Not DURABLE: the read_document tool awaits this synchronously with a timeout, so a
+# blind autoretry would double-parse and the caller would already have degraded. The
+# task is routed to the dedicated ``parsing`` queue (celeryconfig task_routes) so a
+# parse enqueued from inside a Celery worker (headless/scheduled agent) is served by a
+# separate parsing worker and never self-deadlocks the awaiting worker.
+@celery.task(bind=True, acks_late=False, autoretry_for=())
+def parse_document(self, artifact_id, parent, user_id, options=None):
+    return parse_document_worker(self, artifact_id, parent, user_id, options or {})
 
 
 @celery.task(**DURABLE_TASK)

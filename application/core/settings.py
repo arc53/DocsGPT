@@ -343,6 +343,10 @@ class Settings(BaseSettings):
     SANDBOX_MAX_OUTPUT_BYTES: int = 8 * 1024 * 1024  # cap on buffered stdout+stderr per exec
     SANDBOX_MAX_FILE_BYTES: int = 10 * 1024 * 1024  # cap on get_file size routed through stdout
     SANDBOX_MAX_INPUT_BYTES: int = 25 * 1024 * 1024  # cap on an input document staged into a sandbox session
+    # ``read_document`` parsing on a dedicated Celery ``parsing`` queue (backend parser).
+    DOCUMENT_PARSE_QUEUE: str = "parsing"  # queue the parse_document task is routed to
+    DOCUMENT_PARSE_TIMEOUT: int = 120  # seconds the tool awaits the enqueued parse before degrading
+    DOCUMENT_PARSE_MAX_BYTES: int = 0  # cap on a parsed document's bytes (0 = reuse SANDBOX_MAX_INPUT_BYTES)
     # Per-agent-node cap on files passed natively to the node's LLM (vision/doc
     # inputs). Files past the cap are extracted to text or dropped, not attached
     # natively, to bound context/cost. Re-uses SANDBOX_MAX_INPUT_BYTES per file.

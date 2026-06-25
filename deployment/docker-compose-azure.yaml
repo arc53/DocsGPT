@@ -32,7 +32,8 @@ services:
 
   worker:
     build: ../application
-    command: celery -A application.app.celery worker -l INFO
+    # `parsing` queue carries read_document/parse_document; required for its await to resolve.
+    command: celery -A application.app.celery worker -l INFO -Q docsgpt,parsing
     env_file:
       - ../.env
     environment:
