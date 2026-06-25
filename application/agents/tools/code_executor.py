@@ -54,7 +54,7 @@ def _tail(stream: Optional[str]) -> str:
 
 class CodeExecutorTool(Tool):
     """Code Executor
-    Run Python (or other) code in a sandboxed, semi-persistent session and capture produced files as artifacts.
+    Run code in a sandboxed session; files it writes become downloadable artifacts.
     """
 
     def __init__(self, tool_config: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None) -> None:

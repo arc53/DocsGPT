@@ -377,8 +377,8 @@ def merge_patch(target: Any, patch: Any) -> Any:
 
 
 class ArtifactGeneratorTool(Tool):
-    """Artifact Generator
-    Render editable documents (presentation/document/spreadsheet/pdf/html) from a JSON spec and version them.
+    """Artifact
+    Create, edit, and version documents - slides, docs, sheets, PDF, HTML.
     """
 
     def __init__(self, tool_config: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None) -> None:

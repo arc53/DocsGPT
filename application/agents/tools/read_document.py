@@ -39,7 +39,7 @@ except Exception:  # pragma: no cover - jsonschema is a declared dependency
 
 class ReadDocumentTool(Tool):
     """Read Document
-    Parse an input document artifact (pdf/docx/pptx/...) to text/markdown/structured JSON via the backend parser.
+    Parse a document (PDF, Word, PowerPoint, ...) to text, markdown, or structured data.
     """
 
     # Hidden from the Add-Tool catalog; surfaced (workflow-only) via the
