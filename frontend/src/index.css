@@ -893,6 +893,8 @@ Avoid over-scrolling in mobile browsers
   --sidebar-border: #2b2c31;
   --sidebar-ring: #976af3;
   --answer-bubble: #2e303e;
+  /* Fix: iOS Safari does not apply CSS variables to borders in dark mode */
+    color-scheme: dark;
 }
 
 /*
