@@ -1517,6 +1517,7 @@ class StreamProcessor:
                 docs=docs,
                 docs_together=docs_together,
                 tools_data=tools_data,
+                artifact_parent={"conversation_id": self.conversation_id},
             )
 
         # Use the user_id that resolved the model so owner-scoped BYOM

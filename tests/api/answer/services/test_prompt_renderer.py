@@ -379,6 +379,44 @@ class TestNamespaceManagerWithTools:
         assert "system" in context
         assert context["system"]["request_id"] == "req_123"
 
+
+class TestPromptRendererArtifactParent:
+    """render_prompt forwards artifact_parent so artifacts.artifact(id) resolves for classic agents."""
+
+    def test_render_resolves_artifact_by_id_with_conversation_parent(self):
+        from unittest.mock import patch
+
+        from application.api.answer.services.prompt_renderer import PromptRenderer
+
+        row = {"id": "art-1", "current_version": 1, "kind": "document", "title": "Report"}
+        version = {"mime_type": "text/html", "filename": "report.html", "size": 12}
+        with patch(
+            "application.storage.db.repositories.artifacts.ArtifactsRepository"
+        ) as repo_cls, patch("application.storage.db.session.db_readonly"):
+            repo = repo_cls.return_value
+            repo.get_artifact_in_parent.return_value = row
+            repo.get_version.return_value = version
+
+            rendered = PromptRenderer().render_prompt(
+                "file={{ artifacts.artifact('art-1').filename }}",
+                artifact_parent={"conversation_id": "conv-1"},
+            )
+
+        assert rendered == "file=report.html"
+        _, kwargs = repo.get_artifact_in_parent.call_args
+        assert kwargs.get("conversation_id") == "conv-1"
+
+    def test_render_without_parent_yields_empty_lookup(self):
+        from application.api.answer.services.prompt_renderer import PromptRenderer
+
+        # No artifact_parent (e.g. a first-turn conversation_id is None) must not error;
+        # the lookup returns an empty mapping and the attribute renders blank.
+        rendered = PromptRenderer().render_prompt(
+            "[{{ artifacts.artifact('art-1').filename }}]"
+        )
+
+        assert rendered == "[]"
+
     def test_namespace_manager_get_builder(self):
         from application.templates.namespaces import NamespaceManager, SystemNamespace
 

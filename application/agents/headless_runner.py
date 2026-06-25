@@ -117,6 +117,7 @@ def run_agent_headless(
             user_id=owner,
             docs=retrieved_docs or None,
             docs_together=format_docs_for_prompt(retrieved_docs),
+            artifact_parent={"conversation_id": conversation_id},
         )
     except Exception as exc:
         logger.warning("Headless prompt rendering failed; using raw prompt: %s", exc)
