@@ -1,0 +1,126 @@
+import { describe, expect, it } from 'vitest';
+
+import type { WorkflowVariable } from './components/PromptTextArea';
+import {
+  ALL_INPUT_DOCUMENTS_TOKEN,
+  DEFAULT_FILE_PASSING,
+  documentsModeToInputDocuments,
+  getDocumentsMode,
+  normalizeFilePassing,
+  stripAgentPrefix,
+  toDocumentVariableOptions,
+} from './documentConfig';
+
+describe('getDocumentsMode', () => {
+  it('treats missing/empty as none', () => {
+    expect(getDocumentsMode(undefined)).toBe('none');
+    expect(getDocumentsMode([])).toBe('none');
+  });
+
+  it('treats the wildcard token as all', () => {
+    expect(getDocumentsMode([ALL_INPUT_DOCUMENTS_TOKEN])).toBe('all');
+  });
+
+  it('treats a bare-name list as choose', () => {
+    expect(getDocumentsMode(['wire_doc'])).toBe('choose');
+    expect(getDocumentsMode(['wire_doc', 'A1'])).toBe('choose');
+  });
+});
+
+describe('documentsModeToInputDocuments', () => {
+  it('maps all to the wildcard token regardless of chosen names', () => {
+    expect(documentsModeToInputDocuments('all', ['wire_doc'])).toEqual([
+      ALL_INPUT_DOCUMENTS_TOKEN,
+    ]);
+  });
+
+  it('maps none to an empty list', () => {
+    expect(documentsModeToInputDocuments('none', ['wire_doc'])).toEqual([]);
+  });
+
+  it('maps choose to the chosen bare names, dropping blanks and the wildcard', () => {
+    expect(
+      documentsModeToInputDocuments('choose', [
+        'wire_doc',
+        '  ',
+        ALL_INPUT_DOCUMENTS_TOKEN,
+        'A1',
+      ]),
+    ).toEqual(['wire_doc', 'A1']);
+  });
+
+  it('round-trips a chosen selection through getDocumentsMode', () => {
+    const next = documentsModeToInputDocuments('choose', ['wire_doc']);
+    expect(getDocumentsMode(next)).toBe('choose');
+    expect(next).toEqual(['wire_doc']);
+  });
+});
+
+describe('normalizeFilePassing', () => {
+  it('passes through supported values', () => {
+    expect(normalizeFilePassing('auto')).toBe('auto');
+    expect(normalizeFilePassing('native')).toBe('native');
+    expect(normalizeFilePassing('extract')).toBe('extract');
+  });
+
+  it('falls back to the default for unknown values', () => {
+    expect(normalizeFilePassing(undefined)).toBe(DEFAULT_FILE_PASSING);
+    expect(normalizeFilePassing('bogus')).toBe(DEFAULT_FILE_PASSING);
+  });
+});
+
+describe('stripAgentPrefix', () => {
+  it('strips a dotted agent prefix to a bare name', () => {
+    expect(stripAgentPrefix('agent.wire_doc')).toBe('wire_doc');
+    expect(stripAgentPrefix('agent.node_abc_output')).toBe('node_abc_output');
+  });
+
+  it('strips a bracketed agent prefix and unescapes quotes', () => {
+    expect(stripAgentPrefix("agent['weird name']")).toBe('weird name');
+    expect(stripAgentPrefix("agent['it\\'s']")).toBe("it's");
+  });
+
+  it('leaves bare names untouched', () => {
+    expect(stripAgentPrefix('A1')).toBe('A1');
+  });
+});
+
+describe('toDocumentVariableOptions', () => {
+  const make = (templatePath: string): WorkflowVariable => ({
+    label: templatePath,
+    templatePath,
+    section: 'x',
+  });
+
+  it('keeps input_documents and upstream outputs as bare names', () => {
+    const options = toDocumentVariableOptions([
+      make('agent.input_documents'),
+      make('agent.wire_doc'),
+      make("agent['weird name']"),
+    ]);
+    expect(options).toEqual([
+      { value: 'input_documents', label: 'input_documents' },
+      { value: 'wire_doc', label: 'wire_doc' },
+      { value: 'weird name', label: 'weird name' },
+    ]);
+  });
+
+  it('excludes query, chat_history and global context variables', () => {
+    const options = toDocumentVariableOptions([
+      make('agent.query'),
+      make('agent.chat_history'),
+      make('source.content'),
+      make('system.date'),
+      make('artifacts.artifact(id)'),
+    ]);
+    expect(options).toEqual([]);
+  });
+
+  it('deduplicates by bare name', () => {
+    const options = toDocumentVariableOptions([
+      make('agent.wire_doc'),
+      make('agent.wire_doc'),
+    ]);
+    expect(options).toEqual([{ value: 'wire_doc', label: 'wire_doc' }]);
+  });
+});

@@ -10,7 +10,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-interface WorkflowVariable {
+export interface WorkflowVariable {
   label: string;
   templatePath: string;
   section: string;
@@ -98,7 +98,7 @@ function getUpstreamNodeIds(nodeId: string, edges: Edge[]): Set<string> {
   return upstream;
 }
 
-function extractUpstreamVariables(
+export function extractUpstreamVariables(
   nodes: Node[],
   edges: Edge[],
   selectedNodeId: string,

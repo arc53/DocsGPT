@@ -75,7 +75,17 @@ import {
   validateCodeJsonSchema,
 } from './codeNodeConfig';
 import MobileBlocker from './components/MobileBlocker';
-import PromptTextArea from './components/PromptTextArea';
+import PromptTextArea, {
+  extractUpstreamVariables,
+} from './components/PromptTextArea';
+import {
+  documentsModeToInputDocuments,
+  FILE_PASSING_OPTIONS,
+  FilePassing,
+  getDocumentsMode,
+  normalizeFilePassing,
+  toDocumentVariableOptions,
+} from './documentConfig';
 import {
   AgentNode,
   CodeNode,
@@ -104,6 +114,8 @@ interface AgentNodeConfig {
   chunks?: string;
   retriever?: string;
   json_schema?: Record<string, unknown>;
+  input_documents?: string[];
+  file_passing?: FilePassing;
 }
 
 interface UserTool {
@@ -1455,6 +1467,13 @@ function WorkflowBuilderInner() {
     return selectedModel.supports_structured_output;
   }, [selectedNode, availableModels]);
 
+  const selectedAgentDocumentOptions = useMemo(() => {
+    if (!selectedNode || selectedNode.type !== 'agent') return [];
+    return toDocumentVariableOptions(
+      extractUpstreamVariables(nodes, edges, selectedNode.id),
+    );
+  }, [selectedNode, nodes, edges]);
+
   const selectedCodeJsonSchemaText = useMemo(() => {
     if (!selectedNode || selectedNode.type !== 'code') return '';
 
@@ -2191,6 +2210,131 @@ function WorkflowBuilderInner() {
                                     emptyText="No sources available"
                                   />
                                 </div>
+                                {(() => {
+                                  const inputDocuments =
+                                    selectedNode.data.config?.input_documents;
+                                  const documentsMode =
+                                    getDocumentsMode(inputDocuments);
+                                  const chosenDocuments =
+                                    documentsMode === 'choose'
+                                      ? (inputDocuments ?? [])
+                                      : [];
+                                  const filePassing = normalizeFilePassing(
+                                    selectedNode.data.config?.file_passing,
+                                  );
+                                  const setInputDocuments = (
+                                    nextInputDocuments: string[],
+                                  ) =>
+                                    handleUpdateNodeData({
+                                      config: {
+                                        ...(selectedNode.data.config || {}),
+                                        input_documents: nextInputDocuments,
+                                      },
+                                    });
+                                  return (
+                                    <>
+                                      <div>
+                                        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                          Documents
+                                        </label>
+                                        <div className="border-border bg-card flex gap-1 rounded-xl border p-1">
+                                          {(
+                                            [
+                                              ['all', 'All input docs'],
+                                              ['none', 'None'],
+                                              ['choose', 'Choose…'],
+                                            ] as const
+                                          ).map(([mode, modeLabel]) => (
+                                            <Button
+                                              key={mode}
+                                              type="button"
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() =>
+                                                setInputDocuments(
+                                                  documentsModeToInputDocuments(
+                                                    mode,
+                                                    chosenDocuments,
+                                                  ),
+                                                )
+                                              }
+                                              className={`h-auto flex-1 rounded-lg px-2 py-1.5 text-xs font-medium ${
+                                                documentsMode === mode
+                                                  ? 'bg-primary text-white'
+                                                  : 'text-gray-600 dark:text-gray-300'
+                                              }`}
+                                            >
+                                              {modeLabel}
+                                            </Button>
+                                          ))}
+                                        </div>
+                                        {documentsMode === 'choose' && (
+                                          <div className="mt-2">
+                                            <MultiSelect
+                                              options={
+                                                selectedAgentDocumentOptions
+                                              }
+                                              selected={chosenDocuments}
+                                              onChange={(nextDocuments) =>
+                                                setInputDocuments(
+                                                  documentsModeToInputDocuments(
+                                                    'choose',
+                                                    nextDocuments,
+                                                  ),
+                                                )
+                                              }
+                                              placeholder="Select documents..."
+                                              searchPlaceholder="Search variables..."
+                                              emptyText="No upstream documents"
+                                            />
+                                          </div>
+                                        )}
+                                        <p className="text-muted-foreground mt-1 text-xs">
+                                          Documents passed to this agent from
+                                          uploads or upstream nodes.
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                          File passing
+                                        </label>
+                                        <Select
+                                          value={filePassing}
+                                          onValueChange={(value) =>
+                                            handleUpdateNodeData({
+                                              config: {
+                                                ...(selectedNode.data.config ||
+                                                  {}),
+                                                file_passing:
+                                                  value as FilePassing,
+                                              },
+                                            })
+                                          }
+                                        >
+                                          <SelectTrigger className="w-full">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {FILE_PASSING_OPTIONS.map(
+                                              (option) => (
+                                                <SelectItem
+                                                  key={option.value}
+                                                  value={option.value}
+                                                >
+                                                  {option.label}
+                                                </SelectItem>
+                                              ),
+                                            )}
+                                          </SelectContent>
+                                        </Select>
+                                        <p className="text-muted-foreground mt-1 text-xs">
+                                          Auto: send native when the model
+                                          supports it, otherwise extract text.
+                                        </p>
+                                      </div>
+                                    </>
+                                  );
+                                })()}
                                 <div>
                                   <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     Structured Output (JSON Schema)
