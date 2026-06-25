@@ -908,14 +908,13 @@ export default function MessageInput({
   });
 
   const handleInput = useCallback(() => {
-    if (inputRef.current) {
-      if (window.innerWidth < 350) inputRef.current.style.height = 'auto';
-      else inputRef.current.style.height = '64px';
-      inputRef.current.style.height = `${Math.min(
-        inputRef.current.scrollHeight,
-        96,
-      )}px`;
-    }
+    if (!inputRef.current) return;
+    if (window.innerWidth < 350) inputRef.current.style.height = 'auto';
+    else inputRef.current.style.height = '64px';
+    inputRef.current.style.height = `${Math.min(
+      inputRef.current.scrollHeight,
+      Math.round(window.innerHeight * 0.4),
+    )}px`;
   }, []);
 
   const buildVoiceDraftValue = (baseText: string, transcript: string) => {

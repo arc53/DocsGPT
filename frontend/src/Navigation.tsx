@@ -571,14 +571,14 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           )}
           {conversations?.data && conversations.data.length > 0 ? (
             <div className="mt-7">
-              <div className="my-auto mt-2 ml-4 flex h-9 items-center justify-between gap-4 rounded-3xl">
+              <div className="my-auto mt-2 ml-2.75 p-1 flex h-9 items-center justify-between gap-4 rounded-3xl">
                 <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
                   onClick={() => setSearchOpen(true)}
-                  className="text-muted-foreground hover:text-foreground hover:bg-sidebar-accent mr-3 rounded-full"
+                  className="mr-1 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent rounded-full"
                   aria-label={t('modals.searchConversations.searchPlaceholder')}
                   title={t('modals.searchConversations.searchPlaceholder')}
                 >
