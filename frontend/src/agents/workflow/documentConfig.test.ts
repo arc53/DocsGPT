@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { WorkflowVariable } from './components/PromptTextArea';
 import {
   ALL_INPUT_DOCUMENTS_TOKEN,
+  appendDocumentRef,
   DEFAULT_FILE_PASSING,
   documentsModeToInputDocuments,
   getDocumentsMode,
@@ -123,6 +124,26 @@ describe('toDocumentVariableOptions', () => {
       make('agent.wire_doc'),
     ]);
     expect(options).toEqual([{ value: 'wire_doc', label: 'wire_doc' }]);
+  });
+});
+
+describe('appendDocumentRef', () => {
+  it('appends a trimmed literal ref', () => {
+    expect(appendDocumentRef(['wire_doc'], '  A1 ')).toEqual([
+      'wire_doc',
+      'A1',
+    ]);
+  });
+
+  it('ignores blanks and the wildcard token', () => {
+    expect(appendDocumentRef(['wire_doc'], '   ')).toEqual(['wire_doc']);
+    expect(appendDocumentRef(['wire_doc'], ALL_INPUT_DOCUMENTS_TOKEN)).toEqual([
+      'wire_doc',
+    ]);
+  });
+
+  it('does not append an already-present ref', () => {
+    expect(appendDocumentRef(['A1'], 'A1')).toEqual(['A1']);
   });
 });
 

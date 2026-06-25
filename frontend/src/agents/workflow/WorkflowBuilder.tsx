@@ -68,24 +68,20 @@ import { ConditionCase, WorkflowNode } from '../types/workflow';
 import {
   createDefaultCodeConfig,
   normalizeCodeConfig,
-  parseCodeInputs,
   parseCodeJsonSchemaDraft,
   serializeCodeConfig,
-  stringifyCodeInputs,
   validateCodeJsonSchema,
 } from './codeNodeConfig';
 import MobileBlocker from './components/MobileBlocker';
+import NodeDocumentsControl from './components/NodeDocumentsControl';
 import PromptTextArea, {
   extractUpstreamVariables,
 } from './components/PromptTextArea';
 import {
-  documentsModeToInputDocuments,
   FILE_PASSING_OPTIONS,
   FilePassing,
-  getDocumentsMode,
   normalizeFilePassing,
   toDocumentVariableOptions,
-  withChosenDocumentOptions,
 } from './documentConfig';
 import {
   AgentNode,
@@ -359,9 +355,6 @@ function WorkflowBuilderInner() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-  // Node id for which the author explicitly entered "Choose…" documents mode,
-  // so the picker shows even before any document is selected (empty reads as None).
-  const [docChooseNodeId, setDocChooseNodeId] = useState<string | null>(null);
   const [workflowName, setWorkflowName] = useState('New Workflow');
   const [workflowDescription, setWorkflowDescription] = useState('');
   const [showWorkflowSettings, setShowWorkflowSettings] = useState(false);
@@ -1478,6 +1471,13 @@ function WorkflowBuilderInner() {
     );
   }, [selectedNode, nodes, edges]);
 
+  const selectedCodeDocumentOptions = useMemo(() => {
+    if (!selectedNode || selectedNode.type !== 'code') return [];
+    return toDocumentVariableOptions(
+      extractUpstreamVariables(nodes, edges, selectedNode.id),
+    );
+  }, [selectedNode, nodes, edges]);
+
   const selectedCodeJsonSchemaText = useMemo(() => {
     if (!selectedNode || selectedNode.type !== 'code') return '';
 
@@ -2214,144 +2214,60 @@ function WorkflowBuilderInner() {
                                     emptyText="No sources available"
                                   />
                                 </div>
-                                {(() => {
-                                  const inputDocuments =
-                                    selectedNode.data.config?.input_documents;
-                                  const documentsMode =
-                                    getDocumentsMode(inputDocuments);
-                                  const showChoose =
-                                    documentsMode === 'choose' ||
-                                    docChooseNodeId === selectedNode.id;
-                                  const chosenDocuments = showChoose
-                                    ? documentsModeToInputDocuments(
-                                        'choose',
-                                        inputDocuments ?? [],
-                                      )
-                                    : [];
-                                  const filePassing = normalizeFilePassing(
-                                    selectedNode.data.config?.file_passing,
-                                  );
-                                  const setInputDocuments = (
-                                    nextInputDocuments: string[],
-                                  ) =>
+                                <NodeDocumentsControl
+                                  key={selectedNode.id}
+                                  value={
+                                    selectedNode.data.config?.input_documents ??
+                                    []
+                                  }
+                                  onChange={(nextInputDocuments) =>
                                     handleUpdateNodeData({
                                       config: {
                                         ...(selectedNode.data.config || {}),
                                         input_documents: nextInputDocuments,
                                       },
-                                    });
-                                  return (
-                                    <>
-                                      <div>
-                                        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                          Documents
-                                        </label>
-                                        <div className="border-border bg-card flex gap-1 rounded-xl border p-1">
-                                          {(
-                                            [
-                                              ['all', 'All input docs'],
-                                              ['none', 'None'],
-                                              ['choose', 'Choose…'],
-                                            ] as const
-                                          ).map(([mode, modeLabel]) => (
-                                            <Button
-                                              key={mode}
-                                              type="button"
-                                              variant="ghost"
-                                              size="sm"
-                                              onClick={() => {
-                                                setDocChooseNodeId(
-                                                  mode === 'choose'
-                                                    ? selectedNode.id
-                                                    : null,
-                                                );
-                                                setInputDocuments(
-                                                  documentsModeToInputDocuments(
-                                                    mode,
-                                                    chosenDocuments,
-                                                  ),
-                                                );
-                                              }}
-                                              className={`h-auto flex-1 rounded-lg px-2 py-1.5 text-xs font-medium ${
-                                                (showChoose
-                                                  ? 'choose'
-                                                  : documentsMode) === mode
-                                                  ? 'bg-primary text-white'
-                                                  : 'text-gray-600 dark:text-gray-300'
-                                              }`}
-                                            >
-                                              {modeLabel}
-                                            </Button>
-                                          ))}
-                                        </div>
-                                        {showChoose && (
-                                          <div className="mt-2">
-                                            <MultiSelect
-                                              options={withChosenDocumentOptions(
-                                                selectedAgentDocumentOptions,
-                                                chosenDocuments,
-                                              )}
-                                              selected={chosenDocuments}
-                                              onChange={(nextDocuments) =>
-                                                setInputDocuments(
-                                                  documentsModeToInputDocuments(
-                                                    'choose',
-                                                    nextDocuments,
-                                                  ),
-                                                )
-                                              }
-                                              placeholder="Select documents..."
-                                              searchPlaceholder="Search variables..."
-                                              emptyText="No upstream documents"
-                                            />
-                                          </div>
-                                        )}
-                                        <p className="text-muted-foreground mt-1 text-xs">
-                                          Documents passed to this agent from
-                                          uploads or upstream nodes.
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                          File passing
-                                        </label>
-                                        <Select
-                                          value={filePassing}
-                                          onValueChange={(value) =>
-                                            handleUpdateNodeData({
-                                              config: {
-                                                ...(selectedNode.data.config ||
-                                                  {}),
-                                                file_passing:
-                                                  value as FilePassing,
-                                              },
-                                            })
-                                          }
+                                    })
+                                  }
+                                  options={selectedAgentDocumentOptions}
+                                  label="Documents"
+                                  helpText="Documents passed to this agent from uploads or upstream nodes."
+                                />
+                                <div>
+                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    File passing
+                                  </label>
+                                  <Select
+                                    value={normalizeFilePassing(
+                                      selectedNode.data.config?.file_passing,
+                                    )}
+                                    onValueChange={(value) =>
+                                      handleUpdateNodeData({
+                                        config: {
+                                          ...(selectedNode.data.config || {}),
+                                          file_passing: value as FilePassing,
+                                        },
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger className="w-full">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {FILE_PASSING_OPTIONS.map((option) => (
+                                        <SelectItem
+                                          key={option.value}
+                                          value={option.value}
                                         >
-                                          <SelectTrigger className="w-full">
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {FILE_PASSING_OPTIONS.map(
-                                              (option) => (
-                                                <SelectItem
-                                                  key={option.value}
-                                                  value={option.value}
-                                                >
-                                                  {option.label}
-                                                </SelectItem>
-                                              ),
-                                            )}
-                                          </SelectContent>
-                                        </Select>
-                                        <p className="text-muted-foreground mt-1 text-xs">
-                                          Auto: send native when the model
-                                          supports it, otherwise extract text.
-                                        </p>
-                                      </div>
-                                    </>
-                                  );
-                                })()}
+                                          {option.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <p className="text-muted-foreground mt-1 text-xs">
+                                    Auto: send native when the model supports
+                                    it, otherwise extract text.
+                                  </p>
+                                </div>
                                 <div>
                                   <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     Structured Output (JSON Schema)
@@ -2911,33 +2827,21 @@ function WorkflowBuilderInner() {
                                     placeholder={'print("hello world")'}
                                   />
                                 </div>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Inputs
-                                  </label>
-                                  <textarea
-                                    value={stringifyCodeInputs(
-                                      selectedNode.data.config?.inputs,
-                                    )}
-                                    onChange={(e) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          inputs: parseCodeInputs(
-                                            e.target.value,
-                                          ),
-                                        },
-                                      })
-                                    }
-                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
-                                    rows={2}
-                                    placeholder="One per line: state variable or artifact ref"
-                                  />
-                                  <p className="text-muted-foreground mt-1 text-xs">
-                                    Artifact refs or state-variable names, one
-                                    per line.
-                                  </p>
-                                </div>
+                                <NodeDocumentsControl
+                                  key={selectedNode.id}
+                                  value={selectedNode.data.config?.inputs ?? []}
+                                  onChange={(nextInputs) =>
+                                    handleUpdateNodeData({
+                                      config: {
+                                        ...(selectedNode.data.config || {}),
+                                        inputs: nextInputs,
+                                      },
+                                    })
+                                  }
+                                  options={selectedCodeDocumentOptions}
+                                  label="Input files"
+                                  helpText="Artifacts/upstream refs staged as files in the sandbox (one becomes inputs/<name>)."
+                                />
                                 <div>
                                   <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     Output Variable

@@ -83,6 +83,19 @@ export function toDocumentVariableOptions(
   return options;
 }
 
+/** Append a typed literal ref to a chosen list, ignoring blanks, the wildcard and duplicates. */
+export function appendDocumentRef(chosen: string[], ref: string): string[] {
+  const value = ref.trim();
+  if (
+    value === '' ||
+    value === ALL_INPUT_DOCUMENTS_TOKEN ||
+    chosen.includes(value)
+  ) {
+    return chosen;
+  }
+  return [...chosen, value];
+}
+
 /** Append stored chosen names lacking an upstream option so they stay visible and removable. */
 export function withChosenDocumentOptions(
   options: { value: string; label: string }[],
