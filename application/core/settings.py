@@ -343,6 +343,10 @@ class Settings(BaseSettings):
     SANDBOX_MAX_OUTPUT_BYTES: int = 8 * 1024 * 1024  # cap on buffered stdout+stderr per exec
     SANDBOX_MAX_FILE_BYTES: int = 10 * 1024 * 1024  # cap on get_file size routed through stdout
     SANDBOX_MAX_INPUT_BYTES: int = 25 * 1024 * 1024  # cap on an input document staged into a sandbox session
+    # Per-agent-node cap on files passed natively to the node's LLM (vision/doc
+    # inputs). Files past the cap are extracted to text or dropped, not attached
+    # natively, to bound context/cost. Re-uses SANDBOX_MAX_INPUT_BYTES per file.
+    WORKFLOW_NODE_NATIVE_MAX_FILES: int = 5
     # Runner container resource caps — consumed by the docsgpt-sandbox compose
     # service (deployment/sandbox), not by the app client. cgroup CPU/mem caps
     # are part of the untrusted-code security boundary.

@@ -49,6 +49,15 @@ class AgentNodeConfig(BaseModel):
     retriever: str = ""
     model_id: Optional[str] = None
     json_schema: Optional[Dict[str, Any]] = None
+    # Run-scoped documents fed to this node's LLM. Entries are state-var names
+    # holding artifact refs (single dict or a list of dicts), raw artifact ids,
+    # short refs (``A1``), or the ``"*"``/``"input_documents"`` token meaning
+    # "every ref in ``state['input_documents']``".
+    input_documents: List[str] = Field(default_factory=list)
+    # How selected documents reach the model: ``auto`` (native when the model
+    # accepts the mime, else extract to text), ``native`` (force native; raise
+    # on an unsupported mime), or ``extract`` (always inline extracted text).
+    file_passing: Literal["auto", "native", "extract"] = "auto"
 
 
 class CodeNodeConfig(BaseModel):

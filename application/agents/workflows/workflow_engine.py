@@ -250,10 +250,10 @@ class WorkflowEngine:
         )
         node_api_key = get_api_key_for_provider(node_llm_name) or self.agent.api_key
 
+        # Structured output gates on the model's registry capability flags;
+        # fetch them only when a node json_schema needs the check.
         if node_json_schema and node_model_id:
-            model_capabilities = get_model_capabilities(
-                node_model_id, user_id=node_user_id
-            )
+            model_capabilities = get_model_capabilities(node_model_id, user_id=node_user_id)
             if model_capabilities and not model_capabilities.get(
                 "supports_structured_output", False
             ):
@@ -293,6 +293,16 @@ class WorkflowEngine:
         # node resolves for edit_artifact in a later node within the same run.
         if getattr(node_agent, "tool_executor", None) is not None:
             node_agent.tool_executor.workflow_run_id = self.workflow_run_id
+
+        # Decide native-eligibility from the SAME supported-types list the provider
+        # handler filters on at send time, so a mime is never sent native-but-empty
+        # and then silently dropped. Read post-construction: BaseAgent consumes
+        # ``self.attachments`` at gen time, so assigning here takes effect.
+        node_attachments = self._materialize_node_attachments(
+            node_config, node.title, self._agent_supported_attachment_types(node_agent)
+        )
+        if node_attachments:
+            node_agent.attachments = node_attachments
 
         full_response_parts: List[str] = []
         structured_response_parts: List[str] = []
@@ -477,16 +487,183 @@ class WorkflowEngine:
             loaded.append(f"inputs/{filename}")
         return loaded
 
+    def _materialize_node_attachments(
+        self,
+        node_config: AgentNodeConfig,
+        node_title: str,
+        supported_types: List[str],
+    ) -> List[Dict[str, Any]]:
+        """Resolve a node's selected documents to native/extracted attachment dicts for its LLM."""
+        from application.agents.tools.artifact_ref import resolve_artifact_id
+        from application.core.settings import settings
+        from application.storage.db.repositories.artifacts import ArtifactsRepository
+        from application.storage.db.session import db_readonly
+
+        raw_ids = self._resolve_input_artifact_ids(node_config.input_documents)
+        if not raw_ids:
+            return []
+
+        supported = set(supported_types)
+        supports_images = any(t.startswith("image/") for t in supported)
+        max_files = int(getattr(settings, "WORKFLOW_NODE_NATIVE_MAX_FILES", 5))
+        max_bytes = int(getattr(settings, "SANDBOX_MAX_INPUT_BYTES", 25 * 1024 * 1024))
+
+        # One read-only connection for the whole batch; the resolved-version
+        # rows are collected, then storage reads happen outside the DB context.
+        resolved: List[tuple] = []
+        with db_readonly() as conn:
+            repo = ArtifactsRepository(conn)
+            for raw in raw_ids:
+                # A short ref (A1/...) resolves to an id within this run only; the
+                # resolved id is re-checked through the run-scoped gate so a forged
+                # or cross-run ref can never reach another tenant's bytes.
+                artifact_id = resolve_artifact_id(repo, raw, workflow_run_id=self.workflow_run_id)
+                artifact = (
+                    repo.get_artifact_in_parent(artifact_id, workflow_run_id=self.workflow_run_id)
+                    if artifact_id is not None
+                    else None
+                )
+                if artifact is None:
+                    raise ValueError(
+                        f'Document "{raw}" for node "{node_title}" was not found in this run.'
+                    )
+                version = repo.get_version(artifact_id, artifact["current_version"])
+                if not version or not version.get("storage_path"):
+                    raise ValueError(f"input document {artifact_id} has no stored content.")
+                resolved.append((str(artifact_id), artifact, version))
+
+        attachments: List[Dict[str, Any]] = []
+        native_count = 0
+        for artifact_id, artifact, version in resolved:
+            storage_path = version["storage_path"]
+            mime_type = version.get("mime_type") or "application/octet-stream"
+            filename = version.get("filename") or artifact.get("title") or artifact_id
+            size = version.get("size")
+            if isinstance(size, int) and size > max_bytes:
+                logger.warning(
+                    "Workflow node %s: document %s (%d bytes) exceeds the %d-byte cap; skipping",
+                    node_title, artifact_id, size, max_bytes,
+                )
+                continue
+
+            native_ok = self._is_native_mime(mime_type, supported, supports_images)
+            policy = node_config.file_passing
+            if policy == "native" and not native_ok:
+                raise ValueError(
+                    f'Model "{node_config.model_id or self.agent.model_id}" cannot read '
+                    f'"{mime_type}" natively for node "{node_title}".'
+                )
+            go_native = policy == "native" or (policy == "auto" and native_ok)
+            if go_native and native_count >= max_files:
+                logger.warning(
+                    "Workflow node %s: native file cap (%d) reached; extracting %s instead",
+                    node_title, max_files, filename,
+                )
+                go_native = False
+
+            if go_native:
+                # No bytes copied: the provider reads them from storage via ``path``.
+                attachments.append({"id": artifact_id, "mime_type": mime_type, "path": storage_path})
+                native_count += 1
+            else:
+                content = self._extract_attachment_text(storage_path, mime_type, filename, max_bytes)
+                if content is None:
+                    logger.warning(
+                        "Workflow node %s: could not extract text from %s; skipping",
+                        node_title, filename,
+                    )
+                    continue
+                # A non-native mime routes this through ``_append_unsupported_attachments``,
+                # which inlines ``content`` as text in the system prompt.
+                attachments.append(
+                    {"id": artifact_id, "mime_type": "text/plain", "content": content}
+                )
+        return attachments
+
+    @staticmethod
+    def _agent_supported_attachment_types(node_agent: "BaseAgent") -> List[str]:
+        """Return the provider's authoritative supported attachment mime types (handler's source)."""
+        llm = getattr(node_agent, "llm", None)
+        getter = getattr(llm, "get_supported_attachment_types", None)
+        if not callable(getter):
+            return []
+        types = getter()
+        return list(types) if isinstance(types, (list, tuple, set)) else []
+
+    @staticmethod
+    def _is_native_mime(mime_type: str, supported_types: set, supports_images: bool) -> bool:
+        """A mime is native if the model accepts it, or it is a PDF a vision model renders to images."""
+        if mime_type in supported_types:
+            return True
+        return mime_type == "application/pdf" and supports_images
+
+    def _extract_attachment_text(
+        self, storage_path: str, mime_type: str, filename: str, max_bytes: int
+    ) -> Optional[str]:
+        """Get an attachment's text: inline already-text formats, else extract via Docling; None on failure."""
+        from application.agents.tools.document_extractor import (
+            extract_markdown_from_bytes,
+            truncate_text_head_tail,
+        )
+        from application.storage.storage_creator import StorageCreator
+
+        try:
+            data = StorageCreator.get_storage().get_file(storage_path).read()
+        except Exception:
+            logger.exception("Workflow node: failed to read document bytes for extraction")
+            return None
+        # Defensive size gate: a NULL/missing version size skips the pre-read cap,
+        # so re-check the actual bytes before inlining or sandbox-extracting.
+        if len(data) > max_bytes:
+            logger.warning(
+                "Workflow node: document at %s (%d bytes) exceeds the %d-byte cap; skipping",
+                storage_path, len(data), max_bytes,
+            )
+            return None
+        if self._is_inline_text_mime(mime_type):
+            try:
+                text = data.decode("utf-8", errors="replace")
+            except Exception:
+                return None
+            # Bound the inlined text to a head+tail window so a large-but-under-cap
+            # text file can't blow the context (the Docling branch is already bounded).
+            return truncate_text_head_tail(text)
+        return extract_markdown_from_bytes(data, filename, self._session_id())
+
+    @staticmethod
+    def _is_inline_text_mime(mime_type: str) -> bool:
+        """Already-text formats are inlined directly (no Docling round-trip)."""
+        if mime_type.startswith("text/"):
+            return True
+        return mime_type in ("application/json", "application/xml")
+
     def _resolve_input_artifact_ids(self, inputs: List[str]) -> List[str]:
-        """Resolve node ``inputs`` (state-var names holding refs, or raw ids) to artifact ids."""
+        """Resolve node ``inputs`` (refs/ids, ``*`` token, or state vars holding a ref or a list of refs)."""
         resolved: List[str] = []
         for raw in inputs or []:
+            # ``*`` / ``input_documents`` expands to every run input document.
+            if isinstance(raw, str) and raw.strip() in ("*", "input_documents"):
+                resolved.extend(self._input_document_ids())
+                continue
             ref = self.state.get(raw) if isinstance(raw, str) else None
             if isinstance(ref, dict) and ref.get("artifact_id"):
                 resolved.append(str(ref["artifact_id"]))
+            elif isinstance(ref, list):
+                # A state var holding a list of ref dicts (e.g. input_documents).
+                for item in ref:
+                    if isinstance(item, dict) and item.get("artifact_id"):
+                        resolved.append(str(item["artifact_id"]))
             elif isinstance(raw, str) and raw.strip():
                 resolved.append(raw.strip())
-        return resolved
+        # Dedup preserving order so ``["*", "A1"]`` / duplicate refs don't attach twice.
+        return list(dict.fromkeys(resolved))
+
+    def _input_document_ids(self) -> List[str]:
+        """Return the artifact ids of every ref in ``state['input_documents']``."""
+        docs = self.state.get("input_documents")
+        if not isinstance(docs, list):
+            return []
+        return [str(d["artifact_id"]) for d in docs if isinstance(d, dict) and d.get("artifact_id")]
 
     def _session_id(self) -> str:
         """Sanitize the run id into the sandbox-gateway charset for the session key."""

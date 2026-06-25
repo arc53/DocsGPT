@@ -109,6 +109,84 @@ _EXTRACT_PROGRAM = (
 )
 
 
+def truncate_text_head_tail(text: str, max_bytes: Optional[int] = None) -> str:
+    """Bound text to a head+tail byte window so a large file can't flood context."""
+    cap = int(max_bytes or _MARKDOWN_MAX_BYTES)
+    if cap <= 0:
+        return text
+    encoded = text.encode("utf-8")
+    if len(encoded) <= cap:
+        return text
+    head = cap // 2
+    tail = cap - head
+    dropped = len(encoded) - head - tail
+    head_text = encoded[:head].decode("utf-8", errors="ignore")
+    tail_text = encoded[-tail:].decode("utf-8", errors="ignore")
+    return f"{head_text}\n\n...[truncated {dropped} bytes]...\n\n{tail_text}"
+
+
+def extract_markdown_from_bytes(
+    data: bytes,
+    filename: str,
+    session_id: str,
+    *,
+    markdown_max_bytes: Optional[int] = None,
+) -> Optional[str]:
+    """Run the fixed Docling program in a sandbox session and return the document's markdown, or None.
+
+    The bytes ride in as a DATA file the fixed program reads; nothing untrusted is
+    interpolated into the program. Returns ``None`` when Docling is unavailable or
+    extraction fails (the caller decides how to degrade).
+    """
+    safe_name = safe_filename(filename) or "document"
+    token = uuid.uuid4().hex
+    token_dir = f"extract/{token}"
+    input_path = f"{token_dir}/inputs/{safe_name}"
+    params_path = f"{token_dir}/params.json"
+    result_path = f"{token_dir}/result.json"
+    params = {
+        "input_path": input_path,
+        "markdown_max_bytes": int(markdown_max_bytes or _MARKDOWN_MAX_BYTES),
+        "max_tables": 0,
+    }
+    program = _EXTRACT_PROGRAM.format(params_path=params_path, result_path=result_path)
+    timeout = float(getattr(settings, "SANDBOX_EXEC_TIMEOUT", 60))
+
+    manager = SandboxCreator.get_manager()
+    try:
+        manager.open(session_id, ttl=timeout)
+    except Exception:
+        logger.exception("extract_markdown_from_bytes: failed to open sandbox session")
+        return None
+    try:
+        manager.put_file(session_id, input_path, data)
+        manager.put_file(session_id, params_path, json.dumps(params).encode("utf-8"))
+        result = manager.exec(session_id, program, timeout=timeout)
+        if not result.ok:
+            return None
+        raw = manager.get_file(session_id, result_path)
+    except Exception:
+        logger.exception("extract_markdown_from_bytes: extraction failed")
+        return None
+    finally:
+        manager.remove_path(session_id, token_dir)
+        try:
+            manager.close(session_id)
+        except Exception:
+            logger.exception("extract_markdown_from_bytes: session close failed")
+
+    if not raw:
+        return None
+    try:
+        extracted = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(extracted, dict) or extracted.get("error") or not extracted.get("ok"):
+        return None
+    markdown = extracted.get("markdown")
+    return markdown if isinstance(markdown, str) else None
+
+
 class DocumentExtractorTool(Tool):
     """Document Extractor
     Convert an input document artifact (pdf/docx/pptx/...) to compact, schema-validated structured JSON via Docling.
