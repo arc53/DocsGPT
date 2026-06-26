@@ -691,7 +691,7 @@ const ConversationBubble = forwardRef<
           </div>
         )}
         {message && (
-          <div className="my-2 ml-2 flex justify-start">
+          <div className="my-2 ml-2 flex flex-wrap justify-start gap-y-2">
             {type === 'ERROR' ? (
               <div className="relative mr-2 block items-center justify-center">
                 <div>{retryBtn}</div>
