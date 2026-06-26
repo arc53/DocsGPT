@@ -1,6 +1,8 @@
 services:
   frontend:
-    build: ../frontend
+    build:
+      context: ../frontend
+      target: development
     volumes:
     - ../frontend/src:/app/src
     environment:
