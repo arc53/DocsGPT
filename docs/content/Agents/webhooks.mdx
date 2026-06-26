@@ -88,6 +88,28 @@ Send an HTTP `POST` request to the agent's unique webhook URL with the required 
   </Tabs.Tab>
 </Tabs>
 
+### Triggering with GET (query parameters)
+
+The webhook listener also accepts `GET` requests, mapping the query string to the payload. This is handy for systems that can only issue a simple `GET` (for example a "ping this URL" integration):
+
+```bash
+curl "http://localhost:7091/api/webhooks/agents/your_webhook_token?question=Your+message+to+agent"
+```
+
+As with `POST`, the response is a JSON object containing the `task_id`.
+
+### Preventing duplicate triggers (Idempotency-Key)
+
+To make a trigger safe to retry, send an optional `Idempotency-Key` header. If the same key is seen again within 24 hours, DocsGPT does not enqueue a second task — it returns the **original** `task_id` instead. This prevents a retried or double-fired webhook from running the agent twice.
+
+```bash
+curl -X POST \
+  http://localhost:7091/api/webhooks/agents/your_webhook_token \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: order-4567-created" \
+  -d '{"question": "Your message to agent"}'
+```
+
 ### Step 2: Poll for the Result
 
 Once you have the `task_id`, periodically send a `GET` request to the `/api/task_status` endpoint until the task `status` is `SUCCESS` or `FAILURE`.
