@@ -294,33 +294,7 @@ export default function Prompts({
                       {selectedPrompt?.name || 'Select a prompt'}
                     </span>
                   </span>
-                  {selectedPrompt?.id && selectedPrompt.type !== 'public' && (
-                    <>
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEditModal(selectedPrompt);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            openEditModal(selectedPrompt);
-                          }
-                        }}
-                        className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20 focus-visible:ring-ring/50 mx-1 my-auto shrink-0 rounded-full p-1.5 transition-colors outline-none focus-visible:ring-[3px]"
-                        aria-label="Edit prompt"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </span>
-                      <span
-                        className="bg-border my-2.5 w-px shrink-0"
-                        aria-hidden="true"
-                      />
-                    </>
-                  )}
+
                   <span className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20 my-auto mr-2.5 ml-1 shrink-0 rounded-full p-1.5 transition-colors">
                     <ChevronDown
                       className={cn(
@@ -362,25 +336,21 @@ export default function Prompts({
                         >
                           <span className="truncate">{prompt.name}</span>
                           <div className="flex shrink-0 items-center gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openEditModal(prompt);
-                              }}
-                              className="group/btn hover:bg-foreground/15 dark:hover:bg-foreground/20 h-auto w-auto rounded p-1"
-                              aria-label={
-                                canModify ? 'Edit prompt' : 'View prompt'
-                              }
-                            >
-                              {canModify ? (
-                                <Pencil className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
-                              ) : (
+                            {!canModify && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEditModal(prompt);
+                                }}
+                                className="group/btn hover:bg-foreground/15 dark:hover:bg-foreground/20 h-auto w-auto rounded p-1"
+                                aria-label="View prompt"
+                              >
                                 <Eye className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
-                              )}
-                            </Button>
+                              </Button>
+                            )}
                             <Button
                               type="button"
                               variant="ghost"
@@ -437,6 +407,21 @@ export default function Prompts({
                 </Command>
               </PopoverContent>
             </Popover>
+            {selectedPrompt?.id && (
+              <button
+                type="button"
+                onClick={() => selectedPrompt && openEditModal(selectedPrompt as any)}
+                aria-label={selectedPrompt.type !== 'public' ? t('modals.prompts.editPrompt') : 'View prompt'}
+                title={selectedPrompt.type !== 'public' ? t('modals.prompts.editPrompt') : 'View prompt'}
+                className="border-border bg-card text-muted-foreground hover:bg-accent flex h-11 w-11 items-center justify-center rounded-3xl border transition-colors shrink-0"
+              >
+                {selectedPrompt.type !== 'public' ? (
+                  <Pencil className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </button>
+            )}
             {showAddButton && (
               <Button
                 type="button"
