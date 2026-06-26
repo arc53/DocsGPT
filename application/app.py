@@ -87,11 +87,11 @@ api.init_app(app)
 if settings.AUTH_TYPE in ("simple_jwt", "session_jwt", "oidc") and not settings.JWT_SECRET_KEY:
     key_file = ".jwt_secret_key"
     try:
-        with open(key_file, "r") as f:
+        with open(key_file, "r", encoding="utf-8") as f:
             settings.JWT_SECRET_KEY = f.read().strip()
     except FileNotFoundError:
         new_key = os.urandom(32).hex()
-        with open(key_file, "w") as f:
+        with open(key_file, "w", encoding="utf-8") as f:
             f.write(new_key)
         settings.JWT_SECRET_KEY = new_key
     except Exception as e:

@@ -248,7 +248,7 @@ class SimpleDirectoryReader(BaseReader):
                 parser_metadata = parser.get_file_metadata(input_file)
             else:
                 # do standard read
-                with open(input_file, "r", errors=self.errors) as f:
+                with open(input_file, "r", encoding="utf-8", errors=self.errors) as f:
                     data = f.read()
             
             # Calculate token count for this file
