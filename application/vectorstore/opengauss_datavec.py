@@ -227,6 +227,25 @@ class OpenGaussDataVecStore(BaseVectorStore):
                 (self._source_id,),
             )
 
+    def delete_chunks_by_source_path(self, path: str) -> int:
+        """Delete this source's chunks whose ``metadata.source`` equals ``path``.
+
+        One targeted statement instead of the base loop+scan. The path is bound
+        as a query parameter; only the table identifier is interpolated via
+        ``sql.Identifier``. Returns the number of rows deleted.
+        """
+        sql = self._sql
+        conn = self._get_connection()
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                sql.SQL(
+                    "DELETE FROM {table} "
+                    "WHERE source_id = %s AND metadata->>'source' = %s;"
+                ).format(table=sql.Identifier(_TABLE)),
+                (self._source_id, path),
+            )
+            return cur.rowcount
+
     def save_local(self, *args, **kwargs):
         pass
 

@@ -83,7 +83,7 @@ def get_prompt(prompt_id: str, prompts_collection=None) -> str:
     if prompt_id in preset_mapping:
         file_path = os.path.join(prompts_dir, preset_mapping[prompt_id])
         try:
-            with open(file_path, "r") as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 return f.read()
         except FileNotFoundError:
             raise FileNotFoundError(f"Prompt file not found: {file_path}")

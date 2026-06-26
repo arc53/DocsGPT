@@ -59,7 +59,7 @@ class DatabaseSeeder:
         )
 
         try:
-            with open(config_path, "r") as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f)
                 self._seed_from_config(config)
         except Exception as e:
