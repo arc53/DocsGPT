@@ -1,0 +1,114 @@
+---
+title: GraphRAG — Knowledge-Graph Retrieval
+description: Build a knowledge graph from a source at ingest time and retrieve over it with Personalized PageRank. Covers requirements, enabling, configuration, and the graph view.
+---
+
+import { Callout } from 'nextra/components'
+import Image from 'next/image'
+
+# GraphRAG
+
+GraphRAG augments classic vector retrieval with a **knowledge graph**. During ingestion DocsGPT uses an LLM to extract entities and the relationships between them from a source's chunks, and stores them as a graph alongside the vectors. At query time, a graph retriever uses Personalized PageRank (PPR) to walk that graph from the entities mentioned in your question, surfacing connected context that pure similarity search can miss — useful for multi-hop questions and queries that span related concepts.
+
+<Callout type="warning" emoji="⚠️">
+GraphRAG is **flag-gated** and currently **pgvector-only**. It is available only when both `GRAPHRAG_ENABLED=true` **and** `VECTOR_STORE=pgvector`. On any other vector store the enable action is rejected.
+</Callout>
+
+## Requirements
+
+- A PostgreSQL database with the `pgvector` extension (`VECTOR_STORE=pgvector`). See [PostgreSQL for User Data](/Deploying/Postgres-Migration).
+- `GRAPHRAG_ENABLED=true` in your environment.
+- An LLM configured for extraction (GraphRAG reuses your instance default model unless you override it).
+
+```env
+GRAPHRAG_ENABLED=true
+VECTOR_STORE=pgvector
+```
+
+The graph tables live in the same pgvector database as your embeddings and are sized to the embedding dimension. If you change embedding models you must re-ingest and re-extract (see [Embeddings](/Models/embeddings#important-embedding-dimensions-must-stay-consistent)).
+
+## How it works
+
+1. **Choose GraphRAG** for the source — either at upload time, or by enabling it on an existing source (see below). This sets the source's config to `graphrag` mode.
+2. **Extraction** runs over the source's chunks. For each chunk, the LLM extracts entities and relations, which are written into per-source graph tables. Extraction is durable and resumable via a checkpoint, so it survives restarts and re-runs from scratch each time you re-enable it.
+3. **Query.** Questions against the source are routed to the graph retriever, which runs Personalized PageRank from the query's entities to gather related context.
+
+<Callout type="info" emoji="ℹ️">
+If a source has no graph yet (extraction still running or failed), the graph retriever **falls back to classic vector retrieval** for that source — answers keep working, they just don't use the graph until it is ready.
+</Callout>
+
+## Enabling GraphRAG
+
+### At upload time (recommended)
+
+When you upload a new document, open **Advanced settings** and set **Retriever** to **GraphRAG** (the same dropdown also offers **Hybrid**). The source is created in `graphrag` mode and extraction is enqueued as part of ingestion — no extra step.
+
+<Image
+  src="/graph-rag-settings-before-upload.png"
+  alt="Upload dialog advanced settings showing the Retriever dropdown with Classic, Hybrid, and GraphRAG options"
+  width={661}
+  height={945}
+/>
+
+These are the same [per-source retrieval settings](/Sources/Per-source-configuration) you can change later — choosing the retriever up front just avoids a re-ingest.
+
+### On an existing source
+
+To turn an already-ingested source into a GraphRAG source, use the **Enable GraphRAG** action on the source (it shows a status badge while extraction runs), or call the API:
+
+```bash
+curl -X POST https://your-docsgpt/api/sources/<source_id>/graphrag/enable \
+  -H "Authorization: Bearer <token>"
+```
+
+The response returns a `task_id` for the extraction job:
+
+```json
+{ "success": true, "task_id": "..." }
+```
+
+Notes:
+
+- Requires write access to the source (owner or team `editor`).
+- Returns `400` if GraphRAG isn't available on the workspace (wrong vector store or flag off).
+- Re-running the action rebuilds the graph from scratch rather than no-opping against an existing one.
+- You cannot switch a source to `graphrag` through the [config PATCH endpoint](/Sources/Per-source-configuration#editing-the-config-via-api) — use the upload-time selector or this dedicated endpoint.
+
+## Configuration
+
+Instance-wide settings (see [App Configuration](/Deploying/DocsGPT-Settings)):
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `GRAPHRAG_ENABLED` | `false` | Master switch for the feature. |
+| `GRAPHRAG_EXTRACTION_MODEL` | `null` | Model used for extraction. `null` reuses the instance default model. |
+| `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION` | `2000` | Hard cap on how many chunks are extracted per source (cost control). |
+
+Per-source extraction knobs live under the source config's `graph` object and override the instance defaults:
+
+| Field | Default | Description |
+| --- | --- | --- |
+| `extraction_model` | `null` | Override the extraction model for this source. |
+| `max_chunks` | `null` | Override the chunk cap; `null` falls back to `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION`. |
+| `gleanings` | `0` | Extra extraction passes per chunk to catch entities missed on the first pass. Off by default (each pass costs additional LLM calls). |
+
+<Callout type="warning" emoji="⚠️">
+Graph extraction makes an LLM call per chunk (more if `gleanings > 0`), so it has a real token cost. The cost is attributed to token usage under a `graph_extraction` tag, and the `max_chunks` cap bounds it.
+</Callout>
+
+## Visualizing the graph
+
+GraphRAG sources expose a **graph view** in the UI — an interactive network of the extracted entities and relationships. It is backed by two read endpoints:
+
+```text
+GET /api/sources/<source_id>/graph                    # bounded {nodes, edges} overview
+GET /api/sources/<source_id>/graph/node/<node_id>     # one node and its neighbors
+```
+
+The overview is bounded to a default node limit to keep large graphs responsive.
+
+## Related
+
+- [Per-Source Configuration](/Sources/Per-source-configuration) — the config object GraphRAG plugs into.
+- [PostgreSQL for User Data](/Deploying/Postgres-Migration) — required pgvector setup.
+- [Embeddings](/Models/embeddings) — embedding-dimension constraints that also apply to the graph tables.

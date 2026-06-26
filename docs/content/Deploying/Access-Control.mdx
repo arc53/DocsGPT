@@ -1,0 +1,149 @@
+---
+title: Access Control, Roles & Teams
+description: How DocsGPT models permissions — global admin/user roles (RBAC), the admin dashboard, teams with per-team roles, and sharing agents, sources, prompts, and tools.
+---
+
+import { Callout } from 'nextra/components'
+
+# Access Control, Roles & Teams
+
+DocsGPT has two independent permission planes:
+
+- **Global RBAC** — every user holds the `admin` or `user` role for the whole instance. Admins can manage other users and see instance-wide usage and audit data.
+- **Team roles** — within a team a user is a `team_admin` or `team_member`, and resources can be shared to teams or individual members.
+
+The two planes never mix: a global `admin` is a superuser over *all* teams, but a `team_admin` is **not** a global admin.
+
+<Callout type="info" emoji="🔒">
+Roles are resolved **server-side on every request** and are never trusted from the JWT. The frontend route guards are cosmetic — the server-side decorators are the real boundary. Persisted roles apply under `AUTH_TYPE=oidc`; token-only modes (`simple_jwt`, `session_jwt`) can never hold the admin role.
+</Callout>
+
+## Global roles (RBAC)
+
+| Role | Capabilities |
+| --- | --- |
+| `user` | The default. Owns their own conversations, sources, agents, prompts, and tools. |
+| `admin` | Everything a user can do, plus the [admin dashboard](#admin-dashboard): user management, force-logout, role management, and instance-wide usage/audit. |
+
+To see the roles the current request resolves to, call:
+
+```text
+GET /api/user/me   →   { "user_id": "...", "roles": ["user"], "email": "...", "name": "...", "picture": "..." }
+```
+
+This is the canonical way to check a caller's effective roles (distinct from `/api/config`, which only reports the instance `auth_type`).
+
+## Granting admin
+
+There are four ways an account becomes an admin:
+
+1. **The `grant_admin` script** — run `python scripts/grant_admin.py <user_id>` on the server to grant (or `--revoke` / `--list`) the admin role directly. This is the canonical bootstrap for the first admin.
+2. **OIDC group mapping** — `OIDC_ADMIN_GROUPS` auto-grants admin to members of the listed IdP groups. See [below](#admin-via-oidc-groups).
+3. **Local no-auth mode** — `LOCAL_MODE_ADMIN=true` grants admin when `AUTH_TYPE=None` (self-host, no authentication).
+4. **Grant by an existing admin** — through the admin API/dashboard.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `OIDC_ADMIN_GROUPS` | — | Comma-separated IdP groups whose members are granted the global `admin` role. Re-checked at every login and silent renewal. Unset = no OIDC admin mapping. |
+| `LOCAL_MODE_ADMIN` | `false` | Grants admin in no-auth mode only (`AUTH_TYPE=None`). |
+
+<Callout type="warning" emoji="⚠️">
+**Never set `LOCAL_MODE_ADMIN=true` on a networked deployment.** It only makes sense for a single-user local install with `AUTH_TYPE=None`, where there is no identity to check.
+</Callout>
+
+### Bootstrapping the first admin
+
+Granting admin through the dashboard itself requires *already being* an admin, which creates a chicken-and-egg problem on a fresh deployment. Break it one of these ways:
+
+- **Run the script** on the server: `python scripts/grant_admin.py <user_id>` (the `user_id` is the OIDC `sub`). The grant is written to `user_roles` with `source='manual'` and takes effect on the user's next request. Use `--list` to see current admins and `--revoke` to remove a manual grant.
+- Set `OIDC_ADMIN_GROUPS` to a group you belong to, and sign in — you become an admin automatically.
+- For a no-auth local install, use `LOCAL_MODE_ADMIN=true`.
+
+### Admin via OIDC groups
+
+When `OIDC_ADMIN_GROUPS` is set, group membership is mapped to the admin role at every sign-in *and* every [silent renewal](/Deploying/OIDC-SSO#silent-session-renewal) — so removing a user from the admin group revokes their admin at the next renewal, just like the [sign-in allowlist](/Deploying/OIDC-SSO#restricting-sign-in-by-group). It is independent of `OIDC_ALLOWED_GROUPS` (which controls *whether* a user may sign in at all). Leaving `OIDC_ADMIN_GROUPS` unset never mass-revokes admin.
+
+```env
+OIDC_ADMIN_GROUPS=platform-admins
+# OIDC_GROUPS_CLAIM=groups   # only if your IdP uses a different claim name
+```
+
+If your IdP only exposes groups via the userinfo endpoint, DocsGPT backfills them from there during reconciliation, the same as the allowlist.
+
+## Admin dashboard
+
+Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoint requires the admin role). All mutating actions are written to the `auth_events` audit log with the acting admin recorded in the metadata.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/admin/overview` | Instance overview counts. |
+| `GET` | `/api/admin/users` | List users (paginated; supports a `user_id` filter). |
+| `GET` | `/api/admin/users/<id>` | Drill into a single user. |
+| `PATCH` | `/api/admin/users/<id>` | Activate / deactivate a user (deactivation revokes their sessions). |
+| `POST` | `/api/admin/users/<id>/role` | Grant the admin role (guards against removing the last admin). |
+| `DELETE` | `/api/admin/users/<id>/role` | Revoke the admin role. |
+| `POST` | `/api/admin/users/<id>/revoke-sessions` | Force-logout a user. |
+| `GET` | `/api/admin/admins` | List current admins. |
+| `GET` | `/api/admin/usage` | Token-usage series and top users. |
+| `GET` | `/api/admin/audit` | Authentication/admin audit feed. |
+| `GET` | `/api/admin/devices/audit` | Remote-device audit feed. |
+| `GET` | `/api/admin/teams` | Instance-wide oversight of all teams. |
+
+<Callout type="info" emoji="ℹ️">
+Deactivating a user via the dashboard works for any auth type, while OIDC deployments can also offboard through [SCIM](/Deploying/OIDC-SSO#scim-user-provisioning). Both revoke live sessions immediately.
+</Callout>
+
+## Teams
+
+Teams let a group of users collaborate and share resources. Teams are self-serve — any user can create one and manage its membership.
+
+### Team roles
+
+| Role | Capabilities |
+| --- | --- |
+| `team_member` | Belongs to the team; can use resources shared with the team. |
+| `team_admin` | Manages membership and team settings. Implies `team_member`. |
+
+The team **owner** is a distinct concept from `team_admin`: ownership can be transferred, and a global `admin` is treated as a superuser over every team.
+
+### Managing a team
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` / `POST` | `/api/teams` | List your teams / create a team. |
+| `GET` / `PATCH` / `DELETE` | `/api/teams/<id>` | Read, update, or delete a team. |
+| `GET` / `POST` | `/api/teams/<id>/members` | List members / add a member. |
+| `PATCH` / `DELETE` | `/api/teams/<id>/members/<member_id>` | Change a member's role / remove (or leave). |
+| `POST` | `/api/teams/<id>/transfer_owner` | Transfer ownership. |
+
+Membership and removal are guarded so a team can never be left without an admin (the last-admin guard).
+
+<Callout type="info" emoji="ℹ️">
+Members are added by email (or subject id). The invitee **must have signed in at least once** so DocsGPT can resolve them to a user account.
+</Callout>
+
+## Sharing resources with a team
+
+Four resource types can be shared: **agents**, **sources**, **prompts**, and **tools**. Sharing is **additive** — it grants access to others without changing ownership.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` / `POST` / `DELETE` | `/api/teams/<id>/grants` | List, create, or revoke a share within a team. |
+| `GET` | `/api/resource_shares` | List shares visible to the caller. |
+
+Sharing rules:
+
+- Only the **owner** of a resource can share it.
+- A share targets either the **whole team** or a **single member**.
+- Each share carries an access level: **`viewer`** (read-only) or **`editor`** (read and modify).
+- `editor` is not the same as owner — an editor can change a resource but cannot delete it or re-share it.
+- Shared tools run server-side with the **owner's** credentials; a grantee never sees the owner's secrets.
+
+## Audit log
+
+Access-control actions are appended to the `auth_events` table alongside the [authentication events](/Deploying/OIDC-SSO#login-auditing). This includes admin actions — `admin_user_activated` / `admin_user_deactivated`, `admin_sessions_revoked`, `role_granted` / `role_revoked` (with `metadata.source` = `manual` or `oidc_group`) — and team events (`team.create`, `team.member_add`, `team.member_role`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete`). The acting admin is recorded in the event metadata.
+
+## Related
+
+- [SSO with OIDC](/Deploying/OIDC-SSO) — sign-in, group allowlists, and the `auth_events` table.
+- [App Configuration](/Deploying/DocsGPT-Settings) — the full settings reference.
