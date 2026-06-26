@@ -345,3 +345,51 @@ curl -X POST http://localhost:7091/stream \
 - If the selected model/provider does not support a file type natively, DocsGPT falls back to parsed text content.
 - For providers that support images but not native PDF file attachments, DocsGPT can convert PDF pages to images (synthetic PDF support).
 - Attachments are user-scoped. Upload and query must be done under the same user context (same API key owner or same JWT user).
+
+## Agent Portability (Export & Import)
+
+Agents can be exported to a portable YAML file and imported into another DocsGPT instance (or back into the same one). This is how you move an agent between environments or share a reproducible definition.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/export_agent?id=<agent_id>` | Download the agent as a `*.agent.yaml` file. |
+| `POST` | `/api/import_agent/plan` | Dry-run an import: parse a YAML file and return a resolution plan without creating anything. |
+| `POST` | `/api/import_agent` | Import a YAML file, creating the agent as a **draft**. |
+
+```bash
+# Export
+curl -L "https://your-docsgpt/api/export_agent?id=<agent_id>" \
+  -H "Authorization: Bearer <token>" -o my-agent.agent.yaml
+
+# Preview what an import would do
+curl -X POST https://your-docsgpt/api/import_agent/plan \
+  -H "Authorization: Bearer <token>" \
+  --data-binary @my-agent.agent.yaml
+
+# Import (creates a draft agent)
+curl -X POST https://your-docsgpt/api/import_agent \
+  -H "Authorization: Bearer <token>" \
+  --data-binary @my-agent.agent.yaml
+```
+
+Notes:
+
+- **Secrets are stripped on export** — API keys and tool credentials are never written into the YAML, so you re-enter them after import.
+- The **plan** endpoint resolves references (sources, tools, prompts) and reports what will be created or matched, so you can review before committing.
+- Imported tool URLs are validated against SSRF protections, the same as when creating tools normally.
+- **Workflow agents cannot be exported yet** — exporting one returns `400`.
+
+## Searching Conversations
+
+Search across your conversations by name and message content:
+
+```text
+GET /api/search_conversations?q=<query>&limit=30
+```
+
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `q` | — (required) | Case-insensitive substring to search for. |
+| `limit` | `30` | Max results (max `100`). |
+
+Each result includes a `match_field` (`name`, `prompt`, or `response`) and a `match_snippet` showing the matched text in context, in addition to the fields returned by `/api/get_conversations`.

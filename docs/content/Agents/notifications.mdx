@@ -1,0 +1,91 @@
+---
+title: Realtime Events & Notifications (SSE)
+description: Subscribe to DocsGPT's server-sent events channel for live notifications — ingestion progress, tool approvals, MCP OAuth completion — and reconnect to an in-flight chat answer.
+---
+
+import { Callout } from 'nextra/components'
+
+# Realtime Events & Notifications
+
+DocsGPT pushes realtime updates to the browser over **Server-Sent Events (SSE)**. This is what powers the upload toasts, tool-approval prompts, and other live notifications in the UI. There are two channels:
+
+- **User events** — `GET /api/events`: a per-user notification stream (ingestion progress, tool approvals, MCP OAuth completion, …).
+- **Chat reconnect** — `GET /api/messages/<message_id>/events`: resume an answer stream that was interrupted mid-generation.
+
+<Callout type="info" emoji="ℹ️">
+Both channels require Redis (already a DocsGPT dependency). The publisher can be turned off instance-wide with `ENABLE_SSE_PUSH=false`.
+</Callout>
+
+## User events channel
+
+Open an SSE connection to receive notifications for the authenticated user:
+
+```text
+GET /api/events
+Accept: text/event-stream
+Authorization: Bearer <token>
+```
+
+Each event is a JSON object with a `type` field, for example:
+
+```text
+id: 1718900000000-0
+data: {"type":"source.ingest.queued","scope":{"id":"<source_id>"}, ...}
+```
+
+Common event types:
+
+| Type | Meaning |
+| --- | --- |
+| `source.ingest.queued` | A source ingestion task was enqueued (drives the upload toast). |
+| `mcp.oauth.completed` | An MCP server's OAuth handshake finished. |
+| tool-approval events | An agent is requesting approval to run a tool. |
+| `backlog.truncated` | The client's cursor slid off the retained backlog window — clear your cursor and refetch state. |
+
+### Reconnecting and backlog replay
+
+Events are journaled per user in a Redis Stream so a client that reconnects can catch up on what it missed. Send the last id you processed and DocsGPT replays everything after it:
+
+```text
+GET /api/events
+Last-Event-ID: 1718900000000-0
+```
+
+(You may also pass it as a `last_event_id` query parameter.) Each delivered event carries its own `id:`, so your cursor advances as you read. If you fall a long way behind, the snapshot is delivered across several reconnects rather than all at once.
+
+A few bounded behaviors to be aware of:
+
+- The backlog is capped at `EVENTS_STREAM_MAXLEN` entries (default 1000). If your `Last-Event-ID` is older than the oldest retained entry, you receive a `backlog.truncated` event — reset your cursor and refetch current state.
+- Each snapshot is capped at `EVENTS_REPLAY_MAX_PER_REQUEST` entries per request (default 200); reconnect to continue.
+- There is a per-user cap on simultaneous connections (`SSE_MAX_CONCURRENT_PER_USER`, default 8) and a windowed replay budget. Exceeding either returns **HTTP 429** — back off and retry.
+
+## Chat answer reconnect
+
+When an answer is streaming and the connection drops, resume it without losing the in-progress generation:
+
+```text
+GET /api/messages/<message_id>/events
+```
+
+This replays the message's events past your last-seen sequence number and tails the rest live. It is backed by the Postgres `message_events` journal (retained for `MESSAGE_EVENTS_RETENTION_DAYS`, default 14).
+
+<Callout type="warning" emoji="⚠️">
+The chat reconnect endpoint is a native-async route served by the ASGI entrypoint. Under a plain `flask run` dev server it returns `404`; run the backend via the ASGI app (`uvicorn application.asgi:asgi_app`) or the production gunicorn uvicorn worker to use it. See the [Development Environment](/Deploying/Development-Environment) guide.
+</Callout>
+
+## Settings
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `ENABLE_SSE_PUSH` | `true` | Master switch for the publisher and channel. |
+| `EVENTS_STREAM_MAXLEN` | `1000` | Per-user backlog cap (approximate). |
+| `SSE_KEEPALIVE_SECONDS` | `15` | Keepalive comment-frame cadence (keep below your proxy's idle timeout). |
+| `SSE_MAX_CONCURRENT_PER_USER` | `8` | Max simultaneous SSE connections per user (`0` disables the cap). |
+| `EVENTS_REPLAY_MAX_PER_REQUEST` | `200` | Max backlog entries per replay request. |
+| `EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW` | `30` | Per-user replay requests per window (`0` disables). |
+| `EVENTS_REPLAY_BUDGET_WINDOW_SECONDS` | `60` | Replay budget window length. |
+| `MESSAGE_EVENTS_RETENTION_DAYS` | `14` | Retention for the chat-stream `message_events` journal. |
+
+<Callout type="info" emoji="ℹ️">
+Operators debugging delivery issues ("the toast never appeared", "the answer didn't reconnect") can follow the SSE notifications runbook in the repository at `docs/runbooks/sse-notifications.md`.
+</Callout>
