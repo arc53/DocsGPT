@@ -131,6 +131,11 @@ const ConversationBubble = forwardRef<
 
   const formatToolName = (toolName: string | undefined): string => {
     if (!toolName) return '';
+    // Display-name overrides for tools whose label differs from the formatted key.
+    const overrides: Record<string, string> = {
+      artifact_generator: 'Artifact',
+    };
+    if (overrides[toolName]) return overrides[toolName];
     return toolName
       .split('_')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
@@ -691,9 +696,9 @@ const ConversationBubble = forwardRef<
           </div>
         )}
         {message && (
-          <div className="my-2 ml-2 flex flex-wrap justify-start gap-y-2">
+          <div className="my-2 ml-2 flex flex-wrap justify-start gap-2">
             {type === 'ERROR' ? (
-              <div className="relative mr-2 block items-center justify-center">
+              <div className="relative block items-center justify-center">
                 <div>{retryBtn}</div>
               </div>
             ) : (
@@ -702,7 +707,7 @@ const ConversationBubble = forwardRef<
                   completedArtifactCalls.map((artifactCall, artifactIndex) => (
                     <div
                       key={artifactCall.call_id ?? artifactIndex}
-                      className="relative mr-2 flex items-center justify-center"
+                      className="relative flex items-center justify-center"
                     >
                       <Button
                         type="button"
@@ -743,11 +748,11 @@ const ConversationBubble = forwardRef<
                   ))}
                 {!isStreaming && (
                   <>
-                    <div className="relative mr-2 block items-center justify-center">
+                    <div className="relative block items-center justify-center">
                       <CopyButton textToCopy={message} />
                     </div>
                     {research && message && (
-                      <div className="relative mr-2 block items-center justify-center">
+                      <div className="relative block items-center justify-center">
                         <Button
                           type="button"
                           variant="ghost"
@@ -782,12 +787,12 @@ const ConversationBubble = forwardRef<
                         </Button>
                       </div>
                     )}
-                    <div className="relative mr-2 block items-center justify-center">
+                    <div className="relative block items-center justify-center">
                       <SpeakButton text={message} />
                     </div>
                     {handleFeedback && (
                       <>
-                        <div className="relative mr-2 flex items-center justify-center">
+                        <div className="relative flex items-center justify-center">
                           <Button
                             type="button"
                             variant="ghost"
@@ -810,7 +815,7 @@ const ConversationBubble = forwardRef<
                           </Button>
                         </div>
 
-                        <div className="relative mr-2 flex items-center justify-center">
+                        <div className="relative flex items-center justify-center">
                           <Button
                             type="button"
                             variant="ghost"

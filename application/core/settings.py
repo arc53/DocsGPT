@@ -373,7 +373,7 @@ class Settings(BaseSettings):
     DAYTONA_API_KEY: Optional[str] = None  # Daytona Cloud API key (secret)
     DAYTONA_API_URL: Optional[str] = None  # override Daytona API base URL, if self-targeting
     DAYTONA_TARGET: Optional[str] = None  # Daytona region/target, e.g. "us"
-    DAYTONA_SNAPSHOT: Optional[str] = None  # snapshot/image id to create sandboxes from
+    DAYTONA_SNAPSHOT: Optional[str] = None  # image for new sandboxes; render libs via scripts/build_daytona_snapshot.py
     DAYTONA_LANGUAGE: str = "python"  # default runtime language for created sandboxes
     DAYTONA_AUTO_STOP_INTERVAL: int = 15  # minutes idle before Daytona auto-stops a sandbox (0 disables)
     DAYTONA_AUTO_DELETE_INTERVAL: int = 60  # minutes after stop before Daytona auto-deletes (-1 disables)

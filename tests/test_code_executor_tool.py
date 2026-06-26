@@ -108,12 +108,12 @@ def test_shape_payload_ok_with_artifacts():
 def test_shape_payload_error_carries_clean_message_no_hang():
     tool = _tool()
     result = ExecResult(
-        status="error", error_name="TimeoutError",
-        error_value="execution exceeded 1.0s", exit_code=-1,
+        status="error", error_name="RuntimeError",
+        error_value="kernel reset mid-run", exit_code=-1,
     )
     payload = tool._shape_payload(result, artifacts=[], inputs_loaded=[])
     assert payload["status"] == "error"
-    assert payload["error"] == "TimeoutError: execution exceeded 1.0s"
+    assert payload["error"] == "RuntimeError: kernel reset mid-run"
     assert payload["artifacts"] == []
 
 
@@ -148,16 +148,37 @@ def test_resolve_session_id_sanitizes_disallowed_chars():
     assert re.fullmatch(r"[A-Za-z0-9_-]+", sid)
 
 
-def test_resolve_timeout_picks_the_stricter_cap(monkeypatch):
+def test_exec_timeout_is_a_fixed_uncapped_value(monkeypatch):
+    from application.core import settings as settings_module
+
+    # The per-run wall-clock cap is fixed from settings; callers cannot pass one.
+    monkeypatch.setattr(settings_module.settings, "SANDBOX_EXEC_TIMEOUT", 60, raising=False)
+    assert CodeExecutorTool._exec_timeout() == 60.0
+    monkeypatch.setattr(settings_module.settings, "SANDBOX_EXEC_TIMEOUT", 90, raising=False)
+    assert CodeExecutorTool._exec_timeout() == 90.0
+    # The action schema no longer advertises language/libraries/timeout.
+    props = _tool().get_actions_metadata()[0]["parameters"]["properties"]
+    assert "timeout" not in props and "language" not in props and "libraries" not in props
+
+
+def test_is_timeout_detects_any_backend_naming():
+    assert CodeExecutorTool._is_timeout(ExecResult(error_name="TimeoutError", error_value="x"))
+    assert CodeExecutorTool._is_timeout(ExecResult(error_name="DaytonaTimeoutError"))
+    assert CodeExecutorTool._is_timeout(ExecResult(error_value="process timed out"))
+    assert not CodeExecutorTool._is_timeout(ExecResult(error_name="ValueError", error_value="boom"))
+
+
+def test_timeout_result_guides_backgrounding(monkeypatch):
     from application.core import settings as settings_module
 
     monkeypatch.setattr(settings_module.settings, "SANDBOX_EXEC_TIMEOUT", 60, raising=False)
     tool = _tool()
-    assert tool._resolve_timeout(10) == 10.0  # under the cap
-    assert tool._resolve_timeout(999) == 60.0  # clamped to cap
-    assert tool._resolve_timeout(None) == 60.0  # default
-    assert tool._resolve_timeout("bad") == 60.0  # invalid -> default
-    assert tool._resolve_timeout(-5) == 60.0  # non-positive -> default
+    timed_out = ExecResult(status="error", error_name="TimeoutError", error_value="execution exceeded 60s")
+    err = tool._shape_payload(timed_out, [], [])["error"]
+    assert "60s" in err and "background" in err.lower() and "poll" in err.lower()
+    # A non-timeout failure keeps the raw name/value.
+    crashed = ExecResult(status="error", error_name="ValueError", error_value="boom")
+    assert tool._shape_payload(crashed, [], [])["error"] == "ValueError: boom"
 
 
 def test_coerce_int_and_keep_alive():
@@ -187,10 +208,11 @@ def test_run_code_metadata_reflects_require_approval():
     assert ungated.preview_decision("other", {}) == (True, False)
 
 
-def test_config_requirements_expose_approval_and_backend():
-    reqs = CodeExecutorTool({}, user_id="u").get_config_requirements()
-    assert "require_approval" in reqs
-    assert "sandbox_backend" in reqs
+def test_config_requirements_is_empty():
+    # Approval is an action-level flag (see test_run_code_metadata_reflects_require_approval)
+    # and the sandbox backend is a deployment-level setting, so the tool advertises no
+    # user-configurable requirements.
+    assert CodeExecutorTool({}, user_id="u").get_config_requirements() == {}
 
 
 def test_execute_action_rejects_unknown_action_and_missing_code():

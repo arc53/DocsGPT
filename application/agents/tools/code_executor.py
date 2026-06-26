@@ -77,9 +77,11 @@ class CodeExecutorTool(Tool):
             {
                 "name": "run_code",
                 "description": (
-                    "Execute code in a sandboxed, stateful session bound to this conversation. "
+                    "Execute Python in a sandboxed, stateful session bound to this conversation. "
                     "Files written by the code are captured as downloadable artifacts; only a "
-                    "compact summary (output tail + artifact references) is returned, never raw bytes."
+                    "compact summary (output tail + artifact references) is returned, never raw bytes. "
+                    "Each call is capped at ~60s of wall-clock; for longer work, start it in the "
+                    "background and poll with additional run_code calls (use persist=true to keep state)."
                 ),
                 "active": True,
                 "require_approval": self._require_approval,
@@ -88,16 +90,8 @@ class CodeExecutorTool(Tool):
                     "properties": {
                         "code": {
                             "type": "string",
-                            "description": "Source code to execute in the session.",
-                        },
-                        "language": {
-                            "type": "string",
-                            "description": "Programming language (default: python).",
-                        },
-                        "libraries": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Packages to ensure are installed before running.",
+                            "description": "Python source to execute in the session. Install packages from "
+                            "within the code itself (e.g. subprocess pip install) if needed.",
                         },
                         "inputs": {
                             "type": "array",
@@ -105,10 +99,6 @@ class CodeExecutorTool(Tool):
                             "description": "Files to materialize into the workspace; each accepts the short "
                             "ref like `A1` returned by a previous artifact action, a full artifact id, or "
                             "the name/id of a file the user attached to this conversation.",
-                        },
-                        "timeout": {
-                            "type": "integer",
-                            "description": "Wall-clock timeout in seconds for this execution.",
                         },
                         "ttl": {
                             "type": "integer",
@@ -133,21 +123,9 @@ class CodeExecutorTool(Tool):
         ]
 
     def get_config_requirements(self) -> Dict[str, Any]:
-        """Return configuration requirements (approval gate + backend selection)."""
-        return {
-            "require_approval": {
-                "type": "boolean",
-                "label": "Require approval",
-                "description": "Pause for human approval before each code execution.",
-                "required": False,
-            },
-            "sandbox_backend": {
-                "type": "string",
-                "label": "Sandbox backend",
-                "description": "Code-execution backend (defaults to the SANDBOX_BACKEND setting).",
-                "required": False,
-            },
-        }
+        """Return configuration requirements (none; approval is an action-level flag,
+        and the sandbox backend is a deployment-level setting)."""
+        return {}
 
     def get_artifact_id(self, action_name: str, **kwargs: Any) -> Optional[str]:
         """Return the primary produced artifact id so the UI artifact rail lights up."""
@@ -184,7 +162,7 @@ class CodeExecutorTool(Tool):
 
         should_capture = kwargs.get("capture_artifacts", True)
         ttl = self._coerce_int(kwargs.get("ttl"))
-        timeout = self._resolve_timeout(kwargs.get("timeout"))
+        timeout = self._exec_timeout()
         inputs = kwargs.get("inputs") or []
 
         manager = SandboxCreator.get_manager()
@@ -356,11 +334,21 @@ class CodeExecutorTool(Tool):
         if stderr_tail:
             payload["stderr_tail"] = stderr_tail
         if not result.ok:
-            payload["error"] = (
-                f"{result.error_name}: {result.error_value}"
-                if result.error_name
-                else (result.error_value or "execution error")
-            )
+            if self._is_timeout(result):
+                cap = int(self._exec_timeout())
+                payload["error"] = (
+                    f"Execution timed out. Each run_code call is capped at {cap}s and the limit "
+                    "cannot be raised. For long-running work, start it in the background (e.g. launch a "
+                    "subprocess or `nohup ... &` and write progress to a file) and return immediately, "
+                    "then poll with additional run_code calls to check on it. Pass persist=true (or a "
+                    "ttl) so the background process and its files survive between calls."
+                )
+            else:
+                payload["error"] = (
+                    f"{result.error_name}: {result.error_value}"
+                    if result.error_name
+                    else (result.error_value or "execution error")
+                )
         if inputs_loaded:
             payload["inputs_loaded"] = inputs_loaded
         return payload
@@ -387,13 +375,16 @@ class CodeExecutorTool(Tool):
             return None
         return parsed if parsed > 0 else None
 
-    def _resolve_timeout(self, requested: Any) -> float:
-        """Return the stricter of the requested timeout and the sandbox's default cap."""
-        cap = float(getattr(settings, "SANDBOX_EXEC_TIMEOUT", 60))
-        parsed = self._coerce_int(requested)
-        if parsed is None:
-            return cap
-        return float(min(parsed, cap))
+    @staticmethod
+    def _exec_timeout() -> float:
+        """Return the fixed per-run wall-clock cap (SANDBOX_EXEC_TIMEOUT; not caller-adjustable)."""
+        return float(getattr(settings, "SANDBOX_EXEC_TIMEOUT", 60))
+
+    @staticmethod
+    def _is_timeout(result: ExecResult) -> bool:
+        """True when a failed exec looks like a wall-clock timeout (any backend's naming/message)."""
+        blob = f"{result.error_name or ''} {result.error_value or ''}".lower()
+        return "timeout" in blob or "timed out" in blob
 
     @staticmethod
     def _keep_alive(persist: Any, ttl: Optional[int]) -> bool:

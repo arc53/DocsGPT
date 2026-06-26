@@ -109,6 +109,31 @@ app chooses it). The same applies to k8s: `SANDBOX_KERNEL_NAME=docsgpt-python`
 is set on the `docsgpt-api` and `docsgpt-worker` deployments in
 `deployment/k8s/deployments/docsgpt-deploy.yaml`.
 
+## Artifact rendering on Daytona (snapshot)
+
+The `artifact` tool renders `presentation` / `document` / `spreadsheet` / `pdf`
+specs by running a fixed renderer **inside the sandbox** that imports
+`python-pptx`, `python-docx`, `openpyxl`, and `reportlab` (HTML/markdown need no
+library). The self-hosted Jupyter runner inherits these from the backend venv,
+but Daytona's default snapshot is a plain Python image — so under
+`SANDBOX_BACKEND=daytona` those renders fail with `render failed: ExecutionError`
+(a `ModuleNotFoundError` raised inside the sandbox). HTML/markdown still work.
+
+Bake the libraries into a Daytona snapshot once, then point `DAYTONA_SNAPSHOT`
+at it:
+
+```bash
+# Reads DAYTONA_API_KEY / DAYTONA_API_URL / DAYTONA_TARGET from .env:
+python scripts/build_daytona_snapshot.py        # builds "docsgpt-artifacts-py312"
+# then in .env:
+#   DAYTONA_SNAPSHOT=docsgpt-artifacts-py312
+```
+
+The snapshot lives in **your** Daytona account, so each deployment builds its
+own — the script is idempotent and skips if the name already exists. Keep the
+pins in `scripts/build_daytona_snapshot.py` in sync with the backend venv so the
+Daytona render output matches the Jupyter-backend output.
+
 ## Document reading (parsing worker — not the sandbox)
 
 Document reading no longer runs in this sandbox. The `read_document` tool and the
