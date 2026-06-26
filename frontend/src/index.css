@@ -905,6 +905,22 @@ Avoid over-scrolling in mobile browsers
   }
   body {
     @apply bg-background text-foreground;
+    /* Ensure iOS Safari fills the overscroll area (rubber-band) with the
+       correct background instead of defaulting to white. */
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+  }
+  /* In dark mode Safari on iOS uses the `color-scheme` property to tint its
+     own chrome (address bar, home indicator area). Without this the bottom
+     overscroll region and toolbar borders remain white even when the page is
+     in dark mode. Setting it on <html> also fills the safe-area insets. */
+  html {
+    color-scheme: light;
+    background-color: var(--background);
+  }
+  html.dark {
+    color-scheme: dark;
+    background-color: var(--background);
   }
 }
 
