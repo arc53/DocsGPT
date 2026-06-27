@@ -425,7 +425,7 @@ def list_models():
         # Repository rows now go through ``coerce_pg_native`` at SELECT
         # time, so timestamps arrive as ISO 8601 strings. Parse before
         # taking ``.timestamp()``; fall back to ``time.time()`` only when
-        # the value is genuinely missing or unparseable.
+        # the value is genuinely missing or unparsable.
         created = agent.get("created_at") or agent.get("createdAt")
         if isinstance(created, str):
             try:
