@@ -35,6 +35,16 @@ When the agent completes its task, it stores the result in the shared state.
   - *Custom*: You can set this to something meaningful, like `summary` or `translated_text`.
 - **Streaming**: If "Stream to user" is enabled, the output is sent to the user in real-time as it is generated, in addition to being saved to the state.
 
+### Documents
+
+An agent node can receive documents as inputs. Choose which documents the node sees:
+
+- **All**: every document attached to the run.
+- **None**: no documents.
+- **Choose**: a specific set that you select.
+
+For how a chosen document reaches the model, the node can pass it natively (send the file to a model that accepts files) or extract it to text first. The default picks automatically based on the model and the file type.
+
 ---
 
 ## Set State Node
@@ -63,3 +73,15 @@ You can define multiple operations in a single node. Each operation targets a sp
 - **Loop Counters**: Use a *Set State* node to initialize a counter (`i = 0`) before a loop, and another to increment it inside the loop.
 - **Accumulators**: Use *Append* to collect results from multiple parallel branches into a single list.
 - **Renaming**: Copy the output of a previous node to a more generic name (e.g., set `context` to `{{search_results}}`) so subsequent nodes can use a standard variable name.
+
+---
+
+## Code Node
+
+The **Code Node** runs a script in a sandboxed session bound to the workflow run. Use it to transform data, parse files, cross-check documents, or build a report that later nodes consume.
+
+- **Code**: the script to run. The workflow state is available to the script as data, so it can read variables, compute, and write results back.
+- **Inputs**: documents or artifacts to place in the workspace before the script runs. Each input accepts a produced artifact reference, a full artifact id, or an attached file.
+- **Outputs**: any files the script writes are captured as artifacts and surfaced in the run view. Write a small JSON value back to the state to pass a decision or summary to later nodes.
+
+Runs are sandboxed and have a fixed time limit, so keep each step focused. See [Artifacts and Code Execution](/Tools/artifacts-and-code-execution) for the sandbox backends and configuration.
