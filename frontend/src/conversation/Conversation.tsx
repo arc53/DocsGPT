@@ -354,14 +354,20 @@ export default function Conversation() {
               ) : undefined
             }
           />
-          <div className="from-background pointer-events-none absolute right-1.5 bottom-0 left-0 h-6 rounded-t-2xl bg-linear-to-t to-transparent" />
+          <div
+            className={`from-background pointer-events-none absolute bottom-0 left-1/2 h-6 w-full -translate-x-1/2 rounded-t-2xl bg-linear-to-t to-transparent bg-clip-content px-2 ${
+              isSplitArtifactOpen
+                ? 'max-w-325'
+                : 'max-w-325 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12'
+            }`}
+          />
         </div>
 
         <div
           className={`bg-opacity-0 z-3 flex h-auto w-full flex-col items-end self-center rounded-2xl py-1 ${
             isSplitArtifactOpen
-              ? 'max-w-[1300px]'
-              : 'max-w-[1300px] md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12'
+              ? 'max-w-325'
+              : 'max-w-325 md:w-9/12 lg:w-8/12 xl:w-8/12 2xl:w-6/12'
           }`}
         >
           <div className="flex w-full items-center rounded-full px-2">
