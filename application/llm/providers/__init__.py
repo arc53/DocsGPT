@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from application.llm.providers.astraflow import AstraflowCNProvider, AstraflowProvider
 from application.llm.providers.anthropic import AnthropicProvider
 from application.llm.providers.base import Provider
 from application.llm.providers.docsgpt import DocsGPTProvider
@@ -38,6 +39,8 @@ ALL_PROVIDERS: List[Provider] = [
     GroqProvider(),
     OpenRouterProvider(),
     NovitaProvider(),
+    AstraflowProvider(),
+    AstraflowCNProvider(),
     HuggingFaceProvider(),
     LlamaCppProvider(),
     PremAIProvider(),
