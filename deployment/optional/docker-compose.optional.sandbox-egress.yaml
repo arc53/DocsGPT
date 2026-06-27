@@ -1,0 +1,71 @@
+# Optional egress-firewall overlay for the docsgpt-sandbox runner (compose).
+#
+# Docker Compose cannot express L3 egress filtering the way a Kubernetes
+# NetworkPolicy can, so SSRF containment in compose deployments is delivered by
+# routing the sandbox's outbound traffic through an egress-gateway sidecar that
+# DENIES private / link-local / metadata ranges and ALLOWS the public internet.
+#
+# Two viable approaches; pick one:
+#
+#  (1) Host / cloud firewall (simplest, recommended for single-host compose):
+#      Drop egress to RFC1918 (10/8, 172.16/12, 192.168/16), link-local
+#      (169.254/16, incl. the 169.254.169.254 metadata IP), and ULA on the
+#      docsgpt-sandbox container's interface using iptables/nftables on the
+#      Docker host (Docker does not do this for you). Example (host root):
+#        SBX=$(docker inspect -f '{{.NetworkSettings.Networks.docsgpt_sandbox-net.IPAddress}}' docsgpt-sandbox)
+#        iptables -I DOCKER-USER -s "$SBX" -d 169.254.0.0/16 -j DROP
+#        iptables -I DOCKER-USER -s "$SBX" -d 10.0.0.0/8     -j DROP
+#        iptables -I DOCKER-USER -s "$SBX" -d 172.16.0.0/12  -j DROP
+#        iptables -I DOCKER-USER -s "$SBX" -d 192.168.0.0/16 -j DROP
+#      (Allow established/return traffic and DNS as needed for your setup.)
+#
+#  (2) Egress-gateway sidecar (this overlay): pin the sandbox to an
+#      internal-only network with NO direct internet route, and force all of
+#      its outbound traffic through a small forward proxy that blocks private
+#      destinations. The proxy is the ONLY container on both the internal and
+#      the egress network, so the sandbox cannot reach internal services
+#      directly. Configure the runner's outbound HTTP(S) via the proxy env
+#      vars below; lock down non-HTTP egress with the proxy's own rules.
+#
+# Apply alongside the base stack:
+#   docker compose -f deployment/docker-compose.yaml \
+#     -f deployment/optional/docker-compose.optional.sandbox-egress.yaml up -d
+#
+# NOTE: a forward proxy only constrains traffic that honors the proxy env vars.
+# Truly arbitrary sandbox code can ignore them, so on a multi-tenant or
+# untrusted deployment prefer approach (1) (or the Kubernetes NetworkPolicy)
+# which enforces at the network layer regardless of what the code does.
+version: "3.8"
+
+services:
+  # Forward proxy that denies private/link-local/metadata destinations and
+  # allows the public internet. Replace the image/command with your proxy of
+  # choice (tinyproxy, squid, mitmproxy with a deny rule, etc.); the ACL must
+  # DENY 10/8, 172.16/12, 192.168/16, 169.254/16, 127/8 and ALLOW the rest.
+  sandbox-egress-proxy:
+    image: ghcr.io/example/egress-deny-private:latest # replace with your proxy image
+    restart: unless-stopped
+    networks:
+      - sandbox-net # reachable by the sandbox
+      - sandbox-egress # the only container with an internet route
+
+  docsgpt-sandbox:
+    # Cut the sandbox off from the default (internet) bridge; it keeps only the
+    # internal sandbox-net and must egress via the proxy.
+    networks:
+      - sandbox-net
+    environment:
+      - HTTP_PROXY=http://sandbox-egress-proxy:8080
+      - HTTPS_PROXY=http://sandbox-egress-proxy:8080
+      - NO_PROXY=localhost,127.0.0.1
+
+networks:
+  # Internal-only network shared by the sandbox and the proxy. ``internal:
+  # true`` removes the default gateway so the sandbox has NO direct internet
+  # route -- its only path out is through the proxy on the egress network.
+  sandbox-net:
+    driver: bridge
+    internal: true
+  # Internet-facing network for the proxy only.
+  sandbox-egress:
+    driver: bridge

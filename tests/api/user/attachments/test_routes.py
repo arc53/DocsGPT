@@ -486,6 +486,18 @@ class TestResolveAuthenticatedUser:
             assert result is not None
             assert "jwt_user" in result
 
+    def test_returns_raw_email_sub_unsanitized(self, flask_app):
+        # Regression: an email-style sub must be returned verbatim so the
+        # attachment row's user_id matches the raw sub /stream queries with.
+        # Previously safe_filename stripped "@"/"." (a@b.com -> abcom), making
+        # an uploaded attachment unreadable by its own owner on /stream.
+        from application.api.user.attachments.routes import _resolve_authenticated_user
+
+        app = Flask(__name__)
+        with app.test_request_context("/api/store_attachment", method="POST"):
+            request.decoded_token = {"sub": "alex@arc53.com"}
+            assert _resolve_authenticated_user() == "alex@arc53.com"
+
     def test_returns_user_from_valid_api_key_form(self, flask_app):
         from application.api.user.attachments.routes import _resolve_authenticated_user
 
@@ -1438,6 +1450,70 @@ class TestLiveSpeechToTextAdditional:
 
             response = finish_resource.post()
             assert _get_response_status(response) == 403
+
+    @patch("application.api.user.attachments.routes.STTCreator.create_stt")
+    @patch("application.api.user.attachments.routes.get_redis_instance")
+    def test_live_stt_email_sub_owner_round_trip(
+        self, mock_get_redis, mock_create_stt, flask_app
+    ):
+        # Regression: an email-style sub (a@b.com) is stored RAW on the session, so
+        # the owner must pass the raw-vs-raw ownership gate on chunk + finish. Before
+        # the fix, safe_filename(stored_user) != raw auth_user 403'd the owner.
+        from application.api.user.attachments.routes import (
+            LiveSpeechToTextChunk,
+            LiveSpeechToTextFinish,
+            LiveSpeechToTextStart,
+        )
+
+        app = Flask(__name__)
+        fake_redis = FakeRedis()
+        mock_get_redis.return_value = fake_redis
+        owner_sub = "alex@arc53.com"
+
+        start_resource = LiveSpeechToTextStart()
+        with app.test_request_context(
+            "/api/stt/live/start",
+            method="POST",
+            json={"language": "en"},
+        ):
+            request.decoded_token = {"sub": owner_sub}
+            start_response = start_resource.post()
+            session_id = _get_response_json(start_response)["session_id"]
+
+        mock_stt = MagicMock()
+        mock_stt.transcribe.return_value = {
+            "text": "hello this is a longer test phrase for transcript stabilization today now",
+            "language": "en",
+            "duration_s": 1.0,
+            "segments": [],
+            "provider": "openai",
+        }
+        mock_create_stt.return_value = mock_stt
+
+        chunk_resource = LiveSpeechToTextChunk()
+        with app.test_request_context(
+            "/api/stt/live/chunk",
+            method="POST",
+            data={
+                "session_id": session_id,
+                "chunk_index": "0",
+                "file": (io.BytesIO(b"chunk-0"), "chunk-0.wav"),
+            },
+            content_type="multipart/form-data",
+        ):
+            request.decoded_token = {"sub": owner_sub}
+            chunk_response = chunk_resource.post()
+            assert _get_response_status(chunk_response) == 200
+
+        finish_resource = LiveSpeechToTextFinish()
+        with app.test_request_context(
+            "/api/stt/live/finish",
+            method="POST",
+            json={"session_id": session_id},
+        ):
+            request.decoded_token = {"sub": owner_sub}
+            finish_response = finish_resource.post()
+            assert _get_response_status(finish_response) == 200
 
 
 @pytest.mark.unit

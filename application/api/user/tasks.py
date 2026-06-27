@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 
 from application.api.user.idempotency import with_idempotency
@@ -7,6 +8,7 @@ from application.worker import (
     attachment_worker,
     ingest_worker,
     mcp_oauth,
+    parse_document_worker,
     reembed_wiki_page_worker,
     remote_worker,
     sync,
@@ -245,6 +247,16 @@ def process_agent_webhook(self, agent_id, payload, idempotency_key=None):
     return resp
 
 
+# Not DURABLE: the read_document tool awaits this synchronously with a timeout, so a
+# blind autoretry would double-parse and the caller would already have degraded. The
+# task is routed to the dedicated ``parsing`` queue (celeryconfig task_routes) so a
+# parse enqueued from inside a Celery worker (headless/scheduled agent) is served by a
+# separate parsing worker and never self-deadlocks the awaiting worker.
+@celery.task(bind=True, acks_late=False, autoretry_for=())
+def parse_document(self, artifact_id, parent, user_id, options=None):
+    return parse_document_worker(self, artifact_id, parent, user_id, options or {})
+
+
 @celery.task(**DURABLE_TASK)
 @with_idempotency(
     task_name="ingest_connector_task", on_poison=_emit_ingest_poison_event,
@@ -342,6 +354,25 @@ def cleanup_schedule_runs(self):
     return {"deleted": deleted, "ttl_days": ttl_days}
 
 
+@celery.task(bind=True, acks_late=False)
+def reap_sandbox_sessions(self):
+    """Close sandbox sessions idle past their TTL in this worker process.
+
+    The SandboxManager registry is per-process, so this reaps only sessions
+    bound in THIS worker; the API processes reap their own opportunistically on
+    ``open``. Artifacts are persisted eagerly, so reaping only closes idle
+    kernels and never loses a user-facing artifact.
+    """
+    try:
+        from application.sandbox.sandbox_creator import SandboxCreator
+
+        reaped = SandboxCreator.get_manager().reap_expired()
+    except Exception:  # noqa: BLE001 - housekeeping must never crash the beat loop
+        logging.getLogger(__name__).exception("reap_sandbox_sessions failed")
+        return {"reaped": 0, "error": True}
+    return {"reaped": len(reaped)}
+
+
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
     from application.core.settings import settings
@@ -406,6 +437,14 @@ def setup_periodic_tasks(sender, **kwargs):
         timedelta(hours=24),
         cleanup_schedule_runs.s(),
         name="cleanup-schedule-runs",
+    )
+    # Close idle-past-TTL sandbox sessions roughly every minute. The on-open
+    # opportunistic reap still runs in the API processes; this covers worker
+    # processes (and quiet periods where no new session is opened).
+    sender.add_periodic_task(
+        timedelta(seconds=60),
+        reap_sandbox_sessions.s(),
+        name="reap-sandbox-sessions",
     )
 
 

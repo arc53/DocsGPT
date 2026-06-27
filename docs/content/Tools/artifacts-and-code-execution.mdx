@@ -1,0 +1,101 @@
+---
+title: 📦 Artifacts and Code Execution
+description: Generate editable documents, run sandboxed code, and read files with the DocsGPT artifact, code executor, and read document tools.
+---
+
+import { Callout } from 'nextra/components';
+
+# Artifacts and Code Execution
+
+DocsGPT can generate documents, run code, and read files for you during a chat or inside an agent workflow. Three built-in tools work together for this:
+
+- **Artifact** builds and edits documents such as slide decks, Word documents, spreadsheets, PDFs, and HTML.
+- **Code Executor** runs code in a sandboxed session and turns any files the code writes into downloadable artifacts.
+- **Read Document** parses an uploaded or produced file (PDF, Word, PowerPoint, and more) into text, markdown, or structured data.
+
+The first two are enabled by default for new agents. Read Document is available inside workflows.
+
+## Artifacts
+
+An **artifact** is a file the assistant produces that you can open, download, and edit later. Artifacts are versioned: every edit appends a new version at the same artifact, so you can review or restore an earlier one. Bytes are stored on the server and are never passed through the model, so large files stay fast and cheap to work with.
+
+In a normal chat, a produced artifact appears as a chip under the assistant's reply (for example, "Artifact"). Open it to:
+
+- preview the content in a side panel (HTML and similar kinds render inline),
+- download the file,
+- ask for changes, which create a new version.
+
+### The Artifact tool
+
+The Artifact tool keeps a structured spec as the source of truth and renders the file from it. Editing means changing the spec and re-rendering, which keeps a clean and diffable version history. It exposes three actions:
+
+- **create** a new artifact from a kind and a spec,
+- **edit** an existing artifact with a targeted change (preferred for small edits),
+- **rewrite** an artifact with a full replacement spec.
+
+Supported kinds are presentation (.pptx), document (.docx), spreadsheet (.xlsx), pdf, and html.
+
+## Code Executor
+
+The Code Executor runs Python in a sandboxed, stateful session bound to your conversation (or to a workflow run). Files the code writes into the workspace are captured as artifacts automatically, so a script that produces `report.csv` gives you a downloadable artifact with no extra steps.
+
+Key points:
+
+- The session is stateful, so variables, imports, and files persist between calls in the same conversation while it is kept alive.
+- Only a compact summary is returned to the model (an output tail plus artifact references), never raw file bytes.
+- Each run has a fixed wall-clock limit of about 60 seconds. For longer work, start it in the background and check back with more calls.
+- Install packages from inside the code itself when you need them.
+
+<Callout type="warning">
+  By default the Code Executor runs model-authored code without an approval
+  prompt. Turn on per-action approval on the agent if you want a human to
+  confirm each run.
+</Callout>
+
+### Run inputs
+
+You can pass files into a run. Each input accepts a short reference returned by a previous artifact action, a full artifact id, or the name or id of a file you attached to the conversation. The referenced files are placed in the workspace before the code runs.
+
+## Read Document
+
+Read Document parses a file into text, markdown, structured JSON (with tables), or chunks. It is meant for workflows where a node needs the contents of an uploaded or produced document, for example a compliance flow that extracts fields and validates them against a JSON schema.
+
+Parsing runs in the DocsGPT parsing worker rather than the sandbox, so it uses the same document engine as the rest of the product and works with every sandbox backend.
+
+## Using these tools in workflows
+
+Inside an agent workflow the same building blocks are available:
+
+- A **Code node** runs a script bound to the run, with the workflow state available to it as data.
+- Agent and code nodes can receive selected documents as inputs and hand files to each other by reference.
+- Produced artifacts are visible from the workflow run view.
+
+See [Workflow Nodes](/Agents/nodes) for the node-level details.
+
+## Configuration
+
+Code execution and rendering run inside a sandbox. DocsGPT ships two backends, selected with `SANDBOX_BACKEND`:
+
+- **`jupyter`** (default): a self-hosted runner that you operate. See the runner setup notes under `deployment/sandbox`.
+- **`daytona`**: Daytona Cloud, a managed per-session sandbox. Set `DAYTONA_API_KEY` and choose a region with `DAYTONA_TARGET`.
+
+### Render libraries on Daytona
+
+Artifact rendering imports `python-pptx`, `python-docx`, `openpyxl`, and `reportlab` inside the sandbox. The self-hosted runner already has them. Daytona's default image does not, so presentation, document, spreadsheet, and pdf rendering fail there until you point Daytona at an image that includes them. HTML and markdown artifacts need no extra libraries and work on any image.
+
+Build a snapshot with the libraries once, then set `DAYTONA_SNAPSHOT` to it:
+
+```bash
+# Reads DAYTONA_API_KEY / DAYTONA_API_URL / DAYTONA_TARGET from your environment:
+python scripts/build_daytona_snapshot.py
+# then set in your environment:
+#   DAYTONA_SNAPSHOT=docsgpt-artifacts-py312
+```
+
+### Useful settings
+
+- `SANDBOX_BACKEND`: `jupyter` or `daytona`.
+- `SANDBOX_EXEC_TIMEOUT`: per-run wall-clock cap in seconds.
+- `SANDBOX_MAX_TTL`: upper bound on how long a kept-alive session lives.
+- `DAYTONA_API_KEY`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT`: Daytona Cloud settings.
+- Per-user artifact quotas bound how many artifacts and how much storage each user can hold.

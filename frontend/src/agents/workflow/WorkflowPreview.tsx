@@ -2,7 +2,9 @@ import {
   Bot,
   CheckCircle2,
   Circle,
+  Code2,
   Database,
+  FileBox,
   Flag,
   GitBranch,
   Loader2,
@@ -23,7 +25,9 @@ import MessageInput from '../../components/MessageInput';
 import ConversationBubble from '../../conversation/ConversationBubble';
 import { Query } from '../../conversation/conversationModels';
 import { AppDispatch } from '../../store';
+import { selectCompletedAttachments } from '../../upload/uploadSlice';
 import { WorkflowEdge, WorkflowNode } from '../types/workflow';
+import WorkflowRunArtifacts from './WorkflowRunArtifacts';
 import {
   addQuery,
   fetchWorkflowPreviewAnswer,
@@ -31,6 +35,7 @@ import {
   resendQuery,
   resetWorkflowPreview,
   selectActiveNodeId,
+  setPreviewOpen,
   selectWorkflowExecutionSteps,
   selectWorkflowPreviewQueries,
   selectWorkflowPreviewStatus,
@@ -47,6 +52,9 @@ interface WorkflowData {
 
 interface WorkflowPreviewProps {
   workflowData: WorkflowData;
+  // Saved workflow id (when the draft has been persisted); enables run-artifact
+  // listing by persisting a ``workflow_runs`` row for the preview run.
+  workflowId?: string | null;
 }
 
 const NODE_ICONS: Record<string, React.ReactNode> = {
@@ -56,6 +64,7 @@ const NODE_ICONS: Record<string, React.ReactNode> = {
   note: <StickyNote className="h-3 w-3" />,
   state: <Database className="h-3 w-3" />,
   condition: <GitBranch className="h-3 w-3" />,
+  code: <Code2 className="h-3 w-3" />,
 };
 
 const NODE_COLORS: Record<string, string> = {
@@ -65,6 +74,7 @@ const NODE_COLORS: Record<string, string> = {
   note: 'text-yellow-600 dark:text-yellow-400',
   state: 'text-blue-600 dark:text-blue-400',
   condition: 'text-orange-600 dark:text-orange-400',
+  code: 'text-indigo-600 dark:text-indigo-400',
 };
 
 function ExecutionDetails({
@@ -238,6 +248,54 @@ function ExecutionDetails({
   );
 }
 
+function RunArtifactsSection({
+  workflowRunId,
+  isOpen,
+  onToggle,
+}: {
+  workflowRunId: string;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
+      <div className="my-2 flex flex-row items-center justify-center gap-3">
+        <div className="flex h-[26px] w-[30px] items-center justify-center">
+          <FileBox className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onToggle}
+          className="h-auto gap-2 px-0 py-0 hover:bg-transparent"
+        >
+          <p className="text-base font-semibold">Artifacts</p>
+          <img
+            src={ChevronDownIcon}
+            alt="ChevronDown"
+            className={cn(
+              'h-4 w-4 transform transition-transform duration-200 dark:invert',
+              isOpen ? 'rotate-180' : '',
+            )}
+          />
+        </Button>
+      </div>
+      <div
+        className={cn(
+          'ml-3 grid w-full transition-all duration-300 ease-in-out',
+          isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="max-h-[480px] overflow-y-auto pr-2">
+            {isOpen && <WorkflowRunArtifacts workflowRunId={workflowRunId} />}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function WorkflowMiniMap({
   nodes,
   activeNodeId,
@@ -373,6 +431,7 @@ function WorkflowMiniMap({
 
 export default function WorkflowPreview({
   workflowData,
+  workflowId,
 }: WorkflowPreviewProps) {
   const dispatch = useDispatch<AppDispatch>();
 
@@ -380,9 +439,14 @@ export default function WorkflowPreview({
   const status = useSelector(selectWorkflowPreviewStatus);
   const executionSteps = useSelector(selectWorkflowExecutionSteps);
   const activeNodeId = useSelector(selectActiveNodeId);
+  const completedAttachments = useSelector(selectCompletedAttachments);
+  const hasCompletedAttachment = completedAttachments.length > 0;
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
   const [openDetailsIndex, setOpenDetailsIndex] = useState<number | null>(null);
+  const [openArtifactsIndex, setOpenArtifactsIndex] = useState<number | null>(
+    null,
+  );
 
   const fetchStream = useRef<{ abort: () => void } | null>(null);
   const stepRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -411,11 +475,12 @@ export default function WorkflowPreview({
           question,
           workflowData,
           indx: index,
+          workflowId,
         }),
       );
       fetchStream.current = promise;
     },
-    [dispatch, workflowData],
+    [dispatch, workflowData, workflowId],
   );
 
   const handleQuestion = useCallback(
@@ -429,7 +494,9 @@ export default function WorkflowPreview({
       index?: number;
     }) => {
       const trimmedQuestion = question.trim();
-      if (trimmedQuestion === '') return;
+      // Doc-driven nodes read ``input_documents`` rather than the query, so an
+      // attachment-only run is allowed to proceed with an empty question.
+      if (trimmedQuestion === '' && !hasCompletedAttachment) return;
 
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
@@ -442,7 +509,7 @@ export default function WorkflowPreview({
         handleFetchAnswer({ question: trimmedQuestion, index: undefined });
       }
     },
-    [dispatch, handleFetchAnswer],
+    [dispatch, handleFetchAnswer, hasCompletedAttachment],
   );
 
   const handleQuestionSubmission = (
@@ -456,8 +523,8 @@ export default function WorkflowPreview({
         index: indx,
         isRetry: false,
       });
-    } else if (question && status !== 'loading') {
-      const currentInput = question.trim();
+    } else if ((question || hasCompletedAttachment) && status !== 'loading') {
+      const currentInput = (question ?? '').trim();
       if (lastQueryReturnedErr && queries.length > 0) {
         const lastQueryIndex = queries.length - 1;
         handleQuestion({
@@ -477,10 +544,12 @@ export default function WorkflowPreview({
 
   useEffect(() => {
     dispatch(resetWorkflowPreview());
+    dispatch(setPreviewOpen(true));
     return () => {
       if (fetchStream.current) fetchStream.current.abort();
       handleWorkflowPreviewAbort();
       dispatch(resetWorkflowPreview());
+      dispatch(setPreviewOpen(false));
     };
   }, [dispatch]);
 
@@ -594,6 +663,20 @@ export default function WorkflowPreview({
                         />
                       )}
 
+                      {/* Run artifacts (only once a persisted run id is known
+                          and the run is no longer streaming) */}
+                      {query.workflowRunId && !isStreamingLastQuery && (
+                        <RunArtifactsSection
+                          workflowRunId={query.workflowRunId}
+                          isOpen={openArtifactsIndex === index}
+                          onToggle={() =>
+                            setOpenArtifactsIndex(
+                              openArtifactsIndex === index ? null : index,
+                            )
+                          }
+                        />
+                      )}
+
                       {/* Response bubble */}
                       {(query.response ||
                         shouldShowThought ||
@@ -633,6 +716,7 @@ export default function WorkflowPreview({
               showSourceButton={false}
               showToolButton={false}
               autoFocus={true}
+              allowSendWithoutText={true}
             />
           </div>
         </div>

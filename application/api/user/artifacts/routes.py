@@ -1,0 +1,372 @@
+"""Artifact metadata and download routes (parent-derived authz)."""
+
+from __future__ import annotations
+
+import re
+from typing import Optional
+
+from flask import current_app, jsonify, make_response, redirect, request
+from flask_restx import Namespace, Resource
+
+from application.api import api
+from application.api.user.artifacts.authz import (
+    authorize_artifact,
+    resolve_authenticated_user,
+    user_can_access_conversation,
+)
+from application.core.settings import settings
+from application.storage.db.base_repository import looks_like_uuid
+from application.storage.db.repositories.artifacts import ArtifactsRepository
+from application.storage.db.repositories.workflow_runs import WorkflowRunsRepository
+from application.storage.db.session import db_readonly, db_session
+from application.storage.storage_creator import StorageCreator
+
+artifacts_ns = Namespace("artifacts", description="Artifact operations", path="/api")
+
+# Presigned-URL TTL for private S3 artifact downloads (seconds).
+_PRESIGNED_URL_TTL = 300
+
+
+def _sanitize_header_filename(filename: Optional[str], fallback: str) -> str:
+    """Strip CRLF / quotes from a display filename for a Content-Disposition header."""
+    if not filename:
+        return fallback
+    cleaned = re.sub(r'[\r\n"]', "", str(filename)).strip()
+    return cleaned or fallback
+
+
+def _artifact_summary(artifact: dict) -> dict:
+    """Project an artifact identity row to its API metadata shape (owner id withheld)."""
+    return {
+        "id": str(artifact.get("id")),
+        "conversation_id": (
+            str(artifact["conversation_id"])
+            if artifact.get("conversation_id") is not None
+            else None
+        ),
+        "workflow_run_id": (
+            str(artifact["workflow_run_id"])
+            if artifact.get("workflow_run_id") is not None
+            else None
+        ),
+        "message_id": (
+            str(artifact["message_id"])
+            if artifact.get("message_id") is not None
+            else None
+        ),
+        "kind": artifact.get("kind"),
+        "title": artifact.get("title"),
+        "metadata": artifact.get("metadata"),
+        "current_version": artifact.get("current_version"),
+        "created_at": _iso(artifact.get("created_at")),
+        "updated_at": _iso(artifact.get("updated_at")),
+    }
+
+
+def _version_summary(version: dict, *, include_spec: bool = False) -> dict:
+    """Project a version row to its API metadata shape (storage_path withheld)."""
+    out = {
+        "version": version.get("version"),
+        "mime_type": version.get("mime_type"),
+        "filename": version.get("filename"),
+        "size": version.get("size"),
+        "sha256": version.get("sha256"),
+        "preview_text": version.get("preview_text"),
+        "produced_by": version.get("produced_by"),
+        "created_at": _iso(version.get("created_at")),
+    }
+    if include_spec:
+        out["spec"] = version.get("spec")
+    return out
+
+
+def _iso(value):
+    """ISO-format a datetime, passing through other values unchanged."""
+    return value.isoformat() if hasattr(value, "isoformat") else value
+
+
+@artifacts_ns.route("/artifacts")
+class ListArtifacts(Resource):
+    @api.doc(description="List artifacts for a conversation, workflow run, or the caller")
+    def get(self):
+        user_id = resolve_authenticated_user()
+        conversation_id = request.args.get("conversation_id")
+        workflow_run_id = request.args.get("workflow_run_id")
+        share_token = request.args.get("share_token")
+
+        if not user_id and not share_token:
+            return make_response(
+                jsonify({"success": False, "message": "Authentication required"}), 401
+            )
+
+        # Gate UUID-shape before any CAST(:id AS uuid) reaches the repo, so a
+        # malformed id is rejected cleanly instead of poisoning the transaction.
+        if conversation_id and not looks_like_uuid(conversation_id):
+            return make_response(
+                jsonify({"success": False, "message": "Invalid conversation_id"}), 400
+            )
+        if workflow_run_id and not looks_like_uuid(workflow_run_id):
+            return make_response(
+                jsonify({"success": False, "message": "Invalid workflow_run_id"}), 400
+            )
+
+        try:
+            with db_readonly() as conn:
+                if conversation_id:
+                    if not user_can_access_conversation(
+                        conn, conversation_id, user_id, share_token
+                    ):
+                        return make_response(
+                            jsonify({"success": False, "message": "Forbidden"}), 403
+                        )
+                    rows = ArtifactsRepository(conn).list_artifacts(
+                        conversation_id=conversation_id
+                    )
+                elif workflow_run_id:
+                    run = WorkflowRunsRepository(conn).get(workflow_run_id)
+                    if run is None or run.get("user_id") != user_id:
+                        return make_response(
+                            jsonify({"success": False, "message": "Forbidden"}), 403
+                        )
+                    rows = ArtifactsRepository(conn).list_artifacts(
+                        workflow_run_id=workflow_run_id
+                    )
+                else:
+                    if not user_id:
+                        return make_response(
+                            jsonify({"success": False, "message": "Authentication required"}),
+                            401,
+                        )
+                    rows = ArtifactsRepository(conn).list_artifacts(user_id=user_id)
+
+            return make_response(
+                jsonify(
+                    {"success": True, "artifacts": [_artifact_summary(r) for r in rows]}
+                ),
+                200,
+            )
+        except Exception as err:
+            current_app.logger.error(f"Error listing artifacts: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+
+
+@artifacts_ns.route("/artifacts/<artifact_id>")
+class GetArtifact(Resource):
+    @api.doc(description="Get an artifact's metadata, version list, and current spec")
+    def get(self, artifact_id: str):
+        if not looks_like_uuid(artifact_id):
+            return make_response(
+                jsonify({"success": False, "message": "Artifact not found"}), 404
+            )
+        user_id = resolve_authenticated_user()
+        try:
+            with db_readonly() as conn:
+                repo = ArtifactsRepository(conn)
+                artifact = repo.get_artifact(artifact_id)
+                if artifact is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Artifact not found"}), 404
+                    )
+                if not authorize_artifact(conn, artifact, user_id):
+                    return make_response(
+                        jsonify({"success": False, "message": "Forbidden"}), 403
+                    )
+                versions = repo.list_versions(artifact_id)
+                current = repo.get_version(artifact_id, artifact.get("current_version"))
+
+            payload = _artifact_summary(artifact)
+            payload["versions"] = [_version_summary(v) for v in versions]
+            payload["spec"] = current.get("spec") if current else None
+            return make_response(jsonify({"success": True, "artifact": payload}), 200)
+        except Exception as err:
+            current_app.logger.error(f"Error retrieving artifact: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+
+
+@artifacts_ns.route("/artifacts/<artifact_id>/versions/<int:version>")
+class GetArtifactVersion(Resource):
+    @api.doc(description="Get a single artifact version's metadata and spec")
+    def get(self, artifact_id: str, version: int):
+        if not looks_like_uuid(artifact_id):
+            return make_response(
+                jsonify({"success": False, "message": "Artifact not found"}), 404
+            )
+        user_id = resolve_authenticated_user()
+        try:
+            with db_readonly() as conn:
+                repo = ArtifactsRepository(conn)
+                artifact = repo.get_artifact(artifact_id)
+                if artifact is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Artifact not found"}), 404
+                    )
+                if not authorize_artifact(conn, artifact, user_id):
+                    return make_response(
+                        jsonify({"success": False, "message": "Forbidden"}), 403
+                    )
+                version_row = repo.get_version(artifact_id, version)
+            if version_row is None:
+                return make_response(
+                    jsonify({"success": False, "message": "Version not found"}), 404
+                )
+            return make_response(
+                jsonify(
+                    {"success": True, "version": _version_summary(version_row, include_spec=True)}
+                ),
+                200,
+            )
+        except Exception as err:
+            current_app.logger.error(
+                f"Error retrieving artifact version: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+
+
+@artifacts_ns.route("/artifacts/<artifact_id>/download")
+class DownloadArtifact(Resource):
+    @api.doc(description="Download an artifact's bytes (302 to a presigned URL on S3)")
+    def get(self, artifact_id: str):
+        if not looks_like_uuid(artifact_id):
+            return make_response(
+                jsonify({"success": False, "message": "Artifact not found"}), 404
+            )
+        user_id = resolve_authenticated_user()
+        version_arg = request.args.get("version")
+        try:
+            with db_readonly() as conn:
+                repo = ArtifactsRepository(conn)
+                artifact = repo.get_artifact(artifact_id)
+                if artifact is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Artifact not found"}), 404
+                    )
+                if not authorize_artifact(conn, artifact, user_id):
+                    return make_response(
+                        jsonify({"success": False, "message": "Forbidden"}), 403
+                    )
+                version = artifact.get("current_version")
+                if version_arg is not None:
+                    try:
+                        version = int(version_arg)
+                    except ValueError:
+                        return make_response(
+                            jsonify({"success": False, "message": "Invalid version"}), 400
+                        )
+                version_row = repo.get_version(artifact_id, version)
+
+            if version_row is None:
+                return make_response(
+                    jsonify({"success": False, "message": "Version not found"}), 404
+                )
+            # The object key is derived only from the stored path, never client input.
+            storage_path = version_row.get("storage_path")
+            if not storage_path:
+                return make_response(
+                    jsonify({"success": False, "message": "No file for this version"}), 404
+                )
+
+            filename = _sanitize_header_filename(
+                version_row.get("filename"), f"artifact-{artifact_id}"
+            )
+            mime_type = version_row.get("mime_type") or "application/octet-stream"
+            storage = StorageCreator.get_storage()
+
+            # With URL_STRATEGY=="s3" the contract is to hand back a presigned
+            # URL. If the active backend can't mint one, that's a config error:
+            # surface a 500 rather than silently proxying bytes from a backend
+            # the operator expected to be off the hot path.
+            if getattr(settings, "URL_STRATEGY", "backend") == "s3":
+                try:
+                    url = storage.generate_presigned_url(
+                        storage_path, expires_in=_PRESIGNED_URL_TTL
+                    )
+                except NotImplementedError:
+                    current_app.logger.error(
+                        "URL_STRATEGY=s3 but %s cannot mint presigned URLs",
+                        type(storage).__name__,
+                    )
+                    return make_response(
+                        jsonify(
+                            {"success": False, "message": "Storage misconfigured"}
+                        ),
+                        500,
+                    )
+                return redirect(url, code=302)
+
+            file_obj = storage.get_file(storage_path)
+            response = make_response(file_obj.read())
+            response.headers.set("Content-Type", mime_type)
+            response.headers.set(
+                "Content-Disposition", f'attachment; filename="{filename}"'
+            )
+            return response
+        except FileNotFoundError:
+            return make_response(
+                jsonify({"success": False, "message": "File not found"}), 404
+            )
+        except Exception as err:
+            current_app.logger.error(
+                f"Error downloading artifact: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+
+
+@artifacts_ns.route("/artifacts/<artifact_id>/restore")
+class RestoreArtifact(Resource):
+    @api.doc(description="Restore a prior version by appending it as the new current version")
+    def post(self, artifact_id: str):
+        if not looks_like_uuid(artifact_id):
+            return make_response(
+                jsonify({"success": False, "message": "Artifact not found"}), 404
+            )
+        user_id = resolve_authenticated_user()
+        data = request.get_json(silent=True) or {}
+        target_version = data.get("version")
+        if target_version is None:
+            return make_response(
+                jsonify({"success": False, "message": "Missing version"}), 400
+            )
+        try:
+            target_version = int(target_version)
+        except (ValueError, TypeError):
+            return make_response(
+                jsonify({"success": False, "message": "Invalid version"}), 400
+            )
+
+        try:
+            with db_session() as conn:
+                repo = ArtifactsRepository(conn)
+                artifact = repo.get_artifact(artifact_id)
+                if artifact is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Artifact not found"}), 404
+                    )
+                if not authorize_artifact(conn, artifact, user_id):
+                    return make_response(
+                        jsonify({"success": False, "message": "Forbidden"}), 403
+                    )
+                source = repo.get_version(artifact_id, target_version)
+                if source is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Version not found"}), 404
+                    )
+                new_version = repo.append_version(
+                    artifact_id,
+                    mime_type=source.get("mime_type"),
+                    filename=source.get("filename"),
+                    storage_path=source.get("storage_path"),
+                    size=source.get("size"),
+                    sha256=source.get("sha256"),
+                    spec=source.get("spec"),
+                    preview_text=source.get("preview_text"),
+                    produced_by=source.get("produced_by"),
+                )
+            return make_response(
+                jsonify(
+                    {"success": True, "version": _version_summary(new_version, include_spec=True)}
+                ),
+                200,
+            )
+        except Exception as err:
+            current_app.logger.error(f"Error restoring artifact: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)

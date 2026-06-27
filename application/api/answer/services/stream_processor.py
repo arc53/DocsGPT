@@ -806,6 +806,13 @@ class StreamProcessor:
                 self.agent_config["workflow"] = self.data["workflow"]
                 if isinstance(self.decoded_token, dict):
                     self.agent_config["workflow_owner"] = self.decoded_token.get("sub")
+                # A saved workflow id alongside the embedded graph (builder
+                # Preview) lets the run persist a ``workflow_runs`` row so its
+                # artifacts are listable + authz'd; ownership is re-checked on
+                # save, so a forged id for another user's workflow never persists.
+                preview_workflow_id = self.data.get("workflow_id")
+                if preview_workflow_id:
+                    self.agent_config["workflow_id"] = str(preview_workflow_id)
 
             self.agent_config.update(
                 {
@@ -1510,6 +1517,7 @@ class StreamProcessor:
                 docs=docs,
                 docs_together=docs_together,
                 tools_data=tools_data,
+                artifact_parent={"conversation_id": self.conversation_id},
             )
 
         # Use the user_id that resolved the model so owner-scoped BYOM
@@ -1658,6 +1666,12 @@ class StreamProcessor:
                 agent_kwargs["workflow_id"] = workflow_config
             elif isinstance(workflow_config, dict):
                 agent_kwargs["workflow"] = workflow_config
+                # Embedded-graph Preview run that names a saved workflow: run the
+                # canvas graph but persist the run under the saved id so artifacts
+                # parent to a real, ownership-checked ``workflow_runs`` row.
+                saved_workflow_id = self.agent_config.get("workflow_id")
+                if saved_workflow_id:
+                    agent_kwargs["workflow_id"] = saved_workflow_id
             workflow_owner = self.agent_config.get("workflow_owner")
             if workflow_owner:
                 agent_kwargs["workflow_owner"] = workflow_owner

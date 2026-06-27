@@ -1,0 +1,83 @@
+# docsgpt-sandbox runner (Jupyter Kernel Gateway). Sessions are in-process
+# kernels, never child containers; the Docker socket is NOT mounted. Network
+# egress is constrained by the NetworkPolicy under
+# deployment/k8s/network-policies/sandbox-egress-policy.yaml -- apply both.
+#
+# On Linux prod, schedule this onto a gVisor `runsc` RuntimeClass for kernel
+# isolation (uncomment `runtimeClassName` once the node has it installed).
+#
+# SINGLE TRUST DOMAIN: all sessions in this pod share one container/uid and are
+# isolated by working directory only (per-session cwd) — not by a kernel/OS
+# boundary. This image ships an env-scrubbing kernelspec under the distinct name
+# "docsgpt-python"; the app (docsgpt-api / docsgpt-worker) MUST select it via
+# SANDBOX_KERNEL_NAME=docsgpt-python (already set in docsgpt-deploy.yaml) so the
+# scrubber runs. The stock "python3" spec stays untouched, so it can never
+# shadow the scrubbing kernel. Sibling workspaces are still readable under the
+# shared uid and kernels share one address space. Do NOT inject app secrets
+# (DB/LLM creds) into this pod's env; the runner needs none. For cross-tenant /
+# untrusted multi-tenant workloads use a per-session VM via
+# SANDBOX_BACKEND=daytona instead.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docsgpt-sandbox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: docsgpt-sandbox
+  template:
+    metadata:
+      labels:
+        app: docsgpt-sandbox
+    spec:
+      # runtimeClassName: gvisor
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: docsgpt-sandbox
+          image: arc53/docsgpt-sandbox
+          ports:
+            - containerPort: 8888
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: JUPYTER_RUNTIME_DIR
+              value: /tmp/jupyter-runtime
+            - name: JUPYTER_DATA_DIR
+              value: /tmp/jupyter-data
+          resources:
+            limits:
+              memory: "1Gi"
+              cpu: "1"
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+          volumeMounts:
+            # Per-session workspaces + Jupyter runtime files on an emptyDir;
+            # the root FS stays read-only everywhere else.
+            - name: scratch
+              mountPath: /tmp
+      volumes:
+        - name: scratch
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docsgpt-sandbox
+spec:
+  selector:
+    app: docsgpt-sandbox
+  ports:
+    - protocol: TCP
+      port: 8888
+      targetPort: 8888
+  # Cluster-internal only: the runner must never be exposed outside the cluster.
+  type: ClusterIP

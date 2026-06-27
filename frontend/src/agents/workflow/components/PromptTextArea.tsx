@@ -10,7 +10,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
-interface WorkflowVariable {
+export interface WorkflowVariable {
   label: string;
   templatePath: string;
   section: string;
@@ -62,6 +62,11 @@ const GLOBAL_CONTEXT_VARIABLES: WorkflowVariable[] = [
     templatePath: 'system.user_id',
     section: 'Global context',
   },
+  {
+    label: 'artifacts.artifact(id)',
+    templatePath: 'artifacts.artifact(id)',
+    section: 'Global context',
+  },
 ];
 
 function toAgentTemplatePath(variableName: string): string {
@@ -93,7 +98,7 @@ function getUpstreamNodeIds(nodeId: string, edges: Edge[]): Set<string> {
   return upstream;
 }
 
-function extractUpstreamVariables(
+export function extractUpstreamVariables(
   nodes: Node[],
   edges: Edge[],
   selectedNodeId: string,
@@ -107,6 +112,11 @@ function extractUpstreamVariables(
     {
       label: 'agent.chat_history',
       templatePath: 'agent.chat_history',
+      section: 'Workflow input',
+    },
+    {
+      label: 'agent.input_documents',
+      templatePath: 'agent.input_documents',
       section: 'Workflow input',
     },
     ...GLOBAL_CONTEXT_VARIABLES,

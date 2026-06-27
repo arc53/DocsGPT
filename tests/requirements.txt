@@ -5,3 +5,9 @@ coverage>=7.4.0
 pytest-postgresql>=6.0.0
 psycopg[binary]>=3.1
 cryptography>=46.0.0
+# jupyter_client (KernelSpecManager) for the sandbox kernelspec-resolution test.
+jupyter-client>=8.0
+# Document renderers used by the artifact_generator unit-test fixtures
+# (python-pptx and openpyxl already ship in application/requirements.txt).
+python-docx>=1.1
+reportlab>=4.0,<5

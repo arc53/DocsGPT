@@ -51,7 +51,10 @@ import {
 import PromptsModal from '../preferences/PromptsModal';
 import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
-import { getToolDisplayName } from '../utils/toolUtils';
+import {
+  getToolDisplayName,
+  isClassicAgentToolVisible,
+} from '../utils/toolUtils';
 import AgentPageHeader from './AgentPageHeader';
 import AgentPreview from './AgentPreview';
 import { Agent, ToolSummary } from './types';
@@ -480,6 +483,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       ]);
       if (!toolsResponse.ok) throw new Error('Failed to fetch tools');
       const data = await toolsResponse.json();
+      // Hide workflow-only builtins (e.g. read_document) from the classic
+      // agent picker; they belong to the workflow-node picker only.
+      const visibleTools = (data.tools as UserToolType[]).filter(
+        isClassicAgentToolVisible,
+      );
       const devicesById = new Map<
         string,
         { online: boolean; last_seen_at: string | null | undefined }
@@ -498,7 +506,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         if (tool.default) return t('agents.form.toolsPopup.groupDefault');
         return t('agents.form.toolsPopup.groupCustom');
       };
-      const tools: MultiSelectPopoverItem[] = data.tools.map(
+      const tools: MultiSelectPopoverItem[] = visibleTools.map(
         (tool: UserToolType) => {
           const base: MultiSelectPopoverItem = {
             id: tool.id,
@@ -537,7 +545,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           groupOrder.indexOf(a.group || '') - groupOrder.indexOf(b.group || ''),
       );
       setUserTools(tools);
-      setRawUserTools(data.tools as UserToolType[]);
+      setRawUserTools(visibleTools);
     };
     const getModels = async () => {
       const response = await modelService.getModels(token);

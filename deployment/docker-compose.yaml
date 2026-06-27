@@ -24,6 +24,12 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
+      # Code-execution runner reached over HTTP + WebSocket (no docker socket).
+      - SANDBOX_GATEWAY_URL=http://docsgpt-sandbox:8888
+      # Select the runner's env-scrubbing kernelspec (distinct name; never
+      # shadowed by the stock "python3" spec). Must match the kernel the
+      # docsgpt-sandbox image installs.
+      - SANDBOX_KERNEL_NAME=docsgpt-python
     ports:
       - "7091:7091"
     volumes:
@@ -39,7 +45,11 @@ services:
   worker:
     user: root
     build: ../application
-    command: celery -A application.app.celery worker -l INFO -B
+    # Consumes the default queue AND the dedicated `parsing` queue (read_document /
+    # parse_document). Without `parsing` here the read_document await never resolves.
+    # For heavy/OCR parsing run a separate worker with `-Q parsing` (see
+    # deployment/sandbox/README.md).
+    command: celery -A application.app.celery worker -l INFO -B -Q docsgpt,parsing
     env_file:
       - ../.env
     environment:
@@ -49,6 +59,9 @@ services:
       - API_URL=http://backend:7091
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
+      - SANDBOX_GATEWAY_URL=http://docsgpt-sandbox:8888
+      # Env-scrubbing kernelspec selected by name (see backend service).
+      - SANDBOX_KERNEL_NAME=docsgpt-python
     volumes:
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
@@ -58,6 +71,38 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
+
+  # Always-on code-execution runner (Jupyter Kernel Gateway). Sessions are
+  # in-process kernels, never child containers; the Docker socket is NOT
+  # mounted. On an internal-only network — no host port is published, so the
+  # runner is reachable only from backend/worker, not from the host/internet.
+  # Egress/SSRF blocks, the gVisor `runsc` runtime, and seccomp profile come in
+  # the hardening slice.
+  #
+  # SINGLE TRUST DOMAIN: all sessions share this one container/uid and are
+  # isolated by working directory only (per-session cwd) — not by a kernel/OS
+  # boundary. The custom kernelspec scrubs secrets from the kernel env, but
+  # sibling workspaces are readable under the shared uid and kernels share one
+  # address space. Do NOT add `env_file: ../.env` here (the runner needs no app
+  # secrets). For cross-tenant / untrusted multi-tenant workloads use a
+  # per-session VM via SANDBOX_BACKEND=daytona instead.
+  docsgpt-sandbox:
+    build: ./sandbox
+    mem_limit: ${SANDBOX_MEMORY:-1g}
+    cpus: ${SANDBOX_CPUS:-1.0}
+    pids_limit: 256
+    read_only: true
+    environment:
+      # Keep Jupyter's runtime/connection files on the writable tmpfs.
+      - JUPYTER_RUNTIME_DIR=/tmp/jupyter-runtime
+      - JUPYTER_DATA_DIR=/tmp/jupyter-data
+    tmpfs:
+      # Per-session workspaces (/tmp/docsgpt-sandbox/<session_id>) and Jupyter
+      # runtime files live on tmpfs; the root FS is read-only everywhere else.
+      - /tmp
+    networks:
+      - sandbox-net
+      - default
 
   redis:
     image: redis:6-alpine
@@ -79,6 +124,12 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+networks:
+  # Internal-only network for the sandbox runner (no external egress route via
+  # this network; the runner still reaches the internet via the default bridge).
+  sandbox-net:
+    internal: true
 
 volumes:
   postgres_data:

@@ -1,7 +1,7 @@
 # DocsGPT Public Threat Model
 
 **Classification:** Public  
-**Last updated:** 2026-04-15  
+**Last updated:** 2026-06-25  
 **Applies to:** Open-source and self-hosted DocsGPT deployments
 
 ## 1) Overview
@@ -41,6 +41,7 @@ Out of scope:
 
 - Documents, attachments, chunks/embeddings, summaries.
 - Conversations, agents, workflows, prompt templates.
+- Generated artifacts and their versions; sandbox code-execution sessions.
 - Secrets (JWT secret, `INTERNAL_KEY`, provider/API/OAuth credentials).
 - Operational capacity (worker throughput, queue depth, model quota/cost).
 
@@ -65,6 +66,7 @@ Untrusted input includes API payloads, file uploads, remote URLs, OAuth/webhook 
 6. Frontend rendering + token storage.
 7. Internal service endpoints (`INTERNAL_KEY`).
 8. High-impact integrations (SQL tool, generic API tool, remote MCP tools).
+9. Sandboxed code execution (LLM-authored code, document/artifact generation, workflow code nodes).
 
 ## 7) Key threats and expected mitigations
 
@@ -103,6 +105,12 @@ Untrusted input includes API payloads, file uploads, remote URLs, OAuth/webhook 
 - Threat: request floods, large ingestion jobs, expensive prompts/crawls.
 - Mitigations: rate limits, quotas, timeouts, queue backpressure, usage budgets.
 
+### I. Sandboxed code execution and tenant isolation
+- Threat: LLM-authored code (the code-execution tool, document/artifact generation, and workflow code nodes) runs attacker-influenceable Python; a poisoned document or prompt can shape what executes.
+- Threat: on the self-hosted Jupyter Kernel Gateway runner, all sessions run as kernels inside one shared container and uid — a kernel can read sibling sessions' workspaces and reach the network. Treat a single runner as one trust domain, not a per-tenant boundary.
+- Threat: `code_executor` is on by default and runs sandboxed code WITHOUT an approval prompt, so any chat agent (including one steered by prompt injection) can execute code unprompted; the sandbox is the only boundary.
+- Mitigations: code-exec approval exists per tool but is off for the default tool (enable it or rely on the sandbox boundary); pass workflow state to code nodes as data (a `state.json` file), never templated into the executed program; scrub secrets from the kernel environment (no provider keys/tokens/DB URL reach kernel code); path-traversal-safe file I/O with output/time/size caps and per-session `0700` workspaces; block egress at the network layer (NetworkPolicy/host firewall). For per-tenant isolation use the Daytona per-session-VM backend (`SANDBOX_BACKEND=daytona`); run the self-hosted runner under gVisor for host protection. Artifacts are access-controlled by their parent (conversation or workflow run).
+
 ## 8) Example attacker stories
 
 - Internet-exposed deployment runs with weak/no auth and receives unauthorized data access/abuse.
@@ -111,6 +119,7 @@ Untrusted input includes API payloads, file uploads, remote URLs, OAuth/webhook 
 - Malicious URL/redirect chain targets internal services.
 - Poisoned document causes data exfiltration through tool calls.
 - Over-privileged SQL/API/MCP tool performs destructive side effects.
+- A poisoned document drives a workflow code node or the code-execution tool to run attacker-chosen Python inside a shared runner and read another session's workspace.
 
 ## 9) Severity calibration
 
@@ -131,6 +140,7 @@ Untrusted input includes API payloads, file uploads, remote URLs, OAuth/webhook 
 8. Monitor auth failures, tool anomalies, ingestion spikes, and cost anomalies.
 9. Keep dependencies/images patched and scanned.
 10. Validate multi-tenant isolation with explicit tests.
+11. Run untrusted code execution with per-tenant isolation (Daytona per-session VM or gVisor), scrubbed kernel secrets, and network-layer egress controls; treat a shared self-hosted runner as a single trust domain.
 
 ## 11) Maintenance
 

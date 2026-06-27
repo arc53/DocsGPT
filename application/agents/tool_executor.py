@@ -33,6 +33,28 @@ def _sanitize_tool_prefix(tool_name: Optional[str]) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]+", "_", str(tool_name or "")).strip("_")
 
 
+# Longest string value rendered into a debug log line; longer values (e.g. an
+# LLM-authored ``code`` body or an api_tool ``body``) are truncated so the full
+# program/secret is never written to logs even at DEBUG level.
+_LOG_VALUE_PREVIEW_LEN = 80
+
+
+def _redact_args_for_log(args: Any) -> Any:
+    """Truncate long string values so a code/body argument never lands in logs in full."""
+    if not isinstance(args, dict):
+        text = str(args)
+        return text if len(text) <= _LOG_VALUE_PREVIEW_LEN else f"{text[:_LOG_VALUE_PREVIEW_LEN]}...(truncated)"
+    redacted: Dict[str, Any] = {}
+    for key, value in args.items():
+        if isinstance(value, str) and len(value) > _LOG_VALUE_PREVIEW_LEN:
+            redacted[key] = f"{value[:_LOG_VALUE_PREVIEW_LEN]}...(truncated, {len(value)} chars)"
+        elif isinstance(value, (dict, list)):
+            redacted[key] = f"<{type(value).__name__} omitted>"
+        else:
+            redacted[key] = value
+    return redacted
+
+
 def _record_proposed(
     call_id: str,
     tool_name: str,
@@ -175,7 +197,15 @@ class ToolExecutor:
         self.tool_calls: List[Dict] = []
         self._loaded_tools: Dict[str, object] = {}
         self.conversation_id: Optional[str] = None
+        # Set by the workflow engine for agent nodes so run-scoped tools
+        # (artifact_generator / code_executor) address artifacts by the
+        # workflow run rather than a conversation.
+        self.workflow_run_id: Optional[str] = None
         self.message_id: Optional[str] = None
+        # The request's own (already user-scoped) chat attachments, stamped onto
+        # sandbox tools so a referenced attachment can be lazily bridged to a
+        # conversation-scoped artifact at tool-use time.
+        self.attachments: List[Dict] = []
         self.client_tools: Optional[List[Dict]] = None
         self._name_to_tool: Dict[str, Tuple[str, str]] = {}
         self._tool_to_name: Dict[Tuple[str, str], str] = {}
@@ -478,6 +508,12 @@ class ToolExecutor:
                     tool_data, action_name, arguments,
                 )
             )
+        elif tool_data.get("name") == "code_executor":
+            # The deployment-level ``config.require_approval`` is authoritative
+            # over the cached action snapshot, so consult the tool directly.
+            require_approval = self._code_executor_requires_approval(
+                tool_data, action_name, arguments,
+            ) or require_approval
 
         if require_approval:
             if self.headless:
@@ -551,6 +587,30 @@ class ToolExecutor:
                 "forced prompt",
             )
             return True, True
+
+    def _code_executor_requires_approval(
+        self, tool_data: Dict, action_name: str, arguments: Dict,
+    ) -> bool:
+        """Live approval decision for a ``code_executor`` invocation.
+
+        Honors the deployment-level ``config.require_approval`` even when the
+        cached action snapshot is stale. Fails closed (require approval) on any
+        error so a misconfigured tool never silently runs untrusted code.
+        """
+        try:
+            from application.agents.tools.code_executor import CodeExecutorTool
+
+            tool = CodeExecutorTool(
+                tool_config=tool_data.get("config") or {},
+                user_id=self.user,
+            )
+            requires_approval, _forced = tool.preview_decision(action_name, arguments)
+            return requires_approval
+        except Exception:
+            logger.exception(
+                "code_executor preview_decision failed; defaulting to a prompt",
+            )
+            return True
 
     def execute(self, tools_dict: Dict, call, llm_class_name: str):
         """Execute a tool call. Yields status events, returns (result, call_id)."""
@@ -748,11 +808,19 @@ class ToolExecutor:
         try:
             if tool_data["name"] == "api_tool":
                 logger.debug(
-                    f"Executing api: {action_name} with query_params: {query_params}, headers: {headers}, body: {body}"
+                    "Executing api: %s with query_params: %s, headers: %s, body: %s",
+                    action_name,
+                    _redact_args_for_log(query_params),
+                    _redact_args_for_log(headers),
+                    _redact_args_for_log(body),
                 )
                 result = tool.execute_action(action_name, **body)
             else:
-                logger.debug(f"Executing tool: {action_name} with args: {call_args}")
+                logger.debug(
+                    "Executing tool: %s with args: %s",
+                    action_name,
+                    _redact_args_for_log(call_args),
+                )
                 result = tool.execute_action(action_name, **parameters)
         except Exception as exc:
             if proposed_ok:
@@ -821,7 +889,15 @@ class ToolExecutor:
         """Load a tool, using cache when possible."""
         cache_key = f"{tool_data['name']}:{tool_id}:{self.user or ''}"
         if cache_key in self._loaded_tools:
-            return self._loaded_tools[cache_key]
+            cached = self._loaded_tools[cache_key]
+            # A tool cached on an earlier turn carries that turn's attachments;
+            # refresh them so a chat attachment added this turn is bridgeable.
+            cached_config = getattr(cached, "config", None)
+            if isinstance(cached_config, dict) and self.conversation_id:
+                # Refresh unconditionally so a turn with no attachments clears the
+                # prior turn's list (no stale carryover within the session).
+                cached_config["attachments"] = self.attachments or []
+            return cached
 
         tm = ToolManager(config={})
 
@@ -885,6 +961,15 @@ class ToolExecutor:
             tool_config["tool_id"] = str(row_id)
             if self.conversation_id:
                 tool_config["conversation_id"] = self.conversation_id
+                # Carry the request's own attachments so sandbox tools can
+                # lazily bridge a referenced chat attachment (conversation
+                # scope only; workflow nodes bridge attachments up front).
+                if self.attachments:
+                    tool_config["attachments"] = self.attachments
+            # Workflow agent nodes run-scope their artifact tools so a short
+            # ref (A1) and edit_artifact resolve against the workflow run.
+            if self.workflow_run_id:
+                tool_config["workflow_run_id"] = self.workflow_run_id
             if tool_data["name"] == "scheduler":
                 # Agent-bound: stamp schedules.agent_id. Agentless: the tool
                 # falls back to ``origin_conversation_id`` as the schedule's
