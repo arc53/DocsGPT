@@ -232,6 +232,8 @@ class Settings(BaseSettings):
 
     TTS_PROVIDER: str = "google_tts"  # google_tts or elevenlabs
     ELEVENLABS_API_KEY: Optional[str] = None
+    ELEVENLABS_VOICE_ID: str = "nPczCjzI2devNBz1zQrb"
+    ELEVENLABS_LANGUAGE: str = "en"
     STT_PROVIDER: str = "openai"  # openai or faster_whisper
     OPENAI_STT_MODEL: str = "gpt-4o-mini-transcribe"
     STT_LANGUAGE: Optional[str] = None
