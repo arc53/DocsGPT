@@ -1,4 +1,5 @@
 import logging
+import re
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -125,29 +126,35 @@ class ToolsNamespace(NamespaceBuilder):
         return "tools"
 
     def build(
-        self, tools_data: Optional[Dict[str, Any]] = None, **kwargs
+        self,
+        tools_data: Optional[Dict[str, Any]] = None,
+        enabled_tools: Optional[Any] = None,
+        **kwargs,
     ) -> Dict[str, Any]:
         """
-        Build tools context with pre-executed tool results.
+        Build tools context: pre-executed tool results plus the enabled-tool set.
 
         Args:
             tools_data: Dictionary of pre-fetched tool results organized by tool name
                        e.g., {"memory": {"notes": "content", "tasks": "list"}}
+            enabled_tools: Names of the tools enabled for this turn. When provided,
+                       exposed as the reserved ``tools.enabled`` list for gating
+                       tool-specific prompt sections. Left absent (not just empty)
+                       when the caller did not compute it, so a gate can fail open.
 
         Returns:
-            Dictionary with tool results organized by tool name
+            Dictionary with tool results by tool name, plus ``enabled`` when known
         """
-        if not tools_data:
-            return {}
-
-        safe_data = {}
-        for tool_name, tool_result in tools_data.items():
+        safe_data: Dict[str, Any] = {}
+        for tool_name, tool_result in (tools_data or {}).items():
             if isinstance(tool_result, (str, dict, list, int, float, bool, type(None))):
                 safe_data[tool_name] = tool_result
             else:
                 logger.warning(
                     f"Skipping non-serializable tool result for '{tool_name}': {type(tool_result)}"
                 )
+        if enabled_tools is not None:
+            safe_data["enabled"] = sorted({str(t) for t in enabled_tools if t})
         return safe_data
 
 
@@ -253,6 +260,46 @@ class ArtifactsNamespace(NamespaceBuilder):
         return artifact
 
 
+class AttachmentsNamespace(NamespaceBuilder):
+    """Attached-file metadata namespace: {{ attachments.files }} (name / mime_type / size)."""
+
+    @property
+    def namespace_name(self) -> str:
+        return "attachments"
+
+    def build(self, attachments: Optional[list] = None, **kwargs) -> Dict[str, Any]:
+        """Expose metadata for files attached to this message.
+
+        Only the filename, MIME type, and size enter the prompt; file bytes and
+        any extracted ``content`` are never surfaced through this namespace. Field
+        names mirror the ``artifacts`` namespace (``filename`` / ``mime_type`` / ``size``).
+        """
+        if not attachments:
+            return {}
+        files = []
+        for att in attachments:
+            if not isinstance(att, dict):
+                continue
+            filename = att.get("filename") or att.get("name")
+            if not filename:
+                continue
+            # Filenames are user-controlled and rendered unescaped into the prompt;
+            # strip control chars/newlines and cap length so a crafted name cannot
+            # inject fake markdown sections regardless of the upstream upload path.
+            clean = re.sub(r"[\x00-\x1f\x7f]", " ", str(filename))[:255].strip()
+            if not clean:
+                continue
+            entry: Dict[str, Any] = {
+                "filename": clean,
+                "mime_type": att.get("mime_type") or "application/octet-stream",
+            }
+            size = att.get("size")
+            if isinstance(size, int) and size > 0:
+                entry["size"] = size
+            files.append(entry)
+        return {"files": files} if files else {}
+
+
 class NamespaceManager:
     """Manages all namespace builders and context assembly"""
 
@@ -263,6 +310,7 @@ class NamespaceManager:
             "source": SourceNamespace(),
             "tools": ToolsNamespace(),
             "artifacts": ArtifactsNamespace(),
+            "attachments": AttachmentsNamespace(),
         }
 
     def build_context(self, **kwargs) -> Dict[str, Any]:

@@ -226,6 +226,20 @@ class ToolExecutor:
             self.merge_client_tools(tools, self.client_tools)
         return tools
 
+    def get_enabled_tool_names(self) -> set:
+        """Return the set of tool names enabled for this context.
+
+        Authoritative (resolves through :meth:`get_tools`): an agent yields its
+        configured ``agents.tools``; an agentless chat yields the user's active
+        tools plus the synthesized defaults. Used to gate tool-specific prompt
+        sections via the ``tools.enabled`` template namespace.
+        """
+        return {
+            str(tool["name"])
+            for tool in self.get_tools().values()
+            if isinstance(tool, dict) and tool.get("name")
+        }
+
     def _get_tools_by_api_key(self, api_key: str) -> Dict[str, Dict]:
         """Resolve an agent's toolset — exactly ``agents.tools``, no defaults."""
         # Per-operation session: the answer pipeline spans a long-lived
