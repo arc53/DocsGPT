@@ -190,6 +190,16 @@ def test_coerce_int_and_keep_alive():
     assert CodeExecutorTool._keep_alive(False, None) is False
 
 
+def test_normalize_outputs():
+    n = CodeExecutorTool._normalize_outputs
+    assert n(["a.csv", "b.pdf"]) == ["a.csv", "b.pdf"]
+    assert n("report.pdf") == ["report.pdf"]      # a bare string is tolerated
+    assert n([" x ", "", 5, "y"]) == ["x", "y"]   # stripped; empties/non-strings dropped
+    assert n([]) is None
+    assert n(None) is None
+    assert n("   ") is None
+
+
 # ---------------------------------------------------------------------------
 # Action metadata / approval surface
 # ---------------------------------------------------------------------------

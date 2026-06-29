@@ -78,8 +78,9 @@ class CodeExecutorTool(Tool):
                 "name": "run_code",
                 "description": (
                     "Execute Python in a sandboxed, stateful session bound to this conversation. "
-                    "Files written by the code are captured as downloadable artifacts; only a "
-                    "compact summary (output tail + artifact references) is returned, never raw bytes. "
+                    "Files written by the code are saved as downloadable artifacts (write throwaway "
+                    "files under `tmp/`, or pass `outputs` to save only specific files); only a compact "
+                    "summary (output tail + artifact references) is returned, never raw bytes. "
                     "Each call is capped at ~60s of wall-clock; for longer work, start it in the "
                     "background and poll with additional run_code calls (use persist=true to keep state)."
                 ),
@@ -100,6 +101,13 @@ class CodeExecutorTool(Tool):
                             "ref like `A1` returned by a previous artifact action, a full artifact id, or "
                             "the name/id of a file the user attached to this conversation.",
                         },
+                        "outputs": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Filenames or globs (e.g. `report.pdf`, `*.csv`) to save as "
+                            "downloadable artifacts. When set, only matching files are saved; when omitted, "
+                            "every produced file is saved except scratch paths under `tmp/`.",
+                        },
                         "ttl": {
                             "type": "integer",
                             "description": "Keep-alive lifetime (seconds) for the session; clamped by SANDBOX_MAX_TTL.",
@@ -114,7 +122,9 @@ class CodeExecutorTool(Tool):
                         },
                         "capture_artifacts": {
                             "type": "boolean",
-                            "description": "Capture newly written workspace files as artifacts (default: true).",
+                            "description": "Save produced workspace files as downloadable artifacts "
+                            "(default: true). Set false for setup or install-only steps that write nothing "
+                            "worth keeping.",
                         },
                     },
                     "required": ["code"],
@@ -161,6 +171,7 @@ class CodeExecutorTool(Tool):
             return {"status": "error", "error": "code is required."}
 
         should_capture = kwargs.get("capture_artifacts", True)
+        outputs = self._normalize_outputs(kwargs.get("outputs"))
         ttl = self._coerce_int(kwargs.get("ttl"))
         timeout = self._exec_timeout()
         inputs = kwargs.get("inputs") or []
@@ -192,7 +203,7 @@ class CodeExecutorTool(Tool):
             artifacts: List[Dict[str, Any]] = []
             if should_capture:
                 try:
-                    artifacts = self._capture_artifacts(manager, session_id, pre_signatures)
+                    artifacts = self._capture_artifacts(manager, session_id, pre_signatures, outputs)
                 except Exception:
                     logger.exception("code_executor: artifact capture failed")
 
@@ -299,10 +310,28 @@ class CodeExecutorTool(Tool):
         """Map each non-input workspace file to a (size, sha256) signature for change detection."""
         return snapshot_signatures(manager, session_id)
 
+    @staticmethod
+    def _normalize_outputs(raw: Any) -> Optional[List[str]]:
+        """Coerce the ``outputs`` arg to a list of non-empty glob strings, or None.
+
+        Tolerates a bare string (some models pass one instead of an array); an empty
+        or non-list value means "no allow-list" (auto-capture).
+        """
+        if isinstance(raw, str):
+            raw = [raw]
+        if not isinstance(raw, list):
+            return None
+        patterns = [str(p).strip() for p in raw if isinstance(p, str) and str(p).strip()]
+        return patterns or None
+
     def _capture_artifacts(
-        self, manager: Any, session_id: str, pre_signatures: Dict[str, Tuple[int, Optional[str]]]
+        self,
+        manager: Any,
+        session_id: str,
+        pre_signatures: Dict[str, Tuple[int, Optional[str]]],
+        outputs: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """Persist each non-input workspace file that is new or whose content changed."""
+        """Persist produced workspace files (only ``outputs`` globs when given)."""
         captured = capture_artifacts(
             manager,
             session_id,
@@ -315,6 +344,7 @@ class CodeExecutorTool(Tool):
                 "action": "run_code",
                 "session_id": session_id,
             },
+            outputs=outputs,
         )
         if captured:
             self._last_artifact_id = captured[0]["artifact_id"]

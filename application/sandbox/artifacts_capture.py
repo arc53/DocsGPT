@@ -8,6 +8,7 @@ here; binary bytes live in ``BaseStorage`` and never enter LLM context or workfl
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import io
 import logging
@@ -32,6 +33,13 @@ class QuotaExceeded(Exception):
 # Cap the per-run capture work so a workspace full of pre-existing files can't turn
 # one exec into an unbounded read+persist sweep.
 MAX_CAPTURED_FILES = 64
+
+# Auto-capture skips scratch/intermediate workspace paths so install steps, extracted
+# archives, and temp files don't each become a downloadable artifact. Agents write
+# throwaway files under ``tmp/``; an explicit ``outputs`` list bypasses this skip (the
+# agent is then naming exactly what to keep).
+_SCRATCH_PREFIXES = ("tmp/",)
+_SCRATCH_SUFFIXES = (".tmp", ".lock", ".pyc", ".pyo")
 
 _DEFAULT_KIND = "file"
 
@@ -64,8 +72,27 @@ def kind_for_mime(mime: str) -> str:
     return _DEFAULT_KIND
 
 
+def _is_scratch(rel_path: str) -> bool:
+    """True for scratch/junk workspace paths excluded from auto-capture."""
+    if rel_path == "tmp" or rel_path.startswith(_SCRATCH_PREFIXES):
+        return True
+    if any(part == "__pycache__" or part.startswith(".") for part in rel_path.split("/")):
+        return True
+    return rel_path.endswith(_SCRATCH_SUFFIXES)
+
+
+def _matches_outputs(rel_path: str, outputs: List[str]) -> bool:
+    """True when a workspace path matches any caller-supplied ``outputs`` glob.
+
+    Each pattern is matched against the full workspace-relative path and the bare
+    filename, so ``report.pdf``, ``*.csv``, and ``out/*.json`` all work.
+    """
+    name = rel_path.rsplit("/", 1)[-1]
+    return any(fnmatch.fnmatch(rel_path, pat) or fnmatch.fnmatch(name, pat) for pat in outputs)
+
+
 def snapshot_signatures(manager: Any, session_id: str) -> Dict[str, Tuple[int, Optional[str]]]:
-    """Map each non-input workspace file to a (size, sha256) signature for change detection."""
+    """Map each non-input, non-scratch workspace file to a (size, sha256) signature."""
     signatures: Dict[str, Tuple[int, Optional[str]]] = {}
     try:
         files = manager.list_files(session_id)
@@ -73,7 +100,7 @@ def snapshot_signatures(manager: Any, session_id: str) -> Dict[str, Tuple[int, O
         logger.exception("artifacts_capture: pre-exec listing failed")
         return signatures
     for rel_path in files:
-        if rel_path.startswith("inputs/"):
+        if rel_path.startswith("inputs/") or _is_scratch(rel_path):
             continue
         try:
             data = manager.get_file(session_id, rel_path)
@@ -93,9 +120,13 @@ def capture_artifacts(
     conversation_id: Optional[str] = None,
     workflow_run_id: Optional[str] = None,
     produced_by: Optional[Dict[str, Any]] = None,
+    outputs: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
-    """Persist each non-input workspace file that is new or whose content changed.
+    """Persist workspace files that are new or whose content changed.
 
+    When ``outputs`` is given, capture only files matching those globs (the caller is
+    naming exactly what to keep). Otherwise auto-capture every produced file except
+    scratch/intermediate paths (``tmp/`` and obvious junk; see ``_is_scratch``).
     Returns one artifact reference per captured file: ``{artifact_id, version,
     filename, mime_type, size}`` (JSON primitives only; never bytes).
     """
@@ -105,7 +136,11 @@ def capture_artifacts(
         logger.exception("artifacts_capture: post-exec listing failed")
         return []
 
-    candidates = sorted(f for f in post_files if not f.startswith("inputs/"))
+    produced = (f for f in post_files if not f.startswith("inputs/"))
+    if outputs:
+        candidates = sorted(f for f in produced if _matches_outputs(f, outputs))
+    else:
+        candidates = sorted(f for f in produced if not _is_scratch(f))
     captured: List[Dict[str, Any]] = []
     for rel_path in candidates:
         if len(captured) >= MAX_CAPTURED_FILES:
